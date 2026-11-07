@@ -125,11 +125,13 @@ body:
       description: >-
         Design as for a durable, mission-critical, latency-critical system (`units.md` § units-engineering). Answer
         every row in its last cell with a bound, a budget or a measured number, or `n/a — <reason>` where the change
-        has no such path. An empty row and a bare `n/a` are refused.
+        has no such path. An empty row and a bare `n/a` are refused. The `change` row has two parts,
+        `unchanged: <the work when no input of the result changes>; edit: <the work an edit costs>`, or reads
+        `n/a — <reason>`.
       value: |
         | Row | The issue states | Bound |
         | --- | ---------------- | ----- |
-        | change | what a change to the input recomputes, and its bound | |
+        | change | `unchanged:` the work when no input of the result changes (a lookup, none, or a cheap recomputation and why it is cheap); `edit:` the work an edit costs, in what the edit changes; a stored result names its content key | |
         | complexity | time and space in the input size; the worst case; hostile input | |
         | latency | the budget of the path the change sits on: a keystroke, a check, a request, a landing | |
         | parallelism | what runs at once, what serialises, where contention sits, the width left unused | |

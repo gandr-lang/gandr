@@ -46,7 +46,7 @@ Read the record's `time` of the gate on main (`.config/gate-scope/passed.bash`).
 
 | Row | Bound |
 | --- | ----- |
-| change | the fix changes the task or the test that grew, never the whole gate |
+| change | unchanged: none, as a gate whose tasks do not change keeps its time; edit: the fix changes the task or the test that grew, never the whole gate |
 | complexity | the gate's time is linear in its tasks and their tests |
 | latency | `mise run gate:all` on main takes under {{budget}} s |
 | parallelism | the gate's tasks run at once in its slot, and its one full test suite takes the slot's cores |

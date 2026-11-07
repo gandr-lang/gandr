@@ -43,8 +43,11 @@
 #   row's name in its first cell and its answer in its last: a bound, a
 #   budget or a measured number, or `n/a — <reason>` where the change has no
 #   such path (`units.md` § units-engineering). An empty answer and a bare
-#   `n/a` are refused. An issue the coordinator signed is not judged, so no
-#   unit signed before the rule becomes unclaimable;
+#   `n/a` are refused. A `change` answer other than `n/a — <reason>` holds
+#   two parts (#5850): `unchanged:`, the work when no input of the result
+#   changes, and `edit:`, the work an edit costs. One that lacks either is
+#   refused, by the part it lacks. An issue the coordinator signed is not
+#   judged, so no unit signed before the rule becomes unclaimable;
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
@@ -110,6 +113,13 @@ def engineering_findings($labels):
       | if ($answers | length) == 0 then "`## Engineering` has no row for `\($row)`: write \($form)"
         elif all($answers[]; . == "") then "`## Engineering` leaves `\($row)` empty: write \($form)"
         elif all($answers[]; test("^n/?a\\.?$"; "i")) then "`## Engineering` answers `\($row)` with a bare `n/a`: write `n/a — <reason>`"
+        elif $row == "change"
+          and all($answers[]; (test("^n/?a\\b"; "i") | not)
+            and ((test("(^|[^a-z])unchanged:"; "i") and test("(^|[^a-z])edit:"; "i")) | not))
+        then
+          ([if any($answers[]; test("(^|[^a-z])unchanged:"; "i")) then empty else "`unchanged:`" end,
+            if any($answers[]; test("(^|[^a-z])edit:"; "i")) then empty else "`edit:`" end] | join(" and ")) as $lacks
+          | "`## Engineering` answers `change` without \($lacks): write `unchanged: <the work when no input of the result changes>; edit: <the work an edit costs, in what the edit changes>`, or `n/a — <reason>` (`units.md` § units-engineering)"
         else empty
         end
       end
