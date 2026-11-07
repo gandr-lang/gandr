@@ -2825,13 +2825,13 @@ impl Refusal<'_>
                 | gandr_surface_lowering::WfKind::SplitCircuitOutputs
                 | gandr_surface_lowering::WfKind::SharedCircuitPort,
             ..
-        }, RefusalName::MalformedForm) | (LoweringRefusal::IllFormedDescription { .. },
-        RefusalName::IllFormedDescription) | (LoweringRefusal::GradedBridge { .. },
-        RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
-        RefusalName::MalformedLiteral) | (LoweringRefusal::NoUniverseAbove { .. },
-        RefusalName::NoUniverseAbove) | (LoweringRefusal::MalformedForm { .. },
-        RefusalName::MalformedForm) | (LoweringRefusal::UnknownAttribute { .. },
-        RefusalName::UnknownAttribute) | (LoweringRefusal::DuplicateAttribute { .. },
+        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm) | (
+        LoweringRefusal::IllFormedDescription { .. }, RefusalName::IllFormedDescription) | (
+        LoweringRefusal::GradedBridge { .. }, RefusalName::GradedBridge) | (
+        LoweringRefusal::MalformedLiteral { .. }, RefusalName::MalformedLiteral) | (
+        LoweringRefusal::NoUniverseAbove { .. }, RefusalName::NoUniverseAbove) | (
+        LoweringRefusal::UnknownAttribute { .. }, RefusalName::UnknownAttribute) | (
+        LoweringRefusal::DuplicateAttribute { .. },
         RefusalName::DuplicateAttribute) | (LoweringRefusal::MissingPayload { .. },
         RefusalName::MissingPayload) | (LoweringRefusal::NonValuePayload { .. },
         RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
@@ -2941,12 +2941,12 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
                 | gandr_surface_lowering::WfKind::SplitCircuitOutputs
                 | gandr_surface_lowering::WfKind::SharedCircuitPort,
             ..
-        } => RefusalName::MalformedForm,
+        }
+        | LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         LoweringRefusal::IllFormedDescription { .. } => RefusalName::IllFormedDescription,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
         LoweringRefusal::NoUniverseAbove { .. } => RefusalName::NoUniverseAbove,
-        LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         LoweringRefusal::UnknownAttribute { .. } => RefusalName::UnknownAttribute,
         LoweringRefusal::DuplicateAttribute { .. } => RefusalName::DuplicateAttribute,
         LoweringRefusal::MissingPayload { .. } => RefusalName::MissingPayload,
