@@ -195,7 +195,7 @@ mod tests
         );
         // compose(replay) ≡ replay(compose): the graft equals a direct engine
         // composite, up to replay-equivalence.
-        let direct = cert(compose_invertible(&first, &second), ra, re);
+        let direct = cert(compose_invertible(&first, &second, &store), ra, re);
         assert!(
             bool::from(vdc.cells_equal(&graft, &direct)),
             "grafting agrees with engine composition up to replay-equivalence"
@@ -265,13 +265,16 @@ mod tests
         let d_second = cert(second, rc.clone(), re);
         let through_identity =
             vdc.compose_cells(&vdc.id_cell(&rc), core::slice::from_ref(&d_first));
-        assert_eq!(through_identity.elaborate(), d_first.elaborate());
+        assert_eq!(
+            through_identity.elaborate(&store),
+            d_first.elaborate(&store)
+        );
         let stuck = vdc.compose_cells(&d_second, &[d_first.clone(), d_first]);
-        assert!(matches!(stuck.elaborate(), Elaborated::Stuck));
+        assert!(matches!(stuck.elaborate(&store), Elaborated::Stuck));
         assert!(!bool::from(stuck.replays(&store)));
         assert!(!bool::from(vdc.cells_equal(&stuck, &stuck)));
         let still_stuck = vdc.compose_cells(&d_second, &[stuck]);
-        assert!(matches!(still_stuck.elaborate(), Elaborated::Stuck));
+        assert!(matches!(still_stuck.elaborate(&store), Elaborated::Stuck));
         let identity = vdc.id_cell(&ra);
         assert!(bool::from(vdc.cells_equal(&identity, &vdc.id_cell(&ra))));
         let reflexive = cert(reflexive_cert(&first), ra.clone(), ra);
@@ -905,7 +908,7 @@ mod tests
         );
         let d_broken = cert(broken, relation.clone(), relation);
         let stuck = Derivation::graft(d_broken.clone(), vec![d_broken]);
-        assert!(matches!(stuck.elaborate(), Elaborated::Stuck));
+        assert!(matches!(stuck.elaborate(&store), Elaborated::Stuck));
         for (fwd, bwd, valid) in [
             (&id, &id, true),
             (&id, &d_refl, true),

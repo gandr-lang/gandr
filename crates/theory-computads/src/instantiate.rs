@@ -639,7 +639,8 @@ where
                 second,
                 joins_at,
                 convexity: A::convexity_discharge(store),
-            };
+            }
+            .recorded(store);
             (witness, ConvexityGrant::Rechecked(warrant))
         },
         Err(obstruction) => return Err(CircuitShiftObstruction::Refused(Box::new(obstruction))),
@@ -714,7 +715,9 @@ where
 }
 
 /// The application one recorded occurrence instantiates to: the record's
-/// position, and the cell the occurrence's rewrite is bound to.
+/// position, and the cell the occurrence's rewrite is bound to. Its
+/// substitution is empty until the witness records it on the peak
+/// ([`ShiftEquivalence::recorded`]).
 ///
 /// # Specification
 /// - requires: `bindings` is a function from port to cell.
@@ -785,6 +788,7 @@ where
     Ok(CellApp {
         cell: binding.cell,
         at: A::position_at_path(&path),
+        subst: A::Subst::default(),
     })
 }
 
@@ -1156,10 +1160,10 @@ mod tests
         assert_eq!(
             Err(CircuitShiftObstruction::Refused(Box::new(
                 ShiftObstruction::StepDoesNotFire {
-                    step: Box::new(CellApp {
-                        cell: ground,
-                        at: Pos::from_steps([PositionStep::from(0_usize)]),
-                    }),
+                    step: Box::new(CellApp::unrecorded(
+                        ground,
+                        Pos::from_steps([PositionStep::from(0_usize)]),
+                    )),
                 }
             ))),
             instantiate_two_redex_rule(
@@ -1244,10 +1248,7 @@ mod tests
 
         let mut store = CellStore::new();
         let id = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
-        let step = CellApp {
-            cell: id,
-            at: ToyAlphabet::root_position(),
-        };
+        let step = CellApp::unrecorded(id, ToyAlphabet::root_position());
         assert_eq!(
             Ok(Toy::zero()),
             fire(&store, &Toy::succ(Toy::zero()), &step)
@@ -1257,10 +1258,7 @@ mod tests
         };
         assert_eq!(Err(no_redex.clone()), fire(&store, &Toy::zero(), &step));
         assert_eq!(Err(no_redex), exercise(&store, &Toy::zero(), &step, &step));
-        let missing = CellApp {
-            cell: CellId::from(usize::MAX),
-            at: ToyAlphabet::root_position(),
-        };
+        let missing = CellApp::unrecorded(CellId::from(usize::MAX), ToyAlphabet::root_position());
         let unknown = ShiftObstruction::UnknownCell { cell: missing.cell };
         assert_eq!(Err(unknown.clone()), fire(&store, &Toy::zero(), &missing));
         assert_eq!(
@@ -1283,14 +1281,8 @@ mod tests
         let mut store = CellStore::new();
         let grow = store.insert(toy_cell(Toy::var("x"), Toy::succ(Toy::var("x"))));
         let erase = store.insert(toy_cell(Toy::var("x"), Toy::zero()));
-        let first = CellApp {
-            cell: grow,
-            at: ToyAlphabet::root_position(),
-        };
-        let second = CellApp {
-            cell: erase,
-            at: ToyAlphabet::root_position(),
-        };
+        let first = CellApp::unrecorded(grow, ToyAlphabet::root_position());
+        let second = CellApp::unrecorded(erase, ToyAlphabet::root_position());
         assert_eq!(
             Err(ShiftObstruction::SequentializationsDiffer {
                 first_then_second: Box::new(Toy::zero()),

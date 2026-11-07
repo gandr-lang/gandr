@@ -96,6 +96,7 @@ use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::Overlap;
 use gandr_theory_coherent_resolutions::OverlapSupport;
 use gandr_theory_coherent_resolutions::overlaps_between;
+use gandr_theory_coherent_resolutions::record_path;
 use gandr_theory_coherent_resolutions::replay_from_peak;
 use gandr_theory_coherent_resolutions::rewrite_at;
 use quenchant_shape::shape::Maybe;
@@ -194,6 +195,55 @@ impl<A: CellAlphabet> ShiftEquivalence<A>
             &self.second_then_first(),
         );
         ShiftReplay::from(bool::from(replayed))
+    }
+
+    /// This witness with each application's substitution recorded where
+    /// [`ShiftEquivalence::replay`] fires it: on the peak skolemized, as
+    /// [`record_path`] records the first sequentialization.
+    ///
+    /// The two applications stand at incomparable positions, so the command
+    /// at each one is the same in either order. One substitution per
+    /// application serves both sequentializations.
+    ///
+    /// # Specification
+    /// - ensures: the witness with both applications recorded by
+    ///   [`record_path`] from the peak; its peak, its composite, its warrant,
+    ///   and the cell and position of each application are unchanged.
+    /// - panics: none.
+    /// - intension: one firing by match of each application.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`derive_shift_equivalence`], whose witness is
+    ///   recorded here: a derived witness on a peak with metavariables replays,
+    ///   and the same witness with its composite retargeted does not.
+    /// - witness: `tests::shift::the_cong2_composite_replays_under_both_sequentializations`
+    /// - witness: `tests::shift::a_retargeted_composite_no_longer_replays`
+    #[inline]
+    #[must_use]
+    #[spec(captures: placed = (self.peak.clone(), self.joins_at.clone(), self.convexity, (self.first.cell, self.first.at.clone()), (self.second.cell, self.second.at.clone())),
+        ensures: |output| (output.peak.clone(), output.joins_at.clone(), output.convexity, (output.first.cell, output.first.at.clone()), (output.second.cell, output.second.at.clone())) == placed)]
+    pub fn recorded(
+        self,
+        store: &CellStore<A>,
+    ) -> Self
+    {
+        let Self {
+            peak,
+            first,
+            second,
+            joins_at,
+            convexity,
+        } = self;
+        let mut pair = [first, second];
+        record_path(store, &peak, &mut pair);
+        let [first, second] = pair;
+        Self {
+            peak,
+            first,
+            second,
+            joins_at,
+            convexity,
+        }
     }
 }
 
@@ -338,7 +388,8 @@ where
         second: second.clone(),
         joins_at: forward,
         convexity,
-    })
+    }
+    .recorded(store))
 }
 
 /// The three guard conjuncts, with the convexity discharge and the overlap
@@ -739,14 +790,8 @@ mod tests
         let refusal = derive_shift_equivalence(
             &store,
             &frame_term(),
-            &CellApp {
-                cell: frame,
-                at: Pos::root(),
-            },
-            &CellApp {
-                cell: add,
-                at: Pos::root(),
-            },
+            &CellApp::unrecorded(frame, Pos::root()),
+            &CellApp::unrecorded(add, Pos::root()),
         )
         .expect_err("one position is not two");
         assert_eq!(
@@ -767,14 +812,8 @@ mod tests
         let refusal = derive_shift_equivalence(
             &store,
             &frame_term(),
-            &CellApp {
-                cell: frame,
-                at: Pos::root(),
-            },
-            &CellApp {
-                cell: add,
-                at: pos![0],
-            },
+            &CellApp::unrecorded(frame, Pos::root()),
+            &CellApp::unrecorded(add, pos![0]),
         )
         .expect_err("a nested pair is refused");
         assert_eq!(
@@ -797,14 +836,8 @@ mod tests
         let refusal = derive_shift_equivalence(
             &store,
             &frame_term(),
-            &CellApp {
-                cell: frame,
-                at: pos![0],
-            },
-            &CellApp {
-                cell: add,
-                at: pos![1],
-            },
+            &CellApp::unrecorded(frame, pos![0]),
+            &CellApp::unrecorded(add, pos![1]),
         )
         .expect_err("an overlapping cell pair is refused");
         let ShiftObstruction::GenuineOverlap { overlap } = refusal
@@ -826,14 +859,8 @@ mod tests
         // refused when the discharge is withheld: the third conjunct is a
         // check, not a comment.
         let (store, ground) = trivial_overlap_store();
-        let step = CellApp {
-            cell: ground,
-            at: pos![0],
-        };
-        let other = CellApp {
-            cell: ground,
-            at: pos![1],
-        };
+        let step = CellApp::unrecorded(ground, pos![0]);
+        let other = CellApp::unrecorded(ground, pos![1]);
         assert_eq!(
             Ok(()),
             check_shift_guard(
@@ -864,14 +891,8 @@ mod tests
             ProdPat::ctor("Zero", []),
             ConsPat::op("add", [ProdPat::ctor("Zero", [])], ConsPat::top()),
         );
-        let step = CellApp {
-            cell: ground,
-            at: pos![0],
-        };
-        let other = CellApp {
-            cell: ground,
-            at: pos![1],
-        };
+        let step = CellApp::unrecorded(ground, pos![0]);
+        let other = CellApp::unrecorded(ground, pos![1]);
         let refusal = derive_shift_equivalence(&store, &term, &step, &other)
             .expect_err("no redex sits at either fabricated position");
         assert_eq!(
@@ -907,14 +928,8 @@ mod tests
         let refusal = derive_shift_equivalence(
             &store,
             &frame_term(),
-            &CellApp {
-                cell: frame,
-                at: pos![0],
-            },
-            &CellApp {
-                cell: missing,
-                at: pos![1],
-            },
+            &CellApp::unrecorded(frame, pos![0]),
+            &CellApp::unrecorded(missing, pos![1]),
         )
         .expect_err("an unresolvable identifier is refused");
         assert_eq!(
@@ -930,14 +945,8 @@ mod tests
         let mut store = CellStore::new();
         let lead_id = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
         let trail_id = store.insert(toy_cell(Toy::zero(), Toy::add(Toy::zero(), Toy::zero())));
-        let lead = CellApp {
-            cell: lead_id,
-            at: ToyAlphabet::root_position(),
-        };
-        let trail = CellApp {
-            cell: trail_id,
-            at: ToyAlphabet::root_position(),
-        };
+        let lead = CellApp::unrecorded(lead_id, ToyAlphabet::root_position());
+        let trail = CellApp::unrecorded(trail_id, ToyAlphabet::root_position());
         let peak = Toy::succ(Toy::zero());
         let joined = Toy::add(Toy::zero(), Toy::zero());
         assert_eq!(Ok(joined.clone()), run_pair(&store, &peak, &lead, &trail));
@@ -953,10 +962,7 @@ mod tests
             }),
             run_pair(&store, &peak, &lead, &lead)
         );
-        let missing = CellApp {
-            cell: CellId::from(99_usize),
-            at: ToyAlphabet::root_position(),
-        };
+        let missing = CellApp::unrecorded(CellId::from(99_usize), ToyAlphabet::root_position());
         assert_eq!(
             Err(ShiftObstruction::UnknownCell { cell: missing.cell }),
             run_pair(&store, &peak, &lead, &missing)
@@ -989,22 +995,12 @@ mod tests
         let mut store = CellStore::new();
         let lead_id = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
         let trail_id = store.insert(toy_cell(Toy::zero(), Toy::add(Toy::zero(), Toy::zero())));
-        let lead = CellApp {
-            cell: lead_id,
-            at: ToyAlphabet::root_position(),
-        };
-        let trail = CellApp {
-            cell: trail_id,
-            at: ToyAlphabet::root_position(),
-        };
-        let first_missing = CellApp {
-            cell: CellId::from(99_usize),
-            at: ToyAlphabet::root_position(),
-        };
-        let second_missing = CellApp {
-            cell: CellId::from(100_usize),
-            at: ToyAlphabet::root_position(),
-        };
+        let lead = CellApp::unrecorded(lead_id, ToyAlphabet::root_position());
+        let trail = CellApp::unrecorded(trail_id, ToyAlphabet::root_position());
+        let first_missing =
+            CellApp::unrecorded(CellId::from(99_usize), ToyAlphabet::root_position());
+        let second_missing =
+            CellApp::unrecorded(CellId::from(100_usize), ToyAlphabet::root_position());
         let support = OverlapSupport::from_store(&store);
         for (first, second, expected) in [
             (&first_missing, &trail, first_missing.cell),
@@ -1022,14 +1018,14 @@ mod tests
                 )
             );
         }
-        let reverse_first = CellApp {
-            cell: trail_id,
-            at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
-        };
-        let reverse_second = CellApp {
-            cell: lead_id,
-            at: ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
-        };
+        let reverse_first = CellApp::unrecorded(
+            trail_id,
+            ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+        );
+        let reverse_second = CellApp::unrecorded(
+            lead_id,
+            ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+        );
         let refusal = check_shift_guard(
             &store,
             &reverse_first,

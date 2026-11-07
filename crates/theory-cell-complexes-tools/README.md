@@ -4,6 +4,7 @@ The test-facing second inhabitant of the cell-alphabet trait — a first-order t
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -18,6 +19,10 @@ The test-facing second inhabitant of the cell-alphabet trait — a first-order t
 **Why.** The workspace ships one production alphabet, whose only command position is the root. An engine generic over `CellAlphabet` measured over that alphabet alone measures that alphabet, and never meets two applications inside one term. A second inhabitant with nested commands gives every engine suite a term language where positions below the root, overlaps between them and splices into them exist; an adversary gives the defensive checks of an engine an input that reaches them, which no honest inhabitant does.
 
 **How.** A toy term is one flat table in prefix order, so every walk over it is a loop. Matching, unification, anti-unification, reading and splicing run over index ranges into that table; anti-unification walks the members' tables in lockstep and emits the generalization in prefix order. `Lying<L>` reuses the toy's associated types, its orientation tag wrapped in `LyingOrient<L>`, and forwards every method to `ToyAlphabet` except `position_order`, `splice_cmd_at` and `convexity_discharge`, which it forwards to `L`, as `LyingOrient<L>` forwards its hash; `AlphabetLie` gives each the honest answer by default, so an adversary overrides exactly the method it lies about.
+
+## References
+
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — the toy alphabets read whether an image holds a hole.
 
 ## Provided features
 

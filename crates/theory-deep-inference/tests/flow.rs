@@ -234,7 +234,7 @@ fn dup_cell() -> Cell<ToyAlphabet>
 }
 
 /// A one-step certificate over a boundary the caller chooses, both legs
-/// recording `step`.
+/// recording `step` with its substitution on that peak over `store`.
 ///
 /// The carrier's overlap stands for the recorded peak and nothing else: these
 /// fixtures are about which boundary a certificate records, not which critical
@@ -243,12 +243,15 @@ fn dup_cell() -> Cell<ToyAlphabet>
 /// # Specification
 /// trivial.
 fn one_step_certificate(
+    store: &CellStore<ToyAlphabet>,
     peak: &Toy,
     joins_at: &Toy,
     step: &CellApp<ToyAlphabet>,
 ) -> Tracelet<ToyAlphabet>
 {
-    tracelet_over(peak, joins_at, vec![step.clone()], vec![step.clone()])
+    tracelet_over(store, peak, joins_at, vec![step.clone()], vec![
+        step.clone(),
+    ])
 }
 
 /// The guard-refused pair: (add-Z) at the left argument and (add-S) at the
@@ -276,14 +279,8 @@ fn guard_refused_pair() -> (
     (
         store,
         peak,
-        CellApp {
-            cell: z,
-            at: at![0],
-        },
-        CellApp {
-            cell: s,
-            at: at![1],
-        },
+        CellApp::unrecorded(z, at![0]),
+        CellApp::unrecorded(s, at![1]),
     )
 }
 
@@ -293,10 +290,7 @@ fn guard_refused_pair() -> (
 /// trivial.
 fn add_z_at_root(composition: &Overlap<ToyAlphabet>) -> CellApp<ToyAlphabet>
 {
-    CellApp {
-        cell: composition.right,
-        at: at![],
-    }
+    CellApp::unrecorded(composition.right, at![])
 }
 
 #[test]
@@ -335,16 +329,10 @@ fn the_games_quotient_identifies_two_firings_the_peak_anchor_separates()
     // The quotient is therefore not contained in flow equality.
     let (store, f, _g) = cong2_store();
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
-    let left = project_flow(&store, &peak, &[CellApp {
-        cell: f,
-        at: at![0],
-    }])
-    .expect("f fires at the left argument");
-    let right = project_flow(&store, &peak, &[CellApp {
-        cell: f,
-        at: at![1],
-    }])
-    .expect("f fires at the right argument");
+    let left = project_flow(&store, &peak, &[CellApp::unrecorded(f, at![0])])
+        .expect("f fires at the left argument");
+    let right = project_flow(&store, &peak, &[CellApp::unrecorded(f, at![1])])
+        .expect("f fires at the right argument");
     assert_eq!(
         ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
         left.convexity,
@@ -375,32 +363,14 @@ fn the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form()
     let f = store.insert(f_cell());
     let peak = Toy::succ(Toy::zero());
     let forward_path = vec![
-        CellApp {
-            cell: dup,
-            at: at![],
-        },
-        CellApp {
-            cell: f,
-            at: at![0],
-        },
-        CellApp {
-            cell: f,
-            at: at![1],
-        },
+        CellApp::unrecorded(dup, at![]),
+        CellApp::unrecorded(f, at![0]),
+        CellApp::unrecorded(f, at![1]),
     ];
     let backward_path = vec![
-        CellApp {
-            cell: dup,
-            at: at![],
-        },
-        CellApp {
-            cell: f,
-            at: at![1],
-        },
-        CellApp {
-            cell: f,
-            at: at![0],
-        },
+        CellApp::unrecorded(dup, at![]),
+        CellApp::unrecorded(f, at![1]),
+        CellApp::unrecorded(f, at![0]),
     ];
     let forward = project_flow(&store, &peak, &forward_path)
         .expect("dup then the two f firings is a derivation of the peak");
@@ -427,6 +397,7 @@ fn the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form()
     // The certificate-level reading agrees: a tracelet recording the two
     // orders replays, and its two legs still have no shared canonical form.
     let tracelet = tracelet_over(
+        &store,
         &peak,
         &Toy::add(Toy::zero(), Toy::zero()),
         forward_path,
@@ -496,14 +467,8 @@ fn disjoint_steps_share_no_thread()
     let (store, f, g) = cong2_store();
     let peak = cong2_body();
     let path = [
-        CellApp {
-            cell: f,
-            at: at![0],
-        },
-        CellApp {
-            cell: g,
-            at: at![1],
-        },
+        CellApp::unrecorded(f, at![0]),
+        CellApp::unrecorded(g, at![1]),
     ];
     let flow = project_flow(&store, &peak, &path).expect("f then g is a derivation of the peak");
     assert_eq!(
@@ -627,7 +592,7 @@ fn a_single_step_leg_threads_the_whole_term_through_one_vertex()
     // there is no frame.
     let (store, f, _g) = cong2_store();
     let peak = Toy::succ(Toy::zero());
-    let flow = project_flow(&store, &peak, &[CellApp { cell: f, at: at![] }])
+    let flow = project_flow(&store, &peak, &[CellApp::unrecorded(f, at![])])
         .expect("f fires at the root of Succ(Zero)");
     assert_eq!(1_usize, flow.labels.len(), "one vertex");
     assert!(
@@ -660,10 +625,10 @@ fn a_consumed_creation_is_one_thread_between_two_vertices()
     let z = store.insert(add_z());
     let s = store.insert(add_s());
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
-    let flow = project_flow(&store, &peak, &[CellApp { cell: s, at: at![] }, CellApp {
-        cell: z,
-        at: at![0],
-    }])
+    let flow = project_flow(&store, &peak, &[
+        CellApp::unrecorded(s, at![]),
+        CellApp::unrecorded(z, at![0]),
+    ])
     .expect("add-S then add-Z is a derivation of the peak");
     assert_eq!(2_usize, flow.labels.len(), "two vertices");
     assert!(
@@ -683,16 +648,10 @@ fn the_projection_forgets_where_a_cell_fired()
     // them apart is which occurrences their threads touch.
     let (store, f, _g) = cong2_store();
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
-    let left = project_flow(&store, &peak, &[CellApp {
-        cell: f,
-        at: at![0],
-    }])
-    .expect("f fires at the left argument");
-    let right = project_flow(&store, &peak, &[CellApp {
-        cell: f,
-        at: at![1],
-    }])
-    .expect("f fires at the right argument");
+    let left = project_flow(&store, &peak, &[CellApp::unrecorded(f, at![0])])
+        .expect("f fires at the left argument");
+    let right = project_flow(&store, &peak, &[CellApp::unrecorded(f, at![1])])
+        .expect("f fires at the right argument");
     let Maybe::Present(cell) = store.get(f)
     else {
         panic!("f is stored");
@@ -720,9 +679,18 @@ fn equal_flows_over_different_boundaries_are_not_one_certificate()
     // does not.
     let (store, composition) = fusion_fixture();
     let step = add_z_at_root(&composition);
-    let ground = one_step_certificate(&Toy::add(Toy::zero(), Toy::zero()), &Toy::zero(), &step);
-    let schematic =
-        one_step_certificate(&Toy::add(Toy::zero(), Toy::var("y")), &Toy::var("y"), &step);
+    let ground = one_step_certificate(
+        &store,
+        &Toy::add(Toy::zero(), Toy::zero()),
+        &Toy::zero(),
+        &step,
+    );
+    let schematic = one_step_certificate(
+        &store,
+        &Toy::add(Toy::zero(), Toy::var("y")),
+        &Toy::var("y"),
+        &step,
+    );
     assert!(
         bool::from(ground.replay(&store)) && bool::from(schematic.replay(&store)),
         "both are certificates: add-Z fires on each peak and reaches each recorded join"
@@ -764,9 +732,18 @@ fn flow_equality_implies_replay_equivalence()
         joins_at: fused_derivation.joins_at.clone(),
     };
     let step = add_z_at_root(&composition);
-    let ground = one_step_certificate(&Toy::add(Toy::zero(), Toy::zero()), &Toy::zero(), &step);
-    let schematic =
-        one_step_certificate(&Toy::add(Toy::zero(), Toy::var("y")), &Toy::var("y"), &step);
+    let ground = one_step_certificate(
+        &store,
+        &Toy::add(Toy::zero(), Toy::zero()),
+        &Toy::zero(),
+        &step,
+    );
+    let schematic = one_step_certificate(
+        &store,
+        &Toy::add(Toy::zero(), Toy::var("y")),
+        &Toy::var("y"),
+        &step,
+    );
     let certificates = [fused_derivation, two_step, ground, schematic];
     for left in &certificates {
         for right in &certificates {
@@ -792,6 +769,7 @@ fn a_leg_that_lands_off_the_join_has_no_certificate_flow()
     // would be compared as if it stood for that boundary.
     let (store, composition) = fusion_fixture();
     let strays = one_step_certificate(
+        &store,
         &Toy::add(Toy::zero(), Toy::zero()),
         &Toy::succ(Toy::zero()),
         &add_z_at_root(&composition),
@@ -815,6 +793,7 @@ fn a_certificate_whose_legs_record_one_step_has_one_flow()
 {
     let (store, composition) = fusion_fixture();
     let certificate = one_step_certificate(
+        &store,
         &Toy::add(Toy::zero(), Toy::zero()),
         &Toy::zero(),
         &add_z_at_root(&composition),
@@ -830,6 +809,7 @@ fn a_leg_off_the_join_refuses_the_leg_comparison()
 {
     let (store, composition) = fusion_fixture();
     let strays = one_step_certificate(
+        &store,
         &Toy::add(Toy::zero(), Toy::zero()),
         &Toy::succ(Toy::zero()),
         &add_z_at_root(&composition),
@@ -850,13 +830,19 @@ fn equal_flows_from_two_peaks_to_one_join_are_not_one_certificate()
     // peak conjunct alone separates the two certificates.
     let mut store = CellStore::new();
     let erase = store.insert(toy_cell(Toy::add(Toy::var("x"), Toy::zero()), Toy::zero()));
-    let step = CellApp {
-        cell: erase,
-        at: at![],
-    };
-    let ground = one_step_certificate(&Toy::add(Toy::zero(), Toy::zero()), &Toy::zero(), &step);
-    let schematic =
-        one_step_certificate(&Toy::add(Toy::var("y"), Toy::zero()), &Toy::zero(), &step);
+    let step = CellApp::unrecorded(erase, at![]);
+    let ground = one_step_certificate(
+        &store,
+        &Toy::add(Toy::zero(), Toy::zero()),
+        &Toy::zero(),
+        &step,
+    );
+    let schematic = one_step_certificate(
+        &store,
+        &Toy::add(Toy::var("y"), Toy::zero()),
+        &Toy::zero(),
+        &step,
+    );
     let ground_flow =
         project_flow(&store, &ground.overlap.peak, &ground.path_a).expect("the leg projects");
     let schematic_flow =
@@ -878,15 +864,14 @@ fn the_games_oracle_separates_missing_labels_and_causal_shapes()
 {
     let (store, f, g) = cong2_store();
     let empty = project_flow(&store, &Toy::zero(), &[]).expect("an empty leg projects");
-    let one_f = project_flow(&store, &Toy::succ(Toy::zero()), &[CellApp {
-        cell: f,
-        at: at![],
-    }])
+    let one_f = project_flow(&store, &Toy::succ(Toy::zero()), &[CellApp::unrecorded(
+        f,
+        at![],
+    )])
     .expect("f fires at its root");
-    let one_g = project_flow(&store, &Toy::succ(Toy::succ(Toy::zero())), &[CellApp {
-        cell: g,
-        at: at![],
-    }])
+    let one_g = project_flow(&store, &Toy::succ(Toy::succ(Toy::zero())), &[
+        CellApp::unrecorded(g, at![]),
+    ])
     .expect("g fires at its root");
     assert!(bool::from(games_equivalent(&empty, &empty)));
     assert!(!bool::from(games_equivalent(&empty, &one_f)));
@@ -899,15 +884,9 @@ fn the_games_oracle_separates_missing_labels_and_causal_shapes()
         Toy::zero(),
     );
     let chain = project_flow(&store, &chain_peak, &[
-        CellApp {
-            cell: c,
-            at: at![0, 0],
-        },
-        CellApp {
-            cell: c,
-            at: at![0],
-        },
-        CellApp { cell: c, at: at![] },
+        CellApp::unrecorded(c, at![0, 0]),
+        CellApp::unrecorded(c, at![0]),
+        CellApp::unrecorded(c, at![]),
     ])
     .expect("three nested collapses fire in order");
     let fork_peak = Toy::add(
@@ -915,15 +894,9 @@ fn the_games_oracle_separates_missing_labels_and_causal_shapes()
         Toy::add(Toy::zero(), Toy::zero()),
     );
     let fork = project_flow(&store, &fork_peak, &[
-        CellApp {
-            cell: c,
-            at: at![0],
-        },
-        CellApp {
-            cell: c,
-            at: at![1],
-        },
-        CellApp { cell: c, at: at![] },
+        CellApp::unrecorded(c, at![0]),
+        CellApp::unrecorded(c, at![1]),
+        CellApp::unrecorded(c, at![]),
     ])
     .expect("independent children collapse before their parent");
     assert_eq!(chain.labels, fork.labels);

@@ -79,6 +79,9 @@
 //!
 //! # References
 //!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: a certificate step
+//!   records the substitution that matched its cell, and replay instantiates
+//!   the cell by it in place of a match (§ gate-substitution-read).
 //! - Donald E. Knuth and Peter B. Bendix. "Simple Word Problems in Universal
 //!   Algebras." In _Computational Problems in Abstract Algebra_, Pergamon,
 //!   1970, pages 263–297. `doi:10.1016/B978-0-08-012975-4.50028-X` — critical
@@ -228,9 +231,11 @@ pub use crate::rewrite::CellApp;
 pub use crate::rewrite::Normalization;
 pub use crate::rewrite::Rewrite;
 pub use crate::rewrite::apply_once;
+pub use crate::rewrite::fire_at;
 pub use crate::rewrite::firing;
 pub use crate::rewrite::normalize;
 pub use crate::rewrite::redex_search;
+pub use crate::rewrite::replay_at;
 pub use crate::rewrite::rewrite_at;
 pub use crate::tracelet::ReplayPath;
 pub use crate::tracelet::ReplayPathOutcome;
@@ -241,6 +246,7 @@ pub use crate::tracelet::Tracelet;
 pub use crate::tracelet::confluence_join;
 pub use crate::tracelet::confluence_tracelet;
 pub use crate::tracelet::derive_fused;
+pub use crate::tracelet::record_path;
 pub use crate::tracelet::replay_equivalent;
 pub use crate::tracelet::replay_from_peak;
 pub use crate::tracelet::replay_path;

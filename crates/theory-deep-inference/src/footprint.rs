@@ -653,11 +653,8 @@ mod tests
             ProdPat::ctor("Zero", []),
             ConsPat::frame("Succ", ConsPat::top()),
         );
-        let footprint = match_footprint(&store, &term, &CellApp {
-            cell: frame,
-            at: Pos::root(),
-        })
-        .expect("the frame-defining cell fires at the root");
+        let footprint = match_footprint(&store, &term, &CellApp::unrecorded(frame, Pos::root()))
+            .expect("the frame-defining cell fires at the root");
         assert_eq!(
             alloc::vec![Pos::root()],
             footprint.written,
@@ -680,10 +677,7 @@ mod tests
             ProdPat::ctor("Zero", []),
             ConsPat::top(),
         );
-        let step = CellApp {
-            cell: frame,
-            at: Pos::root(),
-        };
+        let step = CellApp::unrecorded(frame, Pos::root());
         assert_eq!(
             Err(FootprintObstruction::StepDoesNotFire {
                 step: Box::new(step.clone()),
@@ -694,10 +688,7 @@ mod tests
         let missing = CellId::from(41_usize);
         assert_eq!(
             Err(FootprintObstruction::UnknownCell { cell: missing }),
-            match_footprint(&store, &term, &CellApp {
-                cell: missing,
-                at: Pos::root(),
-            }),
+            match_footprint(&store, &term, &CellApp::unrecorded(missing, Pos::root())),
             "and an unresolvable identifier is refused before the term is read"
         );
     }
@@ -819,10 +810,11 @@ mod tests
         );
         let mut store = CellStore::new();
         let identity = store.insert(toy_cell(Toy::var("x"), Toy::var("x")));
-        let footprint = match_footprint(&store, &Toy::zero(), &CellApp {
-            cell: identity,
-            at: root.clone(),
-        })
+        let footprint = match_footprint(
+            &store,
+            &Toy::zero(),
+            &CellApp::unrecorded(identity, root.clone()),
+        )
         .expect("the identity rule fires");
         assert_eq!(
             MatchFootprint::<ToyAlphabet> {

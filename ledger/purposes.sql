@@ -3437,6 +3437,7 @@ INSERT INTO purpose VALUES('theory-cell-complexes','boundary::CellLinearity','st
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::CellStoreEmptyStatus','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::FiringPermission','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::GroundPatternStatus','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes','boundary::HoleOccurrence','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::Multiplicity','struct','How many times something is used: the bound a description field declares, or the number of times a cell''s right-hand side writes one hole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::PatternSize','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','boundary::PositionRootStatus','struct','Defines a transparent newtype over one primitive with `From` conversions both ways.',NULL,'fits','sound',NULL);
@@ -3674,11 +3675,13 @@ INSERT INTO purpose VALUES('theory-coherent-resolutions','overlap::interior_over
 INSERT INTO purpose VALUES('theory-coherent-resolutions','overlap::overlaps_between','function','Enumerates the overlaps between two cells, so the pair''s entries are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','overlap::peak_legs','function','Names the legs of a peak, so the peak''s shape is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','overlap::root_overlaps_between','function','Enumerates the root overlaps between two cells, so the root family''s entries are read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::CellApp','struct','Holds one rewrite step, so the step''s cell and position are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::CellApp','struct','Holds one rewrite step, so the step''s cell, position and substitution are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::Normalization','struct','Holds the outcome of a normalization, so the term reached and the budget''s stop are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::Rewrite','struct','Holds one successful rewrite, so the step and the term after it are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::apply_once','function','Fires the first cell that fires anywhere, so the term''s first redex is contracted.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::fire_at','function','Fires a cell at a command position and keeps the substitution that matched, so a step records its evidence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::normalize','function','Repeats firing until no cell fires or the budget is spent, so the term''s normal form is reached.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::replay_at','function','Replays one recorded step by its substitution, so a forged substitution is refused by name.','oracle','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','rewrite::rewrite_at','function','Fires a cell at a command position, so the redex''s contractum is spliced back.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::ReplayPath','struct','Holds one recorded rewrite path, so the path''s steps are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::ReplayPathOutcome','enum','Names the outcome of a replay path, so the path''s result is read.',NULL,'fits','sound',NULL);
@@ -3688,6 +3691,7 @@ INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::StuckStep','
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::Tracelet','struct','Holds a peak and two recorded rewrite paths that both reach one join, so the certificate''s evidence is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::confluence_tracelet','function','Builds a confluence certificate joining the two reducts of a critical pair, so the pair''s join is witnessed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::derive_fused','function','Builds the fused cell of a composition and its certificate, so the fused cell''s derivation is witnessed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::record_path','function','Records the substitution of each step where replay fires it, so a path built elsewhere replays.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::replay_equivalent','function','Checks whether two certificates denote one transformation, so the equivalence''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::replay_from_peak','function','Replays two recorded paths from a peak, so the paths'' join is checked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::replay_path','function','Replays one recorded path, so the path''s join is checked.',NULL,'fits','sound',NULL);

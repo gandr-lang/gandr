@@ -233,7 +233,10 @@ fn a_tracelet_web_decomposes_over_its_events()
     let mut store = CellStore::new();
     let cell = store.insert(f_cell());
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
-    let path = [CellApp { cell, at: at![0] }, CellApp { cell, at: at![1] }];
+    let path = [
+        CellApp::unrecorded(cell, at![0]),
+        CellApp::unrecorded(cell, at![1]),
+    ];
     let web = causal_web(&event_order(&store, &peak, &path).expect("the fixture replays"));
     let tree = web.decompose().expect("a tracelet web decomposes");
     let ModularNode::Par(ref factors) = *root(&tree)

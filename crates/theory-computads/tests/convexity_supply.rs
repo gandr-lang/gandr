@@ -123,14 +123,8 @@ fn a_withheld_discharge_is_rechecked_by_the_supply_point()
     .expect("the supply point grants the conjunct the store withheld");
     assert_eq!(
         ConvexityGrant::Rechecked(SweptPair {
-            first: CellApp {
-                cell: f,
-                at: at![0],
-            },
-            second: CellApp {
-                cell: g,
-                at: at![1],
-            },
+            first: CellApp::unrecorded(f, at![0]),
+            second: CellApp::unrecorded(g, at![1]),
         }),
         shift.convexity,
         "the supply point was asked about exactly the record's pair, and its warrant came back"

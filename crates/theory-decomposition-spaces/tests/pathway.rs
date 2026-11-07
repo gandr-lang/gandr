@@ -40,16 +40,10 @@ fn a_kill_signal_stops_the_query_rather_than_refusing_a_candidate()
         Toy::add(Toy::zero(), Toy::zero()),
         Toy::add(Toy::zero(), Toy::zero()),
     );
-    let root = CellApp { cell: c, at: at![] };
+    let root = CellApp::unrecorded(c, at![]);
     let recorded = alloc::vec![
-        CellApp {
-            cell: c,
-            at: at![0],
-        },
-        CellApp {
-            cell: c,
-            at: at![1],
-        },
+        CellApp::unrecorded(c, at![0]),
+        CellApp::unrecorded(c, at![1]),
         root.clone(),
     ];
     let cell = present(store.get(c));
@@ -77,7 +71,7 @@ fn an_ordinary_non_replaying_candidate_is_refused_without_failing()
     let mut store: CellStore<Lying<IncomparablePositions>> = CellStore::new();
     let c = store.insert(lying_cell(Toy::add(Toy::zero(), Toy::zero()), Toy::zero()));
     let peak = Toy::add(Toy::zero(), Toy::zero());
-    let recorded = alloc::vec![CellApp { cell: c, at: at![] }];
+    let recorded = alloc::vec![CellApp::unrecorded(c, at![])];
     let refused = certify_candidate(&store, &peak, &peak, &recorded)
         .expect("a candidate that misses its join is refused, not fatal");
     assert!(matches!(
@@ -127,10 +121,7 @@ fn a_backward_extension_is_returned_once_with_its_exact_frontier()
         .find(|o| o.left == ab && o.right == bc)
         .expect("sequential seam");
     let certificate = |cell, peak, join| {
-        let step = CellApp {
-            cell,
-            at: Pos::root(),
-        };
+        let step = CellApp::unrecorded(cell, Pos::root());
         let mut overlap = template.clone();
         overlap.peak = peak;
         Tracelet {
@@ -165,14 +156,8 @@ fn a_backward_extension_is_returned_once_with_its_exact_frontier()
     assert_eq!(extension.certificate, directed);
     assert_eq!(usize::from(extension.length), 2);
     assert_eq!(extension.certificate.path_a, vec![
-        CellApp {
-            cell: ab,
-            at: Pos::root()
-        },
-        CellApp {
-            cell: bc,
-            at: Pos::root()
-        }
+        CellApp::unrecorded(ab, Pos::root()),
+        CellApp::unrecorded(bc, Pos::root()),
     ]);
     assert!(bool::from(extension.certificate.replay(&store)));
     let bounded = synthesize_pathways(

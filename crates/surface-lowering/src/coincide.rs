@@ -188,6 +188,7 @@ use gandr_theory_coherent_resolutions::PairScheme;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TraceletReplay;
 use gandr_theory_coherent_resolutions::normalize;
+use gandr_theory_coherent_resolutions::record_path;
 use gandr_theory_coherent_resolutions::replay_path;
 use gandr_theory_computads::AdmittedFaceIndex;
 use gandr_theory_computads::CompositeCriterion;
@@ -1250,14 +1251,18 @@ where
                     later_round: DerivedRound::from(derived.len().saturating_add(1)),
                 }));
             }
+            // The steps get their substitutions when the certificate is
+            // recorded on its peak, after the store holds the new cell.
             let mut path_a = Vec::from([CellApp {
                 cell: overlap.left,
                 at: A::root_position(),
+                subst: A::Subst::default(),
             }]);
             path_a.extend(left_steps);
             let mut path_b = Vec::from([CellApp {
                 cell: overlap.right,
                 at: overlap.seam.clone(),
+                subst: A::Subst::default(),
             }]);
             path_b.extend(right_steps);
             let (lhs, rhs, from_lhs) = match direction {
@@ -1273,6 +1278,7 @@ where
             from_lhs.push(CellApp {
                 cell,
                 at: A::root_position(),
+                subst: A::Subst::default(),
             });
             let _previous = parents.insert(cell, derived.len());
             derived.push(DerivedRule {
@@ -1284,7 +1290,8 @@ where
                     path_a,
                     path_b,
                     joins_at: rhs,
-                },
+                }
+                .recorded(store),
             });
             joinability = joining.resume_with(store, budget, scheme);
         }
@@ -1813,16 +1820,15 @@ where
     if bool::from(normalized.exhausted) {
         return Err(NormalFormFault::Exhausted);
     }
-    if !bool::from(replay_path(
-        store,
-        start,
-        &normalized.normal,
-        &normalized.path,
-    )) {
+    // The replay skolemizes `start`, so the path records its substitutions
+    // there.
+    let mut path = normalized.path;
+    record_path(store, start, &mut path);
+    if !bool::from(replay_path(store, start, &normalized.normal, &path)) {
         return Err(NormalFormFault::Uncertified);
     }
     let normal = read(&normalized.normal).map_err(NormalFormFault::Unwritable)?;
-    Ok((normalized.path, normal))
+    Ok((path, normal))
 }
 
 /// The block's oriented rules read over terms, where a call holding an

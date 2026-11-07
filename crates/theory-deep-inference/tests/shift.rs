@@ -139,14 +139,8 @@ fn an_overlapping_toy_pair_at_disjoint_positions_is_refused()
         Toy::add(Toy::zero(), Toy::succ(Toy::zero())),
         Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
     );
-    let first = CellApp {
-        cell: z,
-        at: at![0],
-    };
-    let second = CellApp {
-        cell: s,
-        at: at![1],
-    };
+    let first = CellApp::unrecorded(z, at![0]);
+    let second = CellApp::unrecorded(s, at![1]);
     let forward = run(&store, &peak, &[first.clone(), second.clone()]);
     let backward = run(&store, &peak, &[second.clone(), first.clone()]);
     assert_eq!(
@@ -187,14 +181,8 @@ fn a_nested_toy_pair_is_refused()
 {
     let (store, f, g) = cong2_store();
     let peak = cong2_body();
-    let outer = CellApp {
-        cell: g,
-        at: at![1],
-    };
-    let inner = CellApp {
-        cell: f,
-        at: at![1, 0],
-    };
+    let outer = CellApp::unrecorded(g, at![1]);
+    let inner = CellApp::unrecorded(f, at![1, 0]);
     let refusal = derive_shift_equivalence(&store, &peak, &outer, &inner)
         .expect_err("one application inside the other is not an adjacent pair");
     assert_eq!(
@@ -224,26 +212,11 @@ fn an_adjacent_transposition_schedule_asks_a_quadratic_number_of_questions()
         ),
     );
     let canonical: Vec<CellApp<ToyAlphabet>> = vec![
-        CellApp {
-            cell: f,
-            at: at![0],
-        },
-        CellApp {
-            cell: f,
-            at: at![1, 0],
-        },
-        CellApp {
-            cell: f,
-            at: at![1, 1, 0],
-        },
-        CellApp {
-            cell: f,
-            at: at![1, 1, 1, 0],
-        },
-        CellApp {
-            cell: f,
-            at: at![1, 1, 1, 1],
-        },
+        CellApp::unrecorded(f, at![0]),
+        CellApp::unrecorded(f, at![1, 0]),
+        CellApp::unrecorded(f, at![1, 1, 0]),
+        CellApp::unrecorded(f, at![1, 1, 1, 0]),
+        CellApp::unrecorded(f, at![1, 1, 1, 1]),
     ];
     let length = canonical.len();
     let reached = run(&store, &peak, &canonical);
@@ -298,14 +271,8 @@ fn a_pair_naming_an_unstored_cell_is_refused()
     let refusal = derive_shift_equivalence(
         &store,
         &peak,
-        &CellApp {
-            cell: f,
-            at: at![0],
-        },
-        &CellApp {
-            cell: missing,
-            at: at![1],
-        },
+        &CellApp::unrecorded(f, at![0]),
+        &CellApp::unrecorded(missing, at![1]),
     )
     .expect_err("an unresolvable identifier is refused");
     assert_eq!(
