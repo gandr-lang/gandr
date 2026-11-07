@@ -64,12 +64,16 @@
 //! checkpoints and the cancellations. Only `holds` and `fails` carry evidence,
 //! and each other outcome is a named stop, never false.
 //!
+//! `Rand` is the entropy source of the operating system. `draw` takes a width
+//! `n` with `1 ≤ n ≤ 64` and replies an integer uniform over `[0, 2^n)`. The
+//! host declines any other width, and a draw holds no state on the host.
+//!
 //! Each interface lives in its API's module, as Rust's `std` places
 //! `io::Result`, and its name is its path: the module, then `Eff`. The
 //! standard streams and the ring sit under `std.io`, the process's execution
 //! and its early exit under `std.process`, and the filesystem, the
-//! environment, the network and the exact reals each in a module of its own.
-//! A source names an interface where it imports the module, as
+//! environment, the network, the exact reals and randomness each in a module
+//! of its own. A source names an interface where it imports the module, as
 //! `import std.io;` for `std.io.Console.Eff`, and the module names its own
 //! (#4523). `Partial` names the partiality monad and stays ambient by its bare
 //! name until `std.partial.Eff` reads by its path.
@@ -84,6 +88,7 @@
 //! | the environment | `std.env.Eff` |
 //! | the network | `std.net.Eff` |
 //! | the exact reals | `std.reals.Eff` |
+//! | randomness | `std.rand.Eff` |
 //! | execution | `std.process.Exec.Eff` |
 //! | early exit | `std.process.Exit.Eff` |
 //! | divergence | `Partial` |
@@ -138,16 +143,19 @@ pub const NET: &str = "std.net.Eff";
 /// The exact reals interface: a plan admitted, its root enclosed, and an open
 /// root decided by a resumable machine.
 pub const REALS: &str = "std.reals.Eff";
-/// The names of the eleven interfaces, in the order
+/// The randomness interface: fair bits drawn from the entropy source of the
+/// operating system.
+pub const RAND: &str = "std.rand.Eff";
+/// The names of the twelve interfaces, in the order
 /// [`HostSignatures::interfaces`] returns them.
-pub const INTERFACES: [&str; 11] = [
-    EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET, REALS,
+pub const INTERFACES: [&str; 12] = [
+    EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET, REALS, RAND,
 ];
 
 /// The `std` module each host interface lives in, beside the interface: the
 /// module a source imports to name it (#4523). [`PARTIAL`] lives in none and
 /// stays ambient.
-pub const HOMES: [(&str, &str); 10] = [
+pub const HOMES: [(&str, &str); 11] = [
     (EXEC, "std.process"),
     (FS, "std.fs"),
     (PROC, "std.process"),
@@ -158,6 +166,7 @@ pub const HOMES: [(&str, &str); 10] = [
     (STDIN, "std.io"),
     (NET, "std.net"),
     (REALS, "std.reals"),
+    (RAND, "std.rand"),
 ];
 
 quenchant_shape::reason_enum! {
@@ -233,7 +242,7 @@ impl core::fmt::Display for HostHome
     }
 }
 
-/// The eleven interfaces, sharing their arena-owned payload and reply types.
+/// The twelve interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -259,6 +268,8 @@ pub struct HostSignatures
     pub net: EffectSig,
     /// Admit a plan of exact reals, and enclose its root.
     pub reals: EffectSig,
+    /// Draw fair bits from the entropy source of the operating system.
+    pub rand: EffectSig,
 }
 
 quenchant_shape::reason_enum! {
@@ -386,7 +397,7 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.partial, &host.console, &host.stderr, &host.stdin, &host.net, &host.reals].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.partial, &host.console, &host.stderr, &host.stdin, &host.net, &host.reals, &host.rand].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
@@ -569,6 +580,11 @@ impl HostSignatures
                 reply: counters,
             },
         ])?;
+        let rand = EffectSig::new(RAND.into(), [EffectOp {
+            name: "draw".into(),
+            payload: integer,
+            reply: integer,
+        }])?;
         Ok(Self {
             exec,
             fs,
@@ -581,16 +597,17 @@ impl HostSignatures
             stdin,
             net,
             reals,
+            rand,
         })
     }
 
-    /// The eleven interfaces, in the order the host declares them.
+    /// The twelve interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 11]
+    pub const fn interfaces(&self) -> [&EffectSig; 12]
     {
         [
             &self.exec,
@@ -604,6 +621,7 @@ impl HostSignatures
             &self.stdin,
             &self.net,
             &self.reals,
+            &self.rand,
         ]
     }
 

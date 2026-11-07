@@ -230,6 +230,7 @@ mod console;
 mod entry;
 mod hole;
 mod net;
+mod rand;
 mod reals;
 mod worlds;
 

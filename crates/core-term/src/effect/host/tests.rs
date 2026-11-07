@@ -10,6 +10,7 @@ use super::HostSignatures;
 use super::NET;
 use super::PARTIAL;
 use super::PROC;
+use super::RAND;
 use super::REALS;
 use super::STDERR;
 use super::STDIN;
@@ -133,6 +134,7 @@ fn host_interfaces_pin_names_payloads_and_replies()
             ("restore", string, integer),
             ("step", integer, status),
         ]),
+        (&host.rand, RAND, alloc::vec![("draw", integer, integer)]),
     ];
     for (signature, name, operations) in expected {
         assert_eq!(signature.name().as_ref(), name);
@@ -200,6 +202,11 @@ fn each_host_interface_but_partial_lives_in_a_std_module_4523()
         home(NET),
         Maybe::Present(super::HostHome("std.net")),
         "the network lives in `std.net`"
+    );
+    assert_eq!(
+        home(RAND),
+        Maybe::Present(super::HostHome("std.rand")),
+        "randomness lives in `std.rand`"
     );
     assert_eq!(
         home(PARTIAL),

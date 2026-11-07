@@ -746,11 +746,12 @@ INSERT INTO purpose VALUES('core-term','effect::host::FS','constant','The filesy
 INSERT INTO purpose VALUES('core-term','effect::host::HOMES','constant','The `std` module each host interface lives in, so a source names the interface where it imports the module.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::HostAccess','enum','How a host operation meets the host: it only reads it, or it changes what another task could observe.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::HostHome','struct','Names the `std` module a host interface lives in, spelled as an import writes it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The eleven host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::INTERFACES','constant','The eleven host interfaces'' names, in the order the host declares them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The twelve host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::INTERFACES','constant','The twelve host interfaces'' names, in the order the host declares them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::NET','constant','The network interface''s name: a stream to a peer named by its key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PARTIAL','constant','The divergence interface''s name, with no operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PROC','constant','The early process-exit interface''s name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::RAND','constant','The randomness interface''s name: fair bits drawn from the entropy source of the operating system.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::REALS','constant','The exact reals interface''s name: a plan admitted from its canonical bytes, its root enclosed, and an open root decided by a resumable machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The completion ring''s buffer interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDERR','constant','The error stream interface''s name: a line written to the process''s standard error.',NULL,'fits','sound',NULL);

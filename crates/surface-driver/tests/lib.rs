@@ -6,4 +6,6 @@ mod cli;
 #[cfg(test)]
 mod net;
 #[cfg(test)]
+mod rand;
+#[cfg(test)]
 mod reals;
