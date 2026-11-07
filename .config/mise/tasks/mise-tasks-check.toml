@@ -3020,10 +3020,12 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # semicolon and dash rules, a paragraph of at most five sentences, and no
 # path, issue or URL outside its `- see:` and `- owes:` lines (#4900).
 # A paper is cited as `[label]`, never by a locator or a title in prose.
-# A corpus source outside the features ledger holds a head of four paragraphs.
+# A corpus source outside the features ledger holds a head of four paragraphs,
+# or five whose fourth opens on `Limits:` (#6005).
 # Its first sentence holds at most twenty words.
 # Each `- cites:` label has a footer line with a quoted title (#5045).
-# An item comment holds at most two sentences.
+# An item comment holds at most two sentences, and a third that opens on
+# `Limits:`.
 # The procedural form binds the rendered diagnostics
 # (crates/workflow-prose/README.md). spaCy parses under the venv these
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new

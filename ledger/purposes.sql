@@ -4702,6 +4702,8 @@ INSERT INTO purpose VALUES('workflow-prose','passage::Gathered','struct','Everyt
 INSERT INTO purpose VALUES('workflow-prose','passage::Golden','struct','One rendered diagnostic: its headline, whether a label places it, and its advice.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Head','struct','The opening comment run of a corpus source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Item','struct','One item comment of a corpus source, after the head.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::LIMITS','constant','The opening of a head paragraph, or of an item''s third sentence, that states a limit.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::Limits','enum','Where a head''s `Limits` paragraph stands: absent, after the how paragraph, or misplaced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Line','struct','A one-based line number in a file.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Opened','enum','Whether a corpus source opens on a comment run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Passage','struct','One paragraph to parse, with its file, line and source.',NULL,'fits','sound',NULL);

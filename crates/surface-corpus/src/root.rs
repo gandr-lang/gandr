@@ -68,6 +68,14 @@
 //! `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run ci:recovery`
 //! re-records one source, and the diff is read for recovery regressions.
 //!
+//! `check:corpus` holds every source of both roots to the sugared form with
+//! `gandr fmt --check --form=sugared`. A source whose claim is a former's own
+//! shape keeps the explicit form under `@[ form(explicit) ]`: the arity sources
+//! (`surface/arity/` `product`, `sum` and `records`), the engine's fragment and
+//! classifier sources (`fragment/`, `classifier/`), the universe sources
+//! (`model/universe/` and `pathological/universe/`) and
+//! `model/identity/cong-thunk.gandr`, whose path lies in a thunk type.
+//!
 //! No count is pinned. The runner's report says how many sources each root
 //! holds, how many declarations settled, the ledger size and the seal, and its
 //! tests assert that each root holds declarations and that every row of the
