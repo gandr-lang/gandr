@@ -322,6 +322,7 @@ use crate::replay::Unfoldings;
 use crate::replay::read_comp_decode;
 use crate::replay::read_decode;
 use crate::replay::read_endpoints;
+use crate::replay::read_identity_endpoints;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value;
@@ -4169,6 +4170,17 @@ where
                     else {
                         return Err(value_shape_mismatch(arena, shape, expected));
                     };
+                    // A reflexivity reads the endpoints of the identity that
+                    // the code quotes. It reads them by the evaluator that read
+                    // the decode. The checker reads the whole decode by its own
+                    // evaluation. So it records no dialogue for an endpoint
+                    // that its evaluation runs (#5364).
+                    let decoded = if matches!(arena.value(id), Some(Value::Here { .. })) {
+                        read_identity_endpoints(arena, &unfoldings, decoded, ReplayBudget::DEFAULT)
+                    }
+                    else {
+                        decoded
+                    };
                     goal = Goal::CheckValue(id, decoded);
                     continue 'expand;
                 },
@@ -5671,6 +5683,9 @@ where
                 // ([`carried_stage`]).
                 Frame::ElementTransport(transport) => {
                     let path_type = produced.value_type()?;
+                    // A path a field holds may check at the decode of a call,
+                    // its family's answer: the walk reads the type it returns.
+                    let path_type = read_returned_decode(arena, judgement, path_type);
                     let Some(&Computation::PathTransport { motive, value, .. }) =
                         arena.computation(transport)
                     else {
@@ -5706,6 +5721,7 @@ where
                 // in the family's fibre over the path's source.
                 Frame::TelescopePath(transport) => {
                     let path_type = produced.value_type()?;
+                    let path_type = read_returned_decode(arena, judgement, path_type);
                     let Some(&Computation::TelescopeTransport { motive, start, .. }) =
                         arena.computation(transport)
                     else {

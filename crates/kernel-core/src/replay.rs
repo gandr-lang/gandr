@@ -1984,6 +1984,77 @@ pub(crate) fn read_comp_decode(
     })
 }
 
+/// `quoted`, or the identity type it is with each endpoint read to its normal
+/// form, normalized as [`Replay::normalize_returned`] gives it.
+///
+/// # Specification
+/// - requires: `quoted`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: an identity type at the domain of `quoted` over the normal forms
+///   of its endpoints, which lives in `arena`, when `quoted` is an identity
+///   type and an endpoint reads to another normal form within `budget`. An
+///   endpoint whose normalization stops stays as `quoted` holds it. `quoted`
+///   otherwise, with `arena` holding what it held on entry.
+/// - provides: the endpoints a reflexivity reads at the type a decode quotes.
+///   The kernel's evaluator reads the decode. The checker reads the whole
+///   decode by its own evaluation. So the checker records no dialogue for an
+///   endpoint that its evaluation runs. The kernel reads that endpoint by the
+///   evaluator that read the decode (#5364).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reflexivity with no dialogue checks at a decode whose
+///   code returns an identity's quote over an endpoint that calls a definition,
+///   and one whose point the call does not answer is refused.
+/// - witness: `check::tests::a_reflexivity_reads_the_endpoints_of_a_decoded_identity_5364`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| (ret == quoted && arena.watermark() == before)
+        || matches!(arena.value_type(ret), Some(&ValueType::Path { .. })),
+)]
+#[must_use]
+pub(crate) fn read_identity_endpoints(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    quoted: ValueTypeId,
+    budget: ReplayBudget,
+) -> ValueTypeId
+{
+    let Some(&ValueType::Path {
+        domain,
+        left,
+        right,
+    }) = arena.value_type(quoted)
+    else {
+        return quoted;
+    };
+    let watermark = arena.watermark();
+    let mut run = Replay {
+        arena,
+        unfoldings,
+        evaluator: unfoldings,
+        trace: core::iter::empty().peekable(),
+        reading: Reading::Forced,
+        position: 0,
+        spent: 0,
+        budget: u64::from(budget),
+        table: ContentTable::new(),
+        memo: NullMemo,
+        owed: Vec::new(),
+    };
+    let left_normal = run
+        .normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold)
+        .unwrap_or(left);
+    let right_normal = run
+        .normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold)
+        .unwrap_or(right);
+    if (left_normal, right_normal) == (left, right) {
+        run.arena.truncate_to(watermark);
+        return quoted;
+    }
+    run.arena.value_type_path(domain, left_normal, right_normal)
+}
+
 /// What `quoted` reads from the normal form of `code`, normalized as
 /// [`Replay::normalize_returned`] gives it.
 ///

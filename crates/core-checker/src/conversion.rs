@@ -1792,14 +1792,32 @@ fn convert(
                 Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
                 Maybe::Absent(open::Absent::Closed) => {
                     // The kernel reads a side written as a call by reduction.
-                    // It compares every other side as syntax.
-                    let called = [left, right].into_iter().any(|side| {
-                        matches!(context.arena().value(side), Some(&Value::Returned(_)))
-                    });
-                    gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                    // Two codes convert as the types they quote, so a call in
+                    // a quoted type reads by reduction too (#5381). It
+                    // compares every other side as syntax.
+                    let arena = context.arena();
+                    let code = |side: ValueId| {
+                        matches!(
+                            arena.value(side),
+                            Some(&(Value::Quote(_) | Value::QuoteComputation(_)))
+                        )
+                    };
+                    let codes = code(left) && code(right);
+                    let called = [left, right]
+                        .into_iter()
+                        .any(|side| matches!(arena.value(side), Some(&Value::Returned(_))));
+                    if gandr_core_term::equal_certificate_syntax(arena, left, right)
                         == gandr_core_term::CertificateEquality::Equal
-                        || called
-                            && endpoints_agree(context, left, right)? == Agreement::Convertible
+                    {
+                        true
+                    }
+                    else if codes {
+                        pending.push(Pairing::Codes(left, right));
+                        true
+                    }
+                    else {
+                        called && endpoints_agree(context, left, right)? == Agreement::Convertible
+                    }
                 },
             },
             Pairing::Endpoints(left, right) => match pose_open(context, left, right)? {

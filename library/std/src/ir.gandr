@@ -146,3 +146,42 @@ pub def rec elim(
     | Intro(x) => s x (mapArgs d c (IR d c) (thunk { fun (m) { el d c m } }) p (thunk {
       fun (n) { elim[<] d c p s n }
     }) x)
+
+/// The signatures over an index type `i`, the decodes at each index in `o`.
+pub data ISig(i : Type, o : i -> Type) : Type[+, 1] where
+  /// No argument: the index `j` and the decode `e` at it.
+  | IIota : (j : i, e : o(j)) --> ISig(i, o)
+  /// A value of the type `a`, and the signature the rest reads it by.
+  | ISigma : (a : Type, f : a -> ISig(i, o)) --> ISig(i, o)
+  /// A function from `a` into the family at the indices `j` picks.
+  | IDelta : (a : Type, j : a -> i, f : ((z : a) -> o(j(z))) -> ISig(i, o)) --> ISig(i, o)
+
+/// The index a pair holds.
+pub def first(i : Type, o : i -> Type, p : DPair(i, o)) -> i =
+  match p
+    | MkDPair(j, e) => j
+
+/// The decode a pair holds, at the index it holds.
+pub def second(i : Type, o : i -> Type, p : DPair(i, o)) -> o(first(i, o, p)) =
+  match p
+    | MkDPair(j, e) => e
+
+/// The plain signature an indexed signature translates to. Its decodes pair
+/// an index with the decode at it. Each inductive argument gains a field that
+/// pins its index.
+pub def rec floor(i : Type, o : i -> Type, c : ISig(i, o)) -> Sig(DPair(i, o)) =
+  match c
+    | IIota(j, e) => Iota (MkDPair j e)
+    | ISigma(a, f) => SigmaC a (fun (y) { floor[<] i o (f y) })
+    | IDelta(a, j, f) => DeltaC a (fun (h) { (SigmaC ((z : a) -> Path[.A = i](first i o (h z), j z)) (fun (q) { floor[<] i o (f (fun (z) { Path.walk (fun (k) { o k }) (q z) (second i o (h z)) })) }) : Sig(DPair(i, o))) })
+
+/// The family an indexed signature defines, at the index `j`: a value of the
+/// family its floor defines, with a path from the index its decode holds to
+/// `j`.
+pub type IIR(i : Type, o : i -> Type, c : ISig(i, o), j : i) = DPair(IR(DPair(i, o), floor(i, o, c)), fun (x) { return (type(Path[.A = i](first i o (el (DPair i o) (floor i o c) x), j))) });
+
+/// The decode of a value of the indexed family: the decode of its plain
+/// value, carried along its path to the index.
+pub def elI(i : Type, o : i -> Type, c : ISig(i, o), j : i, m : IIR(i, o, c, j)) -> o(j) =
+  match m
+    | MkDPair(x, q) => Path.walk (fun (k) { o k }) q (second i o (el (DPair i o) (floor i o c) x))
