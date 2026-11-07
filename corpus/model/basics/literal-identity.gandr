@@ -12,6 +12,7 @@
 ///
 /// - see: #6142 — `texts_same`, `decoded_flag`
 /// - see: #6158 — `decoded_flag`, a comparison in a stated type
+/// - see: #6228
 
 /// Two codes.
 data Code : Type where
