@@ -170,6 +170,7 @@ use quenchant_shape::shape::Maybe;
 use super::Block;
 use super::Frame;
 use super::LabelRead;
+use super::Listed;
 use super::Lowered;
 use super::Lowerer;
 use super::Parameter;
@@ -1814,6 +1815,7 @@ impl<'source> Lowerer<'_, 'source>
                         frame: extended,
                         declared: Maybe::Present(declared.node),
                         component: None,
+                        listed: Listed::Elsewhere,
                     });
                     inner = Frame::Inner(extended);
                 }
@@ -3903,6 +3905,7 @@ impl<'source> Lowerer<'_, 'source>
                 frame: extended,
                 declared: Maybe::Present(declared.node),
                 component: None,
+                listed: Listed::Elsewhere,
             });
             inner = Frame::Inner(extended);
         }
@@ -4016,6 +4019,7 @@ impl<'source> Lowerer<'_, 'source>
                 frame: extended,
                 declared: Maybe::Present(declared.node),
                 component: None,
+                listed: Listed::Elsewhere,
             });
             inner = Frame::Inner(extended);
         }
@@ -4972,6 +4976,7 @@ impl<'source> Lowerer<'_, 'source>
             frame: extended,
             declared: Maybe::Present(declared.node),
             component: None,
+            listed: Listed::Elsewhere,
         });
         self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
         self.plan(
@@ -5115,6 +5120,7 @@ impl<'source> Lowerer<'_, 'source>
             frame: extended,
             declared: Maybe::Present(declared.node),
             component: None,
+            listed: Listed::Elsewhere,
         });
         let inner = Frame::Inner(extended);
         self.read(

@@ -2100,6 +2100,31 @@ struct Parameter
     /// implicit's, when it is one of a flattened model implicit's parameters
     /// ([`model::Flattened`]).
     component: Option<model::ComponentPlace>,
+    /// Whether the tail's own parameter list writes the parameter.
+    listed: Listed,
+}
+
+/// Where a function's parameter is written.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: [`Self::Own`] for a parameter the tail's own list writes, bound
+///   in written or in merged order; [`Self::Elsewhere`] for one an implicit
+///   group, a row label, a model's components, a telescope or a clause's
+///   columns bind.
+/// - executable: none — the record holds no tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a linear tail with an implicit group takes its written
+///   parameters linearly and its implicit one intuitionistically.
+/// - witness: `lower::tests::a_linear_tail_takes_each_written_parameter_once_5853`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Listed
+{
+    /// The tail's own parameter list writes the parameter.
+    Own,
+    /// Something other than the tail's own list binds the parameter.
+    Elsewhere,
 }
 
 /// A label the source writes against an entry, kept while the lowering plans
@@ -2529,43 +2554,43 @@ struct Function
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: a linear tail counts from the first parameter written in its own
-///   list; the parameters a merged telescope adds stay intuitionistic.
+/// - ensures: a linear tail takes linearly each parameter its own list writes,
+///   in any order a merged telescope binds them; every other parameter stays
+///   intuitionistic.
 /// - executable: none — the parameter store is not retained.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a tail at `⊸` mints the linear lambda and the linear
 ///   arrow for each written parameter, and one at `->` the lambda and the
-///   arrow.
+///   arrow; an implicit group stays intuitionistic.
 /// - witness: `lower::tests::a_linear_tail_takes_each_written_parameter_once_5853`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Taking
 {
     /// `->`: each parameter is intuitionistic.
     Unrestricted,
-    /// `⊸`: each parameter from the one at `from` in the tail's stretch on is
-    /// linear, at the multiplicity one.
-    Linear
-    {
-        /// The position of the first written parameter.
-        from: usize,
-    },
+    /// `⊸`: each parameter the tail's own list writes is linear, at the
+    /// multiplicity one.
+    Linear,
 }
 
 impl Taking
 {
-    /// Whether the parameter at `position` in the tail's stretch is linear.
+    /// The taking of `parameter`: linear when the tail takes its own list
+    /// linearly and that list writes `parameter`, unrestricted otherwise.
     ///
     /// # Specification
     /// trivial.
-    const fn linear(
+    fn of(
         self,
-        position: usize,
-    ) -> bool
+        parameter: &Parameter,
+    ) -> Self
     {
-        match self {
-            Self::Unrestricted => false,
-            Self::Linear { from } => position >= from,
+        if self == Self::Linear && parameter.listed == Listed::Own {
+            Self::Linear
+        }
+        else {
+            Self::Unrestricted
         }
     }
 }
@@ -11510,9 +11535,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let mut frame =
             self.merged_parameters(site, function, &mut cursor, Frame::Outermost, &mut own)?;
-        // A linear tail takes its own list's parameters linearly, the merged
-        // telescope's parameters before them intuitionistically.
-        let written = self.parameters.mark();
         // The written parameters at a session type.
         let mut endpoints = Vec::new();
         loop {
@@ -11576,6 +11598,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     frame: bound,
                     declared,
                     component: None,
+                    listed: Listed::Own,
                 };
                 if endpoint == session::Stands::Session {
                     endpoints.push(parameter);
@@ -11639,9 +11662,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let arrow = match cursor.tile(TileName::ARROW) {
             Maybe::Present(_) => Some(Taking::Unrestricted),
             Maybe::Absent(_) => match cursor.tile(TileName::LINEAR_ARROW) {
-                Maybe::Present(_) => Some(Taking::Linear {
-                    from: usize::from(written).saturating_sub(usize::from(start)),
-                }),
+                Maybe::Present(_) => Some(Taking::Linear),
                 Maybe::Absent(_) => None,
             },
         };
@@ -11650,9 +11671,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 // A linear parameter's shadow binds in the arrow's codomain
                 // whether or not the result names it, so every telescope
                 // counts its frame.
-                if let Taking::Linear { .. } = taking {
-                    for parameter in self.parameters.read(self.parameters.since(written)) {
-                        self.scope.mention(parameter.frame);
+                if taking == Taking::Linear {
+                    for parameter in self.parameters.read(parameters) {
+                        if parameter.listed == Listed::Own {
+                            self.scope.mention(parameter.frame);
+                        }
                     }
                 }
                 let result = function.one(cursor.operands())?;
@@ -22444,7 +22467,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             // A linear tail's parameter is the linear lambda's: its body
             // reads the shadow in types and draws the one copy elsewhere.
-            let id = if function.taking.linear(position) {
+            let id = if function.taking.of(parameter) == Taking::Linear {
                 sink.arena.computation_linear_lambda(body)
             }
             else {
@@ -22654,7 +22677,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let id = if function.taking.linear(index) {
+            let id = if function.taking.of(parameter) == Taking::Linear {
                 // A linear parameter's arrow binds its shadow whatever the
                 // result names, at the multiplicity one.
                 let one = match multiplicity_one(sink, binder) {
@@ -27010,6 +27033,64 @@ mod tests
             module.origins().value_type(first),
             Maybe::Present(_)
         ));
+    }
+
+    /// A linear tail takes each parameter its own list writes once, and an
+    /// implicit parameter stays intuitionistic: the body opens a linear lambda
+    /// and the signature a linear arrow for each written parameter, where the
+    /// plain tail opens intuitionistic ones (#5853).
+    #[test]
+    fn a_linear_tail_takes_each_written_parameter_once_5853()
+    {
+        let opened = |source: &'static str| {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            let declaration = module.declarations().iter().next().unwrap();
+            let Some(&Value::Thunk(mut body)) = arena.value(body_of(declaration.outcome()))
+            else {
+                panic!("a function's body is a thunk");
+            };
+            let mut lambdas = Vec::new();
+            while let Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) =
+                arena.computation(body)
+            {
+                lambdas.push(matches!(
+                    arena.computation(body),
+                    Some(&Computation::LinearLambda(_))
+                ));
+                body = inner;
+            }
+            let Some(&ValueType::Thunk(mut arrow)) =
+                arena.value_type(declared_of(declaration.outcome()))
+            else {
+                panic!("a function's signature is a thunk");
+            };
+            let mut arrows = Vec::new();
+            while let Some(
+                &(CompType::Arrow { codomain, .. }
+                | CompType::Pi { codomain, .. }
+                | CompType::LinearArrow { codomain, .. }),
+            ) = arena.comp_type(arrow)
+            {
+                arrows.push(matches!(
+                    arena.comp_type(arrow),
+                    Some(&CompType::LinearArrow { .. })
+                ));
+                arrow = codomain;
+            }
+            (lambdas, arrows)
+        };
+        assert_eq!(
+            opened("def keep[a : Type](x : a, n : Integer) -> a = x ;"),
+            (vec![false, false, false], vec![false, false, false]),
+            "a plain tail opens an intuitionistic lambda and arrow for each parameter"
+        );
+        assert_eq!(
+            opened("def keep[a : Type](x : a, n : Integer) ⊸ a = x ;"),
+            (vec![false, true, true], vec![false, true, true]),
+            "a linear tail opens linear ones for its written parameters, and the implicit stays \
+             intuitionistic"
+        );
     }
 
     #[test]
