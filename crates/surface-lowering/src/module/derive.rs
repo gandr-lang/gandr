@@ -30,6 +30,7 @@ use super::slot_refusal;
 use crate::derive::DeriveFault;
 use crate::derive::Lemma;
 use crate::derive::plan;
+use crate::description::DescriptionFault;
 use crate::description::derive::derived_statement;
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
@@ -155,7 +156,14 @@ impl<'source> Collector<'_, 'source>
                 LoweringRefusal::MalformedForm {
                     span: diagnostic.span,
                     form: FormName::DERIVED_RULE_DECLARATION,
-                    fault: FormFault::MisplacedTile,
+                    fault: if diagnostic.fault == DescriptionFault::Malformed
+                        && diagnostic.span.start() == diagnostic.span.end()
+                    {
+                        FormFault::MissingOperand
+                    }
+                    else {
+                        FormFault::MisplacedTile
+                    },
                 }
             })?;
         let name = self.name_of(statement.named);
