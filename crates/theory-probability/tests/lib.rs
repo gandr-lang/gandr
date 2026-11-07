@@ -25,6 +25,8 @@ mod canonical;
 #[cfg(test)]
 mod condition;
 #[cfg(test)]
+mod inference;
+#[cfg(test)]
 mod joint;
 #[cfg(test)]
 mod monad;

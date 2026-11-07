@@ -29,10 +29,12 @@ path = "benches/distribution.rs"
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. A weight is the exact rational of the sheaf
 # crate, so the weights of a distribution and the entries of a coboundary are
-# one type.
+# one type. Sum-product runs over any ordered semiring of the ordered-algebras
+# crate, and the crate gives two over the rationals.
 [dependencies]
 anodized.workspace = true
 gandr-theory-cellular-sheaves.workspace = true
+gandr-theory-ordered-algebras.workspace = true
 
 [dev-dependencies]
 allocation-counter.workspace = true
