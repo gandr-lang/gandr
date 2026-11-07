@@ -1,2 +1,2 @@
 data Small : Type where
-  | Pick : (a : Type, f : a -> Small) --> Small
+  | Pick : (a : Type, f : +U (a -> -F Small)) --> Small

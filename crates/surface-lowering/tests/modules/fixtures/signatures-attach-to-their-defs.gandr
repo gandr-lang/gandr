@@ -1,3 +1,4 @@
-def answer : Integer = 42;
-def f : Integer -> Integer;
-def f(x : Integer) -> Integer { x }
+def answer : Integer;
+def answer = 42;
+def f : +U (Integer -> -F Integer);
+def f(x : Integer) -> -F Integer { return x }

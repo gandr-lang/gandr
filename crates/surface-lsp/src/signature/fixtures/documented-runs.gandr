@@ -21,4 +21,4 @@ def use(
     /// The index.
     i : Nat
   ) -> Nat
-) -> Nat { 0 }
+) -> -F Nat { 0 }

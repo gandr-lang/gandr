@@ -1,4 +1,4 @@
-def id(n : Integer) -> Integer { n }
-def returned(n : Integer) -> Integer { id n }
-def leading(n : Integer) -> Integer { id n + 1 }
-def grouped(n : Integer) -> Integer { n + 1 }
+def id(n : Integer) -> -F Integer { n }
+def returned(n : Integer) -> -F Integer { return id n }
+def leading(n : Integer) -> -F Integer { id n + 1 }
+def grouped(n : Integer) -> -F Integer { return n + 1 }

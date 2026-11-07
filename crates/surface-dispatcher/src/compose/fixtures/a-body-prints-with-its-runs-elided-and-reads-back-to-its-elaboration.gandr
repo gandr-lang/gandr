@@ -1,6 +1,8 @@
-def kept(n : Integer) -> Integer { n }
-def bound(n : Integer) -> Integer { kept (kept n) }
-def nested(n : Integer) -> Integer { kept (kept n) }
-def nested_printed(a : Integer) -> Integer { kept (kept a) }
-def written(n : Integer) -> Integer { kept (run kept n) }
-def written_printed(a : Integer) -> Integer { kept (run kept a) }
+def kept(n : Integer) -> -F Integer { n }
+def bound(n : Integer) -> -F Integer { let m = kept n; kept m }
+def nested(n : Integer) -> -F Integer { kept (kept n) }
+def nested_printed : +U (Integer -> -F Integer);
+def nested_printed = thunk { fun (a) { kept (kept a) } };
+def written(n : Integer) -> -F Integer { kept (run kept n) }
+def written_printed : +U (Integer -> -F Integer);
+def written_printed = thunk { fun (a) { kept (run kept a) } };

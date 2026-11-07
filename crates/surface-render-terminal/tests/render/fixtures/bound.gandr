@@ -1,2 +1,2 @@
-def id(x : Integer) -> Integer { x }
-def f(n : Integer) -> String { let m = id n; m }
+def id(x : Integer) -> -F Integer { return x }
+def f(n : Integer) -> -F String { let m = id n; return m }

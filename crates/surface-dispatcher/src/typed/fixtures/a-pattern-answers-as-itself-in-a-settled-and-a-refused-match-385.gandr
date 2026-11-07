@@ -11,23 +11,23 @@ data Int : Type where {
   rule : P (S x) <=> x;
 }
 
-def tell(p : Path[.A = Circle](Base, Base)) -> Integer {
+def tell(p : Path[.A = Circle](Base, Base)) -> -F Integer {
   match p {
-    | here => 0
-    | loop ∷ q => 1
-    | back(loop) ∷ q => 2
+    | here => return 0
+    | loop ∷ q => return 1
+    | back(loop) ∷ q => return 2
   }
 }
 
-def rec spin(n : Int) -> Path[.A = Circle](Base, Base) {
+def rec spin(n : Int) -> -F Path[.A = Circle](Base, Base) {
   match n {
-    | Z => Path.here Base
-    | S(x) => loop ∷ spin[<] x
-    | P(x) => back (loop) ∷ spin[<] x
+    | Z => return Path.here Base
+    | S(x) => { let c = spin[<] x; return loop ∷ c }
+    | P(x) => { let c = spin[<] x; return back (loop) ∷ c }
   }
 }
 
-def flip(x : Circle) -> Circle {
+def flip(x : Circle) -> -F Circle {
   match x {
     | Base => Base
     | loop => Path.back (loop)

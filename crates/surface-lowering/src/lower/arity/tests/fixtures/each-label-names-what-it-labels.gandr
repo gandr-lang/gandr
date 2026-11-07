@@ -1,5 +1,5 @@
 def point : *{n : Integer};
 def pair = *{m = 3};
-def pick : Integer -> Integer;
-def dependent : (a : Type, a) -> a;
+def pick : +U ((y : Integer) -> -F Integer);
+def dependent : (a : Type, x : a) -> a;
 def ring : *{k : Integer, w : Path[.A = Integer](k, k)};

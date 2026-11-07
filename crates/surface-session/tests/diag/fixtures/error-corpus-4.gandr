@@ -1,1 +1,2 @@
-def f : Integer -> Integer = thunk { 1 };
+def f : +U (Integer -> -F Integer);
+def f = thunk { return 1 };

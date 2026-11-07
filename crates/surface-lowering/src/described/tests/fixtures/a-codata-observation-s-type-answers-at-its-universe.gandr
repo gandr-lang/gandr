@@ -1,6 +1,6 @@
 codata Stream(a : Type) : Type[-] where {
   head : a;
-  tail : Stream a;
+  tail : Stream(a);
 }
 codata Spot : Type[-] where {
   x : Integer;

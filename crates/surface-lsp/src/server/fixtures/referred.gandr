@@ -1,8 +1,9 @@
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-def rec plus(n : Nat, m : Nat) -> Nat =
+def rec plus(n : Nat, m : Nat) -> -F Nat =
   match m where
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)
-def two : Nat = Succ (Succ Zero);
+def two : Nat;
+def two = Succ (Succ Zero);

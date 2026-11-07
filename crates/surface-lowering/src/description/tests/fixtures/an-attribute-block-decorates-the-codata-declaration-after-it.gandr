@@ -1,2 +1,3 @@
-codata Stream(a : Type) : Type[-] where { head : a; tail : Stream a; }
+@[ checks ]
+codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }
 def later = 7;

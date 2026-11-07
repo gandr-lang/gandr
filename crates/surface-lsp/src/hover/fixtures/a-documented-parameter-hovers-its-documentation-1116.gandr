@@ -2,11 +2,11 @@ def plus(
   /// The first summand.
   n : Integer,
   m : Integer
-) -> Integer {
-  n
+) -> -F Integer {
+  return n
 }
 def id(
   k : Integer
-) -> Integer {
-  k
+) -> -F Integer {
+  return k
 }

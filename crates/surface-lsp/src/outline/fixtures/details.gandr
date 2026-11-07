@@ -1,7 +1,7 @@
 def twice(
   x : Integer
-) -> Integer =
-  x
+) -> -F Integer =
+  return x
 def answer = 42;
 def later : Integer;
 data Color : Type where { | Red : Color }
