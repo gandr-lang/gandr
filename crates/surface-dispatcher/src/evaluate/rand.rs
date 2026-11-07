@@ -72,7 +72,7 @@ struct Drawn(u64);
 
 /// Why the host declines an operation of [`RAND`].
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum Declined
+pub(super) enum Declined
 {
     /// The operation is not `draw`.
     Operation,
@@ -270,7 +270,8 @@ pub(super) enum Advanced
 /// The path's leading draws are answered as recorded, and each draw past
 /// them is answered 0 and recorded. [`Self::advance`] then drops the trailing
 /// draws at their greatest answer and raises the last one that can rise, so
-/// the runs walk every sequence of answers depth first, each once.
+/// the runs walk every sequence of answers depth first, each once. The first
+/// draw a run declines is kept, so the corpus names its cause.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Draws
 {
@@ -286,6 +287,8 @@ pub(super) struct Draws
     quota: u32,
     /// The bits a draw past the quota would take, when one was asked.
     past: Option<u32>,
+    /// Why the first draw this run declined was declined, when one was.
+    declined: Option<Declined>,
 }
 
 impl Draws
@@ -303,6 +306,7 @@ impl Draws
             bits: 0,
             quota: u32::from(quota),
             past: None,
+            declined: None,
         }
     }
 
@@ -323,6 +327,15 @@ impl Draws
     pub(super) fn past(&self) -> Option<Bits>
     {
         self.past.map(Bits::from)
+    }
+
+    /// Why the first draw the last run declined was declined, when one was.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn declined(&self) -> Option<&Declined>
+    {
+        self.declined.as_ref()
     }
 
     /// The answer to a draw of `width` bits: the path's recorded answer while
@@ -387,6 +400,7 @@ impl Draws
         self.taken = 0;
         self.bits = 0;
         self.past = None;
+        self.declined = None;
         while let Some(&mut (width, ref mut drawn)) = self.path.last_mut() {
             let greatest = u64::MAX
                 .checked_shr(WIDEST.saturating_sub(width.0))
@@ -412,8 +426,9 @@ impl Draws
 /// - ensures: for `draw`, the answer [`Draws::answer`] gives. A decline when
 ///   the width is not an integer from one to 64, when the path draws past its
 ///   quota, or when the run draws another width than the path recorded; one
-///   line on `console`'s standard error names the cause first. Nothing for any
-///   other interface.
+///   line on `console`'s standard error names the cause first, and `draws`
+///   keeps the cause of the run's first decline. Nothing for any other
+///   interface.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -446,6 +461,9 @@ where
             let line = format!("{RAND}.{}: {declined}", request.operation.as_ref());
             match console.eprint(Line::from(line.as_str())) {
                 Printed::Written | Printed::Failed => {},
+            }
+            if draws.declined.is_none() {
+                draws.declined = Some(declined);
             }
             HostReply::Decline
         },

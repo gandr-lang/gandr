@@ -1,0 +1,19 @@
+import std.rand;
+pub world desk;
+pub world far requires [std.rand.Eff];
+@[ distributes("1 0") ]
+def rooted() -> [std.rand.Eff] Integer =
+  std.rand.draw 0
+@[ distributes("1 0") ]
+def forked() -> [std.rand.Eff] Integer =
+  let desk = fork (seat : !Integer. end) {
+    let drawn = std.rand.draw 99;
+    send seat drawn;
+    close seat
+  };
+  let drawn = recv desk
+  close desk
+  pure drawn
+@[ entry(*{desk, far}), distributes("1 0") ]
+def migrated() -> [std.rand.Eff] Integer =
+  migrate [far] { std.rand.draw 99 }

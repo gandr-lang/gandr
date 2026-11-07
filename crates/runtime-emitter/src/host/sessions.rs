@@ -13,7 +13,8 @@
 //! child's answer up, keeps the root's, and continues the next task ready;
 //! once every task has ended the root's answer pops the halt frame. With no
 //! task ready and one waiting, the run is stuck at the actions the tasks wait
-//! at.
+//! at. The host's [`TaskOrder`] picks the next task ready: the oldest, or the
+//! newest.
 //!
 //! An end abandoned before its protocol ended is cancelled, and a task that
 //! meets a cancelled peer is abandoned ([`cancel`]).
@@ -45,6 +46,7 @@ use super::kind;
 use super::object_header;
 use super::unit;
 use crate::function::Label;
+use crate::seam::TaskOrder;
 use crate::trace::Carried;
 use crate::trace::ChannelNumber;
 use crate::trace::Play;
@@ -307,7 +309,8 @@ struct Channel<'run>
 /// running, the root's answer once the root has ended, and the action a
 /// cancellation abandoned the root at, once one has. Scheduling is
 /// deterministic: a fork's parent runs on, and a child or a task a message
-/// or a cancellation readies joins the back of the queue.
+/// or a cancellation readies joins the back of the queue. The host's order
+/// takes the next task from the front of the queue or from its back.
 ///
 /// # Specification
 /// trivial.
@@ -320,6 +323,8 @@ pub(super) struct Scheduler<'run>
     channels: Vec<Channel<'run>>,
     /// The tasks ready.
     ready: VecDeque<Ready>,
+    /// Which end of the queue the next task comes from.
+    order: TaskOrder,
     /// The task running.
     running: Task,
     /// The last task forked; the root before any fork.
@@ -335,16 +340,21 @@ pub(super) struct Scheduler<'run>
 
 impl<'run> Scheduler<'run>
 {
-    /// The scheduler of a run whose joined frame resumes at `joined`.
+    /// The scheduler of a run whose joined frame resumes at `joined`, taking
+    /// its ready tasks in `order`.
     ///
     /// # Specification
     /// trivial.
-    pub(super) const fn new(joined: Word) -> Self
+    pub(super) const fn new(
+        joined: Word,
+        order: TaskOrder,
+    ) -> Self
     {
         Self {
             joined,
             channels: Vec::new(),
             ready: VecDeque::new(),
+            order,
             running: Task::ROOT,
             forked: Task::ROOT,
             parked: 0,
@@ -884,7 +894,11 @@ impl<'run> Calls<'run, '_>
     {
         let base = runtime.frame_base();
         runtime.set_frame_top(base);
-        match self.scheduler.ready.pop_front() {
+        let next = match self.scheduler.order {
+            TaskOrder::Oldest => self.scheduler.ready.pop_front(),
+            TaskOrder::Newest => self.scheduler.ready.pop_back(),
+        };
+        match next {
             Some(Ready::Start { task, closure, end }) => {
                 self.scheduler.running = task;
                 let entry = closure.to_pointer::<Word>();

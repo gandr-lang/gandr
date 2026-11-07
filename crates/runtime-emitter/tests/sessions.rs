@@ -6,8 +6,11 @@
 use alloc::sync::Arc;
 
 use gandr_core_sequent::CommandNode;
+use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Definitions;
+use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::Outcome;
+use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::read_back_value;
@@ -25,8 +28,13 @@ use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::WebPiece;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::Sign;
 use gandr_runtime_emitter::Carried;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
@@ -36,8 +44,10 @@ use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Play;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::TaskNumber;
+use gandr_runtime_emitter::TaskOrder;
 use gandr_runtime_emitter::Trace;
 use gandr_runtime_emitter::evaluate_on;
+use gandr_runtime_emitter::evaluate_on_with_host;
 use gandr_runtime_emitter::evaluate_with_host;
 
 use crate::world::Digits;
@@ -134,11 +144,15 @@ fn echo(
 /// so it waits; the first child runs, its echo queued, then the second,
 /// whose selection readies the root, which takes `right`, receives `2`, then
 /// the `1` queued from the first, closes both and answers `(2, 1)`: the
-/// program and its answer.
+/// program and its answer. When `noted` names an interface, each child first
+/// performs its `note` with the integer it is sent.
 ///
 /// # Specification
 /// trivial.
-fn exchange(core: &mut CoreArena) -> (ComputationId, ValueId)
+fn exchange(
+    core: &mut CoreArena,
+    noted: Option<&EffectSig>,
+) -> (ComputationId, ValueId)
 {
     let one = integer(core, Digits("1"));
     let two = integer(core, Digits("2"));
@@ -196,12 +210,14 @@ fn exchange(core: &mut CoreArena) -> (ComputationId, ValueId)
         sent,
     );
     let second = echo(core, Echoed::Selecting(right));
+    let second = noting(core, noted, two, second);
     let inner = core.computation_session(SessionAction::Fork {
         protocol,
         child: second,
         parent: sent,
     });
     let first = echo(core, Echoed::Plainly);
+    let first = noting(core, noted, one, first);
     let program = core.computation_session(SessionAction::Fork {
         protocol,
         child: first,
@@ -217,7 +233,7 @@ fn exchange(core: &mut CoreArena) -> (ComputationId, ValueId)
 fn forked_tasks_exchange_alike_on_both_tiers()
 {
     let mut core = CoreArena::new();
-    let (program, expected) = exchange(&mut core);
+    let (program, expected) = exchange(&mut core, None);
     let (arena, root) = focused(&core, program);
     for &tier in tiers() {
         let mut store = Store::new();
@@ -283,7 +299,7 @@ impl HostHandler for Declining
 fn a_traced_run_plays_each_channel_as_its_dialogue()
 {
     let mut core = CoreArena::new();
-    let (program, expected) = exchange(&mut core);
+    let (program, expected) = exchange(&mut core, None);
     let (arena, root) = focused(&core, program);
     let mut store = Store::new();
     let mut trace = Trace::default();
@@ -416,6 +432,142 @@ fn a_traced_run_plays_each_channel_as_its_dialogue()
             .map(|played| &played.movement),
         "the selection reaches the parked root as its offer"
     );
+}
+
+/// The one-operation interface `Note`, its `note` taking an integer and
+/// answering the unit.
+///
+/// # Specification
+/// trivial.
+fn note(core: &mut CoreArena) -> EffectSig
+{
+    let integer = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_unit();
+    EffectSig::new(EffectName::from("Note"), [EffectOp {
+        name: "note".into(),
+        payload: integer,
+        reply: unit,
+    }])
+    .expect("one operation is a signature")
+}
+
+/// `note(mark); child` when `noted` names the interface, else `child`.
+///
+/// # Specification
+/// trivial.
+fn noting(
+    core: &mut CoreArena,
+    noted: Option<&EffectSig>,
+    mark: ValueId,
+    child: ComputationId,
+) -> ComputationId
+{
+    noted.map_or(child, |signature| {
+        let performed = core.computation_perform(signature.clone(), "note".into(), mark);
+        core.computation_bind(performed, child)
+    })
+}
+
+/// A host that answers each operation with the unit, recording its payload,
+/// and takes the run's ready tasks in its order.
+#[derive(Debug)]
+struct Noting
+{
+    /// The order of the ready tasks.
+    order: TaskOrder,
+    /// Each payload offered, in the order offered.
+    noted: Vec<HeapValue>,
+}
+
+impl HostHandler for Noting
+{
+    type Abort = ();
+
+    /// Record the payload, then resume with the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        request: HostRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> HostReply<()>
+    {
+        if let Some(payload) = values.value(request.payload).cloned() {
+            self.noted.push(payload);
+        }
+        values
+            .allocate(HeapValue::Constructed {
+                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+                fields: Box::new([]),
+            })
+            .map_or(HostReply::Decline, HostReply::Resume)
+    }
+
+    /// The order this host was given.
+    ///
+    /// # Specification
+    /// trivial.
+    fn task_order(&mut self) -> TaskOrder
+    {
+        self.order
+    }
+}
+
+/// #5712: the sessions of [`exchange`] are linear, so the run answers
+/// `(2, 1)` under each order of its ready queue, on every tier. The order
+/// still changes which child runs first once the root waits: each child notes
+/// the integer it is sent before it receives, and the host reads `1, 2` with
+/// the oldest task first and `2, 1` with the newest first. A scheduler that
+/// ignores the order, or one that loses a task, fails one of the two.
+#[test]
+fn linear_tasks_answer_alike_under_each_order_5712()
+{
+    let mut core = CoreArena::new();
+    let noted = note(&mut core);
+    let (program, expected) = exchange(&mut core, Some(&noted));
+    let (arena, root) = focused(&core, program);
+    let marks = |digits: [&str; 2]| {
+        digits.map(|spelled| {
+            HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+                Sign::NonNegative,
+                Magnitude::from_decimal_text(spelled.into()).expect("decimal digits"),
+            )))
+        })
+    };
+    for &tier in tiers() {
+        for (order, seen) in [
+            (TaskOrder::Oldest, marks(["1", "2"])),
+            (TaskOrder::Newest, marks(["2", "1"])),
+        ] {
+            let mut host = Noting {
+                order,
+                noted: Vec::new(),
+            };
+            let mut store = Store::new();
+            let outcome = evaluate_on_with_host(
+                tier,
+                (&arena, &Definitions::new(), root),
+                (budget(), RunInputs::new(&mut store)),
+                &mut host,
+            );
+            let Ok(HostOutcome::Completed(Outcome::Halted(answer))) = outcome
+            else {
+                panic!("the run halts {order:?} on {tier:?}: {outcome:?}");
+            };
+            let read =
+                read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, read, expected),
+                "the answer {order:?} on {tier:?}"
+            );
+            assert_eq!(
+                host.noted, seen,
+                "the children's turns {order:?} on {tier:?}"
+            );
+        }
+    }
 }
 
 /// A root and its child each receive first on their channel: the root

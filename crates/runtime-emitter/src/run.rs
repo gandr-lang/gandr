@@ -673,11 +673,11 @@ impl<'run, 'host> RunInputs<'run, 'host>
     }
 
     /// The same inputs, offered to `offer`. A caller's inputs offer to no
-    /// host: only the hosted entries set one.
+    /// host: only the hosted entries and a migration run here set one.
     ///
     /// # Specification
     /// trivial.
-    fn offered<'with>(
+    pub(crate) fn offered<'with>(
         self,
         offer: &'run mut (dyn Offer + 'with),
     ) -> RunInputs<'run, 'with>

@@ -1,0 +1,40 @@
+// Two seats share one binary session. Each seat draws one fair bit through
+// `std.rand.Eff` and sends it to the other seat. Each seat answers whether
+// the two bits agree, and `exchanged` answers the pair of answers.
+//
+// A session between seats is one program, the choreography of its seats.
+// Its draws happen in two tasks, and the exact model answers each draw. So
+// the pair has an exact distribution, though the two tasks run in turns that
+// the scheduler picks.
+//
+// The desk draws its bit, then forks the seat and keeps the other end. The
+// seat draws and sends its bit, receives the desk's bit, then sends its
+// answer. The desk receives first and sends its bit after. The corpus runs
+// `exchanged` once for each of the four sequences of answers, and the two
+// seats always give one answer.
+//
+// - see: `model/probability/draws.gandr` — the exact model at the root
+// - see: `model/probability/leader.gandr` — the exact model across worlds
+// - see: `crates/surface-dispatcher/src/evaluate.rs` — a test runs
+//   `exchanged` under two orders of the ready queue
+
+// The host interface of randomness.
+import std.rand;
+
+/// The desk's answer and the seat's answer, each true on the paths whose two
+/// bits agree. The corpus spells true as `+{.0 = *{}}`.
+@[ distributes(("1/2 *{+{.0 = *{}}, +{.0 = *{}}}", "1/2 *{+{.1 = *{}}, +{.1 = *{}}}")) ]
+pub def exchanged() -> [std.rand.Eff] *{Bool, Bool} =
+  let mine = std.rand.draw 1;
+  let desk = fork (seat : !Integer. ?Integer. !Bool. end) {
+    let mine = std.rand.draw 1;
+    send seat mine;
+    let theirs = recv seat;
+    send seat (mine == theirs);
+    close seat
+  };
+  let theirs = recv desk
+  send desk mine
+  let answered = recv desk
+  close desk
+  pure *{mine == theirs, answered}

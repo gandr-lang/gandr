@@ -316,6 +316,8 @@ mod settle;
 
 pub use crate::distribution::Bits;
 pub use crate::distribution::PastQuota;
+pub use crate::distribution::Performer;
+pub use crate::distribution::Undistributed;
 pub use crate::distribution::distributed;
 pub use crate::expectation::ExpectationFault;
 pub use crate::expectation::ExpectationSchema;

@@ -3408,7 +3408,7 @@ mod tests
             constant: ConstantIndex,
             _quota: crate::distribution::Bits,
             path: &mut dyn FnMut(RunSpelling, crate::distribution::Bits),
-        ) -> Result<(), crate::distribution::PastQuota>
+        ) -> Result<(), crate::distribution::Undistributed>
         {
             self.0.push(("distributes", usize::from(constant)));
             path(

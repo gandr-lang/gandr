@@ -1009,6 +1009,202 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
     );
 }
 
+/// `draw(1)`, performed by `std.rand.Eff`'s name.
+///
+/// # Specification
+/// trivial.
+fn draw(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+) -> ComputationId
+{
+    let width = arena.value_literal(crate::fixture::integer_literal());
+    arena.computation_perform(host.rand.clone(), "draw".into(), width)
+}
+
+/// `operation; pure *{}`.
+///
+/// # Specification
+/// trivial.
+fn then_unit(
+    arena: &mut CoreArena,
+    operation: ComputationId,
+) -> ComputationId
+{
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    arena.computation_bind(operation, returned)
+}
+
+/// `handle r : std.rand.Eff { subject } with { | pure(x) => pure x | oper
+/// draw(width, k) => pure *{} }`, its clause dropping the continuation.
+///
+/// # Specification
+/// trivial.
+fn drawing_scope(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    subject: ComputationId,
+) -> ComputationId
+{
+    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let passes = arena.computation_return(answered);
+    let unit = arena.value_unit();
+    let dropped = arena.computation_return(unit);
+    let clauses: Arc<[EffectClause]> = [EffectClause {
+        operation: "draw".into(),
+        body: dropped,
+    }]
+    .into();
+    arena.computation_scope(host.rand.clone(), subject, passes, clauses)
+}
+
+/// Check `term` against the returner of the unit at `row`.
+///
+/// # Specification
+/// trivial.
+fn check_in_row(
+    arena: &mut CoreArena,
+    term: ComputationId,
+    row: gandr_core_term::effect::EffectRow,
+) -> Result<(), CheckRefusal>
+{
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner_with_effects(unit, row);
+    check_at(arena, term, returner)
+}
+
+/// A forked task stands on the joined frame, where no handler of its parent
+/// stands. So the host answers a draw that the task performs by name, once,
+/// and the task's end crosses the draw. The same draw in the parent can reach
+/// a handler of the caller, which can resume it twice, so the draw captures
+/// the parent's end (#6058).
+#[test]
+fn a_seat_draws_while_it_holds_its_end_6058()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    let drawing = gandr_core_term::effect::EffectRow::singleton(host.rand.clone());
+    // let d = fork (s : end) { draw(1); close(s) }; close(d)
+    let drawn = draw(&mut arena, &host);
+    let child = parent_open(&mut arena, drawn);
+    let closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child, closed);
+    assert_eq!(
+        check_in_row(&mut arena, exchange, drawing.clone()),
+        Ok(()),
+        "the host answers the task's draw once"
+    );
+    // let d = fork (s : end) { close(s) }; draw(1); close(d)
+    let drawn = draw(&mut arena, &host);
+    let parent = parent_open(&mut arena, drawn);
+    let child_closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child_closed, parent);
+    assert_eq!(
+        check_in_row(&mut arena, exchange, drawing),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(drawn)),
+            defect: LinearityDefect::Captured {
+                endpoint: Endpoint {
+                    fork: exchange,
+                    side: ForkSide::Parent,
+                },
+                by: Capture::Continuation,
+            },
+        }),
+        "a handler of the caller may resume the parent's draw twice"
+    );
+}
+
+/// A handler inside a task stands between the task's draw and the host, and
+/// it can resume the draw twice. So the task's end does not cross a draw that
+/// such a handler answers (#6058).
+#[test]
+fn a_draw_under_a_handler_inside_the_task_captures_its_end_6058()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    // let d = fork (s : end) {
+    //   (handle r : std.rand.Eff { draw(1); pure *{} } with { … } : F_[Rand] 1);
+    //   close(s)
+    // }; close(d)
+    let drawn = draw(&mut arena, &host);
+    let subject = then_unit(&mut arena, drawn);
+    let scoped = drawing_scope(&mut arena, &host, subject);
+    let unit = arena.value_type_unit();
+    let answer = arena.comp_type_returner_with_effects(
+        unit,
+        gandr_core_term::effect::EffectRow::singleton(host.rand.clone()),
+    );
+    let ascribed = arena.computation_ascribe(scoped, answer);
+    let child = parent_open(&mut arena, ascribed);
+    let closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child, closed);
+    assert_eq!(
+        check_in_row(
+            &mut arena,
+            exchange,
+            gandr_core_term::effect::EffectRow::singleton(host.rand.clone())
+        ),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(drawn)),
+            defect: LinearityDefect::Captured {
+                endpoint: Endpoint {
+                    fork: exchange,
+                    side: ForkSide::Child,
+                },
+                by: Capture::Continuation,
+            },
+        }),
+        "the handler inside the task may resume the draw twice"
+    );
+}
+
+/// A task's operation reaches the host past every handler and scope of its
+/// parent. So a function owes its task's draw in its own row, though a scope
+/// around the fork answers the parent's draws. Without that row the task's
+/// draw is refused: only the parent's scope would answer it, and the scope
+/// never sees it (#6058).
+#[test]
+fn a_task_owes_its_draw_past_its_parent_s_handler_6058()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    // handle r : std.rand.Eff {
+    //   let d = fork (s : end) { close(s); draw(1); pure *{} }; close(d)
+    // } with { … }
+    let closed = Program::new(&mut arena).close();
+    let drawn = draw(&mut arena, &host);
+    let after = then_unit(&mut arena, drawn);
+    let child = arena.computation_bind(closed, after);
+    let parent_closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child, parent_closed);
+    let scoped = drawing_scope(&mut arena, &host, exchange);
+    assert!(
+        matches!(
+            check_in_row(
+                &mut arena,
+                scoped,
+                gandr_core_term::effect::EffectRow::EMPTY
+            ),
+            Err(CheckRefusal::TypeMismatch(_))
+        ),
+        "the parent's scope never answers the task's draw"
+    );
+    assert_eq!(
+        check_in_row(
+            &mut arena,
+            scoped,
+            gandr_core_term::effect::EffectRow::singleton(host.rand.clone())
+        ),
+        Ok(()),
+        "the function's row owes the task's draw to the host"
+    );
+}
+
 /// `Cap {operations}` over the host's file system, held by the host for the
 /// run.
 ///
