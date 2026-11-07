@@ -206,7 +206,8 @@ features = ["anodized"]
 # BLAKE3 hashing for content and node identities, the kernel's verdict keys
 # and build identity, the site's build identity a stored stratum's key binds,
 # the engine hub's socket names, the rank a sweep's sample orders sources by,
-# and the digest a prose finding's sentence is keyed by.
+# the digest a prose finding's sentence is keyed by, and the key of a plan's
+# minimal form.
 # consumers:
 # - core-incremental
 # - kernel-core (and its build script)
@@ -218,6 +219,7 @@ features = ["anodized"]
 # - surface-lsp
 # - surface-parser (dev)
 # - surface-syntax
+# - theory-exact-reals
 # - theory-sites (build script)
 # - workflow-prose
 # - workflow-sweep

@@ -17,7 +17,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 
 ## Synopsis
 
-**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. `approximate` encloses each real node of a validated plan, and it gives each open node a positive and a negative approximant. `check` replays a `Certificate` of a judgement with no search. `Dovetail` runs the refinement machine, and a `Cache` keeps the certificates that it writes. The crate is `no_std` and depends on `num-bigint`, `hashbrown`, `foldhash` and the specification facade.
+**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. `approximate` encloses each real node of a validated plan, and it gives each open node a positive and a negative approximant. `check` replays a `Certificate` of a judgement with no search. `Dovetail` runs the refinement machine, and a `Cache` keeps the certificates that it writes. The crate is `no_std`.
 
 **Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. An interval alone is never evidence of truth. Truth needs a certificate that a checker replays with exact comparisons alone. The crate does not depend on the kernel, and no real number enters kernel conversion.
 
@@ -31,9 +31,12 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Bauer-2009-dedekind_reals_abstract_stone_duality` — exemplar: Bauer and Taylor, _MSCS_ 19:4, 2009, `doi:10.1017/S0960129509007695` — Moore's arithmetic.
 - `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar: Escardó, _ENTCS_ 87, 2004, `doi:10.1016/j.entcs.2004.09.017` — an open as a semidecidable property.
 - `Bakke-2026-synthetic_sierpinski_cone` — newest: Bakke, Sterling, Williams and Ye, 2026, `arXiv:2605.00773` — the outcomes of a run as a cone.
-- `Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions` — exemplar: Tarau, 2008, `arXiv:0808.0754` — Ackermann's code as a bijection, and its successor on the sets.
-- `Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes` — exemplar: Tarau, 2008, `arXiv:0808.0753` — the ranking fold, and what the unranking unfold asks of its transformer.
-- `vault:01a1b278-5641-7c20-95d3-093641459620` — exemplar: the source page of Cantone and Policriti, "Encoding Sets as Real Numbers", 2018, `arXiv:1806.09329` — the real code `R` and its successor.
+- `Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions` — exemplar: Tarau, 2008, `arXiv:0808.0754` — Ackermann's code and its successor.
+- `Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes` — exemplar: Tarau, 2008, `arXiv:0808.0753` — the ranking fold and the unranking unfold.
+- `vault:01a1b278-5641-7c20-95d3-093641459620` — exemplar: Cantone and Policriti, 2018, `arXiv:1806.09329` — the real code `R` and its successor.
+- `Doré-2023-computing_spaces_type_theory` — exemplar: Doré, 2023 — graph matchings.
+- `vault:01a1b278-54ca-7062-94f4-4c94748c971e` — exemplar: Paige and Tarjan, 1987, `doi:10.1137/0216062` — partition refinement.
+- `vault:01a1b278-4fbc-7c31-a4f3-2a171b335796` — anchor: the fixed-point ledger.
 
 ## Provided features
 
@@ -60,6 +63,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Cache`, `CacheBound`, `Lookup`, `CacheRefusal` and `CacheTally`: the checked-result cache that `Dovetail::consult` reads and `Dovetail::record` fills. The `cache` module documentation states its key.
 - `eliminate`, `Elimination`: cut elimination. The `elimination` module tables the rewrite.
 - `Sets`, `SetId`, `Ackermann`, `Rank`, `code` and `CodeError`: a table of hereditarily finite sets with Tarau's fold, unfold and successor of Ackermann's code, and the real code of a set of rank at most 3 as a plan. The `ackermann` module documentation states which operations carry over to the real code.
+- `PlanGraph`, `GraphBuilder`: a plan or a recursive system as a graph, its `Core`, its `MinimalForm` and `PlanKey`.
 
 ## Expected features
 
@@ -111,11 +115,11 @@ A plan is a finite DAG of real, open and domain nodes. A cut and the two quantif
 
 ## Certificates
 
-A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The `certificate` module documentation tables the rules, and the `schema` module documentation states the schema. A `Cache` keeps each certificate under the canonical bytes of the plan that its node roots. The checker replays each hit before the machine uses it.
+A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The `certificate` and `schema` module documentation tables the rules and states the schema. A `Cache` keeps each certificate under the canonical bytes of the plan that its node roots. The checker replays each hit before the machine uses it.
 
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` runs one bench for each stage of the crate: the arithmetic, the plan, the certificate, the scheduler, the quantifiers and the cache. Each bench prints the median, the 99th percentile and the allocations per operation, and its module documentation lists its rows.
+`cargo bench -p gandr-theory-exact-reals` runs one bench for each stage. Each prints the median, the 99th percentile and the allocations per operation, and its module documentation lists its rows.
 
 Stage C is the first release: a gandr program reaches the crate through `std.reals.Eff`. `cargo bench -p gandr-surface-dispatcher --bench reals` times that host against the bare crate. At the median, the host adds under 0.8 µs to `enclose` and under 0.2 µs to `decide`. To `admit` it adds 0.4 µs to 2.2 µs over the crate's own decode of the bytes.
 

@@ -1962,7 +1962,9 @@ name = "gandr-theory-exact-reals"
 version = "0.0.0"
 dependencies = [
  "allocation-counter",
+ "blake3",
  "foldhash 0.2.0",
+ "gandr-theory-discrete-morse",
  "hashbrown 0.17.1",
  "num-bigint",
  "proptest",
