@@ -233,7 +233,8 @@ fn evaluated(plan: &Plan) -> Vec<Exact>
                     | Real::Pi
                     | Real::Cos(_)
                     | Real::Sin(_)
-                    | Real::Arg(..) => None,
+                    | Real::Arg(..)
+                    | Real::Recurrence(_) => None,
                 };
                 value.map_or(Exact::Undefined, Exact::Real)
             },

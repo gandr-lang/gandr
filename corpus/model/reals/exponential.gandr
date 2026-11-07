@@ -1,0 +1,65 @@
+// A program decides two bounds on `e`: `1000 · exp 1` lies between `2718`
+// and `2719`. It works through `std.reals.Eff`, the host interface of exact
+// reals.
+//
+// No plan of field operations and cuts defines `e`. A recurrence node
+// defines it: the sum of a series whose term ratio is a rational function of
+// the index. The plan of `exp 1` is the series of ratio `1 / (n + 1)` at one,
+// and `exp` has no rule of its own.
+//
+// The host encloses the series by a partial sum and a tail bound, at a
+// precision that doubles. The checker replays each step before the host
+// replies. `gandr run exponential.gandr` prints `holds holds`. The same
+// `decided` runs under a handler of this source, a second model of the
+// interface.
+//
+// - see: `crates/theory-exact-reals/src/recurrence.rs` — the rule of the
+//   recurrence node
+// - see: `corpus/model/reals/trigonometry.gandr` — the builtins of a plan
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+// The join of two strings.
+import std.string (concat);
+// The subject's shared declarations: `decided`.
+import "./reals-base.gandr";
+
+/// The canonical bytes of the plan of `2718 < 1000 · exp 1` in lowercase
+/// hexadecimal: 6 nodes in 100 bytes, the magic `GXRP` first.
+pub def eAbove : String = "4758525001000600000000000000020100000002000000000000004f05020300000001000000000000007d02000000000100000000000000010d020000000100000001000000020000000100000001000000050100000003000000120000000004000000";
+
+/// The canonical bytes of the plan of `1000 · exp 1 < 2719`: 6 nodes in 100
+/// bytes.
+pub def eBelow : String = "4758525001000600000000000000020300000001000000000000007d02000000000100000000000000010d010000000100000001000000020000000100000001000000050000000002000000020000000002000000000000009f0a120300000004000000";
+
+/// The verdicts on the two bounds, a space between them.
+pub def bounds() -> [std.reals.Eff] String =
+  let first = decided eAbove 16
+  let second = decided eBelow 16
+  concat first (concat " " second)
+
+/// `bounds` under a handler of this source, a second model of
+/// `std.reals.Eff` that decides each root true.
+@[ runs("\"holds holds\"") ]
+def boundsModelled() -> String =
+  handle r : std.reals.Eff {
+    bounds ()
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "0p0" "1p0"
+    | oper decide(asked, k) => k "holds" 0
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k ""
+    | oper restore(text, k) => k 0
+    | oper report(machine, k) => k #[6, 2, 6, 0, 0, 0, 6, 0, 0]
+  }
+
+/// The entry: decide the two bounds within 16 quanta each, print the
+/// verdicts, and exit with 0.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let verdicts = bounds ()
+  std.io.Console.print verdicts
+  0
