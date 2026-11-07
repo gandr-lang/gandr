@@ -29,6 +29,16 @@
 //! `quenchant-shape`; its `hotpath` feature links `std` and the profiler, which
 //! times the overlap queries and normalization for the benchmark report.
 //!
+//! Each overlap is one unification at a seam, so the enumeration asks one
+//! query for each ordered pair of cells. A certificate records which cell
+//! fired where, and no substitution. Its replay matches each step again
+//! against skolemized terms. Completion is one worklist loop for a fresh
+//! run, a supplied run and a resumed run. A step ceiling and a cell ceiling
+//! bound it, and a ceiling returns a decline that holds the pending batches.
+//! Absence and refusal are values. A step that does not happen returns
+//! `Maybe` with its reason, and a refused operation returns `Result` with a
+//! typed refusal.
+//!
 //! The construction takes four sources. Squier, Otto and Kobayashi read a
 //! joined critical branching as a coherence cell, so each certificate is a
 //! 3-cell. Guiraud, Hoffbeck and Malbos collapse the resolution of a
@@ -44,10 +54,11 @@
 //!
 //! The results hold at two levels. Each confluence certificate is a 3-cell of
 //! a coherent presentation, which holds up to homotopy (Ara and others,
-//! Theorem 7.3.5). The critical triples and the bar complex hold only over the
-//! integers, as chains. The general form is the Squier polygraphic
-//! resolution, with a cell for each critical branching of each arity (Ara and
-//! others, Theorem 23.2.3).
+//! Theorem 7.3.5). [`Basis`] builds the 4-cell of each critical triple from
+//! them, so its reduction holds up to homotopy too, with its equivalence. The
+//! bar complex holds only over the integers, as chains. The general form is
+//! the Squier polygraphic resolution, with a cell for each critical branching
+//! of each arity (Ara and others, Theorem 23.2.3).
 //!
 //! # Executable specifications
 //!
@@ -131,6 +142,7 @@ extern crate alloc;
 #[cfg(feature = "hotpath")]
 extern crate std;
 
+mod basis;
 mod boundary;
 mod completion;
 mod lawvere;
@@ -139,6 +151,18 @@ mod rewrite;
 mod tracelet;
 mod triple;
 
+pub use crate::basis::Basis;
+pub use crate::basis::BasisCell;
+pub use crate::basis::BasisFault;
+pub use crate::basis::BasisRefusal;
+pub use crate::basis::Composite;
+pub use crate::basis::Fill;
+pub use crate::basis::Homotopy;
+pub use crate::basis::Move;
+pub use crate::basis::PathStep;
+pub use crate::basis::RewritePath;
+pub use crate::basis::Sense;
+pub use crate::basis::Witness;
 pub use crate::boundary::Arity;
 pub use crate::boundary::BarDegree;
 pub use crate::boundary::BatchIndex;
@@ -147,6 +171,7 @@ pub use crate::boundary::CertificateIndex;
 pub use crate::boundary::CompletionCellBudget;
 pub use crate::boundary::CompletionStatus;
 pub use crate::boundary::CompletionStepBudget;
+pub use crate::boundary::MovePlace;
 pub use crate::boundary::NormalizationBudget;
 pub use crate::boundary::Occurrences;
 pub use crate::boundary::Operation;
@@ -154,10 +179,12 @@ pub use crate::boundary::OverlapIndex;
 pub use crate::boundary::PairDecisions;
 pub use crate::boundary::RulePlace;
 pub use crate::boundary::StepIndependence;
+pub use crate::boundary::StepPlace;
 pub use crate::boundary::TermPlace;
 pub use crate::boundary::TermSize;
 pub use crate::boundary::TraceletEquivalence;
 pub use crate::boundary::TraceletReplay;
+pub use crate::boundary::TripleIndex;
 pub use crate::boundary::Variable;
 pub use crate::completion::CompletionBudget;
 pub use crate::completion::CompletionOutcome;

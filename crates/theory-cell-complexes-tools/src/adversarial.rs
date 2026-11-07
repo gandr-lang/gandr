@@ -623,6 +623,16 @@ where
         ToyAlphabet::position_at_path(path)
     }
 
+    /// The toy alphabet's steps of `pos`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn position_steps(pos: &Self::Pos) -> &[PositionStep]
+    {
+        ToyAlphabet::position_steps(pos)
+    }
+
     /// `L`'s position order.
     ///
     /// # Specification

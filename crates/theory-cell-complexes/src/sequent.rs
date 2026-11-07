@@ -1029,6 +1029,16 @@ impl CellAlphabet for SequentAlphabet
         Pos::from_steps(path.iter().copied())
     }
 
+    /// The steps of `pos`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn position_steps(pos: &Self::Pos) -> &[PositionStep]
+    {
+        pos.steps()
+    }
+
     /// How two positions relate: [`path_order`] over their steps.
     ///
     /// # Specification
