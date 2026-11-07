@@ -29,7 +29,7 @@ ci_workflow=CI
 # `hold:owner`, #3253), as `landing.jq` reads them.
 read_prs() {
   local pr number head base upstream rollup gated
-  gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -f query='
+  gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query='
     query($owner: String!, $name: String!, $endCursor: String) {
       repository(owner: $owner, name: $name) {
         pullRequests(states: OPEN, first: 20, after: $endCursor) {

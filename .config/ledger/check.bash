@@ -84,10 +84,8 @@ fi
 # `kind:epic`. Every number the rows name is gathered first and read in one
 # query of aliases per hundred. A failed read prints the call and its error
 # and stops the check: no row is judged on a state the check did not read.
+# gh fills `{owner}` and `{repo}` from `GH_REPO` or the checkout's remote.
 declare -A issue=()
-origin=$(git remote get-url origin 2> /dev/null || true)
-repo=$(sed -nE 's#^(https://github\.com/|git@github\.com:)([^/]+/[^/.]+)(\.git)?$#\2#p' <<< "$origin")
-repo=${repo:-gandr-lang/gandr}
 read_issues() {
   local chunk=() n
   for n in "$@"; do
@@ -97,10 +95,10 @@ read_issues() {
   (( ${#chunk[@]} == 0 )) || read_chunk "${chunk[@]}"
 }
 read_chunk() {
-  local n query="{ repository(owner: \"${repo%/*}\", name: \"${repo#*/}\") { " out
+  local n query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ' out
   for n in "$@"; do query+="n$n: issue(number: $n) { state labels(first: 100) { nodes { name } } } "; done
   query+="} }"
-  if ! out=$(gh api graphql -f query="$query" --jq '.data.repository | to_entries[] | [(.key | ltrimstr("n")), (.value.state // "MISSING"), ((.value.labels.nodes // []) | map(.name) | any(. == "kind:gap" or . == "kind:epic"))] | @tsv' 2> "$tmp/gh-error"); then
+  if ! out=$(gh api graphql -F owner='{owner}' -F name='{repo}' -f query="$query" --jq '.data.repository | to_entries[] | [(.key | ltrimstr("n")), (.value.state // "MISSING"), ((.value.labels.nodes // []) | map(.name) | any(. == "kind:gap" or . == "kind:epic"))] | @tsv' 2> "$tmp/gh-error"); then
     printf '`gh api graphql` over %s failed, so no row is judged: %s\n' "$(printf '#%s ' "$@" | sed 's/ $//')" "$(paste -sd ' ' "$tmp/gh-error")" >&2
     echo 'ledger check FAILED' >&2
     exit 1
