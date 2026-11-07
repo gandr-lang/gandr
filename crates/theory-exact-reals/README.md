@@ -10,8 +10,6 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Examples](#examples)
 - [Intervals](#intervals)
 - [Plans and their bytes](#plans-and-their-bytes)
-- [Validation](#validation)
-- [Dual approximation](#dual-approximation)
 - [Certificates](#certificates)
 - [Measurement](#measurement)
 - [License](#license)
@@ -33,6 +31,9 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Bauer-2009-dedekind_reals_abstract_stone_duality` — exemplar: Bauer and Taylor, _MSCS_ 19:4, 2009, `doi:10.1017/S0960129509007695` — Moore's arithmetic.
 - `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar: Escardó, _ENTCS_ 87, 2004, `doi:10.1016/j.entcs.2004.09.017` — an open as a semidecidable property.
 - `Bakke-2026-synthetic_sierpinski_cone` — newest: Bakke, Sterling, Williams and Ye, 2026, `arXiv:2605.00773` — the outcomes of a run as a cone.
+- `Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions` — exemplar: Tarau, 2008, `arXiv:0808.0754` — Ackermann's code as a bijection, and its successor on the sets.
+- `Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes` — exemplar: Tarau, 2008, `arXiv:0808.0753` — the ranking fold, and what the unranking unfold asks of its transformer.
+- `vault:01a1b278-5641-7c20-95d3-093641459620` — exemplar: the source page of Cantone and Policriti, "Encoding Sets as Real Numbers", 2018, `arXiv:1806.09329` — the real code `R` and its successor.
 
 ## Provided features
 
@@ -58,6 +59,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, and the scheduler that runs them in bounded quanta within a budget. `Dovetail::resume` reads its checkpoint back. The `semidecision`, `dovetail` and `bisection` module documentation states each.
 - `Cache`, `CacheBound`, `Lookup`, `CacheRefusal` and `CacheTally`: the checked-result cache that `Dovetail::consult` reads and `Dovetail::record` fills. The `cache` module documentation states its key.
 - `eliminate`, `Elimination`: cut elimination. The `elimination` module tables the rewrite.
+- `Sets`, `SetId`, `Ackermann`, `Rank`, `code` and `CodeError`: a table of hereditarily finite sets with Tarau's fold, unfold and successor of Ackermann's code, and the real code of a set of rank at most 3 as a plan. The `ackermann` module documentation states which operations carry over to the real code.
 
 ## Expected features
 
@@ -106,14 +108,6 @@ The arithmetic takes proper operands and refuses a dual one as `DualOperand`. A 
 ## Plans and their bytes
 
 A plan is a finite DAG of real, open and domain nodes. A cut and the two quantifiers each bind one real variable, and a bound variable names its binder by a de Bruijn index. A `PlanBuilder` holds a DAG by construction. `finish` brings the nodes that the root reaches to one canonical form, which holds each distinct subterm once in an order that depends on its structure alone. `Plan::encode` writes the canonical bytes, and `Plan::decode` accepts exactly those bytes and refuses every other input by name. The `plan` module documentation states the node kinds and the canonical walk, and the `codec` module documentation tables the byte layout.
-
-## Validation
-
-A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `validate` reads the bytes, and `admit` takes a plan in memory. A `Refusal` names the node that fails, or the input as a whole, and the `Check` that fails there. The pass is linear in the nodes and edges, and it never panics. The `validate` module documentation tables each check and states the two walks.
-
-## Dual approximation
-
-`approximate` gives each node of a validated plan an approximation at one precision. A real node gets an enclosure that holds its value, rounded outward. An open node gets a positive and a negative approximant, and each one is sound on its own. When neither proves its side, the proposition stays undecided at that precision, and the crate never reports it as false. The `approx` module documentation tables the approximation of each node kind and states the bounds of the pass.
 
 ## Certificates
 

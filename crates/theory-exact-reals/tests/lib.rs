@@ -4,6 +4,8 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod ackermann;
+#[cfg(test)]
 mod approx;
 #[cfg(test)]
 mod cache;

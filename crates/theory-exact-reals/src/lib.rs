@@ -40,6 +40,8 @@
 //!   builtin nodes. No plan of field operations and cuts defines a
 //!   transcendental real, so each builtin is a node with one rule. The
 //!   approximation pass, the checker and the machine read that rule.
+//! - [`Sets`], [`Ackermann`], [`code`] — a table of hereditarily finite sets,
+//!   the operations of Ackermann's code on it, and the real code as a plan.
 //!
 //! # References
 //!
@@ -67,6 +69,7 @@
 
 extern crate alloc;
 
+pub mod ackermann;
 pub mod approx;
 pub mod bisection;
 pub mod cache;
@@ -83,6 +86,12 @@ pub mod schema;
 pub mod semidecision;
 pub mod validate;
 
+pub use crate::ackermann::Ackermann;
+pub use crate::ackermann::CodeError;
+pub use crate::ackermann::Rank;
+pub use crate::ackermann::SetId;
+pub use crate::ackermann::Sets;
+pub use crate::ackermann::code;
 pub use crate::approx::Approximation;
 pub use crate::approx::BilateralApprox;
 pub use crate::approx::NegativeApprox;

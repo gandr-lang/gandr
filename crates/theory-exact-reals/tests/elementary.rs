@@ -84,6 +84,10 @@ const ATAN_HALF: Decimal =
 const COS_QUARTER_PI: Decimal =
     Decimal("0.707106781186547524400844362104849039284835937688474036588339");
 
+/// The first 60 decimals of the cosine of the square root of two.
+const COS_ROOT_TWO: Decimal =
+    Decimal("0.155943694765374473454647978908589641624447250391305356890410");
+
 /// The truncation as a rational, and one unit of its last digit.
 ///
 /// # Specification
@@ -675,7 +679,6 @@ fn the_machine_certifies_the_builtins()
             Some(Outcome::Suspended(reason)) => {
                 let expected = match index {
                     5 => SuspendReason::Opposed,
-                    7 => SuspendReason::NoRule,
                     _ => panic!("obligation {index} suspends with {reason:?}"),
                 };
                 assert_eq!(reason, expected);
@@ -683,7 +686,7 @@ fn the_machine_certifies_the_builtins()
             other => panic!("obligation {index} settles, not {other:?}"),
         }
     }
-    assert_eq!(certificates.len(), 6);
+    assert_eq!(certificates.len(), 7);
     let conclusion = |certificate: &Certificate| {
         let checked = check(&plan, certificate, &quotas).unwrap();
         let Conclusion::Encloses { ref interval, .. } = *checked.conclusion()
@@ -700,6 +703,11 @@ fn the_machine_certifies_the_builtins()
         conclusion(&certificates[5]),
         NumericInterval::point(Dyadic::ZERO)
     );
+    // The compound chain encloses the cut by its witnesses, so the builtin
+    // over it settles.
+    let over_cut = conclusion(&certificates[6]);
+    meets(&over_cut, &COS_ROOT_TWO);
+    assert!(width(&over_cut) <= power_of_two(Exponent::from(-10_i32)));
     // A run stopped after each of its turns and resumed from its checkpoint
     // certifies the cosine as the unbroken run does.
     let single = [obligations[0]];

@@ -229,3 +229,13 @@ exemplar = "no newer work states the opens of a space as its semidecidable prope
 site = "theory-exact-reals"
 work = "Taylor-2010-lambda_calculus_real_analysis"
 exemplar = "no newer work states the calculus of Dedekind cuts whose opens have no negation, with its Frobenius law and its quantifiers over compact and overt intervals"
+
+[[site]]
+site = "theory-exact-reals::ackermann"
+work = "Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions"
+exemplar = "no newer work states Ackermann's code as the recursive use of a bijection from finite sets of naturals to naturals, with the successor that it carries to the sets"
+
+[[site]]
+site = "theory-exact-reals::ackermann"
+work = "Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes"
+exemplar = "no newer work states ranking as a fold and unranking as an unfold, with the condition on the transformer that makes the unfold a bijection"
