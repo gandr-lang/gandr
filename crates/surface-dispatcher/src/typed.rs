@@ -2623,7 +2623,20 @@ impl TypeTable
                     (TypeNode::Computation(ty), Standing::Named(named))
                 },
                 Labelled::Value(value) => {
-                    let Some((first, (constant, depth))) = first_of(TermNode::Value(value))
+                    let typed =
+                        first_of(TermNode::Value(value))
+                            .map(|(first, (constant, depth))| {
+                                (first, CoreNode::Value(value), constant, depth)
+                            })
+                            .or_else(|| match origins.binding(value) {
+                                Maybe::Present(binder) => first_uses.get(&binder).map(
+                                    |&(first, judged, constant, depth)| {
+                                        (first, CoreNode::Value(judged), constant, depth)
+                                    },
+                                ),
+                                Maybe::Absent(_) => None,
+                            });
+                    let Some((first, node, constant, depth)) = typed
                     else {
                         continue;
                     };
@@ -2631,7 +2644,7 @@ impl TypeTable
                         first,
                         Standing::Judged(Within {
                             constant,
-                            node: CoreNode::Value(value),
+                            node,
                             depth: Some(depth),
                         }),
                     )
@@ -8208,6 +8221,26 @@ mod tests
             Maybe::Absent(typing::Absent::Untyped),
             "layout between declarations is no node's"
         );
+    }
+
+    #[test]
+    fn a_shared_record_value_keeps_each_field_label_5827()
+    {
+        let source = SourceText::from(concat!(
+            "def pair() -> -F *{l : Unit, r : Unit} {\n",
+            "  let a = pure *{};\n",
+            "  let b = pure *{};\n",
+            "  pure *{l = a, r = a}\n",
+            "}\n",
+        ));
+        let table = table(source);
+        for label in ["l = a,", "r = a}"] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(label)),
+                agreed(Subject::Binder, SourceText::from("Unit")),
+                "`{label}` answers at its field's type"
+            );
+        }
     }
 
     /// #4958: the digit of a negated literal answers at its own span, and the
