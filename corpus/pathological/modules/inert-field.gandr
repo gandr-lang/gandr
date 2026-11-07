@@ -36,7 +36,7 @@ def shown = Box.label;
 
 /// The label of any labelled thing.
 @[ refuses("InertRead") ]
-def labelOf(l : Model(Labelled)) -> String { l.label }
+def labelOf(l : Model Labelled) -> String { l.label }
 
 /// The mark on a sort, which is no field.
 @[ refuses("MalformedForm") ]

@@ -20,11 +20,11 @@ data N : Type where
 @[ refuses("OutOfFragment.Indexed") ]
 data Prog : N -> Type where {
   /// The program that stops, at index zero.
-  | Stop : Prog(Z)
+  | Stop : Prog Z
   /// A program that asks once, standing one index above its continuation.
-  | Ask : (k : Prog(Z)) --> Prog(S(Z))
+  | Ask : (k : Prog Z) --> Prog(S Z)
   /// A program that tells an integer and continues at the same index.
-  | Tell : (s : Integer, k : Prog(Z)) --> Prog(Z)
+  | Tell : (s : Integer, k : Prog Z) --> Prog Z
   /// Two tells in a row keep only the second, a rule over the constructors.
   rule : Tell s (Tell u k) <=> Tell u k;
 }

@@ -32,4 +32,4 @@ module Bare where
 
 /// The unascribed module, named as a ticker.
 @[ refuses("UnresolvedName") ]
-def named : Model(Ticker) = Bare;
+def named : Model Ticker = Bare;

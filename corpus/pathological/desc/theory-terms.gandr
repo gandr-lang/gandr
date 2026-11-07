@@ -31,7 +31,7 @@ theory Mon where
 
 /// The monoid's unit as a term: its terms are refused, and so is it.
 @[ refuses("RuleNotPresentable") ]
-def neutral : Terms(Mon) = Mon.one;
+def neutral : Terms Mon = Mon.one;
 
 /// A second declaration asking for the terms states the same cause.
 @[ refuses("RuleNotPresentable") ]
@@ -50,7 +50,7 @@ theory Pair where
 
 /// Terms over two sorts stand outside the slice.
 @[ refuses("OutOfFragment.terms_type.sorted") ]
-def paired : Terms(Pair) = Pair.origin;
+def paired : Terms Pair = Pair.origin;
 
 /// A signature that states a law: `twice` twice equals `twice` once.
 theory Idem where
@@ -63,4 +63,4 @@ theory Idem where
 
 /// Terms of a theory stating a law stand outside the slice.
 @[ refuses("OutOfFragment.terms_type.law") ]
-def doubled : Terms(Idem) = Idem.twice;
+def doubled : Terms Idem = Idem.twice;

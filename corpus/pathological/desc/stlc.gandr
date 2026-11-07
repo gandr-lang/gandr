@@ -18,7 +18,7 @@ import "../../model/desc/stlc.gandr";
 /// The renamer past one more entry. The constructor `There` is the body of a
 /// lambda, where it reads no stated type.
 @[ refuses("OutOfFragment.Unannotated") ]
-def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, b), g) =
+def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren d g) -> Ren (Extend d b) g =
   return fun (a) { return fun (x) { There d a b (r a x) } }
 
 /// The renaming of neutrals and normal forms. Each descends on its third
@@ -26,7 +26,7 @@ def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, b), g) =
 rec {
   /// The renamer of a neutral.
   @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
-  def rec renNe(g : Ctx, a : ObjTy, t : Ne(g, a), d : Ctx, r : Ren(d, g)) -> Ne(d, a) {
+  def rec renNe(g : Ctx, a : ObjTy, t : Ne g a, d : Ctx, r : Ren d g) -> Ne d a {
     match t where
       | NVar(_h, b, x) => NVar d b (r b x)
       | NApp(h, b, c, f, u) => {
@@ -37,7 +37,7 @@ rec {
   }
   /// The renamer of a normal form.
   @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
-  def rec renNf(g : Ctx, a : ObjTy, t : Nf(g, a), d : Ctx, r : Ren(d, g)) -> Nf(d, a) =
+  def rec renNf(g : Ctx, a : ObjTy, t : Nf g a, d : Ctx, r : Ren d g) -> Nf d a =
     match t where
       | NNe(h, n) => { let n2 = renNe[<] h Base n d r; NNe d n2 }
       | NLam(h, b, c, body) => {
