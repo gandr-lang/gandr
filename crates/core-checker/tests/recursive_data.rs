@@ -1827,6 +1827,7 @@ fn the_kernel_replays_a_conversion_through_a_definition_by_eliminator()
                 gandr_kernel_term::DeclarationContent::Data { .. }
                 | gandr_kernel_term::DeclarationContent::Codata { .. }
                 | gandr_kernel_term::DeclarationContent::Axiom { .. }
+                | gandr_kernel_term::DeclarationContent::LiteralIdentity { .. }
                 | gandr_kernel_term::DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
             .collect(),
@@ -2314,8 +2315,9 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
     // `gandr_core_term::generic` derives for each: every one checks and
     // crosses owing nothing, and Nat's and Mark's — Mark's writing Nat's in
     // place, its flag compared first, a case bound before the rest — answer
-    // true exactly at equal arguments. The normaliser runs no native
-    // operation, so Point's integer comparisons run in the corpus.
+    // true exactly at equal arguments. The normaliser runs a native identity
+    // test only on literals, so Point's integer comparisons, over its
+    // fields, run in the corpus.
     let mut arena = CoreArena::new();
     let kind = kind(&mut arena);
     let nat = nat(&mut arena);
@@ -2370,11 +2372,11 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
             readmitted.outcome()
         );
     }
-    // Nothing is owed; the one axiom is the integer primitive's typed
-    // runtime assumption, which every native operation records.
+    // Nothing is owed and nothing is assumed: the integer comparison crosses
+    // as a literal identity test, a kernel primitive and no axiom.
     assert!(report.ledger().entries().is_empty());
     assert!(crossed.audit().unchecked_admissions().is_empty());
-    assert_eq!(crossed.audit().axioms().len(), 1_usize);
+    assert!(crossed.audit().axioms().is_empty());
 
     let unit = arena.value_unit();
     let truth = arena.value_injection(gandr_kernel_term::Summand::from(0_usize), unit);

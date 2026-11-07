@@ -290,6 +290,8 @@ enum DeclKind
     Def,
     /// A tracked typed hole.
     Axiom,
+    /// A literal identity test.
+    LiteralIdentity,
     /// A sealed abstract type.
     AbstractType,
 }
@@ -377,6 +379,9 @@ struct DeclMeta
     /// The free cells a type of words carries; absent for every other
     /// declaration.
     cells: Option<crate::presented::FreeCells>,
+    /// The test a literal identity declaration computes; absent for every
+    /// other declaration.
+    identity: Option<crate::LiteralIdentity>,
 }
 
 /// Where the decoder found an artifact's segments, as offsets into the image it
@@ -1678,6 +1683,7 @@ fn decode_cases(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cases, Deco
             DeclKind::AbstractType => meta.root_body.is_none() && meta.sealed.is_some_and(|(root, _)| value_type_id_at(&table.nodes, root).is_some())
                 && meta.interface.is_none_or(|(relation, reflexivity, law)| value_id_at(&table.nodes, relation).is_some() && value_id_at(&table.nodes, reflexivity).is_some() && law.is_none_or(|law| value_id_at(&table.nodes, law).is_some())),
             DeclKind::Axiom => meta.root_body.is_none(),
+            DeclKind::LiteralIdentity => meta.root_body.is_none() && meta.identity.is_some(),
         }),
     captures: [entry = table.arena.watermark(), related = metas.iter().map(|meta| meta.related.len()).collect::<Vec<_>>()],
     ensures: |ret| table.arena.watermark() == entry && ret.as_ref().map_or_else(
@@ -1693,6 +1699,9 @@ fn decode_cases(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cases, Deco
                         && meta.root_body.and_then(|root| value_id_at(&table.nodes, root)) == Some(body),
                     DeclarationContent::Axiom { declared } => matches!(meta.kind, DeclKind::Axiom)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared),
+                    DeclarationContent::LiteralIdentity { declared, test } => matches!(meta.kind, DeclKind::LiteralIdentity)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared)
+                        && meta.identity == Some(test),
                     DeclarationContent::AbstractType { kind, representation, scope, interface } => matches!(meta.kind, DeclKind::AbstractType)
                         && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
                         && meta.sealed.is_some_and(|(root, extent)| value_type_id_at(&table.nodes, root) == Some(representation)
@@ -1894,6 +1903,16 @@ fn build_declarations(
             },
             DeclKind::Axiom => {
                 DeclarationBuilder::new(&mut table.arena).axiom(meta.levels.clone(), declared)
+            },
+            DeclKind::LiteralIdentity => {
+                let test = meta.identity.ok_or(DecodeError::Malformed {
+                    site: MalformedSite::Polarity,
+                })?;
+                DeclarationBuilder::new(&mut table.arena).literal_identity(
+                    meta.levels.clone(),
+                    declared,
+                    test,
+                )
             },
         };
         declarations.push(MarkedDeclaration::new(
@@ -2533,13 +2552,13 @@ impl<'bytes> ByteReader<'bytes>
         && match (meta.kind, meta.root_body) {
             (DeclKind::Def, Some(root)) => root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::Value),
-            (DeclKind::Data | DeclKind::Codata | DeclKind::Axiom | DeclKind::AbstractType, None) => true,
+            (DeclKind::Data | DeclKind::Codata | DeclKind::Axiom | DeclKind::LiteralIdentity | DeclKind::AbstractType, None) => true,
             _ => false,
         }
         && match (meta.kind, meta.sealed) {
             (DeclKind::AbstractType, Some((root, _))) => root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::ValueType),
-            (DeclKind::Data | DeclKind::Codata | DeclKind::Def | DeclKind::Axiom, None) => true,
+            (DeclKind::Data | DeclKind::Codata | DeclKind::Def | DeclKind::Axiom | DeclKind::LiteralIdentity, None) => true,
             _ => false,
         }
         && meta.interface.is_none_or(|(relation, reflexivity, law)| matches!(meta.kind, DeclKind::AbstractType)
@@ -2580,6 +2599,7 @@ fn decode_declaration(
     let mut covers = Vec::new();
     let mut stages = crate::stage_signature::StageSignature::default();
     let mut cells = None;
+    let mut identity = None;
     let root_body = match kind {
         DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
@@ -2720,6 +2740,12 @@ fn decode_declaration(
             None
         },
         DeclKind::Axiom => None,
+        // A literal identity test closes with its base's atom byte and its
+        // polarity byte.
+        DeclKind::LiteralIdentity => {
+            identity = Some(decode_identity(reader)?);
+            None
+        },
     };
     Ok(DeclMeta {
         mark,
@@ -2743,7 +2769,54 @@ fn decode_declaration(
         stages,
         rules,
         cells,
+        identity,
     })
+}
+
+/// Decode a literal identity test: its base's atom byte, then its polarity
+/// byte.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: the test the two bytes name, having consumed exactly them.
+/// - provides: syntax only; that the declared type is the one the base gives is
+///   the kernel's admission obligation.
+/// - fails: [`TagSite::IdentityBase`] for a base byte other than the integer
+///   and text atoms, [`TagSite::IdentityPolarity`] for a polarity byte outside
+///   its alphabet, and the reader's truncation refusal.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each base and polarity round-trips; a numeric base and a
+///   third polarity byte refuse at their own sites.
+/// - witness: `encode::tests::a_literal_identity_test_closes_its_segment_with_its_base_and_polarity`
+#[spec(captures: before = reader.position.0, ensures: |ret| ret.is_err() || reader.position.0 == before.saturating_add(2))]
+fn decode_identity(reader: &mut ByteReader<'_>) -> Result<crate::LiteralIdentity, DecodeError>
+{
+    let base = match reader.next_tag()? {
+        tags::BASE_INTEGER => crate::IdentityBase::Integer,
+        tags::BASE_STRING => crate::IdentityBase::Text,
+        other => {
+            return Err(DecodeError::UnknownTag {
+                site: TagSite::IdentityBase,
+                tag: other,
+            });
+        },
+    };
+    let polarity = match reader.next_tag()? {
+        tags::IDENTITY_SAME => crate::Polarity::Same,
+        tags::IDENTITY_DIFFERENT => crate::Polarity::Different,
+        other => {
+            return Err(DecodeError::UnknownTag {
+                site: TagSite::IdentityPolarity,
+                tag: other,
+            });
+        },
+    };
+    Ok(crate::LiteralIdentity::new(base, polarity))
 }
 
 /// Decode one side of a presented rule: a node count, then each node's tag
@@ -4265,7 +4338,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -4282,6 +4355,7 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         | tags::KIND_DEF_RULED
         | tags::KIND_DEF_COVERED => Ok(DeclKind::Def),
         tags::KIND_AXIOM => Ok(DeclKind::Axiom),
+        tags::KIND_LITERAL_IDENTITY => Ok(DeclKind::LiteralIdentity),
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
         // refused.
@@ -5471,6 +5545,7 @@ mod tests
             let kind = match byte {
                 0 | 7 | 9 | 14 | 16 => Ok(super::DeclKind::Def),
                 1 => Ok(super::DeclKind::Axiom),
+                17 => Ok(super::DeclKind::LiteralIdentity),
                 2 | 12 | 15 => Ok(super::DeclKind::AbstractType),
                 3 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::ModuleSig,
@@ -5943,6 +6018,7 @@ mod tests
                     stages: crate::StageSignature::default(),
                     rules: vec![],
                     cells: None,
+                    identity: None,
                 })
                 .collect();
             super::budget_report(&table, &metas, &mut alloc::vec::Vec::new())
@@ -6039,6 +6115,7 @@ mod tests
             stages: crate::StageSignature::default(),
             rules: vec![],
             cells: None,
+            identity: None,
         };
         let metrics = super::budget_report(&table, &[meta], &mut alloc::vec::Vec::new());
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
@@ -6931,6 +7008,7 @@ mod tests
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
+                identity: None,
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -6954,6 +7032,7 @@ mod tests
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
+                identity: None,
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -6980,6 +7059,7 @@ mod tests
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
+                identity: None,
             },
         ];
         let arena_before = table.arena.clone();

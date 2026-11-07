@@ -4379,8 +4379,10 @@ impl Positions
     ///
     /// # Specification
     /// - requires: the environment holds no signature of `primitive` yet.
-    /// - ensures: one checked axiom of `primitive`'s table signature, named
-    ///   after it, at the next kernel position and appended to the exports.
+    /// - ensures: one checked declaration of `primitive`'s table signature,
+    ///   named after it, at the next kernel position and appended to the
+    ///   exports: a literal identity test for a row that is one, which the
+    ///   kernel computes on two literals, and an axiom for every other row.
     ///   Seeded at its first reader, a native signature's position depends on
     ///   the declarations before that reader alone, so a readmission resumed
     ///   past a prefix holds the prefix's positions whatever native operations
@@ -4424,7 +4426,10 @@ impl Positions
             computation = arena.comp_type_arrow(domain, computation);
         }
         let declared = arena.value_type_thunk(computation);
-        let staged = staging.axiom(LevelSignature::monomorphic(), declared);
+        let staged = match primitive.literal_identity() {
+            Some(test) => staging.literal_identity(LevelSignature::monomorphic(), declared, test),
+            None => staging.axiom(LevelSignature::monomorphic(), declared),
+        };
         let name = StructuredName::from(
             primitive
                 .name()
@@ -4558,7 +4563,16 @@ impl Positions
             }
             bodies.push(entry);
         }
-        Unfoldings::new(bodies).presenting(self.presentations.clone())
+        Unfoldings::new(bodies)
+            .presenting(self.presentations.clone())
+            .testing_at(
+                self.native
+                    .iter()
+                    .filter_map(|(primitive, &position)| {
+                        primitive.literal_identity().map(|test| (position, test))
+                    })
+                    .collect(),
+            )
     }
 
     /// The decision the kernel's replay reads for the normaliser's `decision`:

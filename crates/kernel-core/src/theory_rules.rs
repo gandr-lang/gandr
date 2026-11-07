@@ -85,6 +85,7 @@ pub fn admit(
                 DeclarationContent::Codata { .. }
                 | DeclarationContent::Def { .. }
                 | DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
                 | DeclarationContent::AbstractType { .. } => false,
             });
     if !coded || !matches!(arena.value(body), Some(&Value::Constructor { .. })) {
