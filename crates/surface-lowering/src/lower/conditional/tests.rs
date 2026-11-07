@@ -99,11 +99,8 @@ fn an_else_if_tests_its_own_condition_in_the_false_branch()
 #[test]
 fn two_else_if_rungs_lower_as_nested_false_branches_6072()
 {
-    let source = r#"
-def rung(n : Integer) -> -F Integer {
-    if n < 0 { 0 } else if n < 1 { 1 } else if n < 2 { 2 } else { 3 }
-}
-"#;
+    let source =
+        include_str!("tests/fixtures/two-else-if-rungs-lower-as-nested-false-branches-6072.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("rung")));
