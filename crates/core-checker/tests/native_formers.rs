@@ -3503,6 +3503,127 @@ fn a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// #6110: a case on a `Bool`, `Unit + Unit`, and a split of the unit read
+/// their goals at each form, in the checker and in the kernel, with
+/// `Tag(s : Unit + Unit) : Type { Mk : Tag(s) }` at position 0. `mixed(y, v :
+/// Tag(y)) -> Tag(y) { x => v | x => Mk : Tag(inj₁ x) }` at position 1 cases
+/// on the outer `y`: its first arm reads `v` at `Tag(inj₀ x)`, and its second
+/// reads the goal at `Tag(inj₁ x)`. `crossed` at position 2 swaps the arms'
+/// forms and is refused. `outer(y, w : Unit) -> Tag(y)` at position 3 cases on
+/// `y` past `w`, and `split(u : Unit) -> Tag(inj₀ u)` at position 4 reads `u`
+/// as `()`.
+#[test]
+fn a_case_on_an_outer_binder_reads_its_goal_at_each_form_in_both_checkers_6110()
+{
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::ComputationId;
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit_type = arena.value_type_unit();
+    let sum = arena.value_type_sum(&[unit_type, unit_type]);
+    let tags = ConstantIndex::from(0_usize);
+    let family = Declaration::data(
+        tags,
+        DataSignature::new(vec![sum], vec![vec![]], kind).into(),
+        OriginToken::from(0_usize),
+    );
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let unit = arena.value_unit();
+    let tag_at = |arena: &mut CoreArena, summand: usize, payload: ValueId| {
+        let injected = arena.value_injection(gandr_core_term::Summand::from(summand), payload);
+        arena.value_type_data(tags, vec![injected])
+    };
+    let made = |arena: &mut CoreArena, tag: ValueTypeId| {
+        let made = arena.value_constructor(tags, tag, ConstructorTag::from(0_usize), vec![]);
+        arena.computation_return(made)
+    };
+    let function = |arena: &mut CoreArena, body: ComputationId, binders: usize| {
+        let body = (0 .. binders).fold(body, |body, _| arena.computation_lambda(body));
+        arena.value_thunk(body)
+    };
+    // `mixed` and `crossed`: under `y` and `v`, the arm's own binder `x`
+    // puts `v` at index 1 and `y` at index 2.
+    let y = variable(&mut arena, 0);
+    let tag_at_y = arena.value_type_data(tags, vec![y]);
+    let y_past_v = variable(&mut arena, 1);
+    let goal = arena.value_type_data(tags, vec![y_past_v]);
+    let answers = arena.comp_type_returner(goal);
+    let mixed_type = arena.comp_type_pi(tag_at_y, answers);
+    let mixed_type = arena.comp_type_pi(sum, mixed_type);
+    let mixed_type = arena.value_type_thunk(mixed_type);
+    let v = variable(&mut arena, 1);
+    let reads_v = arena.computation_return(v);
+    let x = variable(&mut arena, 0);
+    let at_second = tag_at(&mut arena, 1, x);
+    let makes_second = made(&mut arena, at_second);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_case(scrutinee, &[reads_v, makes_second]);
+    let mixed = function(&mut arena, case, 2);
+    let case = arena.computation_case(scrutinee, &[makes_second, reads_v]);
+    let crossed = function(&mut arena, case, 2);
+    // `outer`: the goal `Tag(y)` reads `y` at index 1, past `w`.
+    let y_past_w = variable(&mut arena, 1);
+    let goal = arena.value_type_data(tags, vec![y_past_w]);
+    let answers = arena.comp_type_returner(goal);
+    let outer_type = arena.comp_type_pi(unit_type, answers);
+    let outer_type = arena.comp_type_pi(sum, outer_type);
+    let outer_type = arena.value_type_thunk(outer_type);
+    let arm = |arena: &mut CoreArena, summand: usize| {
+        let x = variable(arena, 0);
+        let tag = tag_at(arena, summand, x);
+        made(arena, tag)
+    };
+    let arms = [arm(&mut arena, 0), arm(&mut arena, 1)];
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_case(scrutinee, &arms);
+    let outer = function(&mut arena, case, 2);
+    // `split`: the goal `Tag(inj₀ u)` and a body at `Tag(inj₀ ())`.
+    let u = variable(&mut arena, 0);
+    let goal = tag_at(&mut arena, 0, u);
+    let answers = arena.comp_type_returner(goal);
+    let split_type = arena.comp_type_pi(unit_type, answers);
+    let split_type = arena.value_type_thunk(split_type);
+    let at_unit = tag_at(&mut arena, 0, unit);
+    let body = made(&mut arena, at_unit);
+    let scrutinee = variable(&mut arena, 0);
+    let split = arena.computation_split(scrutinee, ComponentCount::default(), body);
+    let split = function(&mut arena, split, 1);
+    let (report, crossed_kernel) = run(&mut arena, &[
+        family,
+        definition(ConstantIndex::from(1_usize), mixed_type, mixed),
+        definition(ConstantIndex::from(2_usize), mixed_type, crossed),
+        definition(ConstantIndex::from(3_usize), outer_type, outer),
+        definition(ConstantIndex::from(4_usize), split_type, split),
+    ]);
+    for (position, what) in [
+        (1, "a later binder and the goal at each arm's injection"),
+        (3, "an outer scrutinee at each arm's injection"),
+        (4, "a split's scrutinee at the unit"),
+    ] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "the checker reads {what}: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed_kernel.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel reads {what}: {:?}",
+            crossed_kernel.readmitted()[position].outcome()
+        );
+    }
+    assert!(
+        !matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "an arm that meets the other injection's goal is refused: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(crossed_kernel.audit().axioms().is_empty());
+}
+
 #[test]
 fn a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483()
 {

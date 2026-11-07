@@ -185,6 +185,58 @@ fn a_presented_constructor_is_set_aside_on_either_side()
     }
 }
 
+/// η relates the unit to a neutral of its type, so the deferring walk sets
+/// the pair aside on either side, the empty record as well, and the replay's
+/// conversion relates it where α-equality does not. Two neutrals still
+/// separate in the walk (#6110).
+#[test]
+fn a_unit_against_a_neutral_is_set_aside_6110()
+{
+    let mut arena = TermArena::new();
+    let unit = arena.value_unit();
+    let record = arena.value_record(alloc::collections::BTreeMap::new());
+    let neutral = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let other = arena.value_variable(DeBruijnIndex::from(1_u32));
+    for (left, right) in [
+        (unit, neutral),
+        (neutral, unit),
+        (record, neutral),
+        (neutral, record),
+    ] {
+        let mut pending = alloc::vec::Vec::new();
+        assert_eq!(
+            super::pending_endpoints(
+                &arena,
+                &crate::presented::FREE,
+                ConversionGoal::Value(left, right),
+                &mut pending
+            ),
+            Convertibility::Convertible
+        );
+        assert_eq!(pending, [super::SetAside::Values(left, right)]);
+        assert_eq!(
+            super::equal_values(&arena, left, right),
+            Convertibility::Distinct
+        );
+        assert_eq!(
+            super::convert_values(&mut arena, &crate::presented::FREE, left, right),
+            Convertibility::Convertible,
+            "the replay relates the pair by η"
+        );
+    }
+    let mut pending = alloc::vec::Vec::new();
+    assert_eq!(
+        super::pending_endpoints(
+            &arena,
+            &crate::presented::FREE,
+            ConversionGoal::Value(neutral, other),
+            &mut pending
+        ),
+        Convertibility::Distinct
+    );
+    assert!(pending.is_empty());
+}
+
 #[test]
 fn a_decode_of_a_returned_code_is_set_aside_against_another_former()
 {

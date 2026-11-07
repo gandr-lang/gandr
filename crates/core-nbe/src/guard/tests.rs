@@ -50,7 +50,7 @@ fn equal_content_folds_to_one_word()
         "equal content folds to one word wherever it is minted"
     );
     assert!(
-        matches!(first, Guard::Rigid(_)),
+        matches!(first, Guard::Rigid(..)),
         "and content with no closure inside is rigid"
     );
     let two = Guard::compose(GuardTag::Literal, &integer(String::from("2")), &[]);
@@ -116,6 +116,35 @@ fn only_two_rigid_words_that_differ_are_apart()
             assert_eq!(answer, left.settles(right));
         }
     }
+}
+
+/// η relates the unit to a neutral of its type, so a unit and a neutral, at
+/// the root or inside one former, settle nothing. A unit stays apart from a
+/// pair, and an injection of it from one at another tag (#6110).
+#[test]
+fn a_unit_and_a_neutral_are_never_apart_6110()
+{
+    let unit = Guard::compose(GuardTag::Tuple, &0_usize, &[]);
+    let empty = Guard::compose(GuardTag::Record, &0_usize, &[]);
+    let variable = Guard::compose(GuardTag::Variable, &0_u32, &[]);
+    let neutral = Guard::compose(GuardTag::ValueNeutral, &(), &[variable]);
+    for (one, other) in [(unit, neutral), (empty, neutral)] {
+        assert_eq!(GuardAnswer::Inconclusive, one.settles(other));
+        assert_eq!(GuardAnswer::Inconclusive, other.settles(one));
+    }
+    let injected = |tag: usize, word: Guard| Guard::compose(GuardTag::Injection, &tag, &[word]);
+    assert_eq!(
+        GuardAnswer::Inconclusive,
+        injected(0, unit).settles(injected(0, neutral)),
+        "inside one former too"
+    );
+    let pair = Guard::compose(GuardTag::Tuple, &2_usize, &[unit, unit]);
+    assert_eq!(GuardAnswer::Apart, unit.settles(pair));
+    assert_eq!(
+        GuardAnswer::Apart,
+        injected(0, unit).settles(injected(1, unit)),
+        "`true` against `false` keeps its constant-time answer"
+    );
 }
 
 #[test]
