@@ -2036,6 +2036,15 @@ description = "A restored build state dates only the sources it was built from t
 tools.jq = "1.8.1"
 run = ".config/build-state/restamp.bash"
 
+# The records a pull request's recovery sweep holds (#5864):
+# `.config/recovery/change-cases.bash` commits each shape of a change in a
+# scratch repository and runs `ci:recovery-change` over it, `ci:recovery`
+# stubbed: one source, a new source and an edited record, a strict source,
+# the parser, a renamed source, and no source at all.
+["check:recovery-change"]
+description = "A pull request's recovery sweep holds the records its change touches, and every record for the parser or a removed source"
+run = ".config/recovery/change-cases.bash"
+
 # The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
 # job that starts the CI image, restores no build state and so is a step of
 # `reports`, a `reports` step a failure before it would hide, and a step after
