@@ -1,0 +1,25 @@
+// A model does not reach a function through its theory's value, nor an inert
+// field outside the manifest step.
+//
+// A generic encoder over a module needs the type of a model from the value of
+// its theory. It also reads every field of the model.
+//
+// `Model` reads the name of a theory, so a `Theory` variable names no model
+// type. Only the manifest step reads an inert field of a model.
+//
+// - see: #4730
+// - see: #6046 — what a generic encoder over a module needs
+// - see: `../../model/desc/module-reflection.gandr` — what reaches a module
+import std.build (Gandr);
+import std.string (concat);
+
+/// An encoder for the model of any theory. `Model(T)` over the variable `T`
+/// is refused, because `Model` reads a theory's name and not a value.
+@[ refuses("UnresolvedTypeHead") ]
+def encodeAny(T : Theory, m : Model(T)) -> String = "";
+
+/// The `[package]` lines of a model. `name` and `version` are inert, so this
+/// function is refused at its first read of them.
+@[ refuses("InertRead") ]
+def manifest(m : Model(Gandr.Package)) -> String =
+  concat (concat "name = " m.name) (concat "\nversion = " m.version)
