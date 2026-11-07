@@ -152,19 +152,6 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ModelIndex(pub usize);
 
-impl From<ModelIndex> for usize
-{
-    /// The place as a count of the models before it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(index: ModelIndex) -> Self
-    {
-        index.0
-    }
-}
-
 /// A type family member's place in the collection's family list.
 ///
 /// # Specification
@@ -193,19 +180,6 @@ impl From<FamilyIndex> for usize
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ParameterList(pub usize);
-
-impl From<ParameterList> for usize
-{
-    /// The place as a count of the lists before it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(index: ParameterList) -> Self
-    {
-        index.0
-    }
-}
 
 /// One component of a derived model signature: the model and the
 /// component's place in it.
