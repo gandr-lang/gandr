@@ -450,15 +450,17 @@ impl Refinement
     /// - requires: the step `premise` concludes the current enclosure.
     /// - ensures: the step is [`Step::Split`] at the point of `split`, on the
     ///   side its cut holds of. A point that is the root itself gives way to
-    ///   the point of the lower half. The new end replaces the old end of its
-    ///   side, so the enclosure narrows.
+    ///   the point of the wider half, and of the lower half when the halves are
+    ///   alike. A policy that takes the root again then narrows both ends in
+    ///   turn. The new end replaces the old end of its side, so the enclosure
+    ///   narrows.
     /// - fails: refuses a point wider than the quota as
     ///   [`CertificateCheck::WidthQuota`].
     /// - panics: none.
     /// - executable: none — the clause speaks of the cut that the step replays
     ///   against.
-    /// - intension: two exact additions, two exact halvings and at most two
-    ///   exact squares.
+    /// - intension: two exact additions, two exact halvings, at most two exact
+    ///   squares, and two exact subtractions when the point is the root.
     ///
     /// # Errors
     /// - [`CertificateCheck::WidthQuota`]: a point is too wide.
@@ -482,7 +484,16 @@ impl Refinement
         let (point, side) = match membership(&middle, &self.radicand)? {
             Membership::Lower => (middle, Side::Lower),
             Membership::Upper => (middle, Side::Upper),
-            Membership::Root => (split.point(&self.lower, &middle)?, Side::Lower),
+            Membership::Root => {
+                let below = exact(middle.sub(&self.lower, Precision::MAX, Rounding::Floor))?;
+                let above = exact(self.upper.sub(&middle, Precision::MAX, Rounding::Floor))?;
+                if above > below {
+                    (split.point(&middle, &self.upper)?, Side::Upper)
+                }
+                else {
+                    (split.point(&self.lower, &middle)?, Side::Lower)
+                }
+            },
         };
         match side {
             Side::Lower => self.lower = point.clone(),
