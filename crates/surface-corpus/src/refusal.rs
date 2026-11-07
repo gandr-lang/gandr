@@ -2819,13 +2819,19 @@ impl Refusal<'_>
         RefusalName::UnexportedName) | (LoweringRefusal::ShadowedBuiltin { .. },
         RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
         RefusalName::OutOfFragment(_)) | (LoweringRefusal::BareFeedback { .. },
-        RefusalName::BareFeedback) | (LoweringRefusal::IllFormedDescription { .. },
-        RefusalName::IllFormedDescription) | (LoweringRefusal::GradedBridge { .. },
-        RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
-        RefusalName::MalformedLiteral) | (LoweringRefusal::NoUniverseAbove { .. },
-        RefusalName::NoUniverseAbove) | (LoweringRefusal::MalformedForm { .. },
-        RefusalName::MalformedForm) | (LoweringRefusal::UnknownAttribute { .. },
-        RefusalName::UnknownAttribute) | (LoweringRefusal::DuplicateAttribute { .. },
+        RefusalName::BareFeedback) | (LoweringRefusal::IllFormedDescription {
+            kind: gandr_surface_lowering::WfKind::CyclicCircuitWiring
+                | gandr_surface_lowering::WfKind::CircuitDerivationBudget
+                | gandr_surface_lowering::WfKind::SplitCircuitOutputs
+                | gandr_surface_lowering::WfKind::SharedCircuitPort,
+            ..
+        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm) | (
+        LoweringRefusal::IllFormedDescription { .. }, RefusalName::IllFormedDescription) | (
+        LoweringRefusal::GradedBridge { .. }, RefusalName::GradedBridge) | (
+        LoweringRefusal::MalformedLiteral { .. }, RefusalName::MalformedLiteral) | (
+        LoweringRefusal::NoUniverseAbove { .. }, RefusalName::NoUniverseAbove) | (
+        LoweringRefusal::UnknownAttribute { .. }, RefusalName::UnknownAttribute) | (
+        LoweringRefusal::DuplicateAttribute { .. },
         RefusalName::DuplicateAttribute) | (LoweringRefusal::MissingPayload { .. },
         RefusalName::MissingPayload) | (LoweringRefusal::NonValuePayload { .. },
         RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
@@ -2928,11 +2934,19 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             ..
         } => RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary))),
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
+        LoweringRefusal::IllFormedDescription {
+            kind:
+                gandr_surface_lowering::WfKind::CyclicCircuitWiring
+                | gandr_surface_lowering::WfKind::CircuitDerivationBudget
+                | gandr_surface_lowering::WfKind::SplitCircuitOutputs
+                | gandr_surface_lowering::WfKind::SharedCircuitPort,
+            ..
+        }
+        | LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         LoweringRefusal::IllFormedDescription { .. } => RefusalName::IllFormedDescription,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
         LoweringRefusal::NoUniverseAbove { .. } => RefusalName::NoUniverseAbove,
-        LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         LoweringRefusal::UnknownAttribute { .. } => RefusalName::UnknownAttribute,
         LoweringRefusal::DuplicateAttribute { .. } => RefusalName::DuplicateAttribute,
         LoweringRefusal::MissingPayload { .. } => RefusalName::MissingPayload,
