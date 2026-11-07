@@ -14,6 +14,7 @@
 #   dirty      it conflicts with its base;
 #   red        a required context failed on its head (`required.jq`);
 #   dequeued   the merge queue removed it and its head has not moved since;
+#   unrun      its head has no `CI` run (`unrun`, #6164);
 #   green      every required context passed;
 #   pending    otherwise.
 # A seat is told by a comment carrying the mark `<event>:<head>`, once per
@@ -43,6 +44,14 @@
 #   `pr-green`, its seat to land it, and a dequeued pull request is told
 #   `pr-dequeued`.
 #
+# GitHub starts no `CI` run for a push that reaches a pull request while it
+# conflicts with its base, and none for a base edit, which it sends as
+# `edited` (#6164). Such a head waits on required contexts that never start,
+# so nothing lands it, and its stack waits above it. With the token, an unrun
+# pull request is closed and reopened, and `reopened` starts `CI`, once per
+# head (`pr-rerun`). Without the token, its seat is told `pr-unrun`, once per
+# head.
+#
 # Input: an object with
 #   token  whether the watcher holds a token that may queue;
 #   prs    the open pull requests, drafts left out, each
@@ -55,7 +64,8 @@
 #          …) or "", `stranded` whether the last change of its base is a
 #          failed automatic change from the base it still has, `upstream`
 #          the subjects described below, `marks` the `<event>:<head>` marks
-#          its comments carry.
+#          its comments carry, `unrun` whether its head has no `CI` run and
+#          is older than the margin `read_prs` allows a new head.
 #
 #   A removal for `failed_checks` is the entry's own run failing: the
 #   enforcing lane runs only in the merge group, so the pull request's own
@@ -69,14 +79,16 @@
 #
 # Output: the actions, by pull request number, each `{number, act}` with `act`
 # one of `land` (with `told`), `restack` (with `told`), `retarget` (with
-# `told`), `green`, `dirty`, `red` (with `failed`, the contexts) or
-# `dequeued` (with `upstream` when it holds such commits).
+# `told`), `green`, `dirty`, `red` (with `failed`, the contexts),
+# `dequeued` (with `upstream` when it holds such commits), `rerun` or
+# `unrun`.
 
 def key: if .stack == null then "#\(.number)" else "stack \(.stack)" end;
 def state:
   if .merge == "DIRTY" then "dirty"
   elif (.reading.failed // []) != [] then "red"
   elif .removed then "dequeued"
+  elif .unrun then "unrun"
   elif (.reading.pending // ["unread"]) == [] then "green"
   else "pending"
   end;
@@ -98,6 +110,11 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
         elif marked("pr-dequeued") then empty
         elif (.upstream // []) != [] then {number, act: "dequeued", upstream}
         else {number, act: "dequeued"}
+        end
+      elif .state == "unrun" then
+        if marked("pr-rerun") or marked("pr-unrun") then empty
+        elif $token then {number, act: "rerun"}
+        else {number, act: "unrun"}
         end
       elif .state == "green" and all($members[]; .state != "dequeued") then
         if $token then {number, act: "land", key: key, told: marked("pr-dequeued")}
