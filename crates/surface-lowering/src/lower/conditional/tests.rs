@@ -96,6 +96,36 @@ fn an_else_if_tests_its_own_condition_in_the_false_branch()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+#[test]
+fn two_else_if_rungs_lower_as_nested_false_branches_6072()
+{
+    let source =
+        include_str!("tests/fixtures/two-else-if-rungs-lower-as-nested-false-branches-6072.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("rung")));
+    let Some([_, second]) = branches(&arena, tail, Tested::Bound)
+    else {
+        panic!(
+            "`rung` cases on its first condition: {:?}",
+            arena.computation(tail)
+        );
+    };
+    let Some([_, third]) = branches(&arena, second, Tested::Bound)
+    else {
+        panic!(
+            "the first false branch cases on the second condition: {:?}",
+            arena.computation(second)
+        );
+    };
+    assert!(
+        branches(&arena, third, Tested::Bound).is_some(),
+        "the second false branch cases on the third condition: {:?}",
+        arena.computation(third)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #2089: an `if` that writes its answer has its case ascribed that answer,
 /// so it synthesises where nothing states its type, as the computation a
 /// `let` binds; one that writes none leaves its case bare.
