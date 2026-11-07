@@ -454,6 +454,7 @@ fn statements_decide_by_the_engine_and_replay()
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => None,
         })
         .collect();

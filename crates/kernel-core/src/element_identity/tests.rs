@@ -2085,6 +2085,7 @@ fn readmit(artifact: &DecodedArtifact) -> Result<Environment, KernelError>
                 .relating(marked.declaration().related().to_vec()),
             DeclarationContent::Axiom { declared } => staging.axiom(levels, declared),
             DeclarationContent::Data { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::AbstractType { .. } => {
                 panic!("the fixture holds definitions and axioms")
@@ -2149,6 +2150,7 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
         })
         .collect();

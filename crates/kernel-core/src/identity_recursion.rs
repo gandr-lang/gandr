@@ -528,7 +528,8 @@ impl<'entries> Interfaces<'entries>
             | DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
-            | DeclarationContent::Axiom { .. } => None,
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. } => None,
         }
     }
 }

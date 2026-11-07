@@ -1418,20 +1418,20 @@ fn a_module_head_and_a_declaration_head_read_back_alike()
     }
 }
 
-/// A native call stands on its operation, closed literals included, and reads
-/// back as the operation's thunk forced and applied to its arguments in order:
-/// the normaliser runs no native operation (#2378).
+/// A native call other than a literal identity test stands on its operation,
+/// closed literals included, and reads back as the operation's thunk forced
+/// and applied to its arguments in order (#2378).
 #[test]
 fn a_primitive_head_reads_back_as_its_thunk_2378()
 {
     use gandr_core_term::primitive::Arguments;
     use gandr_core_term::primitive::PRELUDE;
     let mut core = CoreArena::new();
-    let int_eq = PRELUDE
+    let int_lt = PRELUDE
         .iter()
         .copied()
-        .find(|primitive| primitive.name().as_ref() == "int.eq")
-        .expect("the prelude holds int.eq");
+        .find(|primitive| primitive.name().as_ref() == "int.lt")
+        .expect("the prelude holds int.lt");
     let [zero, one] = ["0", "1"].map(|digits| {
         let magnitude = Magnitude::from_decimal_text(alloc::string::String::from(digits))
             .expect("decimal digits");
@@ -1440,7 +1440,7 @@ fn a_primitive_head_reads_back_as_its_thunk_2378()
             magnitude,
         )))
     });
-    let call = core.computation_primitive(int_eq, Arguments::Binary([zero, one]));
+    let call = core.computation_primitive(int_lt, Arguments::Binary([zero, one]));
 
     let (chain, environment) = nothing_unfolds();
     let scope = environment.root();
@@ -1454,7 +1454,7 @@ fn a_primitive_head_reads_back_as_its_thunk_2378()
     };
     let held = domain.neutral(neutral).expect("its neutral resolves");
     assert_eq!(
-        NeutralHead::Primitive(int_eq),
+        NeutralHead::Primitive(int_lt),
         held.head(),
         "the call is stuck on its operation"
     );
@@ -1492,7 +1492,7 @@ fn a_primitive_head_reads_back_as_its_thunk_2378()
     assert!(
         matches!(
             core.value(operation),
-            Some(&Value::Primitive { primitive, .. }) if primitive == int_eq
+            Some(&Value::Primitive { primitive, .. }) if primitive == int_lt
         ),
         "the head reads back as the operation's thunk"
     );

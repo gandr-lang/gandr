@@ -483,9 +483,11 @@ impl From<ParameterCount> for u32
     }
 }
 
-/// The definitions a replay may unfold, by admission position, the presented
-/// types whose terms it rewrites, and the relations lawful atoms read their
-/// identities as.
+/// The rules a replay may fire, by admission position.
+///
+/// They are the definitions it may unfold, the presented types whose terms it
+/// rewrites, the relations lawful atoms read their identities as, and the
+/// literal identity tests it computes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Unfoldings
 {
@@ -495,6 +497,9 @@ pub struct Unfoldings
     presentations: crate::presented::Presentations,
     /// The relation of each lawful atom, at its admission position.
     identities: BTreeMap<ConstantIndex, ValueId>,
+    /// The test of each literal identity declaration, at its admission
+    /// position.
+    tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
     /// The fixpoint each ruled definition's body thunks, in ascending order.
     /// Admission decided that the rules of the definition terminate and that
     /// the fixpoint is their decision tree, so its recursion terminates.
@@ -534,6 +539,7 @@ impl Unfoldings
             bodies,
             presentations: crate::presented::Presentations::default(),
             identities: BTreeMap::new(),
+            tests: BTreeMap::new(),
             terminating: Vec::new(),
         }
     }
@@ -623,6 +629,104 @@ impl Unfoldings
     ) -> Option<ValueId>
     {
         self.identities.get(&atom).copied()
+    }
+
+    /// These unfoldings, the replay computing every literal identity test
+    /// among `entries` on two literals.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in.
+    /// - ensures: [`Self::literal_identity`] answers the test of each literal
+    ///   identity declaration among `entries`, at its admission position, and
+    ///   nothing at any other position.
+    /// - provides: where the reduction computes a test forced and applied to
+    ///   two literals.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a test applied to two literals reduces to its answer
+    ///   with the table, and stays stuck without it.
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[inline]
+    #[must_use]
+    pub fn testing(
+        self,
+        entries: &crate::env::Entries,
+    ) -> Self
+    {
+        let mut tests = BTreeMap::new();
+        for (position, entry) in entries.iter().enumerate() {
+            if let gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } =
+                *entry.content()
+            {
+                let _previous = tests.insert(ConstantIndex::from(position), test);
+            }
+        }
+        Self { tests, ..self }
+    }
+
+    /// These unfoldings, the replay computing the test each position of
+    /// `tests` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn testing_at(
+        self,
+        tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
+    ) -> Self
+    {
+        Self { tests, ..self }
+    }
+
+    /// The literal identity test the constant at `constant` computes, when it
+    /// is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<gandr_kernel_term::LiteralIdentity>
+    {
+        self.tests.get(&constant).copied()
+    }
+
+    /// The rules of these unfoldings that no choice stands behind: the
+    /// presented types' rewriting and the literal identity tests, with no
+    /// definition to unfold.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same presentations and tests, every constant opaque, and
+    ///   no lawful atom or ruled fixpoint. The clause checks the count of tests
+    ///   and the empty bodies; the equality of the two tables stays prose-only,
+    ///   since comparing them walks both.
+    /// - provides: the table the kernel's own conversion fires unread.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the kernel's own conversion relates a test applied to
+    ///   two literals to its answer.
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[spec(ensures: |ret| ret.tests.len() == self.tests.len() && ret.bodies.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn forced(&self) -> Self
+    {
+        Self {
+            presentations: self.presentations.clone(),
+            tests: self.tests.clone(),
+            ..Self::default()
+        }
     }
 
     /// These unfoldings, the replay reading the fixpoint each ruled
@@ -1402,7 +1506,7 @@ pub fn convert(
 {
     let (left, right) = terms(sides);
     let watermark = arena.watermark();
-    let rules = Unfoldings::default().presenting(unfoldings.presentations().clone());
+    let rules = unfoldings.forced();
     let mut run = Replay {
         arena,
         unfoldings: &rules,
@@ -3256,7 +3360,7 @@ where
     ) -> Result<Convertibility, Stop>
     {
         let watermark = self.arena.watermark();
-        let rules = Unfoldings::default().presenting(self.unfoldings.presentations().clone());
+        let rules = self.unfoldings.forced();
         let mut run = Replay {
             arena: &mut *self.arena,
             unfoldings: &rules,
@@ -8215,6 +8319,49 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             match self.arena.value(read.node) {
                                 Some(&Value::Thunk(body)) => {
                                     focus = read.with(body);
+                                    progress = Progress::Reduced;
+                                },
+                                // A literal identity test forced and applied to
+                                // two literals of its base answers as the
+                                // checker's evaluator does: the left summand of
+                                // `1 + 1` when it holds, the right when not.
+                                Some(&Value::Constant(constant)) => {
+                                    let answered = self
+                                        .unfoldings
+                                        .literal_identity(constant)
+                                        .and_then(|test| {
+                                            let [.., ref second, ref first] = *frames.as_slice()
+                                            else {
+                                                return None;
+                                            };
+                                            let (Frame::Apply(left), Frame::Apply(right)) =
+                                                (first.node, second.node)
+                                            else {
+                                                return None;
+                                            };
+                                            let left = cells.resolve(self.arena, first.with(left));
+                                            let right =
+                                                cells.resolve(self.arena, second.with(right));
+                                            match (
+                                                self.arena.value(left.node),
+                                                self.arena.value(right.node),
+                                            ) {
+                                                (
+                                                    Some(&Value::Literal(ref left)),
+                                                    Some(&Value::Literal(ref right)),
+                                                ) => test.answer(left, right),
+                                                _ => None,
+                                            }
+                                        });
+                                    let Some(summand) = answered
+                                    else {
+                                        break;
+                                    };
+                                    frames.truncate(frames.len().saturating_sub(2));
+                                    let unit = self.arena.value_unit();
+                                    let injected = self.arena.value_injection(summand, unit);
+                                    focus =
+                                        Closure::closed(self.arena.computation_return(injected));
                                     progress = Progress::Reduced;
                                 },
                                 Some(_) => break,

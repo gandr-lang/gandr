@@ -249,6 +249,67 @@ fn a_string_equality_compares_the_texts_byte_for_byte()
 }
 
 #[test]
+fn an_identity_row_answers_as_its_evaluation()
+{
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let integers: Vec<Scalar> = [
+        "0",
+        "-0",
+        "1",
+        "-1",
+        "99999999999999999999",
+        "-99999999999999999999",
+    ]
+    .into_iter()
+    .map(|digits| integer(Digits(digits)))
+    .collect();
+    let texts: Vec<Scalar> = ["", "a", "machine", "machines", "é", "e\u{301}"]
+        .into_iter()
+        .map(text)
+        .collect();
+    let literal = |scalar: &Scalar| match *scalar {
+        Scalar::Integer(ref integer) => Literal::Integer(integer.clone()),
+        Scalar::Text(ref text) => Literal::Text(text.clone()),
+        Scalar::Boolean(_) | Scalar::Float64(_) | Scalar::Fixed(_) => {
+            panic!("the fixtures are integers and texts")
+        },
+    };
+    let operands: Vec<&Scalar> = integers.iter().chain(&texts).collect();
+    let mut tests = Vec::new();
+    for row in PRELUDE.iter().copied() {
+        let Some(test) = row.literal_identity()
+        else {
+            continue;
+        };
+        let name = String::from(row.name().as_ref());
+        for &left in &operands {
+            for &right in &operands {
+                let evaluated = row.evaluate(&[left.borrowed(), right.borrowed()]);
+                let answered = test.answer(&literal(left), &literal(right));
+                match (evaluated, answered) {
+                    (Ok(Scalar::Boolean(side)), Some(summand)) => assert_eq!(
+                        summand,
+                        Summand::from(usize::from(side == Side::Right)),
+                        "{name} at {left:?} and {right:?}"
+                    ),
+                    (Err(PrimitiveError::ArgumentType), None) => {},
+                    (evaluated, answered) => panic!(
+                        "{name} at {left:?} and {right:?}: evaluated {evaluated:?}, answered {answered:?}"
+                    ),
+                }
+            }
+        }
+        tests.push(name);
+    }
+    tests.sort_unstable();
+    assert_eq!(
+        tests,
+        ["eq", "int.eq", "ne", "string.eq"],
+        "the identity rows are integer and text equality and integer inequality"
+    );
+}
+
+#[test]
 fn a_string_order_compares_the_texts_byte_for_byte()
 {
     let below = named(PrimitiveName("string.lt"));
