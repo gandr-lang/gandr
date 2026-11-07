@@ -2,6 +2,8 @@
 //!
 //! The declarations provide the circle, its loop words, and
 //! their integer model.
+//! Winding and spinning follow the HoTT book's § 8.1. The circle follows
+//! cubical Agda's `Cubical/HITs/S1/Base.agda`.
 //!
 //! Each subject source imports these declarations to state its own law.
 //! The checker evaluates their rules and path operations.

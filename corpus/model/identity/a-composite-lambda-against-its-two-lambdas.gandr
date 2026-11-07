@@ -2,6 +2,8 @@
 ///
 /// The two lambda bodies return the same path for each argument.
 /// A bind over the inner composite reads its endpoint.
+/// A transport that sticks on `g` returns the value that it moves, at any path.
+/// So the bind is the transport along `h` at that endpoint.
 ///
 /// The kernel evaluates the composite calls inside the action motive.
 /// The two codes then compare by the same path rules.

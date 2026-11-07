@@ -6,6 +6,9 @@
 ///
 /// The machine evaluates the call where the type reads it.
 /// The kernel repeats that endpoint comparison.
+/// At a stuck call, the type of `concat` reads the endpoint through the
+/// environment that its call binds. The type written with `Path.step` writes
+/// the call in place.
 ///
 /// - see: #4038 — stuck endpoints
 /// - see: #4005 — returned endpoints

@@ -5,6 +5,7 @@
 ///
 /// The conversion walk substitutes the call argument into the lambda body.
 /// The kernel checks each composite by its own reading.
+/// Two composites written apart meet part by part.
 ///
 /// - see: #4073 — stated lambda application
 /// - see: #4065 — call arguments

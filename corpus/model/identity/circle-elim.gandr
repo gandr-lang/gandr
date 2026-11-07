@@ -5,6 +5,9 @@
 ///
 /// The checker reads each path type from the words of its operation.
 /// Transport computes by the family that contains the point.
+/// In a family of paths, transport composes on the side where the endpoint
+/// varies. In a constant family it is the identity. Through a map, it is the
+/// map's image of the word.
 ///
 /// - see: corpus/model/identity/circle-base.gandr
 

@@ -6,6 +6,7 @@
 ///
 /// The checker evaluates pure calls in the types that it checks.
 /// The kernel replays each declaration at its evaluated form.
+/// The instantiated type reads a stuck argument as the stated type writes it.
 ///
 /// - see: #4065 — the checker refused a stuck call passed to a parameter
 /// - see: #4038 — a composite by a definition over stuck endpoints
