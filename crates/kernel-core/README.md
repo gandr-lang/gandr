@@ -29,9 +29,9 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **The checking machine.** `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`; only `Environment` admits.
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
-- **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, a refused trace's `ReplayRefusal` classed by `RefusalClass`; `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
+- **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` (the classes are in [`replay`](src/replay.rs)); `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
 - **The descent skeleton.** `Descent` and `descent::replay`: one replay for a conversion trace and a guarded family with its rows.
-- **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`: `Flow`, `stay`, `then`, `ride` and its telescope form, with forward, function and session certificates replayed on readmission), all through ordinary admission.
+- **Native formers.** Nominal data and structural records, recursive data with the structural fixpoint, the native List former, universe paths, session codes, element and function identity and the bridge (`element_identity`), and the directed family (`flow_universe`), whose certificates replay on readmission, all through ordinary admission.
 - **Rule languages beside admission.** Identity and bridge recursion (`identity_recursion`), guarded higher fields (`higher_field`), the experimental stage universe (`stage`) and guarded admission of staging-equation families (`admission`); none of them admits a declaration on its own authority.
 - **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
@@ -43,7 +43,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it.
 - **Receipt scope.** A `CheckedId` names a position, not an environment identity. Use it only with the corresponding admission history.
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, and `audit` reports every declaration that rests on it.
-- **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal. Two stuck eliminations' motives are the exception: the replay reads their endpoints by its own reduction.
+- **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal. [`replay`](src/replay.rs) states the one exception.
 
 ## Examples
 
@@ -65,7 +65,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The four decisions, the memo's binding conditions and collapse law, arithmetic and absence, specification boundaries | [`src/lib.rs`](src/lib.rs) |
 | The checking machine, its correspondence table, universes and the lift, static operators, the native List | [`src/check.rs`](src/check.rs) |
 | Nominal data and records; accessibility under the stage order; the structural fixpoint typed by stages | [`src/check/former.rs`](src/check/former.rs), [`src/check/occurrence.rs`](src/check/occurrence.rs), [`src/check/recursion.rs`](src/check/recursion.rs), [`src/stage_order.rs`](src/stage_order.rs) |
-| Admission, staging order, the audit, replay | [`src/env.rs`](src/env.rs) |
+| Admission, staging order, the audit, replay; each role's holder | [`src/env.rs`](src/env.rs), [`src/builtin.rs`](src/builtin.rs) |
 | The seal rule: a manifest atom read as its representation | [`src/seal.rs`](src/seal.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |
 | Conversion replay, its decisions and laws | [`src/replay.rs`](src/replay.rs) |
@@ -96,6 +96,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — § 5's `var`, `split` and `compose`, which the replay walks.
 - `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design (§ coverage-evidence-form) — the derivation that the kernel replays step by step.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the field label on each refusal of a patched type's replayed formation.
+- `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2, whose holders the kernel validates.
 
 ## License
 

@@ -391,6 +391,42 @@ impl StagedDeclaration
         }
     }
 
+    /// This staged data declaration or definition holding the built-in
+    /// `role`, its content start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the choke point validates the holder against the
+    ///   role's canonical form.
+    /// - ensures: the declaration as [`Declaration::held`] leaves it, at the
+    ///   same content start: a data declaration or a definition holds exactly
+    ///   `role`, any other declaration is unchanged.
+    /// - provides: how a producer attaches a role before offering the
+    ///   declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a canonical holder admits with its role, and a
+    ///   departing one is refused at its departure.
+    /// - witness: `builtin::tests::a_role_s_holder_is_admitted_in_its_canonical_form_5304`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. } | DeclarationContent::Data { .. }), self.declaration.role()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.role() == if entry.1 { Maybe::Present(role) } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn held(
+        self,
+        role: gandr_kernel_term::Builtin,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.held(role),
+            ..self
+        }
+    }
+
     /// This staged data declaration carrying `presentation` as the rules
     /// rewriting its constructor terms, its content start and content
     /// unchanged.
