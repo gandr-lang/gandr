@@ -20,13 +20,19 @@ set -euo pipefail
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
+# shellcheck source=sweep.bash
+source "$pr_stack_dir/sweep.bash"
+# shellcheck source=landed-heads.bash
+source "$pr_stack_dir/landed-heads.bash"
 token=${LANDING_TOKEN_HELD:-false}
 # The CI workflow, which `landing.yml` runs on and the depth gate cancels:
 # the `name` of `.github/workflows/ci.yml`.
 ci_workflow=CI
 
 # The open pull requests, held ones left out (a draft, or the owner's
-# `hold:owner`, #3253), as `landing.jq` reads them.
+# `hold:owner`, #3253), as `landing.jq` reads them. The head and base of
+# every open pull request, held ones too, go to the file `$used_refs`, one a
+# line: the landed heads the watcher deletes are never one of them (#6185).
 read_prs() {
   local pr number head base upstream rollup gated
   gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query='
@@ -50,8 +56,10 @@ read_prs() {
           }
         }
       }
-    }' --jq '.data.repository.pullRequests.nodes[] | select((.isDraft or any(.labels.nodes[]; .name == "hold:owner")) | not)' \
+    }' --jq '.data.repository.pullRequests.nodes[]' \
     | while IFS= read -r pr; do
+        jq -r '.headRefName, .baseRefName' <<< "$pr" >> "${used_refs:-/dev/null}"
+        if jq -e '.isDraft or any(.labels.nodes[]; .name == "hold:owner")' <<< "$pr" > /dev/null; then continue; fi
         number=$(jq -r .number <<< "$pr")
         head=$(jq -r .headRefOid <<< "$pr")
         # A dequeued head GitHub would rebase: the commits its base already
@@ -277,6 +285,7 @@ required=$(required_contexts)
 # endpoint and printed last, so a costly run shows in its own log.
 spent_before=$(command gh api rate_limit --jq .resources.graphql.used 2> /dev/null) || spent_before=
 trap 'if [[ -n $spent_before ]] && spent_after=$(command gh api rate_limit --jq .resources.graphql.used 2> /dev/null); then echo "landing: $((spent_after - spent_before)) GraphQL points this run"; fi' EXIT
+used_refs=$(mktemp)
 prs=$(read_prs)
 actions=$(jq -c --argjson token "$token" '{token: $token, prs: .}' <<< "$prs" | jq -c -f "$pr_stack_dir/landing.jq")
 err=$(mktemp)
@@ -302,3 +311,22 @@ while read -r number oid; do
     echo "::warning::#$number: the rerun of CI run $run failed: $(< "$err")"
   fi
 done < <(jq -r --argjson limit "$limit" '.[] | select(.waiting and .depth <= $limit) | "\(.number) \(.oid)"' <<< "$prs")
+
+# The landed heads no open pull request uses (#6185): GitHub keeps a stack
+# member's branch while the member above has it as its base, and a branch a
+# seat pushed with no pull request after its commits land elsewhere. One read
+# of the remote heads over git, no GitHub API call, and one push that deletes
+# the landed ones, each under a lease on the head as read. The checkout's own
+# credential reads only, so the push carries `GH_TOKEN`, which may write
+# contents. `LANDING_HEADS_DRY=true` prints the deletions and pushes nothing.
+git fetch --quiet --no-tags origin "$trunk" || echo "::warning::fetching $trunk failed; the heads are read against the checkout's $trunk"
+heads=$(branch_reading origin "origin/$trunk" "$used_refs" "${kept_branches[@]}") || heads='[]'
+jq -r '.[] | select(.action == "delete") | "delete \(.name) at \(.oid[0:9]): \(.reason)"' <<< "$heads"
+if [[ ${LANDING_HEADS_DRY:-false} != true ]] && jq -e 'any(.[]; .action == "delete")' <<< "$heads" > /dev/null; then
+  auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+  if ! GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0= \
+    GIT_CONFIG_KEY_1=http.https://github.com/.extraheader GIT_CONFIG_VALUE_1="AUTHORIZATION: basic $auth" \
+    branch_delete origin "$heads"; then
+    echo "::warning::the push that deletes the landed heads was refused in part; the next run reads them again"
+  fi
+fi
