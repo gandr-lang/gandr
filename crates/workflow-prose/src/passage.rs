@@ -99,8 +99,8 @@ pub enum Opened
 /// The opening comment run of a corpus source.
 ///
 /// # Specification
-/// - provides: the paragraph count, the references paragraph and the line of
-///   the first prose paragraph.
+/// - provides: the paragraph count, the references paragraph, the line of the
+///   first prose paragraph and the place of a `Limits` paragraph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Head
 {
@@ -112,6 +112,26 @@ pub struct Head
     pub references: References,
     /// The line of the first prose paragraph, when the run has one.
     pub what: WhatLine,
+    /// Where a paragraph that opens on `Limits:` stands.
+    pub limits: Limits,
+}
+
+/// Where a head's `Limits` paragraph stands.
+///
+/// # Specification
+/// - provides: whether the head holds a `Limits` paragraph, and whether it
+///   stands after the how paragraph, the only place the shape admits it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Limits
+{
+    /// No paragraph opens on `Limits:`.
+    None,
+    /// One paragraph opens on `Limits:`, the fourth, after the how paragraph
+    /// and before the references.
+    After,
+    /// A paragraph that opens on `Limits:` stands at this line, in another
+    /// place, or a second one does.
+    Misplaced(Line),
 }
 
 /// Whether the references paragraph keeps its line form.
@@ -343,6 +363,14 @@ const OWES: &str = "- owes:";
 
 /// The opening of a references line citing a paper through the footer.
 const CITES: &str = "- cites:";
+
+/// The opening of a head paragraph, or of an item's third sentence, that
+/// states a limit.
+pub const LIMITS: &str = "Limits:";
+
+/// The place of a head's `Limits` paragraph, counted from zero: after what,
+/// why and how.
+const LIMITS_AT: usize = 3;
 
 /// A label a footer line defines or a `- cites:` line names, its backticks
 /// removed.
@@ -580,6 +608,23 @@ fn head_of(run: &Run<'_>) -> Head
             footer_label(Text(text.trim())).is_some() && titled(Text(text.trim())) == Titled::Bare
         })
         .map(|&(line, _)| line);
+    // A `Limits` paragraph stands fourth, after the how paragraph and before
+    // the references. One in another place, or a second one, is misplaced.
+    let mut limits = Limits::None;
+    for (at, lines) in paragraphs.iter().enumerate() {
+        let Some(&(line, text)) = lines.first()
+        else {
+            continue;
+        };
+        if !text.starts_with(LIMITS) {
+            continue;
+        }
+        limits = match limits {
+            Limits::None if at == LIMITS_AT && at < split => Limits::After,
+            Limits::Misplaced(first) => Limits::Misplaced(first),
+            Limits::None | Limits::After => Limits::Misplaced(line),
+        };
+    }
     Head {
         line: run.lines.first().map_or(Line(1), |&(line, _)| line),
         paragraphs: paragraphs.len(),
@@ -593,6 +638,7 @@ fn head_of(run: &Run<'_>) -> Head
             .first()
             .and_then(|lines| lines.first().map(|&(line, _)| WhatLine::At(line)))
             .unwrap_or(WhatLine::None),
+        limits,
     }
 }
 
@@ -1321,6 +1367,7 @@ mod tests
 {
     use super::Advice;
     use super::Head;
+    use super::Limits;
     use super::Line;
     use super::Opened;
     use super::Placed;
@@ -1414,6 +1461,48 @@ mod tests
     }
 
     #[test]
+    fn a_limits_paragraph_stands_only_after_the_how_paragraph_6005()
+    {
+        let head = |paragraphs: &[&str]| {
+            let text = format!(
+                "{}\n//!\n//! - see: #1 — x\n\ndef x = 1;\n",
+                paragraphs
+                    .iter()
+                    .map(|paragraph| format!("//! {paragraph}"))
+                    .collect::<Vec<_>>()
+                    .join("\n//!\n")
+            );
+            let passages = comments(Text("corpus/a.gandr"), Text(&text));
+            let Opened::Run(head) =
+                comment_shape(Text("corpus/a.gandr"), Text(&text), &passages).opened
+            else {
+                panic!("the source opens on a head");
+            };
+            (head.paragraphs, head.limits)
+        };
+        assert_eq!(
+            head(&["Pairs sum.", "Why.", "How.", "Limits: no frame rule."]),
+            (5, Limits::After),
+            "a `Limits` paragraph after the how paragraph stands in place"
+        );
+        assert_eq!(
+            head(&["Pairs sum.", "Why.", "Limits: no frame rule.", "How."]),
+            (5, Limits::Misplaced(Line(5))),
+            "a `Limits` paragraph before the how paragraph is misplaced, at its line"
+        );
+        assert_eq!(
+            head(&["Pairs sum.", "Why.", "How.", "Limits: one.", "Limits: two."]),
+            (6, Limits::Misplaced(Line(9))),
+            "a second `Limits` paragraph is misplaced, at its line"
+        );
+        assert_eq!(
+            head(&["Pairs sum.", "Why.", "How."]),
+            (4, Limits::None),
+            "a head with no `Limits` paragraph holds none"
+        );
+    }
+
+    #[test]
     fn a_head_cites_through_its_footer()
     {
         let head = |references: &str| {
@@ -1440,6 +1529,7 @@ mod tests
                     paragraphs: 4,
                     references: References::Shaped,
                     what: WhatLine::At(Line(1)),
+                    limits: Limits::None,
                 },
                 3
             ),
