@@ -8226,12 +8226,8 @@ mod tests
     #[test]
     fn a_shared_record_value_keeps_each_field_label_5827()
     {
-        let source = SourceText::from(concat!(
-            "def pair() -> -F *{l : Unit, r : Unit} {\n",
-            "  let a = pure *{};\n",
-            "  let b = pure *{};\n",
-            "  pure *{l = a, r = a}\n",
-            "}\n",
+        let source = SourceText::from(include_str!(
+            "typed/fixtures/a-shared-record-value-keeps-each-field-label-5827.gandr"
         ));
         let table = table(source);
         for label in ["l = a,", "r = a}"] {
