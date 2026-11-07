@@ -428,6 +428,19 @@ pub(crate) struct Entry
     bytes: Vec<u8>,
 }
 
+impl AsRef<[u8]> for Entry
+{
+    /// Borrow the bytes written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        return &self.bytes;
+    }
+}
+
 impl Entry
 {
     /// Forget the bytes and keep the storage.

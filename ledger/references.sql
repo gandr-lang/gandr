@@ -48,6 +48,7 @@ INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellula
 INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-discrete-morse','reduct','exemplar','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','e2806ee9859d5431b49caf4b760e4fe27ba94efa');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','821731951d3fcd129ae0dfd38fa0333694c145be');
+INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-exact-reals','graph','exemplar','6099d43c994e63da017541bf4588861828115dc1','2026-11-07','e18d0d9572b33421d9960d9d8bf1df8b5df19439');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-shapes','formula','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','36f894989d773771961311177868caf3f968d516');
 INSERT INTO reference VALUES('Doré-2026-dependent_multiplicities_dependent_linear_type_theory','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
@@ -619,6 +620,8 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-shapes','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-stone-duality','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b278-4fbc-7c31-a4f3-2a171b335796','theory-exact-reals','minimal','anchor','b2f9eac7d4078d3e8ed85141317c9a171de7b4e7','2026-11-07','5348640e9c4186d136c37c2c3e79eb9872aa1cfb');
+INSERT INTO reference VALUES('vault:01a1b278-54ca-7062-94f4-4c94748c971e','theory-exact-reals','minimal','exemplar','b2f9eac7d4078d3e8ed85141317c9a171de7b4e7','2026-11-07','5348640e9c4186d136c37c2c3e79eb9872aa1cfb');
 INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theory-exact-reals','ackermann','exemplar','578de397edfc0e1cf510674eb9325ce9f7418ab6','2026-11-07','b94955e326d1fedb2039fe89e7736d72a76a471e');
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the

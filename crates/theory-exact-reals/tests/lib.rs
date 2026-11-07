@@ -24,6 +24,8 @@ mod elimination;
 #[cfg(test)]
 mod interval;
 #[cfg(test)]
+mod minimal;
+#[cfg(test)]
 mod oracle;
 #[cfg(test)]
 mod plan;

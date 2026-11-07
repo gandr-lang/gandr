@@ -725,7 +725,7 @@ impl Node
     ///   and the round trip reads each back with its children in place.
     /// - witness: `tests::plan::encoding_round_trips_generated_plans`
     /// - witness: `tests::plan::canonical_form_ignores_order_sharing_and_dead_nodes`
-    fn moved<Place>(
+    pub(crate) fn moved<Place>(
         self,
         mut place: Place,
     ) -> Result<Self, PlanError>
