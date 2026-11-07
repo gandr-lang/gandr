@@ -248,6 +248,7 @@ pub fn clause(
                     CompType::Returner { .. }
                     | CompType::Returns { .. }
                     | CompType::Pi { .. }
+                    | CompType::LinearArrow { .. }
                     | CompType::With(..)
                     | CompType::Codata { .. }
                     | CompType::Element { .. }
@@ -446,6 +447,7 @@ pub fn fibre(
                 CompType::Returner { .. }
                 | CompType::Returns { .. }
                 | CompType::Pi { .. }
+                | CompType::LinearArrow { .. }
                 | CompType::Element { .. }
                 | CompType::Unknown
                 | CompType::With(..)

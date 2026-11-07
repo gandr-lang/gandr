@@ -312,6 +312,7 @@ use crate::closure::CompBody;
 use crate::closure::Environment;
 use crate::closure::EnvironmentDepth;
 use crate::closure::Mover;
+use crate::domain::Abstraction;
 use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
 use crate::domain::DomainValue;
@@ -3798,9 +3799,11 @@ fn step(
                 flow,
                 function,
             });
-            machine
-                .comps
-                .push(domain.comp_lambda(applied, CompTermFace::Reduced));
+            machine.comps.push(domain.comp_lambda(
+                applied,
+                Abstraction::Intuitionistic,
+                CompTermFace::Reduced,
+            ));
             Ok(())
         },
         // The thunk a function transport along a universe path moves a
@@ -3822,9 +3825,11 @@ fn step(
                 path,
                 function,
             });
-            machine
-                .comps
-                .push(domain.comp_lambda(applied, CompTermFace::Reduced));
+            machine.comps.push(domain.comp_lambda(
+                applied,
+                Abstraction::Intuitionistic,
+                CompTermFace::Reduced,
+            ));
             Ok(())
         },
         // The thunk a suspension transport along a universe path moves a
@@ -5125,7 +5130,21 @@ fn step_comp(
             let closed = capture_keeps_source(&captured);
             let closure = domain.comp_closure_node(body, captured);
             let face = composite_comp_face(closed, term);
-            machine.comps.push(domain.comp_lambda(closure, face));
+            machine
+                .comps
+                .push(domain.comp_lambda(closure, Abstraction::Intuitionistic, face));
+            Ok(())
+        },
+        // A linear lambda evaluates as a lambda does: its body reads the
+        // parameter through the shadow, and the checker spends the supply.
+        Computation::LinearLambda(body) => {
+            let captured = machine.capture(env)?;
+            let closed = capture_keeps_source(&captured);
+            let closure = domain.comp_closure_node(body, captured);
+            let face = composite_comp_face(closed, term);
+            machine
+                .comps
+                .push(domain.comp_lambda(closure, Abstraction::Linear, face));
             Ok(())
         },
         // A fixpoint is inert until a gate observes it: it closes over its

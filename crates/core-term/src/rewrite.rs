@@ -2203,7 +2203,7 @@ Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } | Computation::Decompose(_) => 1,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } | Computation::Decompose(_) => 1,
 Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::ReturnAll(ref values) => values.len(),
 Computation::With(ref components) => components.len(),
@@ -2232,6 +2232,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | Some(&CompType::Returns { ref results, ref effects }) => results.len().saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
             Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::LinearArrow { .. }) => 3,
             Some(&CompType::With(ref components)) => components.len(),
             Some(&CompType::Codata { ref arguments, .. }) => arguments.len(),
         },
@@ -2625,6 +2626,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 },
                 Some(
                     &(Computation::Lambda(body)
+                    | Computation::LinearLambda(body)
                     | Computation::Fixpoint { body, .. }
                     | Computation::Shift(body)),
                 ) => self
@@ -2905,6 +2907,16 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 Some(&CompType::Pi { domain, codomain }) => {
                     self.tasks
                         .push(open(Node::CompType(codomain), depth.deeper()));
+                    self.tasks.push(open(Node::ValueType(domain), depth));
+                },
+                Some(&CompType::LinearArrow {
+                    domain,
+                    multiplicity,
+                    codomain,
+                }) => {
+                    self.tasks
+                        .push(open(Node::CompType(codomain), depth.deeper()));
+                    self.tasks.push(open(Node::Value(multiplicity), depth));
                     self.tasks.push(open(Node::ValueType(domain), depth));
                 },
                 Some(&CompType::Element { code, .. }) => {
@@ -3728,7 +3740,7 @@ Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } | Computation::Decompose(_) => 1,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } | Computation::Decompose(_) => 1,
 Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::ReturnAll(ref values) => values.len(),
 Computation::With(ref components) => components.len(),
@@ -4151,6 +4163,15 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                 }
                 else {
                     self.arena.computation_lambda(rewritten)
+                }
+            },
+            Computation::LinearLambda(body) => {
+                let rewritten = Self::computation(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.computation_linear_lambda(rewritten)
                 }
             },
             Computation::Fixpoint { body, evidence } => {
@@ -4748,6 +4769,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | Some(&CompType::Returns { ref results, ref effects }) => results.len().saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
             Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(&CompType::LinearArrow { .. }) => 3,
             Some(&CompType::With(ref components)) => components.len(),
             Some(&CompType::Codata { ref arguments, .. }) => arguments.len(),
         }],
@@ -4840,6 +4862,27 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .comp_type_arrow(rewritten_domain, rewritten_codomain)
+                }
+            },
+            CompType::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => {
+                let rewritten_codomain = Self::comp_type(&mut self.results, codomain);
+                let rewritten_multiplicity = Self::value(&mut self.results, multiplicity);
+                let rewritten_domain = Self::value_type(&mut self.results, domain);
+                if (rewritten_domain, rewritten_multiplicity, rewritten_codomain)
+                    == (domain, multiplicity, codomain)
+                {
+                    id
+                }
+                else {
+                    self.arena.comp_type_linear_arrow(
+                        rewritten_domain,
+                        rewritten_multiplicity,
+                        rewritten_codomain,
+                    )
                 }
             },
             CompType::Pi { domain, codomain } => {
@@ -6991,6 +7034,7 @@ fn survey_computation(
             Position::Value(payload, region),
         ]),
         Computation::Lambda(body)
+        | Computation::LinearLambda(body)
         | Computation::Fixpoint { body, .. }
         | Computation::Reset(body)
         | Computation::Shift(body)

@@ -1131,6 +1131,23 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: LinearityDefect::ContinuationUsedTwice { .. },
             ..
         } => String::from("end the continuation only once"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::LinearSlotConsumed { .. },
+            ..
+        } => String::from("use the linear parameter once, or take it at `->` instead of `⊸`"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::LinearSlotUnconsumed { .. },
+            ..
+        } => String::from("use the linear parameter exactly once on every path through the body"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ShadowCaptured { .. },
+            ..
+        } => String::from(
+            "use the linear parameter outside the thunk, loop or fold that captures it",
+        ),
+        CheckRefusal::MultiplicityUnsupported { .. } => {
+            String::from("write the linear arrow with no multiplicity, which is one")
+        },
         CheckRefusal::DataFieldLevel { .. } => {
             String::from("lower each constructor field to its datatype's universe")
         },
@@ -1349,7 +1366,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 240] = [
+    const WORDED: [&str; 244] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1590,6 +1607,10 @@ mod tests
         "BuiltinMisplaced",
         "BuiltinNotCanonical",
         "FixedFieldDiffers",
+        "LinearSlotConsumed",
+        "LinearSlotUnconsumed",
+        "ShadowCaptured",
+        "MultiplicityUnsupported",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

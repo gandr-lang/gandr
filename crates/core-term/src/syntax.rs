@@ -847,6 +847,10 @@ pub enum Computation
     /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
     /// `A → C`.
     Lambda(ComputationId),
+    /// A linear lambda `λ x ˆ m. M`, introducing `(x : A) ˆ m ⊸ C`. The host
+    /// binds `x` as one intuitionistic shadow `x : A•`, which only types read,
+    /// and the supply holds `m` copies of `x : A`, which the body spends.
+    LinearLambda(ComputationId),
     /// A fixpoint `fix x. M`, binding its own thunk `x : U C` as one
     /// intuitionistic value variable over `M : C`; it checks at any
     /// computation type and carries the termination claim it is offered
@@ -1367,6 +1371,18 @@ pub enum CompType
         /// The value-type domain.
         domain: ValueTypeId,
         /// The computation-type codomain, in the ambient context.
+        codomain: CompTypeId,
+    },
+    /// The linear function type `(x : A) ˆ m ⊸ C`: its parameter is a supply
+    /// of `m` copies of `x : A`, and its codomain stands in the ambient context
+    /// extended by the shadow `x : A•`, as [`Self::Pi`]'s does.
+    LinearArrow
+    {
+        /// The value-type domain, in the ambient context.
+        domain: ValueTypeId,
+        /// The multiplicity `m`, a host value in the ambient context.
+        multiplicity: ValueId,
+        /// The computation-type codomain, under the shadow's binder.
         codomain: CompTypeId,
     },
     /// The dependent function type `Π (x : A). C`, whose codomain stands in the
@@ -2039,6 +2055,7 @@ fn forced_computation(
                 arena.computation(body),
                 Some(
                     &Computation::Lambda(_)
+                        | &Computation::LinearLambda(_)
                         | &Computation::TupleProjection(..)
                         | &Computation::RecordProjection(..)
                 )
@@ -2478,7 +2495,8 @@ fn called_reduct(
             break;
         }
         while let Some(argument) = arguments.pop() {
-            let Some(&Computation::Lambda(inner)) = arena.computation(body)
+            let Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) =
+                arena.computation(body)
             else {
                 break 'reduce;
             };
@@ -2569,7 +2587,7 @@ fn called_computation(
             break;
         }
         let mut body = match arena.computation(head) {
-            Some(&Computation::Lambda(_)) => head,
+            Some(&(Computation::Lambda(_) | Computation::LinearLambda(_))) => head,
             Some(&Computation::Force(mut thunk)) => {
                 while let Some(&Value::Ascribe { value, .. }) = arena.value(thunk) {
                     thunk = value;
@@ -2582,7 +2600,8 @@ fn called_computation(
             Some(_) | None => break,
         };
         while let Some(argument) = arguments.pop() {
-            let Some(&Computation::Lambda(inner)) = arena.computation(body)
+            let Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) =
+                arena.computation(body)
             else {
                 break 'reduce;
             };
@@ -3971,6 +3990,7 @@ fn computation_formers(
         },
         (
             &(Computation::Lambda(_)
+            | Computation::LinearLambda(_)
             | Computation::Shift(_)
             | Computation::Reset(_)
             | Computation::Return(_)
@@ -4192,9 +4212,13 @@ fn comp_type_formers(
                 arguments: ref right_arguments,
             },
         ) => left == right && left_arguments.len() == right_arguments.len(),
-        (&(CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Unknown), _) => {
-            core::mem::discriminant(a) == core::mem::discriminant(b)
-        },
+        (
+            &(CompType::Arrow { .. }
+            | CompType::LinearArrow { .. }
+            | CompType::Pi { .. }
+            | CompType::Unknown),
+            _,
+        ) => core::mem::discriminant(a) == core::mem::discriminant(b),
         _ => false,
     };
     if agree {
@@ -4294,7 +4318,10 @@ where
                 | (&Value::Nested(left), &Value::Thunk(right))
                     if matches!(reading, Reading::Printed(_))
                         && [left, right].iter().any(|&body| {
-                            matches!(arena.computation(body), Some(&Computation::Lambda(_)))
+                            matches!(
+                                arena.computation(body),
+                                Some(&(Computation::Lambda(_) | Computation::LinearLambda(_)))
+                            )
                         }) =>
                 {
                     pending.queue(C(left, right), beside);

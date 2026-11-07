@@ -254,6 +254,8 @@ impl TrackingIssue
     /// A fixed field of a patched type read back where its value is no
     /// literal, and the coercions between a patched type and its base.
     pub const PATCHED_TYPE: Self = Self(5536);
+    /// A linear function at a multiplicity other than `1`.
+    pub const LINEAR_MULTIPLICITY: Self = Self(5867);
 
     /// The issue's page.
     ///

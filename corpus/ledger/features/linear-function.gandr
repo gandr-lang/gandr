@@ -1,0 +1,30 @@
+/// `linear-function`: The linear function `(x : A) ⊸ C`, whose body takes its parameter once.
+/// Implemented: a linear function takes each parameter of its own list once, at the multiplicity one. A type reads the parameter through its shadow, and the body draws its one copy.
+/// Not implemented: a multiplicity other than one is refused, and a definition half ignores the linear arrows of a signature written apart.
+///
+/// - owes: #5867
+/// - owes: #5923
+// Each parameter that a `⊸` tail writes is linear. Its body reads the copy
+// once on every path, and never inside a thunk, a loop or a fold. The
+// implicit parameters before the list stay intuitionistic, so a type
+// parameter reads only in types. Three exemplars show the refusals.
+//
+// - see: `../diagnostics/LinearSlotConsumed.gandr`
+// - see: `../diagnostics/LinearSlotUnconsumed.gandr`
+// - see: `../diagnostics/ShadowCaptured.gandr`
+
+/// The identity, its type supplied by the argument.
+@[ checks ]
+def id[a : Type](x : a) ⊸ a = x ;
+
+/// `id` at the integers.
+@[ runs("7") ]
+def seven() -> Integer { id 7 }
+
+/// The result type reads the parameter through its shadow, and the body takes its copy once.
+@[ checks ]
+def itself(x : Integer) ⊸ Path(x, x) = Path.here x ;
+
+/// A function of linear type, applied once.
+@[ checks ]
+def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f(a) ;

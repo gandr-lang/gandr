@@ -159,7 +159,7 @@ quenchant_shape::reason_enum! {
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
 ///   return, classifier, match, fixpoint, endpoint, identity, nested, bound,
-///   unwind, model, relation, parameter and implicit.
+///   unwind, model, relation, parameter, implicit and multiplicity.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -287,6 +287,10 @@ pub enum Insertion
     /// member's type is read at, at that type. The source writes each type,
     /// never the payload or the kind.
     Foreign,
+    /// The multiplicity a linear arrow leaves unwritten, the one, located at
+    /// the arrow: the source writes `⊸`, never the count of copies its body
+    /// takes.
+    Multiplicity,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

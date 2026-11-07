@@ -1537,6 +1537,15 @@ pub enum CheckRefusal
         /// The ride.
         at: ComputationId,
     },
+    /// A linear arrow at a multiplicity other than the literal `1`, which the
+    /// linear function does not admit yet.
+    MultiplicityUnsupported
+    {
+        /// The linear arrow.
+        at: CompTypeId,
+        /// Its multiplicity.
+        multiplicity: ValueId,
+    },
     /// A recorded run its session does not admit: a literal checked at a
     /// protocol whose moves it breaks, or a run ridden to a target that does
     /// not admit it.
@@ -1642,7 +1651,7 @@ impl CheckRefusal
     /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
         | Self::OutOfFragment { former, .. } => ret == former.judged(),
-        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::ComposeUncertified { .. } | Self::FillUncertified { .. } | Self::GeneratorFamilyUnsupported { .. } | Self::RideUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::FunextUnsupported { .. } | Self::EquivUnsupported { .. } | Self::UncertifiedStratum { .. } | Self::UaUncertified { .. } | Self::ComposeUncertified { .. } | Self::FillUncertified { .. } | Self::GeneratorFamilyUnsupported { .. } | Self::RideUnsupported { .. } | Self::MultiplicityUnsupported { .. } | Self::ForwardUnsupported { .. } | Self::OutsideFold { .. } => matches!(ret, FailureClass::Unimplemented(_)),
         | Self::UnboundIndex { .. }
         | Self::BudgetExceeded { .. }
         | Self::DanglingNode { .. }
@@ -1787,6 +1796,9 @@ impl CheckRefusal
                 FailureClass::Unimplemented(family.tracking())
             },
             Self::RideUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::RIDE),
+            Self::MultiplicityUnsupported { .. } => {
+                FailureClass::Unimplemented(TrackingIssue::LINEAR_MULTIPLICITY)
+            },
             Self::ForwardUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FORWARD),
             Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
@@ -2021,6 +2033,7 @@ impl CheckRefusal
             | Self::OpenSessionPayload { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RideUnsupported { .. }
+            | Self::MultiplicityUnsupported { .. }
             | Self::RunNotAdmitted { .. }
             | Self::DialogueUnmatched { .. }
             | Self::DialogueInverted { .. }

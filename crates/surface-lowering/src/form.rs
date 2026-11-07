@@ -500,6 +500,9 @@ impl TileName
     pub const ACQUIRE: Self = Self("acquire");
     /// The arrow `->` of a function type and of a function's result.
     pub const ARROW: Self = Self("->");
+    /// The linear arrow `⊸` of a linear function type and of a linear
+    /// function's result, the tile its ASCII spelling `-o` molds too.
+    pub const LINEAR_ARROW: Self = Self("⊸");
     /// The temporary-access eliminator `abort`.
     pub const ABORT: Self = Self("abort");
     /// The temporary-access lead `access`.
@@ -973,6 +976,9 @@ pub enum Former
     /// The arrow type `A -> C`, or the static Pi `A -> B` where a value type
     /// is read.
     ArrowType,
+    /// The linear arrow type `(x : A) ⊸ C`, whose one binder the body takes
+    /// once.
+    LinearArrowType,
     /// The eager product type `A * B`.
     ProductType,
     /// The sum type `A + B`.
@@ -1098,7 +1104,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 72_usize] = [
+    pub const ALL: [Self; 73_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1139,6 +1145,7 @@ impl Former
         Self::ThunkType,
         Self::ReturnerType,
         Self::ArrowType,
+        Self::LinearArrowType,
         Self::ProductType,
         Self::SumType,
         Self::LazyProductType,
@@ -1198,7 +1205,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 135_usize] = [
+pub const FORMERS: [(&str, Former); 136_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1245,6 +1252,7 @@ pub const FORMERS: [(&str, Former); 135_usize] = [
     ("u_type", Former::ThunkType),
     ("f_type", Former::ReturnerType),
     ("function_type", Former::ArrowType),
+    ("linear_function_type", Former::LinearArrowType),
     ("product_type", Former::ProductType),
     ("sum_type", Former::SumType),
     ("lazy_product_type", Former::LazyProductType),

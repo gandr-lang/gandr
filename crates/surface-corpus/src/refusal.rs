@@ -862,6 +862,8 @@ pub enum RefusalName
     NonCovariantMotive,
     /// A ride whose motive the checker cannot move.
     RideUnsupported,
+    /// A linear arrow at a multiplicity other than `1`.
+    MultiplicityUnsupported,
     /// A recorded run the protocol does not admit.
     RunNotAdmitted,
     /// A dialogue move with no move of the other endpoint to match it.
@@ -1211,6 +1213,15 @@ pub enum RefusalName
     /// A continuation holding an obligation read as a value, other than as
     /// what a resumption or an abandonment ends.
     ContinuationAsValue,
+    /// A linear function's body that reads its parameter after its copy was
+    /// spent.
+    LinearSlotConsumed,
+    /// A linear function's body that ends with its parameter's copy unread, or
+    /// a case whose arms read the copy unequally.
+    LinearSlotUnconsumed,
+    /// A linear function's parameter read where its read may run other than
+    /// once.
+    ShadowCaptured,
     /// An access naming a linear slot that holds no value.
     NotHeld,
     /// A held value read while an access lends it exclusively, or accessed
@@ -1316,7 +1327,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 244_usize] = [
+    pub const VOCABULARY: [Self; 248_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1394,6 +1405,7 @@ impl RefusalName
         Self::OpenSessionPayload,
         Self::NonCovariantMotive,
         Self::RideUnsupported,
+        Self::MultiplicityUnsupported,
         Self::RunNotAdmitted,
         Self::DialogueUnmatched,
         Self::DialogueInverted,
@@ -1525,6 +1537,9 @@ impl RefusalName
         Self::ContinuationUsedTwice,
         Self::ContinuationCaptured,
         Self::ContinuationAsValue,
+        Self::LinearSlotConsumed,
+        Self::LinearSlotUnconsumed,
+        Self::ShadowCaptured,
         Self::NotHeld,
         Self::HeldLent,
         Self::HeldCaptured,
@@ -1801,6 +1816,9 @@ impl RefusalName
         | (Self::ContinuationUsedTwice, b"ContinuationUsedTwice")
         | (Self::ContinuationCaptured, b"ContinuationCaptured")
         | (Self::ContinuationAsValue, b"ContinuationAsValue")
+        | (Self::LinearSlotConsumed, b"LinearSlotConsumed")
+        | (Self::LinearSlotUnconsumed, b"LinearSlotUnconsumed")
+        | (Self::ShadowCaptured, b"ShadowCaptured")
         | (Self::NotHeld, b"NotHeld")
         | (Self::HeldLent, b"HeldLent")
         | (Self::HeldCaptured, b"HeldCaptured")
@@ -1851,6 +1869,7 @@ impl RefusalName
         | (Self::OpenSessionPayload, b"OpenSessionPayload")
         | (Self::NonCovariantMotive, b"NonCovariantMotive")
         | (Self::RideUnsupported, b"RideUnsupported")
+        | (Self::MultiplicityUnsupported, b"MultiplicityUnsupported")
         | (Self::RunNotAdmitted, b"RunNotAdmitted")
         | (Self::DialogueUnmatched, b"DialogueUnmatched")
         | (Self::DialogueInverted, b"DialogueInverted")
@@ -1964,6 +1983,9 @@ impl RefusalName
             Self::ContinuationUsedTwice => "ContinuationUsedTwice",
             Self::ContinuationCaptured => "ContinuationCaptured",
             Self::ContinuationAsValue => "ContinuationAsValue",
+            Self::LinearSlotConsumed => "LinearSlotConsumed",
+            Self::LinearSlotUnconsumed => "LinearSlotUnconsumed",
+            Self::ShadowCaptured => "ShadowCaptured",
             Self::NotHeld => "NotHeld",
             Self::HeldLent => "HeldLent",
             Self::HeldCaptured => "HeldCaptured",
@@ -2014,6 +2036,7 @@ impl RefusalName
             Self::OpenSessionPayload => "OpenSessionPayload",
             Self::NonCovariantMotive => "NonCovariantMotive",
             Self::RideUnsupported => "RideUnsupported",
+            Self::MultiplicityUnsupported => "MultiplicityUnsupported",
             Self::RunNotAdmitted => "RunNotAdmitted",
             Self::DialogueUnmatched => "DialogueUnmatched",
             Self::DialogueInverted => "DialogueInverted",
@@ -3107,6 +3130,9 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationUsedTwice { .. }, .. }, RefusalName::ContinuationUsedTwice)
         | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationCaptured { .. }, .. }, RefusalName::ContinuationCaptured)
         | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationAsValue { .. }, .. }, RefusalName::ContinuationAsValue)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotConsumed { .. }, .. }, RefusalName::LinearSlotConsumed)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotUnconsumed { .. }, .. }, RefusalName::LinearSlotUnconsumed)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ShadowCaptured { .. }, .. }, RefusalName::ShadowCaptured)
         | (CheckRefusal::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
         | (CheckRefusal::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
         | (CheckRefusal::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
@@ -3158,6 +3184,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UnassertedLaw { .. }, RefusalName::UnprovenLaw)
         | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
         | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
+        | (CheckRefusal::MultiplicityUnsupported { .. }, RefusalName::MultiplicityUnsupported)
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
         | (CheckRefusal::DialogueUnmatched { .. }, RefusalName::DialogueUnmatched)
         | (CheckRefusal::DialogueInverted { .. }, RefusalName::DialogueInverted)
@@ -3269,6 +3296,9 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             LinearityDefect::ContinuationUsedTwice { .. } => RefusalName::ContinuationUsedTwice,
             LinearityDefect::ContinuationCaptured { .. } => RefusalName::ContinuationCaptured,
             LinearityDefect::ContinuationAsValue { .. } => RefusalName::ContinuationAsValue,
+            LinearityDefect::LinearSlotConsumed { .. } => RefusalName::LinearSlotConsumed,
+            LinearityDefect::LinearSlotUnconsumed { .. } => RefusalName::LinearSlotUnconsumed,
+            LinearityDefect::ShadowCaptured { .. } => RefusalName::ShadowCaptured,
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => RefusalName::NotHeld,
@@ -3331,6 +3361,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::UnassertedLaw { .. } => RefusalName::UnprovenLaw,
         CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
         CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
+        CheckRefusal::MultiplicityUnsupported { .. } => RefusalName::MultiplicityUnsupported,
         CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,
         CheckRefusal::DialogueUnmatched { .. } => RefusalName::DialogueUnmatched,
         CheckRefusal::DialogueInverted { .. } => RefusalName::DialogueInverted,

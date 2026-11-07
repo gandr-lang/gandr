@@ -1254,6 +1254,9 @@ fn checked(
             "`Flow.ride` moves a run of the moving endpoint, a value whose type does not depend \
              on it, or a value the flow's translator computes",
         ),
+        CheckRefusal::MultiplicityUnsupported { .. } => {
+            f.write_str("a linear function admits the multiplicity one alone for now")
+        },
         CheckRefusal::RunNotAdmitted { .. } => f.write_str("the protocol does not admit this run"),
         CheckRefusal::DialogueUnmatched { .. } => {
             f.write_str("this dialogue's message is not received as it was sent")
@@ -1459,6 +1462,17 @@ fn checked(
             ),
             LinearityDefect::ContinuationAsValue { .. } => f.write_str(
                 "this continuation holds something that must end, so it can be used only by `resume` or `abandon`",
+            ),
+            LinearityDefect::LinearSlotConsumed { .. } => f.write_str(
+                "the linear parameter is used a second time, and the function holds one copy of it",
+            ),
+            LinearityDefect::LinearSlotUnconsumed { .. } => f.write_str(
+                "the linear parameter is not used, or one branch uses it where another does not",
+            ),
+            LinearityDefect::ShadowCaptured { by, .. } => write!(
+                f,
+                "the linear parameter is used inside {}, which may use it other than once",
+                Captor(by)
             ),
         },
         CheckRefusal::Access { defect, .. } => match defect {
@@ -2647,6 +2661,25 @@ pub mod tests
                     clause: computation,
                 },
             },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::LinearSlotConsumed {
+                    lambda: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::LinearSlotUnconsumed {
+                    lambda: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ShadowCaptured {
+                    lambda: computation,
+                    by: Capture::Task,
+                },
+            },
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::NotHeld,
@@ -2833,6 +2866,10 @@ pub mod tests
             CheckRefusal::UndischargedLaw { at: value_type },
             CheckRefusal::NonCovariantMotive { at: computation },
             CheckRefusal::RideUnsupported { at: computation },
+            CheckRefusal::MultiplicityUnsupported {
+                at: comp_type,
+                multiplicity: value,
+            },
             CheckRefusal::RunNotAdmitted {
                 at: value,
                 fault: gandr_core_checker::RunFault::WrongLabel(gandr_core_checker::RunStep::from(

@@ -1314,7 +1314,9 @@ pub fn covariant(
                             .map(|&component| (Position::CompType(component), polarity, depth)),
                     );
                 },
-                CompType::Codata { .. } | CompType::Unknown => return Err(refused),
+                CompType::Codata { .. } | CompType::Unknown | CompType::LinearArrow { .. } => {
+                    return Err(refused);
+                },
             },
         }
     }

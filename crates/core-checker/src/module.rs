@@ -1117,7 +1117,11 @@ impl ModuleReport
                         pending.extend(results.iter().copied().map(Node::Value));
                     },
                     Some(
-                        &(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain }),
+                        &(CompType::Arrow { domain, codomain }
+                        | CompType::Pi { domain, codomain }
+                        | CompType::LinearArrow {
+                            domain, codomain, ..
+                        }),
                     ) => {
                         pending.extend([Node::Value(domain), Node::Computation(codomain)]);
                     },

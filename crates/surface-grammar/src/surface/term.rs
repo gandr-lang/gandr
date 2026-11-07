@@ -4083,12 +4083,16 @@ fn regular_def_tail() -> Regex
             seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
             // function tail: `(params) -> T? { … }`, its body one expression
             // after `=`, `(params) -> T? = E ;`, or the clauses matching the
-            // arrows after the head: `(params) : T where { | … }`
+            // arrows after the head: `(params) : T where { | … }`. The arrow
+            // `⊸` in place of `->` binds each parameter in the linear zone.
             seq([
                 params(),
                 alt([
                     seq([
-                        opt(seq([t(TileLabel("->")), h(Sort::Type)])),
+                        opt(seq([
+                            alt([t(TileLabel("->")), t(TileLabel("⊸"))]),
+                            h(Sort::Type),
+                        ])),
                         alt([
                             braced_statements(),
                             seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),

@@ -82,7 +82,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 55 && rules.iter().take(41).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(41).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 56 && rules.iter().take(42).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(42).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -111,7 +111,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 41 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 42 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -146,6 +146,16 @@ fn add_type_rules(
         AdaptationReason("folded into function_type: the box `(A, B) -> C` is the arrow over a value codomain, so the value function space has no arrow of its own"),
     ));
     rules.push(function);
+    // The linear arrow `(x : A) ⊸ C`, in the band of the arrow: its parameter
+    // binds in the linear zone, and the codomain reads the parameter only
+    // through its shadow. The glyph is the one tile the form molds; the
+    // labeler offers the ASCII spelling `-o` as the tile `⊸`.
+    rules.push(binary_infix_rule(
+        RuleName("linear_function_type"),
+        ty,
+        type_arrow,
+        TileLabel("⊸"),
+    ));
     rules.push(binary_infix_rule(
         RuleName("union_type"),
         ty,

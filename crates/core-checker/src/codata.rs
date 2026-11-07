@@ -275,6 +275,7 @@ fn observation(
                 break;
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::LinearArrow { .. }
             | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
@@ -423,6 +424,7 @@ pub(crate) fn argument(
         | CompTypeView::With(..)
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
+        | CompTypeView::LinearArrow { .. }
         | CompTypeView::Element { .. }
         | CompTypeView::Unknown => Err(CheckRefusal::MachineInvariant),
     }
