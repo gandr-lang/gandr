@@ -1080,17 +1080,19 @@ mod sweeps
         let page = PageWidth::from(80_u32);
         let style = Form::Explicit.into();
         let answers = |table: &TypeTable| {
+            let declarations = table.declarations(page, style).collect::<Vec<_>>();
+            let refusals = declarations
+                .iter()
+                .map(|&(key, _)| {
+                    table
+                        .refusal(key)
+                        .map(|refusal| String::from(<&str>::from(refusal)))
+                })
+                .collect::<Vec<_>>();
             (
                 table.entries(page, style).collect::<Vec<_>>(),
-                table.declarations(page, style).collect::<Vec<_>>(),
-                table
-                    .declarations(page, style)
-                    .map(|(key, _)| {
-                        table
-                            .refusal(key)
-                            .map(|refusal| String::from(<&str>::from(refusal)))
-                    })
-                    .collect::<Vec<_>>(),
+                declarations,
+                refusals,
                 table.declared_names().to_vec(),
             )
         };
