@@ -81,6 +81,7 @@ INSERT INTO purpose VALUES('core-checker','code::Reduction','struct','One step o
 INSERT INTO purpose VALUES('core-checker','code::Reflexivity','struct','The normaliser''s reading of one reflexivity: the derivation relating its point to each endpoint of the path type it was checked against.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','code::Stalled','struct','The normaliser''s reading of one closed claim whose normal form does not return.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','code::Unfolded','enum','What one certified step unfolds: the name a certificate is filed under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','comonoid::Grade','enum','The grade of a binder of the intuitionistic zone: ω needs a comonoid of its type, and 0 a counit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','context::CheckBudget','struct','The work one judgement may spend before it refuses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','context::CheckingContext','struct','The checking context: the core context the judgement goes under binders in, wrapped with what the core context does not hold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','context::Checkpoint','struct','A checkpoint of the checking context: its binders, signature table and admissions.',NULL,'fits','sound',NULL);
@@ -668,6 +669,7 @@ INSERT INTO purpose VALUES('core-term','arena::CompTypeId','struct','The arena-r
 INSERT INTO purpose VALUES('core-term','arena::ComputationId','struct','The arena-relative allocation index of a Computation node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::CoreArena','struct','The append-only arena owning every core term and type node of one run, addressed by four typed ids and carrying each node''s support beside it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ElementFields','struct','The fields an element of a record type or of a patched type holds: the record''s, or the base record''s less the labels the patch fixes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','arena::QubitPrecedence','enum','Where a value type stands against its arena''s first qubit type: a type minted before it holds no qubit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueId','struct','The arena-relative allocation index of a Value node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueTypeId','struct','The arena-relative allocation index of a ValueType node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::Visit','trait','What a walk does with each child of a core node, one method per family, each handed the binders of each zone the former opens over that child.',NULL,'fits','sound',NULL);

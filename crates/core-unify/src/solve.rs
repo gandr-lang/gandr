@@ -1086,6 +1086,7 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::Session(_)
         | ValueType::Capability { .. }
         | ValueType::Buffer
+        | ValueType::Qubit
         | ValueType::Kept { .. }
         | ValueType::World(_) => TypeHead::Outside,
     }

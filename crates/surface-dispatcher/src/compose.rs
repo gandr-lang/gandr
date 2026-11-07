@@ -4864,7 +4864,8 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Scope
         | UnadmittedFormer::Run
         | UnadmittedFormer::Memory
-        | UnadmittedFormer::Buffer => Residence::Checker,
+        | UnadmittedFormer::Buffer
+        | UnadmittedFormer::Qubit => Residence::Checker,
         UnadmittedFormer::ValueLift
         | UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom

@@ -456,6 +456,7 @@ pub fn session_code(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
@@ -1048,6 +1049,7 @@ pub fn endpoints(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
@@ -1278,6 +1280,7 @@ pub fn covariant(
                 | ValueType::Session(_)
                 | ValueType::Capability { .. }
                 | ValueType::Buffer
+                | ValueType::Qubit
                 | ValueType::Row
                 | ValueType::Dialogue(_)
                 | ValueType::Web
@@ -1588,6 +1591,7 @@ fn computed(
             | ValueType::Session(_)
             | ValueType::Capability { .. }
             | ValueType::Buffer
+            | ValueType::Qubit
             | ValueType::Row
             | ValueType::RowTail(_)
             | ValueType::Staged { .. }
@@ -1755,6 +1759,7 @@ pub fn run_premises(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Dialogue(_)
@@ -1879,6 +1884,7 @@ pub fn dialogue_premises(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)

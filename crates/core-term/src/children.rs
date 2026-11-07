@@ -608,6 +608,7 @@ pub fn of_value_type<Walk>(
         | ValueType::Abstract(_)
         | ValueType::Unknown
         | ValueType::Buffer
+        | ValueType::Qubit
         | ValueType::Web
         | ValueType::Row => {},
         ValueType::Product(ref components) | ValueType::Sum(ref components) => {

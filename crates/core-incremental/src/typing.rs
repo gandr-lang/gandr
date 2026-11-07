@@ -27,6 +27,7 @@ use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::comonoid::Grade;
 use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::Endpoint;
 use gandr_core_checker::session::ForkSide;
@@ -310,6 +311,14 @@ pub enum Linearity
         lambda: Site,
         /// What may run the read.
         by: Capture,
+    },
+    /// A binder of the intuitionistic zone held a type with no comonoid.
+    ComonoidAbsent
+    {
+        /// The binder's type.
+        ty: TypeContent,
+        /// The binder's grade.
+        grade: Grade,
     },
 }
 
@@ -776,6 +785,10 @@ impl Projection<'_, '_, '_, '_>
             LinearityDefect::ShadowCaptured { lambda, by } => Linearity::ShadowCaptured {
                 lambda: self.site(ArenaNode::Computation(lambda)),
                 by,
+            },
+            LinearityDefect::ComonoidAbsent { ty, grade } => Linearity::ComonoidAbsent {
+                ty: self.value_type(ty),
+                grade,
             },
         }
     }

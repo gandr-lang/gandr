@@ -160,6 +160,8 @@ impl TrackingIssue
     pub const KERNEL_STATIC_LAMBDA: Self = Self(1630);
     /// A staged type in a term, which the kernel does not replay.
     pub const KERNEL_STAGE: Self = Self(1631);
+    /// A declaration naming a qubit, which the kernel does not replay.
+    pub const KERNEL_QUBIT: Self = Self(5936);
     /// An infix form the lowering does not read: list concatenation, or a
     /// path cons whose left operand is neither a loop nor `back` of one.
     pub const INFIX_FORM: Self = Self(1997);

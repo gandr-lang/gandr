@@ -277,6 +277,18 @@ pub enum BinderPrecedence
     Unread,
 }
 
+/// Where a value type stands against its arena's first qubit type.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum QubitPrecedence
+{
+    /// Minted before it: neither the type nor any node it holds is the qubit
+    /// type.
+    Before,
+    /// Minted at or after it, or not minted in this arena: only a walk says
+    /// whether the type holds a qubit.
+    Unread,
+}
+
 /// A snapshot of the four family lengths and of the supports' word arena.
 ///
 /// Restoring an arena to a watermark drops exactly the nodes allocated after
@@ -431,6 +443,10 @@ pub struct CoreArena
     /// it in its family was minted earlier, so neither it nor any node it
     /// reaches names one.
     region_binders_from: Option<ArenaWatermark>,
+    /// The offset of the arena's first qubit type in the value-type family: a
+    /// type below it was minted earlier, so neither it nor any node it holds
+    /// is the qubit type.
+    qubits_from: Option<usize>,
 }
 
 impl CoreArena
@@ -728,6 +744,12 @@ impl CoreArena
         }) {
             self.region_binders_from = None;
         }
+        if self
+            .qubits_from
+            .is_some_and(|from| usize::from(self.value_types.len()) <= from)
+        {
+            self.qubits_from = None;
+        }
     }
 
     /// Share every node minted so far with every clone of the arena made
@@ -1001,6 +1023,40 @@ impl CoreArena
         }
     }
 
+    /// Where the value type at `id` stands against the arena's first qubit
+    /// type.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: [`QubitPrecedence::Before`] exactly when `id` resolves and
+    ///   sits below the first qubit type, or the arena holds none;
+    ///   [`QubitPrecedence::Unread`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type minted before the first qubit type, that qubit
+    ///   type, a product minted after it over a unit, a dangling id, and the
+    ///   same arena truncated below the qubit type.
+    /// - witness: `arena::tests::a_type_minted_before_the_first_qubit_holds_none_5739`
+    #[spec(ensures: |ret| ret == QubitPrecedence::Unread || self.value_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn value_type_qubit_precedence(
+        &self,
+        id: ValueTypeId,
+    ) -> QubitPrecedence
+    {
+        let first = self
+            .qubits_from
+            .unwrap_or_else(|| usize::from(self.value_types.len()));
+        if usize::from(id_offset(ArenaIndex(id.0))) < first {
+            QubitPrecedence::Before
+        }
+        else {
+            QubitPrecedence::Unread
+        }
+    }
+
     /// Where the computation type at `id` stands against the arena's first
     /// value type naming a region binder.
     ///
@@ -1213,6 +1269,9 @@ impl CoreArena
             )
         {
             self.region_binders_from = Some(self.watermark());
+        }
+        if self.qubits_from.is_none() && matches!(value_type, ValueType::Qubit) {
+            self.qubits_from = Some(usize::from(self.value_types.len()));
         }
         let support = self.value_type_carried(&value_type);
         self.value_types.push(Row {
@@ -3552,6 +3611,16 @@ impl CoreArena
     pub fn value_type_buffer(&mut self) -> ValueTypeId
     {
         self.alloc_value_type(ValueType::Buffer)
+    }
+
+    /// Mint the qubit type `Qubit`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_qubit(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Qubit)
     }
 
     /// Mint the unknown computation type.

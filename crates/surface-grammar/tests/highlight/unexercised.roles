@@ -101,7 +101,6 @@
 150 Type def_value type_identifier L[identifier type_identifier type_variable] R[) , :]
 152 Other def_value shared L[:] R[<type>]
 153 Other def_value consumed L[:] R[<type>]
-157 Other def_value ⊸ L[)] R[<type>]
 172 Other def_value : L[identifier] R[<type>]
 176 Other def_value = L[<expression>] R[<expression>]
 177 Other def_value += L[<expression>] R[<expression>]

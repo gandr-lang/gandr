@@ -10,6 +10,7 @@ use gandr_kernel_term::GroundSort;
 use super::ArenaWatermark;
 use super::BinderPrecedence;
 use super::CoreArena;
+use super::QubitPrecedence;
 use super::ValueId;
 use crate::classifier::Sort;
 use crate::control::StackFrame;
@@ -402,6 +403,45 @@ fn a_type_minted_before_the_first_region_binder_names_none()
         arena.value_type_binder_precedence(reused),
         BinderPrecedence::Before,
         "a truncation below the binder's type forgets it"
+    );
+}
+
+/// A type minted before the arena's first qubit type holds none without a
+/// walk; that qubit type and every type minted after it are read, until a
+/// truncation drops it.
+#[test]
+fn a_type_minted_before_the_first_qubit_holds_none_5739()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let mark = arena.watermark();
+    let qubit = arena.value_type_qubit();
+    let later = arena.value_type_product(&[unit, unit]);
+    assert_eq!(
+        arena.value_type_qubit_precedence(unit),
+        QubitPrecedence::Before,
+        "a type minted before the first qubit holds none"
+    );
+    assert_eq!(
+        (
+            arena.value_type_qubit_precedence(qubit),
+            arena.value_type_qubit_precedence(later)
+        ),
+        (QubitPrecedence::Unread, QubitPrecedence::Unread),
+        "the qubit and a type minted after it are read, whatever they hold"
+    );
+    arena.truncate_to(mark);
+    assert_eq!(
+        arena.value_type_qubit_precedence(qubit),
+        QubitPrecedence::Unread,
+        "a dangling id says nothing"
+    );
+    let reused = arena.value_type_product(&[unit, unit]);
+    assert_eq!(reused, qubit, "the truncated index is minted again");
+    assert_eq!(
+        arena.value_type_qubit_precedence(reused),
+        QubitPrecedence::Before,
+        "a truncation below the qubit type forgets it"
     );
 }
 

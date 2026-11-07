@@ -250,6 +250,7 @@ fn motive_heads_read_apart()
         MotiveHead::Session,
         MotiveHead::Capability,
         MotiveHead::Buffer,
+        MotiveHead::Qubit,
         MotiveHead::Kept,
         MotiveHead::World,
         MotiveHead::Row,

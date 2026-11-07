@@ -619,7 +619,7 @@ fn value_spelling(
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Patched { .. } |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Bridge { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi { .. } | &ValueType::Sigma {
-.. } | &ValueType::Capability { .. } | &ValueType::World(_) | &ValueType::Unknown | &ValueType::Buffer | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Prefix(_) | &ValueType::Dialogue(_) | &ValueType::Web | &ValueType::Staged { .. } | &ValueType::Kept { .. } | &ValueType::Row | &ValueType::RowTail(_)) | None => Token::Other,
+.. } | &ValueType::Capability { .. } | &ValueType::World(_) | &ValueType::Unknown | &ValueType::Buffer | &ValueType::Qubit | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Prefix(_) | &ValueType::Dialogue(_) | &ValueType::Web | &ValueType::Staged { .. } | &ValueType::Kept { .. } | &ValueType::Row | &ValueType::RowTail(_)) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),

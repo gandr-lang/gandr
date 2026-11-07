@@ -218,6 +218,7 @@ pub fn component(
                 | ValueTypeView::Kept { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Qubit
                 | ValueTypeView::Row
                 | ValueTypeView::RowTail(_)
                 | ValueTypeView::Session(_)
@@ -255,6 +256,7 @@ pub fn component(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
@@ -389,6 +391,7 @@ pub fn flow_component(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)

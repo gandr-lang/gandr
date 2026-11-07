@@ -1558,6 +1558,7 @@ Err(_) => false,
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
                     | ValueType::Buffer
+                    | ValueType::Qubit
                     | ValueType::Web
                     | ValueType::Row => [None, None, None, None, None],
                     ValueType::Capability { ref authority, .. } => {

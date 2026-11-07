@@ -467,6 +467,7 @@ pub fn authorise(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_) => Err(CheckRefusal::ShapeMismatch {
             at: TermNode::Value(capability),
@@ -741,6 +742,7 @@ fn successors(
             | ValueType::Abstract(_)
             | ValueType::Unknown
             | ValueType::Buffer
+            | ValueType::Qubit
             | ValueType::Row
             | ValueType::RowTail(_) => {},
         },

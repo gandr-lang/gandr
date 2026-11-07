@@ -50,6 +50,7 @@ use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::TacticFault;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
+use gandr_core_checker::comonoid::Grade;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
@@ -1474,6 +1475,16 @@ fn checked(
                 "the linear parameter is used inside {}, which may use it other than once",
                 Captor(by)
             ),
+            LinearityDefect::ComonoidAbsent {
+                grade: Grade::Many, ..
+            } => f.write_str(
+                "this binder may use its value any number of times (grade ω), but its type holds a qubit, which has no copy and no discard",
+            ),
+            LinearityDefect::ComonoidAbsent {
+                grade: Grade::Zero, ..
+            } => f.write_str(
+                "this binder holds its value in types only (grade 0), but its type holds a qubit, which has no discard",
+            ),
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => {
@@ -2678,6 +2689,13 @@ pub mod tests
                 defect: LinearityDefect::ShadowCaptured {
                     lambda: computation,
                     by: Capture::Task,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ComonoidAbsent {
+                    ty: value_type,
+                    grade: gandr_core_checker::comonoid::Grade::Many,
                 },
             },
             CheckRefusal::Access {

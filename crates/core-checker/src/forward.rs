@@ -548,6 +548,7 @@ fn first_order(
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
@@ -686,6 +687,7 @@ fn leaves(
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
@@ -862,6 +864,7 @@ fn natural(
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
