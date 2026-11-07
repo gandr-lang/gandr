@@ -5,7 +5,7 @@
       "body": null,
       "rows": ["| 0a1b2c3d | #5000 | gandr | ⚠️ 1 regression | #1545 |"]
     },
-    "output": "This issue lists the landings whose hotpath checks regress, or improve past the band of their policy.\n\nThe table gives one row for each red `hotpath / <benchmark>` check of a landing, and one row for each report that improves past its band. `mise run ci:hotpath-landed` adds the rows on the push to `main`. A red row links the issues of the functions that it regresses. A fix or a stated acceptance settles the row of the pull request there.\n\n<details><summary>1 row — 1 regressed, 0 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 0a1b2c3d | #5000 | gandr | ⚠️ 1 regression | #1545 |\n\n</details>"
+    "output": "This issue lists the landings whose hotpath checks regress, or improve past the band of their policy.\n\nThe table gives one row for each red `hotpath / <benchmark>` check of a landing, and one row for each report that improves past its band. `mise run ci:hotpath-landed` adds the rows on the push to `main`. A red row links the issues of the functions that it regresses. A fix or a stated acceptance settles the row of the pull request there. A row reads `fixed` once each issue it links is closed, and at once when it links none.\n\n<details><summary>1 row — 1 regressed, 0 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 0a1b2c3d | #5000 | gandr | ⚠️ 1 regression | #1545 |\n\n</details>"
   },
   {
     "name": "a filed ledger keeps its prose and its rows, a row of a pull request and benchmark it holds joins nothing, and a new one joins",
@@ -16,6 +16,15 @@
         "| 5e6f7a8b | #5001 | store | ⚠️ 2 regressions | #1666 |"
       ]
     },
-    "output": "Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy's band, is one row here.\n\n<details><summary>2 rows — 1 regressed, 1 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 9f8e7d6c | #4000 | gandr-timing | ✅ improved 12 % | — |\n| 5e6f7a8b | #5001 | store | ⚠️ 2 regressions | #1666 |\n\n</details>"
+    "output": "Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy's band, is one row here.\n\n<details><summary>2 rows — 1 regressed, 1 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 9f8e7d6c | #4000 | gandr-timing | ✅ improved 12 % | fixed — no issue |\n| 5e6f7a8b | #5001 | store | ⚠️ 2 regressions | #1666 |\n\n</details>"
+  },
+  {
+    "name": "#3348: a row settles once each issue it links is closed, and at once when it links none; a row with an open issue, or an issue of unknown state, stays open",
+    "input": {
+      "body": "A ledger.\n\n<details><summary>4 rows — 3 regressed, 1 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 1a1a1a1a | #4100 | gandr | ⚠️ 1 regression | #1711 |\n| 2b2b2b2b | #4101 | gandr | ⚠️ 2 regressions | #1545 #2882 |\n| 3c3c3c3c | #4102 | gandr | ✅ no regressions, 🚀 1 improvement | — |\n| 4d4d4d4d | #4103 | gandr | ⚠️ 1 regression | #9999 |\n\n</details>",
+      "rows": ["| 5e5e5e5e | #4104 | store | ⚠️ 1 regression | fixed — #1600 |"],
+      "states": { "#1711": "OPEN", "#1545": "CLOSED", "#2882": "CLOSED" }
+    },
+    "output": "A ledger.\n\n<details><summary>5 rows — 4 regressed, 1 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 1a1a1a1a | #4100 | gandr | ⚠️ 1 regression | #1711 |\n| 2b2b2b2b | #4101 | gandr | ⚠️ 2 regressions | fixed — #1545 #2882 |\n| 3c3c3c3c | #4102 | gandr | ✅ no regressions, 🚀 1 improvement | fixed — no issue |\n| 4d4d4d4d | #4103 | gandr | ⚠️ 1 regression | #9999 |\n| 5e5e5e5e | #4104 | store | ⚠️ 1 regression | fixed — #1600 |\n\n</details>"
   }
 ]
