@@ -2293,7 +2293,7 @@ const CROSSING_READS: [(Tag, CrossingRead); 2] = [
 ];
 
 /// Every former the checker's judgement has no rule for.
-const FORMERS: [UnadmittedFormer; 25_usize] = [
+const FORMERS: [UnadmittedFormer; 26_usize] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -2319,6 +2319,7 @@ const FORMERS: [UnadmittedFormer; 25_usize] = [
     UnadmittedFormer::Buffer,
     UnadmittedFormer::Qubit,
     UnadmittedFormer::Abandon,
+    UnadmittedFormer::EndpointLoop,
 ];
 
 /// Every fault a model component the derivation cannot state carries.
@@ -2517,7 +2518,7 @@ const fn boundary_tag(boundary: FragmentBoundary) -> Tag
 /// # Adequacy
 /// - hypothesis: L3 — `OutOfFragment.Perform` is minted by its former's tag.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-const fn former_tag(former: UnadmittedFormer) -> Tag
+pub const fn former_tag(former: UnadmittedFormer) -> Tag
 {
     Tag(match former {
         UnadmittedFormer::ValueLift => "ValueLift",
@@ -2545,6 +2546,7 @@ const fn former_tag(former: UnadmittedFormer) -> Tag
         UnadmittedFormer::Buffer => "Buffer",
         UnadmittedFormer::Qubit => "Qubit",
         UnadmittedFormer::Abandon => "Abandon",
+        UnadmittedFormer::EndpointLoop => "EndpointLoop",
     })
 }
 

@@ -287,6 +287,9 @@ pub enum UnadmittedFormer
     Qubit,
     /// Abandonment of a first-class stack.
     Abandon,
+    /// A loop each pass of which moves on an endpoint it threads: it never
+    /// returns, and the kernel's returner assumes that each call returns.
+    EndpointLoop,
 }
 
 impl UnadmittedFormer
@@ -313,7 +316,7 @@ impl UnadmittedFormer
     #[spec(ensures: |ret| match self {
         | Self::Stage | Self::TypeLift => matches!(ret, FailureClass::MalformedSource),
         | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
-        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Qubit | Self::Abandon => matches!(ret, FailureClass::EngineFault),
+        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Qubit | Self::Abandon | Self::EndpointLoop => matches!(ret, FailureClass::EngineFault),
     })]
     #[inline]
     #[must_use]
@@ -342,7 +345,8 @@ impl UnadmittedFormer
             | Self::Memory
             | Self::Buffer
             | Self::Qubit
-            | Self::Abandon => FailureClass::EngineFault,
+            | Self::Abandon
+            | Self::EndpointLoop => FailureClass::EngineFault,
         }
     }
 }
