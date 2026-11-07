@@ -14,8 +14,9 @@
 //! critical cells. [`greedy()`] builds an acyclic matching on a finite
 //! complex. [`equivalence()`] gives the equivalence on the complex's own
 //! [`Composites`], with a witness for each inverse law, and on its complex it
-//! is a [`Reduction`] that composes in sequence. [`reduct()`] gives its
-//! abelianisation: the critical cells with their boundary over the integers.
+//! is a [`Reduction`] that composes in sequence. A [`Sum`] sets reductions of
+//! one type side by side. [`reduct()`] gives its abelianisation: the critical
+//! cells with their boundary over the integers.
 //!
 //! The equivalence holds at the general level, on the complex's own
 //! composites (Doré's thesis, § 3.5). The reduct is its shadow, the homology.
@@ -32,6 +33,7 @@
 //! | [`reduct()`], [`Reduct`], [`Place`] | the reduct along an acyclic matching: the critical cells, the Morse boundary of each and the walk of its gradient |
 //! | [`equivalence()`], [`Equivalence`], [`EquivalenceOf`], [`Removal`], [`Bound`], [`Refusal`] | the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name |
 //! | [`Reduction`], [`Then`], [`Answer`] | a reduction: the collapse, the inclusion, both inverse witnesses and the replay, two reductions in sequence, and what a step gives |
+//! | [`Sum`], [`Summand`], [`PartIndex`], [`SumFault`] | reductions of one type side by side as one reduction, a value of one part with its part, the place of a part, and why a sum cannot answer |
 //! | [`Abelian`], [`Chain`] | the abelianisation of a scheme: its composites as integer chains |
 //! | [`MorseError`] | every refusal: the caller's own fault, a walk past its budget, or a sum past the integers |
 //!
@@ -110,6 +112,7 @@ mod greedy;
 mod poset;
 mod reduct;
 mod reduction;
+mod sum;
 
 pub use abelian::Abelian;
 pub use abelian::Chain;
@@ -144,3 +147,7 @@ pub use reduct::reduct;
 pub use reduction::Answer;
 pub use reduction::Reduction;
 pub use reduction::Then;
+pub use sum::PartIndex;
+pub use sum::Sum;
+pub use sum::SumFault;
+pub use sum::Summand;

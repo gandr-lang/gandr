@@ -19,7 +19,8 @@
 //! template where that pays ([`anti_unify_tracelets`], [`GuardedTemplate`]),
 //! and the template with one row for each member is a reduction of the
 //! family whose replay checks each member against its instance
-//! ([`TemplateReduction`]).
+//! ([`TemplateReduction`]). A family of families folds its templates into one
+//! template of templates where that pays ([`TemplateFold`]).
 //!
 //! Replay in `gandr-theory-coherent-resolutions` is the semantic oracle: every
 //! relation here is sound below it, and a negative answer means "not
@@ -288,6 +289,7 @@ pub use crate::normal_form::tracelets_nf_equal;
 pub use crate::reduction::FoldFault;
 pub use crate::reduction::Folded;
 pub use crate::reduction::Identity;
+pub use crate::reduction::TemplateFold;
 pub use crate::reduction::TemplateReduction;
 pub use crate::shift::ShiftEquivalence;
 pub use crate::shift::ShiftObstruction;

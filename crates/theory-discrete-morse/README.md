@@ -40,6 +40,7 @@ The equivalence holds at the general level, on the complex's own composites, aft
 - `reduct`, `Reduct`, `Place`: the reduct along an acyclic matching, its critical cells, the Morse boundary of each and the walk of its gradient.
 - `equivalence`, `Equivalence`, `EquivalenceOf`, `Removal`, `Bound`, `Refusal`: the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name.
 - `Reduction`, `Then`, `Answer`: a reduction with its collapse, its inclusion, both inverse witnesses and its replay, two reductions in sequence, and what a step gives.
+- `Sum`, `Summand`, `PartIndex`, `SumFault`: reductions of one type side by side as one reduction, a value of one part with its part, the place of a part, and why a sum cannot answer.
 - `Abelian`, `Chain`: the abelianisation of a scheme, its composites as integer chains.
 - `MorseError`: every refusal, the caller's own fault, a walk past its budget, or a sum past the integers.
 
@@ -76,7 +77,7 @@ mise exec -- cargo nextest run -p gandr-theory-discrete-morse
 
 ## Where the detail lives
 
-The complex and the incidence are in `src/complex.rs`, the scheme and its check in `src/collapse.rs`, and the cycle search of a gradient in `src/gradient.rs`. The greedy matching is in `src/greedy.rs`, the graded poset as a complex in `src/poset.rs`, and the reduct with the order of its walks in `src/reduct.rs`. `src/equivalence.rs` holds the equivalence, the check that replays it and the trait `Composites`. The trait of a reduction and the sequence of two reductions are in `src/reduction.rs`. The abelianisation is in `src/abelian.rs`.
+The complex and the incidence are in `src/complex.rs`, the scheme and its check in `src/collapse.rs`, and the cycle search of a gradient in `src/gradient.rs`. The greedy matching is in `src/greedy.rs`, the graded poset as a complex in `src/poset.rs`, and the reduct with the order of its walks in `src/reduct.rs`. `src/equivalence.rs` holds the equivalence, the check that replays it and the trait `Composites`. The trait of a reduction and the sequence of two reductions are in `src/reduction.rs`, and the sum of reductions is in `src/sum.rs`. The abelianisation is in `src/abelian.rs`.
 
 ## License
 
