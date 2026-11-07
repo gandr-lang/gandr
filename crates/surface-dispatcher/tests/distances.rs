@@ -31,36 +31,46 @@ use gandr_theory_ordered_algebras::Lawvere;
 use gandr_theory_ordered_algebras::OrderedSemiring as _;
 use gandr_theory_ordered_algebras::check;
 use quenchant_shape::shape::Maybe;
+use rayon::iter::ParallelIterator as _;
+use rayon::slice::ParallelSlice as _;
 
 /// The fusion rows of every corpus source, each with the source that writes
-/// its block, in path order and then in the census's order.
+/// its block, in path order and then in the census's order. The sources do
+/// not depend on each other, so each part of them has its own census on a
+/// core of its own. A part is a quarter of one worker's share, so a part of
+/// slow sources leaves the other workers busy.
 ///
 /// # Specification
 /// trivial.
 fn census() -> Vec<(PathBuf, FusionRow)>
 {
-    let mut census = Census::new(
-        super::coincide::sources().into_iter().collect(),
-        Fusions::Composed,
-    );
-    let mut rows = Vec::new();
-    while let Maybe::Present(step) = census.step() {
-        if let CensusStep::Source {
-            path,
-            fusions,
-            over,
-            ..
-        } = step
-        {
-            assert!(
-                over.is_empty(),
-                "{}: a block passes the fusion budget",
-                path.display()
-            );
-            rows.extend(fusions.into_iter().map(|row| (path.to_path_buf(), row)));
-        }
-    }
-    rows
+    let sources: Vec<PathBuf> = super::coincide::sources().into_iter().collect();
+    let parts = rayon::current_num_threads().saturating_mul(4).max(1);
+    let size = sources.len().div_ceil(parts).max(1);
+    sources
+        .par_chunks(size)
+        .flat_map_iter(|part| {
+            let mut census = Census::new(part.to_vec(), Fusions::Composed);
+            let mut rows = Vec::new();
+            while let Maybe::Present(step) = census.step() {
+                if let CensusStep::Source {
+                    path,
+                    fusions,
+                    over,
+                    ..
+                } = step
+                {
+                    assert!(
+                        over.is_empty(),
+                        "{}: a block passes the fusion budget",
+                        path.display()
+                    );
+                    rows.extend(fusions.into_iter().map(|row| (path.to_path_buf(), row)));
+                }
+            }
+            rows
+        })
+        .collect()
 }
 
 /// The composed count of the hole named `hole` in `row`.
