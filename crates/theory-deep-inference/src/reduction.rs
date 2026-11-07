@@ -589,10 +589,7 @@ impl<'family, A: CellAlphabet> TemplateFold<'family, A>
         cache: &mut InheritanceCache,
     ) -> Result<Self, TemplateRefusal>
     {
-        let carriers: Vec<Tracelet<A>> = templates
-            .iter()
-            .map(|template| template.carrier().clone())
-            .collect();
+        let carriers: Vec<&Tracelet<A>> = templates.iter().map(GuardedTemplate::carrier).collect();
         Ok(Self::over(
             anti_unify_tracelets(&carriers, store, cache)?,
             templates,

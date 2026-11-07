@@ -121,6 +121,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 
 use anodized::spec;
 use foldhash::fast::FixedState;
@@ -982,7 +983,7 @@ where
 }
 
 /// Folds a family of certificates into a guarded template, or says why it
-/// does not.
+/// does not. The family holds its members, or borrows them from elsewhere.
 ///
 /// # Specification
 /// - requires: `cache` holds verdicts of this store alone; a verdict recorded
@@ -1038,7 +1039,9 @@ where
     match family.split_first() {
         None => matches!(output, Err(TemplateRefusal::EmptyFamily)) && unchanged,
         Some((first, rest)) => {
+            let first: &Tracelet<A> = first.borrow();
             let divergence = rest.iter().position(|member| {
+                let member: &Tracelet<A> = member.borrow();
                 member.overlap.left != first.overlap.left
                     || member.overlap.right != first.overlap.right
                     || member.overlap.kind != first.overlap.kind
@@ -1050,7 +1053,7 @@ where
                     if usize::from(member) == index.saturating_add(1)) && unchanged
             } else {
                 let plain = family.iter().fold(0_usize, |sum, member|
-                    sum.saturating_add(usize::from(plain_size(member))));
+                    sum.saturating_add(usize::from(plain_size::<A>(member.borrow()))));
                 match output.as_ref() {
                     Ok(template) => {
                         let size = template.entries.iter().flat_map(|entry| entry.arms.values())
@@ -1096,19 +1099,22 @@ where
     }
 })]
 #[inline]
-pub fn anti_unify_tracelets<A>(
-    family: &[Tracelet<A>],
+pub fn anti_unify_tracelets<A, Member>(
+    family: &[Member],
     store: &CellStore<A>,
     cache: &mut InheritanceCache,
 ) -> Result<GuardedTemplate<A>, TemplateRefusal>
 where
     A: CellAlphabet,
+    Member: Borrow<Tracelet<A>>,
 {
     let Some((first, rest)) = family.split_first()
     else {
         return Err(TemplateRefusal::EmptyFamily);
     };
+    let first: &Tracelet<A> = first.borrow();
     if let Some(index) = rest.iter().position(|member| {
+        let member: &Tracelet<A> = member.borrow();
         member.overlap.left != first.overlap.left
             || member.overlap.right != first.overlap.right
             || member.overlap.kind != first.overlap.kind
@@ -1122,7 +1128,10 @@ where
     }
     let boundaries: Vec<[A::Cmd; 2]> = family
         .iter()
-        .map(|member| [member.overlap.peak.clone(), member.joins_at.clone()])
+        .map(|member| {
+            let member: &Tracelet<A> = member.borrow();
+            [member.overlap.peak.clone(), member.joins_at.clone()]
+        })
         .collect();
     let members: Vec<&[A::Cmd]> = boundaries.iter().map(<[A::Cmd; 2]>::as_slice).collect();
     let Maybe::Present(Generalization { patterns, points }) = A::anti_unify_cmd(&members)
@@ -1178,7 +1187,7 @@ where
 
     let plain = family
         .iter()
-        .map(plain_size)
+        .map(|member| plain_size::<A>(member.borrow()))
         .fold(0_usize, |total, member| {
             total.saturating_add(usize::from(member))
         });
