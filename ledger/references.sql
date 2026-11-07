@@ -61,6 +61,7 @@ INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-cor
 INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-strata','poset','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','63cf51119ea5e8cbfa160672f287983114665a83');
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere::brown','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','triple','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','surface-dispatcher','cells::fusion','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-cell-complexes','alphabet','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','8987509bb5ddbb7c61740ca2c9fa2cabc953ab1c');
@@ -71,6 +72,7 @@ INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theo
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ljungström-2025-computational_synthetic_cohomology_theory_homotopy_type_theory','theory-cellular-sheaves','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','407ea300683d73b3d94a9ade39f585365000707c');
 INSERT INTO reference VALUES('Malbos-2021-completion_operads_essential_syzygies','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Malbos-2021-completion_operads_essential_syzygies','theory-coherent-resolutions','triple','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','d38ffeaccc6639cb2a02ad7a18fd25b0d03a892d','2026-10-29','663ac54adb8b393f7ff7154d3c59eac7fcf7c44c');
 INSERT INTO reference VALUES('Pruiksma-2022-back_futures','runtime-emitter','cut','background','fc0387766eac4f5ffc7dc1a2622e7670e587c7b7','2026-10-29','40551b1269e78f7ae38d6f550f8e1e04de8adf84');
 INSERT INTO reference VALUES('Racordon-2020-formal_definition_swifts_value_semantics','runtime-emitter','run','background','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');

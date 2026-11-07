@@ -13,8 +13,10 @@
 //! cell of dimension two for each confluence entry of the overlap enumerator.
 //! The two faces of that cell are the two rules of the entry. A composition
 //! entry is a path of two steps and not a branching. Thus the complex has no
-//! cell for it. No three rules of these blocks overlap pairwise. Thus the
-//! complex has no cell of dimension three.
+//! cell for it. `NatUnits` and `NatApart` hold no critical triple. The three
+//! triples of `NatAssoc` chain its pairs below the root, the pentagon of
+//! associativity among them. The complex reads no entry below the root. Thus
+//! it has no cell of dimension three.
 //!
 //! The critical cells and the certified pairs agree up to the order of each
 //! pair. `NatUnits` and `NatApart` have the same left-hand sides. Thus their
@@ -48,6 +50,7 @@ use gandr_theory_coherent_resolutions::CompletionStepBudget;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::OverlapKind;
 use gandr_theory_coherent_resolutions::complete;
+use gandr_theory_coherent_resolutions::critical_triples;
 use gandr_theory_coherent_resolutions::enumerate_overlaps;
 use gandr_theory_coherent_resolutions::interior_overlaps_between;
 use quenchant_shape::shape::Maybe;
@@ -170,41 +173,6 @@ fn complex(store: &CellStore<ToyAlphabet>) -> Complex
             })
             .collect(),
     }
-}
-
-/// The triples of rules that overlap pairwise at the root.
-///
-/// A critical triple needs three left-hand sides that unify at one root, and
-/// then each two of them unify. Thus an empty answer shows that the complex
-/// has no cell of dimension three.
-///
-/// # Specification
-/// trivial.
-fn triples(complex: &Complex) -> Vec<[CellId; 3]>
-{
-    let count = complex.rules.len();
-    let mut overlap = vec![vec![false; count]; count];
-    for &(cell, _) in &complex.branchings {
-        overlap[usize::from(cell.left)][usize::from(cell.right)] = true;
-        overlap[usize::from(cell.right)][usize::from(cell.left)] = true;
-    }
-    let mut out = Vec::new();
-    for &(first, _) in &complex.rules {
-        for &(second, _) in &complex.rules {
-            for &(third, _) in &complex.rules {
-                let [one, two, three] = [first, second, third].map(usize::from);
-                if first < second
-                    && second < third
-                    && overlap[one][two]
-                    && overlap[two][three]
-                    && overlap[one][three]
-                {
-                    out.push([first, second, third]);
-                }
-            }
-        }
-    }
-    out
 }
 
 /// `cells` ordered greatest first along the reduction order of their terms.
@@ -439,7 +407,7 @@ fn the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units()
         "each of the two unordered pairs has an entry in each direction"
     );
     assert!(
-        triples(&complex).is_empty(),
+        critical_triples(&store).is_empty(),
         "the unit laws do not overlap each other's successor case"
     );
     assert_eq!(

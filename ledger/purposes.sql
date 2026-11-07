@@ -3650,6 +3650,8 @@ INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::derive_fused
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::replay_equivalent','function','Checks whether two certificates denote one transformation, so the equivalence''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::replay_from_peak','function','Replays two recorded paths from a peak, so the paths'' join is checked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','tracelet::replay_path','function','Replays one recorded path, so the path''s join is checked.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','triple::CriticalTriple','struct','Holds three steps on one peak that the overlaps of their left-hand sides connect, so a generating cell of dimension four is read.','collapse','fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','triple::critical_triples','function','Enumerates the critical triples of a store once each, so the collapse reads the cells above the critical pairs.','collapse','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','boundary::AdmittedFaceIndex','struct','The index of an admitted rule face in its description''s `rules`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','boundary::ConstructorCount','struct','How many constructors a description declares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','boundary::DeclinedFaceIndex','struct','The index of a declined rule face in its description''s `rules`.',NULL,'fits','sound',NULL);

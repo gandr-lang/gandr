@@ -33,8 +33,9 @@
 //! joined critical branching as a coherence cell, so each certificate is a
 //! 3-cell. Guiraud, Hoffbeck and Malbos collapse the resolution of a
 //! convergent presentation onto its rules, critical pairs and critical
-//! triples. Brown's scheme on the bar complex is that collapse, up to the
-//! critical pairs. Malbos and Ren count each critical branching once, and keep
+//! triples. [`critical_triples`] lists the triples of a store. Brown's scheme
+//! on the bar complex is that collapse, up to the critical triples. Malbos and
+//! Ren count each critical branching once, and keep
 //! only the essential ones. Completion joins each root branching once. The
 //! collapse tests compare the essential branchings with the certified pairs.
 //! Doré states a matching as a partial function, acyclic when each cell
@@ -93,6 +94,7 @@
 //!   Zeitschrift_ 293 (2019), pages 113–179. `doi:10.1007/s00209-018-2185-z` —
 //!   the resolution whose generating cells are the rules, the critical pairs
 //!   and the critical triples, and the collapsing scheme that reaches it.
+//!   [`critical_triples`] lists the triples of its § 6.2.
 //! - Philippe Malbos and Isaac Ren. "Completion in Operads via Essential
 //!   Syzygies." In _Proceedings of ISSAC 2021_, ACM, 2021.
 //!   `doi:10.1145/3452143.3465552` — each critical branching counted once,
@@ -128,6 +130,7 @@ mod lawvere;
 mod overlap;
 mod rewrite;
 mod tracelet;
+mod triple;
 
 pub use crate::boundary::Arity;
 pub use crate::boundary::BarDegree;
@@ -207,3 +210,5 @@ pub use crate::tracelet::derive_fused;
 pub use crate::tracelet::replay_equivalent;
 pub use crate::tracelet::replay_from_peak;
 pub use crate::tracelet::replay_path;
+pub use crate::triple::CriticalTriple;
+pub use crate::triple::critical_triples;
