@@ -2,6 +2,8 @@
 ///
 /// A large code stores a type in one field.
 /// The flow type has a level above the universe of the code.
+/// `Flow[.A = Type[+, 1]](A, B)` is the directed hom of that universe, as
+/// Definition 1.2 of the cited work gives it.
 ///
 /// The kernel checks each declaration over the level-one universe.
 /// Each motive decodes its large code at that same level.

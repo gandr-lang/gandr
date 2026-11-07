@@ -2,6 +2,8 @@
 ///
 /// Each case at the point owes transport around the loop.
 /// A loop arm supplies the path that transport requires.
+/// This is the circle's dependent elimination in the HoTT book's Lemma 6.2.5:
+/// an answer at the point and a path over the loop.
 ///
 /// The checker unfolds each map within its obligation budget.
 /// The source gives each transport its refusal name.

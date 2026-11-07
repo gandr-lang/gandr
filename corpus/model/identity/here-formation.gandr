@@ -2,6 +2,7 @@
 ///
 /// Reflexivity synthesises a type or checks against a written path type.
 /// A function can pass it as a value.
+/// `Path.here` is the HoTT book's § 1.12 `refl`.
 ///
 /// The checker reads the point and its selected path type.
 /// The examples use reflexivity at four.

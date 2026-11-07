@@ -5,6 +5,7 @@
 ///
 /// The checker reads the derived rule as `Monoid.assoc4`.
 /// Both sides reduce to one normal form.
+/// The rewrites to that normal form are the proof.
 ///
 /// - see: #4106 — derived model components
 /// - see: corpus/pathological/identity/derived-associator.gandr

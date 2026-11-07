@@ -1,10 +1,13 @@
 /// This source states congruence for reflexivity under conversion.
 ///
 /// Two reflexivity terms agree when their points convert at every path level.
+/// It is the HoTT book's § 1.12 (`refl`) under judgmental equality.
 /// A parameter does not reduce to a reflexivity term.
 ///
 /// The checker converts endpoints by each rule form.
 /// It compares each path at its resolved equality.
+///
+/// Limits: conversion knows no arithmetic law.
 ///
 /// - see: #1723 — `peak_is_here`
 /// - see: #2378 — `held_sum`

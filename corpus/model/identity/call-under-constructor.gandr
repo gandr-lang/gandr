@@ -3,6 +3,7 @@
 ///
 /// Integer rules can reduce the constructor to the call beneath it.
 /// A recursive transport remains neutral on its path.
+/// The integers and their sum follow cubical Agda's `Cubical/Data/Int`.
 ///
 /// The kernel reads each endpoint through the integer rules.
 /// The checker rejects a zero arm that gives the wrong endpoint.

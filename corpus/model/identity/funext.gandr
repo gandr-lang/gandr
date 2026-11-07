@@ -1,6 +1,7 @@
 /// This source states function extensionality.
 ///
 /// Functions form one path when they agree at every argument.
+/// It is the HoTT book's § 2.9 (`Path.funext`) and cubical Agda's `funExt`.
 ///
 /// Double negation returns each Boolean value.
 /// Single negation differs from the identity function.
