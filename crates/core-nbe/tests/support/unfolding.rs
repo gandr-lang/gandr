@@ -145,7 +145,7 @@ pub struct Unfolded(pub u64);
                     Computation::Exercise { ref signature, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
                     Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) | Computation::BindAll { .. } | Computation::Ascribe { .. } => 3,
                     Computation::ReturnAll(ref values) => 1_u64.saturating_add(u64::try_from(values.len()).unwrap_or(u64::MAX)),
-                    Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Decompose(_) | Computation::Mark { .. } => 2,
+                    Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Decompose(_) | Computation::Mark { .. } => 2,
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
@@ -178,6 +178,7 @@ pub struct Unfolded(pub u64);
                     CompType::Returns { ref results, ref effects } => 1_u64.saturating_add(u64::try_from(results.len().saturating_add(effects.types().count())).unwrap_or(u64::MAX)),
                     CompType::Element { .. } => 2,
                     CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => 3,
+                    CompType::LinearArrow { .. } => 4,
                     CompType::Unknown => 1,
                     CompType::Codata { ref arguments, .. } => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
                 }
@@ -429,7 +430,8 @@ pub fn unfolded(
                     Computation::Reset(body)
                     | Computation::Shift(body)
                     | Computation::Project(_, body)
-                    | Computation::Lambda(body) => pending.push(CoreNode::Computation(body)),
+                    | Computation::Lambda(body)
+                    | Computation::LinearLambda(body) => pending.push(CoreNode::Computation(body)),
                     Computation::ListFold {
                         element,
                         result,
@@ -645,6 +647,15 @@ pub fn unfolded(
                     },
                     CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                         pending.push(CoreNode::ValueType(domain));
+                        pending.push(CoreNode::CompType(codomain));
+                    },
+                    CompType::LinearArrow {
+                        domain,
+                        multiplicity,
+                        codomain,
+                    } => {
+                        pending.push(CoreNode::ValueType(domain));
+                        pending.push(CoreNode::Value(multiplicity));
                         pending.push(CoreNode::CompType(codomain));
                     },
                     CompType::Element { code, .. } => pending.push(CoreNode::Value(code)),

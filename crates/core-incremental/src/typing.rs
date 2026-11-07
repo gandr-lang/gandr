@@ -289,6 +289,28 @@ pub enum Linearity
         /// The clause's body.
         clause: Site,
     },
+    /// A linear function's body read its parameter after its copy was spent.
+    LinearSlotConsumed
+    {
+        /// The linear lambda.
+        lambda: Site,
+    },
+    /// A linear function's body ended with its parameter's copy unread, or
+    /// one arm of a case read the copy and another did not.
+    LinearSlotUnconsumed
+    {
+        /// The linear lambda.
+        lambda: Site,
+    },
+    /// A linear function's parameter was read as a value where its read may
+    /// run other than once.
+    ShadowCaptured
+    {
+        /// The linear lambda.
+        lambda: Site,
+        /// What may run the read.
+        by: Capture,
+    },
 }
 
 /// The world a located refusal names, projected: the host's, or the
@@ -744,6 +766,16 @@ impl Projection<'_, '_, '_, '_>
             },
             LinearityDefect::ContinuationAsValue { clause } => Linearity::ContinuationAsValue {
                 clause: self.site(ArenaNode::Computation(clause)),
+            },
+            LinearityDefect::LinearSlotConsumed { lambda } => Linearity::LinearSlotConsumed {
+                lambda: self.site(ArenaNode::Computation(lambda)),
+            },
+            LinearityDefect::LinearSlotUnconsumed { lambda } => Linearity::LinearSlotUnconsumed {
+                lambda: self.site(ArenaNode::Computation(lambda)),
+            },
+            LinearityDefect::ShadowCaptured { lambda, by } => Linearity::ShadowCaptured {
+                lambda: self.site(ArenaNode::Computation(lambda)),
+                by,
             },
         }
     }

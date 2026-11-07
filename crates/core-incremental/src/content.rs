@@ -833,6 +833,8 @@ pub enum ContentNode
     },
     /// A lambda over its body.
     Lambda(NodeIndex),
+    /// A linear lambda over its body, which binds the parameter's shadow.
+    LinearLambda(NodeIndex),
     /// An application of a computation to a value.
     Application(NodeIndex, NodeIndex),
     /// A return of a value.
@@ -1005,6 +1007,16 @@ pub enum ContentNode
         /// The domain.
         domain: NodeIndex,
         /// The codomain, under the domain's binder.
+        codomain: NodeIndex,
+    },
+    /// A linear arrow.
+    LinearArrow
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The multiplicity, a value.
+        multiplicity: NodeIndex,
+        /// The codomain, under the parameter's shadow.
         codomain: NodeIndex,
     },
     /// The computation type a code denotes.
@@ -1439,6 +1451,7 @@ impl ContentNode
         | Self::Ride { .. }
         | Self::Primitive(..)
         | Self::Lambda(_)
+        | Self::LinearLambda(_)
         | Self::Application(..)
         | Self::Return(_)
         | Self::Bind(..)
@@ -1489,6 +1502,7 @@ impl ContentNode
         | Self::Returns { .. }
         | Self::Arrow { .. }
         | Self::Pi { .. }
+        | Self::LinearArrow { .. }
         | Self::ComputationElement { .. }
         | Self::UnknownComputationType => matches!(ret, Sort::CompType),
         | Self::Unresolved(sort) => matches!(
@@ -1568,6 +1582,7 @@ impl ContentNode
             | Self::Ride { .. }
             | Self::Primitive(..)
             | Self::Lambda(_)
+            | Self::LinearLambda(_)
             | Self::Application(..)
             | Self::Return(_)
             | Self::Bind(..)
@@ -1618,6 +1633,7 @@ impl ContentNode
             | Self::Returns { .. }
             | Self::Arrow { .. }
             | Self::Pi { .. }
+            | Self::LinearArrow { .. }
             | Self::ComputationElement { .. }
             | Self::UnknownComputationType => Sort::CompType,
             Self::Unresolved(sort) => sort,
@@ -1726,7 +1742,7 @@ impl ContentNode
             | Self::RowTail(a)
             | Self::ComputationElement { code: a, .. }
             | Self::ValueMark { body: a, .. } => actual == Some(&[(a, V)][..]),
-            | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) | Self::Fixpoint { body: a, .. } => {
+            | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) | Self::LinearLambda(a) | Self::Fixpoint { body: a, .. } => {
                 actual == Some(&[(a, M)][..])
             },
             | Self::Application(a, b) => actual == Some(&[(a, M), (b, V)][..]),
@@ -1763,6 +1779,11 @@ impl ContentNode
                 domain: a,
                 codomain: b,
             } => actual == Some(&[(a, A), (b, C)][..]),
+            | Self::LinearArrow {
+                domain: a,
+                multiplicity: m,
+                codomain: b,
+            } => actual == Some(&[(a, A), (m, V), (b, C)][..]),
         }
     })]
     pub(crate) fn children(&self) -> Children<'_>
@@ -2049,7 +2070,7 @@ impl ContentNode
             | Self::Run(body)
             | Self::Reset(body)
             | Self::Project(_, body) => Children::of(&[(body, M)]),
-            Self::Lambda(body) | Self::Fixpoint { body, .. } => {
+            Self::Lambda(body) | Self::LinearLambda(body) | Self::Fixpoint { body, .. } => {
                 Children::of(&[(body, M)]).binding(ChildSlot(0), one)
             },
             Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
@@ -2129,6 +2150,12 @@ impl ContentNode
             Self::Pi { domain, codomain } => {
                 Children::of(&[(domain, A), (codomain, C)]).binding(ChildSlot(1), one)
             },
+            Self::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => Children::of(&[(domain, A), (multiplicity, V), (codomain, C)])
+                .binding(ChildSlot(2), one),
         }
     }
 
@@ -2151,7 +2178,7 @@ impl ContentNode
         Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
         Self::ReturnAll(_) | Self::BindAll(..) | Self::Returns { .. } |
         Self::Patched { .. } |
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::LinearLambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::LinearArrow { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -2239,6 +2266,7 @@ impl ContentNode
             | Self::Thunk(_)
             | Self::ValueLift { .. }
             | Self::Lambda(_)
+            | Self::LinearLambda(_)
             | Self::Application(..)
             | Self::Return(_)
             | Self::Bind(..)
@@ -2259,6 +2287,7 @@ impl ContentNode
             | Self::Returner { .. }
             | Self::Arrow { .. }
             | Self::Pi { .. }
+            | Self::LinearArrow { .. }
             | Self::Quote(_)
             | Self::QuoteComputation(_)
             | Self::StaticLambda(_)
@@ -5096,6 +5125,7 @@ fn computation_content(
             ContentNode::BindAll(found.computation()?, arity, found.computation()?)
         },
         Computation::Lambda(_) => ContentNode::Lambda(found.computation()?),
+        Computation::LinearLambda(_) => ContentNode::LinearLambda(found.computation()?),
         Computation::Application(..) => {
             ContentNode::Application(found.computation()?, found.value()?)
         },
@@ -5306,6 +5336,11 @@ fn comp_type_content(
         },
         CompType::Pi { .. } => ContentNode::Pi {
             domain: found.value_type()?,
+            codomain: found.comp_type()?,
+        },
+        CompType::LinearArrow { .. } => ContentNode::LinearArrow {
+            domain: found.value_type()?,
+            multiplicity: found.value()?,
             codomain: found.comp_type()?,
         },
         CompType::Element { ref target, .. } => ContentNode::ComputationElement {
@@ -5840,6 +5875,7 @@ where
             body: image(body),
         },
         ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
+        ContentNode::LinearLambda(body) => ContentNode::LinearLambda(image(body)),
         ContentNode::Application(head, argument) => {
             let head = image(head);
             ContentNode::Application(head, image(argument))
@@ -5943,6 +5979,19 @@ where
             let domain = image(domain);
             ContentNode::Pi {
                 domain,
+                codomain: image(codomain),
+            }
+        },
+        ContentNode::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => {
+            let domain = image(domain);
+            let multiplicity = image(multiplicity);
+            ContentNode::LinearArrow {
+                domain,
+                multiplicity,
                 codomain: image(codomain),
             }
         },
@@ -6253,7 +6302,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::RowTail(_) | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::Patched { .. })
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::LinearArrow { .. } | ContentNode::RowTail(_) | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::Patched { .. })
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -6548,6 +6597,7 @@ fn mint_node(
         | ContentNode::RowTail(_)
         | ContentNode::RowValue(_)
         | ContentNode::ComputationElement { .. }
+        | ContentNode::LinearArrow { .. }
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::ListNil
@@ -6564,6 +6614,7 @@ fn mint_node(
         | ContentNode::StaticLambda(_)
         | ContentNode::StaticApplication(..)
         | ContentNode::Lambda(_)
+        | ContentNode::LinearLambda(_)
         | ContentNode::Application(..)
         | ContentNode::Return(_)
         | ContentNode::Bind(..)

@@ -1103,6 +1103,7 @@ const fn comp_type_head(comp_type: &CompType) -> TypeHead<'_>
         CompType::Returner { .. }
         | CompType::Returns { .. }
         | CompType::Arrow { .. }
+        | CompType::LinearArrow { .. }
         | CompType::Pi { .. }
         | CompType::With(_)
         | CompType::Codata { .. } => TypeHead::Rigid,

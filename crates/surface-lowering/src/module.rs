@@ -5299,6 +5299,7 @@ impl<'source> Collector<'_, 'source>
                     | Former::ThunkType
                     | Former::ReturnerType
                     | Former::ArrowType
+                    | Former::LinearArrowType
                     | Former::ProductType
                     | Former::SumType
                     | Former::LazyProductType
@@ -11110,10 +11111,10 @@ fn read_tail<'source>(
 /// - requires: `header` stands at the tail's `(`.
 /// - ensures: signed exactly when every binder tile before the parameter list's
 ///   own `)`, with the names after it that share its type, is followed by `:`,
-///   and the `)` by `->` or by the `:` stating a clause tail's type; unsigned
-///   otherwise, a list with no `)` included. Only the tiles are read: whether
-///   each type and the result hold exactly one form is the function's own
-///   reading, decided where the classification reads the declaration.
+///   and the `)` by `->`, by `⊸` or by the `:` stating a clause tail's type;
+///   unsigned otherwise, a list with no `)` included. Only the tiles are read:
+///   whether each type and the result hold exactly one form is the function's
+///   own reading, decided where the classification reads the declaration.
 /// - provides: which halves a function tail writes.
 /// - fails: never.
 /// - panics: none.
@@ -11128,6 +11129,7 @@ fn read_tail<'source>(
     ensures: |ret| {
         ret != Signing::Signed
             || matches!(header.at(TileName::ARROW), Maybe::Present(_))
+            || matches!(header.at(TileName::LINEAR_ARROW), Maybe::Present(_))
             || matches!(header.at(TileName::COLON), Maybe::Present(_))
     },
 )]
@@ -11148,9 +11150,15 @@ fn signing(mut header: Cursor<'_>) -> Signing
             Maybe::Absent(_) => return Signing::Unsigned,
         }
     }
-    match (header.at(TileName::ARROW), header.at(TileName::COLON)) {
-        (Maybe::Present(_), _) | (_, Maybe::Present(_)) => Signing::Signed,
-        (Maybe::Absent(_), Maybe::Absent(_)) => Signing::Unsigned,
+    match (
+        header.at(TileName::ARROW),
+        header.at(TileName::LINEAR_ARROW),
+        header.at(TileName::COLON),
+    ) {
+        (Maybe::Present(_), ..) | (_, Maybe::Present(_), _) | (_, _, Maybe::Present(_)) => {
+            Signing::Signed
+        },
+        (Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_)) => Signing::Unsigned,
     }
 }
 

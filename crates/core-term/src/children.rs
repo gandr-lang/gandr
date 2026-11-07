@@ -5,9 +5,10 @@
 //! which order, and how many binders of each zone the former opens over each.
 //! The intuitionistic binders are the ones the rewrite machines count per
 //! child. The linear ones are a fork's two ends, a receive's payload and a
-//! hold's or an access's view. The arena folds a node's support over its
-//! children when it mints the node, and a walk that descends a term reads the
-//! children here rather than restating the formers.
+//! hold's or an access's view. A linear lambda's parameter is intuitionistic:
+//! the host binds its shadow, and its supply is no binder. The arena folds a
+//! node's support over its children when it mints the node, and a walk that
+//! descends a term reads the children here rather than restating the formers.
 //!
 //! A node's own names are not children: a variable's index, a session
 //! action's endpoint and a memory form's resident are what the node names
@@ -277,15 +278,15 @@ pub fn of_value<Walk>(
 /// # Specification
 /// - ensures: every child the former holds, once each and in the order the
 ///   former lists it, past the binders the former opens over it: one
-///   intuitionistic for a lambda's, a fixpoint's and a shift's body, a bind's
-///   continuation, a case's branches, a data case's motive, a transport's or a
-///   ride's motive, a return clause and a scoped subject; two for a fold's cell
-///   branch and an operation clause; one per component for a split's body and
-///   one per value for a many-value bind's body, and one for a split's motive;
-///   a world form's scoped binders; one linear for each half of a fork, for a
-///   receive's body, and a memory form's scoped binders. A hole holds no child;
-///   a session action's endpoint and a memory form's resident are names, not
-///   children.
+///   intuitionistic for a lambda's, a linear lambda's, a fixpoint's and a
+///   shift's body, a bind's continuation, a case's branches, a data case's
+///   motive, a transport's or a ride's motive, a return clause and a scoped
+///   subject; two for a fold's cell branch and an operation clause; one per
+///   component for a split's body and one per value for a many-value bind's
+///   body, and one for a split's motive; a world form's scoped binders; one
+///   linear for each half of a fork, for a receive's body, and a memory form's
+///   scoped binders. A hole holds no child; a session action's endpoint and a
+///   memory form's resident are names, not children.
 /// - panics: none.
 /// - executable: none — the clause is the former's scoping, which the body
 ///   states once; a predicate would restate it beside it.
@@ -341,6 +342,7 @@ pub fn of_computation<Walk>(
             }
         },
         Computation::Lambda(body)
+        | Computation::LinearLambda(body)
         | Computation::Fixpoint { body, .. }
         | Computation::Shift(body) => {
             visit.computation(body, under(Binders::ONE));
@@ -703,6 +705,15 @@ pub fn of_comp_type<Walk>(
         },
         CompType::Pi { domain, codomain } => {
             visit.value_type(domain, at);
+            visit.comp_type(codomain, under(Binders::ONE));
+        },
+        CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => {
+            visit.value_type(domain, at);
+            visit.value(multiplicity, at);
             visit.comp_type(codomain, under(Binders::ONE));
         },
         CompType::Element { code, .. } => visit.value(code, at),

@@ -140,6 +140,7 @@ UnassertedLaw = { tag = 92, sites = ["at"] }
 UndischargedLaw = { tag = 105, sites = ["at"] }
 NonCovariantMotive = { tag = 67 }
 RideUnsupported = { tag = 68 }
+MultiplicityUnsupported = { tag = 112 }
 RunNotAdmitted = { tag = 69 }
 DialogueUnmatched = { tag = 87 }
 DialogueInverted = { tag = 88 }

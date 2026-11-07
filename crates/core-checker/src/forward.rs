@@ -1101,6 +1101,7 @@ fn function_parts(
         | CompTypeView::Returns { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
+        | CompTypeView::LinearArrow { .. }
         | CompTypeView::Element { .. }
         | CompTypeView::Codata { .. }
         | CompTypeView::Unknown => Ok(Maybe::Absent(unread::Absent::Unbound)),

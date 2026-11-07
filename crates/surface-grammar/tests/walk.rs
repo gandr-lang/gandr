@@ -79,16 +79,16 @@ use gandr_theory_graphs::WalkChainLength;
 /// operands by juxtaposition (#5556), then by a system of faces after the
 /// first, `T[f ↦ a, g ↦ b]` (#5106), then by a string in type position,
 /// `T[.l = "s"]`.
-const BUILT_IN_FINGERPRINT: u64 = 0x500e_ba94_2045_34e4;
+const BUILT_IN_FINGERPRINT: u64 = 0x1f44_fd8b_db5f_4758;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3021);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3025);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 95;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -294,6 +294,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("∷", 2),
     ("≃", 1),
     ("≅", 1),
+    ("⊸", 4),
 ];
 
 /// A grammar of one group, with the infix form `E + E` and the atom `x`.

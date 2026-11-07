@@ -2070,7 +2070,8 @@ impl DomainArena
     ///
     /// # Specification
     /// - requires: `body` names a live computation closure of this arena.
-    /// - ensures: a fresh computation node carrying that closure id and `face`.
+    /// - ensures: a fresh computation node carrying that closure id, the
+    ///   abstraction it came from and `face`.
     /// - provides: the weak-head form a lambda evaluates to, with the body left
     ///   unevaluated under its environment.
     /// - fails: never — a closure that dangles surfaces where an application
@@ -2083,14 +2084,22 @@ impl DomainArena
     ///   payload or source face changes the observed term.
     /// - witness: `readback::tests::a_lambda_reads_back_with_its_binder_as_an_index`
     #[inline]
-    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Lambda { body, face }))]
+    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Lambda { body, abstraction, face }))]
     pub fn comp_lambda(
         &mut self,
         body: CompClosureId,
+        abstraction: crate::domain::Abstraction,
         face: CompTermFace,
     ) -> DomainCompId
     {
-        self.alloc_computation(DomainComp::Lambda { body, face }, Guard::Flexible)
+        self.alloc_computation(
+            DomainComp::Lambda {
+                body,
+                abstraction,
+                face,
+            },
+            Guard::Flexible,
+        )
     }
 
     /// Mint a returner over an already-allocated value.

@@ -345,6 +345,17 @@ pub enum CompTypeView<'arena>
         /// The computation-type codomain, under the binder.
         codomain: CompTypeId,
     },
+    /// The linear arrow `(x : A) ˆ m ⊸ C`: its parameter is a supply of `m`
+    /// copies, and its codomain is scoped under the shadow's binder.
+    LinearArrow
+    {
+        /// The value-type domain.
+        domain: ValueTypeId,
+        /// The multiplicity, a host value.
+        multiplicity: ValueId,
+        /// The computation-type codomain, under the shadow's binder.
+        codomain: CompTypeId,
+    },
     /// The computation type a code denotes.
     Element
     {
@@ -561,9 +572,9 @@ pub fn value_type_view(
 /// # Specification
 /// - requires: nothing — a dangling id is admissible input and refused.
 /// - ensures: the node's view for every computation former: a returner of one
-///   value or of several, an arrow, a dependent arrow and a decode; the
-///   children are the node's own. The unknown type, and a decode whose code is
-///   a hole or a mark, view as [`CompTypeView::Unknown`].
+///   value or of several, an arrow, a dependent arrow, a linear arrow and a
+///   decode; the children are the node's own. The unknown type, and a decode
+///   whose code is a hole or a mark, view as [`CompTypeView::Unknown`].
 /// - provides: the one decision of which computation types the judgement and
 ///   the bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -587,6 +598,7 @@ pub fn value_type_view(
     | (Some(&CompType::Returns { ref results, ref effects }), Ok(CompTypeView::Returns { results: held, effects: row })) => **results == *held && effects == row,
     | (Some(&CompType::Arrow { domain, codomain }), Ok(CompTypeView::Arrow { domain: found_domain, codomain: found_codomain }))
     | (Some(&CompType::Pi { domain, codomain }), Ok(CompTypeView::Pi { domain: found_domain, codomain: found_codomain })) => domain == found_domain && codomain == found_codomain,
+    | (Some(&CompType::LinearArrow { domain, multiplicity, codomain }), Ok(CompTypeView::LinearArrow { domain: found_domain, multiplicity: found_multiplicity, codomain: found_codomain })) => domain == found_domain && multiplicity == found_multiplicity && codomain == found_codomain,
     | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target
         && comp_type_knowledge(arena, comp_type) == Knowledge::Known,
     | (Some(&(CompType::Element { .. } | CompType::Unknown)), Ok(CompTypeView::Unknown)) => comp_type_knowledge(arena, comp_type) == Knowledge::Unknown,
@@ -616,6 +628,15 @@ pub fn comp_type_view(
         } => Ok(CompTypeView::Returns { results, effects }),
         CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
         CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
+        CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => Ok(CompTypeView::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        }),
         CompType::Element { code, ref target } => match comp_type_knowledge(arena, comp_type) {
             Knowledge::Known => Ok(CompTypeView::Element { code, target }),
             Knowledge::Unknown => Ok(CompTypeView::Unknown),

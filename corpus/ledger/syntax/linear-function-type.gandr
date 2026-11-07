@@ -1,0 +1,5 @@
+/// `linear_function_type`: a linear function type, written with its glyph and in ASCII.
+@[ checks ]
+def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f(a) ;
+@[ checks ]
+def applyAscii(f : (x : Integer) -o Integer, a : Integer) -> Integer = f(a) ;

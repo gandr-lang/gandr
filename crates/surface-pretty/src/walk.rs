@@ -442,7 +442,7 @@ enum Kind
         | Former::Element(_) | Former::Abstract(_) | Former::Member(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
         | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Returns(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
-        | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
+        | Former::With(..) | Former::Pi { .. } | Former::LinearArrow { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::RecordUpdate(..) | Former::Injection(..) | Former::Thunk(_)
         | Former::Reify | Former::ListNil | Former::ListCons(..)
@@ -451,7 +451,7 @@ enum Kind
         | Former::Ua { .. } | Former::Compose { .. } | Former::Fill { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
         | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Step(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::BindAll { .. } | Former::Force(_) | Former::Decompose(_)
-        | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
+        | Former::Application(..) | Former::Lambda(_) | Former::LinearLambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
         | Former::ListFold { .. } | Former::ListCase { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
@@ -501,6 +501,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::EffectfulReturner { .. }
         | Former::Arrow { .. }
         | Former::Pi { .. }
+        | Former::LinearArrow { .. }
         | Former::ComputationElement(_)
         | Former::Codata { .. } => Kind::CompType,
         Former::PathRefl(_)
@@ -554,6 +555,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Decompose(_)
         | Former::Application(..)
         | Former::Lambda(_)
+        | Former::LinearLambda(_)
         | Former::Primitive { .. }
         | Former::Transport(..)
         | Former::PathTransport { .. }
@@ -602,6 +604,31 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
             )
         )]
         Former::Unreadable(_) => Kind::Unknown,
+    }
+}
+
+/// What printing the multiplicity `multiplicity` of a linear arrow leaves
+/// out: nothing for the literal `1`, which the surface leaves implicit, and
+/// [`Elided::Multiplicity`] for any other, which the surface cannot write.
+///
+/// # Specification
+/// trivial.
+pub fn elided_multiplicity<S>(
+    source: &S,
+    multiplicity: S::Node,
+) -> Option<Elided>
+where
+    S: Source + ?Sized,
+{
+    if matches!(
+        source.read(multiplicity),
+        Former::Literal(&Literal::Integer(ref integer))
+            if integer.sign() == Sign::NonNegative && integer.magnitude().as_ref() == "1"
+    ) {
+        None
+    }
+    else {
+        Some(Elided::Multiplicity)
     }
 }
 
@@ -1124,7 +1151,7 @@ where
             && ret.iter().take(usize::from(arity)).all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE)
             && (!annotated || ret.last().is_some_and(|slot| slot.admits == Admits::ValueType))
     },
-    | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..)
+    | Former::Pi { .. } | Former::LinearArrow { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::Bind(..)
         | Former::Shift(_) | Former::Leta { .. } => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
     | Former::Fixpoint(_) => ret.last().is_some_and(|slot| slot.binds.count > 0_usize),
     | Former::Case { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
@@ -1318,7 +1345,12 @@ where
         Former::Cong(map, path) => {
             Vec::from([Slot::of(map, Admits::Value, Binds::ONE), value(path)])
         },
-        Former::Pi { domain, codomain } => Vec::from([
+        // The surface writes no multiplicity: the walk notes one other than
+        // `1` as left out, where it joins the arrow.
+        Former::Pi { domain, codomain }
+        | Former::LinearArrow {
+            domain, codomain, ..
+        } => Vec::from([
             value_type(domain),
             Slot::of(codomain, Admits::CompType, Binds::ONE),
         ]),
@@ -1513,17 +1545,21 @@ where
             }]),
         },
         // A lambda's body below a value states no more than the lambda.
-        Former::Lambda(body) | Former::Shift(body) => Vec::from([match admits {
-            Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
-            Admits::Computation(Tail::Ends | Tail::Continues | Tail::Passes)
-            | Admits::Type
-            | Admits::ValueType
-            | Admits::CompType
-            | Admits::Thunked
-            | Admits::Value
-            | Admits::Operand
-            | Admits::Stated => ends(body, Binds::ONE),
-        }]),
+        // A linear lambda's body stands under the parameter's shadow, as a
+        // lambda's under its binder; the walk opens the linear copy beside it.
+        Former::Lambda(body) | Former::LinearLambda(body) | Former::Shift(body) => {
+            Vec::from([match admits {
+                Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
+                Admits::Computation(Tail::Ends | Tail::Continues | Tail::Passes)
+                | Admits::Type
+                | Admits::ValueType
+                | Admits::CompType
+                | Admits::Thunked
+                | Admits::Value
+                | Admits::Operand
+                | Admits::Stated => ends(body, Binds::ONE),
+            }])
+        },
         // A thunk's body states its type only where the thunk's position
         // does: a definition's value, a family's argument; below any other
         // value, as a constructor's field, nothing states it.
@@ -1863,7 +1899,7 @@ enum Elaboration
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
 /// - witness: `tests::goldens::a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211`
-#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
     || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
 } else if !matches!(*former,
@@ -1892,6 +1928,7 @@ where
         *former,
         Former::Thunk(_)
             | Former::Lambda(_)
+            | Former::LinearLambda(_)
             | Former::StaticLambda(_)
             | Former::PathTransport { .. }
             | Former::Ride { .. }
@@ -3207,6 +3244,9 @@ enum Join
     /// binders open where the join runs; written as the plain arrow when the
     /// walk spelled every node so far and no occurrence named its binder.
     Pi,
+    /// A linear arrow over its domain and codomain, its binder named as a
+    /// dependent arrow's is: `(x : A) ⊸ C`, the glyph in the spelling asked.
+    LinearArrow,
     /// A dependent pair type over its two factors, its first label named as
     /// a dependent arrow's binder is and its second by the next name; a link
     /// of a dependent record writes the next link's fields in its braces.
@@ -8139,6 +8179,10 @@ impl Walk<'_, '_>
                 | Former::Force(_)
                 | Former::Application(..)
                 | Former::Lambda(_)
+                | Former::LinearLambda(_)
+                // The box `(A1, …, An) -> C` is a thunked chain of plain and
+                // dependent arrows; a linear arrow in the chain has no box.
+                | Former::LinearArrow { .. }
                 | Former::Nested(_)
                 | Former::Run(_)
                 | Former::Ua { .. }
@@ -10048,6 +10092,26 @@ impl Walk<'_, '_>
                 Production("function_type"),
                 writes(Production("parenthesized_type"), Join::Pi),
             )),
+            // A linear arrow names its binder in a parenthesized domain,
+            // `(x : A) ⊸ C`. The surface writes no multiplicity, so one other
+            // than `1` is left out and the printing is approximate.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a multiplicity other than one has no surface spelling: the arrow \
+                              is written `⊸`, its multiplicity left out"
+                )
+            )]
+            Former::LinearArrow { multiplicity, .. } => {
+                if let Some(elided) = elided_multiplicity(source, multiplicity) {
+                    self.note(Unspelled::Elided(elided));
+                }
+                Some(writes(
+                    Production("linear_function_type"),
+                    writes(Production("parenthesized_type"), Join::LinearArrow),
+                ))
+            },
             Former::Sigma { .. } => {
                 self.links.push(record_link(source, node));
                 Some(writes(Production("telescope_type"), Join::Sigma))
@@ -10340,7 +10404,11 @@ impl Walk<'_, '_>
                 tasks.push(Task::Bind(Zone::Intuitionistic, Some(node)));
                 return writes(Production("lambda_expression"), Ok(()));
             },
-            Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
+            // A linear lambda is written as a lambda: the linear arrow it
+            // checks against tells the two apart.
+            Former::Lambda(_) | Former::LinearLambda(_) => {
+                Some(writes(Production("lambda_expression"), Join::Lambda))
+            },
             // A composite read where a value is read is the return of its
             // node, the shape `compose[n, k](…)` lowers to there: it is
             // written as the form, under no `pure`.
@@ -10502,7 +10570,10 @@ impl Walk<'_, '_>
             if subject {
                 tasks.push(Task::Handled(false));
             }
-            for _ in 0_usize .. slot.binds.count {
+            // A linear lambda's body stands under its linear copy too, which
+            // closes first.
+            let copies = usize::from(matches!(former, Former::LinearLambda(_)));
+            for _ in 0_usize .. slot.binds.count.saturating_add(copies) {
                 tasks.push(Task::Unbind);
             }
             // A quote written in its own spelling, `type(T)`, holds its type in
@@ -10585,6 +10656,11 @@ impl Walk<'_, '_>
                 let holding = depth
                     .checked_sub(content.saturating_add(1_usize))
                     .filter(|&held| held < threads.held().0);
+                // The linear copy of a linear lambda's parameter opens inside
+                // its shadow, named as the shadow is.
+                if copies > 0_usize {
+                    tasks.push(Task::Rebind(Zone::Linear, Some(DeBruijnIndex::from(0_u32))));
+                }
                 tasks.push(if scoped {
                     Task::BindScope(slot.binds.zone, opener)
                 }
@@ -12988,6 +13064,7 @@ impl Walk<'_, '_>
             | Former::Returner(_)
             | Former::Arrow { .. }
             | Former::Pi { .. }
+            | Former::LinearArrow { .. }
             | Former::ComputationElement(_)
             | Former::List(_)
             | Former::Variable { .. }
@@ -13025,6 +13102,7 @@ impl Walk<'_, '_>
             | Former::Force(_)
             | Former::Application(..)
             | Former::Lambda(_)
+            | Former::LinearLambda(_)
             | Former::Run(_)
             | Former::Ua { .. }
             | Former::Compose { .. }
@@ -13202,7 +13280,7 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedLambda | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::LinearArrow | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedLambda | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::EffectReturner { ref close, group, .. } => group.map_or(1_usize, |Arity(results)| results).checked_add(usize::from(close.is_some())),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
@@ -13214,7 +13292,7 @@ impl Walk<'_, '_>
                     // The join writes a box whose bare spelling reads as the
                     // static Pi as its thunk where it names no binder.
                     Join::ValueFunction(_, _, Classifies::Codes) if piece.binding == Binding::Prefix => Binding::Prefix,
-                    Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
+                    Join::Arrow | Join::Pi | Join::LinearArrow | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
@@ -13533,6 +13611,20 @@ impl Walk<'_, '_>
                 let head = self
                     .builder
                     .concat_all(&[open, binder, colon, domain.doc, arrow])?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            Join::LinearArrow => {
+                let codomain = self.pop()?;
+                let domain = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("("))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let close = self.leaf(Glyphs(") "))?;
+                let arrow = self.leaf(Glyphs(grammar::LINEAR_ARROW.written(self.spelling).0))?;
+                let head = self
+                    .builder
+                    .concat_all(&[open, binder, colon, domain.doc, close, arrow])?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
             },

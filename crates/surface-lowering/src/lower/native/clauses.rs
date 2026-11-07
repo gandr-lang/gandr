@@ -167,6 +167,7 @@ impl<'source> Lowerer<'_, 'source>
                 frame: bound,
                 declared: Maybe::Present(domain),
                 component: None,
+                listed: super::super::Listed::Elsewhere,
             });
             chained = Frame::Inner(bound);
         }

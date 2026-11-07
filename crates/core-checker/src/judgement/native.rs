@@ -947,6 +947,7 @@ impl Machine<'_, '_>
             | &Computation::Ride { .. }
             | &Computation::TelescopeTransport { .. }
             | &Computation::Lambda(_)
+            | &Computation::LinearLambda(_)
             | &Computation::Fixpoint { .. }
             | &Computation::Application(..)
             | &Computation::Return(_)
@@ -1067,6 +1068,7 @@ impl Machine<'_, '_>
             | &Computation::Ride { .. }
             | &Computation::TelescopeTransport { .. }
             | &Computation::Lambda(_)
+            | &Computation::LinearLambda(_)
             | &Computation::Fixpoint { .. }
             | &Computation::Application(..)
             | &Computation::Return(_)
@@ -1176,6 +1178,7 @@ impl Machine<'_, '_>
                     | &Computation::Ride { .. }
                     | &Computation::TelescopeTransport { .. }
                     | &Computation::Lambda(_)
+                    | &Computation::LinearLambda(_)
                     | &Computation::Fixpoint { .. }
                     | &Computation::Application(..)
                     | &Computation::Return(_)
@@ -1248,6 +1251,7 @@ impl Machine<'_, '_>
                 | &Computation::Ride { .. }
                 | &Computation::TelescopeTransport { .. }
                 | &Computation::Lambda(_)
+                | &Computation::LinearLambda(_)
                 | &Computation::Fixpoint { .. }
                 | &Computation::Application(..)
                 | &Computation::Return(_)
