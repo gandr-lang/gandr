@@ -974,7 +974,7 @@ pub enum RefusalName
     ForwardMemberReference,
     /// A type member, or a type a signature states, reading a value.
     PhaseDependence,
-    /// A declaration reading a model's inert field when it is none itself.
+    /// A declaration reading an inert declaration when it is not inert itself.
     InertRead,
     /// A selection or a signature component a module does not supply.
     UnknownMember,

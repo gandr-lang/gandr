@@ -352,7 +352,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             String::from("write `Eq.generic(T)` as a definition's whole body")
         },
         LoweringRefusal::InertRead { .. } => {
-            String::from("read an inert field only from a manifest step or inert field")
+            String::from("read an inert declaration only from a manifest step or inert declaration")
         },
         LoweringRefusal::PhaseDependence { .. } => {
             String::from("make the static member's type depend only on static members")

@@ -285,6 +285,7 @@ use quenchant_shape::shape::Maybe;
 use crate::attribute::AttributeTable;
 use crate::attribute::DeprecatedUse;
 use crate::attribute::Deprecation;
+use crate::attribute::RegisteredAttribute;
 use crate::coincide::Decisions;
 use crate::description::DescriptionFault;
 use crate::doc::Documentation;
@@ -839,27 +840,31 @@ pub enum Role
     Discharged,
 }
 
-/// Whether a declaration is a model's inert component: a field only the
-/// manifest step and another inert field read, which a package's address
-/// leaves out (#3030).
+/// Whether a declaration is inert, which a package's address leaves out.
+///
+/// A top-level definition marked `@[ inert ]` is inert, and so is a model's
+/// inert component. Only the manifest step and another inert declaration read
+/// one (#3030).
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: [`Inertness::Inert`] marks a member declared in a module ascribed
-///   `Model(T)` under the name of an operation `T` marks `@[ inert ]`; every
-///   other declaration is [`Inertness::Content`].
+/// - ensures: [`Inertness::Inert`] marks a top-level definition that carries
+///   `@[ inert ]`, and a member declared in a module ascribed `Model(T)` under
+///   the name of an operation `T` marks `@[ inert ]`; every other declaration
+///   is [`Inertness::Content`].
 /// - executable: none — a data type; the lowering's assembly states it.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a model's inert component and its content component are
-///   told apart.
+/// - hypothesis: L3 — a model's inert component, a marked definition and a
+///   content declaration are told apart.
 /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+/// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Inertness
 {
     /// Content: what the declaration states enters its package's address.
     Content,
-    /// A model's inert component, left out of its package's address.
+    /// An inert declaration, left out of its package's address.
     Inert,
 }
 
@@ -1694,6 +1699,10 @@ pub struct Collected<'source>
     /// The slots declared `def rec`: in a mutual block, its recursive
     /// functions recurse through one another.
     pub recursive: BTreeSet<SlotIndex>,
+    /// The slots of the top-level definitions marked `@[ inert ]`: kept apart
+    /// from their attributes, which the attribute pass takes, so every read
+    /// and the assembly see the mark. A module's member takes no mark.
+    pub inert: BTreeSet<SlotIndex>,
     /// The merged telescope of each function whose implicit telescope binds a
     /// value, by its slot: every parameter in the order the declared type
     /// binds it, with where it is written; or the refusal the merge met,
@@ -3643,6 +3652,7 @@ pub fn begin_collection<'source>(
         theory_sources: BTreeSet::new(),
         blocks: Vec::new(),
         recursive: BTreeSet::new(),
+        inert: BTreeSet::new(),
         plicities: BTreeMap::new(),
         parameters: BTreeMap::new(),
         stage_binders: BTreeMap::new(),
@@ -6563,6 +6573,24 @@ impl<'source> Collector<'_, 'source>
         self.collected.own(declaration.node, slot);
         if let Maybe::Present(_) = recursive {
             let _fresh = self.collected.recursive.insert(slot);
+        }
+        // A module's member answers a model's component or reads beside
+        // them, and content reads a component off a model binder; an inert
+        // member would leave the address while content still reads it.
+        if let Some(mark) = attributes
+            .iter()
+            .find(|written| written.name.as_ref() == RegisteredAttribute::INERT.as_ref())
+        {
+            match container {
+                Container::TopLevel(_) => {
+                    let _fresh = self.collected.inert.insert(slot);
+                },
+                Container::Module(_) => {
+                    if attributed.is_ok() {
+                        attributed = Err(misplaced_in(FormName::ATTRIBUTE, mark.span));
+                    }
+                },
+            }
         }
         for &block in decorations {
             self.collected.own(block.node, slot);
@@ -11453,7 +11481,8 @@ pub struct DeclarationParts<'source>
     pub halves: Halves,
     /// What the name's declarations amount to.
     pub outcome: DeclarationOutcome<'source>,
-    /// Whether the name is a model's inert component.
+    /// Whether the name is inert: a marked definition or a model's inert
+    /// component.
     pub inertness: Inertness,
     /// Whether the name's source exports it: what a package's signature key
     /// reads of its root (#533 p3).

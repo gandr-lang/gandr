@@ -1226,6 +1226,52 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 
+/// #6141: in a package source, an edit to a top-level definition marked
+/// `@[ inert ]` leaves the package's address, and the same edit to the
+/// definition unmarked moves it.
+#[test]
+fn an_edit_to_an_inert_definition_leaves_the_address_6141()
+{
+    let directory = scratch(Path::new("inert-definition"), &[Path::new(
+        "hello/package.gandr",
+    )]);
+    let library = directory.join("hello/package.gandr");
+    let stated = |mark: &str, note: &str| {
+        format!(
+            "{STD_PACKAGE}pub module Package : Model(Gandr.Package) where {{\n  def name : String \
+             = \"hello\";\n  def version = \"0.1.0\";\n  def authors = \"Ada\";\n  def licence = \
+             \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n  def gandr = \">= \
+             0.0\";\n  def features = \"\";\n  def systems = \"\";\n  def spelling = \"\";\n  def \
+             sources = \"src\";\n}}\n{mark}def note = \"{note}\";\n"
+        )
+    };
+    std::fs::write(&library, stated("@[ inert ]\n", "a")).expect("the library is written");
+    let Maybe::Present(package) = Package::discover(&library)
+    else {
+        panic!("the package is found");
+    };
+    let grammar = built_in().expect("the built-in grammar builds");
+    let store = stored(Path::new("inert-definition"));
+    let address = |mark: &str, note: &str| {
+        let held = Held(BTreeMap::from([(library.clone(), stated(mark, note))]));
+        package
+            .identity(&grammar, &held, &Lock::default(), &store)
+            .expect("the package addresses")
+            .address
+    };
+    assert_eq!(
+        address("@[ inert ]\n", "b"),
+        address("@[ inert ]\n", "a"),
+        "an edit to the inert `note` leaves the address"
+    );
+    assert_ne!(
+        address("", "b"),
+        address("", "a"),
+        "the same edit to a content `note` moves the address"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
 /// The keys, spelled, of the items whose content key differs between
 /// `before` and `after`, two keyings of one unit.
 ///

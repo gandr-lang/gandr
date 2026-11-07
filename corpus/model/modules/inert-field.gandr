@@ -3,9 +3,11 @@
 // An inert operation identifies a package. It does not define
 // the package content.
 //
-// The checker allows a manifest step and another inert operation to read it.
+// The checker allows a manifest step and another inert declaration to read
+// it. A top-level definition marked inert is such a declaration.
 //
 // - see: #3029
+// - see: #6141 — a top-level definition marked inert
 // - see: pathological/modules/inert-field.gandr
 
 /// `Released` states an inert version.
@@ -49,3 +51,17 @@ module Hello : Model(Named) where {
 /// `welcome` reads the greeting through `Hello`.
 @[ runs("\"hello, world\"") ]
 def welcome = Hello.greeting;
+
+/// `helloName` reads the inert name by its path, so it is inert too.
+@[ inert ]
+@[ runs("\"hello\"") ]
+def helloName = Hello.name;
+
+/// `nameOf` reads the inert name off any model of `Named`.
+@[ inert ]
+def nameOf(n : Model(Named)) -> String { n.name }
+
+/// `shownName` reads another inert definition.
+@[ inert ]
+@[ runs("\"hello\"") ]
+def shownName = helloName;
