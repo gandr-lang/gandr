@@ -16,10 +16,10 @@ import std.string (concat);
 /// An encoder for the model of any theory. `Model(T)` over the variable `T`
 /// is refused, because `Model` reads a theory's name and not a value.
 @[ refuses("UnresolvedTypeHead") ]
-def encodeAny(T : Theory, m : Model(T)) -> String = "";
+def encodeAny(T : Theory, m : Model T) -> String = "";
 
 /// The `[package]` lines of a model. `name` and `version` are inert, so this
 /// function is refused at its first read of them.
 @[ refuses("InertRead") ]
-def manifest(m : Model(Gandr.Package)) -> String =
+def manifest(m : Model (Gandr.Package)) -> String =
   concat (concat "name = " m.name) (concat "\nversion = " m.version)

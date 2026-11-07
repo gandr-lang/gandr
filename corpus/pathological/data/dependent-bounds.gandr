@@ -22,5 +22,5 @@ import "../../model/data/injective-index.gandr";
 /// No natural lies below zero. Each constructor stands at a successor, apart
 /// from zero, so the match needs no arm.
 @[ refuses("NonExhaustiveMatch") ]
-def absurdFin(i : Finite(Zero)) -> Integer =
+def absurdFin(i : Finite Zero) -> Integer =
   match i {}

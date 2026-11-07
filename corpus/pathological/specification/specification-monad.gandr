@@ -17,7 +17,7 @@ theory LawfulSpecificationMonad where
   sort Below(w : C, v : C) : Type;
   oper ret : (a : V) --> C;
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
-  oper refl : (w : C) --> Below(w, w);
+  oper refl : (w : C) --> Below w w;
   rule unitL : ext (ret a) k <=> k a;
   rule unitR : ext m (bind x. (ret x)) <=> m;
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
@@ -29,4 +29,4 @@ theory LawfulSpecificationMonad where
 theory IncludedSpecificationMonad where
   include RelativeMonad;
   sort Below(w : C, v : C) : Type;
-  oper refl : (w : C) --> Below(w, w);
+  oper refl : (w : C) --> Below w w;

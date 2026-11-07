@@ -48,7 +48,7 @@ def pushedWhileRead() -> Integer =
 @[ refuses("HeldConsumed") ]
 def readAfterTakenInOneArm(t : Repr) -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  let xs = match t -> -F List(Integer) where
+  let xs = match t -> -F List Integer where
     | Inline(bs) => s.bytes ()
     | Shared(n, bs) => pure bs
   s.len ()

@@ -2,4 +2,4 @@
 /// binds the parameter `a`: an index the header does not declare.
 @[ refuses("OutOfFragment.Indexed") ]
 data Bad(a : Type) : Type where
-  | Mk : Bad(Integer)
+  | Mk : Bad Integer

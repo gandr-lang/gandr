@@ -20,5 +20,5 @@ module Bytes where
 /// type does not yet choose between them.
 @[ refuses("AmbiguousMethod") ]
 def measured() -> -F Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   s.len ()
