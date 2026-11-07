@@ -3,6 +3,11 @@
 //! conjunctive band and its column disjunctions, decided with a derivation or
 //! a countermodel that a validator checks without the decision procedure.
 //!
+//! The face poset of a shape is the cell poset of a cellular sheaf, after
+//! Curry, Ghrist and Nanda. The cover tests build a sheaf on the faces and
+//! their meets, with its maps up. Gluing on the meets decides the kernel of
+//! the first coboundary, which is the kernel of Hansen's sheaf Laplacian.
+//!
 //! # The shape theory
 //!
 //! The crate states a shape parameter `ft` in the sense of [`FaceTT`]: the
@@ -146,6 +151,8 @@
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
 //!   presented-spaces-stone-faces reads the face formulas as a lattice whose
 //!   monotone part is free, and the monotone band decides in that free part.
+//! - Justin Curry et al. "Discrete Morse Theory for Computing Cellular Sheaf
+//!   Cohomology". 2016. `arXiv:1312.6454` — the cell poset of a sheaf.
 //!
 //! [`FaceTT`]: https://types2026.cse.chalmers.se/abstracts/42.pdf
 //! [Kaposi–Xie]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10

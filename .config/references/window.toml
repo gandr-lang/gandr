@@ -189,3 +189,13 @@ exemplar = "no newer work states the reduction of a cellular sheaf along a match
 site = "theory-discrete-morse::reduct"
 work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
 exemplar = "no newer work states the reduct of a complex along a matching whose pairs are invertible, with the boundary that its gradient paths give"
+
+[[site]]
+site = "theory-graded-posets"
+work = "arXiv:1312.6454"
+exemplar = "no newer work states the cell poset of a cellular sheaf, each cell with its boundary and rank, that a compatible matching collapses"
+
+[[site]]
+site = "surface-diagnostics"
+work = "doi:10.4230/lipics.rta.2013.223"
+exemplar = "no newer work states homotopical completion with the parting critical pair as its obstruction; the newer monograph cites it for the procedure"

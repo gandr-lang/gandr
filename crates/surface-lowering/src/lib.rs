@@ -11,6 +11,13 @@
 //! There is no lexer here, no parser, and no checker: the tree arrives built,
 //! the core nodes leave minted, and what a term *means* is decided above.
 //!
+//! The coincide check takes Squier completion from Guiraud, Malbos and
+//! Mimram. Each joined critical pair keeps its certificate as a coherence
+//! cell. A pair whose sides part is the obstruction that the check refuses.
+//! The collapse probe runs Brown's scheme after Guiraud, Hoffbeck and Malbos.
+//! It compares the essential cells of dimension three with the certified
+//! pairs, after Malbos and Ren. It checks the matching as Doré states one.
+//!
 //! # The grammar names every form
 //!
 //! Every node is dispatched on the named kind the grammar gives its mold, and
@@ -301,6 +308,21 @@
 //!   Calculi and Applications (TLCA 1999)_, LNCS 1581, Springer (1999). <https://doi.org/10.1007/3-540-48959-2_17>
 //!   — the value and computation sorts, thunks and returners (`U` and `F`), and
 //!   the arrow as a computation type, which fix every sort a position demands.
+//! - Yves Guiraud, Philippe Malbos and Samuel Mimram. "A Homotopical Completion
+//!   Procedure with Applications to Coherence of Monoids." _RTA 2013_, volume
+//!   21 (2013), 223–238. `doi:10.4230/LIPIcs.RTA.2013.223` — homotopical
+//!   completion, which keeps a generating 3-cell for each joined critical pair.
+//! - Yves Guiraud, Eric Hoffbeck and Philippe Malbos. "Convergent Presentations
+//!   and Polygraphic Resolutions of Associative Algebras." _Mathematische
+//!   Zeitschrift_ 293 (2019), 113–179. `doi:10.1007/s00209-018-2185-z` — the
+//!   collapse of a resolution onto the rules and the critical pairs, which the
+//!   collapse probe runs.
+//! - Philippe Malbos and Isaac Ren. "Completion in Operads via Essential
+//!   Syzygies." _ISSAC 2021_, ACM (2021). `doi:10.1145/3452143.3465552` — the
+//!   essential branchings, which the probe compares with the certified pairs.
+//! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
+//!   University of Oxford (2023), § 3.4 — a matching as a partial function,
+//!   acyclic when each cell reaches a critical cell.
 //! - N. G. de Bruijn. "Lambda calculus notation with nameless dummies."
 //!   _Indagationes Mathematicae_ 75(5) (1972).
 //!   <https://doi.org/10.1016/1385-7258(72)90034-0> — the binder indices a

@@ -17,6 +17,11 @@
 //! enumeration takes a budget. Finite Stone duality enumerates it and reads
 //! the spectrum, so those two hold at most 64 cells.
 //!
+//! The cells form the cell poset of a cellular sheaf, after Curry, Ghrist and
+//! Nanda. Each cell holds its data, boundary and rank, and the caller orients
+//! its faces. Kessler's traversal keys a molecule up to isomorphism. The crate
+//! keeps the closure of the order, not her face data, and computes no key.
+//!
 //! # Items
 //!
 //! | Item | What it holds |
@@ -35,6 +40,18 @@
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the cell family
 //!   of the presented-spaces frame, a finite graded poset with its cells as
 //!   data.
+//! - Justin Curry, Robert Ghrist and Vidit Nanda. "Discrete Morse Theory for
+//!   Computing Cellular Sheaf Cohomology." _Foundations of Computational
+//!   Mathematics_ 16 (2016), 875–897. `arXiv:1312.6454` — the cell poset that a
+//!   cellular sheaf lives on, each cell with its boundary and rank.
+//! - Diana-Maria Kessler. _Computational Aspects of Rewriting in
+//!   Higher-Dimensional Diagrams_. Doctoral thesis, Tallinn University of
+//!   Technology (2025). `doi:10.23658/TALTECH.47/2025` — oriented graded
+//!   posets, and the traversal that keys a molecule up to isomorphism in `O(n²
+//!   log n)`, which this crate does not compute. The thesis supersedes Amar
+//!   Hadzihasanovic and Diana Kessler, "Data Structures for Topologically Sound
+//!   Higher-Dimensional Diagram Rewriting", EPTCS 380 (2023),
+//!   `doi:10.4204/EPTCS.380.7`.
 
 #![no_std]
 
