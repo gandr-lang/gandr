@@ -5,4 +5,4 @@ theory Pair where
   sort B : Type;
 @[ checks ]
 def pairsOn(x : Type) -> -F Type =
-  return type(Model(Pair) with sort A = x with sort B = Unit + Unit)
+  return type(Model Pair with sort A = x with sort B = Unit + Unit)

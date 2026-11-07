@@ -24,7 +24,7 @@ import std.codec.toml (Toml, Table, Value);
 
 /// The manifest a package's model renders to, each inert field a key of the
 /// `[package]` table.
-pub def manifest(m : Module(Gandr.Package)) -> [Elab] Toml =
+pub def manifest(m : Module Gandr.Package) -> [Elab] Toml =
   let fields = m.definitions.map (fun (d) { *{d.name, Value.string d.value} })
   Toml.document (#[*{"package", Table.of fields}])
 

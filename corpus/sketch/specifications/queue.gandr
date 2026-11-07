@@ -19,15 +19,15 @@ import std.mem (Heap, Ref);
 /// A queue of `a` in a ring buffer of fixed capacity.
 pub data Queue(a : Type) : Type where
   /// The buffer, the index of the front and the number of elements held.
-  | Ring : (cells : Ref(Array(Maybe(a))), front : Nat, count : Nat) --> Queue(a)
+  | Ring : (cells : Ref (Array (Maybe a)), front : Nat, count : Nat) --> Queue a
 
 /// Whether a queue's count fits its buffer and its front lies inside it.
-pub def valid[a : Type](q : Queue(a)) -> [State(Heap)] Bool =
+pub def valid[a : Type](q : Queue a) -> [State(Heap)] Bool =
   let n = capacity q
   q.count <= n && q.front < n
 
 /// Removes the front element, if there is one.
-pub def pop[a : Type](q : Queue(a)) -> [State(Heap)] Maybe(a) #spec{
+pub def pop[a : Type](q : Queue a) -> [State(Heap)] Maybe a #spec{
   requires { valid q }
   ensures r {
     | valid(q)
@@ -46,7 +46,7 @@ pub def pop[a : Type](q : Queue(a)) -> [State(Heap)] Maybe(a) #spec{
 }
 
 /// Adds an element at the back, refusing it when the queue is full.
-pub def push[a : Type](q : Queue(a), x : a) -> [State(Heap)] Bool #spec{
+pub def push[a : Type](q : Queue a, x : a) -> [State(Heap)] Bool #spec{
   requires { valid q }
   ensures accepted {
     | valid(q)
@@ -64,7 +64,7 @@ pub def push[a : Type](q : Queue(a), x : a) -> [State(Heap)] Bool #spec{
 }
 
 /// Empties a queue one element at a time and answers how many it removed.
-pub def rec drain[a : Type](q : Queue(a)) -> [State(Heap)] Nat #spec{
+pub def rec drain[a : Type](q : Queue a) -> [State(Heap)] Nat #spec{
   requires { valid q }
   ensures removed {
     | size(q) == 0

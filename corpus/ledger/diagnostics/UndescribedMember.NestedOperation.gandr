@@ -11,6 +11,6 @@ theory BelowMonad where
 
   oper ret : (a : V) --> C;
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
-  oper refl : (w : C) --> Below(w, w);
+  oper refl : (w : C) --> Below w w;
 
   rule unitR : ext m (bind x. (ret x)) <=> m;

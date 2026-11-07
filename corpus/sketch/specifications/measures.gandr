@@ -17,7 +17,7 @@ import std.spec (Spec, old);
 import std.cost (Additive, Tropical);
 
 /// The index of `x` in a sorted array, between `lo` and `hi`.
-pub def rec search(xs : Array(Integer), x : Integer, lo : Nat, hi : Nat) -> Maybe(Nat) #spec{
+pub def rec search(xs : Array Integer, x : Integer, lo : Nat, hi : Nat) -> Maybe Nat #spec{
   requires {
     | sorted(xs)
     | hi <= length xs
@@ -42,11 +42,11 @@ pub def rec search(xs : Array(Integer), x : Integer, lo : Nat, hi : Nat) -> Mayb
 /// the front when the front runs out.
 pub data Banker(a : Type) : Type where
   /// The front, read in order, and the back, read in reverse.
-  | Lists : (front : List(a), back : List(a)) --> Banker(a)
+  | Lists : (front : List a, back : List a) --> Banker a
 
 /// Pops the front element, paying for a reversal from the potential the
 /// pushes saved.
-pub def pop[a : Type](q : Banker(a)) -> [State(Banker a)] Maybe(a) #spec{
+pub def pop[a : Type](q : Banker a) -> [State(Banker a)] Maybe a #spec{
   ensures r { length q == old (length q) - 1 || r == none }
   measure Additive {
     | potential length(q.back)
@@ -66,7 +66,7 @@ pub def pop[a : Type](q : Banker(a)) -> [State(Banker a)] Maybe(a) #spec{
 }
 
 /// The shortest distance to every node, its bound in the tropical semiring.
-pub def shortest(g : Graph, source : Node) -> Map(Node, Distance) #spec{
+pub def shortest(g : Graph, source : Node) -> Map Node Distance #spec{
   ensures d { d.#[source] == 0 }
   measure Tropical {
     | cost edges(g) + nodes g * log2 (nodes g)

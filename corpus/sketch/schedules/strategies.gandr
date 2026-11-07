@@ -24,11 +24,11 @@ def bySize(n : Nat) -> Strategy =
 
 /// The squares of a large list, the map's cuts run in chunks. The expression
 /// names its strategy, and the answer is the sequential map's.
-def squares(xs : List(Integer)) -> List(Integer) =
+def squares(xs : List Integer) -> List Integer =
   (xs.map (fun (x) { x * x })).using (bySize xs.length)
 
 /// A whole definition under one strategy. Every cut in its body runs eagerly
 /// in chunks.
 @[schedule(perChunk)]
-def histogram(words : List(String)) -> Map(String, Nat) =
+def histogram(words : List String) -> Map String Nat =
   words.foldMap (fun (w) { Map.single w 1 })

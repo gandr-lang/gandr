@@ -25,7 +25,7 @@ def popBody : Thir.Body = ~rust.body "corten::buddy::pop";
 
 /// What `pop` promises: it answers the head of an order's free list and
 /// leaves the rest free.
-def popSpec(order : Nat) -> Spec(Places, Option(Thir.Value)) =
+def popSpec(order : Nat) -> Spec Places (Option Thir.Value) =
   Spec.ensures (fun (r, mem) { freeHead mem order r })
 
 /// `pop` meets its specification, read off the folded precondition.

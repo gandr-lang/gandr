@@ -20,7 +20,7 @@ import std.codec.toml (Toml, Table, Value);
 pub type Version = *{ major : Nat, minor : Nat, patch : Nat };
 
 /// The codec between a version and a TOML string, `"1.4.2"`.
-pub def versionToml : Codec(Toml, Version) = *{
+pub def versionToml : Codec Toml Version = *{
   encode = fun (v) { Value.string (show v.major ++ "." ++ show v.minor ++ "." ++ show v.patch) },
   decode = fun (doc) {
     match doc where

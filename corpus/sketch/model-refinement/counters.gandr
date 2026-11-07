@@ -34,7 +34,7 @@ pub theory Counter where
   oper read : (c : C) --> Integer;
 
 /// One and the unit as a pair, whose type fixes both carriers.
-def bothManifest : Model(Pairing) with {
+def bothManifest : Model Pairing with {
   | sort A = Integer
   | sort B = Unit
 } = *{
@@ -43,22 +43,22 @@ def bothManifest : Model(Pairing) with {
 };
 
 /// One fixed sort fits on one line, so its bar stays out.
-def firstManifest : Model(Pairing) with { sort A = Integer } = *{
+def firstManifest : Model Pairing with { sort A = Integer } = *{
   .left = 1,
   .right = *{}
 };
 
 /// A count of a counter whose counts are integers is an integer.
-def countOfIntegers(a : Model(Counter) with { sort C = Integer }, c : a.C) -> Integer { c }
+def countOfIntegers(a : Model Counter with { sort C = Integer }, c : a.C) -> Integer { c }
 
 /// `b` counts in `a`'s counts, so a count of `a` steps in `b`.
-def stepShared(a : Model(Counter), b : Model(Counter) with { sort C = a.C }, c : a.C) -> Integer =
+def stepShared(a : Model Counter, b : Model Counter with { sort C = a.C }, c : a.C) -> Integer =
   b.read (b.incr c)
 
 /// A pair whose first carrier is an integer and whose second is `m`'s.
 def rightBeside(
-  m : Model(Pairing) with { sort A = Integer },
-  n : Model(Pairing) with {
+  m : Model Pairing with { sort A = Integer },
+  n : Model Pairing with {
     | sort A = Integer
     | sort B = m.B
   }

@@ -24,24 +24,24 @@ import std.abi.C;
 /// The demo library's two functions. `Option(&u32)` is one word with `None`
 /// as null, so the computed row matches the library's.
 extern C from "lib:demo" {
-  fun f(x : Option(& u32), n : u32) -> u32;
-  fun sum(xs : Ptr(u32), len : usize) -> u64;
+  fun f(x : Option (& u32), n : u32) -> u32;
+  fun sum(xs : Ptr u32, len : usize) -> u64;
 }
 
 /// zlib's running checksum, as `zlib.h` declares it on an LP64 target, where
 /// `unsigned long` is eight bytes and `unsigned int` four.
 extern C from "lib:z" {
-  fun crc32(crc : u64, buf : Ptr(u8), len : u32) -> u64;
+  fun crc32(crc : u64, buf : Ptr u8, len : u32) -> u64;
 }
 
 /// The value behind a reference that may be absent, the default otherwise.
-pub def orDefault(x : Option(& u32), d : u32) -> u32 =
+pub def orDefault(x : Option (& u32), d : u32) -> u32 =
   f x d
 
 /// The checksum of `len` bytes from zlib's initial value.
-pub def checksum(buf : Ptr(u8), len : u32) -> u64 =
+pub def checksum(buf : Ptr u8, len : u32) -> u64 =
   crc32 0 buf len
 
 /// Two buffers' checksum, the second continuing the first's.
-pub def checksumBoth(a : Ptr(u8), alen : u32, b : Ptr(u8), blen : u32) -> u64 =
+pub def checksumBoth(a : Ptr u8, alen : u32, b : Ptr u8, blen : u32) -> u64 =
   crc32 (crc32 0 a alen) b blen

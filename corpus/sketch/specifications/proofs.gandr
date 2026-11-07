@@ -17,7 +17,7 @@ import std.spec (Spec);
 import std.math.nat (sumAppend, sumNonNegative);
 
 /// The sum of a list, by a loop that keeps a running total.
-pub def total(xs : List(Nat)) -> Nat #spec{
+pub def total(xs : List Nat) -> Nat #spec{
   ensures s {
     | s == sum(xs) with {
         sumAppend (take (length xs) xs) Nil
@@ -29,7 +29,7 @@ pub def total(xs : List(Nat)) -> Nat #spec{
 }
 
 /// Sorts a list and keeps its length and elements, which one lemma proves.
-pub def sortKeeps(xs : List(Integer)) -> List(Integer) #spec{
+pub def sortKeeps(xs : List Integer) -> List Integer #spec{
   ensures ys {
     | length(ys) == length xs
     | permutation(ys, xs
@@ -40,7 +40,7 @@ pub def sortKeeps(xs : List(Integer)) -> List(Integer) #spec{
 
 /// The first failure of a validation, under the theory of exceptions, which
 /// has no entry state, so a ghost binding names the input's length.
-pub def firstInvalid(rows : List(Row)) -> [Raise(Invalid)] Unit #spec{
+pub def firstInvalid(rows : List Row) -> [Raise(Invalid)] Unit #spec{
   ghost n = length rows
   requires { n > 0 }
   ensures _ { n == length rows }

@@ -8,5 +8,5 @@ import std.list (List);
 def tick(n : Integer) -> -F Unit =
   *{}
 @[ checks ]
-def each(xs : List(Integer)) -> -F Unit =
+def each(xs : List Integer) -> -F Unit =
   for x in xs { tick x; }

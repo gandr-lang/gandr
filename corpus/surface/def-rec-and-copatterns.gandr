@@ -3,13 +3,13 @@ def rec fact(n : Integer) -> Integer =
   fact[<] n
 
 @[ refuses("MalformedForm") ]
-def rec nats(n : Integer) -> Stream(Integer) {
+def rec nats(n : Integer) -> Stream Integer {
   .head => n,
   .tail => nats[>] (plus n 1)
 }
 
 @[ refuses("MalformedForm") ]
-def rec loopy(n : Integer) -> Stream(Integer) {
+def rec loopy(n : Integer) -> Stream Integer {
   .head => n,
   _ => nats n
 }

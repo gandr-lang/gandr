@@ -15,7 +15,7 @@ import std.par (both, sequential);
 
 /// Two searches race over one index. The `[Par]` row demands both at once,
 /// so they run apart under every policy.
-def bothEnds(index : Index, word : String) -> [Par] *{Maybe(Nat), Maybe(Nat)} =
+def bothEnds(index : Index, word : String) -> [Par] *{Maybe Nat, Maybe Nat} =
   both (index.first word) (index.last word)
 
 /// A comparison of two secrets whose timing must not depend on where they

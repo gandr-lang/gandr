@@ -23,6 +23,6 @@ type Header = *{size : U32, order : U8, free : Bool};
 def cHeader : C.Abi = ~c.abi("struct header", path = "vendor/alloc.h");
 
 /// The two agree byte for byte, so a header crosses either way.
-def headerLink : Realizes(cHeader, Layout.of(Header)) {
+def headerLink : Realizes cHeader Layout.of(Header) {
   Realizes.byFields(cHeader, Layout.of Header)
 }

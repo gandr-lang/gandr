@@ -17,7 +17,7 @@ import std.grade (Grade, Usage, Count);
 
 /// A cache over any algebra of grades. A lookup uses its loader once, and a
 /// refresh uses it once more.
-module Cache(g : Model(Grade)) where {
+module Cache(g : Model Grade) where {
   /// A key and the value it caches.
   pub data Entry : Type where
     /// The key and its value.

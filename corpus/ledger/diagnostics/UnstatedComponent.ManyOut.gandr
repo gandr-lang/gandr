@@ -8,4 +8,4 @@ theory T where
   rule swap : pair x y ==> (y, x);
 
 @[ refuses("UnstatedComponent.ManyOut") ]
-def model : Model(T) ;
+def model : Model T ;

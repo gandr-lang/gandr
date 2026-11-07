@@ -55,5 +55,5 @@ module Versions where {
   def latest : () -> V3 = moved (*{"ada", 30}) ;
   /// Four flows to itself. The endpoints fix the carrier the source omits.
   @[ checks ]
-  def stayed : Flow(4, 4) = Flow.stay 4 ;
+  def stayed : Flow 4 4 = Flow.stay 4 ;
 }

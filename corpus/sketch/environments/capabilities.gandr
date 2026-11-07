@@ -11,7 +11,7 @@
 /// - see: corpus/sketch/environments/open.gandr — `open e;` on a configuration
 
 /// What a plugin may touch: one directory to read and one log to write.
-pub def Grants : Type = Model(*{ fs : Cap { read }; log : Sink });
+pub def Grants : Type = Model *{ fs : Cap { read }; log : Sink });
 
 /// A plugin that reads its configuration and logs what it read.
 def plugin(grants : Grants) -> [Io] Unit =
@@ -25,6 +25,6 @@ def host(root : Cap { read, write }, log : Sink) -> [Io] Unit =
 
 /// A one-shot token leaves its environment by move: the second use is
 /// refused, since the first moved it out.
-def redeem(wallet : Model(*{ token : +U[1] Token; owner : Name })) -> [Io] Receipt =
+def redeem(wallet : Model *{ token : +U[1] Token; owner : Name }) -> [Io] Receipt =
   open wallet
   spend token
