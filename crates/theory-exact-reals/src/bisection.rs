@@ -8,8 +8,9 @@
 //! touches a root of the body, keeps no later piece from its turn. On each
 //! piece it writes the enclosure of each operand under the hypothesis that the
 //! variable lies in the piece. The operands of a piece separate on one side,
-//! or the piece splits at its midpoint. A part of an operand that does not
-//! read the variable is enclosed once, and each piece reads its step.
+//! or the piece splits at the point of its [`Split`]. A part of an operand
+//! that does not read the variable is enclosed once, and each piece reads its
+//! step.
 //!
 //! |Quantifier|Asked|A piece where the body holds|A piece where the body fails|
 //! |---|---|---|---|
@@ -48,7 +49,7 @@ use crate::plan::NodeId;
 use crate::plan::Open;
 use crate::plan::Plan;
 use crate::plan::Real;
-use crate::schema::midpoint;
+use crate::schema::Split;
 use crate::semidecision::Demand;
 use crate::semidecision::SuspendReason;
 use crate::semidecision::suspension;
@@ -338,10 +339,11 @@ impl Search
         plan: &Plan,
         steps: &mut Vec<Step>,
         quotas: &CheckerQuotas,
+        split: Split,
     ) -> Result<Turn, SuspendReason>
     {
         if self.queue.is_empty() {
-            self.next_piece(plan, StepCount::from(steps.len()), quotas)?;
+            self.next_piece(plan, StepCount::from(steps.len()), (quotas, split))?;
         }
         if steps.len() >= usize::from(quotas.steps) {
             return Err(SuspendReason::Quota);
@@ -360,8 +362,8 @@ impl Search
     /// # Specification
     /// - ensures: the queue holds the steps of one piece, and the ending states
     ///   whether its last step concludes. A piece that settles nothing splits
-    ///   at its midpoint, and both halves wait behind the pieces before them. A
-    ///   cover lists its premises by the lower ends of their pieces.
+    ///   at the point of `split`, and both halves wait behind the pieces before
+    ///   them. A cover lists its premises by the lower ends of their pieces.
     /// - fails: as [`Self::unit`].
     /// - panics: none.
     /// - executable: none — the clause speaks of the pieces' order.
@@ -376,7 +378,7 @@ impl Search
         &mut self,
         plan: &Plan,
         base: StepCount,
-        quotas: &CheckerQuotas,
+        (quotas, split): (&CheckerQuotas, Split),
     ) -> Result<(), SuspendReason>
     {
         let (lower, upper) = self.pieces.pop_front().ok_or(SuspendReason::Opposed)?;
@@ -571,7 +573,7 @@ impl Search
             },
             Settles::Nothing => {},
             Settles::Split => {
-                let middle = midpoint(&lower, &upper).map_err(suspension)?;
+                let middle = split.point(&lower, &upper).map_err(suspension)?;
                 if middle.width() > quotas.width || middle == lower || middle == upper {
                     return Err(SuspendReason::Quota);
                 }

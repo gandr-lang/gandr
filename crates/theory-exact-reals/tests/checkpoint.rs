@@ -6,6 +6,7 @@
 use core::cell::Cell;
 use core::num::NonZeroU32;
 
+use gandr_theory_exact_reals::Bound;
 use gandr_theory_exact_reals::Budget;
 use gandr_theory_exact_reals::Certificate;
 use gandr_theory_exact_reals::CertificateCheck;
@@ -21,8 +22,10 @@ use gandr_theory_exact_reals::Exponent;
 use gandr_theory_exact_reals::Judgement;
 use gandr_theory_exact_reals::Node;
 use gandr_theory_exact_reals::NodeId;
+use gandr_theory_exact_reals::NumericInterval;
 use gandr_theory_exact_reals::Obligation;
 use gandr_theory_exact_reals::Open;
+use gandr_theory_exact_reals::Orientation;
 use gandr_theory_exact_reals::Outcome;
 use gandr_theory_exact_reals::PlanBuilder;
 use gandr_theory_exact_reals::PlanError;
@@ -33,12 +36,13 @@ use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::ResumeError;
 use gandr_theory_exact_reals::Root;
 use gandr_theory_exact_reals::Rounds;
+use gandr_theory_exact_reals::Split;
 use gandr_theory_exact_reals::Steps;
 use gandr_theory_exact_reals::Stop;
 use gandr_theory_exact_reals::ValidatedPlan;
 use gandr_theory_exact_reals::admit;
 use gandr_theory_exact_reals::refine;
-use gandr_theory_exact_reals::square_root_of_two;
+use gandr_theory_exact_reals::square_root;
 use num_bigint::BigInt;
 use proptest::prelude::*;
 
@@ -51,14 +55,30 @@ fn laws() -> Evidence
     return Evidence::from(0_u32);
 }
 
-/// The plan whose root joins `45/32 < sqrt 2`, `sqrt 2 < sqrt 2` and `1 < 2`.
+/// The plan whose root joins `45/32 < sqrt 2`, `sqrt 2 < sqrt 2` and `1 < 2`,
+/// with the hull `[1, 2]` of the square root of two.
 ///
 /// # Specification
 /// trivial.
 fn plan() -> ValidatedPlan
 {
+    return plan_over(Dyadic::from(2_i64));
+}
+
+/// The plan of [`plan`] with the hull `[1, upper]` of the square root of two.
+///
+/// # Specification
+/// trivial.
+fn plan_over(upper: Dyadic) -> ValidatedPlan
+{
     let mut builder = PlanBuilder::new();
-    let root = square_root_of_two(&mut builder, laws()).unwrap();
+    let hull = NumericInterval::new(
+        Bound::closed(Dyadic::ONE),
+        Bound::closed(upper),
+        Orientation::Proper,
+    )
+    .unwrap();
+    let root = square_root(&mut builder, Dyadic::from(2_i64), hull, laws()).unwrap();
     let point = Dyadic::new(BigInt::from(45_u8), Exponent::from(-5_i32)).unwrap();
     let point = builder.real(Real::Constant(point)).unwrap();
     let one = builder.real(Real::Constant(Dyadic::from(1_i64))).unwrap();
@@ -260,11 +280,11 @@ fn a_corrupt_checkpoint_is_refused_by_name()
         .checkpoint()
         .into();
     // The layout: magic 0..4, version 4..6, quantum 6..10, step quota 10..18,
-    // width quota 18..26, cursor 26..34, count 34..42, then the obligation:
-    // its node 42..46, its demand 46..51, its spent steps 51..59, its step
-    // count 59..67, then its first step, a `Witnesses` of the cut: its kind
-    // at 67, the cut 68..72, the lower point's exponent 72..76, its length
-    // 76..84 and its one byte at 84.
+    // width quota 18..26, split 26, cursor 27..35, count 35..43, then the
+    // obligation: its node 43..47, its demand 47..52, its spent steps 52..60,
+    // its step count 60..68, then its first step, a `Witnesses` of the cut:
+    // its kind at 68, the cut 69..73, the lower point's exponent 73..77, its
+    // length 77..85 and its one byte at 85.
     let refused = |edited: &[u8]| Dovetail::resume(&plan, EncodedCheckpoint::from(edited)).err();
     let edit = |at: usize, value: &[u8]| {
         let mut edited = bytes.clone();
@@ -295,22 +315,26 @@ fn a_corrupt_checkpoint_is_refused_by_name()
         Some(ResumeError::Quantum)
     );
     assert_eq!(
-        refused(&edit(26, &1_u64.to_le_bytes())),
+        refused(&edit(27, &1_u64.to_le_bytes())),
         Some(ResumeError::Cursor)
     );
     assert_eq!(
-        refused(&edit(46, &[0x4F])),
+        refused(&edit(26, &[0x5F])),
+        Some(ResumeError::Decode(DecodeError::UnknownKind))
+    );
+    assert_eq!(
+        refused(&edit(47, &[0x4F])),
         Some(ResumeError::Decode(DecodeError::UnknownKind))
     );
     let past = u32::try_from(usize::from(plan.plan().node_count())).unwrap();
     assert_eq!(
-        refused(&edit(42, &past.to_le_bytes())),
+        refused(&edit(43, &past.to_le_bytes())),
         Some(ResumeError::Obligation(PlanError::UnknownNode))
     );
     // A demand that holds of an open node, given to the cut: the node's sort
     // does not take it.
     let mut holds = bytes.clone();
-    holds.splice(46 .. 51, [0x40]);
+    holds.splice(47 .. 52, [0x40]);
     assert_eq!(
         refused(&holds),
         Some(ResumeError::Obligation(PlanError::WrongSort))
@@ -323,8 +347,8 @@ fn a_corrupt_checkpoint_is_refused_by_name()
     assert_eq!(refusal.check, CertificateCheck::WidthQuota);
     // The lower point's one byte padded with a byte of zero: it reads as the
     // same point, so the bytes are not canonical.
-    let mut padded = edit(76, &2_u64.to_le_bytes());
-    padded.insert(85, 0);
+    let mut padded = edit(77, &2_u64.to_le_bytes());
+    padded.insert(86, 0);
     assert_eq!(
         refused(&padded),
         Some(ResumeError::Decode(DecodeError::NotCanonical))
@@ -341,7 +365,7 @@ fn a_corrupt_checkpoint_is_refused_by_name()
         .run(ample(), Rounds::from(1_u64), || false)
         .checkpoint()
         .into();
-    swapped.splice(42 .. 46, u32::from(never_settles).to_le_bytes());
+    swapped.splice(43 .. 47, u32::from(never_settles).to_le_bytes());
     assert_eq!(refused(&swapped), Some(ResumeError::Steps));
 }
 
@@ -349,16 +373,19 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     /// A checkpoint after a generated number of rounds, under a generated
-    /// quantum, resumes to the outcomes, the certificates and the spent steps
-    /// of the run that never stops.
+    /// quantum, split and hull, resumes to the outcomes, the certificates and
+    /// the spent steps of the run that never stops.
     #[test]
     fn every_checkpoint_resumes_to_the_unbroken_run(
         steps in 1_u32 .. 6_u32,
         stop in 0_u64 .. 24_u64,
         more in 0_u64 .. 24_u64,
         bits in 4_i32 .. 48_i32,
+        upper in 2_i64 .. 40_i64,
+        simplest in any::<bool>(),
     ) {
-        let plan = plan();
+        let plan = plan_over(Dyadic::from(upper));
+        let split = if simplest { Split::Simplest } else { Split::Midpoint };
         let [cut, settles, never_settles, constants] = nodes(&plan);
         let width = Exponent::from(bits.checked_neg().unwrap());
         let obligations = [
@@ -369,13 +396,14 @@ proptest! {
             Obligation::new(&plan, settles, Demand::Fails).unwrap(),
         ];
         let quotas = CheckerQuotas::default();
-        let mut unbroken = Dovetail::new(&plan, obligations, quantum(Steps::from(u64::from(steps))), quotas);
+        let start = || Dovetail::with_split(&plan, obligations, (quantum(Steps::from(u64::from(steps))), quotas), split);
+        let mut unbroken = start();
         let total = stop.checked_add(more).unwrap();
         let unbroken_outcomes: Vec<String> = {
             let report = unbroken.run(ample(), Rounds::from(total), || false);
             (0 .. obligations.len()).map(|index| format!("{:?}", report.outcome(Position::from(index)))).collect()
         };
-        let mut first = Dovetail::new(&plan, obligations, quantum(Steps::from(u64::from(steps))), quotas);
+        let mut first = start();
         let (bytes, live) = {
             let report = first.run(ample(), Rounds::from(stop), || false);
             let live: Vec<usize> = (0 .. obligations.len())

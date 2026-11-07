@@ -42,6 +42,7 @@ use crate::codec::EncodedCheckpoint;
 use crate::codec::read_checkpoint;
 use crate::codec::write_checkpoint;
 use crate::plan::PlanError;
+use crate::schema::Split;
 use crate::semidecision::Obligation;
 use crate::semidecision::Outcome;
 use crate::semidecision::Progress;
@@ -295,6 +296,8 @@ pub struct Dovetail<Plan>
     quantum: Quantum,
     /// The bounds of each certificate.
     quotas: CheckerQuotas,
+    /// The point at which each obligation splits an enclosure or a piece.
+    split: Split,
     /// The obligations, in the order of their turns.
     entries: Vec<Entry>,
     /// The obligation of the next turn.
@@ -308,18 +311,17 @@ where
     Plan: Deref<Target = ValidatedPlan>,
 {
     /// The scheduler of `obligations` over `plan`, each turn at most `quantum`
-    /// steps, each certificate within `quotas`.
+    /// steps, each certificate within `quotas`, each split at the midpoint.
     ///
     /// # Specification
-    /// - ensures: every obligation is live, and the first turn goes to the
-    ///   first obligation.
+    /// - ensures: as [`Self::with_split`] with [`Split::Midpoint`].
     /// - panics: none.
     /// - intension: one record for each obligation.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::run`].
     /// - witness: `tests::dovetail::two_obligations_run_round_by_round`
-    #[spec(ensures: |ref result| result.live == result.entries.len() && result.cursor == 0)]
+    #[spec(ensures: |ref result| result.live == result.entries.len() && result.cursor == 0 && result.split == Split::Midpoint)]
     #[inline]
     #[must_use]
     pub fn new<Obligations>(
@@ -331,10 +333,46 @@ where
     where
         Obligations: IntoIterator<Item = Obligation>,
     {
+        return Self::with_split(plan, obligations, (quantum, quotas), Split::Midpoint);
+    }
+
+    /// The scheduler of `obligations` over `plan`, each turn at most `quantum`
+    /// steps, each certificate within `quotas`, each split at the point that
+    /// `split` takes.
+    ///
+    /// The policy holds for the life of the scheduler, and its checkpoint
+    /// records it. So a resumed scheduler splits as the one that wrote the
+    /// checkpoint.
+    ///
+    /// # Specification
+    /// - ensures: every obligation is live, and the first turn goes to the
+    ///   first obligation.
+    /// - panics: none.
+    /// - intension: one record for each obligation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated cuts, comparisons and quantified formulas
+    ///   under each split certify, each certificate replays to its evidence,
+    ///   and each checkpoint resumes to the run that never stops.
+    /// - witness: `tests::dovetail::both_splits_enclose_each_generated_cut`
+    /// - witness: `tests::dovetail::every_certificate_replays_to_its_evidence`
+    /// - witness: `tests::checkpoint::every_checkpoint_resumes_to_the_unbroken_run`
+    #[spec(ensures: |ref result| result.live == result.entries.len() && result.cursor == 0 && result.split == split)]
+    #[inline]
+    #[must_use]
+    pub fn with_split<Obligations>(
+        plan: Plan,
+        obligations: Obligations,
+        (quantum, quotas): (Quantum, CheckerQuotas),
+        split: Split,
+    ) -> Self
+    where
+        Obligations: IntoIterator<Item = Obligation>,
+    {
         let entries: Vec<Entry> = obligations
             .into_iter()
             .map(|obligation| Entry {
-                progress: Progress::new(obligation),
+                progress: Progress::new(obligation, split),
                 spent: 0,
             })
             .collect();
@@ -342,6 +380,7 @@ where
             plan,
             quantum,
             quotas,
+            split,
             live: entries.len(),
             entries,
             cursor: 0,
@@ -639,7 +678,7 @@ where
                 entry.progress.steps(),
             )
         });
-        return write_checkpoint((self.quantum, &self.quotas, cursor), held);
+        return write_checkpoint((self.quantum, &self.quotas, self.split, cursor), held);
     }
 
     /// The scheduler that the checkpoint `bytes` holds, over `plan`.
@@ -679,7 +718,7 @@ where
         bytes: EncodedCheckpoint<'_>,
     ) -> Result<Self, ResumeError>
     {
-        let (quantum, quotas, cursor, held) = read_checkpoint(bytes)
+        let (quantum, (quotas, split), cursor, held) = read_checkpoint(bytes)
             .map_err(ResumeError::Decode)?
             .into_parts();
         let quantum = quantum.ok_or(ResumeError::Quantum)?;
@@ -692,7 +731,7 @@ where
                 let (node, demand, spent, steps) = held.into_parts();
                 let obligation =
                     Obligation::new(&plan, node, demand).map_err(ResumeError::Obligation)?;
-                let progress = Progress::resume(&plan, obligation, steps, &quotas)?;
+                let progress = Progress::resume(&plan, obligation, steps, (&quotas, split))?;
                 return Ok(Entry {
                     progress,
                     spent: spent.0,
@@ -703,6 +742,7 @@ where
             plan,
             quantum,
             quotas,
+            split,
             live: entries.len(),
             entries,
             cursor: cursor.0,

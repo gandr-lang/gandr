@@ -48,6 +48,7 @@ use gandr_theory_exact_reals::RealId;
 use gandr_theory_exact_reals::Root;
 use gandr_theory_exact_reals::Rounding;
 use gandr_theory_exact_reals::Rounds;
+use gandr_theory_exact_reals::Split;
 use gandr_theory_exact_reals::Step;
 use gandr_theory_exact_reals::StepId;
 use gandr_theory_exact_reals::StepSite;
@@ -364,7 +365,7 @@ fn quantum(steps: Steps) -> Quantum
 }
 
 /// The outcome of one obligation of `demand` on the quantifier of `formula`,
-/// run to its end within `budget`.
+/// run to its end within `budget`, each split at the midpoint.
 ///
 /// # Specification
 /// trivial.
@@ -374,12 +375,26 @@ fn settle(
     budget: Budget,
 ) -> Option<Result<Certificate, SuspendReason>>
 {
+    return settle_with(formula, demand, budget, Split::Midpoint);
+}
+
+/// The outcome of [`settle`], each split at the point that `split` takes.
+///
+/// # Specification
+/// trivial.
+fn settle_with(
+    formula: &Formula,
+    demand: Demand,
+    budget: Budget,
+    split: Split,
+) -> Option<Result<Certificate, SuspendReason>>
+{
     let obligation = Obligation::new(&formula.plan, formula.quantifier, demand).unwrap();
-    let mut dovetail = Dovetail::new(
+    let mut dovetail = Dovetail::with_split(
         &formula.plan,
         [obligation],
-        quantum(Steps::from(64_u64)),
-        CheckerQuotas::default(),
+        (quantum(Steps::from(64_u64)), CheckerQuotas::default()),
+        split,
     );
     let report = dovetail.run(budget, Rounds::from(u64::MAX), || false);
     return match report.outcome(Position::from(0)) {
@@ -932,9 +947,10 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     /// Each generated quantified formula over a dyadic interval, asked to hold
-    /// and to fail, settles to a certificate that replays to the evidence
-    /// asked for, or stops for a stated reason. A certified universal holds,
-    /// and a refuted existential fails, at each point of a grid of its domain.
+    /// and to fail under a generated split, settles to a certificate that
+    /// replays to the evidence asked for, or stops for a stated reason. A
+    /// certified universal holds, and a refuted existential fails, at each
+    /// point of a grid of its domain.
     #[test]
     fn quantified_formulas_settle_to_certificates_that_replay(
         exists in any::<bool>(),
@@ -943,7 +959,9 @@ proptest! {
         coefficients in (-8_i64 .. 8, -8_i64 .. 8, -4_i64 .. 4),
         threshold in -16_i64 .. 16,
         flipped in any::<bool>(),
+        simplest in any::<bool>(),
     ) {
+        let split = if simplest { Split::Simplest } else { Split::Midpoint };
         let quarter = |value: i64| dyadic(BigInt::from(value), Exponent::from(-2_i32));
         let (low, high) = (quarter(lower), quarter(lower.checked_add(width).unwrap()));
         let (c0, c1, c2) = (quarter(coefficients.0), quarter(coefficients.1), quarter(coefficients.2));
@@ -978,7 +996,7 @@ proptest! {
             })
             .collect();
         for demand in [Demand::Holds, Demand::Fails] {
-            let Some(Ok(certificate)) = settle(&formula, demand, Budget::from(2048_u64)) else {
+            let Some(Ok(certificate)) = settle_with(&formula, demand, Budget::from(2048_u64), split) else {
                 continue;
             };
             let conclusion = check(&formula.plan, &certificate, &CheckerQuotas::default())
