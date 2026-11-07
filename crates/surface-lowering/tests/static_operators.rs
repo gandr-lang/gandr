@@ -303,7 +303,8 @@ fn elaborate(source: SourceText<'_>) -> Elaborated
                 DeclarationContent::Def { declared, body } => {
                     (declared, Some(digest(AnyNode::Value(body))))
                 },
-                DeclarationContent::Axiom { declared } => (declared, None),
+                DeclarationContent::Axiom { declared }
+                | DeclarationContent::LiteralIdentity { declared, .. } => (declared, None),
                 DeclarationContent::AbstractType { kind, .. }
                 | DeclarationContent::Data { kind, .. }
                 | DeclarationContent::Codata { kind, .. } => (kind, None),

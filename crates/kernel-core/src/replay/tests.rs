@@ -1646,6 +1646,91 @@ fn the_kernel_converts_by_the_forced_rules_alone()
 }
 
 #[test]
+fn a_literal_identity_test_reduces_on_two_literals()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    use gandr_kernel_term::ComputationId;
+    use gandr_kernel_term::IdentityBase;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::LiteralIdentity;
+    use gandr_kernel_term::Polarity;
+    use gandr_kernel_term::StringLiteral;
+    use gandr_kernel_term::Summand;
+
+    let mut arena = TermArena::new();
+    let test = ConstantIndex::from(0_usize);
+    let text = |arena: &mut TermArena, content: &str| {
+        arena.value_literal(Literal::Text(StringLiteral::new(String::from(content))))
+    };
+    // `force test left right`, as the bridge erases a saturated call.
+    let call = |arena: &mut TermArena, left: ValueId, right: ValueId| -> ComputationId {
+        let head = arena.value_constant(test);
+        let forced = arena.computation_force(head);
+        let applied = arena.computation_application(forced, left);
+        arena.computation_application(applied, right)
+    };
+    let answer = |arena: &mut TermArena, summand: usize| {
+        let unit = arena.value_unit();
+        let injected = arena.value_injection(Summand::from(summand), unit);
+        arena.computation_return(injected)
+    };
+    let (a, b) = (text(&mut arena, "a"), text(&mut arena, "b"));
+    let same = call(&mut arena, a, a);
+    let apart = call(&mut arena, a, b);
+    let zero = arena.value_literal(Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+        gandr_kernel_term::Sign::NonNegative,
+        gandr_kernel_term::Magnitude::zero(),
+    )));
+    let crossed = call(&mut arena, a, zero);
+    let (yes, no) = (answer(&mut arena, 0), answer(&mut arena, 1));
+    let watermark = arena.watermark();
+    let tested = Unfoldings::default().testing_at(BTreeMap::from([(
+        test,
+        LiteralIdentity::new(IdentityBase::Text, Polarity::Same),
+    )]));
+    let verdict = |arena: &mut TermArena, unfoldings: &Unfoldings, left, right| {
+        convert(
+            arena,
+            unfoldings,
+            ReplaySides::Computations(left, right),
+            ReplayBudget::default(),
+        )
+    };
+    assert_eq!(
+        verdict(&mut arena, &tested, same, yes),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        verdict(&mut arena, &tested, apart, no),
+        KernelVerdict::Convertible
+    );
+    assert!(
+        matches!(
+            verdict(&mut arena, &tested, same, no),
+            KernelVerdict::Declined(_)
+        ),
+        "the answer is the test's own"
+    );
+    assert!(
+        matches!(
+            verdict(&mut arena, &tested, crossed, no),
+            KernelVerdict::Declined(_)
+        ),
+        "an integer is no text, so the call stays stuck"
+    );
+    assert!(
+        matches!(
+            verdict(&mut arena, &Unfoldings::default(), same, yes),
+            KernelVerdict::Declined(_)
+        ),
+        "without the test the call stays stuck, as an axiom's does"
+    );
+    assert_eq!(arena.watermark(), watermark);
+}
+
+#[test]
 fn the_kernel_unfolds_a_defined_head_within_its_budget()
 {
     let mut arena = TermArena::new();

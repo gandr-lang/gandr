@@ -884,6 +884,7 @@ corpus/model/attributes/doc-comments.gandr STE-8.1 4e303b155c67a513
 corpus/model/attributes/module-metadata.gandr STE-3.5 380ca6c6e4a8511f
 corpus/model/attributes/written-forms.gandr STE-3.6 1b0c308debe26ea8
 corpus/model/attributes/written-forms.gandr STE-9.3 0a13ea9ad83b9029
+corpus/model/basics/literal-identity.gandr STE-4.3 f275a5aa40dcc442
 corpus/model/completion/buffer-moved.gandr STE-3.6 b262ac8e4b234420
 corpus/model/completion/buffer-moved.gandr STE-6.3 b262ac8e4b234420
 corpus/model/completion/buffer-returned.gandr STE-9.3 d4bf18ccb444d3fa

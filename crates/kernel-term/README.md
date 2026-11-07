@@ -36,6 +36,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Ambrus Kovács. "Canonicity for Indexed Inductive-Recursive Types." _Proceedings of the ACM on Programming Languages_ 10 (POPL), 2026. `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2 give `Builtin`'s three roles and the judgement of each holder.
 - `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — `cover`'s three rules.
 - `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design — a match's derivation beside its tree.
+- `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface, so a literal identity test is a declaration form that the audit names.
 
 ## Provided features
 
