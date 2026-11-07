@@ -17,7 +17,7 @@
 //! lives in the free (n,1)-category on the cells, never in a group of chains.
 //! Integer chains are one instance, the abelianisation, and
 //! [`Abelian`](crate::Abelian) reads any scheme so. An equivalence on its
-//! complex is a [`Reduction`](crate::Reduction), so two collapses compose in
+//! complex is a [`Reduction`], so two collapses compose in
 //! sequence.
 //!
 //! # References
@@ -32,8 +32,8 @@
 //!   replaces a collapsible cell by a composite in the free (n,1)-category,
 //!   with its context. §§ 7.5.4–7.5.6 ask well-founded relations of a
 //!   collapsible part, and choose a cell that occurs once with no whiskers.
-//!   [`Composites::definition`] is the replacement, and
-//!   [`Complex::pairing`](crate::Complex::pairing) is the choice.
+//!   [`Composites::definition`] is the replacement, and [`Complex::pairing`] is
+//!   the choice.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -156,8 +156,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot read the
-    ///   cell.
+    /// - [`Complex::Fault`]: the complex cannot read the cell.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the graph `two` gives each vertex its identity path
@@ -180,8 +179,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot build
-    ///   the identity.
+    /// - [`Complex::Fault`]: the complex cannot build the identity.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the matched edge of `two` goes to the identity path
@@ -204,8 +202,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot read the
-    ///   composite.
+    /// - [`Complex::Fault`]: the complex cannot read the composite.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a definition that names its own cell is refused as a
@@ -229,8 +226,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot put an
-    ///   image in its place.
+    /// - [`Complex::Fault`]: the complex cannot put an image in its place.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — through the abelianisation, the collapse of each
@@ -255,8 +251,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot put an
-    ///   image in its place.
+    /// - [`Complex::Fault`]: the complex cannot put an image in its place.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witness of the second collapse of the triangle,
@@ -280,8 +275,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot compose
-    ///   the witnesses.
+    /// - [`Complex::Fault`]: the complex cannot compose the witnesses.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witness of `b` in the composed collapse of the
@@ -305,8 +299,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot whisker
-    ///   the witnesses.
+    /// - [`Complex::Fault`]: the complex cannot whisker the witnesses.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witness of `false` in `two` is the path to its
@@ -335,8 +328,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the partner defines no
-    ///   replacement.
+    /// - [`Complex::Fault`]: the partner defines no replacement.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the edge `false → true` of `two` defines `false` as
@@ -359,8 +351,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot read the
-    ///   witness.
+    /// - [`Complex::Fault`]: the complex cannot read the witness.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witness of `two` closes, and a path that stops at
@@ -386,8 +377,7 @@ pub trait Composites: Scheme
     ///   of its own, and each implementation states its own checks.
     ///
     /// # Errors
-    /// - [`Complex::Fault`](crate::Complex::Fault): the complex cannot compose
-    ///   the conjugate.
+    /// - [`Complex::Fault`]: the complex cannot compose the conjugate.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the inclusion of the loop of `two` is the composite

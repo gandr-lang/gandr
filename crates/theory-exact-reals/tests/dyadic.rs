@@ -410,6 +410,12 @@ fn the_simplest_point_of_each_boundary()
         simplest(value(5_i64, 0_i32), value(7_i64, 0_i32)),
         Ok(value(3_i64, 1_i32))
     );
+    // The first integer past the lower end can hold the most trailing zeros.
+    // Between 239 and 247 units of `2^-20` that integer is 240, not 244.
+    assert_eq!(
+        simplest(value(239_i64, -20_i32), value(247_i64, -20_i32)),
+        Ok(value(15_i64, -16_i32))
+    );
     // Adjacent ends meet at their midpoint.
     assert_eq!(
         simplest(value(1_i64, 0_i32), value(1_i64, 1_i32)),

@@ -5808,9 +5808,10 @@ where
 ///   one allocation of `reached` nodes.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the iterated pair's let spine spells its low levels and
-///   refuses its deep ones by the budget, and its named levels spell whole.
-/// - witness: `typed::tests::a_shared_level_prints_by_its_name_5826`
+/// - hypothesis: L3 — a level of the iterated pair within the floor spells
+///   whole, and the next level, past the bound of its distinct nodes, spells
+///   `?`.
+/// - witness: `tests::goldens::a_shared_type_past_its_distinct_nodes_spells_unknown_5826`
 #[spec(ensures: |ret| reached.0 > SHARED_FLOOR || ret == Sharing::Within)]
 fn sharing<S>(
     source: &S,
