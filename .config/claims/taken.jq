@@ -9,11 +9,11 @@
 # A branch with a `/` or with no number works no unit.
 #
 # Input:
-#   step    `branch`, `gate` or `take`
+#   step    `branch`, `gate`, `take` or `release`
 #   branch  under `branch` and `gate`, the branch the gate runs on, or ""
 #   lanes   under `branch` and `gate`, the keys of `lanes.toml`
-#   lane    under `take`, the lane that takes the claim
-#   issue   under `gate` and `take`, `{number, state, labels, body}` as GitHub
+#   lane    under `take` and `release`, the lane that acts on the claim
+#   issue   under `gate`, `take` and `release`, `{number, state, labels, body}` as GitHub
 #           holds it, or null when the read failed
 #
 # Output: under `branch`, `{lane, number}`, or null for a branch that works no
@@ -21,7 +21,8 @@
 # holds the claim, `closed` for a closed issue, and `unread` or `refused` with
 # the `line` the gate prints. Under `take`, `{verdict}`: `write` with the
 # `body` to write, `held` when the lane holds the claim already, or `refused`
-# with the `line` `claim:take` prints.
+# with the `line` `claim:take` prints. Under `release`, it is `release` when
+# the lane holds the claim, or `refused` with the line `claim:release` prints.
 
 include "markers";
 
@@ -69,6 +70,15 @@ elif .step == "take" then
         # A body without the label keeps no lapsed lane's marker (#5531).
         else {verdict: "write", body: (.issue as $issue | $issue.body | claiming($lane; $issue.labels))}
         end
+    end
+elif .step == "release" then
+  .lane as $lane
+  | holder(.issue) as $holder
+  | if $holder == $lane then {verdict: "release"}
+    elif $holder == null then
+      {verdict: "refused", line: "claim:release: #\(.issue.number) holds no claim of \($lane)"}
+    else
+      {verdict: "refused", line: "claim:release: \($holder) holds the claim of #\(.issue.number). The task leaves it unchanged"}
     end
 else error("taken.jq: no step `\(.step)`")
 end
