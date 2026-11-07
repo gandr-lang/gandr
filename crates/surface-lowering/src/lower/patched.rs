@@ -554,20 +554,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut record = base.node;
         let mut held = None;
-        if let Some((name, Former::TypeHead | Former::Name | Former::Constructor)) =
-            self.form_at(base)?
-        {
-            let named = Site {
-                at: base,
-                name,
-                reading: Reading::ValueType(frame),
-            };
-            if let Maybe::Present(stated) = self.stated_named(named, self.name_at(base))?
-                && let TypeMeaning::Manifest(defined) = stated.meaning
-            {
-                record = defined.node;
-                held = Some(stated.held);
-            }
+        if let Some((defined, member)) = self.member_definition(frame, base)? {
+            record = defined;
+            held = Some(member);
         }
         let entries = match self.stated_form(site, record, Former::TelescopeType, Thunked(false))? {
             Maybe::Present((_, entries))
@@ -581,6 +570,55 @@ impl<'source> Lowerer<'_, 'source>
         };
 
         Ok((entries, held))
+    }
+
+    /// The definition the manifest type member named at `at` writes, with
+    /// that member's held slot, when `at`, read under `frame`, is a type name
+    /// that names one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the member's definition node and held slot when
+    ///   [`Self::stated_named`] answers a manifest type member for the name at
+    ///   `at`; nothing for another form, an unresolved name, or a sealed,
+    ///   instantiated or family member.
+    /// - fails: the name's own resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a patched base named by a type member, and a
+    ///   selection off a name written at a type member.
+    /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+    /// - witness: `lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
+    pub(super) fn member_definition(
+        &mut self,
+        frame: Frame,
+        at: Placed,
+    ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::TypeHead | Former::Name | Former::Constructor)) =
+            self.form_at(at)?
+        else {
+            return Ok(None);
+        };
+        let named = Site {
+            at,
+            name,
+            reading: Reading::ValueType(frame),
+        };
+        Ok(match self.stated_named(named, self.name_at(at))? {
+            Maybe::Present(stated) => match stated.meaning {
+                TypeMeaning::Manifest(defined) => Some((defined.node, stated.held)),
+                TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
+                    None
+                },
+            },
+            Maybe::Absent(_) => None,
+        })
     }
 
     /// The base's fields, each label with the node of the type the base

@@ -467,7 +467,7 @@ fn bound(
 
 /// A row of a hand-built table.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Row(usize);
 
 /// A source over hand-built rows, malformed at will: a child of the wrong

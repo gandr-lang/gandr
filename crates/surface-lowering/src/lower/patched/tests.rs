@@ -53,7 +53,8 @@ fn a_patched_type_is_the_record_of_its_free_fields()
 fn a_base_named_by_a_type_member_keeps_the_name()
 {
     // Three bases written by the member's name, a fourth beside a stage, and
-    // a record written in place, which keeps no name.
+    // the member's own name, which names the record its definition mints; a
+    // record written in place keeps no name.
     let source = format!(
         include_str!("tests/unformatted/a-patched-type-is-the-record-of-its-free-fields.gandr"),
         CONFIG = CONFIG
@@ -73,7 +74,13 @@ fn a_base_named_by_a_type_member_keeps_the_name()
         .collect();
     let written: BTreeSet<(usize, Option<&str>)> = source
         .match_indices("Config[")
-        .map(|(start, _)| (start, Some("Config")))
+        .map(|(start, _)| start)
+        .chain(
+            source
+                .find("type Config")
+                .map(|start| start.saturating_add("type ".len())),
+        )
+        .map(|start| (start, Some("Config")))
         .collect();
     assert_eq!(
         named, written,
