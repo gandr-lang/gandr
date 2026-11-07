@@ -243,6 +243,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::CloseReach;
 use gandr_surface_syntax::ClosingClass;
+use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::GroutShape;
 use gandr_surface_syntax::GroutSort;
@@ -3043,13 +3044,14 @@ impl<'pbg> MeldState<'pbg>
     ///   ends a top-level declaration, `labels` are its labels, and `text` is
     ///   its text.
     /// - ensures: when no candidate continues the nearest open form, the
-    ///   nearest open frontier is the nearest declaration-started one, the
-    ///   completions of that frontier end at no paired closer, and one of the
-    ///   labels' declared molds ends a form of the declaration's rule, mints
-    ///   the ghost end and flags one [`Oblig::MissingTile`] at the frontier,
-    ///   pushes `text` as that mold, closes the declaration with it and returns
-    ///   true; leaves the state untouched and returns false otherwise, as when
-    ///   a bracket inside the declaration is still open.
+    ///   nearest open frontier is the nearest declaration-started one, that
+    ///   frontier is not one whose every completion ends at a closer and whose
+    ///   next tile can close a `(` or a `[`, and one of the labels' declared
+    ///   molds ends a form of the declaration's rule, mints the ghost end and
+    ///   flags one [`Oblig::MissingTile`] at the frontier, pushes `text` as
+    ///   that mold, closes the declaration with it and returns true; leaves the
+    ///   state untouched and returns false otherwise, as when a bracket inside
+    ///   the declaration is still open.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3058,10 +3060,12 @@ impl<'pbg> MeldState<'pbg>
     ///   input only when the separator before the next declaration closes it. A
     ///   well-formed declaration takes its `;` as its own end, and a close
     ///   there would charge a corpus source an obligation. A separator inside
-    ///   an unclosed bracket of the declaration stays inside it, also when the
-    ///   bracket is a tile of the declaration's own rule, as the parameters of
-    ///   a `def` are: a `def` that lost the `)` of its parameters keeps the
-    ///   reading of the repair at the end of the input (#5911).
+    ///   an unclosed bracket of the declaration stays inside it. So does one
+    ///   after a frontier inside the parameters of a `def rec` that lost their
+    ///   `)`: the repair at the end of the declaration places the `)` where the
+    ///   rest parses, and the declaration recovers as on the parent of the
+    ///   close (#5911). A `def` without that `)`, whose end the close takes,
+    ///   recovers no better at the end of the input either.
     /// - witness: `tests::acceptance::a_def_without_its_closer_keeps_its_reading_5911`
     /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
@@ -3099,16 +3103,32 @@ impl<'pbg> MeldState<'pbg>
         else {
             return SeparatorTaken::from(false);
         };
-        // A frontier inside a bracket of the declaration's own rule, as the
-        // parameters of a `def`, waits for its closer: the repair at the
-        // declaration's end places that closer where the rest parses.
-        if self.pbg.closing_class(frontier_mold).is_some() {
-            return SeparatorTaken::from(false);
-        }
         let Ok(rule) = self.pbg.rule_of(frontier_mold).map(|rule| rule.name)
         else {
             return SeparatorTaken::from(false);
         };
+        // A declaration whose every completion ends at a closer, as a `def
+        // rec` ends at the `}` of its block, does not end at a separator. When
+        // its frontier stands inside a `(` or a `[`, as a parameter whose `)`
+        // the source left out, the next tile the frontier takes may be that
+        // closer, and the repair at the end of the declaration places it where
+        // the rest parses. The separator then stays in the declaration.
+        if self.pbg.closing_class(frontier_mold).is_some()
+            && self
+                .pbg
+                .mold_successors(frontier_mold)
+                .iter()
+                .any(|&(_, next)| {
+                    self.pbg.mold(next).is_ok_and(|def| {
+                        matches!(
+                            ClosingClass::closing(DelimSpelling::from(def.label)),
+                            Some(ClosingClass::Paren | ClosingClass::Bracket)
+                        )
+                    })
+                })
+        {
+            return SeparatorTaken::from(false);
+        }
         let terminator = labels
             .iter()
             .flat_map(|&label| self.pbg.label_candidates(label))
