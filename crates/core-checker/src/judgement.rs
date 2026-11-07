@@ -5541,6 +5541,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
         {
             return self.staged_constructor(term, expected, owed);
         }
+        // `*{}` is the unit, and it is also the record of no fields. A patched
+        // type that fixes every field of its base has that record as its one
+        // element. So the literal checks there, and it crosses as that record,
+        // which the kernel admits at the type.
+        if matches!(*self.value(term)?, Value::Tuple(ref components) if components.is_empty())
+            && let head = self.context.whnf_value_type(expected)?
+            && let Some(node @ &gandr_core_term::ValueType::Patched { .. }) =
+                self.context.arena().value_type(head)
+            && self
+                .context
+                .arena()
+                .element_fields(node)
+                .is_some_and(|free| free.iter().next().is_none())
+        {
+            let record = self
+                .context
+                .arena_mut()
+                .value_record(alloc::collections::BTreeMap::new());
+            self.context.record_restated(term, record);
+            return Ok(Step::Ascend(Produced::Checked));
+        }
         match *self.value(term)? {
             Value::Record(_) => self.check_native_record(term, expected),
             Value::Reify(_) => {
