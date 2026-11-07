@@ -167,14 +167,14 @@ fn compare(
     return against(&minus(&first.whole, &second.whole), &difference);
 }
 
-/// Whether `interval` holds `surd`.
+/// Assert that `interval` holds `surd`.
 ///
 /// # Specification
 /// trivial.
-fn holds(
+fn assert_holds(
     interval: &NumericInterval,
     surd: &Surd,
-) -> bool
+)
 {
     let side = |end: &Endpoint, closure: Closure, inside: Ordering| match *end {
         Endpoint::Finite(ref value) => {
@@ -185,8 +185,11 @@ fn holds(
         Endpoint::PosInf => inside == Ordering::Greater,
     };
     let (lower, upper) = (interval.lower(), interval.upper());
-    return side(&lower.endpoint, lower.closure, Ordering::Less)
-        && side(&upper.endpoint, upper.closure, Ordering::Greater);
+    assert!(
+        side(&lower.endpoint, lower.closure, Ordering::Less)
+            && side(&upper.endpoint, upper.closure, Ordering::Greater),
+        "{interval:?} holds {surd:?}"
+    );
 }
 
 /// The width of a finite interval.
@@ -349,9 +352,12 @@ fn tarau_operations_agree_with_the_codes()
             codes.is_sorted(),
             "the members of h_{n} in the order of their codes"
         );
-        let mut shuffled = members.clone();
-        shuffled.reverse();
-        shuffled.extend(members.first().copied());
+        let shuffled: Vec<SetId> = members
+            .iter()
+            .rev()
+            .chain(members.first())
+            .copied()
+            .collect();
         assert_eq!(sets.set(&shuffled), Ok(here));
         if n < 0xFFFF {
             let next = set(&mut sets, Ackermann::from(n + 1));
@@ -370,10 +376,7 @@ fn each_code_encloses_and_replays()
     let mut sets = Sets::new();
     for (n, here) in (0_u64 ..).zip(slice(&mut sets)) {
         let interval = enclosure(|builder| real(builder, &sets, here));
-        assert!(
-            holds(&interval, &surd(Ackermann::from(n))),
-            "{interval:?} holds the code of h_{n}"
-        );
+        assert_holds(&interval, &surd(Ackermann::from(n)));
     }
     // A set of rank 4 reads `2^-x` at an irrational `x`.
     let sixteen = set(&mut sets, Ackermann::from(16_u64));
@@ -434,7 +437,7 @@ fn the_successor_carries_over_to_the_real_code()
             whole: Dyadic::ZERO,
             root: Dyadic::ZERO,
         };
-        assert!(holds(&interval, &zero), "{interval:?} holds zero at h_{n}");
+        assert_holds(&interval, &zero);
     }
 }
 
@@ -518,10 +521,11 @@ fn read_back(
         for &candidate in candidates.iter().skip(1) {
             let held = sets.members(cumulus).unwrap().to_vec();
             let members = sets.members(candidate).unwrap().to_vec();
-            if members.iter().all(|member| held.contains(member)) {
+            // The union equals the cumulus when the cumulus holds the candidate.
+            let union = sets.set(&[held, members].concat()).unwrap();
+            if union == cumulus {
                 continue;
             }
-            let union = sets.set(&[held, members].concat()).unwrap();
             match decide(|builder| (alpha_node(builder, sets, alpha), real(builder, sets, union))) {
                 Decision::Below => {},
                 Decision::NotBelow => {

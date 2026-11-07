@@ -367,8 +367,15 @@ impl Sets
         code: Ackermann,
     ) -> Result<SetId, CodeError>
     {
+        if let Some(&place) = self.places.get(&code) {
+            return Ok(place);
+        }
         let mut waiting = alloc::vec![code];
-        let mut members = Vec::new();
+        // Each other code that the unfold reaches is the position of a bit,
+        // which is below 64 and so has at most 6 set bits. The buffer starts
+        // at the bits of `code` and grows only for a nested code with more.
+        let mut members =
+            Vec::with_capacity(usize::try_from(code.0.count_ones()).unwrap_or_default());
         while let Some(&top) = waiting.last() {
             if self.places.contains_key(&top) {
                 waiting.pop();
@@ -527,6 +534,7 @@ pub fn code(
 /// - fails: refuses any other `d` as [`CodeError::Rank`], and passes the
 ///   builder's failure on as [`CodeError::Plan`].
 /// - panics: none.
+/// - executable: none — the clause restates the construction.
 ///
 /// # Errors
 /// - [`CodeError::Rank`]: `d` has more than one bit below the point.
@@ -569,9 +577,15 @@ fn term(
 /// - fails: refuses an `n` that is not a whole number, or whose negation leaves
 ///   the range of [`Exponent`], as [`CodeError::Rank`].
 /// - panics: none.
+/// - executable: none — the clause restates the construction.
 ///
 /// # Errors
 /// - [`CodeError::Rank`]: `n` is not a whole number in range.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`code`]: each whole code of a member, and each
+///   doubled half code.
+/// - witness: `tests::ackermann::each_code_encloses_and_replays`
 fn half_power(whole: &Dyadic) -> Result<Dyadic, CodeError>
 {
     let shift = u32::try_from(i32::from(whole.exponent())).map_err(|_fraction| CodeError::Rank)?;
