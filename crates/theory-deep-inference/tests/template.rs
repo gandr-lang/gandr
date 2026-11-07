@@ -10,6 +10,8 @@
 //! members sharing no arm. The sequent alphabet's only command position is the
 //! root; the toy alphabet's every node is one.
 
+use alloc::borrow::Cow;
+
 use anodized::spec;
 use gandr_theory_cell_complexes::Cat;
 use gandr_theory_cell_complexes::Cell;
@@ -42,6 +44,7 @@ use gandr_theory_coherent_resolutions::derive_fused;
 use gandr_theory_coherent_resolutions::enumerate_overlaps;
 use gandr_theory_deep_inference::EntryIndex;
 use gandr_theory_deep_inference::FoldFault;
+use gandr_theory_deep_inference::Folded;
 use gandr_theory_deep_inference::GuardId;
 use gandr_theory_deep_inference::GuardedTemplate;
 use gandr_theory_deep_inference::InheritanceCache;
@@ -49,6 +52,7 @@ use gandr_theory_deep_inference::InheritanceVerdict;
 use gandr_theory_deep_inference::LegStepIndex;
 use gandr_theory_deep_inference::MemberIndex;
 use gandr_theory_deep_inference::NodeCount;
+use gandr_theory_deep_inference::TemplateFold;
 use gandr_theory_deep_inference::TemplateLeg;
 use gandr_theory_deep_inference::TemplateObstruction;
 use gandr_theory_deep_inference::TemplateReduction;
@@ -58,8 +62,11 @@ use gandr_theory_deep_inference::anti_unify_tracelets;
 use gandr_theory_deep_inference::flows_equal;
 use gandr_theory_deep_inference::tracelet_flow;
 use gandr_theory_discrete_morse::MorseError;
+use gandr_theory_discrete_morse::PartIndex;
 use gandr_theory_discrete_morse::Reduction as _;
 use gandr_theory_discrete_morse::Refusal;
+use gandr_theory_discrete_morse::Sum;
+use gandr_theory_discrete_morse::Summand;
 use proptest::prelude::*;
 use quenchant_shape::shape::Maybe;
 
@@ -1448,7 +1455,7 @@ fn a_member_unlike_its_instance_is_refused_by_name()
     last.joins_at = first;
     assert_eq!(
         Err(Refusal::Forged(MemberIndex::from(63_usize))),
-        TemplateReduction::over(template.clone(), &joined).replay(),
+        TemplateReduction::over(Cow::Borrowed(&template), &joined).replay(),
         "a member whose join its arms do not give"
     );
     let Source { bases, .. } = fused(Name("fused Peano"), peano_store());
@@ -1463,7 +1470,7 @@ fn a_member_unlike_its_instance_is_refused_by_name()
         Err(Refusal::Morse(MorseError::Complex(FoldFault::Obstruction(
             TemplateObstruction::PeakNotAnInstance
         )))),
-        TemplateReduction::over(template, &shaped).replay(),
+        TemplateReduction::over(Cow::Borrowed(&template), &shaped).replay(),
         "a member of another shape"
     );
 }
@@ -1931,4 +1938,269 @@ fn family_boundaries_preserve_assignments_and_adversary_positions()
     assert!(!bool::from(single[0].replay(&store)));
     assert_eq!(NodeCount::from(2_usize), plain_steps(&single));
     assert_eq!(NodeCount::from(12_usize), plain_size(&single));
+}
+
+/// A count of families in a family of families.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Families(usize);
+
+/// 64 instances of `base`, member `i` filling hole `e` with the numeral that
+/// `fill` gives for `i` and `e`.
+///
+/// # Specification
+/// - ensures: 64 members, every member with the skeleton of `base`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the families of a family of families, and a family with
+///   one hole fixed. The skeleton observer rejects a member whose overlap or
+///   paths differ from the base's.
+/// - witness: `tests::template::a_family_of_families_reduces_in_two_steps`
+/// - witness: `tests::template::a_carrier_unlike_its_instance_is_refused_at_its_part`
+#[spec(ensures: |output| output.len() == 64 && output.iter().all(|member|
+    member.path_a == base.path_a && member.path_b == base.path_b
+        && member.overlap.left == base.overlap.left && member.overlap.right == base.overlap.right
+        && member.overlap.kind == base.overlap.kind && member.overlap.seam == base.overlap.seam))]
+fn filled<A>(
+    base: &Tracelet<A>,
+    fill: impl Fn(Ordinal, Ordinal) -> Value,
+) -> Vec<Tracelet<A>>
+where
+    A: Corpus,
+{
+    let base_holes = holes::<A>(&base.overlap.peak);
+    (0_usize .. 64)
+        .map(|index| {
+            let values: Vec<(A::Var, Value)> = base_holes
+                .iter()
+                .enumerate()
+                .map(|(hole, var)| (var.clone(), fill(Ordinal(index), Ordinal(hole))))
+                .collect();
+            let sigma = A::numerals(&values);
+            let mut member = base.clone();
+            member.overlap.peak = A::apply_subst(&sigma, &base.overlap.peak);
+            member.joins_at = A::apply_subst(&sigma, &base.joins_at);
+            member
+        })
+        .collect()
+}
+
+/// `count` families of instances of `base`, with one skeleton for all.
+/// Member `i` of family `k` fills hole `e` with zero where bit `e` of `i` is
+/// zero, and otherwise with one more than digit `e` of `k` in base six. So
+/// each family holds two arms at each entry, and its carrier is `base` with a
+/// metavariable at each hole.
+///
+/// # Specification
+/// trivial.
+fn families_of_one_skeleton<A>(
+    base: &Tracelet<A>,
+    count: Families,
+) -> Vec<Vec<Tracelet<A>>>
+where
+    A: Corpus,
+{
+    (0_usize .. count.0)
+        .map(|kind| {
+            filled(base, |member, hole| {
+                let digit = u32::try_from(hole.0)
+                    .ok()
+                    .and_then(|place| 6_usize.checked_pow(place))
+                    .and_then(|weight| kind.checked_div(weight))
+                    .and_then(|shifted| shifted.checked_rem(6))
+                    .unwrap_or_default();
+                Value(match value(Regime::TwoArms, member, hole).0 {
+                    0 => 0,
+                    _ => digit.saturating_add(1),
+                })
+            })
+        })
+        .collect()
+}
+
+/// The guarded template of each of `families`.
+///
+/// # Specification
+/// trivial.
+fn templates_of(
+    families: &[Vec<Tracelet>],
+    store: &CellStore,
+    cache: &mut InheritanceCache,
+) -> Vec<GuardedTemplate<SequentAlphabet>>
+{
+    families
+        .iter()
+        .map(|family| anti_unify_tracelets(family, store, cache).expect("each family pays"))
+        .collect()
+}
+
+/// The sum of the template reductions of `families` against `templates`.
+///
+/// # Specification
+/// trivial.
+fn sum_of<'family>(
+    templates: &'family [GuardedTemplate<SequentAlphabet>],
+    families: &[&'family [Tracelet]],
+) -> Sum<TemplateReduction<'family, SequentAlphabet>>
+{
+    Sum::new(
+        templates
+            .iter()
+            .zip(families)
+            .map(|(template, family)| TemplateReduction::over(Cow::Borrowed(template), family))
+            .collect(),
+    )
+}
+
+#[test]
+fn two_families_keep_the_sum_alone()
+{
+    let (store, lead) = lead_base();
+    let families = families_of_one_skeleton(&lead, Families(2));
+    let mut cache = InheritanceCache::new();
+    let templates = templates_of(&families, &store, &mut cache);
+    let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
+    assert_eq!(sum_of(&templates, &views).replay(), Ok(()));
+    assert!(matches!(
+        TemplateFold::fold(&templates, &views, &store, &mut cache),
+        Err(TemplateRefusal::DoesNotPay { .. })
+    ));
+}
+
+#[test]
+fn a_family_of_families_reduces_in_two_steps()
+{
+    let (store, lead) = lead_base();
+    let families = families_of_one_skeleton(&lead, Families(36));
+    let mut cache = InheritanceCache::new();
+    let templates = templates_of(&families, &store, &mut cache);
+    let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
+    let mut fold = TemplateFold::fold(&templates, &views, &store, &mut cache)
+        .expect("36 templates of one skeleton pay");
+    let carriers: Vec<Tracelet> = templates
+        .iter()
+        .map(|template| template.carrier().clone())
+        .collect();
+    assert_eq!(
+        fold.size(),
+        fold.template().cost_report(&carriers, &store).template_size
+    );
+    assert_eq!(fold.replay(), Ok(()));
+    let mut both = sum_of(&templates, &views).then(fold);
+    assert_eq!(both.replay(), Ok(()));
+    // A member collapses onto its row with its template's row, and includes
+    // back as itself.
+    let cell = Summand::new(PartIndex::from(5_usize), MemberIndex::from(3_usize));
+    let generator = both.generator(&cell).expect("a member of family 5");
+    let collapsed = both
+        .collapse(&generator)
+        .expect("the collapse in two steps");
+    let Folded::Nested { ref inner, .. } = *collapsed.value()
+    else {
+        panic!("a row with its template's row, not {collapsed:?}");
+    };
+    assert_eq!(
+        Ok(inner.clone()),
+        templates[5].row(&families[5][3].overlap.peak)
+    );
+    assert_eq!(both.include(&collapsed), Ok(generator));
+}
+
+#[test]
+fn the_then_of_two_plain_folds_stays_refused_at_the_seam()
+{
+    let (store, lead) = lead_base();
+    let families = families_of_one_skeleton(&lead, Families(2));
+    let mut cache = InheritanceCache::new();
+    let first =
+        TemplateReduction::fold(&families[0], &store, &mut cache).expect("the first family pays");
+    let second =
+        TemplateReduction::fold(&families[1], &store, &mut cache).expect("the second family pays");
+    assert_eq!(
+        first.then(second).replay(),
+        Err(Refusal::Unmatched(Some(MemberIndex::from(0_usize))))
+    );
+}
+
+#[test]
+fn a_part_whose_replay_fails_is_refused_with_its_part_and_cell()
+{
+    let (store, lead) = lead_base();
+    let mut families = families_of_one_skeleton(&lead, Families(2));
+    let mut cache = InheritanceCache::new();
+    let templates = templates_of(&families, &store, &mut cache);
+    let first = families[1][0].joins_at.clone();
+    let last = families[1].last_mut().expect("a last member");
+    assert_ne!(first, last.joins_at, "the first and last members differ");
+    last.joins_at = first;
+    let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
+    assert_eq!(
+        sum_of(&templates, &views).replay(),
+        Err(Refusal::Forged(Summand::new(
+            PartIndex::from(1_usize),
+            MemberIndex::from(63_usize)
+        )))
+    );
+}
+
+#[test]
+fn a_carrier_unlike_its_instance_is_refused_at_its_part()
+{
+    let (store, lead) = lead_base();
+    let mut families = families_of_one_skeleton(&lead, Families(36));
+    let mut cache = InheritanceCache::new();
+    let honest = templates_of(&families, &store, &mut cache);
+    let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
+    let template = TemplateFold::fold(&honest, &views, &store, &mut cache)
+        .expect("36 templates of one skeleton pay")
+        .template()
+        .clone();
+    // Family 7 keeps two arms at its first hole and fixes the other at two,
+    // so its carrier holds a numeral where the template of templates holds a
+    // metavariable.
+    families[7] = filled(&lead, |member, hole| match hole.0 {
+        0 => value(Regime::TwoArms, member, hole),
+        _ => Value(2),
+    });
+    let templates = templates_of(&families, &store, &mut cache);
+    let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
+    assert_eq!(
+        TemplateFold::over(template, &templates, &views).replay(),
+        Err(Refusal::Forged(Summand::new(
+            PartIndex::from(7_usize),
+            MemberIndex::from(0_usize)
+        )))
+    );
+}
+
+#[test]
+fn carriers_that_differ_fold_into_a_template_of_templates_with_an_entry()
+{
+    let (store, lead) = lead_base();
+    let mut families = families_of_one_skeleton(&lead, Families(36));
+    // Each odd family fixes its second hole at two, so its carrier holds a
+    // numeral where an even family's carrier holds a metavariable. The
+    // template of templates names a fresh metavariable there, apart from the
+    // carriers' own.
+    for (kind, family) in families.iter_mut().enumerate() {
+        if kind % 2 == 1 {
+            *family = filled(&lead, |member, hole| match hole.0 {
+                0 => Value(
+                    value(Regime::TwoArms, member, hole)
+                        .0
+                        .saturating_mul((kind % 6).saturating_add(1)),
+                ),
+                _ => Value(2),
+            });
+        }
+    }
+    let mut cache = InheritanceCache::new();
+    let templates = templates_of(&families, &store, &mut cache);
+    let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
+    let mut fold = TemplateFold::fold(&templates, &views, &store, &mut cache)
+        .expect("36 templates with one entry between them pay");
+    assert_eq!(fold.template().entries().len(), 1);
+    assert_eq!(fold.replay(), Ok(()));
+    assert_eq!(sum_of(&templates, &views).then(fold).replay(), Ok(()));
 }

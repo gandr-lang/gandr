@@ -18,11 +18,16 @@ use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Images;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Invertibility;
+use gandr_theory_discrete_morse::MorseError;
+use gandr_theory_discrete_morse::PartIndex;
 use gandr_theory_discrete_morse::Place;
 use gandr_theory_discrete_morse::Reduction;
 use gandr_theory_discrete_morse::Refusal;
 use gandr_theory_discrete_morse::Scheme;
 use gandr_theory_discrete_morse::Standing;
+use gandr_theory_discrete_morse::Sum;
+use gandr_theory_discrete_morse::SumFault;
+use gandr_theory_discrete_morse::Summand;
 use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::equivalence;
 use gandr_theory_discrete_morse::greedy;
@@ -792,6 +797,115 @@ fn a_composite_over_other_cells_is_unmatched()
         .on(&mut whole, &all, room)
         .expect("the equivalence reads");
     assert_eq!(lower.then(upper).replay(), Err(Refusal::Unmatched(Some(C))));
+}
+
+#[test]
+fn a_sum_reads_each_cell_in_its_own_part()
+{
+    let room = Budget::from(ROOM);
+    let mut left = Graph::triangle(&[(B, P)]);
+    let mut right = Graph::triangle(&[(C, Q)]);
+    let cells = left.cells();
+    let first = equivalence(&mut left, &cells, room).expect("an acyclic matching");
+    let second = equivalence(&mut right, &cells, room).expect("an acyclic matching");
+    let lower = first
+        .on(&mut left, &cells, room)
+        .expect("the equivalence reads");
+    let upper = second
+        .on(&mut right, &cells, room)
+        .expect("the equivalence reads");
+    let critical = [lower.target().to_vec(), upper.target().to_vec()];
+    let mut sum = Sum::new(Vec::from([lower, upper]));
+    let (zero, one) = (PartIndex::from(0_usize), PartIndex::from(1_usize));
+    let tagged = |part: PartIndex, list: &[Name]| -> Vec<Summand<Name>> {
+        list.iter().map(|&cell| Summand::new(part, cell)).collect()
+    };
+    assert_eq!(
+        sum.source(),
+        [tagged(zero, &cells), tagged(one, &cells)].concat()
+    );
+    assert_eq!(
+        sum.target(),
+        [tagged(zero, &critical[0]), tagged(one, &critical[1])].concat()
+    );
+    assert_eq!(sum.replay(), Ok(()));
+    // `b` collapses onto `a` in the first part, and stays in the second.
+    let early = sum
+        .generator(&Summand::new(zero, B))
+        .expect("a cell of the first part");
+    assert_eq!(sum.collapse(&early), Ok(Summand::new(zero, stay(A))));
+    let late = sum
+        .generator(&Summand::new(one, B))
+        .expect("a cell of the second part");
+    assert_eq!(sum.collapse(&late), Ok(Summand::new(one, stay(B))));
+    // A part past the parts, and two witnesses of two parts, are refused.
+    let past = PartIndex::from(2_usize);
+    assert_eq!(
+        sum.generator(&Summand::new(past, A)),
+        Err(Refusal::Morse(MorseError::Complex(SumFault::NoPart(past))))
+    );
+    let moved = sum
+        .section(&Summand::new(zero, stay(B)))
+        .expect("the section reads")
+        .expect("`b` moves in the first part");
+    let carried = sum
+        .section(&Summand::new(one, stay(C)))
+        .expect("the section reads")
+        .expect("`c` moves in the second part");
+    assert_eq!(
+        sum.compose(&moved, &carried),
+        Err(Refusal::Morse(MorseError::Complex(SumFault::Apart {
+            first: zero,
+            second: one
+        })))
+    );
+    assert_eq!(
+        sum.closes(
+            &moved,
+            &Summand::new(one, stay(B)),
+            &Summand::new(one, stay(A))
+        ),
+        Ok(Closure::Open)
+    );
+}
+
+#[test]
+fn a_part_that_does_not_replay_is_refused_with_its_part()
+{
+    let room = Budget::from(ROOM);
+    let mut honest = Graph::triangle(&[(B, P)]);
+    let cells = honest.cells();
+    let first = equivalence(&mut honest, &cells, room).expect("an acyclic matching");
+    let mut lower = first
+        .on(&mut honest, &cells, room)
+        .expect("the equivalence reads");
+    let mut middle = reduced(&mut lower, &[(C, Q)]);
+    let inner = middle.cells();
+    let second = equivalence(&mut middle, &inner, room).expect("an acyclic matching");
+    let upper = second
+        .on(&mut middle, &inner, room)
+        .expect("the equivalence reads");
+    // The second part's second reduction reads the whole triangle, not the
+    // first target.
+    let mut other = Graph::triangle(&[(B, P)]);
+    let again = equivalence(&mut other, &cells, room).expect("an acyclic matching");
+    let below = again
+        .on(&mut other, &cells, room)
+        .expect("the equivalence reads");
+    let mut whole = Graph::triangle(&[]);
+    let all = whole.cells();
+    let plain = equivalence(&mut whole, &all, room).expect("an acyclic matching");
+    let above = plain
+        .on(&mut whole, &all, room)
+        .expect("the equivalence reads");
+    let mut sum = Sum::new(Vec::from([lower.then(upper), below.then(above)]));
+    assert_eq!(
+        sum.replay(),
+        Err(Refusal::Unmatched(Some(Summand::new(
+            PartIndex::from(1_usize),
+            C
+        ))))
+    );
 }
 
 /// A cell of a square `D` from the edge `γ : x → z` to the composite of

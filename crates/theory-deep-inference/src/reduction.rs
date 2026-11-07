@@ -12,6 +12,14 @@
 //! member equals its instance. The fold is untrusted, and the replay decides
 //! it.
 //!
+//! A family of families reduces in two steps. The
+//! [`Sum`](gandr_theory_discrete_morse::Sum) of the reductions of each family
+//! comes first. [`TemplateFold`] comes second: it folds the member templates'
+//! carriers into one template of templates, and it collapses a member's row
+//! onto that row together with its template's row there. The fold of
+//! templates pays only where it has more member templates than its own size,
+//! so a smaller family of families keeps the sum alone.
+//!
 //! # References
 //!
 //! - `Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions` —
@@ -35,8 +43,11 @@ use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_discrete_morse::Answer;
 use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::MorseError;
+use gandr_theory_discrete_morse::PartIndex;
 use gandr_theory_discrete_morse::Reduction;
 use gandr_theory_discrete_morse::Refusal;
+use gandr_theory_discrete_morse::SumFault;
+use gandr_theory_discrete_morse::Summand;
 
 use crate::boundary::MemberIndex;
 use crate::boundary::NodeCount;
@@ -52,8 +63,8 @@ use crate::template::anti_unify_tracelets;
 #[derive(Debug)]
 pub struct TemplateReduction<'family, A: CellAlphabet>
 {
-    /// The template that the family folds into.
-    template: GuardedTemplate<A>,
+    /// The template that the family folds into, owned or borrowed.
+    template: Cow<'family, GuardedTemplate<A>>,
     /// The family, one certificate for each member.
     family: &'family [Tracelet<A>],
     /// One cell for each member, in family order.
@@ -70,6 +81,15 @@ pub enum Folded<'family, A: CellAlphabet>
     Member(Cow<'family, Tracelet<A>>),
     /// The guard of the arm at each entry of the template.
     Row(TemplateRow),
+    /// A row of a member template, with that template's row in a template of
+    /// templates.
+    Nested
+    {
+        /// The member template's row in the template of templates.
+        outer: TemplateRow,
+        /// The member's row in its own template.
+        inner: TemplateRow,
+    },
 }
 
 /// The witness of a template reduction: an identity, because a row is exact.
@@ -87,9 +107,12 @@ pub enum FoldFault
     Obstruction(TemplateObstruction),
     /// A collapse or a section reads a member alone, and it received a row.
     NotAMember,
-    /// An inclusion or a retraction reads a row alone, and it received a
-    /// certificate.
+    /// An inclusion or a retraction reads a row alone, and it received another
+    /// composite.
     NotARow,
+    /// An inclusion or a retraction of a fold of templates reads a row with
+    /// its template's row alone, and it received another composite.
+    NotNested,
 }
 
 /// The refusal of a template reduction for `fault`.
@@ -141,13 +164,13 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
     ) -> Result<Self, TemplateRefusal>
     {
         Ok(Self::over(
-            anti_unify_tracelets(family, store, cache)?,
+            Cow::Owned(anti_unify_tracelets(family, store, cache)?),
             family,
         ))
     }
 
-    /// Read `family` against `template`, wherever the template comes from:
-    /// the replay decides whether it reduces the family.
+    /// Read `family` against `template`, owned or borrowed, wherever the
+    /// template comes from: the replay decides whether it reduces the family.
     ///
     /// # Specification
     /// - ensures: one cell for each member of `family`, in family order.
@@ -163,7 +186,7 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
     #[inline]
     #[must_use]
     pub fn over(
-        template: GuardedTemplate<A>,
+        template: Cow<'family, GuardedTemplate<A>>,
         family: &'family [Tracelet<A>],
     ) -> Self
     {
@@ -180,7 +203,7 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn template(&self) -> &GuardedTemplate<A>
+    pub fn template(&self) -> &GuardedTemplate<A>
     {
         &self.template
     }
@@ -193,7 +216,7 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn size(&self) -> NodeCount
+    pub fn size(&self) -> NodeCount
     {
         self.template.size()
     }
@@ -259,7 +282,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
                 .row(&member.overlap.peak)
                 .map(Folded::Row)
                 .map_err(obstructed),
-            Folded::Row(_) => Err(refused(FoldFault::NotAMember)),
+            Folded::Row(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotAMember)),
         }
     }
 
@@ -279,7 +302,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
                 .instance(row)
                 .map(|instance| Folded::Member(Cow::Owned(instance)))
                 .map_err(obstructed),
-            Folded::Member(_) => Err(refused(FoldFault::NotARow)),
+            Folded::Member(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotARow)),
         }
     }
 
@@ -296,7 +319,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     {
         match *composite {
             Folded::Member(_) => Ok(Some(Identity)),
-            Folded::Row(_) => Err(refused(FoldFault::NotAMember)),
+            Folded::Row(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotAMember)),
         }
     }
 
@@ -314,7 +337,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     {
         match *composite {
             Folded::Row(_) => Ok(None),
-            Folded::Member(_) => Err(refused(FoldFault::NotARow)),
+            Folded::Member(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotARow)),
         }
     }
 
@@ -417,33 +440,488 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     #[inline]
     fn replay(&mut self) -> Answer<Self, ()>
     {
-        let carrier = self.template.carrier();
         for (index, member) in self.family.iter().enumerate() {
             let cell = MemberIndex::from(index);
-            let row = self
-                .template
-                .row(&member.overlap.peak)
-                .map_err(obstructed)?;
-            let (peak, join) = self.template.boundary(&row).map_err(obstructed)?;
-            if peak != member.overlap.peak {
-                let back = self.template.row(&peak).map_err(obstructed)?;
-                return Err(if back == row {
-                    Refusal::Forged(cell)
-                }
-                else {
-                    Refusal::Unretracted(cell)
-                });
+            match rebuilt(&self.template, member).map_err(obstructed)? {
+                Rebuilt::Same => {},
+                Rebuilt::Forged => return Err(Refusal::Forged(cell)),
+                Rebuilt::Unretracted => return Err(Refusal::Unretracted(cell)),
             }
-            let skeleton = carrier.path_a == member.path_a
-                && carrier.path_b == member.path_b
-                && carrier.overlap.left == member.overlap.left
-                && carrier.overlap.right == member.overlap.right
-                && carrier.overlap.kind == member.overlap.kind
-                && carrier.overlap.unifier == member.overlap.unifier
-                && carrier.overlap.seam == member.overlap.seam
-                && carrier.overlap.right_renamed() == member.overlap.right_renamed();
-            if !skeleton || join != member.joins_at {
-                return Err(Refusal::Forged(cell));
+        }
+        Ok(())
+    }
+}
+
+/// How a certificate stands against the instance of its own row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rebuilt
+{
+    /// The instance is the certificate.
+    Same,
+    /// The instance gives the row back, and it differs from the certificate.
+    Forged,
+    /// The instance's peak gives another row.
+    Unretracted,
+}
+
+/// How `certificate` stands against the instance of its own row in
+/// `template`. The check compares the certificate's skeleton with the
+/// carrier's in place, and it rebuilds only the peak and the join.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// - each [`TemplateObstruction`]: the template does not read a peak or rebuild
+///   a row.
+fn rebuilt<A>(
+    template: &GuardedTemplate<A>,
+    certificate: &Tracelet<A>,
+) -> Result<Rebuilt, TemplateObstruction>
+where
+    A: CellAlphabet,
+{
+    let row = template.row(&certificate.overlap.peak)?;
+    let (peak, join) = template.boundary(&row)?;
+    if peak != certificate.overlap.peak {
+        return Ok(if template.row(&peak)? == row {
+            Rebuilt::Forged
+        }
+        else {
+            Rebuilt::Unretracted
+        });
+    }
+    let carrier = template.carrier();
+    let skeleton = carrier.path_a == certificate.path_a
+        && carrier.path_b == certificate.path_b
+        && carrier.overlap.left == certificate.overlap.left
+        && carrier.overlap.right == certificate.overlap.right
+        && carrier.overlap.kind == certificate.overlap.kind
+        && carrier.overlap.unifier == certificate.overlap.unifier
+        && carrier.overlap.seam == certificate.overlap.seam
+        && carrier.overlap.right_renamed() == certificate.overlap.right_renamed();
+    Ok(if skeleton && join == certificate.joins_at {
+        Rebuilt::Same
+    }
+    else {
+        Rebuilt::Forged
+    })
+}
+
+/// A family of guarded templates folded into one template of templates: a
+/// [`Reduction`] from the rows of each family's members onto those rows with
+/// their templates' rows in the template of templates.
+///
+/// Its cells are the cells of the [`Sum`](gandr_theory_discrete_morse::Sum)
+/// of the families' template reductions, so the two compose through
+/// [`Reduction::then`]. The sum collapses each member onto its row, and the
+/// fold of templates adds the row of the member's template.
+#[derive(Debug)]
+pub struct TemplateFold<'family, A: CellAlphabet>
+{
+    /// The template of templates: the fold of the member templates' carriers.
+    template: GuardedTemplate<A>,
+    /// The member templates, one for each part.
+    templates: &'family [GuardedTemplate<A>],
+    /// The families, one for each member template.
+    families: &'family [&'family [Tracelet<A>]],
+    /// Each member template's row in the template of templates, read once
+    /// from its carrier's peak.
+    outer: Vec<Result<TemplateRow, TemplateObstruction>>,
+    /// One cell for each member of each family, in part order.
+    cells: Vec<Summand<MemberIndex>>,
+}
+
+/// The refusal of a fold of templates for `fault` in the part at `part`.
+///
+/// # Specification
+/// trivial.
+const fn refused_in(
+    part: PartIndex,
+    fault: FoldFault,
+) -> Refusal<Summand<MemberIndex>, SumFault<FoldFault>>
+{
+    Refusal::Morse(MorseError::Complex(SumFault::Part { part, fault }))
+}
+
+/// The refusal of a fold of templates for a part that it does not hold.
+///
+/// # Specification
+/// trivial.
+const fn absent(part: PartIndex) -> Refusal<Summand<MemberIndex>, SumFault<FoldFault>>
+{
+    Refusal::Morse(MorseError::Complex(SumFault::NoPart(part)))
+}
+
+impl<'family, A: CellAlphabet> TemplateFold<'family, A>
+{
+    /// Fold the carriers of `templates` into one template of templates, and
+    /// read each of `families` against its template.
+    ///
+    /// # Specification
+    /// - ensures: one cell for each member of each family, in part order and
+    ///   then in family order, against the template that
+    ///   [`anti_unify_tracelets`] gives for the carriers of `templates`.
+    /// - fails: each [`TemplateRefusal`] of the fold of the carriers, by its
+    ///   own name: [`TemplateRefusal::DoesNotPay`] where the template of
+    ///   templates does not pay.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family of families with one skeleton that pays
+    ///   folds, and the two templates of two families keep
+    ///   [`TemplateRefusal::DoesNotPay`]. The cell observer rejects a dropped
+    ///   part, a dropped member and two parts in the other order.
+    /// - witness: `tests::template::a_family_of_families_reduces_in_two_steps`
+    /// - witness: `tests::template::two_families_keep_the_sum_alone`
+    #[spec(ensures: |output| output.as_ref().ok().is_none_or(|fold| fold.cells.iter()
+        .map(|cell| (usize::from(cell.part()), usize::from(*cell.value())))
+        .eq(families.iter().enumerate().flat_map(|(part, family)|
+            (0 .. family.len()).map(move |member| (part, member))))))]
+    #[inline]
+    pub fn fold(
+        templates: &'family [GuardedTemplate<A>],
+        families: &'family [&'family [Tracelet<A>]],
+        store: &CellStore<A>,
+        cache: &mut InheritanceCache,
+    ) -> Result<Self, TemplateRefusal>
+    {
+        let carriers: Vec<Tracelet<A>> = templates
+            .iter()
+            .map(|template| template.carrier().clone())
+            .collect();
+        Ok(Self::over(
+            anti_unify_tracelets(&carriers, store, cache)?,
+            templates,
+            families,
+        ))
+    }
+
+    /// Read `families` against `templates`, and the templates against the
+    /// template of templates `template`, wherever it comes from: the replay
+    /// decides whether it reduces them.
+    ///
+    /// # Specification
+    /// - ensures: one cell for each member of each family, in part order and
+    ///   then in family order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the template of templates of an honest family of
+    ///   families read against the templates of another. The cell observer
+    ///   rejects a dropped part, a dropped member and two parts in the other
+    ///   order.
+    /// - witness: `tests::template::a_carrier_unlike_its_instance_is_refused_at_its_part`
+    #[spec(ensures: |output| output.cells.iter()
+        .map(|cell| (usize::from(cell.part()), usize::from(*cell.value())))
+        .eq(families.iter().enumerate().flat_map(|(part, family)|
+            (0 .. family.len()).map(move |member| (part, member)))))]
+    #[inline]
+    #[must_use]
+    pub fn over(
+        template: GuardedTemplate<A>,
+        templates: &'family [GuardedTemplate<A>],
+        families: &'family [&'family [Tracelet<A>]],
+    ) -> Self
+    {
+        let cells = families
+            .iter()
+            .enumerate()
+            .flat_map(|(part, family)| {
+                let at = PartIndex::from(part);
+                (0 .. family.len()).map(move |member| Summand::new(at, MemberIndex::from(member)))
+            })
+            .collect();
+        let outer = templates
+            .iter()
+            .map(|member| template.row(&member.carrier().overlap.peak))
+            .collect();
+        Self {
+            template,
+            templates,
+            families,
+            outer,
+            cells,
+        }
+    }
+
+    /// The template of templates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn template(&self) -> &GuardedTemplate<A>
+    {
+        &self.template
+    }
+
+    /// The size of the target: the size `s` of the template of templates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn size(&self) -> NodeCount
+    {
+        self.template.size()
+    }
+}
+
+impl<'family, A: CellAlphabet> Reduction for TemplateFold<'family, A>
+{
+    type Cell = Summand<MemberIndex>;
+    type Composite = Summand<Folded<'family, A>>;
+    type Fault = SumFault<FoldFault>;
+    type Witness = Summand<Identity>;
+
+    /// The members of each family, in part order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn source(&self) -> &[Self::Cell]
+    {
+        &self.cells
+    }
+
+    /// The members of each family again: each keeps its row, with its
+    /// template's row, in the target.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn target(&self) -> &[Self::Cell]
+    {
+        &self.cells
+    }
+
+    /// The row that the member's own template gives for it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn generator(
+        &mut self,
+        cell: &Self::Cell,
+    ) -> Answer<Self, Self::Composite>
+    {
+        let part = cell.part();
+        let at = usize::from(part);
+        let (Some(template), Some(family)) = (self.templates.get(at), self.families.get(at))
+        else {
+            return Err(absent(part));
+        };
+        let member = family
+            .get(usize::from(*cell.value()))
+            .ok_or_else(|| refused_in(part, FoldFault::NoMember(*cell.value())))?;
+        template
+            .row(&member.overlap.peak)
+            .map(|row| Summand::new(part, Folded::Row(row)))
+            .map_err(|obstruction| refused_in(part, FoldFault::Obstruction(obstruction)))
+    }
+
+    /// The member's row, with its template's row in the template of
+    /// templates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn collapse(
+        &mut self,
+        composite: &Self::Composite,
+    ) -> Answer<Self, Self::Composite>
+    {
+        let part = composite.part();
+        let Folded::Row(ref inner) = *composite.value()
+        else {
+            return Err(refused_in(part, FoldFault::NotARow));
+        };
+        let outer = self
+            .outer
+            .get(usize::from(part))
+            .ok_or_else(|| absent(part))?
+            .clone()
+            .map_err(|obstruction| refused_in(part, FoldFault::Obstruction(obstruction)))?;
+        Ok(Summand::new(part, Folded::Nested {
+            outer,
+            inner: inner.clone(),
+        }))
+    }
+
+    /// The member's row alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn include(
+        &mut self,
+        composite: &Self::Composite,
+    ) -> Answer<Self, Self::Composite>
+    {
+        let part = composite.part();
+        match *composite.value() {
+            Folded::Nested { ref inner, .. } => Ok(Summand::new(part, Folded::Row(inner.clone()))),
+            Folded::Member(_) | Folded::Row(_) => Err(refused_in(part, FoldFault::NotNested)),
+        }
+    }
+
+    /// The identity from a row to its inclusion after its collapse, which
+    /// closes only when the two are equal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn section(
+        &mut self,
+        composite: &Self::Composite,
+    ) -> Answer<Self, Option<Self::Witness>>
+    {
+        let part = composite.part();
+        match *composite.value() {
+            Folded::Row(_) => Ok(Some(Summand::new(part, Identity))),
+            Folded::Member(_) | Folded::Nested { .. } => Err(refused_in(part, FoldFault::NotARow)),
+        }
+    }
+
+    /// None: the replay checks that the collapse gives each row back after the
+    /// inclusion.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn retraction(
+        &mut self,
+        composite: &Self::Composite,
+    ) -> Answer<Self, Option<Self::Witness>>
+    {
+        match *composite.value() {
+            Folded::Nested { .. } => Ok(None),
+            Folded::Member(_) | Folded::Row(_) => {
+                Err(refused_in(composite.part(), FoldFault::NotNested))
+            },
+        }
+    }
+
+    /// The identity in its own part: it holds no cell to carry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn include_witness(
+        &mut self,
+        witness: &Self::Witness,
+    ) -> Answer<Self, Self::Witness>
+    {
+        Ok(*witness)
+    }
+
+    /// The identity in its own part: it holds no cell to carry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn collapse_witness(
+        &mut self,
+        witness: &Self::Witness,
+    ) -> Answer<Self, Self::Witness>
+    {
+        Ok(*witness)
+    }
+
+    /// The identity in the witnesses' part. Two witnesses of two parts do not
+    /// compose.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn compose(
+        &mut self,
+        first: &Self::Witness,
+        second: &Self::Witness,
+    ) -> Answer<Self, Self::Witness>
+    {
+        if first.part() == second.part() {
+            Ok(*first)
+        }
+        else {
+            Err(Refusal::Morse(MorseError::Complex(SumFault::Apart {
+                first: first.part(),
+                second: second.part(),
+            })))
+        }
+    }
+
+    /// Whether `source` and `target` are equal, part and all.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn closes(
+        &mut self,
+        _witness: &Self::Witness,
+        source: &Self::Composite,
+        target: &Self::Composite,
+    ) -> Answer<Self, Closure>
+    {
+        Ok(if source == target {
+            Closure::Closes
+        }
+        else {
+            Closure::Open
+        })
+    }
+
+    /// Check each member template in part order: its carrier gives a row of
+    /// the template of templates, and the instance of that row is the
+    /// carrier. The members of each family are the sum's to check.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` exactly when the fold holds one template for each
+    ///   family, and each carrier equals the instance of its own row.
+    /// - fails: a count of templates unlike the count of families as
+    ///   [`Refusal::Unmatched`] with no cell. Then the first carrier that
+    ///   fails, at its part's first member: an obstruction as
+    ///   [`Refusal::Morse`], a row that the round trip moves as
+    ///   [`Refusal::Unretracted`], and an instance that differs from its
+    ///   carrier as [`Refusal::Forged`].
+    /// - panics: none.
+    /// - executable: none — the body is the predicate.
+    /// - intension: one match of a peak and one fold of a row into the peak and
+    ///   the join of the template of templates for each member template, with a
+    ///   second match only where the rebuilt peak differs.
+    ///
+    /// # Errors
+    /// - [`Refusal::Unmatched`]: the counts of templates and families differ.
+    /// - [`Refusal::Morse`]: the template of templates does not read a
+    ///   carrier's peak or rebuild a row.
+    /// - [`Refusal::Unretracted`]: an instance's peak gives another row.
+    /// - [`Refusal::Forged`]: an instance differs from its carrier.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the family of families that pays replays; L3 — a
+    ///   template of templates read against templates whose carriers it does
+    ///   not give is refused at the first such part.
+    /// - witness: `tests::template::a_family_of_families_reduces_in_two_steps`
+    /// - witness: `tests::template::a_carrier_unlike_its_instance_is_refused_at_its_part`
+    #[inline]
+    fn replay(&mut self) -> Answer<Self, ()>
+    {
+        if self.templates.len() != self.families.len() {
+            return Err(Refusal::Unmatched(None));
+        }
+        for (index, member) in self.templates.iter().enumerate() {
+            let part = PartIndex::from(index);
+            let cell = Summand::new(part, MemberIndex::from(0_usize));
+            match rebuilt(&self.template, member.carrier())
+                .map_err(|obstruction| refused_in(part, FoldFault::Obstruction(obstruction)))?
+            {
+                Rebuilt::Same => {},
+                Rebuilt::Forged => return Err(Refusal::Forged(cell)),
+                Rebuilt::Unretracted => return Err(Refusal::Unretracted(cell)),
             }
         }
         Ok(())
