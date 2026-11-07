@@ -7,10 +7,12 @@
 # `restack` is what `signed_restack` gives: `moved`, or `already` when the
 # head already stands on its base. Its `landing` is the status of
 # `land_prefix` and the last of its lines, and its `retarget` is the same of
-# `retarget_bottom` (#5776). The result is one line compared with the case's
-# `output`: each comment, its event line and its explanation, the count of
-# warnings in the run's log, and the pull request that `retarget_bottom`
-# gets, when it runs.
+# `retarget_bottom` (#5776). Its `gh_fail` names the `gh pr` call that fails,
+# `close` or `reopen`, when a rerun closes and reopens (#6164). The result is
+# one line compared with the case's `output`: each comment, its event line
+# and its explanation, the count of warnings in the run's log, the pull
+# request that `retarget_bottom` gets, when it runs, and the `gh` calls, when
+# any is made.
 # shellcheck disable=SC2034
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
@@ -38,6 +40,11 @@ for (( i = 0; i < count; i++ )); do
   landing_line=$(jq -r ".[$i].landing.line" "$cases")
   retarget_status=$(jq -r ".[$i].retarget.status // 0" "$cases")
   retarget_line=$(jq -r ".[$i].retarget.line // empty" "$cases")
+  gh_fail=$(jq -r ".[$i].gh_fail // empty" "$cases")
+  gh() {
+    printf '%s\n' "$*" >> "$work/gh"
+    [[ $2 != "$gh_fail" ]] || { echo "HTTP 422: Validation Failed" >&2; return 1; }
+  }
   retarget_bottom() {
     printf '%s\n' "$1" > "$work/retargeted"
     echo "$retarget_line" >&2
@@ -51,10 +58,12 @@ for (( i = 0; i < count; i++ )); do
   }
   : > "$work/told"
   : > "$work/retargeted"
+  : > "$work/gh"
   log=$(act_on "$action" 2>&1)
   warnings=$(grep -c '^::warning::' <<< "$log" || true)
   actual="told: $(paste -sd '|' "$work/told" | sed 's/|/ | /g'); warnings: $warnings"
   if [[ -s $work/retargeted ]]; then actual+="; retargeted: $(< "$work/retargeted")"; fi
+  if [[ -s $work/gh ]]; then actual+="; gh: $(paste -sd '|' "$work/gh" | sed 's/|/ | /g')"; fi
   if [[ $actual != "$expected" ]]; then
     printf 'pr-stack watcher case %s\n  expected: %s\n  actual:   %s\n' "$name" "$expected" "$actual" >&2
     sed 's/^/    /' <<< "$log" >&2

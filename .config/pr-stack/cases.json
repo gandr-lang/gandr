@@ -4314,5 +4314,103 @@
       ]
     },
     "output": []
+  },
+  {
+    "name": "#6164: with the token, a head with no CI run is rerun once; a marked head, one whose run started and a dirty one are not",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 10,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": true
+        },
+        {
+          "number": 11,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": ["pr-rerun:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+          "unrun": true
+        },
+        {
+          "number": 12,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": false
+        },
+        {
+          "number": 13,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "DIRTY",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": true
+        }
+      ]
+    },
+    "output": "[{\"number\":10,\"act\":\"rerun\"},{\"number\":13,\"act\":\"dirty\"}]"
+  },
+  {
+    "name": "#6164: without the token, a head with no CI run tells its seat `pr-unrun` once per head",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 20,
+          "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": true
+        },
+        {
+          "number": 21,
+          "oid": "ffffffffffffffffffffffffffffffffffffffff",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": ["pr-unrun:ffffffffffffffffffffffffffffffffffffffff"],
+          "unrun": true
+        }
+      ]
+    },
+    "output": "[{\"number\":20,\"act\":\"unrun\"}]"
   }
 ]

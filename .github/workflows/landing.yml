@@ -25,12 +25,14 @@ name: landing
 #
 # The workflow's own token may not enqueue (the queue answers "Enqueuer is
 # not authorized to merge"), and GitHub starts no run for its pushes, so it
-# only tells: one comment per head, `pr-green`, `pr-red`, `pr-dirty` or
-# `pr-dequeued`. With a token that may queue, the run queues a green stack's
-# ready prefix and restacks a dequeued pull request onto its base: the runner
-# rebases it, which runs none of its code (the clone installs no hook, no
-# filter and no merge driver), and replays the result through
-# `createCommitOnBranch`, whose commits GitHub signs (#5214).
+# only tells: one comment per head, `pr-green`, `pr-red`, `pr-dirty`,
+# `pr-dequeued` or `pr-unrun`. With a token that may queue, the run queues a
+# green stack's ready prefix and restacks a dequeued pull request onto its
+# base: the runner rebases it, which runs none of its code (the clone installs
+# no hook, no filter and no merge driver), and replays the result through
+# `createCommitOnBranch`, whose commits GitHub signs (#5214). It also closes
+# and reopens a pull request whose head has no `CI` run, which starts one
+# (#6164).
 # The token is `LANDING_TOKEN` when that secret is set: a fine-grained token
 # of the agents' account (#3355). A linked stack member queues only through
 # the asynchronous merge API, and GitHub refuses an App installation token
