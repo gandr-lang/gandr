@@ -1620,13 +1620,17 @@ fn decide(
         context
             .resolve_models(declaration.models(), Signing::Signature)
             .map_err(|(at, refusal)| call_failure(refusal, at))?;
-        let filled = match context.deferrals().solutions(context.arena()) {
-            Ok(solutions) if !solutions.is_empty() => formed_filled(context, written, &solutions)?,
-            Ok(_) | Err(_) => written,
+        let (filled, signing) = match context.deferrals().solutions(context.arena()) {
+            Ok(solutions) if !solutions.is_empty() => {
+                (formed_filled(context, written, &solutions)?, solutions)
+            },
+            Ok(_) | Err(_) => (written, Solutions::new()),
         };
-        Ok((written, filled))
+        Ok((written, filled, signing))
     });
-    let (written, direction) = match formed {
+    // The solutions the signature bound fill the table where the body binds
+    // none, as when the body is refused.
+    let (written, direction, signing) = match formed {
         Ok(directions) => directions,
         // The signature's refusal keeps the binders it stood under, and
         // names what the solver bound while it formed.
@@ -1768,9 +1772,13 @@ fn decide(
                 let crossed = context.take_crossings();
                 // The run types the body as written, its omitted implicits
                 // standing as holes; each type is read with their solutions.
-                typings = Maybe::Present(Typings::after(signed, typed.crossed(crossed)).retyped(
-                    |ty, depth| solved_type(context.arena_mut(), (ty, depth), &solutions),
-                ));
+                // A hole the body leaves unbound reads the signature's solution.
+                let mut read = signing;
+                read.extend(solutions.iter().map(|(&hole, &solved)| (hole, solved)));
+                typings = Maybe::Present(
+                    Typings::after(signed, typed.crossed(crossed))
+                        .retyped(|ty, depth| solved_type(context.arena_mut(), (ty, depth), &read)),
+                );
                 let _typed = context.take_nesting();
                 let _updated = context.take_updates();
             }
