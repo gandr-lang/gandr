@@ -1,11 +1,12 @@
 //! `state-wp` observes state as predicate transformers.
 //!
 //! A transformer maps a postcondition and initial state to a precondition. It
-//! has type `((A, S) => Type, S) => Type`.
+//! has type `((A, S) => Type, S) => Type`. It uncurries the transformer of
+//! § 3.4 of the cited work, and it reads propositions as types.
 //!
 //! The handler maps `get` and `put` into state predicates. The scope satisfies
 //! state laws. The observation is a monad morphism from state programs. The
-//! normaliser computes a precondition through the
+//! normaliser runs no scope yet. So it computes a precondition through the
 //! fold in `tree-state-wp.gandr`.
 //!
 //! - see: #2754
