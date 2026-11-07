@@ -936,8 +936,10 @@ drop_scratch() {
 # scratch branch `restack/<branch>` made at `$2`'s commit. GitHub signs each one.
 # The mutation takes no file mode: a file a commit adds comes out `100644`.
 # So the branch moves only when the replay's tree is `$3`'s, and only while
-# it still holds `$4`. Prints the new head. Fails with the branch unmoved
-# and the scratch deleted otherwise, naming why on stderr.
+# it still holds `$4`. The replay's tree is read from a fetch of the scratch
+# head, and a replay with another tree is refused naming each path that
+# differs (`replay_difference`, #6020). Prints the new head. Fails with the
+# branch unmoved and the scratch deleted otherwise, naming why on stderr.
 signed_replay() {
   local branch=$1 onto=$2 tip=$3 expect=$4 scratch head commit status path request now
   scratch=restack/$branch
@@ -955,7 +957,8 @@ signed_replay() {
       if [[ $status == D ]]; then
         jq -c --arg path "$path" '. + [{path: $path}]' "$request/deletions" > "$request/next" && mv "$request/next" "$request/deletions"
       else
-        git show "$commit:$path" | base64 -w0 > "$request/contents"
+        # `tr` joins GNU's 76-column lines; BSD's base64 has no `-w`.
+        git show "$commit:$path" | base64 | tr -d '\n' > "$request/contents"
         jq -c --arg path "$path" --rawfile contents "$request/contents" '. + [{path: $path, contents: $contents}]' "$request/additions" > "$request/next" \
           && mv "$request/next" "$request/additions"
       fi
@@ -975,11 +978,18 @@ signed_replay() {
     fi
   done
   rm -rf "$request"
-  if [[ $(gh api "repos/$repo/git/commits/$head" --jq .tree.sha) != $(git rev-parse "$tip^{tree}") ]]; then
-    echo "the signed replay of $branch gives another tree than the rebase: a file it adds keeps no mode" >&2
+  if ! git fetch --quiet origin "+refs/heads/$scratch:refs/restack/$branch"; then
+    echo "the fetch of the signed replay $scratch failed" >&2
     gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
     return 1
   fi
+  if [[ $(git rev-parse "refs/restack/$branch^{tree}") != $(git rev-parse "$tip^{tree}") ]]; then
+    replay_difference "$branch" "$tip" "refs/restack/$branch" >&2
+    git update-ref -d "refs/restack/$branch"
+    gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
+    return 1
+  fi
+  git update-ref -d "refs/restack/$branch"
   now=$(gh api "repos/$repo/git/ref/heads/$branch" --jq .object.sha) || now=
   if [[ $now != "$expect" ]]; then
     echo "$branch moved to ${now:-nothing} while it was replayed; nothing is pushed" >&2
@@ -993,6 +1003,25 @@ signed_replay() {
   fi
   gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
   echo "$head"
+}
+
+# Why the signed replay `$3` of branch `$1` gives another tree than the
+# rebase's tip `$2` (#6020): one line for each path that differs, with its
+# mode and its blob on each side, `000000` and a zero blob where a side holds
+# no file. Only when every path differs in its mode alone does the first
+# line name that cause, as `createCommitOnBranch` takes no mode.
+replay_difference() {
+  local branch=$1 tip=$2 replay=$3 rows reason=": a file it adds keeps no mode"
+  # awk exits 1 when a blob differs, so the cause is not the mode alone.
+  if ! rows=$(git diff-tree -r --no-renames "$tip" "$replay" | awk -F '\t' '{
+    split(substr($1, 2), side, " ")
+    if (side[3] != side[4]) blobs = 1
+    printf "  %s: %s %s in the rebase, %s %s in the replay\n", $2, side[1], substr(side[3], 1, 12), side[2], substr(side[4], 1, 12)
+  } END { exit blobs }'); then
+    reason=" at these paths"
+  fi
+  echo "the signed replay of $branch gives another tree than the rebase$reason"
+  printf '%s\n' "$rows"
 }
 
 # Rebase branch `$1`, at head `$2`, onto its base `$3` in a scratch worktree,
