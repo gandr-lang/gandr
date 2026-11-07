@@ -85,7 +85,8 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Copy, Debug)]
 enum Line<'step>
 {
-    /// A fixture that settled, printed by `test`.
+    /// A settled declaration with a line: a fixture, printed by `test`, or a
+    /// declaration the kernel has no image of, printed by every verb.
     Fixture(&'step DeclarationReport<'step>),
     /// A refusal a pending source carries, printed by `test`.
     Pending(LoweringRefusal<'step>),
@@ -918,10 +919,10 @@ impl<'step> Entries<'step>
     /// - ensures: under [`Refusals::Every`], a settled declaration that
     ///   produced a refusal is that refusal's subject, as an unsettled one is.
     ///   Otherwise counted declarations print nothing; goals are goal subjects.
-    ///   A shown settled declaration is a fixture ledger line; an unsettled
-    ///   declaration is a refusal subject, carrying the failure the machine
-    ///   kept for it, when one was produced, otherwise an unsettled subject
-    ///   naming the failed expectation.
+    ///   A shown settled declaration is a ledger line: a fixture, or one the
+    ///   kernel has no image of; an unsettled declaration is a refusal subject,
+    ///   carrying the failure the machine kept for it, when one was produced,
+    ///   otherwise an unsettled subject naming the failed expectation.
     /// - provides: verb-directed selection without changing declaration order.
     /// - fails: never.
     /// - panics: none.

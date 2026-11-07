@@ -14,9 +14,16 @@
 // Such a loop follows its protocol.
 // Such a loop owes no `Partial`.
 //
+// Limits: such a loop never returns, but the kernel's returner assumes that
+// each call returns. So the kernel has no image of the loop.
+// The bridge declines the loop by name, and the checker's verdict stands alone.
+// The report states that each such declaration has no kernel image.
+//
 // - see: #4502
 // - see: #4705
 // - see: #4727
+// - see: #6047
+// - see: #6099
 
 /// `follow` receives reports until retirement.
 /// Retirement closes the endpoint and ends the loop.
@@ -61,6 +68,14 @@ def serving(desk : mu open. &{report : ?Integer. open}) -> Unit =
     offer desk {
       | report => { let next = recv desk; continue }
     }
+  }
+
+/// `beacon` sends a report on each pass and never hears one.
+/// The bridge declines it as it declines a loop that receives.
+def beacon(seat : mu open. !Integer. open) -> Unit =
+  loop {
+    send seat 1;
+    continue
   }
 
 /// `followed` sends two reports and a retirement to a forked desk.

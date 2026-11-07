@@ -71,6 +71,14 @@
 //! the bridge refuses remains a fault. Reversal: when the kernel admits
 //! effectful computations.
 //!
+//! An endpoint loop — a loop each pass of which moves on an endpoint it
+//! threads — stays on the checker's side too: it never returns, and the
+//! kernel's returner assumes that each call returns. The bridge declines it as
+//! `OutOfFragment` naming `EndpointLoop`, and the settled report marks the
+//! declaration as one with no kernel image: its line says so under every verb,
+//! and the tally counts it apart from the settled. Reversal: #6099, the
+//! loop's codata image.
+//!
 //! This goes beyond the slice's plan, which settles the checker's verdicts
 //! alone. The kernel is the oracle the checker answers to, and the readmission
 //! costs one erasure per accepted declaration; running it on the pass that
@@ -217,6 +225,7 @@ use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::StructuredName;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::Declined;
 use gandr_surface_corpus::Produced;
 use gandr_surface_corpus::Rooted;
 use gandr_surface_corpus::Runner;
@@ -529,16 +538,19 @@ type KeptComponent<'source> = (
 
 impl Composed<'_>
 {
-    /// This composition with `kernel` as its kernel artifact, and `positions`
-    /// as where each declaration that crossed stands in it.
+    /// This composition with `kernel` as its kernel artifact, `positions` as
+    /// where each declaration that crossed stands in it, and `declined` as the
+    /// declarations the kernel has no image of.
     ///
     /// # Specification
-    /// - requires: `kernel` is the export of this composition's admission, and
+    /// - requires: `kernel` is the export of this composition's admission,
     ///   `positions` that admission's record of where each declaration stands,
-    ///   or why it kept none.
-    /// - ensures: a settled composition carries `kernel` and `positions` and is
-    ///   otherwise unchanged; a whole refusal, which offered the kernel
-    ///   nothing, is returned as it was.
+    ///   or why it kept none, and `declined` the declarations it declined, in
+    ///   admission order.
+    /// - ensures: a settled composition carries `kernel` and `positions`, and
+    ///   its report marks each declaration `declined` names; it is otherwise
+    ///   unchanged. A whole refusal, which offered the kernel nothing, is
+    ///   returned as it was.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -557,11 +569,12 @@ impl Composed<'_>
         self,
         kernel: EncodedArtifact,
         positions: Maybe<ArtifactPositions, positioned::Absent>,
+        declined: &[Declined],
     ) -> Self
     {
         match self {
             Self::Settled {
-                report,
+                mut report,
                 exercised,
                 unstatable,
                 origins,
@@ -576,23 +589,26 @@ impl Composed<'_>
                 unreached,
                 program,
                 ..
-            } => Self::Settled {
-                report,
-                exercised,
-                unstatable,
-                origins,
-                spellings,
-                failures,
-                shadowed,
-                inferred,
-                runs,
-                deprecated,
-                parted,
-                unused,
-                unreached,
-                kernel: Maybe::Present(kernel),
-                positions,
-                program,
+            } => {
+                report.decline(declined);
+                Self::Settled {
+                    report,
+                    exercised,
+                    unstatable,
+                    origins,
+                    spellings,
+                    failures,
+                    shadowed,
+                    inferred,
+                    runs,
+                    deprecated,
+                    parted,
+                    unused,
+                    unreached,
+                    kernel: Maybe::Present(kernel),
+                    positions,
+                    program,
+                }
             },
             Self::Refused(refusal) => Self::Refused(refusal),
         }
@@ -681,6 +697,7 @@ impl<'source> Judged<'source>
         let Resumption {
             artifact,
             positions,
+            declined,
             ..
         } = self.admission.admit_resuming(
             bridge::LeadingCount::NONE,
@@ -688,7 +705,7 @@ impl<'source> Judged<'source>
         );
         let kernel = artifact.map_err(ComposeFault::Readmission)?;
         let composed = self.settled.map_err(ComposeFault::Settle)?;
-        Ok(composed.admitted(kernel, positions))
+        Ok(composed.admitted(kernel, positions, &declined))
     }
 }
 
@@ -924,12 +941,14 @@ impl Admission
                     Positioning::Positioned => Maybe::Present(ArtifactPositions::of(&readmission)),
                     Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
                 },
+                declined: declined(&readmission),
                 artifact: Ok(readmission.export_resuming(self.names, crossed, &mut recorded)),
                 crossed: recorded,
             },
             Err(fault) => Resumption {
                 artifact: Err(fault),
                 positions: Maybe::Absent(positioned::Absent::Disagreed),
+                declined: Vec::new(),
                 resumed: bridge::LeadingCount::NONE,
                 judged,
                 crossed: recorded,
@@ -975,6 +994,10 @@ pub struct Resumption
     /// Where each declaration that crossed stands in the artifact, when the
     /// admission was asked to record it and the kernel re-derived every one.
     pub positions: Maybe<ArtifactPositions, positioned::Absent>,
+    /// Each declaration the bridge declines for a former the kernel has no
+    /// image of, in admission order: empty when the kernel did not re-derive
+    /// every declaration.
+    pub declined: Vec<Declined>,
     /// How many leading declarations the readmission resumed rather than
     /// crossed again.
     pub resumed: bridge::LeadingCount,
@@ -999,6 +1022,49 @@ pub enum Positioning
     /// It records none, reads no clock, and pays nothing for them.
     #[default]
     Unpositioned,
+}
+
+/// The declarations `readmission` declines as endpoint loops, in admission
+/// order: each one's verdict stands with no kernel image.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one record for each declaration whose outcome is the bridge's
+///   `OutOfFragment` refusal naming `EndpointLoop`, with the class of that
+///   refusal, in the readmission's order; no other declaration.
+/// - provides: what [`Composed::admitted`] marks on the report.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module holding a send-only loop and a receiving loop
+///   beside a plain definition declines the two loops alone.
+/// - witness: `compose::tests::an_endpoint_loop_settles_with_no_kernel_image_6047`
+#[spec(ensures: |ref ret| ret.iter().all(|decline| decline.former == UnadmittedFormer::EndpointLoop))]
+fn declined(readmission: &bridge::Readmission) -> Vec<Declined>
+{
+    readmission
+        .readmitted()
+        .iter()
+        .filter_map(|readmitted| {
+            let bridge::Outcome::Refused(ref refusal) = *readmitted.outcome()
+            else {
+                return None;
+            };
+            let bridge::Refusal::OutOfFragment {
+                former: UnadmittedFormer::EndpointLoop,
+                ..
+            } = *refusal
+            else {
+                return None;
+            };
+            Some(Declined {
+                constant: readmitted.constant(),
+                former: UnadmittedFormer::EndpointLoop,
+                class: refusal.classify(),
+            })
+        })
+        .collect()
 }
 
 quenchant_shape::reason_enum! {
@@ -3694,12 +3760,13 @@ pub fn judge_component<'source>(
             // declarations, judged as the closure's judgement judged them:
             // its readmission resumes them from the record the first such
             // admission kept.
-            let (admitted, positions) = match (checking, after) {
+            let (admitted, positions, declined) = match (checking, after) {
                 (Checking::After(closure), Some(boundary)) => {
                     let crossed = &closure.judgement().crossed;
                     let Resumption {
                         artifact,
                         positions,
+                        declined,
                         crossed: record,
                         ..
                     } = admission.admit_resuming(
@@ -3712,18 +3779,19 @@ pub fn judge_component<'source>(
                     if let Maybe::Present(record) = record {
                         let _kept = crossed.set(record);
                     }
-                    (artifact, positions)
+                    (artifact, positions, declined)
                 },
                 (Checking::After(_) | Checking::Whole, _) => {
                     let Resumption {
                         artifact,
                         positions,
+                        declined,
                         ..
                     } = admission.admit_resuming(
                         bridge::LeadingCount::NONE,
                         Maybe::Absent(bridge::crossed::Absent::Unasked),
                     );
-                    (artifact, positions)
+                    (artifact, positions, declined)
                 },
             };
             let composed = match admitted {
@@ -3733,7 +3801,7 @@ pub fn judge_component<'source>(
                         .into_iter()
                         .map(|held| {
                             held.map(|composed| {
-                                composed.admitted(kernel.clone(), positions.clone())
+                                composed.admitted(kernel.clone(), positions.clone(), &declined)
                             })
                             .map_err(ComposeFault::Settle)
                         })
@@ -3741,7 +3809,7 @@ pub fn judge_component<'source>(
                     composed.push(
                         projected
                             .last
-                            .map(|composed| composed.admitted(kernel, positions))
+                            .map(|composed| composed.admitted(kernel, positions, &declined))
                             .map_err(ComposeFault::Settle),
                     );
                     composed
@@ -4815,8 +4883,8 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Residence
 {
-    /// The former is effectful and the kernel pure by design: the declaration
-    /// stays on the checker's side.
+    /// The former is effectful and the kernel pure by design, or the kernel
+    /// has no image of it yet: the declaration stays on the checker's side.
     Checker,
     /// The former is pure: the kernel is meant to admit it, so the bridge's
     /// refusal is a disagreement.
@@ -4830,10 +4898,10 @@ enum Residence
 /// - requires: nothing.
 /// - ensures: the checker's side for an effect row, a stack and its literal, a
 ///   request, a handler, a resumption, a delimiter, a capture, a capability, an
-///   exercise, a scope, a recorded run or ride and a memory form; the kernel's
-///   for every pure former, and for a recursion's stage, which no source writes
-///   and the checker never lets a declaration carry, so its refusal is the
-///   checker's fault.
+///   exercise, a scope, a recorded run or ride, a memory form, a buffer, a
+///   qubit and an endpoint loop; the kernel's for every pure former, and for a
+///   recursion's stage, which no source writes and the checker never lets a
+///   declaration carry, so its refusal is the checker's fault.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -4865,7 +4933,8 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Run
         | UnadmittedFormer::Memory
         | UnadmittedFormer::Buffer
-        | UnadmittedFormer::Qubit => Residence::Checker,
+        | UnadmittedFormer::Qubit
+        | UnadmittedFormer::EndpointLoop => Residence::Checker,
         UnadmittedFormer::ValueLift
         | UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom
@@ -4889,6 +4958,7 @@ mod tests
     use gandr_core_checker::ObligationCount;
     use gandr_core_checker::Polled;
     use gandr_core_checker::Retirement;
+    use gandr_core_checker::UnadmittedFormer;
     use gandr_core_checker::Unretired;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
@@ -4898,11 +4968,13 @@ mod tests
     use gandr_core_term::Computation;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
+    use gandr_core_term::TrackingIssue;
     use gandr_core_term::Value;
     use gandr_core_term::equal_certificate_syntax;
     use gandr_core_term::equal_type_syntax;
     use gandr_kernel_term::decode;
     use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_corpus::KernelImage;
     use gandr_surface_corpus::Outcome;
     use gandr_surface_corpus::Produced;
     use gandr_surface_corpus::RefusalName;
@@ -5539,6 +5611,81 @@ mod tests
             ],
             "the kernel's refusal of an exercise and a scope is no disagreement, \
              and the pure declaration beside them is still readmitted"
+        );
+    }
+
+    #[test]
+    fn an_endpoint_loop_settles_with_no_kernel_image_6047()
+    {
+        use crate::report::Goals;
+        use crate::report::Shown;
+        use crate::report::Verb;
+        use crate::report::shown;
+
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        let report = match compose(
+            &grammar,
+            CorpusRoot::Fixture,
+            SourceText::from(include_str!(
+                "compose/fixtures/an-endpoint-loop-settles-with-no-kernel-image-6047.gandr"
+            )),
+            &mut lowerings,
+        ) {
+            Ok(Composed::Settled { report, .. }) => report,
+            Ok(Composed::Refused(refusal)) => panic!("the source lowers: {refusal}"),
+            Err(fault) => panic!("an endpoint loop is no disagreement: {fault}"),
+        };
+        let declined = KernelImage::Declined {
+            former: UnadmittedFormer::EndpointLoop,
+            class: FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP),
+        };
+        let rows: Vec<(String, Settlement, KernelImage, Shown)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| {
+                (
+                    declaration.name().to_string(),
+                    declaration.settlement(),
+                    declaration.image(),
+                    shown(declaration, Verb::Check(Goals::Gated)),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    "beacon".to_owned(),
+                    Settlement::Settled,
+                    declined,
+                    Shown::Line
+                ),
+                (
+                    "asking".to_owned(),
+                    Settlement::Settled,
+                    declined,
+                    Shown::Line
+                ),
+                (
+                    "answer".to_owned(),
+                    Settlement::Settled,
+                    KernelImage::Offered,
+                    Shown::Counted
+                ),
+            ],
+            "the send-only loop and the receiving loop each settle with no kernel image, \
+             and each has a line under `check`; the plain definition beside them crosses"
+        );
+        let tally = report.tally();
+        assert_eq!(
+            (
+                usize::from(tally.declarations().settled()),
+                usize::from(tally.declarations().declined()),
+                usize::from(tally.declarations().unsettled())
+            ),
+            (1_usize, 2_usize, 0_usize),
+            "the two loops count apart from the settled"
         );
     }
 
@@ -6243,7 +6390,8 @@ mod tests
             assert_eq!(
                 settled.clone().admitted(
                     kernel.clone(),
-                    Maybe::Absent(super::positioned::Absent::Unasked)
+                    Maybe::Absent(super::positioned::Absent::Unasked),
+                    &[]
                 ),
                 readmitted_first,
                 "settling before the readmission reads what settling after it read"

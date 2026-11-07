@@ -2035,7 +2035,7 @@ INSERT INTO purpose VALUES('surface-corpus','refusal::RefusalSpelling','struct',
 INSERT INTO purpose VALUES('surface-corpus','refusal::Tag','struct','The text of one reading a qualifier names: a boundary, the stray, a sort, a checker former, a member''s or a model component''s fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::ClassCounts','struct','How many refused declarations each failure class holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::Seal','enum','Whether a settled run also has an empty ledger.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-corpus','report::SettleCounts','struct','How many of some declarations settled and how many did not.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','report::SettleCounts','struct','How many of some declarations settled, how many settled with no kernel image, and how many did not.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::SettleReport','struct','One settle run over a module: every declaration''s report and the ledger size.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::Tally','struct','The counts of a settle run: what a driver gates on and prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','root::CorpusRoot','enum','Which corpus root a source sits under.',NULL,'fits','sound',NULL);
@@ -2045,7 +2045,9 @@ INSERT INTO purpose VALUES('surface-corpus','run::RunSpelling','struct','A run o
 INSERT INTO purpose VALUES('surface-corpus','run::Runner','trait','What settling a `runs` expectation asks of the caller: run one declaration and spell its outcome.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','run::TracedRun','struct','What settling a `traces` expectation asks a run to produce: its outcome and each named channel it forked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::DeclarationReport','struct','One declared name, settled: what it states beside what it produced.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','settle::Declined','struct','A declaration the bridge declines for a former the kernel has no image of: its admission position, the former and the class of the decline.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Filler','enum','The source that discharged a law its module omits, as `gandr check --report cells` names it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','settle::KernelImage','enum','Whether the kernel has an image of a declaration the checker judged, or the former the bridge declines it for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Produced','enum','What a declaration produced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::SettleFault','enum','Why verdicts cannot be settled against a module.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','settle::Settlement','enum','Whether what was stated was produced.',NULL,'fits','sound',NULL);

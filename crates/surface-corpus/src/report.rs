@@ -54,6 +54,8 @@ use quenchant_shape::shape::Maybe;
 
 use crate::expectation::Membership;
 use crate::settle::DeclarationReport;
+use crate::settle::Declined;
+use crate::settle::KernelImage;
 use crate::settle::Settlement;
 use crate::settle::Surviving;
 use crate::settle::produced_refusal;
@@ -122,13 +124,15 @@ impl fmt::Display for Seal
     }
 }
 
-/// How many of some declarations settled and how many did not.
+/// How many of some declarations settled, how many settled with no kernel
+/// image, and how many did not settle.
 ///
 /// # Specification
 /// - requires: the producer owns the correspondence between counts and the
 ///   declarations or runs represented.
-/// - ensures: Keeps settled and unsettled declaration totals in separate
-///   saturating channels.
+/// - ensures: Keeps settled, declined and unsettled declaration totals in
+///   separate saturating channels: a settled declaration the kernel has no
+///   image of is declined, never settled.
 /// - panics: none.
 /// - executable: none — The record has no contributing declarations; its
 ///   counting and accumulation methods specify transitions.
@@ -141,18 +145,22 @@ impl fmt::Display for Seal
 ///   rather than inferred from a record alone.
 /// - witness: `report::tests::the_tally_counts_every_declaration_once`
 /// - witness: `report::tests::saturating_tallies_preserve_every_count_channel`
+/// - witness: `report::tests::a_declined_declaration_counts_apart_from_the_settled_6047`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SettleCounts
 {
-    /// The settled declarations.
+    /// The settled declarations the kernel has an image of.
     settled: DeclarationCount,
+    /// The settled declarations the bridge declines: the kernel has no image
+    /// of them, so the checker's verdict stands alone.
+    declined: DeclarationCount,
     /// The unsettled declarations.
     unsettled: DeclarationCount,
 }
 
 impl SettleCounts
 {
-    /// The settled declarations.
+    /// The settled declarations the kernel has an image of.
     ///
     /// # Specification
     /// trivial.
@@ -161,6 +169,17 @@ impl SettleCounts
     pub const fn settled(&self) -> DeclarationCount
     {
         self.settled
+    }
+
+    /// The settled declarations the kernel has no image of.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn declined(&self) -> DeclarationCount
+    {
+        self.declined
     }
 
     /// The unsettled declarations.
@@ -174,27 +193,35 @@ impl SettleCounts
         self.unsettled
     }
 
-    /// Count one declaration of `settlement`.
+    /// Count one declaration of `settlement`, which the kernel has `image`
+    /// of.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: increments only the selected settlement count, saturating at
-    ///   the largest declaration count; the other count is unchanged.
+    /// - ensures: increments only the selected count, saturating at the largest
+    ///   declaration count: unsettled for an unsettled declaration, declined
+    ///   for a settled one the bridge declines, settled otherwise; the other
+    ///   counts are unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — real settled and unsettled declarations, plus the
-    ///   largest count and its predecessor. Exact selected and unselected
-    ///   counts distinguish wrong-channel increments, wraparound and premature
-    ///   saturation.
+    /// - hypothesis: L3 — real settled, declined and unsettled declarations,
+    ///   plus the largest count and its predecessor. Exact selected and
+    ///   unselected counts distinguish wrong-channel increments, wraparound and
+    ///   premature saturation.
     /// - witness: `report::tests::the_tally_counts_every_declaration_once`
     /// - witness: `report::tests::saturating_tallies_preserve_every_count_channel`
+    /// - witness: `report::tests::a_declined_declaration_counts_apart_from_the_settled_6047`
     #[spec(
         captures: before = *self,
         ensures: |_| {
+    let declined = matches!(image, KernelImage::Declined { .. });
     usize::from(self.settled)
         == usize::from(before.settled)
-            .saturating_add(usize::from(settlement == Settlement::Settled))
+            .saturating_add(usize::from(settlement == Settlement::Settled && !declined))
+        && usize::from(self.declined)
+            == usize::from(before.declined)
+                .saturating_add(usize::from(settlement == Settlement::Settled && declined))
         && usize::from(self.unsettled)
             == usize::from(before.unsettled)
                 .saturating_add(usize::from(settlement == Settlement::Unsettled))
@@ -203,11 +230,17 @@ impl SettleCounts
     fn count(
         &mut self,
         settlement: Settlement,
+        image: KernelImage,
     )
     {
-        match settlement {
-            Settlement::Settled => self.settled = one_more(self.settled),
-            Settlement::Unsettled => self.unsettled = one_more(self.unsettled),
+        match (settlement, image) {
+            (Settlement::Settled, KernelImage::Offered) => self.settled = one_more(self.settled),
+            (Settlement::Settled, KernelImage::Declined { .. }) => {
+                self.declined = one_more(self.declined);
+            },
+            (Settlement::Unsettled, KernelImage::Offered | KernelImage::Declined { .. }) => {
+                self.unsettled = one_more(self.unsettled);
+            },
         }
     }
 
@@ -215,8 +248,8 @@ impl SettleCounts
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: adds settled to settled and unsettled to unsettled,
-    ///   saturating each channel independently.
+    /// - ensures: adds each channel to its own, saturating each channel
+    ///   independently.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -230,6 +263,8 @@ impl SettleCounts
         ensures: |_| {
     usize::from(self.settled)
         == usize::from(before.settled).saturating_add(usize::from(other.settled))
+        && usize::from(self.declined)
+            == usize::from(before.declined).saturating_add(usize::from(other.declined))
         && usize::from(self.unsettled)
             == usize::from(before.unsettled).saturating_add(usize::from(other.unsettled))
 },
@@ -240,17 +275,20 @@ impl SettleCounts
     )
     {
         self.settled = declarations_sum(self.settled, other.settled);
+        self.declined = declarations_sum(self.declined, other.declined);
         self.unsettled = declarations_sum(self.unsettled, other.unsettled);
     }
 }
 
 impl fmt::Display for SettleCounts
 {
-    /// Writes `n settled, m unsettled`.
+    /// Writes `n settled, m unsettled`, then `, k with no kernel image` when
+    /// the bridge declines any.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes both settlement count channels.
+    /// - ensures: writes the settled and unsettled counts, and the declined
+    ///   count when it is not zero.
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -279,7 +317,11 @@ impl fmt::Display for SettleCounts
             "{} settled, {} unsettled",
             usize::from(self.settled),
             usize::from(self.unsettled)
-        )
+        )?;
+        if usize::from(self.declined) != 0_usize {
+            write!(f, ", {} with no kernel image", usize::from(self.declined))?;
+        }
+        Ok(())
     }
 }
 
@@ -638,12 +680,18 @@ impl Tally
     usize::from(self.declarations.settled)
         == usize::from(before.declarations.settled)
             .saturating_add(usize::from(other.declarations.settled))
+        && usize::from(self.declarations.declined)
+            == usize::from(before.declarations.declined)
+                .saturating_add(usize::from(other.declarations.declined))
         && usize::from(self.declarations.unsettled)
             == usize::from(before.declarations.unsettled)
                 .saturating_add(usize::from(other.declarations.unsettled))
         && usize::from(self.fixtures.settled)
             == usize::from(before.fixtures.settled)
                 .saturating_add(usize::from(other.fixtures.settled))
+        && usize::from(self.fixtures.declined)
+            == usize::from(before.fixtures.declined)
+                .saturating_add(usize::from(other.fixtures.declined))
         && usize::from(self.fixtures.unsettled)
             == usize::from(before.fixtures.unsettled)
                 .saturating_add(usize::from(other.fixtures.unsettled))
@@ -751,10 +799,10 @@ impl Tally
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: counts one declaration by settlement, also counting it as a
-    ///   fixture when attributed; adds its directional residual obligations and
-    ///   its refusal class when present. Every increment saturates; the
-    ///   separately supplied ledger is unchanged.
+    /// - ensures: counts one declaration by settlement and kernel image, also
+    ///   counting it as a fixture when attributed; adds its directional
+    ///   residual obligations and its refusal class when present. Every
+    ///   increment saturates; the separately supplied ledger is unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -765,24 +813,30 @@ impl Tally
     ///   recomputation.
     /// - witness: `report::tests::the_tally_counts_every_declaration_once`
     /// - witness: `report::tests::absorbing_a_tally_sums_every_count`
+    /// - witness: `report::tests::a_declined_declaration_counts_apart_from_the_settled_6047`
     #[spec(
         captures: before = *self,
         ensures: |_| {
     let settlement = declaration.settlement();
+    let declined = matches!(declaration.image(), KernelImage::Declined { .. });
+    let settled = settlement == Settlement::Settled && !declined;
+    let unimaged = settlement == Settlement::Settled && declined;
     let fixture = declaration.membership() == Membership::Fixture;
     let surviving = declaration.surviving();
     let refusal = declaration.produced().refusal();
     usize::from(self.declarations.settled)
-        == usize::from(before.declarations.settled)
-            .saturating_add(usize::from(settlement == Settlement::Settled))
+        == usize::from(before.declarations.settled).saturating_add(usize::from(settled))
+        && usize::from(self.declarations.declined)
+            == usize::from(before.declarations.declined).saturating_add(usize::from(unimaged))
         && usize::from(self.declarations.unsettled)
             == usize::from(before.declarations.unsettled)
                 .saturating_add(usize::from(settlement == Settlement::Unsettled))
         && usize::from(self.fixtures.settled)
             == usize::from(before.fixtures.settled)
-                .saturating_add(
-                    usize::from(fixture && settlement == Settlement::Settled),
-                )
+                .saturating_add(usize::from(fixture && settled))
+        && usize::from(self.fixtures.declined)
+            == usize::from(before.fixtures.declined)
+                .saturating_add(usize::from(fixture && unimaged))
         && usize::from(self.fixtures.unsettled)
             == usize::from(before.fixtures.unsettled)
                 .saturating_add(
@@ -817,9 +871,10 @@ impl Tally
     )
     {
         let settlement = declaration.settlement();
-        self.declarations.count(settlement);
+        let image = declaration.image();
+        self.declarations.count(settlement, image);
         if declaration.membership() == Membership::Fixture {
-            self.fixtures.count(settlement);
+            self.fixtures.count(settlement, image);
         }
         let surviving = declaration.surviving();
         self.surviving = Surviving::new(
@@ -991,13 +1046,54 @@ impl<'source> SettleReport<'source>
         }
     }
 
+    /// Mark each declaration in `declined` as one the bridge declines: the
+    /// kernel has no image of it.
+    ///
+    /// # Specification
+    /// - requires: `declined` is in admission order.
+    /// - ensures: each declaration whose admission position `declined` names
+    ///   has the former and the class of its decline as its kernel image; every
+    ///   other declaration is unchanged, and a position this report does not
+    ///   hold marks nothing.
+    /// - provides: the report's statement that a declaration's verdict stands
+    ///   with no kernel image.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — a predicate walks every declaration against the
+    ///   declined positions, more work than the body's binary searches; the
+    ///   witness reads each marked and each unmarked declaration.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module with an endpoint loop beside a plain
+    ///   definition marks the loop alone, and counts it apart from the settled.
+    /// - witness: `report::tests::a_declined_declaration_counts_apart_from_the_settled_6047`
+    #[inline]
+    pub fn decline(
+        &mut self,
+        declined: &[Declined],
+    )
+    {
+        // The declarations are in admission order, so each position is a
+        // binary search: k declined of d declarations cost O(k log d).
+        for decline in declined {
+            if let Ok(found) = self
+                .declarations
+                .binary_search_by_key(&decline.constant, DeclarationReport::constant)
+                && let Some(declaration) = self.declarations.get_mut(found)
+            {
+                declaration.decline(decline.former, decline.class);
+            }
+        }
+    }
+
     /// The run's counts.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every declaration counted once by settlement, every fixture
-    ///   once more among the fixtures, every surviving obligation summed, every
-    ///   produced refusal counted under its class, and the ledger size carried.
+    /// - ensures: every declaration counted once by settlement and kernel
+    ///   image, every fixture once more among the fixtures, every surviving
+    ///   obligation summed, every produced refusal counted under its class, and
+    ///   the ledger size carried.
     /// - provides: the counts a driver gates on and prints.
     /// - fails: never.
     /// - panics: none.
@@ -1023,6 +1119,12 @@ impl<'source> SettleReport<'source>
         .declarations
         .iter()
         .filter(|declaration| declaration.settlement() == Settlement::Settled)
+        .count();
+    let declined = self
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.settlement() == Settlement::Settled
+            && matches!(declaration.image(), KernelImage::Declined { .. }))
         .count();
     let fixtures = self
         .declarations
@@ -1050,10 +1152,13 @@ impl<'source> SettleReport<'source>
                 )
             },
         );
-    ret.ledger == self.ledger && usize::from(ret.declarations.settled) == settled
+    ret.ledger == self.ledger
+        && usize::from(ret.declarations.declined) == declined
+        && usize::from(ret.declarations.settled) == settled.saturating_sub(declined)
         && usize::from(ret.declarations.unsettled)
             == self.declarations.len().saturating_sub(settled)
-        && usize::from(ret.fixtures.settled) == settled_fixtures
+        && usize::from(ret.fixtures.settled).saturating_add(usize::from(ret.fixtures.declined))
+            == settled_fixtures
         && usize::from(ret.fixtures.unsettled)
             == fixtures.saturating_sub(settled_fixtures)
         && (
@@ -1221,9 +1326,12 @@ mod tests
     use core::fmt;
 
     use gandr_core_checker::ObligationCount;
+    use gandr_core_checker::UnadmittedFormer;
     use gandr_core_term::FailureClass;
     use gandr_core_term::TrackingIssue;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_surface_lowering::DeclarationCount;
+    use gandr_surface_lowering::SurfaceName;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
 
@@ -1234,8 +1342,16 @@ mod tests
     use crate::fixture::RefusingWriter;
     use crate::fixture::settled;
     use crate::root::CorpusRoot;
+    use crate::settle::Declined;
+    use crate::settle::KernelImage;
     use crate::settle::Settlement;
     use crate::settle::Surviving;
+
+    /// The image of a declaration the bridge declines as an endpoint loop.
+    const LOOP: KernelImage = KernelImage::Declined {
+        former: UnadmittedFormer::EndpointLoop,
+        class: FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP),
+    };
 
     #[test]
     fn the_run_is_settled_only_when_every_declaration_is()
@@ -1313,32 +1429,40 @@ mod tests
         let owed = ObligationCount::from;
         let mut counts = SettleCounts {
             settled: count(usize::MAX.saturating_sub(1_usize)),
+            declined: count(5_usize),
             unsettled: count(37_usize),
         };
-        counts.count(Settlement::Settled);
+        counts.count(Settlement::Settled, KernelImage::Offered);
         assert_eq!(
             (
                 usize::from(counts.settled()),
+                usize::from(counts.declined()),
                 usize::from(counts.unsettled())
             ),
-            (usize::MAX, 37_usize)
+            (usize::MAX, 5_usize, 37_usize)
         );
-        counts.count(Settlement::Settled);
-        counts.count(Settlement::Unsettled);
+        counts.count(Settlement::Settled, KernelImage::Offered);
+        counts.count(Settlement::Unsettled, KernelImage::Offered);
+        counts.count(Settlement::Settled, LOOP);
+        counts.count(Settlement::Unsettled, LOOP);
         assert_eq!(
             (
                 usize::from(counts.settled()),
+                usize::from(counts.declined()),
                 usize::from(counts.unsettled())
             ),
-            (usize::MAX, 38_usize)
+            (usize::MAX, 6_usize, 39_usize),
+            "a declined declaration that does not settle counts as unsettled"
         );
         let mut total = Tally {
             declarations: SettleCounts {
                 settled: count(usize::MAX),
+                declined: count(usize::MAX.saturating_sub(2_usize)),
                 unsettled: count(11_usize),
             },
             fixtures: SettleCounts {
                 settled: count(usize::MAX.saturating_sub(1_usize)),
+                declined: count(0_usize),
                 unsettled: count(0_usize),
             },
             ledger: owed(usize::MAX.saturating_sub(1_usize)),
@@ -1353,10 +1477,12 @@ mod tests
         let other = Tally {
             declarations: SettleCounts {
                 settled: count(43_usize),
+                declined: count(3_usize),
                 unsettled: count(13_usize),
             },
             fixtures: SettleCounts {
                 settled: count(1_usize),
+                declined: count(2_usize),
                 unsettled: count(7_usize),
             },
             ledger: owed(1_usize),
@@ -1386,16 +1512,18 @@ mod tests
         assert_eq!(
             (
                 usize::from(total.declarations().settled()),
+                usize::from(total.declarations().declined()),
                 usize::from(total.declarations().unsettled())
             ),
-            (usize::MAX, 24_usize)
+            (usize::MAX, usize::MAX, 24_usize)
         );
         assert_eq!(
             (
                 usize::from(total.fixtures().settled()),
+                usize::from(total.fixtures().declined()),
                 usize::from(total.fixtures().unsettled())
             ),
-            (usize::MAX, 7_usize)
+            (usize::MAX, 2_usize, 7_usize)
         );
         assert_eq!(usize::from(total.ledger()), usize::MAX);
         assert_eq!(
@@ -1484,10 +1612,12 @@ mod tests
         let tally = Tally {
             declarations: SettleCounts {
                 settled: count(1009_usize),
+                declined: count(1019_usize),
                 unsettled: count(1013_usize),
             },
             fixtures: SettleCounts {
                 settled: count(101_usize),
+                declined: count(107_usize),
                 unsettled: count(103_usize),
             },
             ledger: owed(149_usize),
@@ -1507,8 +1637,8 @@ mod tests
             .collect();
         numbers.sort_unstable();
         assert_eq!(numbers, [
-            101_usize, 103_usize, 109_usize, 113_usize, 127_usize, 131_usize, 137_usize, 139_usize,
-            149_usize, 1009_usize, 1013_usize
+            101_usize, 103_usize, 107_usize, 109_usize, 113_usize, 127_usize, 131_usize, 137_usize,
+            139_usize, 149_usize, 1009_usize, 1013_usize, 1019_usize
         ]);
         assert!(rendered.contains(&tally.settlement().to_string()));
         assert!(rendered.contains(&tally.seal().to_string()));
@@ -1580,6 +1710,69 @@ mod tests
             .map(|class| usize::from(refusals.count(class))),
             [0_usize, 1_usize, 1_usize, 0_usize],
             "each refusal is counted under its own class"
+        );
+    }
+
+    #[test]
+    fn a_declined_declaration_counts_apart_from_the_settled_6047()
+    {
+        let source = SourceText::from(include_str!("report/fixtures/tally.gandr"));
+        let mut report = settled(CorpusRoot::Fixture, source);
+        let named = |name: SurfaceName<'_>| {
+            report
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name() == name)
+                .map(crate::settle::DeclarationReport::constant)
+                .expect("the fixture declares the name")
+        };
+        let (helper, wrong) = (SurfaceName::from("helper"), SurfaceName::from("wrong"));
+        let class = FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP);
+        let declined =
+            [named(helper), named(wrong), ConstantIndex::from(99_usize)].map(|constant| Declined {
+                constant,
+                former: UnadmittedFormer::EndpointLoop,
+                class,
+            });
+        report.decline(&declined);
+        let tally = report.tally();
+        assert_eq!(
+            (
+                usize::from(tally.declarations().settled()),
+                usize::from(tally.declarations().declined()),
+                usize::from(tally.declarations().unsettled())
+            ),
+            (1_usize, 1_usize, 2_usize),
+            "the declined helper leaves the settled count; the declined wrong stays unsettled"
+        );
+        assert_eq!(
+            tally.settlement(),
+            Settlement::Unsettled,
+            "a decline changes no settlement"
+        );
+        let declined_helper = report
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == helper)
+            .expect("the fixture declares the helper");
+        assert_eq!(
+            declined_helper.image(),
+            LOOP,
+            "the helper carries its decline"
+        );
+        assert!(
+            declined_helper
+                .to_string()
+                .contains(&TrackingIssue::KERNEL_ENDPOINT_LOOP.to_string()),
+            "the helper's line names the issue that gives the kernel its image"
+        );
+        assert!(
+            report
+                .declarations()
+                .iter()
+                .filter(|declaration| declaration.name() != helper && declaration.name() != wrong)
+                .all(|declaration| declaration.image() == KernelImage::Offered),
+            "a position the report does not hold marks nothing"
         );
     }
 

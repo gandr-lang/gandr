@@ -2267,6 +2267,9 @@ impl fmt::Display for Former
             },
             | UnadmittedFormer::Buffer => "a buffer at the pure kernel boundary",
             | UnadmittedFormer::Qubit => "a qubit at the pure kernel boundary",
+            | UnadmittedFormer::EndpointLoop => {
+                "an endpoint loop at the pure kernel boundary, which never returns"
+            },
         })
     }
 }
@@ -4895,6 +4898,7 @@ mod tests
             UnadmittedFormer::Stage,
             UnadmittedFormer::Buffer,
             UnadmittedFormer::Qubit,
+            UnadmittedFormer::EndpointLoop,
         ]
         .into_iter()
         .map(|former| title(CheckRefusal::OutOfFragment { at: comp, former }))
