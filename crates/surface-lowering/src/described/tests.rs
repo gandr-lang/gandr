@@ -125,7 +125,8 @@ fn returned(
                 return arena.value_type(result).cloned();
             },
             gandr_core_term::CompType::Arrow { codomain, .. }
-            | gandr_core_term::CompType::Pi { codomain, .. } => comp = codomain,
+            | gandr_core_term::CompType::Pi { codomain, .. }
+            | gandr_core_term::CompType::LinearArrow { codomain, .. } => comp = codomain,
             gandr_core_term::CompType::Element { .. }
             | gandr_core_term::CompType::Unknown
             | gandr_core_term::CompType::With(..)

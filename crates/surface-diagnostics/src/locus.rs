@@ -1095,6 +1095,9 @@ fn checked(
         | CheckRefusal::AbsentTupleComponent(at)
         | CheckRefusal::NonCovariantMotive { at }
         | CheckRefusal::RideUnsupported { at } => (spanned(origins.computation(at)), UNNAMED),
+        CheckRefusal::MultiplicityUnsupported { at, .. } => {
+            (spanned(origins.comp_type(at)), UNNAMED)
+        },
         CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         CheckRefusal::NotADataType(_)
@@ -1161,7 +1164,10 @@ fn checked(
                 | LinearityDefect::ContinuationUnspent { .. }
                 | LinearityDefect::ContinuationUsedTwice { .. }
                 | LinearityDefect::ContinuationCaptured { .. }
-                | LinearityDefect::ContinuationAsValue { .. },
+                | LinearityDefect::ContinuationAsValue { .. }
+                | LinearityDefect::LinearSlotConsumed { .. }
+                | LinearityDefect::LinearSlotUnconsumed { .. }
+                | LinearityDefect::ShadowCaptured { .. },
         }
         | CheckRefusal::Access { at, .. }
         | CheckRefusal::Codata { at, .. }
@@ -1759,6 +1765,17 @@ impl fmt::Display for Checked
                 | LinearityDefect::ContinuationAsValue { .. } => f.write_str(
                     "the continuation is read as a value outside the resumption or abandonment that ends it",
                 ),
+                | LinearityDefect::LinearSlotConsumed { .. } => f.write_str(
+                    "the linear function's body reads its parameter after its one copy was spent",
+                ),
+                | LinearityDefect::LinearSlotUnconsumed { .. } => f.write_str(
+                    "the linear function's body ends with its parameter's copy unread, or one arm reads it where another does not",
+                ),
+                | LinearityDefect::ShadowCaptured { by, .. } => write!(
+                    f,
+                    "the linear parameter is read inside {}, which may run the read other than once",
+                    Captor(by)
+                ),
             },
             | CheckRefusal::Access { defect, .. } => match defect {
                 | AccessDefect::NotHeld => f.write_str("the access names a linear slot that holds no value"),
@@ -1943,6 +1960,9 @@ impl fmt::Display for Checked
             ),
             | CheckRefusal::RideUnsupported { .. } => f.write_str(
                 "a ride moves a constant motive, a run of the moving endpoint, a value whose type relates its two endpoints, or a decode of the moving code inside products, sums, lists and flows into it",
+            ),
+            | CheckRefusal::MultiplicityUnsupported { .. } => f.write_str(
+                "a linear arrow admits the multiplicity one alone, until a multiplicity is a term",
             ),
             | CheckRefusal::RunNotAdmitted { fault, .. } => match fault {
                 | RunFault::WrongDirection(step) => write!(
@@ -3744,6 +3764,10 @@ mod tests
                 },
             },
             CheckRefusal::Boundary { at: value },
+            CheckRefusal::MultiplicityUnsupported {
+                at: comp_type,
+                multiplicity: value,
+            },
         ];
         for refusal in refusals {
             let found = Annotations::refusal(Refusal::Checking(refusal), declaration, &origins);
@@ -3886,6 +3910,7 @@ mod tests
                         | CheckRefusal::BudgetExceeded { .. }
                         | CheckRefusal::CapabilityUngranted { .. }
                         | CheckRefusal::AdmissionOrder { .. } => declaration,
+                        CheckRefusal::MultiplicityUnsupported { .. } => spans[3_usize],
                     },
                     label: Label::Culprit(Culprit::of(Refusal::Checking(refusal))),
                 }),

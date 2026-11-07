@@ -882,6 +882,7 @@ pub fn bracket(
 /// - `:>`, the opaque ascription, beside `:`, the transparent one;
 /// - `↦`, which restricts a type along a named face, and `|->`, its ASCII
 ///   spelling;
+/// - `⊸`, the linear arrow, and `-o`, its ASCII spelling;
 /// - `+=`, `-=` and `*=`, which write a held place through its value;
 /// - `~>`, the retired rewrite-face arrow, kept so a stale spelling is one tile
 ///   and earns the elaborator's migration decline;
@@ -893,10 +894,10 @@ pub fn bracket(
 /// `'` lead a shebang, a shell block, a comment, a string or a character before
 /// any run is read.
 const OPERATORS: &[&str] = &[
-    "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "↦", "<~>", "~~>", "|->", "~>", "->", "<-",
-    "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", ":>", "::", "+=",
-    "-=", "*=", "!", "&", "*", "+", "-", ":", "<", "=", ">", "?", "|", "$", "~", "+U", "-F", "pi+",
-    "Type+", "ω", "_",
+    "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "↦", "⊸", "<~>", "~~>", "|->", "-o", "~>",
+    "->", "<-", "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", ":>",
+    "::", "+=", "-=", "*=", "!", "&", "*", "+", "-", ":", "<", "=", ">", "?", "|", "$", "~", "+U",
+    "-F", "pi+", "Type+", "ω", "_",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.

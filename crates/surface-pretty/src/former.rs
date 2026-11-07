@@ -607,6 +607,19 @@ pub enum Former<'source, Node>
         /// The computation-type codomain, under the binder.
         codomain: Node,
     },
+    /// The linear arrow `(x : A) ⊸ C`: its parameter binds in the linear
+    /// zone, and its codomain stands under the binder of the parameter's
+    /// shadow.
+    LinearArrow
+    {
+        /// The value-type domain.
+        domain: Node,
+        /// The multiplicity, a value. The surface writes none: it leaves the
+        /// multiplicity `1` implicit.
+        multiplicity: Node,
+        /// The computation-type codomain, under the shadow's binder.
+        codomain: Node,
+    },
     /// The computation type a code denotes; the code is a value.
     ComputationElement(Node),
     /// A finite-list type.
@@ -733,6 +746,10 @@ pub enum Former<'source, Node>
     Application(Node, Node),
     /// A lambda over its body, which stands under one binder: `fun (x) { c }`.
     Lambda(Node),
+    /// A linear lambda over its body, which stands under the binder of the
+    /// parameter's shadow and spends the parameter's copies: `fun (x) { c }`
+    /// at a linear arrow.
+    LinearLambda(Node),
     /// A computation written where a value is read, which the checker runs
     /// or suspends as the type there decides: the computation itself, `f(a)`,
     /// its run left out.
@@ -1389,6 +1406,9 @@ pub enum Elided
     Region,
     /// An ascription's type: the ascription stands as its body.
     Ascription,
+    /// A linear arrow's multiplicity other than the `1` the surface leaves
+    /// implicit, which the surface has no spelling for.
+    Multiplicity,
 }
 
 /// Why a presentation is approximate.

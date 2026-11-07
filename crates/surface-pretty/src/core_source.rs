@@ -2039,6 +2039,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
         | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
+        | (Some(&CompType::LinearArrow { domain, multiplicity, codomain }), Former::LinearArrow { domain: actual_domain, multiplicity: actual_multiplicity, codomain: actual_codomain }) =>
+            actual_domain == CoreNode::ValueType(domain) && actual_multiplicity == CoreNode::Value(multiplicity) && actual_codomain == CoreNode::CompType(codomain),
         | (Some(&CompType::Element { code, .. }), Former::ComputationElement(actual)) => actual == CoreNode::Value(code),
         | _ => false,
     })]
@@ -2130,6 +2132,15 @@ impl<'arena> CoreSource<'arena>
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::CompType(codomain),
             },
+            CompType::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => Former::LinearArrow {
+                domain: CoreNode::ValueType(domain),
+                multiplicity: CoreNode::Value(multiplicity),
+                codomain: CoreNode::CompType(codomain),
+            },
             CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
             CompType::Codata {
                 declaration,
@@ -2171,6 +2182,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Computation::Force(value)), Former::Force(actual))
         | (Some(&Computation::Decompose(value)), Former::Decompose(actual)) => actual == CoreNode::Value(value),
         | (Some(&Computation::Lambda(body)), Former::Lambda(actual))
+        | (Some(&Computation::LinearLambda(body)), Former::LinearLambda(actual))
         | (Some(&Computation::Fixpoint { body, .. }), Former::Fixpoint(actual))
         | (Some(&Computation::Reset(body)), Former::Reset(actual))
         | (Some(&Computation::Shift(body)), Former::Shift(actual)) => actual == CoreNode::Computation(body),
@@ -2283,6 +2295,7 @@ impl<'arena> CoreSource<'arena>
                 Former::Application(computation(function), value(argument))
             },
             Computation::Lambda(body) => Former::Lambda(computation(body)),
+            Computation::LinearLambda(body) => Former::LinearLambda(computation(body)),
             Computation::Primitive {
                 primitive,
                 ref arguments,
@@ -2891,6 +2904,7 @@ impl Source for CoreSource<'_>
                 | Computation::TelescopeTransport { .. }
                 | Computation::Ride { .. }
                 | Computation::Lambda(_)
+                | Computation::LinearLambda(_)
                 | Computation::Fixpoint { .. }
                 | Computation::Application(..)
                 | Computation::Return(_)
@@ -2929,6 +2943,7 @@ impl Source for CoreSource<'_>
                 | CompType::Returner { .. }
                 | CompType::Arrow { .. }
                 | CompType::Pi { .. }
+                | CompType::LinearArrow { .. }
                 | CompType::Element { .. } => None,
             },
         }
@@ -3108,6 +3123,7 @@ impl Source for CoreSource<'_>
                 | Computation::TelescopeTransport { .. }
                 | Computation::Ride { .. }
                 | Computation::Lambda(_)
+                | Computation::LinearLambda(_)
                 | Computation::Fixpoint { .. }
                 | Computation::Application(..)
                 | Computation::Return(_)
@@ -3149,6 +3165,7 @@ impl Source for CoreSource<'_>
                 | CompType::Returns { .. }
                 | CompType::Arrow { .. }
                 | CompType::Pi { .. }
+                | CompType::LinearArrow { .. }
                 | CompType::Element { .. } => None,
             },
         }?;

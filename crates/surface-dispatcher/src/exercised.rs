@@ -1044,7 +1044,7 @@ fn formers(
                 }) => {
                     worklist.extend([path, start, over, value].map(Node::Value));
                 },
-                Some(&Computation::Lambda(under)) => {
+                Some(&(Computation::Lambda(under) | Computation::LinearLambda(under))) => {
                     rows.mark(Row::LambdaChecks);
                     worklist.push(Node::Computation(under));
                 },
