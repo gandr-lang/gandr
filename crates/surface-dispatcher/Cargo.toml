@@ -30,8 +30,9 @@ path = "benches/reals.rs"
 # lowering, the checker and the kernel bridge it carries, the settle
 # comparison the corpus library owns, and the run stage's focusing and
 # readback, with the emitter running a run native or on its executor and the
-# network's runtime serving a program's `Net` operations. The
-# diagnostics model spells the types a refusal names while the arena is at
+# network's runtime serving a program's `Net` operations. A `draw` of
+# `std.rand.Eff` reads the entropy of the operating system through getrandom.
+# The diagnostics model spells the types a refusal names while the arena is at
 # hand, and builds what each step prints; the type table spells the type a
 # face asks for through the presentation printer. The `stage` verb builds the
 # normaliser's staging observer programs and checks them through the
@@ -96,6 +97,7 @@ gandr-theory-exact-reals.workspace = true
 gandr-theory-graphs.workspace = true
 gandr-theory-ordered-algebras.workspace = true
 gandr-theory-sites.workspace = true
+getrandom.workspace = true
 hotpath = { workspace = true, optional = true }
 memmap2.workspace = true
 quenchant-shape.workspace = true
