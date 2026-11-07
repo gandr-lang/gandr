@@ -6,17 +6,6 @@ use gandr_theory_cellular_sheaves::Integer;
 use gandr_theory_cellular_sheaves::Rational;
 use gandr_theory_cellular_sheaves::SheafError;
 
-/// The rational `numerator / denominator` of two 128-bit integers, which the
-/// test knows to be in range.
-macro_rules! rational {
-    ($numerator:expr, $denominator:expr) => {{
-        let numerator: i128 = $numerator;
-        let denominator: i128 = $denominator;
-        Rational::new(Integer::from(numerator), Integer::from(denominator))
-            .expect("a rational in range")
-    }};
-}
-
 /// Each spelling of a number, by a common factor or by the sign on its
 /// denominator, gives one value: the lowest terms with a positive
 /// denominator.
