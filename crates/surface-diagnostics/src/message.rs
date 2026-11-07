@@ -1460,6 +1460,17 @@ fn checked(
             LinearityDefect::ContinuationAsValue { .. } => f.write_str(
                 "this continuation holds something that must end, so it can be used only by `resume` or `abandon`",
             ),
+            LinearityDefect::LinearSlotConsumed { .. } => f.write_str(
+                "the linear parameter is used a second time, and the function holds one copy of it",
+            ),
+            LinearityDefect::LinearSlotUnconsumed { .. } => f.write_str(
+                "the linear parameter is not used, or one branch uses it where another does not",
+            ),
+            LinearityDefect::ShadowCaptured { by, .. } => write!(
+                f,
+                "the linear parameter is used inside {}, which may use it other than once",
+                Captor(by)
+            ),
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => {

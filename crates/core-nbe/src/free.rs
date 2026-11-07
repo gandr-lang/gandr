@@ -1300,9 +1300,10 @@ Err(_) => false,
                     Computation::Reset(body) | Computation::Project(_, body) => {
                         one(computation(body), Lowering::NONE)
                     },
-                    Computation::Shift(body) | Computation::Lambda(body) => {
-                        one(computation(body), Lowering::ONE)
-                    },
+                    Computation::Shift(body)
+                    | Computation::Lambda(body)
+                    | Computation::LinearLambda(body)
+                    | Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
                     Computation::ListFold {
                         element,
                         result,
@@ -1384,7 +1385,6 @@ Err(_) => false,
                         Some((value(over), Lowering::NONE)),
                         Some((value(operand), Lowering::NONE)),
                     ],
-                    Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
                     Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
                     },
@@ -1614,6 +1614,17 @@ Err(_) => false,
                         Reached::CompType(codomain),
                         Lowering::ONE,
                     ),
+                    CompType::LinearArrow {
+                        domain,
+                        multiplicity,
+                        codomain,
+                    } => [
+                        Some((Reached::ValueType(domain), Lowering::NONE)),
+                        Some((value(multiplicity), Lowering::NONE)),
+                        Some((Reached::CompType(codomain), Lowering::ONE)),
+                        None,
+                        None,
+                    ],
                     CompType::Element { code, .. } => one(value(code), Lowering::NONE),
                     CompType::Unknown => [None, None, None, None, None],
                     CompType::Codata { ref arguments, .. } => {

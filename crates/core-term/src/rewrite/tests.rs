@@ -609,7 +609,7 @@ fn value_spelling(
             | Some(&CompType::Arrow { .. }) => Token::Arrow,
             | Some(&CompType::Pi { .. }) => Token::Pi,
             | Some(&CompType::Element { .. }) => Token::CompElement,
-            | Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. } | &CompType::Returns { .. }) | None => Token::Other,
+            | Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. } | &CompType::Returns { .. } | &CompType::LinearArrow { .. }) | None => Token::Other,
         },
         | Visit::ValueType(id) => match arena.value_type(id) {
             | Some(&ValueType::Base(base)) => Token::Base(base),
@@ -668,7 +668,8 @@ fn spelling_of(
                     &CompType::Unknown
                     | &CompType::With(..)
                     | &CompType::Codata { .. }
-                    | &CompType::Returns { .. },
+                    | &CompType::Returns { .. }
+                    | &CompType::LinearArrow { .. },
                 )
                 | None => {
                     tokens.push(Token::Other);
@@ -2513,6 +2514,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                         | crate::Computation::Ride { .. }
                         | crate::Computation::TelescopeTransport { .. }
                         | crate::Computation::Fixpoint { .. }
+                        | crate::Computation::LinearLambda(_)
                         | crate::Computation::Application(..)
                         | crate::Computation::Force(_)
                         | crate::Computation::Decompose(_)

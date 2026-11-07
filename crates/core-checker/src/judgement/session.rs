@@ -64,8 +64,8 @@ use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
 /// Who bound a linear slot: a fork's or a receive's endpoint, a received
-/// value, a hold's held value, an access's view, an entry's capability, or an
-/// operation clause's continuation.
+/// value, a hold's held value, an access's view, an entry's capability, an
+/// operation clause's continuation, or a linear function's parameter.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Resident
 {
@@ -112,6 +112,13 @@ pub(super) enum Resident
     {
         /// The clause's body.
         clause: ComputationId,
+    },
+    /// The copy of the linear function `lambda`'s parameter: its body reads
+    /// the copy once, through the parameter's intuitionistic shadow.
+    Supply
+    {
+        /// The linear lambda.
+        lambda: ComputationId,
     },
 }
 
@@ -160,6 +167,19 @@ pub(super) struct Owed
     pub clause: ComputationId,
 }
 
+/// A linear function's parameter: the level its shadow is bound at, the
+/// linear slot that holds its copy and the lambda.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Supplied
+{
+    /// The intuitionistic level the shadow is bound at.
+    pub shadow: usize,
+    /// The linear slot's position above the run's base.
+    pub slot: usize,
+    /// The linear lambda.
+    pub lambda: ComputationId,
+}
+
 /// The linear state of one run: who bound each linear slot it opened, the
 /// held slots its accesses lend, the zones its offers restore and compare,
 /// and the free linear indices of the terms it read.
@@ -189,6 +209,8 @@ pub(super) struct Sessions
     /// Each open clause's continuation that holds an obligation, innermost
     /// last.
     pub owed: Vec<Owed>,
+    /// Each open linear function's parameter, innermost last.
+    pub supplied: Vec<Supplied>,
     /// The level of the owed stack the resumption or abandonment being
     /// judged ends: its one mention that reads it.
     pub ending: Option<usize>,
@@ -227,6 +249,7 @@ impl Sessions
             abstracted,
             owing: Vec::new(),
             owed: Vec::new(),
+            supplied: Vec::new(),
             ending: None,
             footprints: Vec::new(),
             separated: Vec::new(),
@@ -253,6 +276,8 @@ pub(super) struct Scope
     owing: usize,
     /// The owed continuations held.
     owed: usize,
+    /// The linear functions' parameters held.
+    supplied: usize,
     /// The offers' zones held.
     zones: usize,
     /// The fork halves' footprints held.
@@ -279,19 +304,33 @@ pub(super) enum Joining
     Threaded,
     /// The run holds a value or an endpoint: each arm starts from the zone at
     /// the mark, a held value one arm consumed counts as consumed after the
-    /// case, and every arm leaves each endpoint as the first arm left it.
+    /// case, and every arm leaves each endpoint and each linear parameter's
+    /// copy as the first arm left it.
     Joined(ZoneMark),
 }
 
 /// Which slots two arms' zones must agree on: every slot after an offer's
-/// arms, the endpoints alone after a case's, whose held values join.
+/// arms, the endpoints and the linear parameters' copies alone after a
+/// case's, whose held values join.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Compared
 {
     /// Every slot the run opened.
     Every,
-    /// The endpoints the run opened.
+    /// The endpoints and the linear parameters' copies the run opened.
     Endpoints,
+}
+
+/// What a read of a linear function's shadow does where the run stands: a
+/// read inside a type the body forms is free, and every other read draws the
+/// parameter's copy.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ShadowRead
+{
+    /// A [`Frame::Forming`] waits above the body's frame: the read is free.
+    Free,
+    /// No formation waits above the body's frame: the read draws the copy.
+    Drawn,
 }
 
 /// One linear slot, read: who bound it, its declared type, its remaining
@@ -342,6 +381,7 @@ impl Machine<'_, '_>
             regions: self.sessions.regions.len(),
             owing: self.sessions.owing.len(),
             owed: self.sessions.owed.len(),
+            supplied: self.sessions.supplied.len(),
             zones: self.sessions.zones.len(),
             footprints: self.sessions.footprints.len(),
             separated: self.sessions.separated.len(),
@@ -349,9 +389,9 @@ impl Machine<'_, '_>
     }
 
     /// Drop every linear slot bound, every lending, keep, region, capture
-    /// record, owed continuation and footprint made and every offer zone kept
-    /// since `scope`, spent or not: the linear half of unwinding a refused or
-    /// recovered judgement.
+    /// record, owed continuation, linear parameter and footprint made and
+    /// every offer zone kept since `scope`, spent or not: the linear half of
+    /// unwinding a refused or recovered judgement.
     ///
     /// # Specification
     /// - requires: the zones stand at or above `scope`.
@@ -368,6 +408,7 @@ impl Machine<'_, '_>
         && self.sessions.regions.len() <= scope.regions
         && self.sessions.owing.len() <= scope.owing
         && self.sessions.owed.len() <= scope.owed
+        && self.sessions.supplied.len() <= scope.supplied
         && self.sessions.zones.len() <= scope.zones
         && self.sessions.footprints.len() <= scope.footprints
         && self.sessions.separated.len() <= scope.separated)]
@@ -384,6 +425,7 @@ impl Machine<'_, '_>
         self.sessions.regions.truncate(scope.regions);
         self.sessions.owing.truncate(scope.owing);
         self.sessions.owed.truncate(scope.owed);
+        self.sessions.supplied.truncate(scope.supplied);
         self.sessions.ending = None;
         self.sessions.zones.truncate(scope.zones);
         self.sessions.footprints.truncate(scope.footprints);
@@ -424,7 +466,8 @@ impl Machine<'_, '_>
                 | Resident::Held { .. }
                 | Resident::View { .. }
                 | Resident::Capability { .. }
-                | Resident::Continuation { .. } => None,
+                | Resident::Continuation { .. }
+                | Resident::Supply { .. } => None,
             })
             .collect()
     }
@@ -547,7 +590,8 @@ impl Machine<'_, '_>
             | Resident::Held { .. }
             | Resident::View { .. }
             | Resident::Capability { .. }
-            | Resident::Continuation { .. } => match at {
+            | Resident::Continuation { .. }
+            | Resident::Supply { .. } => match at {
                 CoreNode::Term(term) => Err(CheckRefusal::ShapeMismatch {
                     at: term,
                     wanted: ExpectedShape::Session,
@@ -741,7 +785,8 @@ impl Machine<'_, '_>
     /// region: the slot is kept, frozen until the region's scope ends. Inside
     /// a capability scope, a thunk or a stack names no variable kept in a
     /// region deeper than the one its own type is kept in. Every former but a
-    /// branch names no continuation an operation clause owes.
+    /// branch names no continuation an operation clause owes, and every former
+    /// but a case names no linear parameter's shadow.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -751,14 +796,16 @@ impl Machine<'_, '_>
     ///   keeps each shared view it names, and nothing else changes.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::Captured`] at the goal's term, with the first
-    ///   endpoint it names and what may run it, a case's arms excepted, and
+    ///   endpoint it names and what may run it, a case's arms excepted;
     ///   [`LinearityDefect::ContinuationCaptured`] for an owed continuation it
-    ///   names; [`CheckRefusal::Access`] naming [`AccessDefect::Escaped`] for a
-    ///   view no region keeps, [`AccessDefect::HeldCaptured`] for a held value
-    ///   and for one a fold or a lazy product consumes, and
-    ///   [`AccessDefect::KeptEscaped`] for a variable kept deeper than the
-    ///   goal; a shift names the innermost resident the run holds, which its
-    ///   captured continuation may resume twice.
+    ///   names, and [`LinearityDefect::ShadowCaptured`] for a linear
+    ///   parameter's shadow; [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::Escaped`] for a view no region keeps,
+    ///   [`AccessDefect::HeldCaptured`] for a held value and for one a fold or
+    ///   a lazy product consumes, and [`AccessDefect::KeptEscaped`] for a
+    ///   variable kept deeper than the goal; a shift names the innermost
+    ///   resident the run holds, which its captured continuation may resume
+    ///   twice.
     /// - panics: none.
     ///
     /// # Errors
@@ -870,6 +917,7 @@ impl Machine<'_, '_>
                     | Computation::Ride { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Lambda(_)
+                    | Computation::LinearLambda(_)
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)
@@ -919,6 +967,12 @@ impl Machine<'_, '_>
         else {
             false
         };
+        // A case's arms each read a linear parameter's copy as the others do,
+        // which the join checks; every other captor may run a read of it
+        // twice or never.
+        if !joins {
+            self.supplied_named(term, node, by)?;
+        }
         let scope = match goal {
             Goal::Computation { term, .. } => {
                 matches!(*self.computation(term)?, Computation::Scope { .. })
@@ -998,7 +1052,8 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: a view's access is in the arena.
     /// - ensures: [`Owing::Something`] exactly for an endpoint, a buffer, a
-    ///   capability, a continuation and a view of an exclusive access.
+    ///   capability, a continuation, a linear parameter's copy and a view of an
+    ///   exclusive access.
     /// - fails: [`CheckRefusal::DanglingNode`] for a view whose access is not
     ///   in the arena.
     /// - panics: none.
@@ -1011,7 +1066,7 @@ impl Machine<'_, '_>
     ///   a held value checks.
     /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
     #[spec(ensures: |ret| match resident {
-        | Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } | Resident::Continuation { .. } => matches!(ret, Ok(Owing::Something)),
+        | Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } | Resident::Continuation { .. } | Resident::Supply { .. } => matches!(ret, Ok(Owing::Something)),
         | Resident::Held { .. } | Resident::Received { .. } => matches!(ret, Ok(Owing::Nothing)),
         | Resident::View { .. } => true,
     })]
@@ -1024,7 +1079,8 @@ impl Machine<'_, '_>
             Resident::Endpoint(_)
             | Resident::Buffer { .. }
             | Resident::Capability { .. }
-            | Resident::Continuation { .. } => Owing::Something,
+            | Resident::Continuation { .. }
+            | Resident::Supply { .. } => Owing::Something,
             Resident::Held { .. } | Resident::Received { .. } => Owing::Nothing,
             Resident::View { at, .. } => {
                 if matches!(
@@ -2214,7 +2270,8 @@ impl Machine<'_, '_>
             | Resident::Held { .. }
             | Resident::View { .. }
             | Resident::Capability { .. }
-            | Resident::Continuation { .. } => return Err(CheckRefusal::MachineInvariant),
+            | Resident::Continuation { .. }
+            | Resident::Supply { .. } => return Err(CheckRefusal::MachineInvariant),
         }
         let _state = self
             .context
@@ -2509,7 +2566,9 @@ impl Machine<'_, '_>
     /// - ensures: nothing changes when every slot `compared` names has the same
     ///   use in both and every such available slot equivalent session types.
     /// - fails: [`CheckRefusal::Linearity`] naming
-    ///   [`LinearityDefect::ArmsDisagree`] with the first slot that differs.
+    ///   [`LinearityDefect::ArmsDisagree`] with the first slot that differs;
+    ///   [`LinearityDefect::LinearSlotUnconsumed`] at the arm that left a
+    ///   linear parameter's copy unread where the other read it.
     /// - panics: none.
     ///
     /// # Errors
@@ -2559,7 +2618,12 @@ impl Machine<'_, '_>
                 .checked_sub(base)
                 .and_then(|position| self.sessions.opened.get(position))
                 .map(|opened| opened.resident);
-            if compared == Compared::Endpoints && !matches!(opened, Some(Resident::Endpoint(_))) {
+            if compared == Compared::Endpoints
+                && !matches!(
+                    opened,
+                    Some(Resident::Endpoint(_) | Resident::Supply { .. })
+                )
+            {
                 continue;
             }
             let same = agreed_use == left_use
@@ -2611,6 +2675,17 @@ impl Machine<'_, '_>
                     at,
                     defect: LinearityDefect::ContinuationUnspent { clause },
                 },
+                // One arm read the copy and the other did not: the arm that
+                // left it unread is refused.
+                Resident::Supply { lambda } => CheckRefusal::Linearity {
+                    at: if left_use == LinearUse::Available {
+                        at
+                    }
+                    else {
+                        CoreNode::Term(TermNode::Computation(first))
+                    },
+                    defect: LinearityDefect::LinearSlotUnconsumed { lambda },
+                },
             });
         }
         Ok(())
@@ -2645,12 +2720,16 @@ impl Machine<'_, '_>
     pub(super) fn arms_opened(&mut self) -> Joining
     {
         // A held value one arm may consume and another not, a live buffer
-        // every arm returns or none does, and an endpoint each arm spends as
-        // the others do: each arm starts from it as found.
+        // every arm returns or none does, and an endpoint or a linear
+        // parameter's copy each arm spends as the others do: each arm starts
+        // from it as found.
         if !self.sessions.opened.iter().any(|opened| {
             matches!(
                 opened.resident,
-                Resident::Held { .. } | Resident::Buffer { .. } | Resident::Endpoint(_)
+                Resident::Held { .. }
+                    | Resident::Buffer { .. }
+                    | Resident::Endpoint(_)
+                    | Resident::Supply { .. }
             )
         }) {
             return Joining::Threaded;
@@ -2716,7 +2795,10 @@ impl Machine<'_, '_>
                 )
             })
             .adopting(found, |position| {
-                matches!(resident(position), Some(Resident::Endpoint(_)))
+                matches!(
+                    resident(position),
+                    Some(Resident::Endpoint(_) | Resident::Supply { .. })
+                )
             });
         self.context.binders().restore_linear(&next);
         Ok(())
@@ -3260,6 +3342,334 @@ impl Machine<'_, '_>
         })
     }
 
+    /// Open the linear function `lambda`'s parameter at `domain`: its copy in
+    /// a linear slot, then its shadow as the next intuitionistic binder, which
+    /// every read of the parameter names.
+    ///
+    /// # Specification
+    /// - requires: `domain` is formed where the run stands.
+    /// - ensures: one linear slot more, available and held by
+    ///   [`Resident::Supply`]; one intuitionistic binder more at `domain`; one
+    ///   [`Supplied`] entry whose shadow is that binder's level.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the slots a run counts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear identity checks, and a body that never reads
+    ///   its parameter is refused.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(
+        captures: [
+            supplied = self.sessions.supplied.len(),
+            linear = self.context.depth(Zone::Linear),
+            intuitionistic = self.context.depth(Zone::Intuitionistic),
+        ],
+        ensures: |ret| ret.is_err()
+            || (self.sessions.supplied.len() == supplied.saturating_add(1)
+                && self.context.depth(Zone::Linear) > linear
+                && self.context.depth(Zone::Intuitionistic) > intuitionistic),
+    )]
+    pub(super) fn supply(
+        &mut self,
+        lambda: ComputationId,
+        domain: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, domain);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Supply { lambda },
+            depth,
+        });
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(1)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.context.binders().open(Zone::Intuitionistic, domain);
+        self.sessions.supplied.push(Supplied {
+            shadow: usize::from(depth),
+            slot,
+            lambda,
+        });
+        Ok(())
+    }
+
+    /// End the body of the linear function `lambda`: the body must have read
+    /// its parameter's copy, and the copy's slot and the shadow close.
+    ///
+    /// # Specification
+    /// - requires: the parameter's shadow is the innermost intuitionistic
+    ///   binder and its copy the innermost linear slot.
+    /// - ensures: the parameter's [`Supplied`] entry, its slot and its shadow
+    ///   are gone.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::LinearSlotUnconsumed`] at the lambda for a copy the
+    ///   body never read; [`CheckRefusal::MachineInvariant`] when the entry,
+    ///   the slot or the shadow is not the innermost.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body that never reads its parameter is refused at
+    ///   the lambda, and one that reads it once checks.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(
+        captures: supplied = self.sessions.supplied.len(),
+        ensures: |ret| ret.is_err() || self.sessions.supplied.len().checked_add(1) == Some(supplied),
+    )]
+    pub(super) fn supplied_ended(
+        &mut self,
+        lambda: ComputationId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let supplied = self
+            .sessions
+            .supplied
+            .last()
+            .copied()
+            .filter(|supplied| supplied.lambda == lambda)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let shadow = usize::from(self.context.depth(Zone::Intuitionistic));
+        if supplied.slot.checked_add(1) != Some(self.sessions.opened.len())
+            || supplied.shadow.checked_add(1) != Some(shadow)
+        {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        match self.context.binders().close(Zone::Linear) {
+            Ok(_) => {},
+            Err(ContextError::LinearSlotUnconsumed { .. }) => {
+                return Err(CheckRefusal::Linearity {
+                    at: CoreNode::Term(TermNode::Computation(lambda)),
+                    defect: LinearityDefect::LinearSlotUnconsumed { lambda },
+                });
+            },
+            Err(
+                ContextError::UnboundIndex { .. }
+                | ContextError::LinearSlotConsumed { .. }
+                | ContextError::NoBinderToClose { .. },
+            ) => return Err(CheckRefusal::MachineInvariant),
+        }
+        let _opened = self.sessions.opened.pop();
+        let _supplied = self.sessions.supplied.pop();
+        self.close()
+    }
+
+    /// The linear function's parameter whose shadow the intuitionistic
+    /// `index` names, read here.
+    ///
+    /// # Specification
+    /// - ensures: the innermost [`Supplied`] entry whose shadow stands at the
+    ///   level `index` names; `None` for a variable no shadow is.
+    /// - panics: none.
+    /// - executable: none — the level reads the context's depth, which only a
+    ///   judgement drives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the shadow is found from inside a nested binder.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    fn supplied_at(
+        &self,
+        index: DeBruijnIndex,
+    ) -> Option<Supplied>
+    {
+        if self.sessions.supplied.is_empty() {
+            return None;
+        }
+        let level = usize::from(self.context.depth(Zone::Intuitionistic))
+            .checked_sub(1)?
+            .checked_sub(usize::try_from(u32::from(index)).ok()?)?;
+        self.sessions
+            .supplied
+            .iter()
+            .rev()
+            .find(|supplied| supplied.shadow == level)
+            .copied()
+    }
+
+    /// What a read of the shadow of the linear function `lambda` does: it is
+    /// free where a [`Frame::Forming`] stands above the body's frame.
+    ///
+    /// # Specification
+    /// - ensures: [`ShadowRead::Free`] exactly when a [`Frame::Forming`] waits
+    ///   above the innermost [`Frame::LinearLambdaBody`] of `lambda`.
+    /// - panics: none.
+    /// - executable: none — the frames stand only as a judgement drives them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codomain that reads the shadow forms inside the
+    ///   body, and a term that reads the shadow draws its copy.
+    /// - witness: `judgement::session::tests::a_type_in_a_linear_body_reads_the_shadow_free_5853`
+    fn shadow_read(
+        &self,
+        lambda: ComputationId,
+    ) -> ShadowRead
+    {
+        let forming = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|waiting| {
+                !matches!(
+                    waiting.frame,
+                    Frame::LinearLambdaBody { lambda: body } if body == lambda
+                )
+            })
+            .any(|waiting| matches!(waiting.frame, Frame::Forming));
+        if forming {
+            ShadowRead::Free
+        }
+        else {
+            ShadowRead::Drawn
+        }
+    }
+
+    /// Mark the formation the run starts inside a linear lambda's body: a
+    /// [`Frame::Forming`] waits beneath it, unless one waits above the
+    /// innermost body's frame already.
+    ///
+    /// # Specification
+    /// - ensures: outside a linear lambda's body nothing changes; inside one, a
+    ///   read of the innermost linear lambda's shadow is [`ShadowRead::Free`].
+    /// - panics: none.
+    /// - executable: none — the clause reads every waiting frame, a walk no
+    ///   predicate makes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codomain that reads the shadow forms inside the
+    ///   body, and a term that reads the shadow draws its copy.
+    /// - witness: `judgement::session::tests::a_type_in_a_linear_body_reads_the_shadow_free_5853`
+    pub(super) fn forming_marked(&mut self)
+    {
+        let Some(&Supplied { lambda, .. }) = self.sessions.supplied.last()
+        else {
+            return;
+        };
+        if self.shadow_read(lambda) == ShadowRead::Drawn {
+            self.wait(Frame::Forming);
+        }
+    }
+
+    /// Read at `at` the linear function's parameter whose shadow the
+    /// intuitionistic `index` names: a read inside a type reads the shadow
+    /// free, and every other read draws the parameter's copy.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes for a variable no shadow is, or for a read
+    ///   inside a type the body forms; the copy's slot is spent otherwise.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::LinearSlotConsumed`] at `at` for a copy already
+    ///   read; [`CheckRefusal::MachineInvariant`] for a slot the binders do not
+    ///   hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body that reads its parameter twice is refused at
+    ///   the second read.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotConsumed { .. }, .. } | CheckRefusal::MachineInvariant)))]
+    pub(super) fn drawn(
+        &mut self,
+        at: ValueId,
+        index: DeBruijnIndex,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(supplied) = self.supplied_at(index)
+        else {
+            return Ok(());
+        };
+        if self.shadow_read(supplied.lambda) == ShadowRead::Free {
+            return Ok(());
+        }
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(supplied.slot)
+            .and_then(|above| above.checked_sub(1))
+            .and_then(|slot| u32::try_from(slot).ok())
+            .map(DeBruijnIndex::from)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        match self.context.binders().occurrence(Zone::Linear, slot) {
+            Ok(_) => Ok(()),
+            Err(ContextError::LinearSlotConsumed { .. }) => Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Value(at)),
+                defect: LinearityDefect::LinearSlotConsumed {
+                    lambda: supplied.lambda,
+                },
+            }),
+            Err(
+                ContextError::UnboundIndex { .. }
+                | ContextError::LinearSlotUnconsumed { .. }
+                | ContextError::NoBinderToClose { .. },
+            ) => Err(CheckRefusal::MachineInvariant),
+        }
+    }
+
+    /// Refuse `term`, at `node`, naming a linear function's parameter where
+    /// `by` may run a read of it other than once.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ShadowCaptured`] with `by` for the first free
+    ///   variable of `term` that is a parameter's shadow, outside a type the
+    ///   body forms; [`CheckRefusal::DanglingNode`] and
+    ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk that reads a linear parameter is refused, and
+    ///   the same read outside the thunk checks.
+    /// - witness: `judgement::session::tests::a_thunk_reading_a_linear_parameter_is_refused_5853`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::ShadowCaptured { by: captor, .. }, .. }) if captor == by) || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    pub(super) fn supplied_named(
+        &mut self,
+        term: CoreTerm,
+        node: CoreNode,
+        by: Capture,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.sessions.supplied.is_empty() {
+            return Ok(());
+        }
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            if let Some(supplied) = self.supplied_at(index)
+                && self.shadow_read(supplied.lambda) == ShadowRead::Drawn
+            {
+                return Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::ShadowCaptured {
+                        lambda: supplied.lambda,
+                        by,
+                    },
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Add to the innermost fork half being judged what a name it mentions,
     /// of type `declared`, lets it do to the host
     /// ([`crate::capability::Footprint::reach`]); nothing outside a fork.
@@ -3511,6 +3921,7 @@ impl Machine<'_, '_>
                     | CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
+                    | CompTypeView::LinearArrow { .. }
                     | CompTypeView::Element { .. }
                     | CompTypeView::Codata { .. } => EffectRow::EMPTY,
                 }
@@ -3731,8 +4142,9 @@ impl Machine<'_, '_>
 /// - requires: nothing.
 /// - ensures: success for a held or received value named by a branch.
 /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Captured`]
-///   for an endpoint and [`LinearityDefect::ContinuationCaptured`] for a
-///   clause's continuation; [`CheckRefusal::Access`] naming
+///   for an endpoint, [`LinearityDefect::ContinuationCaptured`] for a clause's
+///   continuation and [`LinearityDefect::ShadowCaptured`] for a linear
+///   parameter's copy; [`CheckRefusal::Access`] naming
 ///   [`AccessDefect::HeldCaptured`] for a held or received value and
 ///   [`AccessDefect::Escaped`] for a view, each at `node` with `by`.
 /// - panics: none.
@@ -3749,7 +4161,7 @@ impl Machine<'_, '_>
 /// - witness: `judgement::session::tests::a_buffer_capability_or_continuation_capture_is_refused_by_its_name`
 #[spec(ensures: |ret| match (resident, ret) {
     | (Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }, Ok(())) => by == Capture::Branch,
-    | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } | Resident::Continuation { .. }, Ok(())) => false,
+    | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } | Resident::Continuation { .. } | Resident::Supply { .. }, Ok(())) => false,
     | (_, Err(_)) => true,
 })]
 fn captured(
@@ -3789,6 +4201,10 @@ fn captured(
         Resident::Continuation { clause } => Err(CheckRefusal::Linearity {
             at: node,
             defect: LinearityDefect::ContinuationCaptured { clause, by },
+        }),
+        Resident::Supply { lambda } => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::ShadowCaptured { lambda, by },
         }),
     }
 }

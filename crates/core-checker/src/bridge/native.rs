@@ -179,6 +179,7 @@ impl Erasure<'_, '_>
                     | Computation::Ride { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Lambda(_)
+                    | Computation::LinearLambda(_)
                     | Computation::Fixpoint { .. }
                     | Computation::Application(..)
                     | Computation::Return(_)
@@ -278,6 +279,7 @@ impl Erasure<'_, '_>
                     gandr_core_term::CompType::Returner { .. }
                     | gandr_core_term::CompType::Arrow { .. }
                     | gandr_core_term::CompType::Pi { .. }
+                    | gandr_core_term::CompType::LinearArrow { .. }
                     | gandr_core_term::CompType::Element { .. }
                     | gandr_core_term::CompType::Unknown => return Err(Refusal::MachineInvariant),
                 }
@@ -526,6 +528,7 @@ impl Erasure<'_, '_>
                     | Computation::Ride { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Lambda(_)
+                    | Computation::LinearLambda(_)
                     | Computation::Fixpoint { .. }
                     | Computation::Application(..)
                     | Computation::Return(_)
@@ -691,6 +694,7 @@ impl Erasure<'_, '_>
                     gandr_core_term::CompType::Returner { .. }
                     | gandr_core_term::CompType::Arrow { .. }
                     | gandr_core_term::CompType::Pi { .. }
+                    | gandr_core_term::CompType::LinearArrow { .. }
                     | gandr_core_term::CompType::Element { .. }
                     | gandr_core_term::CompType::Unknown => return Err(Refusal::MachineInvariant),
                 };

@@ -1185,6 +1185,7 @@ fn decimal_reader(
                     gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, argument),
                 ),
                 CompTypeView::Returner { .. }
+                | CompTypeView::LinearArrow { .. }
                 | CompTypeView::Returns { .. }
                 | CompTypeView::Element { .. }
                 | CompTypeView::With(..)
@@ -1364,6 +1365,7 @@ fn kept_reader(
                 )
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::LinearArrow { .. }
             | CompTypeView::Returns { .. }
             | CompTypeView::Element { .. }
             | CompTypeView::With(..)
@@ -2685,6 +2687,23 @@ fn convert(
                         pending.push(values(right_domain, left_domain));
                         true
                     },
+                    (
+                        CompTypeView::LinearArrow {
+                            domain: left_domain,
+                            multiplicity: left_multiplicity,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::LinearArrow {
+                            domain: right_domain,
+                            multiplicity: right_multiplicity,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(Pairing::Terms(left_multiplicity, right_multiplicity));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
                     // A dependent arrow whose codomain ignores its binder is
                     // the plain arrow over the same children (#577): the
                     // arrow's codomain, read under the dependent arrow's
@@ -2762,6 +2781,7 @@ fn convert(
                         | CompTypeView::With(..)
                         | CompTypeView::Arrow { .. }
                         | CompTypeView::Pi { .. }
+                        | CompTypeView::LinearArrow { .. }
                         | CompTypeView::Element { .. }
                         | CompTypeView::Codata { .. },
                         _,
@@ -3320,6 +3340,7 @@ fn comp_head(
         | CompTypeView::Returns { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
+        | CompTypeView::LinearArrow { .. }
         | CompTypeView::Codata { .. }
         | CompTypeView::Unknown => Ok(side),
     }
@@ -3592,8 +3613,18 @@ fn relocated_comps(
             comp_type_view(arena, left.node())?,
             comp_type_view(arena, right.node())?,
         ) {
-            (CompTypeView::Element { .. } | CompTypeView::Codata { .. }, _)
-            | (_, CompTypeView::Element { .. } | CompTypeView::Codata { .. }) => {
+            (
+                CompTypeView::Element { .. }
+                | CompTypeView::Codata { .. }
+                | CompTypeView::LinearArrow { .. },
+                _,
+            )
+            | (
+                _,
+                CompTypeView::Element { .. }
+                | CompTypeView::Codata { .. }
+                | CompTypeView::LinearArrow { .. },
+            ) => {
                 return Ok(Maybe::Absent(through::Absent::Unread));
             },
             (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => Read::Pushed,

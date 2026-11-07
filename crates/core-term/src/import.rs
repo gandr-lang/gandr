@@ -254,6 +254,7 @@ impl Image
             )
             | Self::Computation(
                 Computation::Lambda(ref mut body)
+                | Computation::LinearLambda(ref mut body)
                 | Computation::Fixpoint { ref mut body, .. }
                 | Computation::Reset(ref mut body)
                 | Computation::Shift(ref mut body)
@@ -466,6 +467,17 @@ impl Image
                     ref mut codomain,
                 },
             ) => [Some(VT(domain)), Some(CT(codomain)), None, None, None],
+            Self::CompType(CompType::LinearArrow {
+                ref mut domain,
+                ref mut multiplicity,
+                ref mut codomain,
+            }) => [
+                Some(VT(domain)),
+                Some(V(multiplicity)),
+                Some(CT(codomain)),
+                None,
+                None,
+            ],
         }
     }
 }
@@ -917,6 +929,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::Decompose(_)
                                 | Computation::TelescopeTransport { .. }
                                 | Computation::Lambda(_)
+                                | Computation::LinearLambda(_)
                                 | Computation::Fixpoint { .. }
                                 | Computation::Application(..)
                                 | Computation::Return(_)
@@ -1038,6 +1051,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                             Some(
                                 &(CompType::Returner { .. }
                                 | CompType::Arrow { .. }
+                                | CompType::LinearArrow { .. }
                                 | CompType::Pi { .. }
                                 | CompType::Element { .. }
                                 | CompType::Unknown),

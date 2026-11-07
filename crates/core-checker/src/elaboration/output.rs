@@ -338,7 +338,9 @@ fn children(
             | Value::Row(_) => {},
         },
         TermNode::Computation(id) => match *arena.computation(id).ok_or(dangling)? {
-            Computation::Lambda(body) | Computation::Ascribe { body, .. } => {
+            Computation::Lambda(body)
+            | Computation::LinearLambda(body)
+            | Computation::Ascribe { body, .. } => {
                 push(TermNode::Computation(body));
             },
             Computation::Application(head, argument) => {
@@ -639,6 +641,10 @@ fn rebuild(
                 Computation::Lambda(original) => {
                     let body = computation(emitted)?;
                     (body != original).then(|| arena.computation_lambda(body))
+                },
+                Computation::LinearLambda(original) => {
+                    let body = computation(emitted)?;
+                    (body != original).then(|| arena.computation_linear_lambda(body))
                 },
                 Computation::Ascribe { body: original, ty } => {
                     let body = computation(emitted)?;

@@ -4592,6 +4592,7 @@ proptest! {
                     );
                 },
                 | Computation::Fixpoint { .. } => prop_assert!(false, "the free recipe mints no fixpoint"),
+                | Computation::LinearLambda(_) => prop_assert!(false, "the free recipe mints no linear lambda"),
                 | Computation::Primitive { .. } | Computation::Force(_) | Computation::Application(..) => {
                     let bridged = synthesised.and_then(|found| {
                         let mut tally = found.conversions();

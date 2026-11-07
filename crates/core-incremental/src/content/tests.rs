@@ -1296,6 +1296,11 @@ fn covers_preserve_every_binding_former()
         ),
         ("lambda", ContentNode::Lambda(index(1_usize)), both),
         (
+            "linear lambda",
+            ContentNode::LinearLambda(index(1_usize)),
+            both,
+        ),
+        (
             "fixpoint",
             ContentNode::Fixpoint {
                 body: index(1_usize),
@@ -1435,6 +1440,15 @@ fn covers_preserve_every_binding_former()
             ContentNode::Pi {
                 domain: index(1_usize),
                 codomain: index(2_usize),
+            },
+            both,
+        ),
+        (
+            "linear arrow",
+            ContentNode::LinearArrow {
+                domain: index(1_usize),
+                multiplicity: index(2_usize),
+                codomain: index(3_usize),
             },
             both,
         ),
