@@ -239,3 +239,8 @@ exemplar = "no newer work states Ackermann's code as the recursive use of a bije
 site = "theory-exact-reals::ackermann"
 work = "Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes"
 exemplar = "no newer work states ranking as a fold and unranking as an unfold, with the condition on the transformer that makes the unfold a bijection"
+
+[[site]]
+site = "theory-ordered-algebras"
+work = "Jeandel-2018-complete_axiomatisation_zxcalculus_clifford+t_quantum_mechanics"
+exemplar = "no newer work in the library states the matrices of the Clifford+T fragment as the matrices over D[e^{iπ/4}] = ℤ[1/√2, i], with the canonical form of an element over the dyadics"

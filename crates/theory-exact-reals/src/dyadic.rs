@@ -2163,7 +2163,8 @@ fn simplest_above_zero(
                 .map_err(|_wide| DyadicError::ExponentOutOfRange)?;
         return Ok(value.mantissa().shl(shift));
     };
-    let first = lift(low)?.add(1_u8);
+    let before = lift(low)?;
+    let first = (&before).add(1_u8);
     let last = lift(high)?.sub(1_u8);
     let (point, exponent) = match first.cmp(&last) {
         // The ends are adjacent on their grid, so the point is their
@@ -2176,9 +2177,11 @@ fn simplest_above_zero(
         ),
         Ordering::Equal => (first, exponent),
         // The integer of the range with the most trailing zeros keeps the
-        // common prefix of its ends and the first bit where they differ.
+        // common prefix of `last` and the integer before the range, and the
+        // first bit where they differ. `first` itself can be that integer, so
+        // the prefix is read against the integer before it.
         Ordering::Less => {
-            let place = usize::try_from((&first).bitxor(&last).bits().saturating_sub(1))
+            let place = usize::try_from((&before).bitxor(&last).bits().saturating_sub(1))
                 .map_err(|_wide| DyadicError::ExponentOutOfRange)?;
             ((&last).shr(place).shl(place), exponent)
         },

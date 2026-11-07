@@ -863,6 +863,46 @@ fn n_ary_products_and_sums_spell_between_their_braces()
     }
 }
 
+/// #5826: a shared type spells whole while its formers stay within the floor,
+/// and spells `?` once they pass the bound its distinct nodes set. Level `k` of
+/// the iterated pair holds `k + 1` distinct nodes and reaches `2^(k + 1) - 1`
+/// formers: level 7 reaches 255, within the floor, and level 8 reaches 511.
+#[test]
+fn a_shared_type_past_its_distinct_nodes_spells_unknown_5826()
+{
+    let mut core = CoreArena::new();
+    let mut levels = vec![core.value_type_product(&[])];
+    for _ in 0_u8 .. 8 {
+        let below = *levels.last().expect("the first level is held");
+        levels.push(core.value_type_product(&[below, below]));
+    }
+    let mut written = String::from("Unit");
+    for _ in 0_u8 .. 7 {
+        written = format!("*{{{written}, {written}}}");
+    }
+    let source = CoreSource::new(&core, &[]);
+    let level = |at: usize| {
+        Root::Type(CoreNode::ValueType(
+            levels.get(at).copied().expect("each level is held"),
+        ))
+    };
+    // The page breaks the whole level, so its text is read past the layout.
+    let (text, fidelity) = spelled(&source, level(7));
+    assert_eq!(
+        (
+            text.split_whitespace().collect::<Vec<_>>().join(" "),
+            fidelity
+        ),
+        (written, Fidelity::Faithful),
+        "a level within the floor spells whole"
+    );
+    assert_eq!(
+        spelled(&source, level(8)),
+        approximate(Written("?")),
+        "a level past the bound of its distinct nodes spells `?`"
+    );
+}
+
 /// #4835: a homed type former spells bare by default, and after the name its
 /// source records for its head otherwise, `std.list.List(Integer)`, its
 /// argument where the bare spelling writes it. A qualified head keeps the call

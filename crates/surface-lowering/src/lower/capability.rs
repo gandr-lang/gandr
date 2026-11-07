@@ -1092,13 +1092,11 @@ impl<'source> Lowerer<'_, 'source>
         let _first = self
             .instance_parameters
             .insert(entry.binder.node, (interface, region));
-        self.parameters.push(super::Parameter {
-            binder: entry.binder.node,
-            frame: bound,
-            declared: Maybe::Absent(super::stated::Absent::Instance),
-            component: None,
-            listed: super::Listed::Elsewhere,
-        });
+        self.parameters.push(super::Parameter::elsewhere(
+            entry.binder.node,
+            bound,
+            Maybe::Absent(super::stated::Absent::Instance),
+        ));
 
         Ok(Frame::Inner(bound))
     }
