@@ -23,6 +23,9 @@ The identity relations on derivations: when two derivations that fire the same c
 ## References
 
 - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — the convexity conjunct of the shift guard; the general check stays unbuilt.
+- `Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions` — exemplar: Barrett et al., LICS 2025, `arXiv:2505.20009` — Definition 37, a template as a superposition.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: a family's superposition as a reduction.
+- `vault:01a12723-951b-7183-87d8-4fbc83c6a779` — anchor: a row, one guard for each point.
 
 ## Provided features
 
@@ -37,8 +40,7 @@ The identity relations on derivations: when two derivations that fire the same c
 - `DependenceBits::decompose`, `CausalWeb::decompose`, `ModularTree`, `ModularNode`, `DecompositionRefusal`, `module_lookup`: the modular decomposition of a web, its events as a tree of independent, ordered and prime compositions that reads every pair back; a web with no prime node is series-parallel.
 - `project_flow`, `tracelet_flow`, `Flow`, `FlowThread`, `FlowEnd`, `TraceletFlow`, `FlowObstruction`, `flows_equal`, `legs_flow_equal`, `tracelets_flow_equal`, `flow_canonical`: the atomic-flow projection of a leg and of a certificate, and flow equality.
 - `match_footprint`, `MatchFootprint`, `footprint_independence`, `FootprintIndependence`, `FootprintObstruction`: the read and write footprint of one application and the polarized independence test.
-- Every walk keeps its stack on the heap: a dependence chain far longer than a small thread's stack is ordered, normalized, projected to a flow and a web, and dropped inside that thread.
-- `anti_unify_tracelets`, `GuardedTemplate`, `TemplateEntry`, `TemplateArm`, `TemplateRefusal`, `TemplateObstruction`, `InheritanceCache`, `InheritanceKey`, `InheritanceVerdict`, `TemplateLeg`, `TemplateAddress`, `ArmAddress`, `ProductionCounts`, `FamilyCostReport`, `inheritance_lookup`: the guarded template of a certificate family, emitted only below its expansion factor, its inheritance check memoized per content triple for one run, members admitted by instantiation and replay, and the family's cost with the template and without.
+- `anti_unify_tracelets`, `GuardedTemplate`, `TemplateEntry`, `TemplateArm`, `TemplateRow`, `TemplateReduction`, `TemplateRefusal`, `TemplateObstruction`, `InheritanceCache`, `InheritanceKey`, `InheritanceVerdict`, `TemplateLeg`, `TemplateAddress`, `ArmAddress`, `ProductionCounts`, `FamilyCostReport`, `inheritance_lookup`: the guarded template of a certificate family, emitted only below its expansion factor, its inheritance check memoized per content triple for one run, members admitted by instantiation and replay, the family's cost with the template and without, and the template as a reduction of its family.
 - The boundary wrappers (`CausalDepth`, `EventIndex`, `EventCount`, `EventDependence`, `EventPrecedence`, `EventConcurrency`, `SchedulePosition`, `TranspositionCount`, `ReplayLevel`, `NormalFormEquality`, `PrimMultiplicity`, `ShiftReplay`, `FlowEquality`, `FlowPortIndex`, `FlowVertexIndex`, `PeakOccurrenceIndex`, `WebVertex`, `WebVertexCount`, `WebPrecedence`, `WebIndependence`, `SliceStepCount`, `ModuleId`, `FactorIndex`, `ModuleCount`, `NodeCount`, `ExpansionFactor`, `MemberIndex`, `MemberCount`, `EntryIndex`, `GuardId`, `TripleCount`, `CacheHitCount`, `AdmissionCount`, `ReplayStepCount`, `LegStepIndex`): every count, index and verdict a public signature here crosses.
 
 ## Expected features
