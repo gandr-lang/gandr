@@ -1,17 +1,12 @@
-// A task answering its parent's request cannot reply before the request
-// arrives.
-//
-// The parent's send, the task's receipt and the task's reply form a chain.
-// The channel's web opens on a series of those three events. Only the task's
-// close commutes with the parent reading the reply.
-//
-// The parent forks the task, sends it a request and reads the reply. The
-// trace states the web the run plays on the task's channel.
-//
-// - see: `independent.gandr` — two tasks whose plays do not order each other
-// - see: #3338 — the run's trace and the web a source states for a channel
-
-// The task's protocols.
+//! `forced` has a parent ask its task before it receives the reply.
+//!
+//! The parent's send, the task's receipt and the task's reply form a chain. Only the task close commutes with the parent receipt.
+//!
+//! The annotations state the channel web. The parent forks the task, sends a request, reads the reply and closes.
+//!
+//! - see: `independent.gandr` — two tasks whose plays do not order each other
+//! - see: #3338 — the run trace and the web a source states for a channel
+// The import gives the task protocols.
 import "./task-base.gandr";
 
 /// A parent sends its task a request and reads the reply.
