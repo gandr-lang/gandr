@@ -1068,15 +1068,11 @@ where
     let seams: Vec<(A::Pos, A::Cmd)> = A::command_positions(left_cell.lhs())
         .into_iter()
         .filter(|seam| *seam != root)
-        .filter_map(|seam| match A::subterm_cmd_at(left_cell.lhs(), &seam) {
-            Maybe::Present(sub)
-                if A::root_agreement(&sub, right_cell.lhs()) == RootAgreement::May
-                    && (A::metavariables(&sub).len() != 1
-                        || A::command_positions(&sub).len() != 1) =>
-            {
+        .filter_map(|seam| match overlap_command::<A>(left_cell.lhs(), &seam) {
+            Some(sub) if A::root_agreement(&sub, right_cell.lhs()) == RootAgreement::May => {
                 Some((seam, sub))
             },
-            Maybe::Present(_) | Maybe::Absent(_) => None,
+            Some(_) | None => None,
         })
         .collect();
     if seams.is_empty() {
@@ -1100,6 +1096,28 @@ where
         }
     }
     out
+}
+
+/// The command at `at` of `term` when an overlap may stand there: a command
+/// that is no lone metavariable.
+///
+/// # Specification
+/// trivial.
+pub fn overlap_command<A>(
+    term: &A::Cmd,
+    at: &A::Pos,
+) -> Option<A::Cmd>
+where
+    A: CellAlphabet,
+{
+    match A::subterm_cmd_at(term, at) {
+        Maybe::Present(sub)
+            if A::metavariables(&sub).len() != 1 || A::command_positions(&sub).len() != 1 =>
+        {
+            Some(sub)
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => None,
+    }
 }
 
 #[cfg(test)]

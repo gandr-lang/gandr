@@ -2,7 +2,7 @@
 
 Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents, and Brown's collapsing scheme on that complex.
 
-Each certificate is a 3-cell of a coherent presentation, but the bar complex is a chain complex over the integers alone. #5884 owes the 4-cells of the critical triples, and #5962 the cells above them.
+Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces them by the 4-cells of the critical triples. The bar complex is a chain complex over the integers alone, and #5962 owes the cells above the triples.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -20,14 +20,14 @@ Each certificate is a 3-cell of a coherent presentation, but the bar complex is 
 
 **Why.** A rule system the surface admits is useful to the decision layer only once its critical pairs are resolved: joined under a certificate that can be checked, or oriented into a new rule. That is completion, and the coherence certificates it emits are the presentation's 3-cells, the evidence a later checker replays rather than trusts. Writing it once over the alphabet trait lets the same engine serve every term language that keeps the trait's laws, and its second inhabitant, a first-order toy, shows the claim is about the trait and not about one alphabet.
 
-**How.** Overlaps are single unifications at a seam, so enumeration is one pair query per ordered pair of cells. Certificates record which cell fired where, never a substitution, and replay re-matches every step against skolemized terms. Completion is one worklist loop shared by a fresh run, a supplied run and a resumed one, bounded by a step ceiling and a cell ceiling; a ceiling returns a decline carrying the pending batches. Absence and refusal are values: a step that does not happen returns `Maybe` with its reason, a refused operation returns `Result` with a typed refusal.
+**How.** The rustdoc states the mechanism: [`src/lib.rs`](src/lib.rs) for the engine as a whole, and each module for its part.
 
 ## References
 
 - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — exemplar: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — the standard resolution of a convergent presentation, which the bar complex of a first-order block builds.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the Squier frame of the presented-spaces page, which reads completion as a Morse collapse of the bar complex.
 - Kenneth S. Brown, "The Geometry of Rewriting Systems: A Proof of the Anick–Groves–Squier Theorem", in _Algorithms and Classification in Combinatorial Group Theory_, MSRI Publications 23, 1992, pages 137–163 — the collapsing scheme of the bar complex along a rewriting strategy, which `LawvereTheory` gives as a `Scheme`.
-- `Ara-2025-polygraphs_rewriting_higher_categories` — background: chapter 13, the Lawvere theory of a rewriting system.
+- `Ara-2025-polygraphs_rewriting_higher_categories` — background: chapter 13, the Lawvere theory of a rewriting system; § 7.5, a homotopy basis reduced by triple confluences.
 - `Malbos-2021-completion_operads_essential_syzygies` — background: essential branchings.
 - `Doré-2023-computing_spaces_type_theory` — background: § 3.4, a matching as a function.
 
@@ -44,16 +44,18 @@ Each certificate is a 3-cell of a coherent presentation, but the bar complex is 
 - `complete_with_overlap_source`, `Overlap::from_supplied_confluence`, `SuppliedOverlapError`: the supplied-overlap seam and its typed declines.
 - `join_critical_pairs`, `Joinability`, `PairJoining`: the joinability check with no derivation, and its resumption over a store grown by appended cells, which decides no joined pair again.
 - `PairScheme`, `PairClass`, `NoScheme`, `PairJoining::resume_with`, `PairJoining::take_composites`: the class of each pair before the joining decides it, a composite pair's join skipped and its witness kept, and the scheme that classes no pair.
+- `Basis`, `BasisCell`, `Composite`, `Witness`, `Fill`, `Homotopy`, `Move`, `RewritePath`, `PathStep`, `Sense`, `BasisFault`, `BasisRefusal`: the homotopy basis reduced by its critical triples, as [`basis`](src/basis.rs) states.
 - `CompositePair`, `CompositeRefusal`: a skipped pair with the redex below its seam, and the replay that checks the redex and refuses a forged witness by name.
 - `LawvereTheory`, `TermTable`, `TermNode`, `TermHead`, `root_rewrite`: the Lawvere theory of a first-order block that the caller states, with its terms interned once and its normal forms innermost first within a `NormalizationBudget`.
 - `BarCell`, `Arrow`, `Degeneracy`, `BarBound`, `Truncation`, `truncated`, `LawvereError`: the bar complex of that theory as a `Complex` of `gandr-theory-discrete-morse`, which states the faces of a cell when a caller asks, and the largest subcomplex inside a bound.
 - `Scheme` for `LawvereTheory`, `LawvereTheory::overlapping`, `overlapped`, `TermTable::generator`: Brown's collapsing scheme on that bar complex as a `Scheme` of `gandr-theory-discrete-morse`, along the leftmost innermost redex, and the second rule of each essential overlap.
-- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `RulePlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
+- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `TripleIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `StepPlace`, `MovePlace`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `RulePlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
 
 ## Expected features
 
 - **An alphabet keeping the inhabitant laws.** The engine spends the three laws the substrate's `CellAlphabet` states and no type can check — a match substituted into its pattern reproduces the matched term, a successful match binds every metavariable the pattern names, a read and a splice at one position agree — and the trait's position and splice clauses: disjoint positions address disjoint subtrees, and a splice changes nothing but its position. An alphabet breaking one gets wrong answers rather than refusals.
 - **Stores sized for rule sets.** Enumeration is quadratic in the store, and completion re-enumerates the whole store after each derived cell; both are sized for presentations a surface declares, not for stores of thousands of cells.
+- **Linear cells for the basis.** `Basis` refuses a cell that copies or erases a variable.
 
 ## Examples
 
@@ -148,6 +150,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Completion and supplied overlaps | [`completion`](src/completion.rs) |
 | The bar complex of a block's Lawvere theory | [`lawvere`](src/lawvere.rs) |
 | Brown's collapsing scheme on that bar complex | [`brown`](src/lawvere/brown.rs) |
+| The homotopy basis, its composites and its reduction | [`basis`](src/basis.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | Executable specifications, references | [`src/lib.rs`](src/lib.rs) |
 

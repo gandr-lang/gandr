@@ -33,6 +33,7 @@ CREATE TABLE reference(
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-dispatcher','cells::fusion','newest','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-driver','','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','ac8eb7332069b7a14b305c1cb8560db64e423b31');
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','theory-ordered-algebras','','dependency','6ac5e25f30e5d98caed7a3aa40a0e9716b3595c5','2026-11-07','f3a5c644a24d2aa271da3450ba19bc89e4317451');
+INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','basis','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','equivalence','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','4c8eb1aafce719d82b019284db472cfe6da9f63c','2026-11-07','3262a443d8f7d07b1986da7072c8db764d8c7c47');
@@ -64,12 +65,13 @@ INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstrac
 INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_laplacian','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
 INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-core','levels','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','b4d5d86272f0c379e8626491b800d6a720394e35');
 INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-strata','poset','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','63cf51119ea5e8cbfa160672f287983114665a83');
+INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','basis','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere::brown','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','triple','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','surface-dispatcher','cells::fusion','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
-INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-cell-complexes','alphabet','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','8987509bb5ddbb7c61740ca2c9fa2cabc953ab1c');
+INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-cell-complexes','alphabet','newest','4932b17daeb4a275c0daef9c897b1675b3db7053','2026-11-07','bf6997119a02467715b6559415cec8dcf840a52a');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-deep-inference','shift','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','6bc30c8da526d378521d82a4fbbbe26219b64de2');
 INSERT INTO reference VALUES('Hansen-2020-laplacians_cellular_sheaves_theory_applications','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
