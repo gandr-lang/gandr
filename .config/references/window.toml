@@ -179,3 +179,13 @@ subject = "pathological/identity"
 
 [[corpus]]
 subject = "pathological/sessions"
+
+[[site]]
+site = "theory-cellular-sheaves::reduce"
+work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
+exemplar = "no newer work states the reduction of a cellular sheaf along a matching whose maps are invertible, with the cohomology that it keeps"
+
+[[site]]
+site = "theory-discrete-morse::reduct"
+work = "Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology"
+exemplar = "no newer work states the reduct of a complex along a matching whose pairs are invertible, with the boundary that its gradient paths give"

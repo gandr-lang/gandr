@@ -1,14 +1,16 @@
-// A constructor written in a field of another takes its classifier from the
-// field: the field's declared type, with the family's parameters and the
-// fields before it replaced by what the constructor around it is written
-// with. A nested list then needs no annotation.
+// Fields classify nested constructors.
+//
+// A field's declared type determines its constructor.
+// Earlier fields instantiate later field types.
+//
+// A nested list then needs no annotation.
 //
 // - see: #1171 — `mistyped`
 
 // The lists.
 import "./data-base.gandr";
 
-/// A representation holding its bytes as a list of integers.
+/// A representation stores bytes in an integer list.
 data Repr : Type where
   | Inline : (s : List Integer) --> Repr
 

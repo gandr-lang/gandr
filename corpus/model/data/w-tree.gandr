@@ -1,25 +1,25 @@
-//! Well-founded trees branching through a function, after Martin-Löf's W-types.
-//! A node holds a function from a type of branches to its subtrees, so the
-//! family occurs to the right of an arrow, never to its left: strictly
-//! positive. A fold reaches each subtree by applying that function and recurses
-//! on the result, one stage below the node it came from
-//! [MartinLof-1982-constructive_mathematics_and_computer_programming].
+//! A well-founded tree has a branching function.
+//!
+//! A node maps each branch to a subtree.
+//! The family occurs to the right of that arrow.
+//!
+//! `size` applies the function to each branch.
+//! It recurses one stage below the node.
 //!
 //! - cites: [MartinLof-1982-constructive_mathematics_and_computer_programming]
 //!
 //! [MartinLof-1982-constructive_mathematics_and_computer_programming]: https://doi.org/10.1016/S0049-237X(09)70189-2 "Martin-Löf, Constructive Mathematics and Computer Programming"
 
-// The naturals the fold counts in, their addition, and the two branches.
+// This source uses naturals for fold counts and `Two` for branches.
 import "./data-base.gandr";
 
-/// Binary trees with the branching written as a function: a node picks its
-/// subtree at each branch.
+/// A `Tree` node maps each branch to a subtree.
 data Tree : Type where
   | Leaf : Tree
   | Node : (f : Two -> Tree) --> Tree
 
-/// The number of leaves: each subtree is reached through `f` and counted one
-/// stage below the node.
+/// `size` applies a node function to each branch.
+/// It counts each subtree one stage below that node.
 def rec size(t : Tree) -> Nat =
   match t where
     | Leaf => Succ Zero
@@ -38,10 +38,10 @@ def cherry : Tree = Node leaves;
 /// A node whose left branch is a cherry and whose right is a leaf.
 def lopsided : Tree = Node (fun (x) { match x -> -F Tree { | L => cherry | R => Leaf } });
 
-/// The cherry's two leaves, counted through its function.
+/// `cherry_leaves` counts two leaves through its function.
 @[ runs("Succ (Succ Zero)") ]
 def cherry_leaves : () -> Nat = size cherry;
 
-/// Three leaves, the left two reached through two functions.
+/// `deeper` counts three leaves through two functions.
 @[ runs("Succ (Succ (Succ Zero))") ]
 def deeper : () -> Nat = size lopsided;

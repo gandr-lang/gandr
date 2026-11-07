@@ -1,7 +1,10 @@
-//! A recursive call nested in the constructor an arm returns: `S(S(dbl[<](x)))`
-//! is sugar for running the call, then returning the constructors over its
-//! value. Each fold respects the integers' rules, so it is defined on the
-//! quotient [Altenkirch-2018-quotient_inductive_inductive_types].
+//! Recursive calls can nest under constructor results.
+//!
+//! The elaborator expands `S(S(dbl[<](x)))` into a `run`.
+//! The constructors then receive the call's value.
+//!
+//! Each fold respects the integers' rules.
+//! It therefore defines an operation on the quotient.
 //!
 //! - cites: [Altenkirch-2018-quotient_inductive_inductive_types]
 //!
@@ -10,24 +13,24 @@
 // The presented integers.
 import "./data-base.gandr";
 
-/// Doubling: each successor and each predecessor written twice.
+/// `dbl` repeats each successor and predecessor.
 def rec dbl(n : Int) -> Int =
   match n where
     | Z => Z
     | S(x) => S (S (dbl[<] x))
     | P(x) => P (P (dbl[<] x))
 
-/// Negation: successors and predecessors swapped.
+/// Negation exchanges successors and predecessors.
 def rec neg(n : Int) -> Int =
   match n where
     | Z => Z
     | S(x) => P (neg[<] x)
     | P(x) => S (neg[<] x)
 
-/// Two doubled.
+/// This example evaluates double two.
 @[ runs("S (S (S (S Z)))") ]
 def doubled : () -> Int = dbl (S (S Z));
 
-/// Two negated.
+/// This example evaluates the negation of two.
 @[ runs("P (P Z)") ]
 def negated : () -> Int = neg (S (S Z));

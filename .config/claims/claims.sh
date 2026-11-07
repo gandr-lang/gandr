@@ -21,7 +21,9 @@
 set -euo pipefail
 mode=${1:?usage: claims.sh merged|sweep [--dry-run]}
 dry=${2:-}
-repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../gh/repo.bash"
+repo=$(repo_name)
 here=$(dirname "${BASH_SOURCE[0]}")
 label=status:claimed
 

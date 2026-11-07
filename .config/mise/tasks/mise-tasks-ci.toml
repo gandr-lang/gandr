@@ -1694,7 +1694,9 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # through a rebase that resolved a conflict. The patches changed. Such a
 # branch has landed when each commit `git cherry` lists has its subject on
 # origin/main. It has also landed when one merged pull request of the branch
-# holds each subject main lacks. The worktree goes by `wt remove -D` (#4227).
+# holds each subject main lacks. The sweep reads those pull requests for all
+# its branches in one query, and the common git directory keeps each answer
+# (`merged_pulls`, #5839). The worktree goes by `wt remove -D` (#4227).
 # A fast-forward of main can carry an equal patch of each commit under a new
 # hash (#5030). `git cherry` then lists no `+` line. The branch has landed
 # when `git rev-list origin/main..<head>` counts above zero. That worktree
@@ -1775,12 +1777,14 @@ under_tmp() {
   return 1
 }
 # One fact line per worktree, then the decisions; the primary is listed
-# first by Git.
+# first by Git. `asked` holds `<branch> <head>` for each branch whose merged
+# pull requests the decision needs, read in one pass after the listing.
 facts=()
 kept=()
 pruned=()
+asked=()
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null idle=false ahead=null gitdir key mark
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null idle=false ahead=null gitdir key mark
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
@@ -1789,22 +1793,13 @@ tree() {
   if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
   # A branch Worktrunk reads unmerged. The `+` lines of `git cherry` are
   # read by subject. `ahead` counts commits not on origin/main (#5030).
-  # Merged pull requests are read when main lacks one subject.
+  # Merged pull requests are asked about when main lacks one subject.
   if [[ -n "$branch" && $merged == false && $primary == false && $branch != wip/* ]]; then
     commits=$(own_commits "$trunk_ref" "$head")
     ahead=$(git rev-list --count "$trunk_ref..$head")
     if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null \
       && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
-      # The headlines alone, 1 GraphQL point: `gh pr list --json commits`
-      # asks for each commit's authors too, 29 points a call (#5061).
-      pulls=$(gh api graphql -F owner='{owner}' -F name='{repo}' -F head="$branch" -f query='
-        query($owner: String!, $name: String!, $head: String!) {
-          repository(owner: $owner, name: $name) {
-            pullRequests(headRefName: $head, states: MERGED, first: 10) {
-              nodes { number commits(first: 100) { nodes { commit { messageHeadline } } } }
-            }
-          }
-        }' --jq '.data.repository.pullRequests.nodes | map({number, subjects: [.commits.nodes[].commit.messageHeadline]})' 2> /dev/null) || pulls=null
+      asked+=("$branch" "$head")
     fi
   fi
   gitdir=$(sed -n 's/^gitdir: //p' "$path/.git" 2> /dev/null) || gitdir=
@@ -1834,8 +1829,8 @@ tree() {
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    --argjson commits "$commits" --argjson ahead "$ahead" --argjson pulls "${pulls:-null}" --argjson idle "$idle" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, ahead: $ahead, pulls: $pulls, idle: $idle}')")
+    --argjson commits "$commits" --argjson ahead "$ahead" --argjson idle "$idle" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, ahead: $ahead, pulls: null, idle: $idle}')")
 }
 # Delete an idle worktree's `incremental` caches, its `target/` measured
 # before and after. A clone shares its blocks with the primary worktree's
@@ -1870,6 +1865,12 @@ while IFS= read -r line; do
       ;;
   esac
 done < <(git worktree list --porcelain; echo)
+# The merged pull requests of every branch asked about, in one reading that
+# makes at most one call (#5839). Each answer goes into its branch's facts.
+if (( ${#asked[@]} > 0 )); then
+  answers=$(merged_pulls "$common/gandr-sweep" "${asked[@]}")
+  mapfile -t facts < <(printf '%s\n' "${facts[@]}" | pulls_into_facts "$answers")
+fi
 removed=0
 dry_run=${usage_dry_run:-false}
 # A detached worktree's branch reads `-`: a tab field cannot be empty.
@@ -1951,7 +1952,8 @@ flag "--remote" help="list only the remote's branches"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source .config/pr-stack/trunk.bash
 kept=$(printf '%s\n' "${kept_branches[@]}" | jq -R . | jq -cs .)
 remote=$(git ls-remote --heads origin | awk '{ sub("^refs/heads/", "", $2); print $2 }' | jq -R . | jq -cs .)
@@ -2884,7 +2886,8 @@ number=${usage_pr:?}
 [[ $number =~ ^[1-9][0-9]*$ ]] || { echo "refactor:file: expected a pull request number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$root/.config/gh/repo.bash"
+repo=$(repo_name)
 pr=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$number" -f query='
   query($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
@@ -3978,7 +3981,8 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 body=$(realpath "${usage_body:?}")
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 own=$(git branch --show-current)
 [[ -n "$own" && "$own" != "$trunk" ]] || { echo "pr:open opens the checked-out branch; check out a unit branch, not $trunk" >&2; exit 2; }
@@ -4320,7 +4324,8 @@ set -euo pipefail
 number=${usage_number:-}
 if [[ -z "$number" ]]; then number=$(gh pr view --json number --jq .number); fi
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 owner=${repo%/*}
 name=${repo#*/}
 deadline=$((SECONDS + 5400))
@@ -4615,7 +4620,8 @@ number=${usage_number:?}
 reason=${usage_reason:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ -n "${reason// }" ]] || { echo 'pr:hold needs the reason it is held' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 who='as a draft'
 if [[ "${usage_owner:-false}" == true ]]; then
   gh label create hold:owner -R "$repo" --color B60205 --description "Held by the owner: no landing queues it or the stack above it" --force > /dev/null
@@ -4654,7 +4660,8 @@ run = '''
 set -euo pipefail
 number=${usage_number:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 IFS=$'\t' read -r draft owner < <(gh pr view "$number" -R "$repo" --json isDraft,labels --jq '[.isDraft, any(.labels[]; .name == "hold:owner")] | @tsv')
 if [[ "$owner" == true ]]; then gh pr edit "$number" -R "$repo" --remove-label hold:owner > /dev/null; fi
 if [[ "$draft" == true ]]; then gh pr ready "$number" -R "$repo" > /dev/null; fi
@@ -4692,7 +4699,8 @@ number=${usage_number:?}
 timeout=${usage_timeout:-10800}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected an issue or pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 deadline=$((SECONDS + timeout))
 # The lock's key: one wait a number on a host (#4268), so a second
@@ -4824,7 +4832,8 @@ number=${usage_number:?}
 timeout=${usage_timeout:-10800}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 deadline=$((SECONDS + timeout))
 seen_queued=false
 # The head the landing trigger last ran on, and the earliest time it runs
@@ -5137,7 +5146,8 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 source .config/stall/stall.bash
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source .config/gh/repo.bash
+repo=$(repo_name)
 source .config/pr-stack/trunk.bash
 reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)") || { echo "stall:check: the reading failed" >&2; exit 2; }
 live=$(stall_liveness)
@@ -5312,7 +5322,8 @@ listen() {
     (( events_urgent == 0 )) || return 0
   done
 }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source .config/gh/repo.bash
+repo=$(repo_name)
 source .config/pr-stack/stack.bash
 required=$(required_contexts)
 trap 'drop_scratch' EXIT

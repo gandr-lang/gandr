@@ -1,17 +1,13 @@
-// A recursion handed through a higher-order function: `apply` takes its
-// function and its argument at one type parameter, and a call instantiates
-// that parameter at the argument's stage. A recursion's claim handed
-// on beside its predecessor takes the predecessor at that stage, one below its
-// own. `count`'s run waits on the machine taking a type code as an argument
-// . `applyAt` is quantified over a stage instead of a type, and a call
-// instantiates the stage from its arguments; `predAt` states that its
-// result stands at its argument's stage, which a definition with no recursion
-// otherwise opens none for; `sameAt` takes both arguments at the stage itself,
-// which a call solves from the bound each argument shows; a call may
-// supply a stage by its binder's name, `applyAt[.i = j]`, which must be the
-// stage the arguments show, and so may a use passing the function as
-// a value, which stands as that call. What refuses is in
-// `../../pathological/data/sized-higher-order.gandr`.
+// Higher-order calls preserve recursive stages.
+//
+// `apply` uses one type parameter for its function and argument.
+// A call instantiates that parameter at its argument's stage.
+//
+// `applyAt` quantifies over a stage.
+// `predAt` returns at its argument's stage.
+// `sameAt` accepts both arguments at one stage.
+// A named stage must agree with the arguments.
+// A higher-order use preserves its supplied stage.
 //
 // - see: #393
 // - see: #452
@@ -20,50 +16,46 @@
 // - see: #1498 — `passedAt`
 // - see: #2373 — `predAt`, `boundedAt`
 // - see: #1241 — `boundedHelped`
+// - see: `../../pathological/data/sized-higher-order.gandr`
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr";
 
-/// A function applied to an argument, both at one type parameter.
+/// This function applies a function and argument at one type parameter.
 pub def apply(a : Type, b : Type, f : a -> b, x : a) -> b =
   f x
 
-/// A number rebuilt, each predecessor counted through `apply`: the call
-/// instantiates `apply`'s parameter at the predecessor's stage, so `count[<]`
-/// takes it.
+/// `count` rebuilds a number through `apply` at the predecessor's stage.
+/// `count[<]` receives the predecessor.
 def rec count(n : Nat) -> Nat =
   match n where
     | Zero => Zero
     | Succ(p) => Succ (apply Nat Nat count[<] p)
 
-/// A function applied to a number below a stage `i`, which a call
-/// instantiates at the stage its arguments show.
+/// This function applies a function at a stage inferred from its arguments.
 pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat =
   f x
 
-/// A number rebuilt, each predecessor handed through `applyAt`: the
-/// predecessor stands one below the recursion's stage, so the call
-/// instantiates `i` at that stage and `helped[<]` takes the predecessor.
+/// `helped` rebuilds a number through `applyAt` at the predecessor's stage.
+/// `helped[<]` receives the predecessor.
 def rec helped(n : Nat) -> Nat =
   match n where
     | Zero => Zero
     | Succ(p) => Succ (applyAt helped[<] p)
 
-/// Two rebuilt through `applyAt`.
+/// `helpedTwo` evaluates two through `applyAt`.
 @[ runs("Succ (Succ Zero)") ]
 def helpedTwo : () -> Nat = helped (Succ (Succ Zero));
 
-/// The predecessor of a number at a stage `i`, zero's its own: the result
-/// stands at `i` too, as the signature states, the returner inserted over the
-/// staged type and never over its base.
+/// `predAt` computes a predecessor at stage `i` and returns zero for zero.
+/// Its result stays at stage `i`.
 pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
   match n where
     | Zero => Zero
     | Succ(p) => p
 
-/// Half a number, rounded up, recursing on its predecessor's predecessor read
-/// through `predAt`: the call instantiates `i` at the field's stage, below the
-/// recursion's, and the result stands there for `halvedAt[<]` to take.
+/// `halvedAt` computes a ceiling half through `predAt` at the predecessor's stage.
+/// `halvedAt[<]` receives that result.
 def rec halvedAt(n : Nat) -> Nat =
   match n where
     | Zero => Zero
@@ -73,49 +65,39 @@ def rec halvedAt(n : Nat) -> Nat =
 @[ runs("Succ (Succ Zero)") ]
 def halvedAtFour : () -> Nat = halvedAt (Succ three);
 
-/// A number below a stage `j` handed back, the stage `k` it stands at bounded
-/// below `j`: the result stands below `j`, as the body was checked with `k`
-/// there; written without its returner, as `predAt`'s is.
+/// `boundedAt` returns a number below stage `j` without a returner.
+/// Its input stage `k` is below `j`.
 pub def boundedAt[j : Size, k : Size, k < j](x : Nat[j], y : Nat[k]) -> Nat[< j] =
   y
 
-/// A number rebuilt, each predecessor read back through `boundedAt`: the call
-/// reads `j` at the number's stage and `k` at the predecessor's, below it, so
-/// the result stands below the number and `boundedHelped[<]` takes it. A call
-/// whose `k` is not below its `j` is refused in
-/// `../../pathological/data/sized-higher-order.gandr`.
+/// `boundedHelped` rebuilds a number from its predecessor stages.
+/// It reads `j` at the number and `k` at its predecessor.
 def rec boundedHelped(n : Nat) -> Nat =
   match n where
     | Zero => Zero
     | Succ(p) => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
 
-/// Two rebuilt through `boundedAt`.
+/// `boundedTwo` evaluates two through `boundedAt`.
 @[ runs("Succ (Succ Zero)") ]
 def boundedTwo : () -> Nat = boundedHelped (Succ (Succ Zero));
 
-/// A function applied to a number at a stage `i` itself, not below it.
+/// `sameAt` applies a function and number at the same stage.
 pub def sameAt[i : Size](f : Nat[i] -> Nat, x : Nat[i]) -> Nat =
   f x
 
-/// A number rebuilt, each predecessor handed through `sameAt` beside the
-/// recursion's claim: the claim's domain bounds `i` from above, one below the
-/// number's stage, and the predecessor from below at its own, which fits
-/// there, so the call solves `i` at the predecessor's stage. A call whose
-/// arguments no stage fits is refused in
-/// `../../pathological/data/sized-higher-order.gandr`.
+/// `agreed` rebuilds a number.
+/// It calls `sameAt` at the predecessor's stage.
 def rec agreed(n : Nat) -> Nat =
   match n where
     | Zero => Zero
     | Succ(p) => Succ (sameAt agreed[<] p)
 
-/// Two rebuilt through `sameAt`.
+/// `agreedTwo` evaluates two through `sameAt`.
 @[ runs("Succ (Succ Zero)") ]
 def agreedTwo : () -> Nat = agreed (Succ (Succ Zero));
 
-/// A function applied to a number below a stage `j` through `applyAt`, its
-/// stage supplied by name: the arguments show `i` at `j`, the stage the
-/// supply states. A supply the arguments do not show is refused in
-/// `../../pathological/data/sized-higher-order.gandr`.
+/// `appliedAt` applies a function at the named stage `j`.
+/// Its arguments determine `i` at stage `j`.
 def appliedAt[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
   applyAt[.i = j] f x
 

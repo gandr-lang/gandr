@@ -790,7 +790,9 @@ fn exported(
 /// directory directly under `model` that holds them. A lemma two sources
 /// need is written in the one that owns it and imported by the other, so
 /// a second declaration of a name a sibling exports is refused here by
-/// name (#436).
+/// name (#436). A program's entry `main` is not a lemma: `gandr run` enters
+/// each source at its own `main`, and no sibling imports it, so it is not
+/// counted.
 #[test]
 fn no_subject_declares_a_name_twice()
 {
@@ -816,7 +818,8 @@ fn no_subject_declares_a_name_twice()
             let own = <&str>::from(text)
                 .get(usize::from(base) ..)
                 .expect("a source's own text follows its base");
-            for name in exported(&grammar, SourceText::from(own), &mut lowerings) {
+            let named = exported(&grammar, SourceText::from(own), &mut lowerings);
+            for name in named.into_iter().filter(|name| name != "main") {
                 declared
                     .entry((PathBuf::from(subject.as_os_str()), name))
                     .or_default()

@@ -14,11 +14,10 @@ trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin"
 # Each case's stub answers differently: no reading is kept between them.
 export GH_BUDGET_TTL=0
+export GH_REPO=case/case
 cat > "$work/bin/gh" << 'EOF'
 #!/usr/bin/env bash
 case "$*" in
-  "repo view --json nameWithOwner --jq .nameWithOwner") echo case/case ;;
-  "repo view case/case --json defaultBranchRef --jq .defaultBranchRef.name") echo main ;;
   "api graphql --paginate "*) ;;
   "api repos/case/case/issues/7")
     [[ $AWAIT_ISSUE != fail ]] || { echo 'gh: HTTP 502' >&2; exit 1; }

@@ -1,5 +1,8 @@
-// A parameterised data type nests inside another type's argument: a list of
-// optional integers. `Maybe` is the one `data-maybe.gandr` declares.
+// A parameterised data type can nest in a type argument.
+//
+// `sum_first` uses a list of optional integers.
+//
+// `Maybe` comes from `data-maybe.gandr`.
 //
 // - see: #1544 — `sum_first`
 
@@ -7,9 +10,8 @@ import "./data-maybe.gandr";
 // The native finite lists.
 import std.list (List);
 
-/// Binds a list of optional integers, then returns. The list is annotated
-/// where it is run as a value, and each element takes the element type,
-/// `Maybe(Integer)`, from that annotation.
+/// `sum_first` binds a list of optional integers and returns seven.
+/// Its list annotation gives each element type `Maybe(Integer)`.
 def sum_first() -> Integer =
   let items = (#[Some 1, None, Some 3] : List (Maybe Integer))
   7

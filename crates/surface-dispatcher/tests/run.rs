@@ -535,9 +535,9 @@ const ROOT_TWO: &str = "4758525001000b000000000000000100000000020000000000000000
 /// an enclosure of the square root of two no wider than `2^-64`, and writes
 /// nothing to standard error. The host declines four `Reals` operations and
 /// names each cause on standard error first: text that is not hexadecimal, a
-/// forged plan whose cut names laws the host does not register, a handle
-/// that names no plan, and a precision past the quota. Each such run is stuck
-/// at the operation, and it prints nothing.
+/// forged plan whose cut names the overtness of a domain as its laws, a
+/// handle that names no plan, and a precision past the quota. Each such run
+/// is stuck at the operation, and it prints nothing.
 #[test]
 fn a_script_encloses_the_square_root_of_two_5700()
 {
@@ -590,7 +590,7 @@ fn a_script_encloses_the_square_root_of_two_5700()
         (
             "forged",
             enclosing(&forged, "held", 64),
-            "std.reals.Eff.admit: the plan is refused at node 10: the evidence table does not register a reference",
+            "std.reals.Eff.admit: the plan is refused at node 10: a reference names an overt domain where its slot takes the laws of a cut",
         ),
         (
             "unknown",

@@ -1,17 +1,15 @@
-// Equality derived from a data type's constructors: a definition
-// written `Eq.generic(T)` is structural equality over `T`, the checker
-// judging it as any declaration. Integers and strings compare by their
-// primitives, a sum by its side, a field of `T` itself recursively and a field
-// of another such type by that type's equality, written in place.
+// Generic equality follows a data type's constructors.
 //
-// `Eq.generic.refl(T)` and `Eq.generic.sym(T)` prove that equality's laws by
-// congruence over `T`'s constructors, resting on the laws the host admits of
-// integer and string equality, so a model of `Eq` whose members are derived
-// puts `T` under `==`. A field of a sum, as `Mark`'s flag, or of `T` itself,
-// as `Peano`'s, takes a proof the derivation does not write; the refusals are
-// beside `../../pathological/data/generic-eq-refused.gandr`.
+// `Eq.generic(T)` compares values structurally.
+// `Eq.generic.refl(T)` and `Eq.generic.sym(T)` derive its laws.
+//
+// Primitive values use their own equality.
+// Sums compare their constructor side.
+// Recursive fields use their own equality.
+// Other data fields use their type's equality.
 //
 // - see: #2302
+// - see: `../../pathological/data/generic-eq-refused.gandr`
 
 /// A point in the plane.
 data Point : Type where
@@ -26,20 +24,20 @@ data Peano : Type where
 data Mark : Type where
   | Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark
 
-/// Points compared field by field.
+/// The derivation compares point fields.
 def eqPoint = Eq.generic Point;
 
 /// Every point is equal to itself under `eqPoint`.
 def reflPoint = Eq.generic.refl Point;
 
-/// Naturals compared structurally, at the type the derivation states.
+/// The derivation compares naturals structurally at its stated type.
 def eqPeano : (Peano, Peano) -> Bool = Eq.generic Peano;
 
-/// Marks compared field by field, the count and the point by their own
-/// equality.
+/// The derivation compares mark fields.
+/// It uses the count and point equalities.
 def eqMark = Eq.generic Mark;
 
-/// Points under `==`, every member derived.
+/// `EqPoint` derives every member for `Point`.
 module EqPoint : Model(Eq) with sort Carrier = Point where {
   /// Field by field.
   @[ checks ]

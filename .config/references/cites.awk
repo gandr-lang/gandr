@@ -30,7 +30,10 @@
 # the indented lines under it. A `- ` line holding the key alone, whose first
 # indented line opens with the dash, is one key line across the two: the key
 # outruns the comment width, and `cargo fmt` wraps the dash onto the next
-# line (#3171).
+# line (#3171). A `- ` line that ends in the dash after its key is one key
+# line with its first indented line too. There the key and the dash fit the
+# comment width, the role does not, and `cargo fmt` wraps the role onto the
+# next line.
 
 function site(path,    rest) {
   rest = path
@@ -161,7 +164,10 @@ corpus {
     tick = substr(rest, 1, 1) == "`" ? index(substr(rest, 2), "`") : 0
     if (tick > 1 && substr(rest, tick + 2, length(dash)) == dash) cited(substr(rest, 2, tick - 1), substr(rest, tick + 2 + length(dash)))
     else if (tick > 1 && substr(rest, tick + 2) ~ /^[[:space:]]*$/) { entry = "bare"; key = substr(rest, 2, tick - 1) }
+    else if (tick > 1 && substr(rest, tick + 2) ~ /^ —[[:space:]]*$/) { entry = "dashed"; key = substr(rest, 2, tick - 1) }
   } else if (entry == "bare" && match(text, /^[[:space:]]+— /)) {
+    cited(key, substr(text, RSTART + RLENGTH))
+  } else if (entry == "dashed" && match(text, /^[[:space:]]+/)) {
     cited(key, substr(text, RSTART + RLENGTH))
   } else if (entry != "" && text ~ /^[[:space:]]+[^[:space:]]/) {
     if (entry == "bare") entry = "legacy"

@@ -1,5 +1,5 @@
-//! The simplices of a triangle as a complex, and the schemes over it that the
-//! tests state by hand.
+//! The simplices of a triangle as a complex, the schemes over it that the
+//! tests state by hand, and the simplicial complexes of a few surfaces.
 
 use alloc::collections::BTreeMap;
 
@@ -35,6 +35,9 @@ pub const HOLLOW: [Simplex; 6] = [A, B, C, AB, AC, BC];
 
 /// The cells of the filled triangle, each after its faces.
 pub const FILLED: [Simplex; 7] = [A, B, C, AB, AC, BC, ABC];
+
+/// A fourth vertex `d`, outside the triangle.
+pub const D: Simplex = Simplex(0b1000);
 
 /// Why a test scheme refuses a cell.
 #[repr(transparent)]
@@ -111,20 +114,7 @@ impl Complex for Triangle
         faces: &mut Vec<(Simplex, Incidence)>,
     ) -> Result<(), Refused>
     {
-        if cell.0.count_ones() < 2 {
-            return Ok(());
-        }
-        let mut sign = 1_i64;
-        for bit in 0 .. u8::BITS {
-            let vertex = 1_u8.checked_shl(bit).expect("a bit of the mask");
-            if cell.0 & vertex != 0 {
-                faces.push((
-                    Simplex(cell.0 & !vertex),
-                    Incidence::from(sign.saturating_mul(self.weight)),
-                ));
-                sign = 0_i64.saturating_sub(sign);
-            }
-        }
+        push_faces(*cell, Incidence::from(self.weight), faces);
         Ok(())
     }
 }
@@ -144,5 +134,155 @@ impl Scheme for Triangle
             return Err(Refused(*cell));
         }
         Ok(self.classes.get(cell).cloned().unwrap_or(Class::Critical))
+    }
+}
+
+/// Push the faces of `cell` onto `faces`, each without one vertex, the signs
+/// alternating from plus in the order of the vertices and each times
+/// `weight`. A vertex has no face.
+///
+/// # Specification
+/// trivial.
+fn push_faces(
+    cell: Simplex,
+    weight: Incidence,
+    faces: &mut Vec<(Simplex, Incidence)>,
+)
+{
+    if cell.0.count_ones() < 2 {
+        return;
+    }
+    let mut sign = 1_i64;
+    for bit in 0 .. u8::BITS {
+        let vertex = 1_u8.checked_shl(bit).expect("a bit of the mask");
+        if cell.0 & vertex != 0 {
+            faces.push((
+                Simplex(cell.0 & !vertex),
+                Incidence::from(sign.saturating_mul(i64::from(weight))),
+            ));
+            sign = 0_i64.saturating_sub(sign);
+        }
+    }
+}
+
+/// A simplicial complex on at most eight vertices, given by its facets: each
+/// cell is a nonempty set of the vertices of one facet, and each face has the
+/// incidence of its sign.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Facets(pub Vec<Simplex>);
+
+impl Facets
+{
+    /// The boundary of the tetrahedron on `a`, `b`, `c` and `d`: a sphere.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn sphere() -> Self
+    {
+        Self(Vec::from([
+            Simplex(0b0111),
+            Simplex(0b1011),
+            Simplex(0b1101),
+            Simplex(0b1110),
+        ]))
+    }
+
+    /// The projective plane on six vertices: each edge of the complete graph
+    /// lies in two of its ten triangles.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn projective_plane() -> Self
+    {
+        Self(Vec::from([
+            Simplex(0b00_0111),
+            Simplex(0b00_1101),
+            Simplex(0b01_1001),
+            Simplex(0b11_0001),
+            Simplex(0b10_0011),
+            Simplex(0b01_0110),
+            Simplex(0b10_1100),
+            Simplex(0b01_1010),
+            Simplex(0b11_0100),
+            Simplex(0b10_1010),
+        ]))
+    }
+
+    /// The torus on seven vertices: the triangles `{i, i + 1, i + 3}` and
+    /// `{i, i + 2, i + 3}` modulo seven.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn torus() -> Self
+    {
+        let mut triangles = Vec::new();
+        for first in 0 .. 7_u32 {
+            for steps in [[0_u32, 1, 3], [0_u32, 2, 3]] {
+                let mut mask = 0_u8;
+                for step in steps {
+                    let vertex = first
+                        .checked_add(step)
+                        .and_then(|sum| sum.checked_rem(7))
+                        .expect("a vertex");
+                    mask |= 1_u8.checked_shl(vertex).expect("a vertex");
+                }
+                triangles.push(Simplex(mask));
+            }
+        }
+        Self(triangles)
+    }
+
+    /// The cells, each after its faces: by the number of vertices, and then by
+    /// mask.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn cells(&self) -> Vec<Simplex>
+    {
+        let mut cells: Vec<Simplex> = (1 ..= u8::MAX)
+            .map(Simplex)
+            .filter(|cell| self.0.iter().any(|facet| cell.0 & !facet.0 == 0))
+            .collect();
+        cells.sort_by_key(|cell| (cell.0.count_ones(), cell.0));
+        cells
+    }
+}
+
+impl Complex for Facets
+{
+    type Cell = Simplex;
+    type Fault = Refused;
+
+    /// Whether `cell` is a nonempty set of the vertices of a facet.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        &mut self,
+        cell: &Simplex,
+    ) -> Result<Standing, Refused>
+    {
+        if cell.0 != 0 && self.0.iter().any(|facet| cell.0 & !facet.0 == 0) {
+            Ok(Standing::Inside)
+        }
+        else {
+            Ok(Standing::Outside)
+        }
+    }
+
+    /// The faces of `cell`, each without one vertex, the signs alternating
+    /// from plus in the order of the vertices.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faces(
+        &mut self,
+        cell: &Simplex,
+        faces: &mut Vec<(Simplex, Incidence)>,
+    ) -> Result<(), Refused>
+    {
+        push_faces(*cell, Incidence::from(1_i64), faces);
+        Ok(())
     }
 }

@@ -5,6 +5,8 @@
 #[cfg(test)]
 mod cochains;
 #[cfg(test)]
+mod reduce;
+#[cfg(test)]
 mod sheaf;
 #[cfg(test)]
 mod towers;

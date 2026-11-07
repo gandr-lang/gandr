@@ -1,6 +1,6 @@
-// A record whose fields are functions, split by a match and each field
-// applied: one once, the other twice, the second application reading the
-// first's answer.
+// A match splits a record with function fields.
+// A match applies each field.
+// `twoSteps` applies `step` twice after `start`.
 
 /// A field bound once and applied twice.
 def twoSteps(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer =

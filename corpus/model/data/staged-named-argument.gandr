@@ -2,7 +2,10 @@
 ///
 /// It pins how the kernel unfolds a constant at a staged fixpoint's gate.
 ///
-/// `le` recurses under a case on its second parameter, so the lowering stages its fixpoint there. The fixpoint takes the first parameter as a leading argument. Called at a named value, the fixpoint sticks at its gate on the name. The checker unfolds the name there, and the kernel replays that unfolding at the staged argument, past the leading one, before the gate opens.
+/// The lowering stages `le` under its second-parameter case. Its fixpoint takes
+/// the first parameter as a leading argument. At a named value, the fixpoint
+/// stops at the gate. The checker unfolds the name there. The kernel replays
+/// this step at the staged argument before the gate opens.
 ///
 /// - see: #3387
 /// - see: #626
@@ -34,7 +37,8 @@ def oneAtMostThree : Path(le oneByName three, true) = Path.here true;
 /// Three is not at most one.
 def threeAboveOne : Path(le three oneByName, false) = Path.here false;
 
-/// Whether the first natural is at most both the second and the third; it recurses on the third.
+/// `leBoth` checks the first natural against each later natural.
+/// It recurses on the third natural.
 def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool =
   match a where
     | Zero => true

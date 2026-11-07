@@ -38,6 +38,8 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 - `complete`, `CompletionBudget`, `CompletionOutcome`, `DeclineReason`, `scheduled_confluence_batches`: budgeted completion, its decline and its resume.
 - `complete_with_overlap_source`, `Overlap::from_supplied_confluence`, `SuppliedOverlapError`: the supplied-overlap seam and its typed declines.
 - `join_critical_pairs`, `Joinability`, `PairJoining`: the joinability check with no derivation, and its resumption over a store grown by appended cells, which decides no joined pair again.
+- `PairScheme`, `PairClass`, `NoScheme`, `PairJoining::resume_with`, `PairJoining::take_composites`: the class of each pair before the joining decides it, a composite pair's join skipped and its witness kept, and the scheme that classes no pair.
+- `CompositePair`, `CompositeRefusal`: a skipped pair with the redex below its seam, and the replay that checks the redex and refuses a forged witness by name.
 - `LawvereTheory`, `TermTable`, `TermNode`, `TermHead`, `root_rewrite`: the Lawvere theory of a first-order block that the caller states, with its terms interned once and its normal forms innermost first within a `NormalizationBudget`.
 - `BarCell`, `Arrow`, `Degeneracy`, `BarBound`, `Truncation`, `truncated`, `LawvereError`: the bar complex of that theory as a `Complex` of `gandr-theory-discrete-morse`, which states the faces of a cell when a caller asks, and the largest subcomplex inside a bound.
 - `Scheme` for `LawvereTheory`, `LawvereTheory::overlapping`, `overlapped`, `TermTable::generator`: Brown's collapsing scheme on that bar complex as a `Scheme` of `gandr-theory-discrete-morse`, along the leftmost innermost redex, and the second rule of each essential overlap.

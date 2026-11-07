@@ -1,0 +1,83 @@
+[
+  {
+    "name": "#5671: three members of one server stack read its entries once",
+    "chain": [1, 2, 3],
+    "servers": { "1": 9, "2": 9, "3": 9 },
+    "entries": {
+      "9": [
+        { "number": 1, "state": "OPEN" },
+        { "number": 2, "state": "OPEN" },
+        { "number": 3, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack none; link --base main 9 1 2 3"
+  },
+  {
+    "name": "#5671: members of two server stacks read each stack's entries once",
+    "chain": [1, 2, 3],
+    "servers": { "1": 9, "2": 9, "3": 7 },
+    "entries": {
+      "9": [
+        { "number": 1, "state": "OPEN" },
+        { "number": 2, "state": "OPEN" }
+      ],
+      "7": [{ "number": 3, "state": "OPEN" }]
+    },
+    "output": "entries 2; unstack none; link --base main 9 1 2 3"
+  },
+  {
+    "name": "#5671: a stack that holds a closed member is unstacked once, and its members link as a new stack",
+    "chain": [2, 3],
+    "servers": { "2": 9, "3": 9 },
+    "entries": {
+      "9": [
+        { "number": 1, "state": "CLOSED" },
+        { "number": 2, "state": "OPEN" },
+        { "number": 3, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack 9; link --base main 2 3"
+  },
+  {
+    "name": "#5671: after the unstack a queued member keeps the stack, and the chain links into it",
+    "chain": [2, 3],
+    "servers": { "2": 9, "3": 9 },
+    "queued": [2],
+    "entries": {
+      "9": [
+        { "number": 1, "state": "CLOSED" },
+        { "number": 2, "state": "OPEN" },
+        { "number": 3, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack 9; link --base main 9 2 3"
+  },
+  {
+    "name": "#5671: with the shared reading stale after the unstack, the next member takes what the first settled and reads nothing",
+    "chain": [2, 3],
+    "servers": { "2": 9, "3": 9 },
+    "stale": true,
+    "entries": {
+      "9": [
+        { "number": 1, "state": "CLOSED" },
+        { "number": 2, "state": "OPEN" },
+        { "number": 3, "state": "OPEN" }
+      ]
+    },
+    "output": "entries 1; unstack 9; link --base main 9 2 3"
+  },
+  {
+    "name": "#5671: a chain in no stack reads no entries and links by its numbers",
+    "chain": [4, 5],
+    "servers": {},
+    "entries": {},
+    "output": "entries 0; unstack none; link --base main 4 5"
+  },
+  {
+    "name": "#3817: one pull request in no stack reads no entries and takes no link",
+    "chain": [4],
+    "servers": {},
+    "entries": {},
+    "output": "entries 0; unstack none; link none"
+  }
+]

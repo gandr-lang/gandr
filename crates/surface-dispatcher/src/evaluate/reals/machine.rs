@@ -32,8 +32,8 @@ use gandr_theory_exact_reals::Obligation;
 use gandr_theory_exact_reals::Outcome;
 use gandr_theory_exact_reals::Position;
 use gandr_theory_exact_reals::Quantum;
-use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Rounds;
+use gandr_theory_exact_reals::Stop;
 use gandr_theory_exact_reals::ValidatedPlan;
 use gandr_theory_exact_reals::check;
 use gandr_theory_exact_reals::validate;
@@ -41,17 +41,10 @@ use gandr_theory_exact_reals::validate;
 use super::Counters;
 use super::Declined;
 use super::Decoded;
+use super::Limits;
 use super::MachineHandle;
 use super::Quanta;
 use super::evidence;
-
-/// The most machines that one run holds.
-pub(super) const MACHINES: usize = 64;
-
-/// The most quanta that one `decide` runs. A quantum is one certificate step,
-/// and a step costs more as the precision of its enclosures grows, so the
-/// bound keeps one operation short.
-pub(super) const QUANTA: u64 = 1 << 10;
 
 /// What a machine knows of its root after its last quantum.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -110,6 +103,14 @@ struct Machine
     live: usize,
     /// The steps of the certificate that decides the machine, or zero.
     certificate: usize,
+    /// The quotas of the checker that replays each certificate of the machine.
+    quotas: CheckerQuotas,
+    /// The certificate steps that the checker replays for the machine.
+    replayed: usize,
+    /// The checkpoints that the machine spells.
+    checkpoints: usize,
+    /// The runs of the machine that stop at a cancellation.
+    cancellations: u64,
 }
 
 /// The machines that a run holds, each at the place that its handle names.
@@ -127,7 +128,7 @@ pub(super) struct Machines
 impl Machines
 {
     /// Mint a machine over `plan` on the two poles of its root, and run it for
-    /// `budget` quanta.
+    /// `budget` quanta under the quotas of `limits`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -153,10 +154,11 @@ impl Machines
         &mut self,
         plan: Rc<ValidatedPlan>,
         budget: Quanta,
+        limits: &Limits,
     ) -> Result<(Verdict, MachineHandle), Declined>
     {
-        if self.held.len() >= MACHINES {
-            return Err(Declined::Machines);
+        if self.held.len() >= limits.machines {
+            return Err(Declined::Machines(limits.machines));
         }
         let root = plan.plan().root().node();
         let (Ok(holds), Ok(fails)) = (
@@ -170,7 +172,7 @@ impl Machines
             Rc::clone(&plan),
             [holds, fails],
             Quantum::from(NonZeroU32::MIN),
-            CheckerQuotas::default(),
+            limits.checker,
         );
         let mut machine = Machine {
             plan,
@@ -179,6 +181,10 @@ impl Machines
             verdict: Verdict::Pending,
             live: 2,
             certificate: 0,
+            quotas: limits.checker,
+            replayed: 0,
+            checkpoints: 0,
+            cancellations: 0,
         };
         machine.advance(budget)?;
         let handle = MachineHandle(self.held.len());
@@ -223,7 +229,8 @@ impl Machines
     /// - requires: nothing.
     /// - ensures: the length of the plan as four bytes with the least
     ///   significant first, the canonical bytes of the plan, and then the
-    ///   canonical bytes of the checkpoint of the scheduler.
+    ///   canonical bytes of the checkpoint of the scheduler. The machine counts
+    ///   one more checkpoint.
     /// - fails: a handle that names no machine, a machine that is decided or
     ///   holds no live obligation, and a plan too long for its length.
     /// - panics: none.
@@ -239,11 +246,11 @@ impl Machines
     ///   to the outcome of an uninterrupted run.
     /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn checkpoint(
-        &self,
+        &mut self,
         handle: MachineHandle,
     ) -> Result<Decoded, Declined>
     {
-        let machine = self.held.get(handle.0).ok_or(Declined::NoMachine)?;
+        let machine = self.held.get_mut(handle.0).ok_or(Declined::NoMachine)?;
         if machine.live == 0 || matches!(machine.verdict, Verdict::Holds | Verdict::Fails) {
             return Err(Declined::Settled);
         }
@@ -254,17 +261,20 @@ impl Machines
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(&plan);
         bytes.extend_from_slice(checkpoint.as_ref());
+        machine.checkpoints = machine.checkpoints.saturating_add(1);
         Ok(Decoded(bytes))
     }
 
-    /// Mint a machine from the checkpoint that `bytes` hold.
+    /// Mint a machine from the checkpoint that `bytes` hold, under the quotas
+    /// of `limits`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the handle of a machine whose plan passes validation again
     ///   and whose steps replay again, each obligation a pole of the root of
     ///   that plan. Its next quanta do what the machine that wrote the
-    ///   checkpoint would do.
+    ///   checkpoint would do. The checker steps of the machine count the steps
+    ///   that the restore replays.
     /// - fails: a full table, bytes that frame no plan, a plan that the
     ///   validation pass refuses, a checkpoint that the scheduler refuses, and
     ///   an obligation that is no pole of the root, each with the table
@@ -283,10 +293,11 @@ impl Machines
     pub(super) fn restore(
         &mut self,
         bytes: &Decoded,
+        limits: &Limits,
     ) -> Result<MachineHandle, Declined>
     {
-        if self.held.len() >= MACHINES {
-            return Err(Declined::Machines);
+        if self.held.len() >= limits.machines {
+            return Err(Declined::Machines(limits.machines));
         }
         let (&length, rest) = bytes.0.split_first_chunk::<4>().ok_or(Declined::Framing)?;
         let length = usize::try_from(u32::from_le_bytes(length))
@@ -294,7 +305,7 @@ impl Machines
             .ok_or(Declined::Framing)?;
         let (plan, checkpoint) = rest.split_at_checked(length).ok_or(Declined::Framing)?;
         let plan = Rc::new(
-            validate(EncodedPlan::from(plan), &Quotas::default(), &evidence())
+            validate(EncodedPlan::from(plan), &limits.plan, &evidence())
                 .map_err(Declined::Refused)?,
         );
         let dovetail = Dovetail::resume(Rc::clone(&plan), EncodedCheckpoint::from(checkpoint))
@@ -309,6 +320,11 @@ impl Machines
         if poles.is_empty() || foreign {
             return Err(Declined::Foreign);
         }
+        let replayed = (0 .. poles.len())
+            .filter_map(|position| dovetail.written(Position::from(position)))
+            .fold(0_usize, |total, steps| {
+                total.saturating_add(usize::from(steps))
+            });
         let handle = MachineHandle(self.held.len());
         self.held.push(Machine {
             plan,
@@ -317,6 +333,10 @@ impl Machines
             poles,
             verdict: Verdict::Pending,
             certificate: 0,
+            quotas: limits.checker,
+            replayed,
+            checkpoints: 0,
+            cancellations: 0,
         });
         Ok(handle)
     }
@@ -327,7 +347,9 @@ impl Machines
     /// - requires: nothing.
     /// - ensures: the quanta that the machine spends over all its runs, the
     ///   obligations that it holds, and the steps of the certificate that
-    ///   decides it, or zero.
+    ///   decides it, or zero. Then the obligations live after its last quantum,
+    ///   no cache hits, the most pieces that a search of it holds at once, the
+    ///   checker steps, the checkpoints and the cancellations.
     /// - fails: a handle that names no machine.
     /// - panics: none.
     /// - executable: none — the clause restates the counters of the machine.
@@ -336,8 +358,8 @@ impl Machines
     /// [`Declined::NoMachine`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the exemplar's resumed machine reports the counters
-    ///   of the uninterrupted one.
+    /// - hypothesis: L3 — the exemplar's resumed machine reports the work of
+    ///   the uninterrupted one, and the exemplars report each counter.
     /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn report(
         &self,
@@ -345,13 +367,25 @@ impl Machines
     ) -> Result<Counters, Declined>
     {
         let machine = self.held.get(handle.0).ok_or(Declined::NoMachine)?;
-        let quanta = (0 .. machine.poles.len())
-            .filter_map(|position| machine.dovetail.spent(Position::from(position)))
+        let positions = || (0 .. machine.poles.len()).map(Position::from);
+        let quanta = positions()
+            .filter_map(|position| machine.dovetail.spent(position))
             .fold(0_u64, |total, spent| total.saturating_add(u64::from(spent)));
+        let regions = positions()
+            .filter_map(|position| machine.dovetail.regions(position))
+            .map(usize::from)
+            .max()
+            .unwrap_or(0);
         Ok(Counters {
             quanta,
             obligations: machine.poles.len(),
             certificate: machine.certificate,
+            frontier: machine.live,
+            hits: 0,
+            regions,
+            replayed: machine.replayed,
+            checkpoints: machine.checkpoints,
+            cancellations: machine.cancellations,
         })
     }
 }
@@ -365,7 +399,9 @@ impl Machine
     /// - requires: nothing.
     /// - ensures: a decided machine runs nothing. Otherwise the verdict is the
     ///   pole that certifies, once the checker replays its certificate to that
-    ///   pole; else the stop of the run with a pole live; else `suspended`.
+    ///   pole; else the stop of the run with a pole live; else `suspended`. A
+    ///   run that stops at a cancellation counts one, and each replay adds its
+    ///   steps to the checker steps.
     /// - fails: a certificate that the checker refuses, or one that concludes
     ///   another judgement than its pole.
     /// - panics: none.
@@ -385,11 +421,15 @@ impl Machine
         if matches!(self.verdict, Verdict::Holds | Verdict::Fails) {
             return Ok(());
         }
-        let quotas = CheckerQuotas::default();
+        let quotas = self.quotas;
         let report = self
             .dovetail
             .run(Budget::from(budget.0), Rounds::from(u64::MAX), || false);
+        if matches!(report.stop(), Stop::Cancelled) {
+            self.cancellations = self.cancellations.saturating_add(1);
+        }
         let mut decided = None;
+        let mut replayed = 0_usize;
         let mut live = 0_usize;
         let mut stopped = Verdict::Suspended;
         for (position, pole) in self.poles.iter().enumerate() {
@@ -406,7 +446,9 @@ impl Machine
                         Demand::Fails => Verdict::Fails,
                         Demand::Encloses { .. } => return Err(Declined::Mismatch),
                     };
-                    decided = Some((verdict, usize::from(certificate.step_count())));
+                    let steps = usize::from(certificate.step_count());
+                    replayed = replayed.saturating_add(steps);
+                    decided = Some((verdict, steps));
                 },
                 Some(Outcome::Pending) => {
                     live = live.saturating_add(1);
@@ -424,6 +466,7 @@ impl Machine
             }
         }
         self.live = live;
+        self.replayed = self.replayed.saturating_add(replayed);
         match decided {
             Some((verdict, steps)) => {
                 self.verdict = verdict;

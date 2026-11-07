@@ -21,18 +21,8 @@
 import std.io;
 // The exact reals' host interface.
 import std.reals;
-// The native list type.
-import std.list (List);
-
-/// The canonical bytes of the plan of `sqrt 2 < 3/2` in lowercase
-/// hexadecimal: 13 nodes in 176 bytes, the magic `GXRP` first.
-pub def belowThreeHalves : String = "4758525001000d000000000000000100000000020000000000000000000000001200000000010000000500000000000000000201000000010000000000000001120300000004000000140200000005000000120100000000000000120400000003000000130700000008000000080001000000000100000000000000010001010000000100000000000000010006000000090000000000000002ffffffff010000000000000003120a0000000b000000";
-
-/// The verdict on the open root of `plan` after at most `quanta` quanta.
-pub def decided(plan : String, quanta : Integer) -> [std.reals.Eff] String =
-  let held = std.reals.admit plan
-  let *{verdict, machine} = std.reals.decide held quanta
-  verdict
+// The subject's shared declarations: `belowThreeHalves` and `decided`.
+import "./reals-base.gandr";
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
@@ -48,7 +38,7 @@ def decidedModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[7, 2, 4]
+    | oper report(machine, k) => k #[7, 2, 4, 0, 0, 0, 4, 0, 0]
   }
 
 /// The entry: decide `sqrt 2 < 3/2` within 16 quanta, print the verdict, and

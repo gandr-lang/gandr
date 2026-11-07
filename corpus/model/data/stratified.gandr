@@ -1,24 +1,24 @@
-// Stratified families: a node may hold a function from its own family, the
-// family standing to the left of an arrow, because the constructor gives that
-// occurrence a stage strictly below the node's — Guermond and Nadathur's
-// stratification read through the accessibility of Guo, Hagens, Kop and Vale
-// . A case on a link reads its fields one stage below the link's, or at
-// a fresh stage for a link at none, so the test a link holds takes the chain
-// before it and never the link itself. What refuses is in
-// `../../pathological/data/curry.gandr`.
+// Stratified families admit lower-stage function fields.
+//
+// A `Link` holds a function from `Chain` at a lower stage.
+// A case reads each link field at a lower or fresh stage.
+//
+// A test reads the chain before its link.
+// It does not read the link itself.
 //
 // - see: #517
+// - see: `../../pathological/data/curry.gandr`
 
-// The naturals the length counts in, and the two answers a test gives.
+// This source uses naturals for lengths and `Two` for test results.
 import "./data-base.gandr";
 
-/// Chains whose every link holds the chain before it and a test of chains:
-/// `Chain` stands to the left of the test's arrow, below the link.
+/// `Chain` links each chain to its predecessor.
+/// Its test receives `Chain` at a lower stage.
 data Chain : Type where
   | Start : Chain
   | Link : (prev : Chain, test : Chain -> Two) --> Chain
 
-/// A test answering `R` of a link and `L` of the start.
+/// `linked` returns `R` for a link and `L` for the start.
 def linked(c : Chain) -> Two { match c -> -F Two { | Start => L | Link(p, t) => R } }
 
 /// Two links over the start, each holding `linked`.

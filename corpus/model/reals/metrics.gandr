@@ -1,0 +1,100 @@
+// A program reads the release metrics of the exact reals through
+// `std.reals.Eff`, the host interface of exact reals. `report` gives nine
+// counters of a machine in a fixed order. `gandr run metrics.gandr` prints
+// `the metrics hold`. The same `measured` runs under a handler of this
+// source, a second model of the interface.
+//
+// The first three counters are the work of a machine: its quanta, its
+// obligations and the steps of its certificate. The other six are the metrics
+// of the first release: the frontier, the cache hits, the regions, the checker
+// steps, the checkpoints and the cancellations. A program compares two runs
+// by them, apart from the wall time.
+//
+// The program decides `∃ x ∈ [1, 2] (3 < x · x)` within 32 quanta. Its search
+// holds at most 4 pieces at once, and the checker replays the 13 steps of its
+// certificate. The program then stops `sqrt 2 < 3/2` after one quantum, with
+// two poles live, and spells its checkpoint. The restore replays the one step
+// of the checkpoint. The host consults no cache and signals no cancellation,
+// so those counts are zero.
+//
+// - see: `corpus/model/reals/resume.gandr` — the checkpoint and the restore
+// - see: `crates/surface-dispatcher/src/evaluate/reals/machine.rs` — the
+//   counters of a machine
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+// The native list type.
+import std.list (List);
+// The subject's shared declarations: `witnessed` and `belowThreeHalves`.
+import "./reals-base.gandr";
+
+/// Whether two lists of counters are equal, place by place.
+pub def rec equal(first : List Integer, second : List Integer) -> Bool =
+  match first where
+    | #[] => match second where
+      | #[] => true
+      | _ => false
+    | #[a, ..rest] => match second where
+      | #[x, ..more] => a == x && equal[<] rest more
+      | _ => false
+
+/// Whether the reports of three machines give their counters. The machines
+/// are a search within 32 quanta, a comparison after one quantum and its
+/// checkpoint, and its restored machine.
+pub def measured(search : String, comparison : String) -> [std.reals.Eff] Bool =
+  let searched = std.reals.admit search
+  let *{found, witness} = std.reals.decide searched 32
+  let compared = std.reals.admit comparison
+  let *{early, interrupted} = std.reals.decide compared 1
+  let text = std.reals.checkpoint interrupted
+  let restored = std.reals.restore text
+  let first = std.reals.report witness
+  let second = std.reals.report interrupted
+  let third = std.reals.report restored
+  let decided = equal first #[23, 2, 13, 0, 0, 4, 13, 0, 0]
+  let held = equal second #[1, 2, 0, 2, 0, 0, 0, 1, 0]
+  let resumed = equal third #[1, 2, 0, 2, 0, 0, 1, 0, 0]
+  decided && held && resumed
+
+/// The counters of a machine under the model of this source. The model names
+/// each machine by the quanta of its `decide`, and the restored machine by 0.
+pub def counted(machine : Integer) -> List Integer =
+  let search = machine == 32
+  let first = machine == 1
+  match search {
+    | true => #[23, 2, 13, 0, 0, 4, 13, 0, 0]
+    | false => match first {
+      | true => #[1, 2, 0, 2, 0, 0, 0, 1, 0]
+      | false => #[1, 2, 0, 2, 0, 0, 1, 0, 0]
+    }
+  }
+
+/// The words for whether the metrics are those that the program expects.
+pub def outcome(held : Bool) -> String =
+  match held { | true => "the metrics hold" | false => "other metrics" }
+
+/// `measured` under a handler of this source, a second model of
+/// `std.reals.Eff` whose reports give the counters of the host.
+@[ runs("+{.0 = *{}}") ]
+def measuredModelled() -> Bool =
+  handle r : std.reals.Eff {
+    measured witnessed belowThreeHalves
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "0p0" "1p0"
+    | oper decide(asked, k) => { let *{plan, quanta} = asked; k "holds" quanta }
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k "00"
+    | oper restore(text, k) => k 0
+    | oper report(machine, k) => k (counted machine)
+  }
+
+/// The entry reads the reports of the three machines and prints whether
+/// their counters hold. It exits with 0 when they hold, and with 1 otherwise.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let held = measured witnessed belowThreeHalves
+  std.io.Console.print (outcome held)
+  match held { | true => 0 | false => 1 }

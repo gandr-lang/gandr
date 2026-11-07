@@ -1,7 +1,9 @@
-// A record whose fields depend on nothing, taken apart by position: each
-// binder is the field the record type writes in its place, as at a dependent
-// record (`sigma-pair.gandr`). Before the fix the pattern was read as the
-// split of an eager product and refused.
+// Positional patterns use a plain-record split.
+//
+// Each binder receives the field type at its position.
+// This follows dependent-record splitting.
+//
+// The parser does not read this pattern as an eager-product split.
 //
 // - see: #1874 — a plain record taken apart by position
 
@@ -14,9 +16,8 @@ def width(band : *{low : Integer, high : Integer}) -> Integer =
 @[ runs("5") ]
 def band_width : () -> Integer = width (*{low = 2, high = 7});
 
-/// The binders take the fields in the type's order whatever they are named:
-/// the first binder is `low`, though it is spelled `top`, and the second
-/// `high`.
+/// `read_as_digits` binds fields in their type order.
+/// It names `low` with `top` and `high` with `bottom`.
 def read_as_digits(band : *{low : Integer, high : Integer}) -> Integer =
   match band where
     | *{top, bottom} => top * 10 + bottom

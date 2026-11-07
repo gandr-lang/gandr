@@ -7,8 +7,8 @@
 // in lowercase hexadecimal. That text is the one form that leaves a run.
 //
 // `restore` validates the text again and mints a third machine. The program
-// steps it until it decides, and it holds. Its counters agree with those of
-// the first machine: 7 quanta, 2 obligations, and a certificate of 4 steps.
+// steps it until it decides, and it holds. Its work agrees with that of the
+// first machine: 7 quanta, 2 obligations, and a certificate of 4 steps.
 // So the certificate replays to the same steps. `gandr run resume.gandr`
 // prints `exhausted`, then `holds`, then `the same work`.
 //
@@ -22,9 +22,8 @@ import std.io;
 import std.reals;
 // The native list type.
 import std.list (List);
-
-// The plan of `sqrt 2 < 3/2`, which the uninterrupted run declares.
-import "./comparison.gandr" as comparison;
+// The subject's shared declarations: `belowThreeHalves`.
+import "./reals-base.gandr";
 
 /// Step `machine` once for each element of `fuel` until it is no longer
 /// `exhausted`, and reply its last verdict.
@@ -40,11 +39,12 @@ pub def rec settle(machine : Integer, fuel : List Integer) -> [std.reals.Eff] St
 /// Sixteen quanta of fuel.
 pub def sixteen : List Integer = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-/// Whether two lists of three counters agree, place by place.
+/// Whether two reports agree on their first three counters, place by place:
+/// the quanta, the obligations and the steps of the certificate.
 pub def agree(first : List Integer, second : List Integer) -> Bool =
   match first where
-    | #[a, b, c] => match second where
-      | #[x, y, z] => a == x && b == y && c == z
+    | #[a, b, c, .._] => match second where
+      | #[x, y, z, .._] => a == x && b == y && c == z
       | _ => false
     | _ => false
 
@@ -71,7 +71,7 @@ pub def restored(plan : String) -> [std.reals.Eff] String =
 @[ runs("\"holds\"") ]
 def restoredModelled() -> String =
   handle r : std.reals.Eff {
-    restored comparison.belowThreeHalves
+    restored belowThreeHalves
   } with {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
@@ -80,13 +80,13 @@ def restoredModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k "00"
     | oper restore(text, k) => k 1
-    | oper report(machine, k) => k #[7, 2, 4]
+    | oper report(machine, k) => k #[7, 2, 4, 0, 0, 0, 4, 0, 0]
   }
 
 /// The entry: interrupt a machine after one quantum, restore it from its
 /// checkpoint, step it to its verdict, compare its work, and exit with 0.
 def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
-  let held = std.reals.admit comparison.belowThreeHalves
+  let held = std.reals.admit belowThreeHalves
   let *{whole, uninterrupted} = std.reals.decide held 16
   let *{early, interrupted} = std.reals.decide held 1
   std.io.Console.print early

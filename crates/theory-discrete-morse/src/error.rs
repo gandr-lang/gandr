@@ -4,8 +4,9 @@ use core::fmt;
 
 use crate::collapse::Budget;
 
-/// Why a collapse gives no answer: the caller's complex refuses, or the walk
-/// of the gradient goes past its budget.
+/// Why a collapse or a reduct gives no answer: the caller's complex refuses,
+/// the walk of the gradient goes past its budget, or a sum passes the
+/// integers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MorseError<Fault>
 {
@@ -13,6 +14,8 @@ pub enum MorseError<Fault>
     Complex(Fault),
     /// The walk of the gradient reaches more redundant cells than this budget.
     PastBudget(Budget),
+    /// A sum of the reduct's incidences passes the 64-bit integers.
+    Overflow,
 }
 
 impl<Fault> From<Fault> for MorseError<Fault>
@@ -32,7 +35,8 @@ impl<Fault> fmt::Display for MorseError<Fault>
 where
     Fault: fmt::Display,
 {
-    /// Renders the refusal: the caller's fault, or the budget the walk passes.
+    /// Renders the refusal: the caller's fault, the budget the walk passes,
+    /// or the sum past the integers.
     ///
     /// # Specification
     /// trivial.
@@ -49,6 +53,7 @@ where
                 "the walk of the gradient reaches more than {} redundant cells",
                 usize::from(budget)
             ),
+            Self::Overflow => write!(f, "a sum of the reduct's incidences passes the integers"),
         }
     }
 }
@@ -66,7 +71,7 @@ where
     {
         match *self {
             Self::Complex(ref fault) => Some(fault),
-            Self::PastBudget(_) => None,
+            Self::PastBudget(_) | Self::Overflow => None,
         }
     }
 }

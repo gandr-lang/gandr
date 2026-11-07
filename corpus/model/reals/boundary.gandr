@@ -55,7 +55,7 @@ def verdictsModelled() -> String =
     | oper step(machine, k) => k "exhausted" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[256, 2, 0]
+    | oper report(machine, k) => k #[256, 2, 0, 2, 0, 0, 0, 0, 0]
   }
 
 /// The entry: print the verdicts of both comparisons, and exit with 0.

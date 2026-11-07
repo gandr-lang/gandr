@@ -1527,6 +1527,7 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
+ "allocation-counter",
  "blake3",
  "gandr-core-checker",
  "gandr-core-fork",
@@ -1858,6 +1859,7 @@ dependencies = [
 name = "gandr-theory-cellular-sheaves"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-discrete-morse",
  "gandr-theory-graded-posets",
  "gandr-theory-stone-duality",
  "quenchant-anodized",

@@ -1,9 +1,10 @@
-// A tuple of optional values: each member takes the component of the product
-// the tuple is written at, as a list's elements take its element type
-// (`data-answered-list.gandr`). `Maybe` is the one `data-maybe.gandr`
-// declares. Before the fix each constructor among the members was refused for
-// want of a stated type. A result written without its returner, `-> A * B`,
-// answers its components as `-> -F (A * B)` does.
+// Products can contain optional values.
+//
+// Each tuple member receives a product component type.
+// `Maybe` comes from `data-maybe.gandr`.
+//
+// Constructors in a product need its stated type.
+// A result with no returner has the type `-F (A * B)`.
 //
 // - see: #2255
 // - see: #1877 — a constructor among a tuple's members, typed by the product
@@ -20,8 +21,8 @@ def paired = (*{Some 1, None} : Maybe Integer * Maybe Integer);
 def answered_pair(n : Integer) -> Maybe Integer * Maybe Integer =
   *{None, Some n}
 
-/// Pairs in a list: each takes the element type, and gives its members the
-/// components.
+/// Each pair in `pair_list` receives its list element type.
+/// Its members receive product component types.
 def pair_list() -> List (Maybe Integer * Maybe Integer) =
   #[*{Some 1, None}, *{None, Some 2}]
 

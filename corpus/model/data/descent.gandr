@@ -1,30 +1,30 @@
-// Descent on the parameter a definition's matches take apart. A
-// recursive definition descends on the parameter the innermost match above
-// each of its claims scrutinises: the first one, with the accumulator after it
-// varying from call to call, or a value rebuilt from the match's fields, so
-// long as it stands below the parameter the match took apart. The parameters
-// before the staged one are passed unchanged; descent on two parameters at
-// once is the sized rung's. What refuses is in
-// `../../pathological/data/descent.gandr`.
+// A recursive definition descends through the parameter an innermost match scrutinises.
+//
+// A recursive claim can use the first parameter, an accumulator or a rebuilt
+// value below that parameter.
+//
+// Parameters before a staged parameter pass unchanged.
+// Two-parameter descent uses the sized rung.
 //
 // - see: #518
 // - see: #392
 // - see: #2127 — `reverseOnto`
 // - see: #2135 — `pairwise`
 // - see: #2833 — `isZeroAtZero`
+// - see: `../../pathological/data/descent.gandr`
 
-// The naturals and the numerals two and three.
+// This source uses naturals and the numerals two and three.
 import "./data-base.gandr";
 
-/// Addition by recursion on the first argument, the second an accumulator
-/// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
+/// `plusFirst` recurses on its first argument.
+/// Each call increments its accumulator.
 def rec plusFirst(m : Nat, n : Nat) -> Nat =
   match m where
     | Zero => n
     | Succ(p) => plusFirst[<] p (Succ n)
 
-/// Half a number, rounded down: the inner match takes apart the outer one's
-/// field, so the call on its field still descends on `n`.
+/// `half` computes the floor half with nested matches.
+/// Its recursive call descends on `n`.
 def rec half(n : Nat) -> Nat =
   match n where
     | Zero => Zero
@@ -32,8 +32,8 @@ def rec half(n : Nat) -> Nat =
       | Zero => Zero
       | Succ(q) => Succ (half[<] q)
 
-/// Fibonacci numbers: the first call rebuilds `Succ(q)` from the inner
-/// match's field, a value below `n` though not one of its fields.
+/// `fib` rebuilds `Succ(q)` from an inner field.
+/// That value is below `n`.
 def rec fib(n : Nat) -> Nat =
   match n where
     | Zero => Zero
@@ -41,17 +41,15 @@ def rec fib(n : Nat) -> Nat =
       | Zero => Succ Zero
       | Succ(q) => plusFirst (fib[<] (Succ q)) (fib[<] q)
 
-/// A list reversed onto an accumulator, the element type passed unchanged:
-/// the accumulator each call grows is a constructor written bare, its type
-/// read off the parameter it fills, the element type standing for itself.
+/// `reverseOnto` reverses a list onto an accumulator.
+/// Its element type stays unchanged as its accumulator grows.
 def rec reverseOnto(a : Type, xs : List a, acc : List a) -> List a =
   match xs where
     | Nil => acc
     | Cons(x, rest) => reverseOnto[<] a rest (Cons x acc)
 
-/// Two lists summed pairwise, a zero in the first skipped: the walk descends
-/// on `xs` and consumes `ys` alongside it, so the call under the match on
-/// `ys` still descends on `xs`, the parameter a match above it takes apart.
+/// `pairwise` sums two lists and skips zero in its first list.
+/// Each recursive call descends on `xs`.
 def rec pairwise(xs : List Integer, ys : List Integer) -> List Integer =
   match xs where
     | Nil => Nil
@@ -87,8 +85,8 @@ def sumsSkippingZero : () -> List Integer = pairwise
   (Cons 1 (Cons 0 (Cons 2 Nil)))
   (Cons 10 (Cons 20 Nil));
 
-/// A recursive definition that makes no recursive call: nothing to descend
-/// on, so it is a definition, and a type naming it unfolds at a constructor.
+/// `isZero` makes no recursive call.
+/// It unfolds at a constructor.
 def rec isZero(n : Nat) -> Type =
   match n where
     | Zero => return Unit

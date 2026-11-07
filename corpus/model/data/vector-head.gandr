@@ -1,12 +1,13 @@
-//! A case that prunes: an arm whose constructor cannot stand at the scrutinee's
-//! index is left out. Each branch of a case on an indexed family binds, past
-//! its fields, the path from the index its constructor states to the
-//! scrutinee's; a left-out arm eliminates that path, its two ends apart, which
-//! needs no rule beyond the case of no arms
-//! [Cockx-2016-unifiers_as_equivalences]. An arm whose ends are not apart
-//! cannot be left out; that is in the pathological twin.
+//! A case can omit an unreachable indexed-family arm.
+//!
+//! `vhead` has index `Succ(n)`.
+//! `VNil` has index zero.
+//!
+//! An omitted arm eliminates the path between those indices.
+//! Apart endpoints need no arm.
 //!
 //! - cites: [Cockx-2016-unifiers_as_equivalences]
+//! - see: `../../pathological/data/vector-head.gandr`
 //!
 //! [Cockx-2016-unifiers_as_equivalences]: https://doi.org/10.1145/2951913.2951917 "Cockx, Devriese and Piessens, Unifiers as equivalences"
 
@@ -16,8 +17,8 @@ import "./data-base.gandr";
 // The vectors and the vector two long.
 import "./vectors.gandr";
 
-/// The first element of a vector at least one long: `VNil` stands at zero,
-/// apart from `Succ(n)`, so its arm is left out.
+/// `vhead` reads a vector at least one element long.
+/// It omits `VNil` because zero is apart from `Succ(n)`.
 def vhead(n : Nat, v : Vec Integer (Succ n)) -> Integer =
   match v where
     | VCons(m, h, t) => h

@@ -58,9 +58,11 @@
 //! `checkpoint` spells an undecided machine and its plan in lowercase
 //! hexadecimal, and `restore` validates that text again and replies a new
 //! machine. The name is not `resume`, a keyword of the surface. `report`
-//! replies the work counters of a machine in a list: the quanta, the
-//! obligations and the steps of its certificate. Only `holds` and `fails`
-//! carry evidence, and each other outcome is a named stop, never false.
+//! replies nine work counters of a machine in a list. The first three are the
+//! quanta, the obligations and the steps of its certificate. The other six are
+//! the frontier, the cache hits, the regions, the checker steps, the
+//! checkpoints and the cancellations. Only `holds` and `fails` carry evidence,
+//! and each other outcome is a named stop, never false.
 //!
 //! Each interface lives in its API's module, as Rust's `std` places
 //! `io::Result`, and its name is its path: the module, then `Eff`. The

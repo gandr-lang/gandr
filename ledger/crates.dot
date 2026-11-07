@@ -335,6 +335,7 @@ digraph crates {
   "theory-cell-complexes" -> "theory-path-orders";
   "theory-cell-complexes" -> "theory-spec-combinators";
   "theory-cell-complexes-tools" -> "theory-cell-complexes";
+  "theory-cellular-sheaves" -> "theory-discrete-morse";
   "theory-cellular-sheaves" -> "theory-graded-posets";
   "theory-cellular-sheaves" -> "theory-stone-duality";
   "theory-circuit-algebras" -> "theory-cell-complexes";
@@ -377,6 +378,7 @@ digraph crates {
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
   "workflow-test-timing" -> "workflow-github";
+  "theory-cellular-sheaves" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-coherent-resolutions" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
@@ -390,7 +392,9 @@ digraph crates {
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
-  "surface-dispatcher" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "surface-dispatcher" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-coherent-resolutions" -> "theory-computads" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-computads" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "core-checker" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-nbe" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];

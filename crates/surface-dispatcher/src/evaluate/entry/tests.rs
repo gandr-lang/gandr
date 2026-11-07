@@ -23,6 +23,7 @@ use crate::evaluate::Evaluation;
 use crate::evaluate::Input;
 use crate::evaluate::Line;
 use crate::evaluate::Printed;
+use crate::evaluate::RealsProfile;
 use crate::evaluate::tests::listed_program;
 use crate::evaluate::tests::program;
 use crate::tests::Listed;
@@ -95,7 +96,12 @@ fn an_entry_runs_to_its_exit_status_1881()
             panic!("an entry: {source}");
         };
         assert_eq!(
-            ran.enter(entry, &arguments, &mut Captured::default(), (None, None)),
+            ran.enter(
+                entry,
+                &arguments,
+                &mut Captured::default(),
+                (None, None, RealsProfile::Default)
+            ),
             Entered::Exited(ExitStatus(wanted)),
             "{source}"
         );
@@ -107,7 +113,12 @@ fn an_entry_runs_to_its_exit_status_1881()
     };
     assert!(
         matches!(
-            goal.enter(entry, &[], &mut Captured::default(), (None, None)),
+            goal.enter(
+                entry,
+                &[],
+                &mut Captured::default(),
+                (None, None, RealsProfile::Default)
+            ),
             Entered::Ended(Evaluation::Holed { .. })
         ),
         "a goal reached ends the run short of a status, at the goal"
@@ -181,7 +192,12 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
         panic!("an entry: {source}");
     };
     assert_eq!(
-        ran.enter(entry, &[], &mut Captured::default(), (None, None)),
+        ran.enter(
+            entry,
+            &[],
+            &mut Captured::default(),
+            (None, None, RealsProfile::Default)
+        ),
         Entered::Exited(ExitStatus(2)),
         "the branch holding the hole is not taken"
     );
@@ -191,7 +207,7 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
         entry,
         &[String::from("a")],
         &mut Captured::default(),
-        (None, None),
+        (None, None, RealsProfile::Default),
     ) {
         Entered::Ended(Evaluation::Holed {
             at: Maybe::Present(span),
@@ -222,7 +238,12 @@ fn an_entry_prints_through_its_console_2279()
     };
     let mut console = Captured::default();
     assert_eq!(
-        ran.enter(entry, &[], &mut console, (None, None)),
+        ran.enter(
+            entry,
+            &[],
+            &mut console,
+            (None, None, RealsProfile::Default)
+        ),
         Entered::Exited(ExitStatus(0)),
         "the unit exits with 0"
     );
@@ -230,7 +251,12 @@ fn an_entry_prints_through_its_console_2279()
     let mut refusing = Refusing { asked: 0 };
     assert!(
         matches!(
-            ran.enter(entry, &[], &mut refusing, (None, None)),
+            ran.enter(
+                entry,
+                &[],
+                &mut refusing,
+                (None, None, RealsProfile::Default)
+            ),
             Entered::Ended(Evaluation::Stuck(_))
         ),
         "a line the console fails to write stops the run"
@@ -253,7 +279,12 @@ fn an_entry_prints_through_its_authority_2970()
     };
     let mut console = Captured::default();
     assert_eq!(
-        ran.enter(entry, &[], &mut console, (None, None)),
+        ran.enter(
+            entry,
+            &[],
+            &mut console,
+            (None, None, RealsProfile::Default)
+        ),
         Entered::Exited(ExitStatus(0)),
         "the unit exits with 0"
     );
@@ -276,7 +307,12 @@ fn an_entry_reads_and_writes_the_three_streams_2970()
     };
     let mut console = Captured::fed(alloc::vec![String::from("hello\n")]);
     assert_eq!(
-        ran.enter(entry, &[], &mut console, (None, None)),
+        ran.enter(
+            entry,
+            &[],
+            &mut console,
+            (None, None, RealsProfile::Default)
+        ),
         Entered::Exited(ExitStatus(0)),
         "the unit exits with 0"
     );

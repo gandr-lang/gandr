@@ -438,6 +438,16 @@ fn a_groups_inverse_law_completes_to_the_rules_it_derives()
                 .all(|certificate| bool::from(certificate.replay(&presented.store))),
             "every critical pair of the completed rules joins"
         );
+        assert!(
+            !certificates.composite_terms.is_empty()
+                && certificates
+                    .composite_terms
+                    .iter()
+                    .all(|pair| pair.replay(&presented.store).is_ok()),
+            "completion skips composite pairs of the completed laws, each with a witness \
+             that replays: {}",
+            certificates.composite_terms.len()
+        );
         let [ref first, ..] = *certificates.derived_terms
         else {
             panic!("a derived rule")

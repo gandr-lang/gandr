@@ -243,6 +243,8 @@ pub use entry::Entry;
 pub use entry::ExitStatus;
 pub use entry::program_entry;
 pub use hole::hole_site;
+pub use reals::RealsAdapter;
+pub use reals::RealsProfile;
 pub use worlds::Hosted;
 pub use worlds::MigrationCount;
 pub use worlds::ProgramKey;

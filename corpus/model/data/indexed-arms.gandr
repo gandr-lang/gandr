@@ -1,11 +1,13 @@
-// A case whose scrutinee no name types, a comparison bound by `run`, cased
-// on by indexed sum patterns: arms covering `.0` to `.n-1` between them
-// settle the sum they inject into, so a case on a boolean as the printer
-// writes it reads back.
+// Indexed patterns infer a case's sum.
+//
+// `run` binds a comparison before the case scrutinises it.
+// The pattern arms determine the sum injections.
+//
+// A Boolean case reads back as indexed arms.
 //
 // - see: #1169 — `open`
 
-/// One for a value below 128 and two otherwise, cased on as the boolean.
+/// This case returns one below 128 and two otherwise.
 def written(c : Integer) -> Integer =
   let small = c < 128
   match small where

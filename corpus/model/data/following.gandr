@@ -1,13 +1,15 @@
-// A result that follows its argument. A recursive definition whose
-// result is the type it recurses on, and which holds with that result at its
-// parameter's own stage — every branch returns a value no larger than the
-// argument — returns at the stage of the argument a call hands it. A recursion
-// then descends through such a call: division recurses on what subtraction
-// leaves of its dividend's predecessor, and a logarithm on half of it. A
-// definition with no recursion opens no stage, and its result follows
-// nothing. What refuses is in `../../pathological/data/following.gandr`.
+// A result can follow its argument.
+//
+// A recursive result has its parameter's type.
+// Each branch returns a value no larger than that parameter.
+//
+// A call keeps the argument's stage.
+// Division follows subtraction.
+// A logarithm takes a half at each recursive call.
+// A nonrecursive definition opens no stage.
 //
 // - see: #392
+// - see: `../../pathological/data/following.gandr`
 
 // The naturals and the numerals two and three.
 import "./data-base.gandr";
@@ -21,15 +23,15 @@ def rec minus(n : Nat, k : Nat) -> Nat =
       | Zero => Zero
       | Succ(p) => minus[<] p j
 
-/// `n` divided by `d + 1`, rounded up: what `minus` leaves of the predecessor
-/// `p` stands where `p` does, below `n`.
+/// `divided` computes the ceiling quotient of `n` by `d + 1`.
+/// `minus` provides a value below `n`.
 def rec divided(n : Nat, d : Nat) -> Nat =
   match n where
     | Zero => Zero
     | Succ(p) => { let r = minus p d; Succ (divided[<] r d) }
 
-/// Half a number, rounded up, through `minus`: one less than the field `p`
-/// stands where `p` does.
+/// `halvedUp` computes the ceiling half of `n`.
+/// Its predecessor is below `n`.
 def rec halvedUp(n : Nat) -> Nat =
   match n where
     | Zero => Zero
@@ -50,7 +52,7 @@ def difference : () -> Nat = minus three (Succ Zero);
 @[ runs("Succ (Succ Zero)") ]
 def quotient : () -> Nat = divided (Succ three) (Succ Zero);
 
-/// Half of three, rounded up: two.
+/// The ceiling half of three is two.
 @[ runs("Succ (Succ Zero)") ]
 def halvedThree : () -> Nat = halvedUp three;
 

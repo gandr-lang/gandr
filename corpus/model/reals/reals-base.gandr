@@ -1,0 +1,41 @@
+//! The declarations that the sources of the exact reals subject share. Each
+//! source that reads them imports this source.
+//!
+//! No two sources of one subject declare one name. So a declaration that two
+//! exemplars read lives here, once.
+//!
+//! A source hands the host a plan as its canonical bytes in lowercase
+//! hexadecimal, and the host replies a plan that the run holds. `decided`
+//! runs a machine on the open root of a plan, and `enclosed` asks for an
+//! enclosure of its real root.
+//!
+//! - see: `crates/surface-dispatcher/src/evaluate/reals.rs` — the host that
+//!   serves the interface
+//! - see: `crates/surface-dispatcher/tests/corpus.rs` — the rule of one name
+//!   for each subject
+
+// The exact reals' host interface.
+import std.reals;
+// The join of two strings.
+import std.string (concat);
+
+/// The canonical bytes of the plan of `sqrt 2 < 3/2` in lowercase
+/// hexadecimal: 13 nodes in 176 bytes, the magic `GXRP` first.
+pub def belowThreeHalves : String = "4758525001000d000000000000000100000000020000000000000000000000001200000000010000000500000000000000000201000000010000000000000001120300000004000000140200000005000000120100000000000000120400000003000000130700000008000000080001000000000100000000000000010001010000000100000000000000010006000000090000000000000002ffffffff010000000000000003120a0000000b000000";
+
+/// The canonical bytes of the plan of `∃ x ∈ [1, 2] (3 < x · x)` in
+/// lowercase hexadecimal: 6 nodes in 111 bytes, the magic `GXRP` first.
+pub def witnessed : String = "475852500100060000000000000020000100000000010000000000000001000101000000010000000000000001000101000000010200000002000000000100000000000000030100000000050200000002000000120100000003000000150000000004000000010000000102000000";
+
+/// The verdict on the open root of `plan` after at most `quanta` quanta.
+pub def decided(plan : String, quanta : Integer) -> [std.reals.Eff] String =
+  let held = std.reals.admit plan
+  let *{verdict, machine} = std.reals.decide held quanta
+  verdict
+
+/// The ends of an enclosure of the root of `plan` no wider than `2^-k`, the
+/// lower end first and a space between them.
+pub def enclosed(plan : String, k : Integer) -> [std.reals.Eff] String =
+  let held = std.reals.admit plan
+  let *{lower, upper} = std.reals.enclose held k
+  concat lower (concat " " upper)

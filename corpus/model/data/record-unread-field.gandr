@@ -1,7 +1,9 @@
-// A record pattern over a plain record binds a field the arm never reads:
-// the binder still answers at the field of its label, as a component of an
-// eager product does. Before the fix the unread binder answered nothing, so
-// the editor showed no type at it.
+// Record patterns bind unread fields.
+//
+// The binder keeps its label's type.
+// A product component follows the same rule.
+//
+// The editor shows the unread binder's type.
 //
 // - see: #1883 — an unread binder answering at its field
 

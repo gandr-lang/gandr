@@ -1,22 +1,19 @@
-//! Rose trees: a node holds its children, in two forms. Written directly, a
-//! node holds a `List` of nodes: the list's parameter is strictly positive, so
-//! each child stands below the node and the family declares; a measure recurses
-//! through the list's `map`, which a call instantiates at the children's stage,
-//! and a run passes `map` the children's type as a code. Written as a block, a
-//! node holds a forest and a forest is empty or a tree before a forest: the two
-//! families name each other, so they are one block, admitted as one and sharing
-//! one stage; and the two measures name each other, so they are one fixpoint
-//! over the sum of their domains, each measure that fixpoint at its own
-//! summand. A measure may take a parameter after the tree, and the fixpoint
-//! passes it on. A call through either stands one stage below the node or
-//! forest it was read from [Abel-2004-termination_checking_with_types]. What
-//! the direct form refuses is in `../../pathological/data/rose.gandr`.
+//! Rose trees use direct and mutual forms.
 //!
-//! - see: #3722 — a measure passes a parameter after the tree to its sibling,
-//!   by which `treeWeight` and `forestWeight` check
+//! `Bush` stores its children in `List`.
+//! The list parameter is strictly positive.
+//! Its measure maps over the children at a lower stage.
+//!
+//! `Rose` and `Forest` form one mutual block.
+//! Their measures share a fixpoint.
+//! The mutual measures keep a later weight parameter.
+//! Each recursive call uses a smaller tree or forest.
+//!
+//! - see: #3722 — a measure keeps a parameter in its sibling call
 //! - see: #517 — `Bush`
 //! - see: #393 — `nodes`
 //! - see: #452 — `shrub_nodes`, `grown_nodes`
+//! - see: `../../pathological/data/rose.gandr`
 //! - cites: [Abel-2004-termination_checking_with_types]
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
@@ -39,32 +36,30 @@ def sprig : Bush = Sprout (Nil : List Bush);
 /// A node over two childless nodes, written directly.
 def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush) : List Bush);
 
-/// A list of numbers, summed.
+/// This function sums a list of numbers.
 def rec sum(xs : List Nat) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => plus x (sum[<] rest)
 
-/// The nodes of a bush, its children's measured through `map`: the call
-/// instantiates `map`'s element at the children's stage, below the node's,
-/// so `nodes[<]` takes each child.
+/// `nodes` measures each `Bush` node.
+/// It maps itself over the children at a lower stage.
 def rec nodes(t : Bush) -> Nat =
   match t where
     | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
-/// A map over the tree: every node gains a childless node beside its
-/// children, each child grown through `map` at its stage.
+/// `grow` adds a childless node to each node.
+/// It maps itself over the children at their stage.
 def rec grow(t : Bush) -> Bush =
   match t where
     | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
 
-/// The shrub's three nodes, its children counted through `map` at the
-/// children's type.
+/// The check expects three nodes in `shrub`.
 @[ runs("Succ (Succ (Succ Zero))") ]
 def shrub_nodes : () -> Nat = nodes shrub;
 
-/// The shrub grown, then counted: the root gains a childless node and each
-/// of its two children gains one, six nodes in all.
+/// The check counts `shrub` after it grows to six nodes.
+/// Its root and each child gain a childless node.
 @[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
 def grown_nodes : () -> Nat = nodes (grow shrub);
 
@@ -113,8 +108,8 @@ def sapling_nodes : () -> Nat = treeSize sapling;
 @[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
 
-/// Two measures that pass a weight to each other unchanged, one block. Each
-/// descends on its first parameter, and the joint passes `k` on.
+/// These measures keep the weight `k` through mutual calls.
+/// Each measure descends on its first parameter.
 rec {
   /// The nodes of a tree, each weighing `k`.
   @[ checks ]
@@ -131,7 +126,7 @@ rec {
       | More(t, rest) => plus (treeWeight[<] t k) (forestWeight[<] rest k)
 }
 
-/// The sapling's three nodes, each weighing two.
+/// The check weighs the three sapling nodes by two.
 @[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
 def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
 

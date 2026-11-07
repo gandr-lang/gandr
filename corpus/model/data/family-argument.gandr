@@ -1,7 +1,9 @@
-// A constructor written as an argument of a data family takes the type the
-// family gives that place: its parameter, under the arguments written before
-// it. `Inl(a)` in `Tagged(Integer, String, Inl(a))` is a
-// `SumOb(Integer, String)`, so it needs no annotation.
+// Family arguments classify constructors.
+//
+// A data family gives each argument its type.
+// Earlier arguments instantiate that type.
+//
+// `Inl(a)` needs no annotation in `Tagged(Integer, String, Inl(a))`.
 //
 // - see: #421
 

@@ -1,8 +1,14 @@
 use core::cmp::Ordering;
 
+use gandr_theory_coherent_resolutions::CellApp;
+use gandr_theory_coherent_resolutions::CompositePair;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
+use gandr_theory_coherent_resolutions::Overlap;
+use gandr_theory_coherent_resolutions::PairClass;
+use gandr_theory_coherent_resolutions::PairScheme as _;
 use gandr_theory_coherent_resolutions::normalize;
 use gandr_theory_coherent_resolutions::replay_path;
+use gandr_theory_coherent_resolutions::rewrite_at;
 use gandr_theory_levitation::SurfaceSpan;
 
 use super::*;
@@ -173,69 +179,138 @@ fn positions_preserve_prefix_boundaries_and_splice_siblings()
     }
 }
 
+/// The store of `peak`, a rule whose left side is `peak`'s subterm at
+/// `seam`, and then `rules`; and the overlap of the two first rules at
+/// `seam`, whose peak is `peak`'s left side.
+///
+/// # Specification
+/// trivial.
+fn paired(
+    peak: &Cell<TermAlphabet>,
+    rules: &[&Cell<TermAlphabet>],
+    seam: &TermPos,
+) -> (CellStore<TermAlphabet>, Overlap<TermAlphabet>)
+{
+    let mut store = CellStore::new();
+    let left = store.insert(peak.clone());
+    let inner = match TermAlphabet::subterm_cmd_at(peak.lhs(), seam) {
+        Maybe::Present(subterm) => Cell::new(
+            subterm,
+            peak.rhs().clone(),
+            TermOrient::Written,
+            TermProv::SurfaceRule,
+        ),
+        Maybe::Absent(_) => peak.clone(),
+    };
+    let right = store.insert(inner.clone());
+    for &rule in rules {
+        let _id = store.insert(rule.clone());
+    }
+    let overlap = Overlap::from_supplied_confluence(
+        (left, peak),
+        (right, &inner),
+        TermSubst::default(),
+        seam.clone(),
+    );
+    (store, overlap)
+}
+
 #[test]
-fn the_walk_below_a_position_agrees_with_the_listing()
+fn the_criterion_finds_the_listings_first_redex_below_each_position()
 {
     let x = FreeTerm::var("x");
-    let free = FreeTerm::results([
-        turn("Succ", turn("Succ", x.clone())),
-        FreeTerm::op("add", [
-            ctor("Zero", []),
-            FreeTerm::op("add", [x, ctor("Zero", [])]),
+    let zero = || ctor("Zero", []);
+    let add = |left: FreeTerm, right: FreeTerm| FreeTerm::op("add", [left, right]);
+    let nil = || FreeTerm::op("nil", []);
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let out = |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), nil()]);
+    let face =
+        |lhs: FreeTerm, rhs: FreeTerm| RuleFace::new(lhs, rhs, Vec::new(), SurfaceSpan::default());
+    // `add(y, Zero) ==> y` binds each variable once, `add(y, y) ==> y` binds
+    // `y` twice, and `nu(bind a . p) ==> p where { | a # p }` scopes `p`.
+    let linear = face_cell(&face(add(FreeTerm::var("y"), zero()), FreeTerm::var("y")));
+    let nonlinear = face_cell(&face(
+        add(FreeTerm::var("y"), FreeTerm::var("y")),
+        FreeTerm::var("y"),
+    ));
+    let collect = conditioned_cell(
+        &face(nu("a", FreeTerm::var("p")), FreeTerm::var("p")).with_fresh(alloc::vec![
+            gandr_theory_levitation::Freshness::new("a", "p")
         ]),
-    ]);
-    let term = Term::from(&free);
-    let listed = TermAlphabet::command_positions(&term);
-    let off = TermAlphabet::position_at_path(&[PositionStep::from(2_usize)]);
-    let mut below: Vec<(TermPos, Term)> = Vec::new();
-    let mut offered = Vec::new();
-    for above in listed.iter().chain([&off]) {
-        below.clear();
-        below.extend(
-            listed
-                .iter()
-                .filter(|at| TermAlphabet::position_order(above, at) == PositionOrder::Encloses)
-                .filter_map(|at| match TermAlphabet::subterm_cmd_at(&term, at) {
-                    Maybe::Present(subterm) => Some((at.clone(), subterm)),
-                    Maybe::Absent(_) => None,
-                }),
-        );
-        offered.clear();
-        assert_eq!(
-            Maybe::Absent(command_below::Absent::NoneAccepted),
-            TermAlphabet::first_command_below(&term, above, |subterm| {
-                offered.push(subterm.clone());
-                false
-            }),
-            "nothing is accepted below {above:?}"
-        );
-        assert!(
-            below
-                .iter()
-                .map(|&(_, ref subterm)| subterm)
-                .eq(offered.iter()),
-            "the subterms below {above:?}, in the listing's order"
-        );
-        for (place, &(ref at, ref subterm)) in below.iter().enumerate() {
-            let mut passes = 0_usize;
-            let found = TermAlphabet::first_command_below(&term, above, |candidate| {
-                passes += 1;
-                candidate == subterm
-            });
-            let accepted = below.get(passes.wrapping_sub(1));
-            assert!(
-                passes <= place + 1 && accepted.is_some_and(|&(_, ref first)| first == subterm),
-                "the walk stops at the first {subterm:?} below {above:?}, at or before {at:?}"
-            );
-            assert_eq!(
-                accepted.map(|&(ref first, _)| first),
-                match found {
-                    Maybe::Present(ref first) => Some(first),
-                    Maybe::Absent(_) => None,
-                },
-                "it answers where it stopped"
-            );
+    );
+    let peak = face_cell(&face(
+        FreeTerm::results([
+            turn("Succ", turn("Succ", x.clone())),
+            add(zero(), add(x, zero())),
+            add(zero(), zero()),
+            nu("c", out("c")),
+            nu("c", nu("d", out("c"))),
+        ]),
+        zero(),
+    ));
+    let reference = |store: &CellStore<TermAlphabet>,
+                     overlap: &Overlap<TermAlphabet>|
+     -> PairClass<TermAlphabet> {
+        for at in TermAlphabet::command_positions(&overlap.peak) {
+            if TermAlphabet::position_order(&overlap.seam, &at) != PositionOrder::Encloses {
+                continue;
+            }
+            for (cell, rule) in store.iter() {
+                if let Maybe::Present(_) = rewrite_at(rule, &overlap.peak, &at) {
+                    return PairClass::Composite(CellApp { cell, at });
+                }
+            }
         }
+        PairClass::Unclassed
+    };
+    let path = |steps: &[usize]| {
+        let steps: Vec<PositionStep> = steps.iter().copied().map(PositionStep::from).collect();
+        TermAlphabet::position_at_path(&steps)
+    };
+    // One criterion answers every pair, so its tables carry from one pair to
+    // the next as they do in a joining.
+    let mut criterion = CompositeCriterion::new();
+    let listed = TermAlphabet::command_positions(peak.lhs());
+    let off = path(&[7]);
+    let stores: [&[&Cell<TermAlphabet>]; 4] = [&[&linear], &[&nonlinear], &[&collect], &[
+        &nonlinear, &linear, &collect,
+    ]];
+    for rules in stores {
+        for seam in listed.iter().chain([&off]) {
+            let (store, overlap) = paired(&peak, rules, seam);
+            let class = criterion.class(&store, &overlap);
+            assert_eq!(
+                class,
+                reference(&store, &overlap),
+                "the criterion answers the listing's first redex below {seam:?}"
+            );
+            if let PairClass::Composite(ref below) = class {
+                assert_eq!(
+                    (CompositePair {
+                        overlap: overlap.clone(),
+                        below: below.clone()
+                    })
+                    .replay(&store),
+                    Ok(()),
+                    "the witness below {seam:?} replays"
+                );
+            }
+        }
+    }
+    for (rules, seam, expected) in [
+        (&[&linear][..], path(&[]), Some(path(&[2]))),
+        (&[&linear], path(&[1]), Some(path(&[1, 1]))),
+        (&[&nonlinear], path(&[1]), None),
+        (&[&nonlinear], path(&[]), Some(path(&[2]))),
+        (&[&collect], path(&[3]), None),
+        (&[&collect], path(&[]), Some(path(&[4, 0, 0]))),
+    ] {
+        let (store, overlap) = paired(&peak, rules, &seam);
+        let found = match criterion.class(&store, &overlap) {
+            PairClass::Composite(below) => Some(below.at),
+            PairClass::Unclassed => None,
+        };
+        assert_eq!(found, expected, "the first redex below {seam:?}");
     }
 }
 

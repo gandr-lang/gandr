@@ -288,6 +288,8 @@ pub use crate::evaluate::MigrationCount;
 pub use crate::evaluate::Printed;
 pub use crate::evaluate::Program;
 pub use crate::evaluate::ProgramKey;
+pub use crate::evaluate::RealsAdapter;
+pub use crate::evaluate::RealsProfile;
 pub use crate::evaluate::RunStatus;
 pub use crate::evaluate::SealedRun;
 pub use crate::evaluate::Terminal;

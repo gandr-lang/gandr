@@ -1,11 +1,13 @@
-//! An arm that hands its recursive call to another definition, unfolded at an
-//! open argument: the call is stuck at the argument's variable, and the arm
-//! goes on into the other definition's call over it. Each step states one
-//! unfolding of the recursion as a path, as an arm that returns constructors
-//! over its call converts (`nested-call-sugar.gandr`). Structural recursion
-//! unfolds only at a constructor [Abel-2004-termination_checking_with_types].
+//! A recursive arm can pass its call to another definition.
+//!
+//! An open argument keeps that call stuck.
+//! The arm continues into the other definition call.
+//!
+//! Each path states one recursive unfolding.
+//! Structural recursion unfolds at constructors.
 //!
 //! - see: #761 — `doubleStep`
+//! - see: `nested-call-sugar.gandr`
 //! - cites: [Abel-2004-termination_checking_with_types]
 //!
 //! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
@@ -17,7 +19,7 @@ import "./data-base.gandr";
 pub def plusTwo(n : Nat) -> Nat =
   Succ (Succ n)
 
-/// Doubling, its arm handing the recursive call to `plusTwo`.
+/// `double` passes its recursive call to `plusTwo`.
 pub def rec double(n : Nat) -> Nat =
   match n where
     | Zero => Zero
@@ -27,14 +29,14 @@ pub def rec double(n : Nat) -> Nat =
 @[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def doubledTwo : () -> Nat = double two;
 
-/// One step of `double` is `plusTwo` of the call, as the arm writes it.
+/// `doubleStep` states `double` with the `plusTwo` call.
 def doubleStep(n : Nat) -> Path(double (Succ n), plusTwo (double n)) =
   Path.here (plusTwo (double n))
 
-/// The same step with `plusTwo` unfolded: two successors over the call.
+/// `doubleStepUnfolded` states that call after it unfolds.
 def doubleStepUnfolded(n : Nat) -> Path(double (Succ n), Succ (Succ (double n))) =
   Path.here (Succ (Succ (double n)))
 
-/// Two steps, each arm handing its call on to `plusTwo`.
+/// `doubleTwoSteps` states two calls through `plusTwo`.
 def doubleTwoSteps(n : Nat) -> Path(double (Succ (Succ n)), plusTwo (plusTwo (double n))) =
   Path.here (plusTwo (plusTwo (double n)))

@@ -1,7 +1,12 @@
-// Dependent pairs: a record whose later entry's type reads an earlier one,
-// split by a match or selected by label or position, and a path between two
-// pairs as a path between the first components and, over it, one between
-// the second (the HoTT book, §2.7).
+// Dependent pairs let later fields read earlier fields.
+//
+// A match, label or position reads a pair field.
+//
+// A pair path has a first-component path and a second-component path over it.
+//
+// - cites: [HoTT-2013]
+//
+// [HoTT-2013]: https://homotopytypetheory.org/book "The Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 /// A family indexed by an integer, with one element at each index.
 data Ix(n : Integer) : Type where
@@ -52,10 +57,8 @@ def rebuilt(p : *{
   match p where
     | *{.n = m, .v = w} => Path.here (*{m, w})
 
-/// A record of three over a type parameter, split under a motive reading the
-/// scrutinee: each arm answers it at the pair its entries rebuild, and the
-/// rest of the record after its first entry is named by the label it starts
-/// at.
+/// `againAt` splits a three-field record under a motive that reads its scrutinee.
+/// Its arm rebuilds the record.
 def againAt(
   b : Type,
   w : *{x : b, y : b, p : Path[.A = b](x, y)}
@@ -63,8 +66,8 @@ def againAt(
   match w where
     | *{.x = u, .y = v, .p = q} => Path.here (*{u, *{v, q}})
 
-/// A record of three over a type parameter is equivalent to itself; each
-/// entry reads the ones before it on both sides.
+/// A three-field record is equivalent to itself.
+/// Every entry reads prior entries on both sides.
 def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b](x, y)} ≃ *{
   x : b,
   y : b,
@@ -78,8 +81,8 @@ def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b](x, y)} ≃ *{
     }
   }
 
-/// A record of three nests its links; a labelled pattern binds the entries it
-/// names, the later one's type reading the earlier.
+/// `middle` uses labelled binders for a three-field record.
+/// The later type reads an earlier entry.
 def middle(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Integer =
   match t where
     | *{.a = x, .c = z} => x
@@ -109,9 +112,10 @@ def tagged_around : Path(tagged, tagged) = *{
 /// Five, carried along `both` through the constant family.
 def moved() -> Integer { Path.walk (fun (s) { Integer }) both 5 }
 
-/// A later entry's type may apply the earlier one: the type printed for the
-/// pair, `Path[.A = Integer](e.0(0), 0)` at its second entry, reads back to it
-/// (#935).
+/// A later entry's type can call an earlier entry.
+/// The printed second type reads the pair.
+///
+/// - see: #935
 def calledFiber(e : *{
   cell : Integer -> Integer,
   fix : Path[.A = Integer](cell 0, 0)

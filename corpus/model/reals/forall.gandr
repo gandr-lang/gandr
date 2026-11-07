@@ -1,0 +1,54 @@
+// A program decides a compact bounded universal through `std.reals.Eff`, the
+// host interface of exact reals. The universal is `∀ x ∈ [0, 1] (x · x < 2)`.
+// `gandr run forall.gandr` prints `holds`. The same `decided` runs under a
+// handler of this source, a second model of the interface.
+//
+// The domain of the plan is the closed interval `[0, 1]`. The domain states
+// its overtness at the reference 1 and its compactness at the reference 2.
+// The universal names the compactness as its evidence, and the overtness as
+// the evidence of its dual. The host registers both references.
+//
+// `decide` mints a machine on the two poles of the root. The pole that holds
+// covers the domain with subintervals where the body holds. It certifies in
+// 5 steps, and the checker replays its certificate before the host replies
+// `holds`. The pole that fails suspends after 3 steps, so the machine spends
+// 8 quanta of its budget of 16.
+//
+// - see: `corpus/model/reals/exists.gandr` — the overt existential
+// - see: `crates/theory-exact-reals/src/bisection.rs` — the search of a
+//   quantifier
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+// The subject's shared declarations: `decided`.
+import "./reals-base.gandr";
+
+/// The canonical bytes of the plan of `∀ x ∈ [0, 1] (x · x < 2)` in
+/// lowercase hexadecimal: 6 nodes in 110 bytes, the magic `GXRP` first.
+pub def covered : String = "4758525001000600000000000000200001000000000000000000000000000100000000010000000000000001000101000000010200000001000000000501000000010000000201000000010000000000000001120200000003000000160000000004000000020000000101000000";
+
+/// `decided` under a handler of this source, a second model of
+/// `std.reals.Eff` that decides each root true.
+@[ runs("\"holds\"") ]
+def coveredModelled() -> String =
+  handle r : std.reals.Eff {
+    decided covered 16
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "0p0" "1p0"
+    | oper decide(asked, k) => k "holds" 0
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k ""
+    | oper restore(text, k) => k 0
+    | oper report(machine, k) => k #[0, 0, 0, 0, 0, 0, 0, 0, 0]
+  }
+
+/// The entry: decide the universal within 16 quanta, print the verdict,
+/// and exit with 0.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let verdict = decided covered 16
+  std.io.Console.print verdict
+  0

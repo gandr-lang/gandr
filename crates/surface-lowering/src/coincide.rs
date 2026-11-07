@@ -112,6 +112,15 @@
 //! `coincide::tests::the_circles_cancellations_join_below_the_root`,
 //! `coincide::tests::a_third_cancellation_parts_the_circles_readings`.
 //!
+//! Completion asks the composite criterion for the class of each pair of
+//! this reading before it joins the pair (`CompositeCriterion`). A pair whose
+//! peak holds a redex strictly below its seam is composite, and completion
+//! skips its join. The block's certificates keep the redex as the pair's
+//! witness ([`Certificates::composite_terms`]), and the witness replays over
+//! the term store as a certificate does. The sequent reading takes no class:
+//! it fires a cell only at the root of a command, so the criterion's argument
+//! does not hold there.
+//!
 //! A `theory` block's laws over unindexed sorts take the same road where one
 //! applies an operation where an argument stands: the circle's shape,
 //! `turn(unturn(x)) ==> x` and `unturn(turn(x)) ==> x` over the operations
@@ -169,15 +178,19 @@ use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_coherent_resolutions::CellApp;
+use gandr_theory_coherent_resolutions::CompositePair;
 use gandr_theory_coherent_resolutions::Joinability;
+use gandr_theory_coherent_resolutions::NoScheme;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::Overlap;
 use gandr_theory_coherent_resolutions::PairJoining;
+use gandr_theory_coherent_resolutions::PairScheme;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TraceletReplay;
 use gandr_theory_coherent_resolutions::normalize;
 use gandr_theory_coherent_resolutions::replay_path;
 use gandr_theory_computads::AdmittedFaceIndex;
+use gandr_theory_computads::CompositeCriterion;
 use gandr_theory_computads::ElaborateError;
 use gandr_theory_computads::Indexing;
 use gandr_theory_computads::PresentedRules;
@@ -356,9 +369,10 @@ pub enum Coincidence
     Orthogonal,
     /// The rules terminate and every critical pair joins, with the rules
     /// completion derived among them: one certificate per prime pair and one
-    /// per derived rule, in the reading each was decided in. A composite pair,
-    /// whose peak reduces below its seam, joins with the others and carries
-    /// none.
+    /// per derived rule, in the reading each was decided in. A composite pair
+    /// of the presented reading, whose peak holds a redex strictly below its
+    /// seam, carries the witness of that redex instead
+    /// ([`Certificates::composite_terms`]).
     Joined(Certificates),
     /// The rules' two readings part, or the check could not tell: the report's
     /// diagnostic at this index says why.
@@ -382,6 +396,10 @@ pub struct Certificates
     /// The rules completion derived for the presented reading, in derivation
     /// order, each a cell its term store ends with.
     pub derived_terms: Vec<DerivedRule<TermAlphabet>>,
+    /// The critical pairs of the presented reading that completion skips as
+    /// composite, each with the redex below its seam, each replaying over its
+    /// term store.
+    pub composite_terms: Vec<CompositePair<TermAlphabet>>,
 }
 
 /// A rule completion derived to join a critical pair whose two normal forms
@@ -783,10 +801,10 @@ impl fmt::Display for PairTerm
 ///   conditioned and [`CoherenceFault::OverlapsSecondOrder`] otherwise, at the
 ///   later rule's span naming the earlier one's; else
 ///   [`Coincidence::Orthogonal`] when no two cells overlap in either reading
-///   and [`Coincidence::Joined`] with every prime pair's certificate and every
-///   derived rule otherwise. Each derived rule's cell is appended to `store` or
-///   to the presented reading's store, in derivation order, so the store a
-///   reading rewrites with ends with them.
+///   and [`Coincidence::Joined`] with every prime pair's certificate, every
+///   composite pair's witness and every derived rule otherwise. Each derived
+///   rule's cell is appended to `store` or to the presented reading's store, in
+///   derivation order, so the store a reading rewrites with ends with them.
 /// - panics: none.
 ///
 /// # Errors
@@ -821,7 +839,7 @@ impl fmt::Display for PairTerm
 /// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
 /// - witness: `coincide::tests::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
-    Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty())
+    Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty() || !certificates.composite_terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
     Ok(Coincidence::Orthogonal) => store.len() == written,
     Ok(Coincidence::Unexamined | Coincidence::Refused(_)) => false,
@@ -853,6 +871,9 @@ pub(crate) fn decide<G>(
     let nameable = naming_port(description).is_some();
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
+    // The sequent reading fires a cell only at a command's root, so the
+    // composite criterion's argument does not hold there, and its pairs take
+    // no class.
     let mut joining = PairJoining::new();
     let (commands, derived_commands) = match joining.resume(&rewriting, budget) {
         Joinability::Joined(certificates) => (certificates, Vec::new()),
@@ -866,7 +887,7 @@ pub(crate) fn decide<G>(
             };
             let completed = reading.complete(
                 &mut completing,
-                joining,
+                (&mut joining, &mut NoScheme),
                 first,
                 PairTerm::Command,
                 |command| match read_command(command) {
@@ -882,28 +903,33 @@ pub(crate) fn decide<G>(
             completed
         },
     };
-    let (terms, derived_terms) = match *presented {
+    let (terms, derived_terms, composite_terms) = match *presented {
         Maybe::Present(ref mut presented) => {
+            let spell_term = |term: &Term| match term.read() {
+                Maybe::Present(read) => Some(read),
+                Maybe::Absent(_) => None,
+            };
+            let mut criterion = CompositeCriterion::new();
             let mut joining = PairJoining::new();
-            let first = joining.resume(&presented.store, budget);
+            let first = joining.resume_with(&presented.store, budget, &mut criterion);
             let reading = Reading {
                 description,
                 faces: &presented.faces,
                 rule_span: &rule_span,
                 at,
             };
-            reading.complete(
+            let (terms, derived_terms) = reading.complete(
                 &mut presented.store,
-                joining,
+                (&mut joining, &mut criterion),
                 first,
                 PairTerm::Term,
-                |term| match term.read() {
-                    Maybe::Present(read) => Some(read),
-                    Maybe::Absent(_) => None,
-                },
-            )?
+                spell_term,
+            )?;
+            (terms, derived_terms, joining.take_composites())
         },
-        Maybe::Absent(presented_reading::Absent::NoTermFace) => (Vec::new(), Vec::new()),
+        Maybe::Absent(presented_reading::Absent::NoTermFace) => {
+            (Vec::new(), Vec::new(), Vec::new())
+        },
     };
     let derived: Vec<&(FreeTerm, FreeTerm)> = if derived_terms.is_empty() {
         derived_commands
@@ -935,7 +961,7 @@ pub(crate) fn decide<G>(
             },
         ));
     }
-    if commands.is_empty() && terms.is_empty() {
+    if commands.is_empty() && terms.is_empty() && composite_terms.is_empty() {
         return Ok(Coincidence::Orthogonal);
     }
     Ok(Coincidence::Joined(Certificates {
@@ -943,6 +969,7 @@ pub(crate) fn decide<G>(
         terms,
         derived_commands,
         derived_terms,
+        composite_terms,
     }))
 }
 
@@ -1058,8 +1085,8 @@ where
     /// that neither joins nor completes.
     ///
     /// # Specification
-    /// - requires: `first` is what `joining` last answered over `store`; `read`
-    ///   writes a term of the reading as the term it denotes.
+    /// - requires: `first` is what `joining` last answered over `store` under
+    ///   `scheme`; `read` writes a term of the reading as the term it denotes.
     /// - ensures: a divergent pair whose two normal forms are both headed by a
     ///   constructor or a results tuple is [`CoherenceFault::Diverges`]; one
     ///   either of whose normal forms writes no term, or which no direction
@@ -1073,13 +1100,14 @@ where
     ///   [`CoherenceFault::NeverCompletes`] naming both; otherwise the oriented
     ///   rule is appended to `store` with its certificate — the pair's two
     ///   paths from the peak, the one reaching the rule's left side then firing
-    ///   the rule at the root — and `joining` resumed at the pair that parted,
-    ///   so a round decides that pair and the ones after it and no pair already
-    ///   joined again. A pair a reduct of which reaches no normal form within
-    ///   [`JOIN_STEPS`] steps is [`CoherenceFault::Undecided`], and a divergent
-    ///   pair met once [`DERIVED_RULES`] rules are derived is
-    ///   [`CoherenceFault::Unfinished`]. Every fault stands at the pair's later
-    ///   face naming the earlier one, and its terms are in that order.
+    ///   the rule at the root — and `joining` resumed under `scheme` at the
+    ///   pair that parted, so a round decides that pair and the ones after it
+    ///   and no pair already joined again. A pair a reduct of which reaches no
+    ///   normal form within [`JOIN_STEPS`] steps is
+    ///   [`CoherenceFault::Undecided`], and a divergent pair met once
+    ///   [`DERIVED_RULES`] rules are derived is [`CoherenceFault::Unfinished`].
+    ///   Every fault stands at the pair's later face naming the earlier one,
+    ///   and its terms are in that order.
     /// - panics: none.
     ///
     /// # Errors
@@ -1098,10 +1126,10 @@ where
     #[spec(captures: before = store.len(), ensures: |ret| ret.as_ref().is_err()
         || ret.as_ref().is_ok_and(|completed| usize::from(store.len()) == usize::from(before).saturating_add(completed.1.len())
             && completed.1.iter().all(|derived| bool::from(derived.replay(store)))))]
-    fn complete<A, W, R>(
+    fn complete<A, W, R, P>(
         &self,
         store: &mut CellStore<A>,
-        mut joining: PairJoining<A>,
+        (joining, scheme): (&mut PairJoining<A>, &mut P),
         first: Joinability<A>,
         wrap: W,
         read: R,
@@ -1110,6 +1138,7 @@ where
         A: CellAlphabet,
         W: Fn(A::Cmd) -> PairTerm,
         R: Fn(&A::Cmd) -> Option<FreeTerm>,
+        P: PairScheme<A>,
     {
         let budget = NormalizationBudget::from(JOIN_STEPS);
         let mut joinability = first;
@@ -1270,7 +1299,7 @@ where
                     joins_at: rhs,
                 },
             });
-            joinability = joining.resume(store, budget);
+            joinability = joining.resume_with(store, budget, scheme);
         }
     }
 }

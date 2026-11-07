@@ -1,8 +1,10 @@
-// A constructor written as a call's argument takes its classifier from the
-// parameter it is passed to: the type the called declaration writes for that
-// parameter, each parameter before it the type names replaced by the argument
-// written for it. A list passed to a function then needs no annotation.
-
+// A parameter classifies a constructor argument.
+//
+// The called declaration states the parameter's type.
+// Earlier arguments instantiate that type.
+//
+// A bare list then needs no annotation.
+//
 // The lists.
 import "./data-base.gandr";
 
@@ -15,21 +17,20 @@ def rec listLength(xs : List Integer) -> Integer =
       counted + 1
     }
 
-/// Two integers passed bare: the list is a `List(Integer)` by the parameter
-/// it is passed to, the inner one by its field.
+/// The parameter classifies the bare list as `List(Integer)`.
+/// Its field classifies the inner integer.
 @[ runs("2") ]
 def pairLength() -> Integer { listLength (Cons 1 (Cons 2 Nil)) }
 
-/// The empty list passed bare.
+/// The bare empty list has type `List(Integer)`.
 @[ runs("0") ]
 def emptyLength() -> Integer { listLength Nil }
 
-/// The same pair under an annotation, as it was written before.
+/// This pair carries an explicit annotation.
 @[ runs("2") ]
 def annotatedLength() -> Integer { listLength (Cons 1 (Cons 2 Nil) : List Integer) }
 
-/// A colour and a list of colours, each argument classified by its own
-/// parameter.
+/// The function classifies each argument from its own parameter.
 def rec tally(c : Color, cs : List Color) -> Integer =
   match cs where
     | Nil => 0
@@ -51,11 +52,11 @@ def rec anyLength(a : Type, xs : List a) -> Integer =
       counted + 1
     }
 
-/// A list passed where `xs : List(a)` takes it at `a = Integer`: its type
-/// reads the argument before it.
+/// The parameter `xs` receives the list at `a = Integer`.
+/// The preceding argument determines `a`.
 @[ runs("1") ]
 def one() -> Integer { anyLength Integer (Cons 1 Nil) }
 
-/// The same parameter read at `a = Color`, the list empty.
+/// At `a = Color`, the parameter receives an empty list.
 @[ runs("0") ]
 def noColours() -> Integer { anyLength Color Nil }
