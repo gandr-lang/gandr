@@ -1786,6 +1786,151 @@ fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
     );
 }
 
+/// #5748: two equal patched types at two core nodes cross one formation, and
+/// two that differ in one fixed value cross two. A formation with no meet
+/// crosses one record witness, ahead of the first declaration that holds it.
+#[test]
+fn equal_patched_types_share_one_formation_5748()
+{
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let one = || {
+        gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("1"))
+                .expect("decimal digits"),
+        ))
+    };
+    // `*{port, tls : Integer}[.port = n]`, minted at a node of its own for each
+    // declaration, and each declaration's body the record of its free field.
+    let crossed = |ports: [gandr_kernel_term::Literal; 2]| {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+            (label("port"), integer),
+            (label("tls"), integer),
+        ]));
+        let module = ports.map(|port| {
+            let port = arena.value_literal(port);
+            let system = arena.value_type_system(
+                record_type,
+                alloc::collections::BTreeMap::from([(label("port"), port)]),
+                alloc::vec::Vec::new(),
+            );
+            let tls = arena.value_literal(integer_literal());
+            let free =
+                arena.value_record(alloc::collections::BTreeMap::from([(label("tls"), tls)]));
+            (system, free)
+        });
+        assert_ne!(
+            module[0].0, module[1].0,
+            "each declaration holds its own core node"
+        );
+        let module = [0_usize, 1].map(|at| {
+            declaration(
+                At(at),
+                Maybe::Present(module[at].0),
+                Maybe::Present(module[at].1),
+            )
+        });
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &module)
+        };
+        let readmission = crate::bridge::readmit(&mut arena, &report);
+        for entry in readmission.readmitted() {
+            assert!(
+                matches!(entry.outcome(), crate::bridge::Outcome::Defined { .. }),
+                "each declaration crosses after its formation: {:?}",
+                entry.outcome()
+            );
+        }
+        readmission.environment().entries().len()
+    };
+    assert_eq!(
+        crossed([integer_literal(), integer_literal()]),
+        3,
+        "two equal formations cross one record witness, then the two declarations"
+    );
+    assert_eq!(
+        crossed([integer_literal(), one()]),
+        4,
+        "formations that differ at `port` cross one record witness each"
+    );
+}
+
+/// #5748: the key of a formation holds its glued values beside its meets. Two
+/// formations whose meets hold 80 at `port` share no witness when one glues 80
+/// and the other glues 0 there. Their first witnesses are equal records, but
+/// the kernel still converts the second meet and refuses it by `port`.
+#[test]
+fn equal_meets_over_other_glued_values_share_no_formation_5748()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let eighty = || {
+        gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("80"))
+                .expect("decimal digits"),
+        ))
+    };
+    let integer = arena.value_type_base(BaseType::Integer);
+    let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    // `*{port, tls : Integer}` whose later face holds 80 at its meet `port`,
+    // glued at `glued`.
+    let system = |arena: &mut CoreArena, glued: gandr_kernel_term::Literal| {
+        let glued = arena.value_literal(glued);
+        let meet = arena.value_literal(eighty());
+        arena.value_type_system(
+            record_type,
+            alloc::collections::BTreeMap::from([(label("port"), glued)]),
+            alloc::vec![(label("port"), meet)],
+        )
+    };
+    let agreeing = [system(&mut arena, eighty()), system(&mut arena, eighty())];
+    let module = [0_usize, 1].map(|at| {
+        let tls = arena.value_literal(integer_literal());
+        let free = arena.value_record(alloc::collections::BTreeMap::from([(label("tls"), tls)]));
+        declaration(At(at), Maybe::Present(agreeing[at]), Maybe::Present(free))
+    });
+    let mut report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    let Verdict::Checked { body, evidence, .. } = report.judged()[1].verdict()
+    else {
+        panic!(
+            "faces that agree on their meet form a type: {:?}",
+            report.judged()[1].verdict()
+        );
+    };
+    let differing = system(&mut arena, integer_literal());
+    report.judged[1].verdict = Verdict::Checked {
+        declared: crate::formation::FormedValueType::derived(differing),
+        body,
+        evidence,
+    };
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        ),
+        "the glued 80 converts with its meet: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+    assert_eq!(
+        readmission.readmitted()[1].outcome(),
+        &crate::bridge::Outcome::Rejected(gandr_kernel_core::KernelError::FixedFieldDiffers {
+            label: label("port"),
+        }),
+        "the glued 0 shares no formation with the glued 80, so its meet is refused by its label"
+    );
+}
+
 /// #5579: an element of a patched type stands at its base by the coercion out,
 /// as the record of its free fields beside the values the type fixes; a
 /// selection of a fixed field reads the fixed value. A nested computation
