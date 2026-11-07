@@ -4665,6 +4665,15 @@ exit 2
 # reopened, the one way out of a queue for a stack member (`pr:land`). The
 # draft alone leaves a queued entry to merge. `pr:release <n>` ends either
 # hold, and the next watch lands it once green.
+#
+# A hold never stops the stack above its pull request (#5902). A member with
+# members above it is cut to the top of its stack first (`cut_to_top`, as the
+# stack watcher cuts a red bottom): the members above replay past it and
+# land, and it waits alone. A cut that `heal.jq` refuses, or that waits on a
+# queued member, leaves it in place, and the hold says the members above
+# wait. A pull request closed unmerged is refused: the stack watcher closes a
+# member so when it cuts it, and a hold would reopen it and stop the stack
+# above it again. Its seat fixes it and opens it again with `pr:open`.
 ["pr:hold"]
 description = "Hold a pull request on purpose: take it out of the merge queue, make it a draft and comment the reason in a table"
 usage = '''
@@ -4681,20 +4690,37 @@ reason=${usage_reason:?}
 [[ -n "${reason// }" ]] || { echo 'pr:hold needs the reason it is held' >&2; exit 2; }
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
+IFS=$'\t' read -r state draft queued auto < <(gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$number" \
+  -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { state isDraft isInMergeQueue autoMergeRequest { enabledAt } } } }' \
+  --jq '.data.repository.pullRequest | [.state, .isDraft, .isInMergeQueue, (.autoMergeRequest != null)] | @tsv')
+case $state in
+  CLOSED)
+    echo "#$number is closed unmerged: the stack watcher closes a member so when it cuts it out of its stack, and a hold would reopen it and stop the stack above it again. Its seat fixes it and opens it again with \`mise run pr:open\`" >&2
+    exit 2
+    ;;
+  MERGED) echo "#$number merged: there is nothing to hold" >&2; exit 2 ;;
+esac
 who='as a draft'
 if [[ "${usage_owner:-false}" == true ]]; then
   gh label create hold:owner -R "$repo" --color B60205 --description "Held by the owner: no landing queues it or the stack above it" --force > /dev/null
   gh pr edit "$number" -R "$repo" --add-label hold:owner > /dev/null
   who='by the owner'
 fi
-IFS=$'\t' read -r draft queued auto < <(gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$number" \
-  -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isDraft isInMergeQueue autoMergeRequest { enabledAt } } } }' \
-  --jq '.data.repository.pullRequest | [.isDraft, .isInMergeQueue, (.autoMergeRequest != null)] | @tsv')
 if [[ "$auto" == true ]]; then gh pr merge "$number" -R "$repo" --disable-auto > /dev/null; fi
 if [[ "$queued" == true ]]; then
   gh pr close "$number" -R "$repo" > /dev/null
   gh pr reopen "$number" -R "$repo" > /dev/null
   echo "#$number left the merge queue"
+fi
+source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
+stack=$(server_stack "$number")
+if [[ $(jq --argjson n "$number" 'any(.[]; .number == $n) and .[-1].number != $n' <<< "$stack") == true ]]; then
+  if cut=$(cut_to_top "$number" "$stack" "[$number]"); then
+    IFS=$'\t' read -r before after <<< "$cut"
+    echo "#$number cut to the top of its stack: $before is now $after"
+  else
+    echo "#$number stays in its stack, and the members above it wait for its release" >&2
+  fi
 fi
 if [[ "$draft" != true ]]; then
   gh pr ready "$number" -R "$repo" --undo > /dev/null
