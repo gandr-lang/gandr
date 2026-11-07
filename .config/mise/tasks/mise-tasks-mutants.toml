@@ -124,9 +124,11 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # (`.config/mutants/items.jq`). The mutants group by
 # function (`.config/mutants/groups.jq`), and each group runs as one
 # cargo-mutants invocation selecting exactly its mutants, with the nextest
-# filterset of the function's witnesses. A function no witness names runs
-# nothing: its mutants read missed at once and are listed again in
-# `unwitnessed.txt`, the gap the coverage lane fills.
+# filterset of the function's witnesses. It builds and links only the test
+# binaries those witnesses live in (#3210): each integration target they name,
+# and the crate's library and binaries when a witness is a unit test. A
+# function no witness names runs nothing: its mutants read missed at once and
+# are listed again in `unwitnessed.txt`, the gap the coverage lane fills.
 #
 # The witnesses run under nextest's `mutants` profile, which ends none of
 # them, so a slow witness on a loaded machine reads timeout, never caught.
@@ -235,6 +237,7 @@ if [[ "$iterate" == true ]]; then
   mv "$output/listed.json" "$output/list.json"
 fi
 mutants_grouped "$output"
+lib=$(jq -r '.lib // true' "$output/group-input.json")
 revision=$({
   git rev-parse 'HEAD^{tree}'
   git diff --binary HEAD
@@ -272,7 +275,7 @@ if [[ "$pending" != '[]' ]]; then
   (cd "$scratch/0" && "$scope" cargo nextest run --locked --package "$crate" --no-tests=fail -E "package(=$crate) & ($union)") > "$output/logs/witnesses.log" 2>&1 \
     || { printf 'the witnesses fail unmutated; see %s\n' "$output/logs/witnesses.log" >&2; exit 1; }
   run_lane() {
-    local lane=$1 index=0 group file re filter key out status left limit
+    local lane=$1 index=0 group file re filter key out status left limit selectors test
     while IFS= read -r group; do
       if (( index % lanes == lane )); then
         limit=()
@@ -286,6 +289,16 @@ if [[ "$pending" != '[]' ]]; then
         file=$(jq -r .file <<< "$group")
         re=$(jq -r .re <<< "$group")
         filter=$(jq -r .filter <<< "$group")
+        # The group builds and links only the binaries its witnesses live in
+        # (#3210): each integration target they name, and the crate's own
+        # targets when a witness is a unit test. `--cargo-arg` reaches the
+        # build of each mutant as well as its test run; an argument after
+        # `--` reaches the test run alone.
+        selectors=()
+        while IFS= read -r test; do selectors+=("--cargo-arg=--test=$test"); done < <(jq -r '.tests[]' <<< "$group")
+        if [[ $(jq -r .unit <<< "$group") == true ]]; then
+          if [[ $lib == true ]]; then selectors+=(--cargo-arg=--lib --cargo-arg=--bins); else selectors+=(--cargo-arg=--bins); fi
+        fi
         mkdir -p "$out"
         jq -r '.names[]' <<< "$group" > "$out/names.txt"
         # cargo-mutants exits 0 with every mutant caught, 2 with one missed
@@ -293,7 +306,7 @@ if [[ "$pending" != '[]' ]]; then
         # `timeout` exits 124, or 137 once it kills, when `--until` stops it.
         status=0
         (cd "$scratch/$lane" && "${limit[@]}" "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
-          --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$file" --re "$re" \
+          --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$file" --re "$re" "${selectors[@]}" \
           --output "$out" -- -E "$filter") > "$output/logs/$index.log" 2>&1 || status=$?
         if [[ -f "$out/mutants.out/outcomes.json" ]] && (( status == 0 || status == 2 || status == 3 )); then
           touch "$out/resolved"
