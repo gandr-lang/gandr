@@ -354,6 +354,8 @@ pub enum MotiveHead
     Capability,
     /// The opaque buffer type a receive places live.
     Buffer,
+    /// The qubit type, which carries no comonoid.
+    Qubit,
     /// A value kept in a region.
     Kept,
     /// A world type.
@@ -411,6 +413,7 @@ impl fmt::Display for MotiveHead
             Self::Session => "a session type",
             Self::Capability => "a capability type",
             Self::Buffer => "the buffer type",
+            Self::Qubit => "the qubit type",
             Self::Kept => "a type kept in a region",
             Self::World => "a world type",
             Self::Row => "a row",
@@ -586,6 +589,7 @@ fn head(node: &ValueType) -> MotiveHead
         ValueType::Session(_) => MotiveHead::Session,
         ValueType::Capability { .. } => MotiveHead::Capability,
         ValueType::Buffer => MotiveHead::Buffer,
+        ValueType::Qubit => MotiveHead::Qubit,
         ValueType::Kept { .. } => MotiveHead::Kept,
         ValueType::World(_) => MotiveHead::World,
         ValueType::Row | ValueType::RowTail(_) => MotiveHead::Row,
@@ -733,6 +737,7 @@ fn row(
         | ValueType::Session(_)
         | ValueType::Capability { .. }
         | ValueType::Buffer
+        | ValueType::Qubit
         | ValueType::Kept { .. }
         | ValueType::World(_)
         | ValueType::Row

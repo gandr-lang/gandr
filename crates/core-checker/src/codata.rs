@@ -47,6 +47,7 @@ use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::CoreNode;
 use crate::TypeNode;
+use crate::comonoid::Grade;
 use crate::formation::form_comp_type;
 use crate::formation::form_value_type;
 use crate::formation::level_of;
@@ -189,7 +190,11 @@ pub fn form_signature(
         })?;
         for &parameter in signature.parameters() {
             let _formed = form_value_type(context, parameter)?;
-            context.binders().open(Zone::Intuitionistic, parameter);
+            context.open_intuitionistic(
+                CoreNode::Type(TypeNode::Value(parameter)),
+                parameter,
+                Grade::Zero,
+            )?;
         }
         for &observed in signature.observations() {
             observation(
@@ -259,11 +264,21 @@ fn observation(
         match comp_type_view(context.arena(), cursor)? {
             CompTypeView::Arrow { domain, codomain } => {
                 let _formed = form_value_type(context, domain)?;
+                crate::comonoid::require(
+                    context.arena(),
+                    CoreNode::Type(TypeNode::Computation(cursor)),
+                    domain,
+                    Grade::Many,
+                )?;
                 cursor = codomain;
             },
             CompTypeView::Pi { domain, codomain } => {
                 let _formed = form_value_type(context, domain)?;
-                context.binders().open(Zone::Intuitionistic, domain);
+                context.open_intuitionistic(
+                    CoreNode::Type(TypeNode::Computation(cursor)),
+                    domain,
+                    Grade::Many,
+                )?;
                 binders = SpineBinders(binders.0.saturating_add(1));
                 cursor = codomain;
             },

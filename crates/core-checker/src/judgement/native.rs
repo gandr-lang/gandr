@@ -46,9 +46,11 @@ use super::Produced;
 use super::Step;
 use super::Waiting;
 use crate::CheckRefusal;
+use crate::CoreNode;
 use crate::ExpectedShape;
 use crate::TermNode;
 use crate::TypeNode;
+use crate::comonoid::Grade;
 use crate::former;
 use crate::respect::Reading;
 use crate::respect::obligation;
@@ -1815,6 +1817,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
@@ -1833,8 +1836,11 @@ impl Machine<'_, '_>
         let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let pair = arena.value_tuple(&[outer, inner]);
         let expected = instantiate_comp_type(arena, lifted, pair);
-        self.context.binders().open(Zone::Intuitionistic, first);
-        self.context.binders().open(Zone::Intuitionistic, second);
+        let split = CoreNode::Term(TermNode::Computation(term));
+        self.context
+            .open_intuitionistic(split, first, Grade::Many)?;
+        self.context
+            .open_intuitionistic(split, second, Grade::Many)?;
         self.wait(Frame::NativeYield(Produced::CompType(result)));
         self.wait(Frame::SplitBody {
             at: term,

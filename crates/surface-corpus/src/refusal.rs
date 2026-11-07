@@ -1222,6 +1222,9 @@ pub enum RefusalName
     /// A linear function's parameter read where its read may run other than
     /// once.
     ShadowCaptured,
+    /// A binder of the intuitionistic zone over a type with no comonoid: a
+    /// qubit, or a type that holds one.
+    ComonoidAbsent,
     /// An access naming a linear slot that holds no value.
     NotHeld,
     /// A held value read while an access lends it exclusively, or accessed
@@ -1327,7 +1330,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 248_usize] = [
+    pub const VOCABULARY: [Self; 249_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1540,6 +1543,7 @@ impl RefusalName
         Self::LinearSlotConsumed,
         Self::LinearSlotUnconsumed,
         Self::ShadowCaptured,
+        Self::ComonoidAbsent,
         Self::NotHeld,
         Self::HeldLent,
         Self::HeldCaptured,
@@ -1819,6 +1823,7 @@ impl RefusalName
         | (Self::LinearSlotConsumed, b"LinearSlotConsumed")
         | (Self::LinearSlotUnconsumed, b"LinearSlotUnconsumed")
         | (Self::ShadowCaptured, b"ShadowCaptured")
+        | (Self::ComonoidAbsent, b"ComonoidAbsent")
         | (Self::NotHeld, b"NotHeld")
         | (Self::HeldLent, b"HeldLent")
         | (Self::HeldCaptured, b"HeldCaptured")
@@ -1986,6 +1991,7 @@ impl RefusalName
             Self::LinearSlotConsumed => "LinearSlotConsumed",
             Self::LinearSlotUnconsumed => "LinearSlotUnconsumed",
             Self::ShadowCaptured => "ShadowCaptured",
+            Self::ComonoidAbsent => "ComonoidAbsent",
             Self::NotHeld => "NotHeld",
             Self::HeldLent => "HeldLent",
             Self::HeldCaptured => "HeldCaptured",
@@ -2287,7 +2293,7 @@ const CROSSING_READS: [(Tag, CrossingRead); 2] = [
 ];
 
 /// Every former the checker's judgement has no rule for.
-const FORMERS: [UnadmittedFormer; 24_usize] = [
+const FORMERS: [UnadmittedFormer; 25_usize] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -2311,6 +2317,7 @@ const FORMERS: [UnadmittedFormer; 24_usize] = [
     UnadmittedFormer::Memory,
     UnadmittedFormer::Stage,
     UnadmittedFormer::Buffer,
+    UnadmittedFormer::Qubit,
     UnadmittedFormer::Abandon,
 ];
 
@@ -2536,6 +2543,7 @@ const fn former_tag(former: UnadmittedFormer) -> Tag
         UnadmittedFormer::Memory => "Memory",
         UnadmittedFormer::Stage => "Stage",
         UnadmittedFormer::Buffer => "Buffer",
+        UnadmittedFormer::Qubit => "Qubit",
         UnadmittedFormer::Abandon => "Abandon",
     })
 }
@@ -3133,6 +3141,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotConsumed { .. }, .. }, RefusalName::LinearSlotConsumed)
         | (CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotUnconsumed { .. }, .. }, RefusalName::LinearSlotUnconsumed)
         | (CheckRefusal::Linearity { defect: LinearityDefect::ShadowCaptured { .. }, .. }, RefusalName::ShadowCaptured)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ComonoidAbsent { .. }, .. }, RefusalName::ComonoidAbsent)
         | (CheckRefusal::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
         | (CheckRefusal::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
         | (CheckRefusal::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
@@ -3299,6 +3308,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             LinearityDefect::LinearSlotConsumed { .. } => RefusalName::LinearSlotConsumed,
             LinearityDefect::LinearSlotUnconsumed { .. } => RefusalName::LinearSlotUnconsumed,
             LinearityDefect::ShadowCaptured { .. } => RefusalName::ShadowCaptured,
+            LinearityDefect::ComonoidAbsent { .. } => RefusalName::ComonoidAbsent,
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => RefusalName::NotHeld,

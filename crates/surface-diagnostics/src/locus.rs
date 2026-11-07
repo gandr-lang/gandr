@@ -46,6 +46,7 @@ use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
+use gandr_core_checker::comonoid::Grade;
 use gandr_core_checker::compared;
 use gandr_core_checker::fill::UnsupportedFamily;
 use gandr_core_checker::session::Capture;
@@ -1167,7 +1168,8 @@ fn checked(
                 | LinearityDefect::ContinuationAsValue { .. }
                 | LinearityDefect::LinearSlotConsumed { .. }
                 | LinearityDefect::LinearSlotUnconsumed { .. }
-                | LinearityDefect::ShadowCaptured { .. },
+                | LinearityDefect::ShadowCaptured { .. }
+                | LinearityDefect::ComonoidAbsent { .. },
         }
         | CheckRefusal::Access { at, .. }
         | CheckRefusal::Codata { at, .. }
@@ -1776,6 +1778,16 @@ impl fmt::Display for Checked
                     "the linear parameter is read inside {}, which may run the read other than once",
                     Captor(by)
                 ),
+                | LinearityDefect::ComonoidAbsent {
+                    grade: Grade::Many, ..
+                } => f.write_str(
+                    "a binder at grade ω copies and discards its value, and the qubit its type holds has no comonoid",
+                ),
+                | LinearityDefect::ComonoidAbsent {
+                    grade: Grade::Zero, ..
+                } => f.write_str(
+                    "a binder at grade 0 discards its value, and the qubit its type holds has no counit",
+                ),
             },
             | CheckRefusal::Access { defect, .. } => match defect {
                 | AccessDefect::NotHeld => f.write_str("the access names a linear slot that holds no value"),
@@ -2252,6 +2264,7 @@ impl fmt::Display for Former
                 "a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel"
             },
             | UnadmittedFormer::Buffer => "a buffer at the pure kernel boundary",
+            | UnadmittedFormer::Qubit => "a qubit at the pure kernel boundary",
         })
     }
 }
@@ -4879,6 +4892,7 @@ mod tests
             UnadmittedFormer::Memory,
             UnadmittedFormer::Stage,
             UnadmittedFormer::Buffer,
+            UnadmittedFormer::Qubit,
         ]
         .into_iter()
         .map(|former| title(CheckRefusal::OutOfFragment { at: comp, former }))

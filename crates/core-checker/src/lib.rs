@@ -577,6 +577,7 @@ mod canonical;
 mod capability;
 pub mod codata;
 mod code;
+pub mod comonoid;
 mod compose;
 mod context;
 mod conversion;

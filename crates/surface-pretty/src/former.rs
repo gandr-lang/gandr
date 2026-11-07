@@ -493,6 +493,9 @@ pub enum Former<'source, Node>
     BaseType(BaseType),
     /// The opaque buffer type `Buf` a receive places live.
     BufferType,
+    /// The qubit type `Qubit` of `std.quantum`: one quantum bit, which carries
+    /// no comonoid.
+    QubitType,
     /// The row kind `Row`: the classifier of a row a definition abstracts
     /// over.
     RowType,

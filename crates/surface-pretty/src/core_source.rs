@@ -1787,6 +1787,7 @@ impl<'arena> CoreSource<'arena>
             | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
             | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&ValueType::Buffer), Former::BufferType)
+            | (Some(&ValueType::Qubit), Former::QubitType)
             | (Some(&ValueType::Row), Former::RowType)
             | (Some(&ValueType::Web), Former::WebType) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
@@ -1917,6 +1918,7 @@ impl<'arena> CoreSource<'arena>
             },
             ValueType::Base(base) => Former::BaseType(base),
             ValueType::Buffer => Former::BufferType,
+            ValueType::Qubit => Former::QubitType,
             ValueType::Row => Former::RowType,
             ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
             ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
@@ -2770,6 +2772,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Buffer
+                | ValueType::Qubit
                 | ValueType::Row
                 | ValueType::RowTail(_)
                 | ValueType::List(_)
@@ -3027,6 +3030,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Buffer
+                | ValueType::Qubit
                 | ValueType::Row
                 | ValueType::RowTail(_)
                 | ValueType::Product(_)

@@ -1145,6 +1145,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from(
             "use the linear parameter outside the thunk, loop or fold that captures it",
         ),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ComonoidAbsent { .. },
+            ..
+        } => String::from(
+            "take the qubit as a linear function's parameter, `(q : Qubit) ⊸ …`. Only a measurement gives a value that a binder can copy",
+        ),
         CheckRefusal::MultiplicityUnsupported { .. } => {
             String::from("write the linear arrow with no multiplicity, which is one")
         },
@@ -1366,7 +1372,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 244] = [
+    const WORDED: [&str; 245] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1610,6 +1616,7 @@ mod tests
         "LinearSlotConsumed",
         "LinearSlotUnconsumed",
         "ShadowCaptured",
+        "ComonoidAbsent",
         "MultiplicityUnsupported",
     ];
 

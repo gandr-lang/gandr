@@ -4918,6 +4918,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Qubit
                 | ValueTypeView::Row
                 | ValueTypeView::RowTail(_)
                 | ValueTypeView::PathUniverse(..)
@@ -5250,6 +5251,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Qubit
                     | ValueTypeView::Row
                     | ValueTypeView::RowTail(_)
                     | ValueTypeView::Integer
@@ -5390,6 +5392,39 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) const fn binders(&mut self) -> &mut Context
     {
         &mut self.binders
+    }
+
+    /// Open a binder of the intuitionistic zone over `ty` at `grade`, and
+    /// refuse a type with no comonoid.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more intuitionistic binder, over `ty`, when the result is
+    ///   `Ok`; no change otherwise.
+    /// - fails: as [`crate::comonoid::require`], at `at`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda, a bind and a case arm over a qubit are
+    ///   refused, and a binder over a type with a comonoid opens.
+    /// - witness: `judgement::session::tests::each_binder_over_a_qubit_is_refused_5739`
+    #[spec(
+        captures: depth = usize::from(self.depth(Zone::Intuitionistic)),
+        ensures: |ret| usize::from(self.depth(Zone::Intuitionistic)) == depth.saturating_add(usize::from(ret.is_ok())),
+    )]
+    pub(crate) fn open_intuitionistic(
+        &mut self,
+        at: CoreNode,
+        ty: ValueTypeId,
+        grade: crate::comonoid::Grade,
+    ) -> Result<(), CheckRefusal>
+    {
+        crate::comonoid::require(self.arena(), at, ty, grade)?;
+        self.binders.open(Zone::Intuitionistic, ty);
+        Ok(())
     }
 
     /// The stages the recursion typing minted since the declaration under way

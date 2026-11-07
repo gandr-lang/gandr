@@ -282,6 +282,9 @@ pub enum UnadmittedFormer
     /// The buffer type: a receive's binder lives on the checker's side, and the
     /// kernel has no buffer.
     Buffer,
+    /// The qubit type: a linear function's qubit lives on the checker's side,
+    /// and the kernel has no qubit.
+    Qubit,
     /// Abandonment of a first-class stack.
     Abandon,
 }
@@ -310,7 +313,7 @@ impl UnadmittedFormer
     #[spec(ensures: |ret| match self {
         | Self::Stage | Self::TypeLift => matches!(ret, FailureClass::MalformedSource),
         | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
-        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Abandon => matches!(ret, FailureClass::EngineFault),
+        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Qubit | Self::Abandon => matches!(ret, FailureClass::EngineFault),
     })]
     #[inline]
     #[must_use]
@@ -338,6 +341,7 @@ impl UnadmittedFormer
             | Self::Run
             | Self::Memory
             | Self::Buffer
+            | Self::Qubit
             | Self::Abandon => FailureClass::EngineFault,
         }
     }

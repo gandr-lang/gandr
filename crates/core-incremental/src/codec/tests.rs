@@ -59,6 +59,7 @@ fn holes_marks_and_the_unknown_types_round_trip()
         },
         ContentNode::UnknownType,
         ContentNode::BufferType,
+        ContentNode::QubitType,
         ContentNode::UnknownComputationType,
     ];
     let mut tags = BTreeSet::new();
@@ -1082,6 +1083,7 @@ fn session_nodes_persist_their_protocol_and_children()
 #[test]
 fn session_refusals_round_trip_with_their_endpoints()
 {
+    use gandr_core_checker::comonoid::Grade;
     use gandr_core_checker::session::Capture;
     use gandr_core_checker::session::ForkSide;
     use gandr_core_checker::session::ProtocolDefect;
@@ -1189,6 +1191,14 @@ fn session_refusals_round_trip_with_their_endpoints()
         Linearity::ShadowCaptured {
             lambda: Site::Unreached,
             by: Capture::Recursion,
+        },
+        Linearity::ComonoidAbsent {
+            ty: state(),
+            grade: Grade::Zero,
+        },
+        Linearity::ComonoidAbsent {
+            ty: state(),
+            grade: Grade::Many,
         },
     ] {
         refusals.push(Refusal::Linearity { at, defect });

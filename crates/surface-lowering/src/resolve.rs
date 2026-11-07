@@ -421,6 +421,8 @@ pub enum TypeAtom
     Buffer,
     /// `Web`, the causal webs `decompose` returns.
     Web,
+    /// `Qubit`, one quantum bit, which carries no comonoid.
+    Qubit,
     /// `Row`, the kind of effect rows a row variable ranges over.
     Row,
 }
@@ -529,7 +531,7 @@ const HOMED_FORMERS: [(&str, &str, TypeFormer); 4_usize] = [
 
 /// The nullary type heads a `std` module homes, each by the module's path and
 /// the name a listed import of it binds: `import std.buffer (Buf, Web);`
-/// (#4522).
+/// (#4522) and `import std.quantum (Qubit);`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -543,9 +545,11 @@ const HOMED_FORMERS: [(&str, &str, TypeFormer); 4_usize] = [
 /// - hypothesis: L3 — each row answers at its home and nowhere else, and its
 ///   name is absent from the ambient table.
 /// - witness: `resolve::tests::a_homed_atom_answers_only_at_its_home_4522`
-const HOMED_ATOMS: [(&str, &str, TypeAtom); 2_usize] = [
+/// - witness: `resolve::tests::the_qubit_answers_only_at_std_quantum_5739`
+const HOMED_ATOMS: [(&str, &str, TypeAtom); 3_usize] = [
     ("std.buffer", "Buf", TypeAtom::Buffer),
     ("std.buffer", "Web", TypeAtom::Web),
+    ("std.quantum", "Qubit", TypeAtom::Qubit),
 ];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
@@ -723,7 +727,8 @@ pub fn homed_atom(
 /// which a listed import of that module binds.
 ///
 /// `std.list` homes `List` (#4520), `std.session` homes `Run`, `Prefix` and
-/// `Dialogue` (#4521), and `std.buffer` homes `Buf` and `Web` (#4522).
+/// `Dialogue` (#4521), `std.buffer` homes `Buf` and `Web` (#4522), and
+/// `std.quantum` homes `Qubit`.
 ///
 /// # Specification
 /// - requires: nothing — every identifier is admissible input.
@@ -2791,6 +2796,33 @@ mod tests
                 head_home(SurfaceName::from(name)),
                 Maybe::Absent(type_head::Absent::Unregistered),
                 "an ambient atom and a near spelling have no home"
+            );
+        }
+    }
+
+    #[test]
+    fn the_qubit_answers_only_at_std_quantum_5739()
+    {
+        assert_eq!(
+            type_atom(SurfaceName::from("Qubit")),
+            Maybe::Absent(type_head::Absent::Unregistered),
+            "the ambient scope answers no `Qubit`"
+        );
+        assert_eq!(
+            homed_atom(SurfaceName::from("std.quantum"), SurfaceName::from("Qubit")),
+            Maybe::Present(TypeAtom::Qubit),
+            "a listing of `std.quantum` answers `Qubit`"
+        );
+        assert_eq!(
+            head_home(SurfaceName::from("Qubit")),
+            Maybe::Present(SurfaceName::from("std.quantum")),
+            "`Qubit`'s home is `std.quantum`"
+        );
+        for (module, name) in [("std.buffer", "Qubit"), ("std.quantum", "Buf")] {
+            assert_eq!(
+                homed_atom(SurfaceName::from(module), SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "`{module}` homes no `{name}`"
             );
         }
     }

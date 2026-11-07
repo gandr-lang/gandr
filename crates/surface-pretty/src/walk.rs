@@ -436,7 +436,7 @@ enum Kind
 /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_) | Former::Patched(..)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::QubitType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_) | Former::Patched(..)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::Member(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
@@ -468,6 +468,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::BufferType
+        | Former::QubitType
         | Former::RowType
         | Former::WebType
         | Former::Product(_)
@@ -1188,7 +1189,7 @@ where
         (None, Some(_)) => 1_usize,
         (None, None) => 2_usize,
     },
-    | Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Member(_) | Former::Capability { .. }
+    | Former::BaseType(_) | Former::BufferType | Former::QubitType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Member(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
@@ -1780,6 +1781,7 @@ where
         },
         Former::BaseType(_)
         | Former::BufferType
+        | Former::QubitType
         | Former::RowType
         | Former::WebType
         | Former::Web(_)
@@ -8125,6 +8127,7 @@ impl Walk<'_, '_>
                 | Former::PathProduct(..)
                 | Former::BaseType(_)
                 | Former::BufferType
+                | Former::QubitType
                 | Former::RowType
                 | Former::Row { .. }
                 | Former::Product(_)
@@ -9285,6 +9288,9 @@ impl Walk<'_, '_>
             },
             Former::BufferType => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
+            },
+            Former::QubitType => {
+                return writes(Production("type_identifier"), self.atom(Glyphs("Qubit")));
             },
             Former::WebType => {
                 return writes(Production("type_identifier"), self.atom(Glyphs("Web")));
@@ -13046,6 +13052,7 @@ impl Walk<'_, '_>
             | Former::PathProduct(..)
             | Former::BaseType(_)
             | Former::BufferType
+            | Former::QubitType
             | Former::RowType
             | Former::Row { .. }
             | Former::Product(_)
