@@ -1,0 +1,65 @@
+// A program sums two draws of two fair bits through `std.rand.Eff`, the host
+// interface of randomness.
+//
+// Each `draw` names a width in bits, and the host replies an integer uniform
+// over `[0, 2^width)` from the entropy source of the operating system. The
+// sum of two draws of two bits lies from 0 to 6, and the program exits with
+// it.
+//
+// `gandr run draws.gandr` exits with the sum and prints nothing. The same
+// `summed` runs under a handler of this source, a second model of the
+// interface that answers each draw from a fixed list.
+//
+// - see: `crates/surface-dispatcher/src/evaluate/rand.rs` — the host that
+//   serves the interface
+// - see: `crates/surface-driver/tests/rand.rs` — the run and its range
+
+// The native finite lists.
+import std.list (List);
+// The host interface of randomness.
+import std.rand;
+
+/// The sum of two integers, each a draw of two bits.
+pub def summed() -> [std.rand.Eff] Integer =
+  let first = std.rand.draw 2
+  let second = std.rand.draw 2
+  first + second
+
+/// The head of `rest`, or 0 when `rest` is empty.
+def headOr(rest : List Integer) -> Integer =
+  match rest where
+    | #[] => 0
+    | #[head, .._] => head
+
+/// The tail of `rest`, or the empty list when `rest` is empty.
+def tailOf(rest : List Integer) -> List Integer =
+  match rest where
+    | #[] => #[]
+    | #[_, ..tail] => tail
+
+/// `summed` under a handler of this source, a second model of `std.rand.Eff`:
+/// a function of a list, which answers each draw with the next integer of the
+/// list, and with 0 past its end.
+def summedFrom() -> (List Integer -> Integer) =
+  handle r : std.rand.Eff {
+    let total = summed ();
+    pure fun (rest : List Integer) { pure total }
+  } with {
+    | pure(x) => pure x
+    | oper draw(width, k) => pure fun (rest : List Integer) {
+      let next = headOr rest;
+      let after = tailOf rest;
+      let g = k next;
+      g after
+    }
+  }
+
+/// `summedFrom` over `#[3, 2]`: the sum is 5.
+@[ runs("5") ]
+def summedModelled() -> Integer =
+  let answer = summedFrom ()
+  answer #[3, 2]
+
+/// The entry: exit with the sum of two draws of two bits.
+def main() -> [std.rand.Eff] Integer =
+  summed ()
