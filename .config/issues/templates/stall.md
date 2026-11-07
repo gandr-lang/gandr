@@ -36,6 +36,7 @@ The closing comment of `stall:watch` names the event that ends the stall: the me
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — a routing event adds nothing at run time |
 | Names | `nominal` | no — a routing event binds, allocates and releases no name |
+| Level | `general` | no — a routing event states no result of the language |
 
 ## Concerns
 
