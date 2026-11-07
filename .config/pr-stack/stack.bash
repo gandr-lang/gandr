@@ -691,30 +691,44 @@ red_reading() {
 }
 
 # Cut the red bottom `$1` out of its server stack and place it on the top
-# (#5073). `heal.jq` decides the cut as `pr:watch`'s heal does: no member
-# above changes a path the red one changes, none is red and none is queued.
-# `restack_past` then replays the members above onto the trunk, signed, with
-# #5071's server and ancestry checks. The red one is retargeted onto the new
-# top and linked there, so it lands last once its seat makes it green. Then
-# the runs the cut made stale are cancelled (`cancel_stale`). One cut runs at
-# a time on the host, under the `stack-cut` lock on descriptor 7.
-# Prints nothing when `$1` is not a red bottom with members above it. Prints
-# `<stack before>\t<stack after>\t<check>\t<run>` on a cut. Fails naming the
-# reason on stderr, with nothing moved, when the cut is refused or conflicts.
+# (#5073), through `cut_to_top` with each red member flagged. Prints nothing
+# when `$1` is not a red bottom with members above it. Prints `<stack
+# before>\t<stack after>\t<check>\t<run>` on a cut. Fails naming the reason on
+# stderr, with nothing moved, when the cut is refused or conflicts.
 cut_bottom() {
-  local root=$1 red stack queued members=() member at=0 flag paths decision chain top status=0 heads=() numbers
+  local root=$1 red stack member flagged cut
   red=$(red_reading "$root") || return 1
   [[ $red != null ]] || return 0
   stack=$(server_stack "$root")
   [[ $(jq --argjson root "$root" 'length > 1 and .[0].number == $root' <<< "$stack") == true ]] || return 0
+  flagged=("$root")
+  for member in $(jq -r '.[1:][].number' <<< "$stack"); do
+    [[ $(red_reading "$member") == null ]] || flagged+=("$member")
+  done
+  cut=$(cut_to_top "$root" "$stack" "$(printf '%s\n' "${flagged[@]}" | jq -sc .)") || return
+  printf '%s\t%s\t%s\n' "$cut" "$(jq -r .check <<< "$red")" "$(jq -r '.run // "no run"' <<< "$red")"
+}
+
+# Cut the member `$1` out of the server stack `$2` (bottom to top) and place
+# it on the top (#5073, #5902). `$3` is a JSON array of the members flagged:
+# a red one for `cut_bottom`, the held one for `pr:hold`. `heal.jq` decides
+# the cut as `pr:watch`'s heal does: no member above changes a path `$1`
+# changes, none is flagged and none is queued. `restack_past` then replays
+# the members above onto the member below `$1`, or the trunk, signed, with
+# #5071's server and ancestry checks. `$1` is retargeted onto the new top and
+# linked there, so it lands last once its seat clears it. Then the runs the
+# cut made stale are cancelled (`cancel_stale`). One cut runs at a time on
+# the host, under the `stack-cut` lock on descriptor 7. Prints `<stack
+# before>\t<stack after>` on a cut. Fails naming the reason on stderr, with
+# nothing moved, when the cut is refused, waits on a queued member, or
+# conflicts.
+cut_to_top() {
+  local root=$1 stack=$2 flagged=$3 queued members=() member at=0 flag paths decision chain top status=0 heads=() numbers
   queued=$(queued_of "$stack")
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   git fetch --quiet origin "$trunk" "${heads[@]}"
   for member in $(jq -r '.[].number' <<< "$stack"); do
-    flag=true
-    if (( member != root )); then
-      [[ $(red_reading "$member") != null ]] || flag=false
-    fi
+    flag=$(jq --argjson n "$member" 'index($n) != null' <<< "$flagged")
     paths=$(member_paths "$stack" "$at")
     members+=("$(jq -cn --argjson number "$member" --argjson red "$flag" --argjson queued "$queued" --argjson paths "$paths" \
       '{number: $number, red: $red, queued: ($number | IN($queued[])), paths: $paths}')")
@@ -750,10 +764,9 @@ cut_bottom() {
   host_unlock 7
   exec 7<&-
   (( status == 0 )) || return "$status"
-  printf '%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\n' \
     "$(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" \
-    "$(jq -r --argjson root "$root" 'map(select(.number != $root) | "#\(.number)") + ["#\($root)"] | join(" ← ")' <<< "$stack")" \
-    "$(jq -r .check <<< "$red")" "$(jq -r '.run // "no run"' <<< "$red")"
+    "$(jq -r --argjson root "$root" 'map(select(.number != $root) | "#\(.number)") + ["#\($root)"] | join(" ← ")' <<< "$stack")"
 }
 
 # Cancel the runs a cut made stale (#5073, `stale.jq`): a queued or running
