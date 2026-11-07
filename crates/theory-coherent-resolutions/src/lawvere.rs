@@ -20,7 +20,8 @@
 //!
 //! A cell of degree one has the boundary `(occ(u₁) − 1) []`. The first face
 //! counts occurrences. So the boundary of a boundary is zero only when each
-//! rule keeps the occurrences of its variables.
+//! rule keeps the occurrences of its variables. [`LawvereTheory::new`]
+//! refuses a rule that changes them.
 //!
 //! The complex is infinite. [`LawvereTheory`] states the faces of a cell when
 //! a caller asks, as a [`Complex`] of the Morse crate. A [`Truncation`] lists
@@ -36,6 +37,12 @@
 //! - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras`
 //!   — exemplar: the standard resolution of a convergent presentation, whose
 //!   collapsing schemes end on the rules and the critical branchings.
+//! - `Ara-2025-polygraphs_rewriting_higher_categories` — background: chapter 13
+//!   presents a Lawvere theory by a term rewriting system, and § 13.5.10 gives
+//!   its coherent presentation, one 3-cell for each critical branching. § 13.4
+//!   adds a cell for each duplication and each erasure of a variable. This
+//!   complex holds no such cell, so the theory refuses a rule that changes the
+//!   occurrences of a variable.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -100,6 +107,10 @@ pub enum LawvereError
     LeadingVariable,
     /// A coefficient passes the integers that an incidence holds.
     Overflow,
+    /// The two sides of the rule whose left side is at this place hold a
+    /// variable a different number of times. The first face counts
+    /// occurrences, so on such a rule the boundary of a boundary is not zero.
+    Unbalanced(TermPlace),
 }
 
 impl fmt::Display for LawvereError
@@ -135,6 +146,11 @@ impl fmt::Display for LawvereError
             Self::Overflow => {
                 f.write_str("a coefficient passes the integers that an incidence holds")
             },
+            Self::Unbalanced(place) => write!(
+                f,
+                "the rule whose left side is at place {} changes the occurrences of a variable",
+                usize::from(place)
+            ),
         }
     }
 }
@@ -456,24 +472,51 @@ impl LawvereTheory
     /// within `budget` rewrites.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the theory exists exactly when the two sides of each rule
+    ///   hold each variable the same number of times.
+    /// - fails: [`LawvereError::Unbalanced`] with the left side of the first
+    ///   rule that changes the occurrences of a variable;
+    ///   [`LawvereError::Unissued`] when the table holds no term at a side.
+    /// - panics: none.
+    /// - executable: none — the ensures compares the occurrences of two sides,
+    ///   and the call holds no second count to check it against.
+    /// - intension: one walk over the two sides of each rule.
+    ///
+    /// # Errors
+    /// - [`LawvereError::Unbalanced`]: a rule changes the occurrences of a
+    ///   variable.
+    /// - [`LawvereError::Unissued`]: the table holds no term at a side of a
+    ///   rule.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule that erases a variable and a rule that
+    ///   duplicates one are each refused, and a rule that keeps each variable
+    ///   is admitted.
+    /// - witness: `tests::lawvere::a_rule_that_changes_the_occurrences_of_a_variable_is_refused`
     #[inline]
-    #[must_use]
-    pub const fn new(
+    pub fn new(
         arities: Vec<Arity>,
         rules: Vec<(TermPlace, TermPlace)>,
         table: TermTable,
         budget: NormalizationBudget,
-    ) -> Self
+    ) -> Result<Self, LawvereError>
     {
-        Self {
+        let (mut before, mut after) = (BTreeMap::new(), BTreeMap::new());
+        for &(left, right) in &rules {
+            table.occurrences(left, &mut before)?;
+            table.occurrences(right, &mut after)?;
+            if before != after {
+                return Err(LawvereError::Unbalanced(left));
+            }
+        }
+        Ok(Self {
             arities,
             rules,
             table,
             normal: BTreeMap::new(),
             budget,
             scheme: brown::Memory::new(),
-        }
+        })
     }
 
     /// The arity of each operation.

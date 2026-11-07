@@ -80,7 +80,7 @@ fn nat_units() -> Result<(LawvereTheory, Terms), LawvereError>
         rules,
         table,
         NormalizationBudget::from(1_000_usize),
-    );
+    )?;
     Ok((theory, Terms {
         first,
         second,

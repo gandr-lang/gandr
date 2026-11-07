@@ -35,9 +35,11 @@
 //!
 //! - `Doré-2023-computing_spaces_type_theory` — background: § 3.4 states a
 //!   matching as a function whose fixed points are the critical cells, and its
-//!   acyclicity as a gradient path from each cell to a critical cell.
-//!   Maximilian Doré, "Computing Spaces in Type Theory", doctoral thesis,
-//!   University of Oxford, 2023.
+//!   acyclicity as a gradient path from each cell to a critical cell. A
+//!   [`Scheme`] is that function. [`collapse()`] reads acyclicity as no cycle
+//!   on the gradient from the given cells, within a budget. Maximilian Doré,
+//!   "Computing Spaces in Type Theory", doctoral thesis, University of Oxford,
+//!   2023.
 //! - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras`
 //!   — background: the introduction and § 5.3 contract the standard resolution
 //!   of a convergent presentation onto its rules, critical pairs and critical

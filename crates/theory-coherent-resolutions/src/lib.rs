@@ -17,7 +17,11 @@
 //! The rewriting engine is generic over the substrate's
 //! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet) and adds no cell
 //! vocabulary. The resolution of a first-order block is the bar complex of the
-//! Lawvere theory that the block presents ([`LawvereTheory`], [`BarCell`]). A
+//! Lawvere theory that the block presents ([`LawvereTheory`], [`BarCell`]). The
+//! complex follows chapter 13 of the polygraphs book of Ara and others, and
+//! refuses a rule that erases or duplicates a variable. Brown's scheme keeps
+//! each critical branching essential, the limit that Malbos and Ren sharpen,
+//! and its matching is a function, as in § 3.4 of Doré. A
 //! sequent cell has no first-order reading in the substrate, so the caller
 //! states the theory's rules. The complex is a
 //! [`Complex`](gandr_theory_discrete_morse::Complex) of the Morse crate. The

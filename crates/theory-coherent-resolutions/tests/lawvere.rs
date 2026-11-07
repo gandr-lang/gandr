@@ -4,7 +4,8 @@
 //! Three small theories carry the witnesses. The free theory on one unary
 //! operation `s` has no rule. The theory `s(z) ⇒ z` has one rule that rewrites
 //! a composite. The theory of `a(z, x) ⇒ x` and `a(x, z) ⇒ x` has two rules
-//! that keep their variables, so the boundary of each boundary is zero.
+//! that keep their variables, so the boundary of each boundary is zero. A rule
+//! that erases or duplicates a variable gives no theory.
 
 use alloc::collections::BTreeMap;
 
@@ -85,7 +86,7 @@ fn collapsing() -> Result<(LawvereTheory, TermPlace, TermPlace), LawvereError>
         vec![(left, zero)],
         table,
         NormalizationBudget::from(BUDGET),
-    );
+    )?;
     Ok((theory, successor, zero))
 }
 
@@ -181,7 +182,7 @@ fn a_normal_form_rewrites_innermost_first_within_its_budget() -> Result<(), Lawv
         vec![(looped, looped)],
         table,
         NormalizationBudget::from(10_usize),
-    );
+    )?;
     assert_eq!(
         looping.normal_form(looped),
         Err(LawvereError::Exhausted(looped))
@@ -233,7 +234,7 @@ fn the_faces_of_a_cell_are_its_first_inner_and_last_faces() -> Result<(), Lawver
         Vec::new(),
         table,
         NormalizationBudget::from(BUDGET),
-    );
+    )?;
     let square = BarCell(vec![
         arrow(one, vec![successor]),
         arrow(one, vec![successor]),
@@ -333,7 +334,7 @@ fn the_boundary_of_each_boundary_in_a_truncation_is_zero() -> Result<(), Lawvere
         vec![(left_unit, x0), (right_unit, x0)],
         table,
         NormalizationBudget::from(BUDGET),
-    );
+    )?;
     let bound = BarBound {
         variables: Arity::from(2_usize),
         weight: TermSize::from(4_usize),
@@ -377,5 +378,45 @@ fn the_boundary_of_each_boundary_in_a_truncation_is_zero() -> Result<(), Lawvere
         truncation.cells(BarDegree::from(4_usize)).is_empty(),
         "the truncation holds no cell past its degree"
     );
+    Ok(())
+}
+
+#[test]
+fn a_rule_that_changes_the_occurrences_of_a_variable_is_refused() -> Result<(), LawvereError>
+{
+    // `a` is binary, `d` unary and `z` a constant. `a(z, x₀) ⇒ z` erases
+    // `x₀`. `d(x₀) ⇒ a(x₀, x₀)` keeps the variables of its left side but
+    // doubles `x₀`, so a check of the variables alone admits it. `a(z, x₀) ⇒
+    // x₀` keeps each variable once.
+    let (a, d, z) = (
+        Operation::from(0_usize),
+        Operation::from(1_usize),
+        Operation::from(2_usize),
+    );
+    let arities = vec![
+        Arity::from(2_usize),
+        Arity::from(1_usize),
+        Arity::from(0_usize),
+    ];
+    let mut table = TermTable::default();
+    let x0 = first(&mut table);
+    let zero = table.op(z, Vec::new())?;
+    let unit = table.op(a, vec![zero, x0])?;
+    let single = table.op(d, vec![x0])?;
+    let doubled = table.op(a, vec![x0, x0])?;
+    let cases = [
+        ((unit, zero), Some(LawvereError::Unbalanced(unit))),
+        ((single, doubled), Some(LawvereError::Unbalanced(single))),
+        ((unit, x0), None),
+    ];
+    for (rule, expected) in cases {
+        let made = LawvereTheory::new(
+            arities.clone(),
+            vec![rule],
+            table.clone(),
+            NormalizationBudget::from(BUDGET),
+        );
+        assert_eq!(made.err(), expected, "{rule:?}");
+    }
     Ok(())
 }
