@@ -1,0 +1,18 @@
+/// `exact-distributions`: Finite distributions with exact weights.
+/// Implemented: a distribution holds exact rational weights in one canonical order. `distributes` states the exact distribution of a definition's runs over every answer of its draws.
+/// Not implemented: no run across worlds or sessions between seats states its exact distribution.
+///
+/// - owes: #5712
+// One draw of one fair bit gives 0 and 1, each with weight one half. The
+// corpus runs `bit` twice, once for each answer of its draw. The model
+// source `draws.gandr` sums two draws of two bits.
+//
+// - see: `../../model/probability/draws.gandr`
+
+// The host interface of randomness.
+import std.rand;
+
+/// One draw of one bit: 0 and 1, each with weight one half.
+@[ distributes(("1/2 0", "1/2 1")) ]
+def bit() -> [std.rand.Eff] Integer =
+  std.rand.draw 1

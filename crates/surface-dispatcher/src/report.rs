@@ -295,7 +295,8 @@ fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
                 | Outcome::Decomposes(_)
                 | Outcome::RefusesRunning(..)
                 | Outcome::RunsTracing(..)
-                | Outcome::Reads(_),
+                | Outcome::Reads(_)
+                | Outcome::Distributes(_),
             )
             | Stated::Malformed(_)),
             _,

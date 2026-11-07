@@ -1,4 +1,4 @@
-//! The seven expectation schemas, the verdict a declaration states, and the
+//! The nine expectation schemas, the verdict a declaration states, and the
 //! reading of a declared name's attributes into it.
 //!
 //! # A name states one verdict or none
@@ -40,6 +40,19 @@
 //! it states no verdict ([`ExpectationFault::TraceWithoutRun`]), and one
 //! whose payload is neither form states none either
 //! ([`ExpectationFault::UnwrittenTrace`]).
+//!
+//! # A distribution states every answer of the draws
+//!
+//! `@[ distributes(("1/4 0", "1/2 1", "1/4 2")) ]` states that the declaration
+//! checks, owing nothing, and that its runs, one for each sequence of answers
+//! to its draws, give each outcome with the weight written before it. Each
+//! text is a positive rational weight, a space, and the outcome as `runs`
+//! spells it, and the weights sum to one. Several texts are one tuple, as
+//! several laws of `respects` are. It reads as
+//! [`Outcome::Distributes`] of the distribution's canonical spelling
+//! (`crate::distribution`), so the order of the texts and a point split in
+//! two state one verdict. Texts that write no distribution state none
+//! ([`ExpectationFault::UnwrittenDistribution`]).
 //!
 //! # A run outcome refines *checks*
 //!
@@ -224,6 +237,10 @@ pub enum ExpectationSchema
     /// `reads(names)`: the declaration checks, owing nothing, and mentions
     /// exactly the items named, `()` when it mentions none.
     Reads,
+    /// `distributes(("w outcome", …))`: the declaration checks, owing nothing,
+    /// and its runs, one for each sequence of answers to its draws, give
+    /// each outcome with its exact weight.
+    Distributes,
 }
 
 impl ExpectationSchema
@@ -233,8 +250,8 @@ impl ExpectationSchema
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `checks`, `owes`, `refuses`, `runs`, `normalizes`,
-    ///   `decomposes`, `traces` and `reads` name their schemas; any other
-    ///   registered attribute names none.
+    ///   `decomposes`, `traces`, `reads` and `distributes` name their schemas;
+    ///   any other registered attribute names none.
     /// - provides: the filter that decides which attributes state a verdict.
     /// - fails: never; an attribute stating something else is the
     ///   [`expectation_schema::Absent::Unrelated`] absence.
@@ -256,9 +273,10 @@ impl ExpectationSchema
     | ("normalizes", Maybe::Present(Self::Normalizes))
     | ("decomposes", Maybe::Present(Self::Decomposes))
     | ("traces", Maybe::Present(Self::Traces))
-    | ("reads", Maybe::Present(Self::Reads)) => true,
+    | ("reads", Maybe::Present(Self::Reads))
+    | ("distributes", Maybe::Present(Self::Distributes)) => true,
     (name, Maybe::Absent(expectation_schema::Absent::Unrelated)) => {
-        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes" | "traces" | "reads")
+        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes" | "traces" | "reads" | "distributes")
     }
     _ => false,
 },
@@ -276,6 +294,7 @@ impl ExpectationSchema
             "decomposes" => Maybe::Present(Self::Decomposes),
             "traces" => Maybe::Present(Self::Traces),
             "reads" => Maybe::Present(Self::Reads),
+            "distributes" => Maybe::Present(Self::Distributes),
             _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
@@ -319,6 +338,7 @@ impl fmt::Display for ExpectationSchema
             Self::Decomposes => "decomposes",
             Self::Traces => "traces",
             Self::Reads => "reads",
+            Self::Distributes => "distributes",
         })
     }
 }
@@ -371,6 +391,10 @@ pub enum Outcome
     /// The declaration checks, owing nothing, and mentions exactly the items
     /// spelled: `()`, one name, or a record of names, `*{a, b}`.
     Reads(RunSpelling),
+    /// The declaration checks, owing nothing, and its runs, one for each
+    /// sequence of answers to its draws, give the distribution spelled in its
+    /// canonical form.
+    Distributes(RunSpelling),
 }
 
 impl fmt::Display for Outcome
@@ -378,7 +402,7 @@ impl fmt::Display for Outcome
     /// Writes `checks owing n`, `refuses Name`, `runs to outcome`,
     /// `normalizes call ~> normal form`, `decomposes to web`,
     /// `refuses Name and runs to outcome`, `runs to outcome tracing c to
-    /// web, …` or `reads names`.
+    /// web, …`, `reads names` or `distributes as distribution`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -425,6 +449,7 @@ impl fmt::Display for Outcome
                 Ok(())
             },
             Self::Reads(ref spelled) => write!(f, "reads {spelled}"),
+            Self::Distributes(ref spelled) => write!(f, "distributes as {spelled}"),
         }
     }
 }
@@ -578,6 +603,14 @@ pub enum ExpectationFault
         /// The bytes the attribute covers.
         span: ByteSpan,
     },
+    /// A `distributes` payload whose texts write no distribution: a text with
+    /// no weight and space before its outcome, a weight that is no positive
+    /// rational, or weights that do not sum to one.
+    UnwrittenDistribution
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+    },
 }
 
 impl fmt::Display for ExpectationFault
@@ -633,6 +666,10 @@ impl fmt::Display for ExpectationFault
             Self::UnwrittenReads { .. } => {
                 f.write_str("the `reads` payload is no `()`, name or record of names")
             },
+            Self::UnwrittenDistribution { .. } => f.write_str(
+                "the `distributes` payload is no texts of positive weights that sum to one, each \
+                 before its outcome",
+            ),
         }
     }
 }
@@ -928,6 +965,8 @@ where
         }
     } else if schema == ExpectationSchema::Traces {
         ret == Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun { span: entry.span() }))
+    } else if schema == ExpectationSchema::Distributes {
+        ret == Ok(crate::distribution::stated(entry, arena))
     } else {
         payload(entry, arena)
             .map_or_else(
@@ -1046,6 +1085,7 @@ fn stated_by(
         ExpectationSchema::Traces => Ok(Stated::Malformed(ExpectationFault::TraceWithoutRun {
             span,
         })),
+        ExpectationSchema::Distributes => Ok(crate::distribution::stated(entry, arena)),
     }
 }
 

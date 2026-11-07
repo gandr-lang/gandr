@@ -11,6 +11,12 @@
 //! the decline, the host writes one line to standard error. The line names
 //! the operation and the cause.
 //!
+//! The exact model answers the draws from a path instead ([`Draws`]): the
+//! corpus runs a `distributes` declaration once for each sequence of answers,
+//! depth first, and reads no entropy. A path that draws past its quota stops
+//! at the draw that passes it, and the path is marked so the corpus refuses
+//! it by name.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — anchor: §
@@ -24,6 +30,7 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
+use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
@@ -38,6 +45,7 @@ use gandr_kernel_term::Sign;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
+use gandr_surface_corpus::Bits;
 
 use super::Console;
 use super::Printed;
@@ -76,6 +84,12 @@ enum Declined
     Entropy(getrandom::Error),
     /// The run's values hold no room for the drawn integer.
     Store,
+    /// The exact model's path draws past its quota: the bits it would take
+    /// with this draw.
+    PastQuota(u32),
+    /// The exact model's run draws another width than its path recorded at
+    /// this draw.
+    Unreplayed,
 }
 
 impl fmt::Display for Declined
@@ -102,6 +116,15 @@ impl fmt::Display for Declined
                 )
             },
             Self::Store => f.write_str("the run holds no room for the drawn integer"),
+            Self::PastQuota(bits) => {
+                write!(
+                    f,
+                    "the draws take {bits} bits, past the quota of the exact model"
+                )
+            },
+            Self::Unreplayed => {
+                f.write_str("the draw has another width than the path the exact model recorded")
+            },
         }
     }
 }
@@ -230,4 +253,201 @@ fn reply(
             magnitude,
         ))))
         .ok()
+}
+
+/// Whether a path follows: what [`Draws::advance`] answers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Advanced
+{
+    /// The draws hold the next path.
+    Next,
+    /// Every path ran.
+    Done,
+}
+
+/// The answers of the draws of one path of a run, for the exact model.
+///
+/// The path's leading draws are answered as recorded, and each draw past
+/// them is answered 0 and recorded. [`Self::advance`] then drops the trailing
+/// draws at their greatest answer and raises the last one that can rise, so
+/// the runs walk every sequence of answers depth first, each once.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Draws
+{
+    /// Each draw of the path, in order: its width and its answer.
+    path: Vec<(Width, Drawn)>,
+    /// How many leading draws of the path this run answers as recorded.
+    fixed: usize,
+    /// How many draws this run has answered.
+    taken: usize,
+    /// The bits this run's draws take.
+    bits: u32,
+    /// The most bits one path may draw.
+    quota: u32,
+    /// The bits a draw past the quota would take, when one was asked.
+    past: Option<u32>,
+}
+
+impl Draws
+{
+    /// The draws of the first path: none recorded yet, each answered 0.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn new(quota: Bits) -> Self
+    {
+        Self {
+            path: Vec::new(),
+            fixed: 0,
+            taken: 0,
+            bits: 0,
+            quota: u32::from(quota),
+            past: None,
+        }
+    }
+
+    /// The bits the draws of the last run take.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn bits(&self) -> Bits
+    {
+        Bits::from(self.bits)
+    }
+
+    /// The bits of the first draw past the quota, when the last run asked
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn past(&self) -> Option<Bits>
+    {
+        self.past.map(Bits::from)
+    }
+
+    /// The answer to a draw of `width` bits: the path's recorded answer while
+    /// the run is within its leading draws, else 0, recorded.
+    ///
+    /// # Specification
+    /// - ensures: an answer below `2^width`; the draw counted with its width.
+    /// - fails: a draw past the quota, marked in [`Self::past`], and a width
+    ///   other than the one the path recorded, are refused by name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two draws of two bits walk 16 paths in order, and a
+    ///   draw of 17 bits is past the quota.
+    /// - witness: `evaluate::rand::tests::two_draws_of_two_bits_walk_sixteen_paths_in_order`
+    /// - witness: `evaluate::rand::tests::a_draw_past_the_quota_is_marked`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |drawn| drawn.0.checked_shr(width.0).is_none_or(|above| above == 0)))]
+    fn answer(
+        &mut self,
+        width: Width,
+    ) -> Result<Drawn, Declined>
+    {
+        let bits = self.bits.saturating_add(width.0);
+        if bits > self.quota {
+            self.past = Some(bits);
+            return Err(Declined::PastQuota(bits));
+        }
+        let drawn = if self.taken < self.fixed {
+            match self.path.get(self.taken) {
+                Some(&(recorded, drawn)) if recorded == width => drawn,
+                Some(_) | None => return Err(Declined::Unreplayed),
+            }
+        }
+        else {
+            self.path.push((width, Drawn(0)));
+            Drawn(0)
+        };
+        self.taken = self.taken.saturating_add(1);
+        self.bits = bits;
+        Ok(drawn)
+    }
+
+    /// Move to the next path, depth first: drop the trailing draws at their
+    /// greatest answer, and raise the last one that can rise.
+    ///
+    /// # Specification
+    /// - ensures: [`Advanced::Next`] with the next path's leading draws fixed
+    ///   and the count of bits reset; [`Advanced::Done`] when every draw of the
+    ///   path is at its greatest answer.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: each pass drops one draw of the finite path or returns.
+    /// - measure: the draws left in the path.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::answer`].
+    /// - witness: `evaluate::rand::tests::two_draws_of_two_bits_walk_sixteen_paths_in_order`
+    #[spec(ensures: |ret| ret == Advanced::Done || self.fixed == self.path.len())]
+    pub(super) fn advance(&mut self) -> Advanced
+    {
+        self.taken = 0;
+        self.bits = 0;
+        self.past = None;
+        while let Some(&mut (width, ref mut drawn)) = self.path.last_mut() {
+            let greatest = u64::MAX
+                .checked_shr(WIDEST.saturating_sub(width.0))
+                .unwrap_or(0);
+            if drawn.0 < greatest {
+                *drawn = Drawn(drawn.0.saturating_add(1));
+                self.fixed = self.path.len();
+                return Advanced::Next;
+            }
+            let _greatest = self.path.pop();
+        }
+        self.fixed = 0;
+        Advanced::Done
+    }
+}
+
+/// Serve the `Rand` operation that `request` offers from `draws`, the exact
+/// model: the reply the path gives, or nothing when the request is another
+/// interface's.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for `draw`, the answer [`Draws::answer`] gives. A decline when
+///   the width is not an integer from one to 64, when the path draws past its
+///   quota, or when the run draws another width than the path recorded; one
+///   line on `console`'s standard error names the cause first. Nothing for any
+///   other interface.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the exemplar's two draws of two bits settle their stated
+///   distribution, and a draw of 17 bits is refused past the quota.
+/// - witness: `tests::corpus::a_distribution_settles_over_every_answer_of_its_draws_5710`
+#[spec(
+    captures: [random = request.signature.name().as_ref() == RAND],
+    ensures: |ret| ret.is_none() != random,
+)]
+pub(super) fn answered<Abort, Printer>(
+    console: &mut Printer,
+    draws: &mut Draws,
+    request: HostRequest<'_>,
+    values: &mut HostValues<'_>,
+) -> Option<HostReply<Abort>>
+where
+    Printer: Console + ?Sized,
+{
+    if request.signature.name().as_ref() != RAND {
+        return None;
+    }
+    let answered = width(request.operation, request.payload, values)
+        .and_then(|width| draws.answer(width))
+        .and_then(|drawn| reply(drawn, values).ok_or(Declined::Store));
+    Some(match answered {
+        Ok(reply) => HostReply::Resume(reply),
+        Err(declined) => {
+            let line = format!("{RAND}.{}: {declined}", request.operation.as_ref());
+            match console.eprint(Line::from(line.as_str())) {
+                Printed::Written | Printed::Failed => {},
+            }
+            HostReply::Decline
+        },
+    })
 }

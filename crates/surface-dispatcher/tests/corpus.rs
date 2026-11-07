@@ -919,6 +919,88 @@ fn a_reads_claim_settles_against_the_carried_footprint_2520()
     );
 }
 
+/// #5710: a `distributes` claim settles against the runs of its declaration,
+/// one for each sequence of answers to its draws, each path of weight `2^-n`
+/// for its `n` bits. Two draws of one bit settle their exact weights; the same
+/// runs stated with other weights are unsettled, the runs' distribution
+/// produced; and a draw of 17 bits passes the quota of 16, refused by name.
+/// The source imports `std.rand`, so it is walked from a fixture root.
+#[test]
+fn a_distribution_settles_over_every_answer_of_its_draws_5710()
+{
+    let scratch = std::env::temp_dir().join(format!(
+        "gandr-dispatcher-distributes-{}",
+        std::process::id()
+    ));
+    if scratch.exists() {
+        std::fs::remove_dir_all(&scratch).expect("a stale scratch directory is removed");
+    }
+    let fixture = scratch.join("corpus/fixture");
+    let source = fixture.join("model/distributes.gandr");
+    std::fs::create_dir_all(source.parent().expect("a file has a parent"))
+        .expect("the directories are created");
+    std::fs::write(
+        &source,
+        include_str!(
+            "corpus/fixtures/a-distribution-settles-over-every-answer-of-its-draws-5710.gandr"
+        ),
+    )
+    .expect("the source is written");
+    let mut claims: Vec<(String, Outcome, Settlement)> = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![fixture]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                composed: Composed::Settled { ref report, .. },
+                ..
+            } = step
+            else {
+                panic!("the source settles: {step:?}");
+            };
+            claims.extend(
+                report
+                    .declarations()
+                    .iter()
+                    .filter(|declaration| {
+                        matches!(
+                            declaration.stated(),
+                            &Stated::Verdict(Outcome::Distributes(_))
+                        )
+                    })
+                    .map(|declaration| {
+                        (
+                            declaration.name().to_string(),
+                            declaration.outcome(),
+                            declaration.settlement(),
+                        )
+                    }),
+            );
+            ControlFlow::Continue(())
+        },
+    );
+    std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+    let distributed =
+        |spelled: &str| Outcome::Distributes(RunSpelling::from(String::from(spelled)));
+    let runs = r#""1/4 0", "1/2 1", "1/4 2""#;
+    assert_eq!(
+        claims,
+        vec![
+            (String::from("pair"), distributed(runs), Settlement::Settled),
+            (
+                String::from("coin"),
+                distributed(runs),
+                Settlement::Unsettled
+            ),
+            (
+                String::from("wide"),
+                distributed("PastQuota: a path draws 17 bits, past the quota of 16"),
+                Settlement::Unsettled
+            ),
+        ],
+        "each claim settles against the distribution of its runs"
+    );
+}
+
 /// The corpus sweeps: a wider visit over corpus sources hands over, step by
 /// step, exactly what the serial visit over them yields, and answers the
 /// serial visit's report; and a judgement's type table answers as the table

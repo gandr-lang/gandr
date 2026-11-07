@@ -597,6 +597,7 @@ use crate::attribute::names;
 use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
+use crate::attribute::texts;
 use crate::by_form::At;
 use crate::by_form::ByForm;
 use crate::by_form::FormPlace;
@@ -24158,6 +24159,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     AttributeSchema::MarkerOrRecord(_) => match deprecation(arena, value) {
                         Maybe::Present(_) => Maybe::Present((Vec::new(), Vec::new())),
                         Maybe::Absent(absent) => Maybe::Absent(absent),
+                    },
+                    AttributeSchema::Texts => match texts(arena, value) {
+                        Maybe::Present(_) => Maybe::Present((Vec::new(), Vec::new())),
+                        Maybe::Absent(texts::Absent::Untexted) => {
+                            return Err(LoweringRefusal::IllTypedPayload {
+                                span: placed.span,
+                                name,
+                                expected: schema,
+                                written: form,
+                            });
+                        },
                     },
                     AttributeSchema::Marker
                     | AttributeSchema::Integer

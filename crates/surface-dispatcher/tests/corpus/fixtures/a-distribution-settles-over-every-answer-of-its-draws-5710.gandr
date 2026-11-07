@@ -1,0 +1,14 @@
+import std.rand;
+@[ distributes(("1/4 0", "1/2 1", "1/4 2")) ]
+def pair() -> [std.rand.Eff] Integer =
+  let first = std.rand.draw 1
+  let second = std.rand.draw 1
+  first + second
+@[ distributes(("1/2 0", "1/2 2")) ]
+def coin() -> [std.rand.Eff] Integer =
+  let first = std.rand.draw 1
+  let second = std.rand.draw 1
+  first + second
+@[ distributes("1 0") ]
+def wide() -> [std.rand.Eff] Integer =
+  std.rand.draw 17
