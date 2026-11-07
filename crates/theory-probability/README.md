@@ -1,6 +1,6 @@
 # gandr-theory-probability
 
-This crate holds finite distributions with exact weights for gandr: the finite Giry monad, the product of two distributions and the marginals of a joint, the restriction to an event, and the decision whether a joint is the product of its marginals. It is the measure of the algebra family that holds probability.
+This crate holds finite distributions with exact weights for gandr: the finite Giry monad, the product of two distributions and the marginals of a joint, the restriction to an event, and the decision whether a joint is the product of its marginals. It also holds exact inference over a factor graph, generic over the ordered semiring, and the gluing of local tables. It is the measure of the algebra family that holds probability.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -16,9 +16,13 @@ This crate holds finite distributions with exact weights for gandr: the finite G
 
 **What.** A `Distribution` puts an exact positive weight on each point of a finite support, and the weights sum to one. A weight is the `Rational` of `theory-cellular-sheaves`. `point`, `uniform`, `map` and `bind` are the finite Giry monad: the unit, a uniform choice over a set, the pushforward and the Kleisli extension. `product` gives the joint of two independent distributions, and `first_marginal` and `second_marginal` give each component of a joint. `condition` restricts a distribution to an event and divides each weight by the weight of the event. `independent` decides whether a joint is the product of its marginals, and otherwise gives the first pair where they differ as an `Independence`.
 
-**Why.** Probability is the second instance of the logic that holds gandr's names: in Simpson's atomic sheaf logic, equivalence is equality in distribution and independence is the probabilistic one. The exact model of `std.rand.Eff` enumerates the answers of the draws of a run, and the exemplars that reason about randomness and about nondeterministic sessions read its distribution. One crate states the distributions, so each of them reads one form.
+A `FactorGraph` holds `Table`s over `Scope`s of finite `Variable`s. `JunctionTree::new` eliminates the variables in a given order and joins the maximal cliques by a spanning tree of greatest separators. `JunctionTree::with_tree` takes a tree as given and refuses one without the running intersection property by the variable that breaks it. `calibrate` runs sum-product over any `OrderedSemiring`: `Probability` gives each clique's marginal, and `MaxTimes` gives its greatest weight, which `decode` reads back as the most likely `Assignment`. A `Family` of tables over a cover glues when each two agree on their overlap: `glue` gives the shared tables, or each `Disagreement` with its entry and both weights. `possibility` decides whether each entry of positive weight extends to a world that every member admits.
+
+**Why.** Probability is the second instance of the logic that holds gandr's names: in Simpson's atomic sheaf logic, equivalence is equality in distribution and independence is the probabilistic one. The exact model of `std.rand.Eff` enumerates the answers of the draws of a run, and the exemplars that reason about randomness and about nondeterministic sessions read its distribution. One crate states the distributions, so each of them reads one form. Inference is the descent of the presented-spaces frame: a factor graph is a presented space, sum-product is its measure, and a calibrated tree is a glued section, so the certificate of a marginal is the section and a failure is the separator entry where it breaks.
 
 **How.** The support is in ascending order, each point once. So two distributions are equal in distribution exactly when their forms are equal, and the derived equality decides it. Every constructor ends in that form: a stable sort, then one merge of equal points by the sum of their weights. The results of a Kleisli extension are ascending runs, so the sort merges `k` runs in `O(n log k)` comparisons, and a product comes out in order with no sort. A weight past the 128-bit integers is refused by name, never rounded, and so is an event of weight zero.
+
+A table holds its weights with the last variable fastest, and a projection onto a smaller scope is one stride walk, so a marginal is linear in the larger table. Calibration sends one message each way on each edge, Shafer–Shenoy, and holds one table for each clique and each separator. Gluing marginalises each member onto each overlap once. `possibility` reads only the support of each table, Boolean, so it decides possibilistic contextuality: the cyclic family of three tables that each put half on the entries where the pair differs glues, yet is refused a joint. A weight past the 128-bit integers is refused by name in every semiring.
 
 ## References
 
@@ -31,6 +35,11 @@ This crate holds finite distributions with exact weights for gandr: the finite G
 - `Distribution`: a finite support in canonical order with exact weights, the finite Giry monad, the product, the marginals, the restriction to an event and the decision of independence.
 - `Independence`: the verdict on a joint, independent or the first pair whose weight is not the product of its marginal weights.
 - `ProbabilityError`: every refusal, a weight past the integers, a set or an event with no weight, or weights that are not a distribution.
+- `Variable`, `Arity`, `Value`, `Scope`, `Table`: finite variables, a scope in ascending order, and one weight for each assignment of a scope.
+- `FactorGraph`, `JunctionTree`, `Calibrated`, `Assignment`: the factors over the variables, a tree of cliques by elimination or as given, the beliefs of sum-product, and the most likely assignment.
+- `Family`, `Gluing`, `Disagreement`, `Possibility`: local tables over a cover, their gluing or each disagreement, and whether a joint is possible.
+- `Probability`, `MaxTimes`: the probability and the max-times semirings over the non-negative rationals.
+- `InferenceError`: every refusal of inference, a scope, a table, a tree or an order that is not well formed, or a weight past the integers.
 
 ## Expected features
 
@@ -64,7 +73,7 @@ mise exec -- cargo bench -p gandr-theory-probability
 
 ## Where the detail lives
 
-The distribution, its canonical form, the monad, the product and the restriction to an event are in `src/distribution.rs`. The marginals and the decision of independence are in `src/joint.rs`, and the refusals are in `src/error.rs`.
+The distribution, its canonical form, the monad, the product and the restriction to an event are in `src/distribution.rs`. The marginals and the decision of independence are in `src/joint.rs`, and the refusals are in `src/error.rs`. Scopes and tables are in `src/table.rs`, the two semirings in `src/semiring.rs`, the factor graph in `src/factor.rs`, the junction tree and its calibration in `src/junction.rs`, and the gluing of a family in `src/glue.rs`.
 
 ## License
 

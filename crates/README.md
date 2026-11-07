@@ -88,7 +88,7 @@ crates/
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-ordered-algebras/       one law checker for ordered semirings, a counterexample for each broken law, and the max-plus, Lawvere and usage instances
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
-├── theory-probability/            finite distributions with exact weights
+├── theory-probability/            exact finite distributions, and inference by gluing
 ├── theory-shapes/                 finite shapes: decidable subshapes, inclusions, the outer pushout, and face entailment in three bands, derived or refuted
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
