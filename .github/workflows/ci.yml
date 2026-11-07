@@ -975,8 +975,12 @@ jobs:
   # nothing: the plain lane's state holds the same units. A pull request,
   # stacked or not, whose change reaches the records runs it too, so a
   # stale record is red on the pull request rather than first in the queue
-  # (#2101). The enforcing shards keep their sample, where every row would
-  # take half an hour (#1434).
+  # (#2101). There it sweeps only the records its own change touches
+  # (`ci:recovery-change`, #5864): `landing` can hold stale records that
+  # `integration` records and the rebase onto `main` brings back, and they
+  # are not the pull request's. A merge group, a dispatch and `main` sweep
+  # every record. The enforcing shards keep their sample, where every row
+  # would take half an hour (#1434).
   cargo-test-recovery:
     name: sweep the recovery records (linux)
     needs: *rust-needs
@@ -988,6 +992,9 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      # A pull request's change is read against `HEAD^`, the base side of
+      # its merge commit.
+      CI_FETCH_DEPTH: "2"
       # As the plain lane's, so the parser's tests reuse its state's units.
       CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
       CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
@@ -1005,7 +1012,9 @@ jobs:
       - name: build the parser's tests
         run: mise run build:tests-plain-only
       - name: sweep every recovery record the change reaches
-        run: mise run ci:recovery
+        env:
+          CI_RECOVERY_TASK: ${{ github.event_name == 'pull_request' && 'ci:recovery-change' || 'ci:recovery' }}
+        run: mise run "$CI_RECOVERY_TASK"
       - *lane-state
 
   # The documentation lane: the private-item rustdoc as its build, over a
