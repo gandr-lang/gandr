@@ -629,7 +629,10 @@
         "escalate": 10,
         "repage": 10
       },
-      "areas": { "triage": ["workflow", "ci"], "triage-2": ["workflow", "ci"] },
+      "areas": {
+        "triage": ["workflow", "ci"],
+        "triage-2": ["workflow", "ci"]
+      },
       "prs": [
         {
           "number": 2784,
@@ -1821,7 +1824,9 @@
     "name": "#3822, #4174: the claimed issues read with their area labels and the lane their claim marker names, null for a markerless claim",
     "program": "facts.jq",
     "input": {
-      "pullRequests": { "nodes": [] },
+      "pullRequests": {
+        "nodes": []
+      },
       "claimed": {
         "nodes": [
           {
@@ -1829,9 +1834,15 @@
             "body": "The brief.\n\n<!-- claim: lane=triage -->\n",
             "labels": {
               "nodes": [
-                { "name": "kind:defect" },
-                { "name": "area:workflow" },
-                { "name": "status:claimed" }
+                {
+                  "name": "kind:defect"
+                },
+                {
+                  "name": "area:workflow"
+                },
+                {
+                  "name": "status:claimed"
+                }
               ]
             }
           },
@@ -1839,9 +1850,15 @@
             "number": 2954,
             "labels": {
               "nodes": [
-                { "name": "area:program-logic" },
-                { "name": "area:runtime" },
-                { "name": "status:claimed" }
+                {
+                  "name": "area:program-logic"
+                },
+                {
+                  "name": "area:runtime"
+                },
+                {
+                  "name": "status:claimed"
+                }
               ]
             }
           }
@@ -1851,53 +1868,7 @@
     "output": "{\"prs\":[],\"merged\":[],\"filed\":[],\"claimed\":[{\"number\":3809,\"areas\":[\"area:workflow\"],\"lane\":\"triage\"},{\"number\":2954,\"areas\":[\"area:program-logic\",\"area:runtime\"],\"lane\":null}]}"
   },
   {
-    "name": "#3822: the board of 2026-10-29 08:47Z, two seated lanes idle since the handoff, pages each lane once 20 minutes on, keyed by its lane; a lane with an open pull request is busy",
-    "program": "detect.jq",
-    "input": {
-      "now": 1793264820,
-      "trunk": "main",
-      "required": ["test"],
-      "thresholds": {
-        "root_unqueued": 20,
-        "ejections": 2,
-        "ejection_window": 360,
-        "depth": 6,
-        "red": 60,
-        "conflicting": 30,
-        "base_blocked": 10,
-        "unfiled": 10,
-        "idle": 20,
-        "escalate": 10,
-        "repage": 10
-      },
-      "prs": [
-        {
-          "number": 3725,
-          "draft": false,
-          "bot": false,
-          "head": "core-3725-content-children",
-          "base": "main",
-          "oid": "o3725",
-          "created": 1793260000,
-          "mergeable": "MERGEABLE",
-          "queued": true,
-          "removals": [],
-          "checks": []
-        }
-      ],
-      "claimed": [{ "number": 3725, "areas": ["area:core"] }],
-      "seats": ["core", "program-logic", "triage"],
-      "areas": {
-        "core": ["core", "kernel"],
-        "program-logic": ["program-logic", "runtime"],
-        "triage": ["workflow", "ci"]
-      },
-      "seen": { "program-logic:seat-idle": 1793263620, "triage:seat-idle": 1793263620 }
-    },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; the coordinator queues its next work\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; the coordinator queues its next work\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
-  },
-  {
-    "name": "#3822: a seated lane with a claimed issue in one of its areas is busy, one idle inside the threshold is remembered and not paged, and a seat's lane no row names is read by no kind",
+    "name": "#5996: a seat working for an hour with no claim and no pull request, as the fixer repairs integration, and a seat waiting 30 minutes on a background job read no finding",
     "program": "detect.jq",
     "input": {
       "now": 1793264820,
@@ -1917,15 +1888,30 @@
         "repage": 10
       },
       "prs": [],
-      "claimed": [{ "number": 3812, "areas": ["area:ux"] }],
-      "seats": ["domhringr", "surface", "triage"],
-      "areas": { "surface": ["surface", "ux"], "triage": ["workflow", "ci"] },
-      "seen": { "triage:seat-idle": 1793264220 }
+      "claimed": [],
+      "seats": ["triage", "workflow"],
+      "activity": {
+        "triage": {
+          "state": "working",
+          "since": 1793261220,
+          "line": "The gate runs on the repair."
+        },
+        "workflow": {
+          "state": "waiting",
+          "since": 1793263020,
+          "line": "The gate, then pr:open and pr:land, are running, and the result will wake me."
+        }
+      },
+      "claim": "queue-next {lane}",
+      "areas": {
+        "triage": ["workflow", "ci"],
+        "workflow": ["workflow"]
+      }
     },
-    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793264220},\"paged\":{},\"stalled\":{}}"
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
   },
   {
-    "name": "#4174: a seat holding a marked claim outside its areas is busy, and a claim in a lane's areas marked for another lane leaves that lane idle",
+    "name": "#5996: a seat idle at its prompt for an hour with a claim reads seat-idle, its line naming the claim and the claim command for its lane, and carries its last line",
     "program": "detect.jq",
     "input": {
       "now": 1793264820,
@@ -1946,18 +1932,128 @@
       },
       "prs": [],
       "claimed": [
-        { "number": 3931, "areas": ["area:theory", "area:kernel"], "lane": "elaboration" },
-        { "number": 3812, "areas": ["area:workflow"], "lane": "surface" }
+        {
+          "number": 3209,
+          "areas": ["area:workflow"],
+          "lane": "triage-2"
+        }
+      ],
+      "seats": ["triage-2"],
+      "activity": {
+        "triage-2": {
+          "state": "idle",
+          "since": 1793261220,
+          "line": "The PR is open; I wait for the landing."
+        }
+      },
+      "claim": "queue-next {lane}",
+      "areas": {
+        "triage-2": ["workflow", "ci"]
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage-2\",\"placed\":true,\"age\":60,\"last\":\"The PR is open; I wait for the landing.\",\"line\":\"STALL seat-idle triage-2 60m: idle at its prompt with no step and no job running; it holds #3209; run `queue-next triage-2` for its next work\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage-2\",\"placed\":true,\"age\":60,\"last\":\"The PR is open; I wait for the landing.\",\"line\":\"STALL seat-idle triage-2 60m: idle at its prompt with no step and no job running; it holds #3209; run `queue-next triage-2` for its next work\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"triage-2:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+  },
+  {
+    "name": "#5996: a seat idle inside the threshold is not found, a seat's lane no row of areas names is read by no kind, and a seat whose activity is not known is not found",
+    "program": "detect.jq",
+    "input": {
+      "now": 1793264820,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [],
+      "seats": ["domhringr", "surface", "triage"],
+      "activity": {
+        "triage": {
+          "state": "idle",
+          "since": 1793264220,
+          "line": null
+        },
+        "domhringr": {
+          "state": "idle",
+          "since": 1793257620,
+          "line": null
+        }
+      },
+      "claim": "queue-next {lane}",
+      "areas": {
+        "surface": ["surface", "ux"],
+        "triage": ["workflow", "ci"]
+      }
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
+  },
+  {
+    "name": "#4174: an idle seat holds the claims its marker names, and a markerless claim in its areas; a claim marked for another lane is not its; with no claim command its line names none",
+    "program": "detect.jq",
+    "input": {
+      "now": 1793264820,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [
+        {
+          "number": 3931,
+          "areas": ["area:theory", "area:kernel"],
+          "lane": "elaboration"
+        },
+        {
+          "number": 3812,
+          "areas": ["area:workflow"],
+          "lane": "surface"
+        },
+        {
+          "number": 4100,
+          "areas": ["area:ci"],
+          "lane": null
+        }
       ],
       "seats": ["elaboration", "triage"],
+      "activity": {
+        "elaboration": {
+          "state": "idle",
+          "since": 1793263620,
+          "line": "Done."
+        },
+        "triage": {
+          "state": "idle",
+          "since": 1793263620,
+          "line": null
+        }
+      },
       "areas": {
         "elaboration": ["elaboration"],
         "surface": ["surface", "ux"],
         "triage": ["workflow", "ci"]
-      },
-      "seen": { "elaboration:seat-idle": 1793263620, "triage:seat-idle": 1793263620 }
+      }
     },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"elaboration\",\"placed\":true,\"age\":20,\"last\":\"Done.\",\"line\":\"STALL seat-idle elaboration 20m: idle at its prompt with no step and no job running; it holds #3931\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"last\":null,\"line\":\"STALL seat-idle triage 20m: idle at its prompt with no step and no job running; it holds #4100\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"elaboration\",\"placed\":true,\"age\":20,\"last\":\"Done.\",\"line\":\"STALL seat-idle elaboration 20m: idle at its prompt with no step and no job running; it holds #3931\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"last\":null,\"line\":\"STALL seat-idle triage 20m: idle at its prompt with no step and no job running; it holds #4100\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"elaboration:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   },
   {
     "name": "#3822: a seat-idle finding paged long ago is never paged again and stalls nothing",
@@ -1982,11 +2078,25 @@
       "prs": [],
       "claimed": [],
       "seats": ["triage"],
-      "areas": { "triage": ["workflow", "ci"] },
-      "seen": { "triage:seat-idle": 1793263620 },
-      "paged": { "triage:seat-idle": { "first": 1793264820, "last": 1793264820 } }
+      "activity": {
+        "triage": {
+          "state": "idle",
+          "since": 1793263620,
+          "line": null
+        }
+      },
+      "claim": "queue-next {lane}",
+      "areas": {
+        "triage": ["workflow", "ci"]
+      },
+      "paged": {
+        "triage:seat-idle": {
+          "first": 1793264820,
+          "last": 1793264820
+        }
+      }
     },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":106,\"line\":\"STALL seat-idle triage 106m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":106,\"last\":null,\"line\":\"STALL seat-idle triage 106m: idle at its prompt with no step and no job running; it holds no claim; run `queue-next triage` for its next work\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   },
   {
     "name": "a pull request in the merge queue of a branch no open pull request heads is queued-off-trunk at once, and a queued member above an open head is not (#4168)",
@@ -2007,7 +2117,11 @@
         "repage": 10
       },
       "lanes": ["triage", "triage-2", "program"],
-      "areas": { "triage": ["workflow"], "triage-2": ["workflow"], "program": ["core"] },
+      "areas": {
+        "triage": ["workflow"],
+        "triage-2": ["workflow"],
+        "program": ["core"]
+      },
       "prs": [
         {
           "number": 4158,
@@ -2098,7 +2212,11 @@
         "repage": 10
       },
       "lanes": ["triage", "triage-2", "program"],
-      "areas": { "triage": ["workflow"], "triage-2": ["workflow"], "program": ["core"] },
+      "areas": {
+        "triage": ["workflow"],
+        "triage-2": ["workflow"],
+        "program": ["core"]
+      },
       "prs": [
         {
           "number": 4158,
@@ -2167,9 +2285,18 @@
           ]
         }
       ],
-      "seen": { "4158:queued-off-trunk:triage-4058-stall-lane": 99400 },
-      "paged": { "4158:queued-off-trunk": { "first": 99400, "last": 99400 } },
-      "stalled": { "4158": 99400 }
+      "seen": {
+        "4158:queued-off-trunk:triage-4058-stall-lane": 99400
+      },
+      "paged": {
+        "4158:queued-off-trunk": {
+          "first": 99400,
+          "last": 99400
+        }
+      },
+      "stalled": {
+        "4158": 99400
+      }
     },
     "output": "{\"findings\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"pages\":[],\"repages\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"stall\":[],\"release\":[],\"seen\":{\"4158:base-blocked:o4158\":100000,\"4158:queued-off-trunk:triage-4058-stall-lane\":99400},\"paged\":{\"4158:queued-off-trunk\":{\"first\":99400,\"last\":100000}},\"stalled\":{\"4158\":99400}}"
   },
@@ -2192,7 +2319,10 @@
         "repage": 10
       },
       "lanes": ["triage", "toolchain"],
-      "areas": { "triage": ["workflow"], "toolchain": ["surface"] },
+      "areas": {
+        "triage": ["workflow"],
+        "toolchain": ["surface"]
+      },
       "prs": [
         {
           "number": 4557,
@@ -2223,19 +2353,31 @@
   {
     "name": "a detector whose last reading is two intervals old is alive (#4167)",
     "program": "live.jq",
-    "input": { "now": 1793375100, "interval": 300, "read": 1793374500 },
+    "input": {
+      "now": 1793375100,
+      "interval": 300,
+      "read": 1793374500
+    },
     "output": ""
   },
   {
     "name": "a detector whose last reading is a second past two intervals old is down, the line naming its time (#4167)",
     "program": "live.jq",
-    "input": { "now": 1793375100, "interval": 300, "read": 1793374499 },
+    "input": {
+      "now": 1793375100,
+      "interval": 300,
+      "read": 1793374499
+    },
     "output": "STALL detector-down 10m: no reading since 2026-10-30T15:34:59Z; run `mise run stall:watch --install` on the triage lane's host"
   },
   {
     "name": "a host with no reading recorded has no detector (#4167)",
     "program": "live.jq",
-    "input": { "now": 1793375100, "interval": 300, "read": null },
+    "input": {
+      "now": 1793375100,
+      "interval": 300,
+      "read": null
+    },
     "output": "STALL detector-down: no reading recorded; run `mise run stall:watch --install` on the triage lane's host"
   },
   {
@@ -2382,17 +2524,34 @@
     "output": "STALL verdict-unfiled #60 surface 20m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #60`; run `mise run refactor:file 60`. Decide: file it: `mise run refactor:file 60`"
   },
   {
-    "name": "#4655: an idle seat pages the coordinator to page it to claim or assign its work, with no pull request to hold",
+    "name": "#5996: an idle seat whose claim gives work pages the coordinator its line and its last line, with no decision",
     "program": "decide.jq",
     "input": {
       "kind": "seat-idle",
       "number": null,
-      "lane": "theory",
+      "lane": "triage-2",
       "placed": true,
-      "age": 20,
-      "line": "STALL seat-idle theory 20m: no open pull request and no claim it holds; the coordinator queues its next work"
+      "age": 60,
+      "last": "The PR is open; I wait for the landing.",
+      "line": "STALL seat-idle triage-2 60m: idle at its prompt with no step and no job running; it holds #3209; run `queue-next triage-2` for its next work",
+      "work": "next #3301 workflow: a queued unit"
     },
-    "output": "STALL seat-idle theory 20m: no open pull request and no claim it holds; the coordinator queues its next work. Decide: page the seat to claim; assign its next work"
+    "output": "STALL seat-idle triage-2 60m: idle at its prompt with no step and no job running; it holds #3209; run `queue-next triage-2` for its next work. Its last line: \"The PR is open; I wait for the landing.\"; the claim gives next #3301 workflow: a queued unit"
+  },
+  {
+    "name": "#5996: an idle seat whose claim gives no work asks the coordinator to assign its next work",
+    "program": "decide.jq",
+    "input": {
+      "kind": "seat-idle",
+      "number": null,
+      "lane": "triage",
+      "placed": true,
+      "age": 106,
+      "last": null,
+      "line": "STALL seat-idle triage 106m: idle at its prompt with no step and no job running; it holds no claim; run `queue-next triage` for its next work",
+      "work": null
+    },
+    "output": "STALL seat-idle triage 106m: idle at its prompt with no step and no job running; it holds no claim; run `queue-next triage` for its next work. Its last line: none. Decide: assign its next work, as the claim gives none"
   },
   {
     "name": "#5116: a cancelled check on a head the CI depth gate stopped reads pending, a failure on it still fails, and a mark naming another head leaves its cancelled check failed (#5074)",
@@ -2562,7 +2721,11 @@
           "kind": "red",
           "line": "EVENT red #5361: pr-red #5361 sweep the recovery records (linux)"
         },
-        { "number": 5358, "kind": "dequeued", "line": "EVENT dequeued #5358: pr-dequeued #5358" },
+        {
+          "number": 5358,
+          "kind": "dequeued",
+          "line": "EVENT dequeued #5358: pr-dequeued #5358"
+        },
         {
           "number": 5340,
           "kind": "ejected",
@@ -2589,12 +2752,21 @@
         }
       ]
     },
-    "output": { "seen": 9, "events": [] }
+    "output": {
+      "seen": 9,
+      "events": []
+    }
   },
   {
     "name": "#5214: a reading with no comment keeps the last one read",
     "program": "events.jq",
-    "input": { "seen": 100, "comments": [] },
-    "output": { "seen": 100, "events": [] }
+    "input": {
+      "seen": 100,
+      "comments": []
+    },
+    "output": {
+      "seen": 100,
+      "events": []
+    }
   }
 ]
