@@ -2051,6 +2051,8 @@ surface/control-flow.gandr:held:3b50818bb4c550d2 uncommented
 surface/control-flow.gandr:skip:7cc9667f35a5daa4 uncommented
 surface/control-flow.gandr:stray:b00d56e3051d4bc5 uncommented
 surface/control-flow.gandr:tick:3fcb47058cba6c89 uncommented
+surface/data-field-decorations.gandr:Expr.Add:b1b735242bbdc3f4 uncommented
+surface/data-field-decorations.gandr:Expr.Lit:2bf38f07746268a8 uncommented
 surface/data-field-decorations.gandr:Vec.Cons:4b49f51c239388f6 uncommented
 surface/data-field-decorations.gandr:Vec.Nil:e7ea57ffe09c2fd1 uncommented
 surface/def-rec-and-copatterns.gandr:<file> uncommented
