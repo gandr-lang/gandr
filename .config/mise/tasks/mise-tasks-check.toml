@@ -1828,6 +1828,10 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # measures from it, one with no record is refused with the replay from the
 # old tip, and one on a trunk no rebase rewrote opens. A record taken after
 # the branch's own commit writes nothing (#5990, `rewritten_base`).
+# `.config/pr-stack/stale-parent-cases.bash` stacks a branch on another
+# pull request's head: an amend of the lower refuses the upper with the replay
+# from its record, and a lower that moved ahead, a worktree on another head
+# and a replayed upper open (#6055, `stale_parent`).
 # `.config/pr-stack/replay-cases.bash` replays a tip through a stub of
 # `createCommitOnBranch` on a local origin: a matching tree moves the branch,
 # and another tree names each differing path with its mode and its blob on
@@ -1916,6 +1920,7 @@ fi
 .config/pr-stack/watcher.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/rewritten-base-cases.bash || failed=1
+.config/pr-stack/stale-parent-cases.bash || failed=1
 .config/pr-stack/replay-cases.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 .config/pr-stack/replays.bash || failed=1

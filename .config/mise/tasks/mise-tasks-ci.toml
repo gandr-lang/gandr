@@ -4568,6 +4568,13 @@ mise run wt:sweep || echo "wt:sweep failed; landing regardless" >&2
 # read from its base's fork to its head; the landing is refused otherwise.
 IFS=$'\t' read -r ledger_base ledger_head < <(gh pr view "$number" -R "$repo" --json baseRefName,headRefName --jq '[.baseRefName, .headRefName] | @tsv')
 git fetch --quiet origin "$ledger_base" "$ledger_head"
+# A head that stands on an old copy of the pull request below would read that
+# copy's change as its own, so it is refused with the replay first (#6055,
+# `stale_parent`).
+if ! stale=$(stale_parent "$ledger_base" "$ledger_head"); then
+  printf 'PR #%s:\n  %s\n' "$number" "$stale" >&2
+  exit 2
+fi
 ledger_body=$(mktemp)
 gh pr view "$number" -R "$repo" --json body --jq .body > "$ledger_body"
 status=0
