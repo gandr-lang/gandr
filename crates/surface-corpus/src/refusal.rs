@@ -1008,6 +1008,9 @@ pub enum RefusalName
     /// A type family whose parameters disagree with the indices its kind
     /// states.
     FamilyTelescope,
+    /// A generator whose result does not apply its family to the family's
+    /// parameters, then one term per index.
+    NonUniformResult,
     /// An effect theory a world's requirement row names under no label.
     UnlabelledRequirement,
     /// A constructor of a family with parameters, bound by a `let` with no
@@ -1330,7 +1333,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 249_usize] = [
+    pub const VOCABULARY: [Self; 250_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1450,6 +1453,7 @@ impl RefusalName
         Self::UnreadCells,
         Self::UninterfacedMember,
         Self::FamilyTelescope,
+        Self::NonUniformResult,
         Self::UnlabelledRequirement,
         Self::UnfixedParameter,
         Self::ImplicitTelescope,
@@ -1677,6 +1681,7 @@ impl RefusalName
         (Self::UndescribedMember(_), b"UndescribedMember") |
         (Self::UninterfacedMember, b"UninterfacedMember") |
         (Self::FamilyTelescope, b"FamilyTelescope") |
+        (Self::NonUniformResult, b"NonUniformResult") |
         (Self::UnlabelledRequirement, b"UnlabelledRequirement") |
         (Self::UnfixedParameter, b"UnfixedParameter") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
@@ -2077,6 +2082,7 @@ impl RefusalName
             Self::UndescribedMember(_) => "UndescribedMember",
             Self::UninterfacedMember => "UninterfacedMember",
             Self::FamilyTelescope => "FamilyTelescope",
+            Self::NonUniformResult => "NonUniformResult",
             Self::UnlabelledRequirement => "UnlabelledRequirement",
             Self::UnfixedParameter => "UnfixedParameter",
             Self::ImplicitTelescope => "ImplicitTelescope",
@@ -2852,7 +2858,8 @@ impl Refusal<'_>
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
         RefusalName::SignatureMismatch(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
-        RefusalName::FamilyTelescope) | (LoweringRefusal::UninterfacedMember { .. },
+        RefusalName::FamilyTelescope) | (LoweringRefusal::NonUniformResult { .. },
+        RefusalName::NonUniformResult) | (LoweringRefusal::UninterfacedMember { .. },
         RefusalName::UninterfacedMember) | (LoweringRefusal::UnlabelledRequirement { .. },
         RefusalName::UnlabelledRequirement) | (LoweringRefusal::UnfixedParameter { .. },
         RefusalName::UnfixedParameter) | (LoweringRefusal::ImplicitTelescope { .. },
@@ -2975,6 +2982,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             RefusalName::UndescribedMember(member_tag(fault))
         },
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
+        LoweringRefusal::NonUniformResult { .. } => RefusalName::NonUniformResult,
         LoweringRefusal::UninterfacedMember { .. } => RefusalName::UninterfacedMember,
         LoweringRefusal::UnlabelledRequirement { .. } => RefusalName::UnlabelledRequirement,
         LoweringRefusal::UnfixedParameter { .. } => RefusalName::UnfixedParameter,

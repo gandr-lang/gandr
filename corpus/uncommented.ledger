@@ -1171,7 +1171,7 @@ pathological/data/generic-eq-refused.gandr:Peano.Next:862177db51444ec5 uncomment
 pathological/data/generic-eq-refused.gandr:Peano.Nought:03f6cf69848a4362 uncommented
 pathological/data/generic-eq-refused.gandr:Point.Point:ca18de0a9ac4a649 uncommented
 pathological/data/generic-eq-refused.gandr:Shape.Shape:2ed7b260f044bad3 uncommented
-pathological/data/head-uniformity-declined.gandr:Bad.Mk:a97580943f0d31e8 uncommented
+
 pathological/data/literal-column-uncovered.gandr:<file> uncommented
 pathological/data/literal-column-uncovered.gandr:Outer.None:33d44d1b754019c5 uncommented
 pathological/data/literal-column-uncovered.gandr:Outer.Some:eddb80920ea021e9 uncommented

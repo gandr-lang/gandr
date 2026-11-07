@@ -458,13 +458,13 @@ corpus/ledger/features/implicit-arguments.gandr STE-6.3 9926db53d0744d9b
 corpus/ledger/features/implicit-arguments.gandr STE-8.1 7cf1e834ca3f5ea2
 corpus/ledger/features/implicit-arguments.gandr STE-4.3 c5a89bbfe9fd8185
 corpus/ledger/features/indexed-data.gandr STE-3.2 2c9daa3e530dfc8d
+corpus/ledger/features/indexed-data.gandr STE-3.2 80eed251aad0970c
 corpus/ledger/features/indexed-data.gandr STE-3.2 8d210e27c33b4200
-corpus/ledger/features/indexed-data.gandr STE-3.2 c4c41ec636d0e3e4
 corpus/ledger/features/indexed-data.gandr STE-3.5 5a46085657e485e5
 corpus/ledger/features/indexed-data.gandr STE-6.3 654affcdcfa2b286
 corpus/ledger/features/indexed-data.gandr STE-6.3 8d210e27c33b4200
 corpus/ledger/features/indexed-data.gandr STE-8.1 654affcdcfa2b286
-corpus/ledger/features/indexed-data.gandr STE-6.6 685a0b37e181ad7c
+corpus/ledger/features/indexed-data.gandr STE-6.6 f9219661478b9f1c
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 45720986ee126271
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 6b60898902d1cf02
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 a8801bb6141675f7
@@ -1357,8 +1357,6 @@ corpus/pathological/data/generic-eq-refused.gandr STE-3.5 08346e9272e0ef53
 corpus/pathological/data/generic-eq-refused.gandr STE-6.3 a103935770959131
 corpus/pathological/data/generic-eq-refused.gandr STE-6.4 7ffeb0f63edb2700
 corpus/pathological/data/generic-eq-refused.gandr STE-6.5 a103935770959131
-corpus/pathological/data/head-uniformity-declined.gandr STE-6.4 7ffeb0f63edb2700
-corpus/pathological/data/head-uniformity-declined.gandr STE-6.5 0530f1dd6c56ad5b
 corpus/pathological/data/index-telescope.gandr STE-3.6 d8e8df6f172f8f19
 corpus/pathological/data/indexed-family-rule-declined.gandr STE-3.2 fd0cf1ba3b95430d
 corpus/pathological/data/indexed-family-rule-declined.gandr STE-3.5 646b43639860b7e1

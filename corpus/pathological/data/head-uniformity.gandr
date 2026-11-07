@@ -1,0 +1,22 @@
+// A generator whose result does not apply its family to its parameters.
+//
+// Head uniformity binds each parameter once, for the whole family. A result
+// that instantiates or reorders a parameter writes a generator of another
+// family.
+//
+// The lowering refuses each such result as `NonUniformResult`. The model
+// twin declares the varying parameter as an index.
+//
+// - see: #3404
+
+/// A family whose generator fixes its parameter at `Integer`.
+@[ refuses("NonUniformResult") ]
+data Bad(a : Type) : Type where
+  /// The value at `Integer`, where the header binds `a`.
+  | Mk : Bad(Integer)
+
+/// A generator whose result reorders the family's parameters.
+@[ refuses("NonUniformResult") ]
+data Swap(a : Type, b : Type) : Type where
+  /// The values `x` and `y`, at the parameters in the reverse order.
+  | MkSwap : (x : a, y : b) --> Swap(b, a)
