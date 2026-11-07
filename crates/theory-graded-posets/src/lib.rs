@@ -19,17 +19,23 @@
 //!
 //! The cells form the cell poset of a cellular sheaf, after Curry, Ghrist and
 //! Nanda. Each cell holds its data, boundary and rank, and the caller orients
-//! its faces. Kessler's traversal keys a molecule up to isomorphism. The crate
-//! keeps the closure of the order, not her face data, and computes no key.
+//! its faces. [`GradedPoset::traverse`] runs Kessler's traversal of a
+//! molecule, and [`Traversal::key`] names it up to isomorphism. The crate
+//! keeps the closure of the order, not her face data.
 //!
 //! # Items
 //!
 //! | Item | What it holds |
 //! | ---- | ------------- |
 //! | [`CellRow`] | a cell's closure or boundary, read off the order's words |
+//! | [`Face`] | the side of a cell that a face one rank below it lies on |
 //! | [`GradedPoset`] | the cells as data, their order as rows of words, their boundary and rank, and the lattice of subcomplexes |
+//! | [`Key`] | a molecule's faces written as places in traversal order, rank by rank: equal exactly for isomorphic molecules |
+//! | [`Place`] | a cell's place among the cells of its rank, in traversal order |
 //! | [`Rank`] | the length of the longest chain below a cell |
 //! | [`ReadBack`] | the lattice of subcomplexes, its spectrum, and the two maps between the spectrum and the poset |
+//! | [`Traversal`] | the cells of a molecule in the order that Kessler's traversal marks them |
+//! | [`TraversalError`] | why the traversal refuses a poset: the cell where a poset that is not a molecule stops it |
 //!
 //! # References
 //!
@@ -48,9 +54,9 @@
 //!   Higher-Dimensional Diagrams_. Doctoral thesis, Tallinn University of
 //!   Technology (2025). `doi:10.23658/TALTECH.47/2025` — oriented graded
 //!   posets, and the traversal that keys a molecule up to isomorphism in `O(n²
-//!   log n)`, which this crate does not compute. The thesis supersedes Amar
-//!   Hadzihasanovic and Diana Kessler, "Data Structures for Topologically Sound
-//!   Higher-Dimensional Diagram Rewriting", EPTCS 380 (2023),
+//!   log n)`, which [`GradedPoset::traverse`] computes. The thesis supersedes
+//!   Amar Hadzihasanovic and Diana Kessler, "Data Structures for Topologically
+//!   Sound Higher-Dimensional Diagram Rewriting", EPTCS 380 (2023),
 //!   `doi:10.4204/EPTCS.380.7`.
 
 #![no_std]
@@ -59,8 +65,14 @@ extern crate alloc;
 
 mod graded;
 mod rows;
+mod traversal;
 
 pub use graded::GradedPoset;
 pub use graded::Rank;
 pub use graded::ReadBack;
 pub use rows::CellRow;
+pub use traversal::Face;
+pub use traversal::Key;
+pub use traversal::Place;
+pub use traversal::Traversal;
+pub use traversal::TraversalError;

@@ -14,7 +14,7 @@ This crate holds finite graded posets for gandr: cells as data with a boundary a
 
 ## Synopsis
 
-**What.** A `GradedPoset` holds cells of the caller's type, such as the points of a face of a shape, and an order on them that the caller states. The cells below a cell are its boundary, and its `Rank` is the length of the longest chain below it. A subcomplex is a set of cells that holds the boundary of each of its cells. `GradedPoset::subcomplexes` gives the lattice of subcomplexes, and `GradedPoset::read_back` gives its spectrum with two monotone maps between the spectrum and the poset, which show that they are the same poset.
+**What.** A `GradedPoset` holds cells of the caller's type, such as the points of a face of a shape, and an order on them that the caller states. The cells below a cell are its boundary, and its `Rank` is the length of the longest chain below it. A subcomplex is a set of cells that holds the boundary of each of its cells. `GradedPoset::subcomplexes` gives the lattice of subcomplexes, and `GradedPoset::read_back` gives its spectrum with two monotone maps between the spectrum and the poset, which show that they are the same poset. `GradedPoset::traverse` runs Kessler's traversal of a molecule whose faces the caller orients, and `Traversal::key` names the molecule up to isomorphism.
 
 **Why.** A face formula reads the faces of a shape as sets of points, and the lattice those sets generate loses a face that is the union of smaller faces. As cells, the faces keep their identity: the join-irreducible subcomplexes are the closures of the cells, so the spectrum is the face poset again on every corpus shape. The cell family's later crates, discrete Morse theory and cellular sheaves, build on these posets.
 
@@ -24,13 +24,17 @@ This crate holds finite graded posets for gandr: cells as data with a boundary a
 
 - Clemens Berger and Mai Gehrke. "Stone duality for spectral sheaves and the patch monad". Journal of Pure and Applied Algebra, 2023, [doi:10.1016/j.jpaa.2022.107306](https://doi.org/10.1016/j.jpaa.2022.107306) — the duality that reads the lattice of subcomplexes back as the poset.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the cell family of the presented-spaces frame.
+- `Kessler-2025-computational_aspects_rewriting_higherdimensional_diagrams` — dependency: Diana-Maria Kessler, _Computational Aspects of Rewriting in Higher-Dimensional Diagrams_, doctoral thesis, Tallinn University of Technology, 2025, [doi:10.23658/TALTECH.47/2025](https://doi.org/10.23658/TALTECH.47/2025). The crate takes the traversal of a molecule (Procedure 2.4.8) and the key that it gives (§ 2.4.3).
 
 ## Provided features
 
 - `CellRow`: a cell's closure or boundary, read off the order's words.
-- `GradedPoset`: cells as data, their order as rows of words, each cell's closure, boundary and rank, and the lattice of subcomplexes.
+- `Face`: the side of a cell that a face one rank below it lies on.
+- `GradedPoset`: cells as data, their order as rows of words, each cell's closure, boundary and rank, the lattice of subcomplexes, and the traversal.
+- `Key` and `Place`: a molecule's faces written as places in traversal order, rank by rank, equal exactly for isomorphic molecules.
 - `Rank`: the length of the longest chain below a cell.
 - `ReadBack`: the lattice of subcomplexes, its spectrum, and the monotone maps from the spectrum to the cells and back.
+- `Traversal` and `TraversalError`: the cells of a molecule in the order that the traversal marks them, and the cell where a poset that is not a molecule stops it.
 
 ## Expected features
 
@@ -60,7 +64,7 @@ mise exec -- cargo nextest run -p gandr-theory-graded-posets
 
 ## Where the detail lives
 
-The graded poset, its ranks, its subcomplexes and the read-back are in `src/graded.rs`, and the order's rows are in `src/rows.rs`. The choice to read the subcomplexes through finite Stone duality is in `src/lib.rs`.
+The graded poset, its ranks, its subcomplexes and the read-back are in `src/graded.rs`, and the order's rows are in `src/rows.rs`. The traversal and the key are in `src/traversal.rs`. The choice to read the subcomplexes through finite Stone duality is in `src/lib.rs`.
 
 ## License
 

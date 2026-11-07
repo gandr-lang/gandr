@@ -382,6 +382,7 @@ digraph crates {
   "theory-cellular-sheaves" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-coherent-resolutions" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-discrete-morse" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
+  "theory-exact-reals" -> "theory-graded-posets" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
