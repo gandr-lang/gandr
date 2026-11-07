@@ -61,8 +61,8 @@ mutants_listed() {
   mkdir -p "$output"
   "${mutants_scope[@]}" cargo mutants --list --json --package "$crate" "$@" > "$output/list.json"
   for doc in "${docs[@]}"; do jq -f .config/mutants/items.jq "$doc"; done | jq -s 'add // []' > "$output/items.json"
-  jq -n --arg package "$crate" --argjson targets "$targets" \
-    '{package: $package, targets: $targets}' > "$output/group-input.json"
+  jq -n --arg package "$crate" --argjson targets "$targets" --argjson lib "$(jq '[.targets[] | select(.kind | index("lib"))] | length > 0' <<< "$package")" \
+    '{package: $package, targets: $targets, lib: $lib}' > "$output/group-input.json"
 }
 
 # Groups a listed crate's mutants. The caller can filter `list.json` before it
