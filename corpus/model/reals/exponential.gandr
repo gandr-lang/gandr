@@ -35,17 +35,17 @@ pub def eAbove : String = "47585250010006000000000000000201000000020000000000000
 pub def eBelow : String = "4758525001000600000000000000020300000001000000000000007d02000000000100000000000000010d010000000100000001000000020000000100000001000000050000000002000000020000000002000000000000009f0a120300000004000000";
 
 /// The verdicts on the two bounds, a space between them.
-pub def bounds() -> [std.reals.Eff] String =
+pub def eBounds() -> [std.reals.Eff] String =
   let first = decided eAbove 16
   let second = decided eBelow 16
   concat first (concat " " second)
 
-/// `bounds` under a handler of this source, a second model of
+/// `eBounds` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
 @[ runs("\"holds holds\"") ]
-def boundsModelled() -> String =
+def eBoundsModelled() -> String =
   handle r : std.reals.Eff {
-    bounds ()
+    eBounds ()
   } with {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
@@ -60,6 +60,6 @@ def boundsModelled() -> String =
 /// The entry: decide the two bounds within 16 quanta each, print the
 /// verdicts, and exit with 0.
 def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
-  let verdicts = bounds ()
+  let verdicts = eBounds ()
   std.io.Console.print verdicts
   0

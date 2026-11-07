@@ -2,19 +2,19 @@
 //! is a rational function of the index, with dyadic endpoints.
 //!
 //! A plan over the field operations, a cut and the bounded quantifiers
-//! defines only algebraic reals. A [`Recurrence`] node defines the sum of a
-//! series instead. Its first term is one, and the term after `t_n` is
-//! `t_n · a · p(n) / q(n)`. One rule serves `exp`, `log` and each later
-//! function of that form, so such a function needs no rule of its own. The
-//! approximation pass, the certificate writer and the checker all read this
-//! rule.
+//! defines only algebraic reals. A [`Recurrence`](crate::Recurrence) node
+//! defines the sum of a series instead. Its first term is one, and the term
+//! after `t_n` is `t_n · a · p(n) / q(n)`. One rule serves `exp`, `log` and
+//! each later function of that form, so such a function needs no rule of its
+//! own. The approximation pass, the certificate writer and the checker all read
+//! this rule.
 //!
 //! # Boundaries
 //!
 //! |Part|Rule|
 //! |---|---|
 //! |partial sum|`N` terms over the enclosure of the argument; each product and quotient rounds outward at `p + 64` significant bits, and the integer `p(n)` multiplies exactly|
-//! |tail|`|t_N| / (1 − ρ)`, for an upper bound `ρ` on `|a · p(n) / q(n)|` at each `n ≥ N` (Johansson 2019, Theorem 1)|
+//! |tail|`abs(t_N) / (1 − ρ)`, for an upper bound `ρ` on `abs(a · p(n) / q(n))` at each `n ≥ N` (Johansson 2019, Theorem 1)|
 //! |count `N`|the first term below `2^-(p + 8)` after which `ρ` lies below one, at most 65,536 terms|
 //! |validation|the degree of `p` is at most the degree of `q`, and `q` has no root at a natural number|
 //!
