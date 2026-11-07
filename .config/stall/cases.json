@@ -2768,5 +2768,34 @@
       "seen": 100,
       "events": []
     }
+  },
+  {
+    "name": "#6164: a head with no CI run pages its seat `unrun`; the watcher's own rerun pages nothing",
+    "program": "events.jq",
+    "input": {
+      "seen": 10,
+      "comments": [
+        {
+          "id": 11,
+          "issue_url": "https://api.github.com/repos/o/r/issues/3",
+          "body": "pr-rerun #3\n\nThe landing watcher closed and reopened it.\n\n<!-- landing:pr-rerun:c -->"
+        },
+        {
+          "id": 12,
+          "issue_url": "https://api.github.com/repos/o/r/issues/4",
+          "body": "pr-unrun #4\n\nGitHub started no CI run on this head.\n\n<!-- landing:pr-unrun:d -->"
+        }
+      ]
+    },
+    "output": {
+      "seen": 12,
+      "events": [
+        {
+          "number": 4,
+          "kind": "unrun",
+          "line": "EVENT unrun #4: pr-unrun #4"
+        }
+      ]
+    }
   }
 ]
