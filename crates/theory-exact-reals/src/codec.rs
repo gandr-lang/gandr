@@ -106,12 +106,13 @@ use crate::plan::RealId;
 use crate::plan::Root;
 use crate::plan::Site;
 use crate::plan::Sort;
+use crate::schema::Split;
 use crate::semidecision::Demand;
 
 /// The four bytes that open an encoded plan.
 const MAGIC: [u8; 4] = *b"GXRP";
 
-/// The layout version that this build writes and reads.
+/// The layout version of a plan that this build writes and reads.
 const VERSION: u16 = 1;
 
 /// The four bytes that open an encoded certificate.
@@ -1904,6 +1905,20 @@ impl Certificate
 /// The four bytes that open an encoded checkpoint.
 const CHECKPOINT_MAGIC: [u8; 4] = *b"GXRK";
 
+/// The layout version of a checkpoint. Version 2 adds the split policy.
+const CHECKPOINT_VERSION: u16 = 2;
+
+/// The kind byte of the split policy in a checkpoint.
+mod split_kind
+{
+    use super::Kind;
+
+    /// Each split at the midpoint.
+    pub(super) const MIDPOINT: Kind = Kind(0x50);
+    /// Each split at the dyadic with the fewest mantissa bits.
+    pub(super) const SIMPLEST: Kind = Kind(0x51);
+}
+
 /// The kind byte of an obligation's demand in a checkpoint.
 mod demand_kind
 {
@@ -2030,6 +2045,8 @@ pub(crate) struct Fields
     quantum: Option<Quantum>,
     /// The bounds of each certificate.
     quotas: CheckerQuotas,
+    /// The point at which each obligation splits.
+    split: Split,
     /// The position of the next turn among the live obligations.
     cursor: Position,
     /// The live obligations, in the order of their turns.
@@ -2038,14 +2055,20 @@ pub(crate) struct Fields
 
 impl Fields
 {
-    /// The quantum, the quotas, the cursor and the live obligations, taken
-    /// out of the record.
+    /// The quantum, the quotas with the split policy, the cursor and the live
+    /// obligations, taken out of the record.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn into_parts(self) -> (Option<Quantum>, CheckerQuotas, Position, Vec<Held>)
+    pub(crate) fn into_parts(self)
+    -> (Option<Quantum>, (CheckerQuotas, Split), Position, Vec<Held>)
     {
-        return (self.quantum, self.quotas, self.cursor, self.held);
+        return (
+            self.quantum,
+            (self.quotas, self.split),
+            self.cursor,
+            self.held,
+        );
     }
 }
 
@@ -2150,11 +2173,16 @@ impl Reader<'_>
 /// The canonical bytes of a checkpoint with these fields.
 ///
 /// The bytes open with the magic `GXRK` and the version as a `u16`. The
-/// quantum follows as a `u32`, then the step quota, the width quota, the
-/// cursor and the count of live obligations, each a `u64`. Each obligation
-/// is its node as a `u32`, its demand, the steps spent on it as a `u64`, and
-/// the count and the steps of its certificate as [`Certificate::encode`]
-/// writes them.
+/// quantum follows as a `u32`, then the step quota and the width quota, each
+/// a `u64`, and the split policy as one byte. The cursor and the count of live
+/// obligations follow, each a `u64`. Each obligation is its node as a `u32`,
+/// its demand, the steps spent on it as a `u64`, and the count and the steps
+/// of its certificate as [`Certificate::encode`] writes them.
+///
+/// | Split | Byte |
+/// | ----- | ---- |
+/// | midpoint | `0x50` |
+/// | simplest | `0x51` |
 ///
 /// | Demand | Byte | Fields |
 /// | ------ | ---- | ------ |
@@ -2173,7 +2201,7 @@ impl Reader<'_>
 /// - hypothesis: L2 — every checkpoint of generated runs round trips.
 /// - witness: `tests::checkpoint::a_resumed_run_certifies_as_an_unbroken_one`
 pub(crate) fn write_checkpoint<'steps, Held>(
-    (quantum, quotas, cursor): (Quantum, &CheckerQuotas, Position),
+    (quantum, quotas, split, cursor): (Quantum, &CheckerQuotas, Split, Position),
     held: Held,
 ) -> CheckpointBytes
 where
@@ -2190,14 +2218,20 @@ where
             steps
                 .saturating_mul(32)
                 .saturating_add(count.saturating_mul(24))
-                .saturating_add(46),
+                .saturating_add(47),
         ),
     };
     entry.bytes.extend_from_slice(&CHECKPOINT_MAGIC);
-    entry.bytes.extend_from_slice(&VERSION.to_le_bytes());
+    entry
+        .bytes
+        .extend_from_slice(&CHECKPOINT_VERSION.to_le_bytes());
     entry.word(Word(NonZeroU32::from(quantum).get()));
     entry.count(ByteCount(usize::from(quotas.steps)));
     entry.wide(Wide(u64::from(quotas.width)));
+    entry.kind(match split {
+        Split::Midpoint => split_kind::MIDPOINT,
+        Split::Simplest => split_kind::SIMPLEST,
+    });
     entry.count(ByteCount(usize::from(cursor)));
     entry.count(ByteCount(count));
     for (node, demand, spent, steps) in held {
@@ -2246,13 +2280,18 @@ pub(crate) fn read_checkpoint(bytes: EncodedCheckpoint<'_>) -> Result<Fields, De
         return Err(DecodeError::Magic);
     }
     let Taken(version) = reader.take(ByteCount(2))?;
-    if version != VERSION.to_le_bytes().as_slice() {
+    if version != CHECKPOINT_VERSION.to_le_bytes().as_slice() {
         return Err(DecodeError::Version);
     }
     let quantum = NonZeroU32::new(reader.word()?.0).map(Quantum::from);
     let quotas = CheckerQuotas {
         steps: StepCount::from(reader.count()?.0),
         width: BitWidth::from(reader.wide()?.0),
+    };
+    let split = match reader.kind()? {
+        split_kind::MIDPOINT => Split::Midpoint,
+        split_kind::SIMPLEST => Split::Simplest,
+        _ => return Err(DecodeError::UnknownKind),
     };
     let cursor = Position::from(reader.count()?.0);
     let count = reader.count()?.0;
@@ -2281,6 +2320,7 @@ pub(crate) fn read_checkpoint(bytes: EncodedCheckpoint<'_>) -> Result<Fields, De
     return Ok(Fields {
         quantum,
         quotas,
+        split,
         cursor,
         held,
     });
