@@ -229,6 +229,23 @@
     }
   },
   {
+    "name": "#6097: claim:release leaves another lane's claim unchanged and names its holder",
+    "input": {
+      "step": "release",
+      "lane": "diagnostic-help",
+      "issue": {
+        "number": 6058,
+        "state": "open",
+        "labels": ["status:claimed"],
+        "body": "Text.\n\n<!-- claim: lane=reals -->\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "claim:release: reals holds the claim of #6058. The task leaves it unchanged"
+    }
+  },
+  {
     "name": "a step the program does not know is refused",
     "input": { "step": "drop", "lane": "triage" },
     "fails": true
