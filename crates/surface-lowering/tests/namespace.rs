@@ -2612,7 +2612,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
     );
     assert!(
         expected.is_err(),
-        "two imports of one alias refuse the unit"
+        "unfinished imports in a source that declares nothing refuse the unit"
     );
     assert_eq!(
         closure.resume(
@@ -2830,7 +2830,7 @@ fn a_closure_whose_unit_refuses_halts_and_answers_the_refusal()
     );
     assert!(
         expected.is_err(),
-        "two imports of one alias refuse the unit"
+        "unfinished imports in a source that declares nothing refuse the unit"
     );
     assert_eq!(
         closure.resume(&tree, &unit, &mut CoreArena::new(), &mut Decisions::none()),
