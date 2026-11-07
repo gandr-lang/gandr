@@ -59,7 +59,7 @@ def helloName = Hello.name;
 
 /// `nameOf` reads the inert name off any model of `Named`.
 @[ inert ]
-def nameOf(n : Model(Named)) -> String { n.name }
+def nameOf(n : Model Named) -> String { n.name }
 
 /// `shownName` reads another inert definition.
 @[ inert ]

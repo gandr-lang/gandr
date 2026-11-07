@@ -51,7 +51,7 @@ def sealedTwo() -> [std.rand.Eff] Integer =
   "1/8 *{2, 2}",
   "1/8 *{2, 3}"
 )) ]
-pub def joint() -> [std.rand.Eff] *{Integer, Integer} =
+pub def joint() -> [std.rand.Eff] (Integer * Integer) =
   let message = 1 + std.rand.draw 1
   let k = key 2
   pure *{message, pad 2 message k}
@@ -59,7 +59,7 @@ pub def joint() -> [std.rand.Eff] *{Integer, Integer} =
 /// A message of 1 or 2 and the difference of two ciphertexts under one key:
 /// the message itself and the message 1.
 @[ distributes(("1/2 *{1, 0}", "1/2 *{2, 1}")) ]
-pub def reused() -> [std.rand.Eff] *{Integer, Integer} =
+pub def reused() -> [std.rand.Eff] (Integer * Integer) =
   let message = 1 + std.rand.draw 1
   let k = key 2
   pure *{message, unpad 2 (pad 2 message k) (pad 2 1 k)}

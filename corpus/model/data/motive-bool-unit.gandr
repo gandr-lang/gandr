@@ -15,7 +15,7 @@
 // - see: `eta.gandr` — the unit's η
 
 /// The type that a flag selects.
-def boolType(b : Bool) -> -F Type =
+def boolType(b : Bool) -> Type =
   match b where
     | true => return String
     | false => return Unit
@@ -43,7 +43,7 @@ def boolBoth(b : Bool, x : boolType(b), y : boolType(b)) -> boolType(b) =
     | false => y
 
 /// The type that the unit selects.
-def unitType(u : Unit) -> -F Type =
+def unitType(u : Unit) -> Type =
   match u where
     | *{} => return String
 
