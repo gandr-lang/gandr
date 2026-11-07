@@ -502,6 +502,11 @@ fn checked(refusal: CheckRefusal) -> Culprit
                 "a continuation that may be ended other than once"
             },
             LinearityDefect::ContinuationAsValue { .. } => "a continuation read as a value",
+            LinearityDefect::LinearSlotConsumed { .. } => "a linear parameter already used",
+            LinearityDefect::LinearSlotUnconsumed { .. } => "a linear parameter left unused",
+            LinearityDefect::ShadowCaptured { .. } => {
+                "a linear parameter that may be used other than once"
+            },
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => "no held value here",
@@ -593,6 +598,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::SessionCodeExpected { .. } => "not a session code",
         CheckRefusal::NonCovariantMotive { .. } => "the moving endpoint other than covariantly",
         CheckRefusal::RideUnsupported { .. } => "a motive the ride cannot move",
+        CheckRefusal::MultiplicityUnsupported { .. } => "a multiplicity other than one",
         CheckRefusal::RunNotAdmitted { fault, .. } => match fault {
             RunFault::WrongDirection(_) => "a move in the other direction",
             RunFault::WrongLabel(_) => "a label the protocol does not admit here",

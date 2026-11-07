@@ -183,6 +183,7 @@ use super::Stretch;
 use super::closed;
 use super::exhausted;
 use super::lowered;
+use super::multiplicity_one;
 use super::native::Answer;
 use super::native::Holds;
 use super::native::answered;
@@ -1506,6 +1507,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ThunkType
                 | Former::ReturnerType
                 | Former::ArrowType
+                | Former::LinearArrowType
                 | Former::ProductType
                 | Former::SumType
                 | Former::LazyProductType
@@ -4954,9 +4956,61 @@ impl<'source> Lowerer<'_, 'source>
         codomain: Placed,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
+        let Some((key, bound, declared)) = self.arrow_binder(frame, domain)?
         else {
             return Ok(Planned(false));
+        };
+        self.read(declared.node, Reading::ValueType(frame));
+        self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
+        self.note_binder(key, bound)?;
+        let extended =
+            self.scope
+                .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
+        let start = self.parameters.mark();
+        self.parameters.push(Parameter {
+            binder: key.node,
+            frame: extended,
+            declared: Maybe::Present(declared.node),
+            component: None,
+        });
+        self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
+        self.plan(
+            site,
+            Plan::DependentArrow(self.parameters.since(start), codomain.node),
+        );
+
+        Ok(Planned(true))
+    }
+
+    /// The one binder a parenthesised domain `(k : T)` names: its key, its
+    /// name and its written type.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the domain of an arrow whose frame is `frame`.
+    /// - ensures: present exactly when `domain` is a parenthesised type that
+    ///   holds one entry, `k : T`; nothing is read or planned.
+    /// - fails: a misplaced key; a hole's own fault.
+    /// - panics: none.
+    /// - executable: none — the entry is read off the syntax tree, which a
+    ///   predicate could check only by repeating the read.
+    ///
+    /// # Errors
+    /// The entries' refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::dependent_arrow`] and
+    ///   [`Self::linear_arrow`].
+    /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
+    /// - witness: `lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
+    fn arrow_binder(
+        &mut self,
+        frame: Frame,
+        domain: Placed,
+    ) -> Result<Option<(Placed, SurfaceName<'source>, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::ParenthesizedType)) = self.form_at(domain)?
+        else {
+            return Ok(None);
         };
         let list = Site {
             at: domain,
@@ -4983,29 +5037,105 @@ impl<'source> Lowerer<'_, 'source>
             },
         ] = entries.as_slice()
         else {
-            return Ok(Planned(false));
+            return Ok(None);
         };
-        let declared = held.at();
+        Ok(Some((key, bound, held.at())))
+    }
+
+    /// Plan the linear arrow `(x : A) ⊸ C`, or `A ⊸ C` with no name for its
+    /// binder.
+    ///
+    /// # Specification
+    /// - requires: `site` is a linear arrow in type position.
+    /// - ensures: the binder extends the arrow's frame and is mentioned, so
+    ///   every telescope counts it: the linear arrow binds the parameter's
+    ///   shadow in its codomain whether or not the codomain names it. A domain
+    ///   `(x : A)` names the binder and reads `A`; any other domain is read as
+    ///   the binder's type under a binder no source name resolves to. Where a
+    ///   value type is read, the codomain is read as a result, under its
+    ///   inserted returner, and the plan is the box over the arrow; elsewhere
+    ///   the codomain is a computation type.
+    /// - fails: the wrong-sort refusal where neither sort suits the position; a
+    ///   misplaced key; a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The arrow's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear arrow where a computation type is read and
+    ///   one where a value type is read, each asserted as the exact core node
+    ///   read back out of the arena.
+    /// - witness: `lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::LinearArrow(..))))]
+    pub(super) fn linear_arrow(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let boxed = matches!(
+            site.reading,
+            Reading::ValueType(_) | Reading::Result(_) | Reading::Value(_)
+        );
+        let produced = if boxed {
+            Produced::ValueType
+        }
+        else {
+            Produced::CompType
+        };
+        let frame = self.require(site, produced)?;
+        let domain = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::LINEAR_ARROW)?;
+        let codomain = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        let (binder, declared, extended) =
+            if let Some((key, bound, declared)) = self.arrow_binder(frame, domain)? {
+                self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
+                self.note_binder(key, bound)?;
+                let extended =
+                    self.scope
+                        .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
+                (key.node, declared, extended)
+            }
+            else {
+                let extended = self.scope.extend_typed(
+                    frame,
+                    SurfaceName::from(""),
+                    domain.node,
+                    Maybe::Absent(binder_site::Absent::Unwritten),
+                );
+                (domain.node, domain, extended)
+            };
         self.read(declared.node, Reading::ValueType(frame));
-        self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
-        self.note_binder(key, bound)?;
-        let extended =
-            self.scope
-                .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
+        self.scope.mention(extended);
         let start = self.parameters.mark();
         self.parameters.push(Parameter {
-            binder: key.node,
+            binder,
             frame: extended,
             declared: Maybe::Present(declared.node),
             component: None,
         });
-        self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
+        let inner = Frame::Inner(extended);
+        self.read(
+            codomain.node,
+            if boxed {
+                Reading::Result(inner)
+            }
+            else {
+                Reading::CompType(inner)
+            },
+        );
         self.plan(
             site,
-            Plan::DependentArrow(self.parameters.since(start), codomain.node),
+            Plan::LinearArrow(
+                self.parameters.since(start),
+                codomain.node,
+                crate::form::Boxed(boxed),
+            ),
         );
 
-        Ok(Planned(true))
+        Ok(())
     }
 
     /// Mint a type over labels: the record of its fields, or the dependent
@@ -5789,6 +5919,73 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_comp_type(id, origin);
 
         Maybe::Present(Lowered::CompType(id))
+    }
+
+    /// Mint a linear arrow: `(x : A) ˆ 1 ⊸ C` over its one binder's type into
+    /// its codomain, or the box over it where a value type is read.
+    ///
+    /// # Specification
+    /// - requires: the binder's type and the codomain are already minted or
+    ///   absent.
+    /// - ensures: the linear arrow at the multiplicity one, the one recorded as
+    ///   inserted at the arrow, the arrow recorded at its binder when the
+    ///   source names one; the thunk over the arrow when `boxed`; nothing when
+    ///   a type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::linear_arrow`].
+    /// - witness: `lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Absent(_) => true,
+        | Maybe::Present(Lowered::ValueType(_)) => boxed.0,
+        | Maybe::Present(Lowered::CompType(_)) => !boxed.0,
+        | Maybe::Present(_) => false,
+    })]
+    pub(super) fn mint_linear_arrow(
+        &self,
+        entries: FormStretch,
+        codomain: NodeIndex,
+        boxed: crate::form::Boxed,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(&Parameter {
+            declared: Maybe::Present(declared),
+            binder,
+            ..
+        }) = self.parameters.read(entries).first()
+        else {
+            return Maybe::Absent(lowered::Absent::Unstated);
+        };
+        let (domain, body) = match (self.value_type_at(declared), self.comp_type_at(codomain)) {
+            (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
+            (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                return Maybe::Absent(reason);
+            },
+        };
+        let one = match multiplicity_one(sink, origin) {
+            Maybe::Present(one) => one,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let id = sink.arena.comp_type_linear_arrow(domain, one, body);
+        // A nameless binder, `A ⊸ C`, stands at its own type and names
+        // nothing to record.
+        if binder != declared
+            && let Maybe::Present(binder) = self.origin_at(binder)
+        {
+            sink.origins.record_arrow(id, binder);
+        }
+        sink.origins.record_comp_type(id, origin);
+        if !boxed.0 {
+            return Maybe::Present(Lowered::CompType(id));
+        }
+        let thunk = sink.arena.value_type_thunk(id);
+        sink.origins.record_value_type(thunk, origin);
+
+        Maybe::Present(Lowered::ValueType(thunk))
     }
 
     /// Mint a function's group of outputs: the many-value returner of its

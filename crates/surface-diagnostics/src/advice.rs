@@ -1131,6 +1131,23 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: LinearityDefect::ContinuationUsedTwice { .. },
             ..
         } => String::from("end the continuation only once"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::LinearSlotConsumed { .. },
+            ..
+        } => String::from("use the linear parameter once, or take it at `->` instead of `⊸`"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::LinearSlotUnconsumed { .. },
+            ..
+        } => String::from("use the linear parameter exactly once on every path through the body"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ShadowCaptured { .. },
+            ..
+        } => String::from(
+            "use the linear parameter outside the thunk, loop or fold that captures it",
+        ),
+        CheckRefusal::MultiplicityUnsupported { .. } => {
+            String::from("write the linear arrow with no multiplicity, which is one")
+        },
         CheckRefusal::DataFieldLevel { .. } => {
             String::from("lower each constructor field to its datatype's universe")
         },

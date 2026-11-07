@@ -1254,6 +1254,9 @@ fn checked(
             "`Flow.ride` moves a run of the moving endpoint, a value whose type does not depend \
              on it, or a value the flow's translator computes",
         ),
+        CheckRefusal::MultiplicityUnsupported { .. } => {
+            f.write_str("a linear function admits the multiplicity one alone for now")
+        },
         CheckRefusal::RunNotAdmitted { .. } => f.write_str("the protocol does not admit this run"),
         CheckRefusal::DialogueUnmatched { .. } => {
             f.write_str("this dialogue's message is not received as it was sent")
