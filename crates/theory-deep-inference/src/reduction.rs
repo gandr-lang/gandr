@@ -23,8 +23,7 @@
 //!   reduction, and its rows compare by exact identity, so each witness is an
 //!   identity.
 //! - `vault:01a12723-951b-7183-87d8-4fbc83c6a779` — anchor: a row is one guard
-//!   for each point of the template, as [`TemplateRow`](crate::TemplateRow)
-//!   holds it.
+//!   for each point of the template, as [`TemplateRow`] holds it.
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
