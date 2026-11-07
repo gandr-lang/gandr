@@ -33,8 +33,10 @@ use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes_tools::Toy;
 use gandr_theory_cell_complexes_tools::ToyAlphabet;
+use gandr_theory_cell_complexes_tools::ToySubst;
 use gandr_theory_cell_complexes_tools::toy_cell;
 use gandr_theory_coherent_resolutions::CellApp;
+use gandr_theory_coherent_resolutions::record_path;
 use gandr_theory_coherent_resolutions::replay_from_peak;
 use quenchant_shape::shape::Maybe;
 
@@ -427,22 +429,28 @@ fn numeral(count: Successors) -> Toy
 #[derive(Clone, Copy, Debug)]
 struct Successors(usize);
 
-/// `cell` fired at the root, `count` times.
+/// `cell` fired at the root of `from`, `count` times, each step with the
+/// substitution of its firing.
 ///
 /// # Specification
 /// trivial.
 fn at_root(
+    store: &CellStore<ToyAlphabet>,
+    from: &Toy,
     cell: CellId,
     count: Successors,
 ) -> Vec<CellApp<ToyAlphabet>>
 {
-    vec![
+    let mut path = vec![
         CellApp {
             cell,
             at: ToyAlphabet::root_position(),
+            subst: ToySubst::default(),
         };
         count.0
-    ]
+    ];
+    record_path(store, from, &mut path);
+    path
 }
 
 #[test]
@@ -581,12 +589,12 @@ fn identity_is_read_off_evaluation_on_both_replays()
         joins_at: Toy::zero(),
     };
     let stepwise = Legs {
-        first: at_root(once, Successors(2)),
-        second: at_root(twice, Successors(1)),
+        first: at_root(&store, &object.peak, once, Successors(2)),
+        second: at_root(&store, &object.peak, twice, Successors(1)),
     };
     let swapped = Legs {
-        first: at_root(twice, Successors(1)),
-        second: at_root(once, Successors(2)),
+        first: at_root(&store, &object.peak, twice, Successors(1)),
+        second: at_root(&store, &object.peak, once, Successors(2)),
     };
     assert_eq!(
         Identification::Identified,
@@ -594,8 +602,8 @@ fn identity_is_read_off_evaluation_on_both_replays()
         "two certificates of one boundary are one, whatever their paths"
     );
     let short = Legs {
-        first: at_root(once, Successors(1)),
-        second: at_root(twice, Successors(1)),
+        first: at_root(&store, &object.peak, once, Successors(1)),
+        second: at_root(&store, &object.peak, twice, Successors(1)),
     };
     assert_eq!(
         Identification::Distinct,
@@ -608,25 +616,25 @@ fn identity_is_read_off_evaluation_on_both_replays()
 fn tracelets_graft_where_one_joins_at_the_next_peak()
 {
     let (mut store, once, twice) = peeling();
-    let one = numeral(Successors(1));
+    let (one, three) = (numeral(Successors(1)), numeral(Successors(3)));
     let upper = (
         Boundary {
-            peak: numeral(Successors(3)),
+            peak: three.clone(),
             joins_at: one.clone(),
         },
         Legs {
-            first: at_root(once, Successors(2)),
-            second: at_root(twice, Successors(1)),
+            first: at_root(&store, &three, once, Successors(2)),
+            second: at_root(&store, &three, twice, Successors(1)),
         },
     );
     let lower = (
         Boundary {
-            peak: one,
+            peak: one.clone(),
             joins_at: Toy::zero(),
         },
         Legs {
-            first: at_root(once, Successors(1)),
-            second: at_root(once, Successors(1)),
+            first: at_root(&store, &one, once, Successors(1)),
+            second: at_root(&store, &one, once, Successors(1)),
         },
     );
     for &(ref object, ref legs) in [&upper, &lower] {
@@ -684,15 +692,17 @@ fn tracelets_graft_where_one_joins_at_the_next_peak()
     }
     // Three one-step tracelets down from three: grafting associates.
     let step = |from: Successors| {
+        let peak = numeral(Successors(from.0.saturating_add(1)));
+        let legs = Legs {
+            first: at_root(&store, &peak, once, Successors(1)),
+            second: at_root(&store, &peak, once, Successors(1)),
+        };
         (
             Boundary {
-                peak: numeral(Successors(from.0.saturating_add(1))),
+                peak,
                 joins_at: numeral(from),
             },
-            Legs {
-                first: at_root(once, Successors(1)),
-                second: at_root(once, Successors(1)),
-            },
+            legs,
         )
     };
     let [top, middle, foot] = [

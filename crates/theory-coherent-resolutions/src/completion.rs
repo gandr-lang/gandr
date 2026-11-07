@@ -148,7 +148,9 @@ use crate::overlap::enumerate_overlaps;
 use crate::overlap::interior_overlaps_between;
 use crate::overlap::root_overlaps_between;
 use crate::rewrite::CellApp;
+use crate::rewrite::firing;
 use crate::rewrite::normalize;
+use crate::rewrite::replay_at;
 use crate::rewrite::rewrite_at;
 use crate::tracelet::Tracelet;
 use crate::tracelet::joined;
@@ -807,7 +809,7 @@ where
                 continue;
             }
             if left.normal == right.normal {
-                if let Maybe::Present(certificate) = joined(overlap, left, right) {
+                if let Maybe::Present(certificate) = joined(overlap, left, right, &store) {
                     certificates.push(certificate);
                 }
                 continue;
@@ -846,7 +848,7 @@ where
             if !bool::from(left.exhausted)
                 && !bool::from(right.exhausted)
                 && left.normal == right.normal
-                && let Maybe::Present(certificate) = joined(overlap, left, right)
+                && let Maybe::Present(certificate) = joined(overlap, left, right, &store)
             {
                 certificates.push(certificate);
             }
@@ -1027,6 +1029,9 @@ pub enum CompositeRefusal
     NotBelow,
     /// The witness's cell does not fire at the witness's position.
     Unmatched,
+    /// The witness's substitution does not instantiate its cell's left-hand
+    /// side to the peak's command at the witness's position.
+    ForgedSubstitution,
 }
 
 impl core::fmt::Display for CompositeRefusal
@@ -1049,6 +1054,9 @@ impl core::fmt::Display for CompositeRefusal
             Self::NotAPeak => f.write_str("the pair's cells do not fire at its peak"),
             Self::NotBelow => f.write_str("the witness is not strictly below the seam"),
             Self::Unmatched => f.write_str("the witness's cell does not fire at its position"),
+            Self::ForgedSubstitution => {
+                f.write_str("the witness's substitution does not give the peak's command")
+            },
         }
     }
 }
@@ -1062,7 +1070,8 @@ impl core::error::Error for CompositeRefusal
 ///
 /// # Specification
 /// - ensures: the pair, and the step of a cell that matches the pair's peak
-///   strictly below its seam; [`Self::replay`] checks the step.
+///   strictly below its seam, with the substitution of that match;
+///   [`Self::replay`] checks the step.
 /// - executable: none — a datum; [`Self::replay`] carries the predicate.
 ///
 /// # Adequacy
@@ -1073,7 +1082,8 @@ pub struct CompositePair<A: CellAlphabet = SequentAlphabet>
 {
     /// The pair.
     pub overlap: Overlap<A>,
-    /// The cell that matches the peak strictly below the seam, and where.
+    /// The cell that matches the peak strictly below the seam, where, and the
+    /// substitution of the match.
     pub below: CellApp<A>,
 }
 
@@ -1086,8 +1096,9 @@ where
     /// # Specification
     /// - ensures: `Ok` exactly when the pair is a confluence, its left cell
     ///   fires at the peak's root and its right cell at the seam, the witness's
-    ///   position is strictly below the seam, and the witness's cell fires at
-    ///   that position; otherwise the first check that fails, in that order.
+    ///   position is strictly below the seam, and the witness replays at that
+    ///   position with its substitution ([`replay_at`]); otherwise the first
+    ///   check that fails, in that order.
     /// - panics: none.
     /// - executable: none — the body is the predicate.
     ///
@@ -1097,8 +1108,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — over the toy alphabet, the witness of a composite
     ///   pair replays. A witness moved to the seam, a witness whose cell does
-    ///   not match at its position, a witness that names no cell of the store,
-    ///   and a pair whose left cell is another are each refused by name.
+    ///   not match at its position, a witness with another position's
+    ///   substitution, a witness that names no cell of the store, and a pair
+    ///   whose left cell is another are each refused by name.
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     #[inline]
     pub fn replay(
@@ -1126,8 +1138,16 @@ where
         if A::position_order(&overlap.seam, &below.at) != PositionOrder::Encloses {
             return Err(CompositeRefusal::NotBelow);
         }
-        if !fires(below.cell, &below.at)? {
-            return Err(CompositeRefusal::Unmatched);
+        let Maybe::Present(witness) = store.get(below.cell)
+        else {
+            return Err(CompositeRefusal::UnissuedCell(below.cell));
+        };
+        match replay_at(witness, &overlap.peak, below) {
+            Maybe::Present(_) => {},
+            Maybe::Absent(firing::Absent::ForgedSubstitution) => {
+                return Err(CompositeRefusal::ForgedSubstitution);
+            },
+            Maybe::Absent(_) => return Err(CompositeRefusal::Unmatched),
         }
         Ok(())
     }
@@ -1419,7 +1439,7 @@ where
                             right_steps: right.path,
                         };
                     }
-                    if let Maybe::Present(certificate) = joined(&overlap, left, right) {
+                    if let Maybe::Present(certificate) = joined(&overlap, left, right, store) {
                         self.certificates.push(certificate);
                     }
                     self.within = self.within.saturating_add(1);
@@ -1514,6 +1534,7 @@ mod tests
     use gandr_theory_cell_complexes_tools::Toy;
     use gandr_theory_cell_complexes_tools::ToyAlphabet;
     use gandr_theory_cell_complexes_tools::ToyPos;
+    use gandr_theory_cell_complexes_tools::ToySubst;
     use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
@@ -1877,8 +1898,10 @@ mod tests
                         continue;
                     }
                     for (cell, rule) in store.iter() {
-                        if let Maybe::Present(_) = rewrite_at(rule, &overlap.peak, &at) {
-                            return PairClass::Composite(CellApp { cell, at });
+                        if let Maybe::Present(fired) =
+                            crate::rewrite::fire_at(cell, rule, &overlap.peak, at.clone())
+                        {
+                            return PairClass::Composite(fired.step);
                         }
                     }
                 }
@@ -1938,14 +1961,24 @@ mod tests
             panic!("one composite pair: {composites:?}");
         };
         assert_eq!(
-            (&composite.overlap.seam, &composite.below),
-            (&addition, &CellApp {
-                cell: second,
-                at: inner
-            }),
+            (
+                &composite.overlap.seam,
+                composite.below.cell,
+                &composite.below.at
+            ),
+            (&addition, second, &inner),
             "the pair at the addition is composite by the second rule one position down"
         );
         assert_eq!(composite.replay(&store), Ok(()), "the witness replays");
+        // The substitution of the second rule at `add(Succ(Zero), Zero)`: the
+        // rule matches the witness's command, but this substitution gives
+        // another command.
+        let mut elsewhere = ToySubst::default();
+        let _bound = ToyAlphabet::match_cmd(
+            &Toy::add(Toy::var("x"), Toy::zero()),
+            &Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
+            &mut elsewhere,
+        );
         let refused = |change: &dyn Fn(&mut CompositePair<ToyAlphabet>)| {
             let mut forged = composite.clone();
             change(&mut forged);
@@ -1955,6 +1988,7 @@ mod tests
             [
                 refused(&|forged| forged.below.at = addition.clone()),
                 refused(&|forged| forged.below.cell = third),
+                refused(&|forged| forged.below.subst = elsewhere.clone()),
                 refused(&|forged| forged.overlap.left = third),
                 refused(&|forged| forged.overlap.kind = OverlapKind::Composition),
                 composite.replay(&CellStore::new()),
@@ -1962,6 +1996,7 @@ mod tests
             [
                 Err(CompositeRefusal::NotBelow),
                 Err(CompositeRefusal::Unmatched),
+                Err(CompositeRefusal::ForgedSubstitution),
                 Err(CompositeRefusal::NotAPeak),
                 Err(CompositeRefusal::NotAConfluence),
                 Err(CompositeRefusal::UnissuedCell(first)),

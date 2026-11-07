@@ -24,6 +24,9 @@
 //!
 //! # References
 //!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: an elaborated graft
+//!   records its composite against the cell store, where the composite's replay
+//!   reads it (§ gate-substitution-read).
 //! - Nicolas Behr, Paul-André Melliès and Noam Zeilberger. “Convolution
 //!   Products on Double Categories and Categorification of Rule Algebras.”
 //!   _FSCD 2023_, paper 17.

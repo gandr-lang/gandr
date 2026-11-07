@@ -240,7 +240,7 @@ fn a_publicly_composed_tracelet_round_trips_its_step_identities()
     unit.overlap.peak = tracelet.joins_at.clone();
     unit.path_a.clear();
     unit.path_b.clear();
-    let composed = compose_invertible(&tracelet, &unit);
+    let composed = compose_invertible(&tracelet, &unit, &store);
     assert!(bool::from(composed.replay(&store)));
     let normal = first_leg(&store, &composed);
     let first = transport_step_index(&normal, &store).expect("indexes");

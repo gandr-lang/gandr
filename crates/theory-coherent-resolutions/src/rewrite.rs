@@ -35,6 +35,16 @@
 //! is reported, never mistaken for a normal form. The budget is the guard
 //! against a store that does not terminate, the same decline-and-report posture
 //! completion takes.
+//!
+//! # Recorded substitution
+//!
+//! A step records the substitution that matched the cell's own left-hand side
+//! ([`CellApp::subst`]). [`fire_at`] fires a cell and records its step.
+//! [`replay_at`] replays a step: it instantiates the left-hand side by the
+//! recorded substitution and compares the instance with the command at the
+//! step's position, in place of a match. A substitution that does not give
+//! that command is refused as [`firing::Absent::ForgedSubstitution`]. The
+//! replay then contracts the step as [`rewrite_at`] does.
 
 use alloc::vec::Vec;
 
@@ -50,17 +60,97 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::BudgetExhaustion;
 use crate::boundary::NormalizationBudget;
 
-/// One rewrite step: which cell fired, and where.
+/// One rewrite step: which cell fired, where, and the substitution that matched
+/// it there.
 ///
-/// A step records no substitution. Replay re-matches and re-contracts every
-/// step, so a certificate is re-executed rather than trusted.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// The substitution binds each variable of the cell's left-hand side, as the
+/// store holds the cell, to its subterm of the command at [`CellApp::at`].
+/// Replay instantiates the left-hand side by it and compares the instance with
+/// that command, in place of a match ([`replay_at`]). Replay then contracts the
+/// step, so a certificate is re-executed and never trusted. A step holds the
+/// substitution of the term that its holder fires it on: a certificate records
+/// each step on the skolemized replay of its peak ([`crate::record_path`]).
+///
+/// # Identity
+///
+/// Equality and hashing read the cell and the position, not the substitution.
+/// The substitution is the evidence of the step, which replay checks, and the
+/// term that a holder fires the step on determines it. So one step that two
+/// holders record on two terms is one step, and a path that a homotopy moves
+/// into a context compares with the path it meets there.
+#[derive(Clone, Debug)]
 pub struct CellApp<A: CellAlphabet = SequentAlphabet>
 {
     /// The cell that fired.
     pub cell: CellId,
     /// The command position it fired at.
     pub at: A::Pos,
+    /// The substitution of the cell's left-hand side that matched the command
+    /// at [`CellApp::at`].
+    pub subst: A::Subst,
+}
+
+impl<A: CellAlphabet> CellApp<A>
+{
+    /// A step of `cell` at `at` that records no substitution yet.
+    ///
+    /// A reader that fires each step by a match, such as an event order, a
+    /// flow or a footprint, reads the cell and the position alone. Replay
+    /// refuses the step until [`crate::record_path`] records its substitution.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn unrecorded(
+        cell: CellId,
+        at: A::Pos,
+    ) -> Self
+    {
+        Self {
+            cell,
+            at,
+            subst: A::Subst::default(),
+        }
+    }
+}
+
+impl<A: CellAlphabet> PartialEq for CellApp<A>
+{
+    /// Whether the two steps fire one cell at one position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.cell == other.cell && self.at == other.at
+    }
+}
+
+impl<A: CellAlphabet> Eq for CellApp<A>
+{
+}
+
+impl<A: CellAlphabet> core::hash::Hash for CellApp<A>
+{
+    /// The cell and the position, as [`PartialEq`] reads them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: core::hash::Hasher,
+    {
+        self.cell.hash(state);
+        self.at.hash(state);
+    }
 }
 
 /// One successful rewrite: the step, and the whole term after it.
@@ -100,6 +190,10 @@ quenchant_shape::reason_enum! {
             Refused,
             /// The cell's left-hand side does not match the command.
             NoMatch,
+            /// The step's substitution does not instantiate the cell's
+            /// left-hand side to the command at the position: the substitution
+            /// is forged.
+            ForgedSubstitution,
             /// The alphabet refused to splice the contractum back where the
             /// redex was read, which an alphabet keeping the splice law never
             /// does.
@@ -235,9 +329,13 @@ where
             continue;
         };
         for (cell_id, cell) in store.iter() {
-            if let Maybe::Present(result) = contract(cell, term, &at, &redex) {
+            if let Maybe::Present((result, subst)) = contract(cell, term, &at, &redex) {
                 return Maybe::Present(Rewrite {
-                    step: CellApp { cell: cell_id, at },
+                    step: CellApp {
+                        cell: cell_id,
+                        at,
+                        subst,
+                    },
                     result,
                 });
             }
@@ -300,16 +398,172 @@ pub fn rewrite_at<A>(
 where
     A: CellAlphabet,
 {
-    let redex = match A::subterm_cmd_at(term, pos) {
+    match fire(cell, term, pos) {
+        Maybe::Present((result, _subst)) => Maybe::Present(result),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    }
+}
+
+/// Fire `cell` at `pos` in `term`, with the substitution that matched the
+/// cell's own left-hand side: [`rewrite_at`] that keeps the substitution.
+///
+/// # Specification
+/// - ensures: the result that [`rewrite_at`] gives, with a substitution that
+///   instantiates the cell's left-hand side to the command at `pos`.
+/// - provides: the reasons that [`rewrite_at`] provides.
+/// - panics: none.
+/// - executable: none — [`rewrite_at`] fires through this function, so a clause
+///   that calls it recurses without end.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`fire_at`], which records its step through it.
+/// - witness: `rewrite::tests::a_replayed_step_refuses_a_forged_substitution_by_name`
+pub fn fire<A>(
+    cell: &Cell<A>,
+    term: &A::Cmd,
+    pos: &A::Pos,
+) -> Maybe<(A::Cmd, A::Subst), firing::Absent>
+where
+    A: CellAlphabet,
+{
+    match A::subterm_cmd_at(term, pos) {
+        Maybe::Present(redex) => contract(cell, term, pos, &redex),
+        Maybe::Absent(reason) => Maybe::Absent(firing::Absent::NoCommand(reason)),
+    }
+}
+
+/// Fire `cell`, which a store holds under `id`, at `at` in `term`, and record
+/// the step: [`rewrite_at`] with the substitution that matched.
+///
+/// # Specification
+/// - ensures: the result that [`rewrite_at`] gives, with the step of `id` at
+///   `at` whose substitution instantiates the cell's left-hand side to the
+///   command at `at`.
+/// - provides: the reasons that [`rewrite_at`] provides.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recorded step replays to the result of its firing, and
+///   the same step with a changed substitution is refused. A substitution of
+///   another redex or a dropped binding changes the replay.
+/// - witness: `rewrite::tests::a_replayed_step_refuses_a_forged_substitution_by_name`
+#[inline]
+#[spec(captures: expected = rewrite_at(cell, term, &at), ensures: |output| match output {
+    Maybe::Present(ref fired) => expected == Maybe::Present(fired.result.clone()) && fired.step.cell == id
+        && matches!(A::subterm_cmd_at(term, &fired.step.at), Maybe::Present(ref redex)
+            if A::apply_images(cell.lhs(), |var| A::image(&fired.step.subst, var)) == *redex),
+    Maybe::Absent(reason) => expected == Maybe::Absent(reason),
+})]
+pub fn fire_at<A>(
+    id: CellId,
+    cell: &Cell<A>,
+    term: &A::Cmd,
+    at: A::Pos,
+) -> Maybe<Rewrite<A>, firing::Absent>
+where
+    A: CellAlphabet,
+{
+    match fire(cell, term, &at) {
+        Maybe::Present((result, subst)) => Maybe::Present(Rewrite {
+            step: CellApp {
+                cell: id,
+                at,
+                subst,
+            },
+            result,
+        }),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    }
+}
+
+/// Replay `step` of `cell` in `term`: instantiate the cell's left-hand side by
+/// the step's substitution, compare the instance with the command at the
+/// step's position, and contract.
+///
+/// The comparison takes the place of a match. The contraction is the one that
+/// [`rewrite_at`] makes, so a replayed step is re-executed and never trusted.
+/// Only the bindings of the left-hand side's variables are read, so a binding
+/// of another variable changes nothing.
+///
+/// # Specification
+/// - ensures: when the substitution instantiates the left-hand side to the
+///   command at `step.at`, the result that [`rewrite_at`] gives there.
+/// - provides: [`firing::Absent::NoCommand`] when the position addresses no
+///   command; [`firing::Absent::Refused`] when the alphabet's firing discipline
+///   refuses the cell there; [`firing::Absent::NoMatch`] when the instance
+///   differs from the command and the left-hand side matches it under no
+///   substitution; [`firing::Absent::ForgedSubstitution`] when the instance
+///   differs from a command that the left-hand side matches;
+///   [`firing::Absent::SpliceRefused`] when the alphabet refuses the splice.
+/// - panics: none.
+/// - intension: one instantiation and one comparison in place of a match, then
+///   one instantiation of the right-hand side. A refused instance costs one
+///   match, which names the refusal. A cell with a wire also matches its faces
+///   renamed apart from `term`, as [`rewrite_at`] does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recorded step replays to the result of its firing. A
+///   substitution of another redex, a dropped binding, an extra binding of
+///   another variable and a command that the cell does not match are replayed.
+///   The first two are refused as forged, the third replays alike, and the
+///   fourth is refused as no match. Accepting a forged substitution or refusing
+///   the honest one changes the outcome.
+/// - witness: `rewrite::tests::a_replayed_step_refuses_a_forged_substitution_by_name`
+#[inline]
+#[spec(ensures: |output| match A::subterm_cmd_at(term, &step.at) {
+    Maybe::Absent(reason) => output == Maybe::Absent(firing::Absent::NoCommand(reason)),
+    Maybe::Present(ref redex) => if !bool::from(A::may_fire(&cell.provenance(), redex)) {
+        output == Maybe::Absent(firing::Absent::Refused)
+    } else if A::apply_images(cell.lhs(), |var| A::image(&step.subst, var)) == *redex {
+        output == rewrite_at(cell, term, &step.at)
+    } else if bool::from(A::match_cmd(cell.lhs(), redex, &mut A::Subst::default())) {
+        output == Maybe::Absent(firing::Absent::ForgedSubstitution)
+    } else {
+        output == Maybe::Absent(firing::Absent::NoMatch)
+    },
+})]
+pub fn replay_at<A>(
+    cell: &Cell<A>,
+    term: &A::Cmd,
+    step: &CellApp<A>,
+) -> Maybe<A::Cmd, firing::Absent>
+where
+    A: CellAlphabet,
+{
+    let redex = match A::subterm_cmd_at(term, &step.at) {
         Maybe::Present(redex) => redex,
         Maybe::Absent(reason) => return Maybe::Absent(firing::Absent::NoCommand(reason)),
     };
-    contract(cell, term, pos, &redex)
+    if !bool::from(A::may_fire(&cell.provenance(), &redex)) {
+        return Maybe::Absent(firing::Absent::Refused);
+    }
+    let image_of = |var: &A::Var| A::image(&step.subst, var);
+    if A::apply_images(cell.lhs(), image_of) != redex {
+        let matches = A::match_cmd(cell.lhs(), &redex, &mut A::Subst::default());
+        return Maybe::Absent(if bool::from(matches) {
+            firing::Absent::ForgedSubstitution
+        }
+        else {
+            firing::Absent::NoMatch
+        });
+    }
+    let contractum = match renamed(cell, term) {
+        None => A::apply_images(cell.rhs(), image_of),
+        Some(ref faces) => match wired_contractum::<A>(faces, &redex) {
+            Maybe::Present(contractum) => contractum,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        },
+    };
+    match A::splice_cmd_at(term, &step.at, contractum) {
+        Ok(result) => Maybe::Present(result),
+        Err(refusal) => Maybe::Absent(firing::Absent::SpliceRefused(refusal)),
+    }
 }
 
 /// Fire `cell` at `pos` in `term`, where `redex` is the command `pos`
 /// addresses: [`rewrite_at`] after its read of the redex, so a search that
-/// tries every cell at one position reads the redex once.
+/// tries every cell at one position reads the redex once. The substitution
+/// that matched the cell's own left-hand side comes with the result.
 ///
 /// # Specification
 /// - requires: `redex` is the command of `term` at `pos`.
@@ -317,7 +571,8 @@ where
 ///   splice of the instantiated right-hand side when the discipline permits the
 ///   cell and its left-hand side matches `redex`, so a root check that refuses
 ///   a cell which matches breaks it. A cell with wires instantiates its faces
-///   renamed apart from `term`.
+///   renamed apart from `term`. The substitution instantiates the cell's own
+///   left-hand side to `redex`.
 /// - provides: [`firing::Absent::Refused`] when the alphabet's firing
 ///   discipline refuses the cell there; [`firing::Absent::NoMatch`] when the
 ///   roots clash or the left-hand side does not match;
@@ -325,7 +580,9 @@ where
 /// - panics: none.
 /// - intension: the roots are compared before the left-hand side is matched, so
 ///   a cell whose root cannot meet the redex costs one comparison. A cell with
-///   no wire fires with its own faces and builds no renamed copy.
+///   no wire fires with its own faces and builds no renamed copy; a cell with a
+///   wire matches its own left-hand side for the substitution and its renamed
+///   one for the contraction.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — [`rewrite_at`]'s witnesses run through it, and the redex
@@ -343,7 +600,8 @@ where
     let mut subst = A::Subst::default();
     if bool::from(A::match_cmd(lhs, redex, &mut subst)) {
         match A::splice_cmd_at(term, pos, A::apply_subst(&subst, rhs)) {
-            Ok(expected) => output == Maybe::Present(expected),
+            Ok(expected) => matches!(output, Maybe::Present((ref result, ref own)) if *result == expected
+                && A::apply_images(cell.lhs(), |var| A::image(own, var)) == *redex),
             Err(reason) => output == Maybe::Absent(firing::Absent::SpliceRefused(reason)),
         }
     } else {
@@ -357,7 +615,7 @@ fn contract<A>(
     term: &A::Cmd,
     pos: &A::Pos,
     redex: &A::Cmd,
-) -> Maybe<A::Cmd, firing::Absent>
+) -> Maybe<(A::Cmd, A::Subst), firing::Absent>
 where
     A: CellAlphabet,
 {
@@ -367,20 +625,58 @@ where
     if A::root_agreement(cell.lhs(), redex) == RootAgreement::Clash {
         return Maybe::Absent(firing::Absent::NoMatch);
     }
-    let renamed = renamed(cell, term);
-    let (lhs, rhs) = renamed.as_ref().map_or_else(
-        || (cell.lhs(), cell.rhs()),
-        |&(ref lhs, ref rhs)| (lhs, rhs),
-    );
     let mut subst = A::Subst::default();
-    if !bool::from(A::match_cmd(lhs, redex, &mut subst)) {
+    if !bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
         return Maybe::Absent(firing::Absent::NoMatch);
     }
-    let contractum = A::apply_subst(&subst, rhs);
+    let contractum = match renamed(cell, term) {
+        None => A::apply_subst(&subst, cell.rhs()),
+        Some(ref faces) => match wired_contractum::<A>(faces, redex) {
+            Maybe::Present(contractum) => contractum,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        },
+    };
     match A::splice_cmd_at(term, pos, contractum) {
-        Ok(result) => Maybe::Present(result),
+        Ok(result) => Maybe::Present((result, subst)),
         Err(refusal) => Maybe::Absent(firing::Absent::SpliceRefused(refusal)),
     }
+}
+
+/// The contractum of a cell with a wire at `redex`: its right-hand side
+/// `faces.1` under the match of its left-hand side `faces.0`, both renamed
+/// apart from the term, so that each wire takes a name the term does not hold.
+///
+/// # Specification
+/// - ensures: the right-hand side under the substitution that matches the
+///   left-hand side to `redex`.
+/// - provides: [`firing::Absent::NoMatch`] when the left-hand side does not
+///   match, which a renaming of a left-hand side that matches never gives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `cong1` fired twice from a ground term writes `x′` and
+///   then `x′'`. A wire written under a held name changes the terms.
+/// - witness: `rewrite::tests::each_firing_writes_its_wire_under_a_name_the_term_does_not_hold`
+#[spec(ensures: |output| {
+    let mut subst = A::Subst::default();
+    if bool::from(A::match_cmd(&faces.0, redex, &mut subst)) {
+        output == Maybe::Present(A::apply_subst(&subst, &faces.1))
+    } else {
+        output == Maybe::Absent(firing::Absent::NoMatch)
+    }
+})]
+fn wired_contractum<A>(
+    faces: &(A::Cmd, A::Cmd),
+    redex: &A::Cmd,
+) -> Maybe<A::Cmd, firing::Absent>
+where
+    A: CellAlphabet,
+{
+    let mut renamed = A::Subst::default();
+    if !bool::from(A::match_cmd(&faces.0, redex, &mut renamed)) {
+        return Maybe::Absent(firing::Absent::NoMatch);
+    }
+    Maybe::Present(A::apply_subst(&renamed, &faces.1))
 }
 
 /// The faces of `cell` renamed apart from `term`, when the cell has a wire: a
@@ -454,8 +750,12 @@ mod tests
             assert_eq!(expected, result.normal);
             assert_eq!(exhausted, bool::from(result.exhausted));
             assert_eq!(
-                alloc::vec![CellApp { cell: peel, at: root.clone() }; steps],
-                result.path
+                alloc::vec![(peel, root.clone()); steps],
+                result
+                    .path
+                    .iter()
+                    .map(|step| (step.cell, step.at.clone()))
+                    .collect::<Vec<_>>()
             );
         }
         let normal = normalize(&store, &Toy::zero(), NormalizationBudget::from(0_usize));
@@ -467,28 +767,20 @@ mod tests
             Toy::var("x"),
         ));
         let term = Toy::add(Toy::succ(Toy::zero()), two.clone());
+        let placed = |rewrite: Maybe<Rewrite<ToyAlphabet>, redex_search::Absent>| match rewrite {
+            Maybe::Present(rewrite) => (rewrite.step.cell, rewrite.step.at, rewrite.result),
+            Maybe::Absent(reason) => panic!("a cell fires: {reason:?}"),
+        };
         assert_eq!(
-            Maybe::Present(Rewrite {
-                step: CellApp {
-                    cell: root_rule,
-                    at: root.clone()
-                },
-                result: Toy::succ(Toy::zero())
-            }),
-            apply_once(&store, &term)
+            (root_rule, root.clone(), Toy::succ(Toy::zero())),
+            placed(apply_once(&store, &term))
         );
         let mut competing = CellStore::new();
         let first = competing.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::zero()));
         competing.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
         assert_eq!(
-            Maybe::Present(Rewrite {
-                step: CellApp {
-                    cell: first,
-                    at: root.clone()
-                },
-                result: Toy::zero()
-            }),
-            apply_once(&competing, &two)
+            (first, root.clone(), Toy::zero()),
+            placed(apply_once(&competing, &two))
         );
         let mut looping = CellStore::new();
         let loop_id = looping.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::succ(Toy::var("x"))));
@@ -496,8 +788,72 @@ mod tests
         assert_eq!(two, bounded.normal);
         assert!(bool::from(bounded.exhausted));
         assert_eq!(
-            alloc::vec![CellApp { cell: loop_id, at: root }; 2],
-            bounded.path
+            alloc::vec![(loop_id, root); 2],
+            bounded
+                .path
+                .iter()
+                .map(|step| (step.cell, step.at.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_replayed_step_refuses_a_forged_substitution_by_name()
+    {
+        use gandr_theory_cell_complexes_tools::Toy;
+        use gandr_theory_cell_complexes_tools::ToyAlphabet;
+        use gandr_theory_cell_complexes_tools::ToyVar;
+        use gandr_theory_cell_complexes_tools::toy_cell;
+        let root = ToyAlphabet::root_position();
+        let mut store = CellStore::new();
+        let id = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::var("y")),
+            Toy::var("x"),
+        ));
+        let Maybe::Present(cell) = store.get(id)
+        else {
+            panic!("the store holds the cell");
+        };
+        let fire = |term: &Toy| match fire_at(id, cell, term, root.clone()) {
+            Maybe::Present(fired) => fired,
+            Maybe::Absent(reason) => panic!("the cell fires at the root: {reason:?}"),
+        };
+        let term = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
+        let fired = fire(&term);
+        assert_eq!(Toy::succ(Toy::zero()), fired.result);
+        assert_eq!(
+            Maybe::Present(fired.result.clone()),
+            replay_at(cell, &term, &fired.step),
+            "the recorded step replays to the result of its firing"
+        );
+        let forged = |subst| CellApp {
+            subst,
+            ..fired.step.clone()
+        };
+        let other = fire(&Toy::add(Toy::zero(), Toy::zero())).step.subst;
+        let dropped = ToyAlphabet::restrict_subst(&fired.step.subst, &[ToyVar::from("x")]);
+        for (label, subst) in [("another redex's", other), ("a dropped binding's", dropped)] {
+            assert_eq!(
+                Maybe::Absent(firing::Absent::ForgedSubstitution),
+                replay_at(cell, &term, &forged(subst)),
+                "{label} substitution is refused by name"
+            );
+        }
+        assert_eq!(
+            Maybe::Absent(firing::Absent::NoMatch),
+            replay_at(cell, &Toy::succ(Toy::zero()), &fired.step),
+            "a step replayed on a command that its cell does not match is no match"
+        );
+        let mut extended = fired.step.subst.clone();
+        assert!(bool::from(ToyAlphabet::match_cmd(
+            &Toy::var("z"),
+            &Toy::zero(),
+            &mut extended
+        )));
+        assert_eq!(
+            Maybe::Present(fired.result.clone()),
+            replay_at(cell, &term, &forged(extended)),
+            "a binding of a variable the left-hand side does not hold is not read"
         );
     }
 

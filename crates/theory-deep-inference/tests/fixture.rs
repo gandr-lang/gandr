@@ -120,14 +120,8 @@ pub fn cong2_pair(
 ) -> (CellApp<ToyAlphabet>, CellApp<ToyAlphabet>)
 {
     (
-        CellApp {
-            cell: f,
-            at: at![0],
-        },
-        CellApp {
-            cell: g,
-            at: at![1],
-        },
+        CellApp::unrecorded(f, at![0]),
+        CellApp::unrecorded(g, at![1]),
     )
 }
 
@@ -266,7 +260,8 @@ pub fn fusion_fixture() -> (CellStore<ToyAlphabet>, Overlap<ToyAlphabet>)
     (store, composition)
 }
 
-/// A tracelet over a chosen boundary and a chosen pair of paths.
+/// A tracelet over a chosen boundary and a chosen pair of paths, each step's
+/// substitution recorded from `peak` over `store`.
 ///
 /// An [`Overlap`] carries a private renamed leg, so only the enumerator builds
 /// one; a certificate over a boundary that is not a critical pair borrows the
@@ -276,6 +271,7 @@ pub fn fusion_fixture() -> (CellStore<ToyAlphabet>, Overlap<ToyAlphabet>)
 /// # Specification
 /// trivial.
 pub fn tracelet_over(
+    store: &CellStore<ToyAlphabet>,
     peak: &Toy,
     joins_at: &Toy,
     path_a: Vec<CellApp<ToyAlphabet>>,
@@ -290,4 +286,5 @@ pub fn tracelet_over(
         path_b,
         joins_at: joins_at.clone(),
     }
+    .recorded(store)
 }

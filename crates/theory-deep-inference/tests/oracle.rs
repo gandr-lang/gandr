@@ -724,7 +724,7 @@ fn composed_tracelets_replay_and_normalize_through_the_public_algebra()
     let (_, left) = derive_fused(&left_overlap, &mut store).expect("left certificate");
     let (_, right) = derive_fused(&right_overlap, &mut store).expect("right certificate");
     let directed = compose_directed(&left, &right, &store).expect("ground seam is acyclic");
-    let invertible = compose_invertible(&left, &right);
+    let invertible = compose_invertible(&left, &right, &store);
     assert_eq!(directed, invertible);
     assert_eq!(directed.overlap.peak, term("A"));
     assert_eq!(directed.joins_at, term("E"));

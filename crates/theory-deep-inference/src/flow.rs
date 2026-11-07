@@ -1139,11 +1139,8 @@ mod tests
             ProdPat::ctor("Zero", []),
             ConsPat::frame("Succ", ConsPat::top()),
         );
-        let flow = project_flow(&store, &term, &[CellApp {
-            cell: frame,
-            at: Pos::root(),
-        }])
-        .expect("the frame-defining cell fires at the root");
+        let flow = project_flow(&store, &term, &[CellApp::unrecorded(frame, Pos::root())])
+            .expect("the frame-defining cell fires at the root");
         assert_eq!(
             1_usize,
             flow.labels.len(),
@@ -1166,10 +1163,7 @@ mod tests
             ProdPat::ctor("Zero", []),
             ConsPat::top(),
         );
-        let step = CellApp {
-            cell: frame,
-            at: Pos::root(),
-        };
+        let step = CellApp::unrecorded(frame, Pos::root());
         assert_eq!(
             Err(FlowObstruction::StepDoesNotFire {
                 step: Box::new(step.clone()),
@@ -1180,10 +1174,7 @@ mod tests
         let missing = CellId::from(97_usize);
         assert_eq!(
             Err(FlowObstruction::UnknownCell { cell: missing }),
-            project_flow(&store, &term, &[CellApp {
-                cell: missing,
-                at: Pos::root(),
-            }]),
+            project_flow(&store, &term, &[CellApp::unrecorded(missing, Pos::root())]),
             "and an unresolvable identifier is refused before the term is read"
         );
     }
@@ -1303,10 +1294,10 @@ mod tests
             .collect();
         assert_eq!(boundary, empty.threads);
         let identity = store.insert(toy_cell(Toy::var("q"), Toy::var("q")));
-        let (identity_flow, reached) = project_walk(&store, &peak, &[CellApp {
-            cell: identity,
-            at: ToyAlphabet::root_position(),
-        }])
+        let (identity_flow, reached) = project_walk(&store, &peak, &[CellApp::unrecorded(
+            identity,
+            ToyAlphabet::root_position(),
+        )])
         .expect("the recorded identity fires");
         assert_eq!(ground, reached);
         assert_eq!(1_usize, identity_flow.labels.len());
@@ -1339,14 +1330,14 @@ mod tests
         let cell = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
         let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
         let steps = [
-            CellApp {
+            CellApp::unrecorded(
                 cell,
-                at: ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
-            },
-            CellApp {
+                ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+            ),
+            CellApp::unrecorded(
                 cell,
-                at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
-            },
+                ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+            ),
         ];
         let flow = project_flow(&store, &peak, &steps).expect("the two reductions fire");
         let Maybe::Present(canonical) = flow.canonical()
@@ -1447,22 +1438,10 @@ mod tests
         let left = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
         let right = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
         let steps = [
-            CellApp {
-                cell: shrink,
-                at: left,
-            },
-            CellApp {
-                cell: shrink,
-                at: right.clone(),
-            },
-            CellApp {
-                cell: shrink,
-                at: right,
-            },
-            CellApp {
-                cell: collapse,
-                at: ToyAlphabet::root_position(),
-            },
+            CellApp::unrecorded(shrink, left),
+            CellApp::unrecorded(shrink, right.clone()),
+            CellApp::unrecorded(shrink, right),
+            CellApp::unrecorded(collapse, ToyAlphabet::root_position()),
         ];
         let flow = project_flow(&store, &peak, &steps)
             .expect("both branches reduce before the root consumes them");

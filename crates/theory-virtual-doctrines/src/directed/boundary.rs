@@ -132,7 +132,7 @@ pub fn directed_cut(
     if bool::from(all_participating_invertible(a, store))
         && bool::from(all_participating_invertible(b, store))
     {
-        return CutOutcome::Coherent(compose_invertible(a, b));
+        return CutOutcome::Coherent(compose_invertible(a, b, store));
     }
     match compose_directed(a, b, store) {
         Ok(composite) => CutOutcome::Directed(composite),

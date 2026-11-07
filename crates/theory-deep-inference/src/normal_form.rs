@@ -2093,14 +2093,8 @@ mod tests
             ConsPat::top(),
         );
         let path = alloc::vec![
-            CellApp {
-                cell: reflexive,
-                at: Pos::root(),
-            },
-            CellApp {
-                cell: reflexive,
-                at: Pos::root(),
-            },
+            CellApp::unrecorded(reflexive, Pos::root()),
+            CellApp::unrecorded(reflexive, Pos::root()),
         ];
         let normal =
             normalize(&store, &face, &face, &path).expect("a reflexive path reaches its own peak");
@@ -2119,10 +2113,7 @@ mod tests
     {
         let (store, tracelet) = fused_fixture();
         let missing = CellId::from(97_usize);
-        let path = alloc::vec![CellApp {
-            cell: missing,
-            at: Pos::root(),
-        }];
+        let path = alloc::vec![CellApp::unrecorded(missing, Pos::root())];
         let refusal = normalize(&store, &tracelet.overlap.peak, &tracelet.joins_at, &path)
             .expect_err("an unresolvable identifier is refused");
         assert_eq!(
@@ -2142,10 +2133,7 @@ mod tests
             ProdPat::ctor("Zero", []),
             ConsPat::top(),
         );
-        let step = CellApp {
-            cell: frame,
-            at: Pos::root(),
-        };
+        let step = CellApp::unrecorded(frame, Pos::root());
         let refusal = normalize(&store, &peak, &peak, core::slice::from_ref(&step))
             .expect_err("the frame cell has no redex at this peak");
         assert_eq!(
@@ -2333,14 +2321,8 @@ mod tests
     {
         let peak = chain_peak();
         let steps = [
-            CellApp {
-                cell: add,
-                at: Pos::root(),
-            },
-            CellApp {
-                cell: add,
-                at: Pos::root(),
-            },
+            CellApp::unrecorded(add, Pos::root()),
+            CellApp::unrecorded(add, Pos::root()),
         ];
         let start = SequentAlphabet::skolemize(&peak);
         let joins_at = run_path(&store, &start, &steps);
@@ -2767,10 +2749,7 @@ mod tests
         let cell = store.insert(rule);
         let peak = Toy::succ(Toy::succ(Toy::zero()));
         let join = Toy::succ(Toy::zero());
-        let step = CellApp {
-            cell,
-            at: ToyAlphabet::root_position(),
-        };
+        let step = CellApp::unrecorded(cell, ToyAlphabet::root_position());
         let path = [step.clone(), step.clone()];
         let normal = normalize(&store, &peak, &join, &path)
             .expect("the first instance moves and the second is a unit");

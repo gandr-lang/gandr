@@ -27,7 +27,8 @@ fn block(cells: impl IntoIterator<Item = Cell<ToyAlphabet>>) -> CellStore<ToyAlp
     store
 }
 
-/// The step of `cell` at the position `path`.
+/// The step of `cell` at the position `path`, with the empty substitution: a
+/// step compares by its cell and its position.
 ///
 /// # Specification
 /// trivial.
@@ -39,6 +40,7 @@ fn step(
     CellApp {
         cell,
         at: ToyAlphabet::position_at_path(path),
+        subst: ToySubst::default(),
     }
 }
 

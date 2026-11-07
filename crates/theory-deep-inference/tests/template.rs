@@ -724,7 +724,8 @@ fn value(
 }
 
 /// The family of `members` instances of `base` under `regime`, its last
-/// member made adversarial as `adversary` says.
+/// member made adversarial as `adversary` says. Each member records its
+/// substitutions from its own peak over `store`.
 ///
 /// # Specification
 /// - ensures: exactly the requested number of instances. Both path skeletons
@@ -749,6 +750,7 @@ fn family<A>(
     members: Members,
     regime: Regime,
     adversary: Adversary,
+    store: &CellStore<A>,
 ) -> Vec<Tracelet<A>>
 where
     A: Corpus,
@@ -766,9 +768,11 @@ where
                     .map(|(hole, var)| (var.clone(), value(regime, Ordinal(index), Ordinal(hole)))),
             );
             let sigma = A::numerals(&values);
-            let mut member = base.clone();
-            member.overlap.peak = A::apply_subst(&sigma, &base.overlap.peak);
-            member.joins_at = A::apply_subst(&sigma, &base.joins_at);
+            let mut member = base.with_ends(
+                A::apply_subst(&sigma, &base.overlap.peak),
+                A::apply_subst(&sigma, &base.joins_at),
+                store,
+            );
             if index == last {
                 match adversary {
                     Adversary::Honest => {},
@@ -969,7 +973,7 @@ fn emitted_below_its_expansion_factor<A>(
 ///   reconstructed but wrong join.
 /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
 #[spec(ensures: produced_under_lies(family, store).map_or_else(|_| true, |template| family.iter().all(|member|
-    template.peak_substitution(&member.overlap.peak).and_then(|substitution| template.instantiate(&substitution))
+    template.peak_substitution(&member.overlap.peak).and_then(|substitution| template.instantiate(&substitution, store))
         .is_ok_and(|rebuilt| rebuilt.overlap.peak == member.overlap.peak && rebuilt.joins_at == member.joins_at)
         && template.admit(&member.overlap.peak, store) == Ok(member.replay(store)))))]
 fn members_admit_as_their_plain_replay<A>(
@@ -985,7 +989,7 @@ fn members_admit_as_their_plain_replay<A>(
     for member in family {
         let rebuilt = template
             .peak_substitution(&member.overlap.peak)
-            .and_then(|substitution| template.instantiate(&substitution))
+            .and_then(|substitution| template.instantiate(&substitution, store))
             .expect("a member rebuilds from the template");
         assert_eq!(
             (&member.overlap.peak, &member.joins_at),
@@ -1090,11 +1094,11 @@ proptest! {
     ) {
         let sources = sequent_sources();
         let chosen = source.get(&sources);
-        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary, &chosen.store);
         emitted_below_its_expansion_factor(&generated, &chosen.store);
         let sources = toy_sources();
         let chosen = source.get(&sources);
-        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary, &chosen.store);
         emitted_below_its_expansion_factor(&generated, &chosen.store);
     }
 
@@ -1104,11 +1108,11 @@ proptest! {
     ) {
         let sources = sequent_sources();
         let chosen = source.get(&sources);
-        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary, &chosen.store);
         members_admit_as_their_plain_replay(&generated, &chosen.store);
         let sources = toy_sources();
         let chosen = source.get(&sources);
-        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary, &chosen.store);
         members_admit_as_their_plain_replay(&generated, &chosen.store);
     }
 
@@ -1118,11 +1122,11 @@ proptest! {
     ) {
         let sources = sequent_sources();
         let chosen = source.get(&sources);
-        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary, &chosen.store);
         folds_replay_as_reductions(&generated, &chosen.store);
         let sources = toy_sources();
         let chosen = source.get(&sources);
-        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary, &chosen.store);
         folds_replay_as_reductions(&generated, &chosen.store);
     }
 }
@@ -1131,12 +1135,24 @@ proptest! {
 fn a_skeleton_divergent_family_yields_no_template()
 {
     let (store, lead) = lead_base();
-    let honest = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let honest = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     assert!(
         anti_unify_tracelets(&honest, &store, &mut InheritanceCache::new()).is_ok(),
         "the near miss, every path shared, yields a template"
     );
-    let divergent = family(&lead, Members(64), Regime::TwoArms, Adversary::Diverged);
+    let divergent = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Diverged,
+        &store,
+    );
     assert_eq!(
         Some(TemplateRefusal::SkeletonDivergence {
             member: MemberIndex::from(63_usize)
@@ -1154,7 +1170,13 @@ fn a_skeleton_divergent_family_yields_no_template()
 fn last_member_altered(alter: impl FnOnce(&mut Tracelet)) -> Option<TemplateRefusal>
 {
     let (store, lead) = lead_base();
-    let mut members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let mut members = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let last = members.last_mut()?;
     alter(last);
     anti_unify_tracelets(&members, &store, &mut InheritanceCache::new()).err()
@@ -1209,7 +1231,13 @@ fn a_member_whose_overlap_kind_alone_differs_is_named_divergent()
 fn a_template_reports_its_expansion_factor()
 {
     let (store, lead) = lead_base();
-    let members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let members = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let template = anti_unify_tracelets(&members, &store, &mut InheritanceCache::new())
         .expect("two arms per entry pay");
     assert_eq!(
@@ -1223,7 +1251,13 @@ fn a_template_reports_its_expansion_factor()
 fn an_entry_a_cell_discriminates_on_yields_no_template()
 {
     let (store, lead) = lead_base();
-    let honest = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let honest = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     assert!(
         anti_unify_tracelets(&honest, &store, &mut InheritanceCache::new()).is_ok(),
         "the near miss, every member honest, yields a template"
@@ -1233,6 +1267,7 @@ fn an_entry_a_cell_discriminates_on_yields_no_template()
         Members(64),
         Regime::TwoArms,
         Adversary::Discriminated,
+        &store,
     );
     assert!(
         !bool::from(adversarial[63].replay(&store)),
@@ -1259,12 +1294,24 @@ fn an_entry_a_cell_discriminates_on_yields_no_template()
 fn a_family_with_no_shared_content_yields_no_template()
 {
     let (store, lead) = lead_base();
-    let shared = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let shared = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     assert!(
         anti_unify_tracelets(&shared, &store, &mut InheritanceCache::new()).is_ok(),
         "the near miss, two arms per entry, yields a template"
     );
-    let distinct = family(&lead, Members(64), Regime::AllDistinct, Adversary::Honest);
+    let distinct = family(
+        &lead,
+        Members(64),
+        Regime::AllDistinct,
+        Adversary::Honest,
+        &store,
+    );
     let mut cache = InheritanceCache::new();
     let refusal = anti_unify_tracelets(&distinct, &store, &mut cache).err();
     assert!(
@@ -1283,7 +1330,7 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
 {
     let (store, lead) = lead_base();
     for members in [Members(64), Members(256)] {
-        let family = family(&lead, members, Regime::TwoArms, Adversary::Honest);
+        let family = family(&lead, members, Regime::TwoArms, Adversary::Honest, &store);
         let mut cache = InheritanceCache::new();
         let template =
             anti_unify_tracelets(&family, &store, &mut cache).expect("two arms per entry pay");
@@ -1336,6 +1383,7 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
         Members(64),
         Regime::TwoArms,
         Adversary::Discriminated,
+        &store,
     );
     let Some(TemplateRefusal::NotInherited { key, .. }) =
         anti_unify_tracelets(&adversarial, &store, &mut InheritanceCache::new()).err()
@@ -1387,7 +1435,13 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
 fn a_template_has_one_flow_for_its_family()
 {
     let (store, lead) = lead_base();
-    let family = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let family = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let template = anti_unify_tracelets(&family, &store, &mut InheritanceCache::new())
         .expect("two arms per entry pay");
     let identity = template.flow(&store).expect("the carrier projects");
@@ -1406,7 +1460,13 @@ fn a_certificate_outside_the_template_is_refused_by_name()
 {
     let (store, lead) = lead_base();
     let template = anti_unify_tracelets(
-        &family(&lead, Members(64), Regime::TwoArms, Adversary::Honest),
+        &family(
+            &lead,
+            Members(64),
+            Regime::TwoArms,
+            Adversary::Honest,
+            &store,
+        ),
         &store,
         &mut InheritanceCache::new(),
     )
@@ -1421,9 +1481,15 @@ fn a_certificate_outside_the_template_is_refused_by_name()
         template.admit(&other.overlap.peak, &store),
         "a peak of another shape"
     );
-    let outside = family(&lead, Members(3), Regime::OneVarying, Adversary::Honest)
-        .pop()
-        .expect("a member whose first hole holds two");
+    let outside = family(
+        &lead,
+        Members(3),
+        Regime::OneVarying,
+        Adversary::Honest,
+        &store,
+    )
+    .pop()
+    .expect("a member whose first hole holds two");
     assert_eq!(
         Err(TemplateObstruction::ArmOutsideTemplate {
             entry: EntryIndex::from(0_usize)
@@ -1435,7 +1501,7 @@ fn a_certificate_outside_the_template_is_refused_by_name()
         Err(TemplateObstruction::UnboundEntry {
             entry: EntryIndex::from(0_usize)
         }),
-        template.instantiate(&Subst::new()),
+        template.instantiate(&Subst::new(), &store),
         "an entry left unbound"
     );
 }
@@ -1444,7 +1510,13 @@ fn a_certificate_outside_the_template_is_refused_by_name()
 fn a_member_unlike_its_instance_is_refused_by_name()
 {
     let (store, lead) = lead_base();
-    let honest = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let honest = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let template = anti_unify_tracelets(&honest, &store, &mut InheritanceCache::new())
         .expect("two arms per entry pay");
     let mut joined = honest.clone();
@@ -1481,7 +1553,13 @@ fn a_member_unlike_its_instance_is_refused_by_name()
 fn a_family_that_does_not_pay_is_no_reduction()
 {
     let (store, lead) = lead_base();
-    let distinct = family(&lead, Members(64), Regime::AllDistinct, Adversary::Honest);
+    let distinct = family(
+        &lead,
+        Members(64),
+        Regime::AllDistinct,
+        Adversary::Honest,
+        &store,
+    );
     let refusal = TemplateReduction::fold(&distinct, &store, &mut InheritanceCache::new()).err();
     assert!(
         matches!(refusal, Some(TemplateRefusal::DoesNotPay { .. })),
@@ -1498,7 +1576,13 @@ fn a_family_that_does_not_pay_is_no_reduction()
 fn a_row_outside_its_template_is_refused_by_name()
 {
     let (store, lead) = lead_base();
-    let honest = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let honest = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let template = anti_unify_tracelets(&honest, &store, &mut InheritanceCache::new())
         .expect("two arms per entry pay");
     let member = honest.first().expect("a first member");
@@ -1509,14 +1593,14 @@ fn a_row_outside_its_template_is_refused_by_name()
     assert_eq!(entries, row.guards().len(), "one guard for each entry");
     assert_eq!(
         Ok(member),
-        template.instance(&row).as_ref(),
+        template.instance(&row, &store).as_ref(),
         "a member's row gives the member back"
     );
     assert_eq!(
         Err(TemplateObstruction::UnboundEntry {
             entry: EntryIndex::from(0_usize)
         }),
-        template.instance(&TemplateRow::default()),
+        template.instance(&TemplateRow::default(), &store),
         "a row with no guard"
     );
     let mut long = row.guards().to_vec();
@@ -1525,7 +1609,7 @@ fn a_row_outside_its_template_is_refused_by_name()
         Err(TemplateObstruction::GuardPastEntries {
             entry: EntryIndex::from(entries)
         }),
-        template.instance(&TemplateRow::from(long)),
+        template.instance(&TemplateRow::from(long), &store),
         "a row with a guard past the last entry"
     );
     let mut foreign = row.guards().to_vec();
@@ -1536,12 +1620,18 @@ fn a_row_outside_its_template_is_refused_by_name()
         Err(TemplateObstruction::ArmOutsideTemplate {
             entry: EntryIndex::from(0_usize)
         }),
-        template.instance(&TemplateRow::from(foreign)),
+        template.instance(&TemplateRow::from(foreign), &store),
         "a guard of no arm"
     );
-    let outside = family(&lead, Members(3), Regime::OneVarying, Adversary::Honest)
-        .pop()
-        .expect("a member whose first hole holds two");
+    let outside = family(
+        &lead,
+        Members(3),
+        Regime::OneVarying,
+        Adversary::Honest,
+        &store,
+    )
+    .pop()
+    .expect("a member whose first hole holds two");
     assert_eq!(
         Err(TemplateObstruction::ArmOutsideTemplate {
             entry: EntryIndex::from(0_usize)
@@ -1678,7 +1768,7 @@ fn generated_rows<A>(
                         "{}",
                         row(
                             &label,
-                            &family(base, members, regime, Adversary::Honest),
+                            &family(base, members, regime, Adversary::Honest, &source.store),
                             &source.store
                         )
                     );
@@ -1727,7 +1817,7 @@ fn verdict_table()
             "{}",
             row(
                 &label,
-                &family(&lead, Members(64), regime, adversary),
+                &family(&lead, Members(64), regime, adversary, &store),
                 &store
             )
         );
@@ -1754,7 +1844,13 @@ fn verdict_table()
 fn inheritance_refusals_preserve_leg_and_step_boundaries()
 {
     let (store, lead) = lead_base();
-    let members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let members = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let mut cache = InheritanceCache::new();
     assert!(matches!(
         anti_unify_tracelets(&members, &CellStore::new(), &mut cache),
@@ -1817,7 +1913,13 @@ fn inheritance_refusals_preserve_leg_and_step_boundaries()
 fn empty_input_and_report_inputs_do_not_rewrite_production_counts()
 {
     let (store, lead) = lead_base();
-    let members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let members = family(
+        &lead,
+        Members(64),
+        Regime::TwoArms,
+        Adversary::Honest,
+        &store,
+    );
     let mut cache = InheritanceCache::new();
     let template =
         anti_unify_tracelets(&members, &store, &mut cache).expect("the shared family pays");
@@ -1828,9 +1930,15 @@ fn empty_input_and_report_inputs_do_not_rewrite_production_counts()
     );
     assert_eq!(cache, before);
 
-    let outside = family(&lead, Members(3), Regime::OneVarying, Adversary::Honest)
-        .pop()
-        .expect("an arm outside the two-arm template");
+    let outside = family(
+        &lead,
+        Members(3),
+        Regime::OneVarying,
+        Adversary::Honest,
+        &store,
+    )
+    .pop()
+    .expect("an arm outside the two-arm template");
     let empty = template.cost_report(&[], &store);
     let singleton = template.cost_report(core::slice::from_ref(&members[0]), &store);
     let external = template.cost_report(core::slice::from_ref(&outside), &store);
@@ -1927,11 +2035,23 @@ fn family_boundaries_preserve_assignments_and_adversary_positions()
     assert_eq!(Value(0), value(Regime::OneVarying, Ordinal(6), Ordinal(1)));
     assert_eq!(Value(6), value(Regime::AllDistinct, Ordinal(6), Ordinal(1)));
     let (store, base) = lead_base();
-    let empty = family(&base, Members(0), Regime::TwoArms, Adversary::Diverged);
+    let empty = family(
+        &base,
+        Members(0),
+        Regime::TwoArms,
+        Adversary::Diverged,
+        &store,
+    );
     assert!(empty.is_empty());
     assert_eq!(NodeCount::from(0_usize), plain_size(&empty));
     assert_eq!(NodeCount::from(0_usize), plain_steps(&empty));
-    let single = family(&base, Members(1), Regime::TwoArms, Adversary::Diverged);
+    let single = family(
+        &base,
+        Members(1),
+        Regime::TwoArms,
+        Adversary::Diverged,
+        &store,
+    );
     assert_eq!(
         &base.path_a[.. base.path_a.len().saturating_sub(1)],
         single[0].path_a.as_slice()
@@ -1948,7 +2068,8 @@ fn family_boundaries_preserve_assignments_and_adversary_positions()
 struct Families(usize);
 
 /// 64 instances of `base`, member `i` filling hole `e` with the numeral that
-/// `fill` gives for `i` and `e`.
+/// `fill` gives for `i` and `e`, each recording its substitutions from its own
+/// peak over `store`.
 ///
 /// # Specification
 /// - ensures: 64 members, every member with the skeleton of `base`.
@@ -1966,6 +2087,7 @@ struct Families(usize);
         && member.overlap.kind == base.overlap.kind && member.overlap.seam == base.overlap.seam))]
 fn filled<A>(
     base: &Tracelet<A>,
+    store: &CellStore<A>,
     fill: impl Fn(Ordinal, Ordinal) -> Value,
 ) -> Vec<Tracelet<A>>
 where
@@ -1980,10 +2102,11 @@ where
                 .map(|(hole, var)| (var.clone(), fill(Ordinal(index), Ordinal(hole))))
                 .collect();
             let sigma = A::numerals(&values);
-            let mut member = base.clone();
-            member.overlap.peak = A::apply_subst(&sigma, &base.overlap.peak);
-            member.joins_at = A::apply_subst(&sigma, &base.joins_at);
-            member
+            base.with_ends(
+                A::apply_subst(&sigma, &base.overlap.peak),
+                A::apply_subst(&sigma, &base.joins_at),
+                store,
+            )
         })
         .collect()
 }
@@ -1999,13 +2122,14 @@ where
 fn families_of_one_skeleton<A>(
     base: &Tracelet<A>,
     count: Families,
+    store: &CellStore<A>,
 ) -> Vec<Vec<Tracelet<A>>>
 where
     A: Corpus,
 {
     (0_usize .. count.0)
         .map(|kind| {
-            filled(base, |member, hole| {
+            filled(base, store, |member, hole| {
                 let digit = u32::try_from(hole.0)
                     .ok()
                     .and_then(|place| 6_usize.checked_pow(place))
@@ -2059,7 +2183,7 @@ fn sum_of<'family>(
 fn two_families_keep_the_sum_alone()
 {
     let (store, lead) = lead_base();
-    let families = families_of_one_skeleton(&lead, Families(2));
+    let families = families_of_one_skeleton(&lead, Families(2), &store);
     let mut cache = InheritanceCache::new();
     let templates = templates_of(&families, &store, &mut cache);
     let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
@@ -2074,7 +2198,7 @@ fn two_families_keep_the_sum_alone()
 fn a_family_of_families_reduces_in_two_steps()
 {
     let (store, lead) = lead_base();
-    let families = families_of_one_skeleton(&lead, Families(36));
+    let families = families_of_one_skeleton(&lead, Families(36), &store);
     let mut cache = InheritanceCache::new();
     let templates = templates_of(&families, &store, &mut cache);
     let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
@@ -2142,7 +2266,7 @@ fn a_family_of_families_reduces_in_two_steps()
 fn the_then_of_two_plain_folds_stays_refused_at_the_seam()
 {
     let (store, lead) = lead_base();
-    let families = families_of_one_skeleton(&lead, Families(2));
+    let families = families_of_one_skeleton(&lead, Families(2), &store);
     let mut cache = InheritanceCache::new();
     let first =
         TemplateReduction::fold(&families[0], &store, &mut cache).expect("the first family pays");
@@ -2158,7 +2282,7 @@ fn the_then_of_two_plain_folds_stays_refused_at_the_seam()
 fn a_part_whose_replay_fails_is_refused_with_its_part_and_cell()
 {
     let (store, lead) = lead_base();
-    let mut families = families_of_one_skeleton(&lead, Families(2));
+    let mut families = families_of_one_skeleton(&lead, Families(2), &store);
     let mut cache = InheritanceCache::new();
     let templates = templates_of(&families, &store, &mut cache);
     let first = families[1][0].joins_at.clone();
@@ -2179,7 +2303,7 @@ fn a_part_whose_replay_fails_is_refused_with_its_part_and_cell()
 fn a_carrier_unlike_its_instance_is_refused_at_its_part()
 {
     let (store, lead) = lead_base();
-    let mut families = families_of_one_skeleton(&lead, Families(36));
+    let mut families = families_of_one_skeleton(&lead, Families(36), &store);
     let mut cache = InheritanceCache::new();
     let honest = templates_of(&families, &store, &mut cache);
     let views: Vec<&[Tracelet]> = families.iter().map(Vec::as_slice).collect();
@@ -2190,7 +2314,7 @@ fn a_carrier_unlike_its_instance_is_refused_at_its_part()
     // Family 7 keeps two arms at its first hole and fixes the other at two,
     // so its carrier holds a numeral where the template of templates holds a
     // metavariable.
-    families[7] = filled(&lead, |member, hole| match hole.0 {
+    families[7] = filled(&lead, &store, |member, hole| match hole.0 {
         0 => value(Regime::TwoArms, member, hole),
         _ => Value(2),
     });
@@ -2209,14 +2333,14 @@ fn a_carrier_unlike_its_instance_is_refused_at_its_part()
 fn carriers_that_differ_fold_into_a_template_of_templates_with_an_entry()
 {
     let (store, lead) = lead_base();
-    let mut families = families_of_one_skeleton(&lead, Families(36));
+    let mut families = families_of_one_skeleton(&lead, Families(36), &store);
     // Each odd family fixes its second hole at two, so its carrier holds a
     // numeral where an even family's carrier holds a metavariable. The
     // template of templates names a fresh metavariable there, apart from the
     // carriers' own.
     for (kind, family) in families.iter_mut().enumerate() {
         if kind % 2 == 1 {
-            *family = filled(&lead, |member, hole| match hole.0 {
+            *family = filled(&lead, &store, |member, hole| match hole.0 {
                 0 => Value(
                     value(Regime::TwoArms, member, hole)
                         .0

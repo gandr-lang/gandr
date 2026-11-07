@@ -167,18 +167,9 @@ fn cube_over(
     let [left, middle, right] = cells.map(|cell| store.insert(cell));
     (
         store,
-        CellApp {
-            cell: left,
-            at: at![0],
-        },
-        CellApp {
-            cell: middle,
-            at: at![1, 0],
-        },
-        CellApp {
-            cell: right,
-            at: at![1, 1],
-        },
+        CellApp::unrecorded(left, at![0]),
+        CellApp::unrecorded(middle, at![1, 0]),
+        CellApp::unrecorded(right, at![1, 1]),
     )
 }
 
@@ -235,10 +226,7 @@ fn edges_at(
     for position in ToyAlphabet::command_positions(term) {
         for (id, cell) in store.iter() {
             if matches!(rewrite_at(cell, term, &position), Maybe::Present(_)) {
-                out.push(CellApp {
-                    cell: id,
-                    at: position.clone(),
-                });
+                out.push(CellApp::unrecorded(id, position.clone()));
             }
         }
     }
@@ -568,14 +556,8 @@ fn rewrite_branching_never_reaches_the_tile_set()
         Toy::succ(Toy::succ(Toy::zero())),
     ));
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
-    let left = CellApp {
-        cell: down,
-        at: at![0],
-    };
-    let right = CellApp {
-        cell: up,
-        at: at![0],
-    };
+    let left = CellApp::unrecorded(down, at![0]);
+    let right = CellApp::unrecorded(up, at![0]);
     assert_ne!(
         fire(&store, &peak, &left),
         fire(&store, &peak, &right),

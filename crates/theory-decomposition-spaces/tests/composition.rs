@@ -1,6 +1,8 @@
 //! Composition floor: replay boundaries, seam roles and presentation
 //! sensitivity.
 
+use alloc::collections::BTreeSet;
+
 use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet as _;
@@ -94,7 +96,7 @@ fn invertible_composition_of_a_ground_chain_replays()
         a.joins_at, b.overlap.peak,
         "the certificates share the seam ⟨C|★⟩"
     );
-    let composite = compose_invertible(&a, &b);
+    let composite = compose_invertible(&a, &b, &store);
     assert_eq!(
         composite.path_a.len(),
         a.path_a.len() + b.path_a.len(),
@@ -127,8 +129,8 @@ fn invertible_composition_is_unital_up_to_replay()
         "two empty paths certify a seam against itself"
     );
     for (composite, certificate, side) in [
-        (compose_invertible(&a, &right), &a, "right"),
-        (compose_invertible(&left, &b), &b, "left"),
+        (compose_invertible(&a, &right, &store), &a, "right"),
+        (compose_invertible(&left, &b, &store), &b, "left"),
     ] {
         assert!(
             bool::from(replay_equivalent(&composite, certificate, &store)),
@@ -189,29 +191,7 @@ fn ground_step(
 #[test]
 fn directed_composition_declines_a_mixed_variance_cycle()
 {
-    let mut store = CellStore::new();
-    let u1 = store.insert(mixed_step(
-        FixtureHoleName("r"),
-        OperationName("dn1"),
-        OperationName("mid1"),
-    ));
-    let v1 = store.insert(mixed_step(
-        FixtureHoleName("s"),
-        OperationName("mid1"),
-        OperationName("up1"),
-    ));
-    let u2 = store.insert(mixed_step(
-        FixtureHoleName("r"),
-        OperationName("dn2"),
-        OperationName("mid2"),
-    ));
-    let v2 = store.insert(mixed_step(
-        FixtureHoleName("s"),
-        OperationName("mid2"),
-        OperationName("up2"),
-    ));
-    let a = fused(&mut store, u1, v1);
-    let b = fused(&mut store, u2, v2);
+    let (store, a, b) = mixed_pair();
 
     let obstruction = compose_directed(&a, &b, &store)
         .expect_err("a shared mixed-variance seam hole cycles the flow");
@@ -257,7 +237,7 @@ fn directed_composition_declines_a_mixed_variance_cycle()
 }
 
 #[test]
-fn the_acyclicity_verdict_reads_the_recorded_cell_support_and_nothing_finer()
+fn the_acyclicity_verdict_reads_the_recorded_steps_and_not_their_order()
 {
     let (store, a, b) = mixed_pair();
     let baseline = compose_directed(&a, &b, &store);
@@ -274,7 +254,8 @@ fn the_acyclicity_verdict_reads_the_recorded_cell_support_and_nothing_finer()
         assert_eq!(
             baseline.is_ok(),
             compose_directed(variant, &b, &store).is_ok(),
-            "{label} is the same input to the gate, so the verdict cannot move"
+            "{label} gives the gate the same steps with the same substitutions, so the verdict \
+             cannot move"
         );
     }
     assert_ne!(
@@ -285,7 +266,7 @@ fn the_acyclicity_verdict_reads_the_recorded_cell_support_and_nothing_finer()
 }
 
 #[test]
-fn the_acyclicity_verdict_is_not_invariant_under_certificate_identity()
+fn a_renamed_presentation_meets_the_seam_through_its_substitution()
 {
     let (mut store, fused_derivation) = mixed_certificate();
     let two_step = presentation(&fused_derivation, &fused_derivation.path_a);
@@ -297,47 +278,40 @@ fn the_acyclicity_verdict_is_not_invariant_under_certificate_identity()
     assert_ne!(
         cell_support(&two_step),
         cell_support(&single_step),
-        "and they record different cells, which is what the identity forgets"
+        "and they record different cells"
     );
-
+    let holes: BTreeSet<SeamHole> = seam_holes(&single_step.joins_at).into_iter().collect();
     assert!(
-        seam_hole_names(&single_step.joins_at)
+        participating(&single_step).iter().all(|cell| {
+            present(store.get(*cell))
+                .meta()
+                .vars()
+                .iter()
+                .all(|var| !holes.contains(var.var().hole()))
+        }),
+        "no cell of the renamed presentation spells a seam hole"
+    );
+    assert!(
+        holes
             .iter()
-            .all(|hole| endpoint_variances(
-                &participating(&single_step),
-                SeamHoleName(hole),
-                &store
-            )
-            .is_empty()),
-        "the alpha-renamed presentation records no hole under a seam name"
-    );
-    assert!(
-        variances(&two_step, &store).contains(&CellVariance::Mixed),
-        "and the two-step presentation records one"
+            .any(|hole| !seam_endpoints(&single_step, hole, &store).is_empty()),
+        "but its substitution carries one, so the gate reads it there"
     );
 
     let onward = mixed_onward_certificate(&mut store, &fused_derivation);
-
-    let declined = compose_directed(&two_step, &onward, &store).expect_err(
-        "the two-step presentation records a mixed seam hole, which meets the partner's and \
-             loops",
-    );
-    let CompositionObstruction::Cycle { cycle } = declined
-    else {
-        panic!("expected a flow cycle")
-    };
-    let recorded: alloc::collections::BTreeSet<CellId> =
-        participating(&two_step).into_iter().collect();
-    assert!(
-        cycle.iter().any(|node| recorded.contains(&node.0)),
-        "the cycle runs through a cell only that presentation records"
-    );
-    let admitted = compose_directed(&single_step, &onward, &store)
-        .expect("the fused presentation records no mixed seam hole, so nothing loops");
-    assert!(
-        bool::from(admitted.replay(&store)),
-        "and the composite it admits is a real certificate — it replays"
-    );
+    for (label, presented) in [("two-step", &two_step), ("renamed", &single_step)] {
+        let Err(CompositionObstruction::Cycle { cycle }) =
+            compose_directed(presented, &onward, &store)
+        else {
+            panic!("the {label} presentation carries a mixed seam hole, which meets the partner's");
+        };
+        let recorded: alloc::collections::BTreeSet<CellId> =
+            participating(presented).into_iter().collect();
+        assert!(
+            cycle.iter().any(|node| recorded.contains(&node.0)),
+            "the {label} cycle runs through a cell that presentation records"
+        );
+    }
 }
 
 #[test]
@@ -429,8 +403,8 @@ fn invertible_composition_is_well_defined_on_the_replay_quotient()
         "the hypothesis: two presentations of one certificate"
     );
     let onward = replayed_onward_partner(&mut store, &fused_derivation);
-    let from_two_step = compose_invertible(&two_step, &onward);
-    let from_single_step = compose_invertible(&single_step, &onward);
+    let from_two_step = compose_invertible(&two_step, &onward, &store);
+    let from_single_step = compose_invertible(&single_step, &onward, &store);
     assert!(
         bool::from(from_two_step.replay(&store)) && bool::from(from_single_step.replay(&store)),
         "the graft of two replaying certificates replays, on either presentation"
@@ -629,10 +603,13 @@ fn variance_pair(
         )
     });
     let template = composition_overlap(&store, left_cell, right_cell);
+    // The peak's hole `s` stands at a producer and at a consumer place, so the
+    // join holds it at both: the left cell emits it, and the right cell's
+    // consumer absorbs it.
     let peak = CmdPat::cut(
         Polarity::Positive,
         ProdPat::meta("s"),
-        ConsPat::op("in0", [], ConsPat::meta("t")),
+        ConsPat::op("in0", [], ConsPat::meta("s")),
     );
     let left = present(one_step_certificate(&store, &template, &peak));
     assert_eq!(
@@ -649,7 +626,8 @@ fn variance_pair(
     (store, left, right)
 }
 
-/// Construct the one step certificate fixture.
+/// Construct the one step certificate fixture, recorded on its peak
+/// skolemized.
 ///
 /// # Specification
 /// trivial.
@@ -667,12 +645,15 @@ fn one_step_certificate(
     let step = step.clone();
     let mut overlap = template.clone();
     overlap.peak = peak.clone();
-    Maybe::Present(Tracelet {
-        overlap,
-        path_a: alloc::vec![step.clone()],
-        path_b: alloc::vec![step],
-        joins_at: stepped.normal,
-    })
+    Maybe::Present(
+        Tracelet {
+            overlap,
+            path_a: alloc::vec![step.clone()],
+            path_b: alloc::vec![step],
+            joins_at: stepped.normal,
+        }
+        .recorded(store),
+    )
 }
 
 /// Construct the certificate corpus fixture.
@@ -825,7 +806,8 @@ fn a_recorded_cell_the_store_does_not_hold_contributes_no_endpoint()
     );
 }
 
-/// Classify the coarser union-of-roles criterion.
+/// Classify the coarser union-of-roles criterion over the gate's own
+/// endpoints.
 ///
 /// # Specification
 /// - ensures: the result follows the named metadata projection.
@@ -835,29 +817,27 @@ fn a_recorded_cell_the_store_does_not_hold_contributes_no_endpoint()
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
 /// - witness: `tests::composition::the_refined_seam_criterion_declines_strictly_less_than_the_union_reading`
-#[spec(ensures: |ret| ret.0 == seam_hole_names(&a.joins_at).iter().any(|hole| { let left = endpoint_variances(&participating(a), SeamHoleName(hole), store); let right = endpoint_variances(&participating(b), SeamHoleName(hole), store); !left.is_empty() && !right.is_empty() && left.iter().chain(&right).any(|v| matches!(v, CellVariance::Producer | CellVariance::Mixed)) && left.iter().chain(&right).any(|v| matches!(v, CellVariance::Consumer | CellVariance::Mixed)) }))]
+#[spec(ensures: |ret| ret.0 == seam_holes(&a.joins_at).iter().any(|hole| { let left = seam_endpoints(a, hole, store); let right = seam_endpoints(b, hole, store); !left.is_empty() && !right.is_empty() && left.iter().chain(&right).any(|endpoint| matches!(endpoint.2, SeamRole::Forward | SeamRole::Both)) && left.iter().chain(&right).any(|endpoint| matches!(endpoint.2, SeamRole::Backward | SeamRole::Both)) }))]
 fn union_reading(
     a: &Tracelet,
     b: &Tracelet,
     store: &CellStore,
 ) -> UnionReadingDecline
 {
-    let a_cells = participating(a);
-    let b_cells = participating(b);
-    for hole in seam_hole_names(&a.joins_at) {
-        let a_side = endpoint_variances(&a_cells, SeamHoleName(&hole), store);
-        let b_side = endpoint_variances(&b_cells, SeamHoleName(&hole), store);
+    for hole in seam_holes(&a.joins_at) {
+        let a_side = seam_endpoints(a, &hole, store);
+        let b_side = seam_endpoints(b, &hole, store);
         if a_side.is_empty() || b_side.is_empty() {
             continue;
         }
         let forward = a_side
             .iter()
             .chain(&b_side)
-            .any(|variance| matches!(*variance, CellVariance::Producer | CellVariance::Mixed));
+            .any(|endpoint| matches!(endpoint.2, SeamRole::Forward | SeamRole::Both));
         let backward = a_side
             .iter()
             .chain(&b_side)
-            .any(|variance| matches!(*variance, CellVariance::Consumer | CellVariance::Mixed));
+            .any(|endpoint| matches!(endpoint.2, SeamRole::Backward | SeamRole::Both));
         if forward && backward {
             return UnionReadingDecline(true);
         }
@@ -870,66 +850,28 @@ fn union_reading(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct UnionReadingDecline(bool);
 
-/// Collect the distinct names in a fixture seam.
+/// The distinct holes of a seam term, in first-appearance order.
 ///
 /// # Specification
-/// - ensures: the result follows the named metadata projection.
+/// - ensures: the hole of each metavariable of `cmd` occurs once.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
 /// - witness: `tests::composition::the_refined_seam_criterion_declines_strictly_less_than_the_union_reading`
-#[spec(ensures: |ret| ret.iter().all(|name| SequentAlphabet::metavariables(cmd).iter().any(|var| var.hole().as_ref() == name)))]
-fn seam_hole_names(cmd: &CmdPat) -> alloc::vec::Vec<alloc::string::String>
+#[spec(ensures: |ret| SequentAlphabet::metavariables(cmd).iter().all(|var| ret.iter().filter(|hole| **hole == SequentAlphabet::hole_of(var)).count() == 1))]
+fn seam_holes(cmd: &CmdPat) -> Vec<SeamHole>
 {
-    let occurrences = SequentAlphabet::metavariables(cmd);
-    let mut seen: alloc::collections::BTreeSet<&str> = alloc::collections::BTreeSet::new();
-    let mut names: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
-    for var in &occurrences {
-        let name: &str = var.hole().as_ref();
-        if seen.insert(name) {
-            names.push(alloc::string::String::from(name));
+    let mut holes: Vec<SeamHole> = Vec::new();
+    let mut seen: BTreeSet<SeamHole> = BTreeSet::new();
+    for var in SequentAlphabet::metavariables(cmd) {
+        let hole = SequentAlphabet::hole_of(&var);
+        if seen.insert(hole.clone()) {
+            holes.push(hole);
         }
     }
-    names
-}
-
-/// Fixture seam hole name.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-struct SeamHoleName<'fixture>(&'fixture str);
-
-/// Read variances of live cells at a named hole.
-///
-/// # Specification
-/// - ensures: the result follows the named metadata projection.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
-///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `tests::composition::the_refined_seam_criterion_declines_strictly_less_than_the_union_reading`
-#[spec(ensures: |ret| ret.iter().all(|variance| cells.iter().any(|cell| matches!(store.get(*cell), Maybe::Present(entry) if entry.meta().vars().iter().any(|v| v.var().hole().as_ref() == hole.0 && v.variance() == *variance)))))]
-fn endpoint_variances(
-    cells: &[CellId],
-    hole: SeamHoleName<'_>,
-    store: &CellStore,
-) -> alloc::vec::Vec<CellVariance>
-{
-    let mut out = alloc::vec::Vec::new();
-    for &cell in cells {
-        let Maybe::Present(entry) = store.get(cell)
-        else {
-            continue;
-        };
-        for var in entry.meta().vars() {
-            if var.var().hole().as_ref() == hole.0 {
-                out.push(var.variance());
-            }
-        }
-    }
-    out
+    holes
 }
 
 /// Read all metadata variances of recorded cells.
@@ -983,7 +925,8 @@ fn cell_support(tracelet: &Tracelet) -> alloc::vec::Vec<CellId>
     cells
 }
 
-/// Construct the mixed pair fixture.
+/// Construct the mixed pair fixture: a fused mixed certificate, and a mixed
+/// one-step partner at its join.
 ///
 /// # Specification
 /// trivial.
@@ -1000,18 +943,8 @@ fn mixed_pair() -> (CellStore, Tracelet, Tracelet)
         OperationName("mid1"),
         OperationName("up1"),
     ));
-    let u2 = store.insert(mixed_step(
-        FixtureHoleName("r"),
-        OperationName("dn2"),
-        OperationName("mid2"),
-    ));
-    let v2 = store.insert(mixed_step(
-        FixtureHoleName("s"),
-        OperationName("mid2"),
-        OperationName("up2"),
-    ));
     let a = fused(&mut store, u1, v1);
-    let b = fused(&mut store, u2, v2);
+    let b = mixed_onward_certificate(&mut store, &a);
     (store, a, b)
 }
 
@@ -1038,10 +971,11 @@ fn mixed_certificate() -> (CellStore, Tracelet)
         OperationName("dn1"),
         OperationName("up1"),
     ));
-    a.path_b = alloc::vec![gandr_theory_coherent_resolutions::CellApp {
-        cell: renamed,
-        at: gandr_theory_cell_complexes::Pos::root()
-    }];
+    a.path_b = alloc::vec![gandr_theory_coherent_resolutions::CellApp::unrecorded(
+        renamed,
+        gandr_theory_cell_complexes::Pos::root(),
+    )];
+    let a = a.recorded(&store);
     (store, a)
 }
 
@@ -1062,16 +996,17 @@ fn replayed_onward_partner(
     ));
     let mut overlap = certificate.overlap.clone();
     overlap.peak = certificate.joins_at.clone();
-    let step = gandr_theory_coherent_resolutions::CellApp {
+    let step = gandr_theory_coherent_resolutions::CellApp::unrecorded(
         cell,
-        at: gandr_theory_cell_complexes::Pos::root(),
-    };
+        gandr_theory_cell_complexes::Pos::root(),
+    );
     let provisional = Tracelet {
         overlap,
         path_a: alloc::vec![step.clone()],
         path_b: alloc::vec![step],
         joins_at: certificate.joins_at.clone(),
-    };
+    }
+    .recorded(store);
     let ReplayPathOutcome::Reached(reached) = provisional.replay_trace(store).path_a.outcome
     else {
         panic!("the partner's single step applies at the certificate's join")
@@ -1279,6 +1214,87 @@ fn the_criterion_reads_the_seam_holes_of_the_left_certificates_recorded_join()
     ));
 }
 
+/// A cell variable that spells a seam hole's name but binds another term is no
+/// endpoint of that hole.
+#[test]
+fn an_unrelated_hole_spelled_alike_is_no_seam_endpoint()
+{
+    let mut store = CellStore::new();
+    // ⟨h | dn1(g; h)⟩ ~> ⟨g | mid1(h; ★)⟩: its mixed hole `h` binds the peak's
+    // `t` and `s`, and its `g` carries the peak's `h` into the join.
+    let spelled = store.insert(Cell::new(
+        CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("h"),
+            ConsPat::op("dn1", [ProdPat::meta("g")], ConsPat::meta("h")),
+        ),
+        CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("g"),
+            ConsPat::op("mid1", [ProdPat::meta("h")], ConsPat::top()),
+        ),
+        Orientation::PolarityDerived,
+        CellProvenance::SurfaceRule,
+    ));
+    // ⟨h | mid1(y; h)⟩ ~> ⟨h | up1(y; h)⟩: its mixed hole `h` binds the join's
+    // `h` and `★`.
+    let partner = store.insert(Cell::new(
+        CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("h"),
+            ConsPat::op("mid1", [ProdPat::meta("y")], ConsPat::meta("h")),
+        ),
+        CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("h"),
+            ConsPat::op("up1", [ProdPat::meta("y")], ConsPat::meta("h")),
+        ),
+        Orientation::PolarityDerived,
+        CellProvenance::SurfaceRule,
+    ));
+    let template = composition_overlap(&store, spelled, partner);
+    let peak = CmdPat::cut(
+        Polarity::Positive,
+        ProdPat::meta("t"),
+        ConsPat::op("dn1", [ProdPat::meta("h")], ConsPat::meta("s")),
+    );
+    let a = present(one_step_certificate(&store, &template, &peak));
+    let b = present(one_step_certificate(&store, &template, &a.joins_at));
+    assert_eq!(
+        (participating(&a), participating(&b)),
+        (alloc::vec![spelled], alloc::vec![partner]),
+        "each certificate records its one cell"
+    );
+    let Some(seam) = seam_holes(&a.joins_at)
+        .into_iter()
+        .find(|hole| hole.as_ref() == "h")
+    else {
+        panic!("the join holds the hole `h`");
+    };
+    for cell in [spelled, partner] {
+        assert!(
+            present(store.get(cell))
+                .meta()
+                .vars()
+                .iter()
+                .any(|var| *var.var().hole() == seam && var.variance() == CellVariance::Mixed),
+            "both cells spell a mixed hole `h`: a reading by name puts both in the seam's bucket, \
+             where each emits and absorbs, and closes a loop"
+        );
+    }
+    let carried = seam_endpoints(&a, &seam, &store);
+    assert!(
+        !carried.is_empty() && carried.iter().all(|endpoint| *endpoint.1.hole() != seam),
+        "through its substitution, the left cell meets the seam `h` with its `g`, not its `h`"
+    );
+    let composite = compose_directed(&a, &b, &store)
+        .expect("the two mixed holes `h` never meet at one seam hole, so nothing loops");
+    assert!(
+        bool::from(composite.replay(&store)),
+        "and the composite replays"
+    );
+}
+
 #[test]
 fn fanout_family_is_a_multi_sum_not_a_single_rule()
 {
@@ -1362,12 +1378,13 @@ type SeamHole = <SequentAlphabet as gandr_theory_cell_complexes::CellAlphabet>::
 /// The sequent alphabet's metavariable, which a flow-graph node records.
 type SeamVar = <SequentAlphabet as gandr_theory_cell_complexes::CellAlphabet>::Var;
 
-/// The endpoints of `hole` among `cells`, read from each present cell's
-/// live metadata.
+/// The endpoints of `hole` among the steps of `tracelet`, read as the gate
+/// reads them: a left-hand-side variable whose image under the step's
+/// substitution holds the hole, or a wire that spells it, gives the hole flow
+/// of its own hole in the step's cell.
 ///
 /// # Specification
-/// - ensures: Returns only live metadata endpoints on the requested seam hole.
-/// - fails: typed capacity, arithmetic or state errors described below.
+/// - ensures: Returns only endpoints of recorded steps' cells.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1375,21 +1392,44 @@ type SeamVar = <SequentAlphabet as gandr_theory_cell_complexes::CellAlphabet>::V
 ///   verdicts, lost edges and invalid maintained state on finite graphs.
 /// - witness: `tests::composition::the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`
 
-#[spec(ensures: |ret| ret.iter().all(|&(cell, ref var, _)| cells.contains(&cell) && SequentAlphabet::hole_of(var) == *hole))]
+#[spec(ensures: |ret| ret.iter().all(|&(cell, ..)| tracelet.path_a.iter().chain(&tracelet.path_b).any(|step| step.cell == cell)))]
 fn seam_endpoints(
-    cells: &[CellId],
+    tracelet: &Tracelet,
     hole: &SeamHole,
     store: &CellStore,
 ) -> Vec<(CellId, SeamVar, SeamRole)>
 {
     let mut endpoints = Vec::new();
-    for &cell in cells {
-        let Maybe::Present(entry) = store.get(cell)
+    // A cell gives the same endpoints for one of its own holes at every step,
+    // and two of its holes give disjoint ones, so each is given once.
+    let mut given: BTreeSet<(CellId, SeamHole)> = BTreeSet::new();
+    for step in tracelet.path_a.iter().chain(&tracelet.path_b) {
+        let Maybe::Present(entry) = store.get(step.cell)
         else {
             continue;
         };
-        for (var, role) in SequentAlphabet::hole_flow(entry.meta(), hole) {
-            endpoints.push((cell, var, role));
+        let carriers = SequentAlphabet::metavariables(entry.lhs())
+            .into_iter()
+            .filter(|var| {
+                matches!(SequentAlphabet::image(&step.subst, var), Maybe::Present(image)
+                    if bool::from(SequentAlphabet::image_holds(image, hole)))
+            })
+            .chain(
+                entry
+                    .wires()
+                    .iter()
+                    .filter(|wire| SequentAlphabet::hole_of(wire) == *hole)
+                    .cloned(),
+            );
+        for var in carriers {
+            let own = SequentAlphabet::hole_of(&var);
+            if given.insert((step.cell, own.clone())) {
+                endpoints.extend(
+                    SequentAlphabet::hole_flow(entry.meta(), &own)
+                        .into_iter()
+                        .map(|(flowing, role)| (step.cell, flowing, role)),
+                );
+            }
         }
     }
     endpoints
@@ -1456,9 +1496,9 @@ fn push_edge(
 
 /// **The gate's flow graph as an edge stream**, derived from the public
 /// alphabet surface exactly as [`compose_directed`]'s specification
-/// describes the construction: `(cell, hole)` nodes over the two
-/// certificates' participating cells and the seam holes of
-/// `a.joins_at`, with an edge for every endpoint pair where one side
+/// describes the construction: `(cell, hole)` nodes over the endpoints that
+/// the two certificates' steps carry through their substitutions at the seam
+/// holes of `a.joins_at`, with an edge for every endpoint pair where one side
 /// emits and the other absorbs.
 ///
 /// Deriving it here rather than reading the gate's own builder is the point
@@ -1484,21 +1524,12 @@ fn characterized_stream(
     store: &CellStore,
 ) -> Vec<EdgeId>
 {
-    let left_cells = participating(a);
-    let right_cells = participating(b);
-    let mut seen: alloc::collections::BTreeSet<SeamHole> = alloc::collections::BTreeSet::new();
-    let mut holes: Vec<SeamHole> = Vec::new();
-    for var in SequentAlphabet::metavariables(&a.joins_at) {
-        let hole = SequentAlphabet::hole_of(&var);
-        if seen.insert(hole.clone()) {
-            holes.push(hole);
-        }
-    }
+    let holes = seam_holes(&a.joins_at);
     let mut nodes: Vec<(CellId, SeamHole)> = Vec::new();
     let mut edges: Vec<EdgeId> = Vec::new();
     for hole in &holes {
-        let left = seam_endpoints(&left_cells, hole, store);
-        let right = seam_endpoints(&right_cells, hole, store);
+        let left = seam_endpoints(a, hole, store);
+        let right = seam_endpoints(b, hole, store);
         if left.is_empty() || right.is_empty() {
             // Not shared across the seam — no cross flow.
             continue;
@@ -1546,7 +1577,7 @@ fn the_gates_own_graph_streamed_incrementally_reproduces_its_verdict()
     }
     let (shared_store, shared_left, shared_right) = mixed_pair();
     corpus.push((
-        "two shared mixed holes",
+        "a shared mixed hole at the join",
         shared_store,
         shared_left,
         shared_right,

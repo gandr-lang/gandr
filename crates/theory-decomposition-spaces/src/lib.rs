@@ -1,9 +1,10 @@
 //! Certificate algebra: sequential composition and bounded backward pathway
 //! queries.
 //!
-//! The directed gate reads recorded cell support at the left certificate's
-//! join. Its verdict is presentation-sensitive; an admitted graft preserves the
-//! replay boundary. Pathway acceptance is relative to the shift guard.
+//! The directed gate reads each seam hole at the left certificate's join
+//! through the substitutions of the recorded steps. Its verdict reads the
+//! recorded cells; an admitted graft preserves the replay boundary. Pathway
+//! acceptance is relative to the shift guard.
 //!
 //! # Boundaries
 //!
@@ -12,8 +13,8 @@
 //! of certificates is the replay relation of the certificates crate: decided
 //! true or false, never a type whose elements are identifications.
 //! [`compose_invertible`] descends to that relation; [`compose_directed`]'s
-//! verdict reads the cells a certificate recorded, so it is a function of the
-//! representative and not of its class. Unitality, which every 2-Segal space
+//! verdict reads the cells a certificate recorded, which the relation does
+//! not compare. Unitality, which every 2-Segal space
 //! has (Feller and others), is a hypothesis at the level of sets, so it is
 //! discharged here rather than inherited: the unit on a seam is two empty
 //! paths, and grafting it on either side is a unit up to replay.

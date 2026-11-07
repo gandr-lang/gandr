@@ -123,6 +123,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 ## References
 
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — the term alphabet reads whether an image holds a hole, and the witnesses record their substitutions.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — the cells this crate elaborates carry each hole's occurrence count.
 
 ## License

@@ -26,6 +26,7 @@ Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces the
 
 - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — exemplar: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — the standard resolution of a convergent presentation, which the bar complex of a first-order block builds.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the Squier frame of the presented-spaces page, which reads completion as a Morse collapse of the bar complex.
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — a step records the substitution that matched its cell, and replay reads it.
 - Kenneth S. Brown, "The Geometry of Rewriting Systems: A Proof of the Anick–Groves–Squier Theorem", in _Algorithms and Classification in Combinatorial Group Theory_, MSRI Publications 23, 1992, pages 137–163 — the collapsing scheme of the bar complex along a rewriting strategy, which `LawvereTheory` gives as a `Scheme`.
 - `Ara-2025-polygraphs_rewriting_higher_categories` — background: chapter 13, the Lawvere theory of a rewriting system; § 7.5, a homotopy basis reduced by triple confluences.
 - `Malbos-2021-completion_operads_essential_syzygies` — background: essential branchings.
@@ -33,13 +34,13 @@ Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces the
 
 ## Provided features
 
-- `rewrite_at`, `apply_once`, `normalize`, `CellApp`, `Rewrite`, `Normalization`, `firing`, `redex_search`: one firing under the alphabet's discipline, and budgeted normalization that tells a normal form from a spent budget.
+- `rewrite_at`, `fire_at`, `replay_at`, `apply_once`, `normalize`, `CellApp`, `Rewrite`, `Normalization`, `firing`, `redex_search`: one firing under the alphabet's discipline and its replay, and budgeted normalization that tells a normal form from a spent budget.
 - Wires (`Cell::wires`): each firing writes fresh names for the wires of a cell, as [`rewrite`](src/rewrite.rs) states.
 - `enumerate_overlaps`, `overlaps_between`, `Overlap`, `OverlapKind`, `OverlapRefusal`, `peak_legs`, `PeakLegs`: the multi-sum family with its seam data, complete up to the root diagonal.
 - `interior_overlaps_between`, `root_overlaps_between`: the confluence family below the root of a left-hand side, a cell paired with itself included, and the root entry alone, which the joinability check reads over a first-order presentation.
 - `OverlapSupport`: the memoized overlap relation on cells and certificates, and independent batches.
-- `Tracelet`, `replay_equivalent`, `confluence_tracelet`, `derive_fused`, `ReplayTrace`, `ReplayPath`, `ReplayStep`, `ReplayPathOutcome`, `StuckStep`, `confluence_join`: certificates checked by replay, their identity, and the observable replay.
-- `replay_from_peak`: the replay of two recorded paths from a supplied peak to a supplied join, for a boundary that is not a critical pair; `Tracelet::replay` is this replay on its overlap's peak.
+- `Tracelet`, `replay_equivalent`, `confluence_tracelet`, `derive_fused`, `record_path`, `ReplayTrace`, `ReplayPath`, `ReplayStep`, `ReplayPathOutcome`, `StuckStep`, `confluence_join`: certificates checked by replay, their identity, and the observable replay.
+- `replay_from_peak`: the replay of two recorded paths from a supplied peak to a supplied join; `Tracelet::replay` is this replay on its overlap's peak.
 - `complete`, `CompletionBudget`, `CompletionOutcome`, `DeclineReason`, `scheduled_confluence_batches`: budgeted completion, its decline and its resume.
 - `complete_with_overlap_source`, `Overlap::from_supplied_confluence`, `SuppliedOverlapError`: the supplied-overlap seam and its typed declines.
 - `join_critical_pairs`, `Joinability`, `PairJoining`: the joinability check with no derivation, and its resumption over a store grown by appended cells, which decides no joined pair again.
@@ -53,7 +54,7 @@ Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces the
 
 ## Expected features
 
-- **An alphabet keeping the inhabitant laws.** The engine spends the three laws the substrate's `CellAlphabet` states and no type can check — a match substituted into its pattern reproduces the matched term, a successful match binds every metavariable the pattern names, a read and a splice at one position agree — and the trait's position and splice clauses: disjoint positions address disjoint subtrees, and a splice changes nothing but its position. An alphabet breaking one gets wrong answers rather than refusals.
+- **An alphabet keeping the inhabitant laws.** The engine spends the inhabitant laws and the position and splice clauses that the substrate's `CellAlphabet` states and no type can check. An alphabet breaking one gets wrong answers rather than refusals.
 - **Stores sized for rule sets.** Enumeration is quadratic in the store, and completion re-enumerates the whole store after each derived cell; both are sized for presentations a surface declares, not for stores of thousands of cells.
 - **Linear cells for the basis.** `Basis` refuses a cell that copies or erases a variable.
 

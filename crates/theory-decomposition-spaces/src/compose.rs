@@ -2,19 +2,20 @@
 //!
 //! # Directed composition and identity
 //!
-//! The graph uses distinct recorded cells, not application positions,
-//! multiplicities or substitutions. It restricts each cell's live metadata to
-//! the holes of the **left** recorded join. A forward endpoint emits, a
-//! backward endpoint absorbs, and a mixed endpoint does both. Edges cross
-//! between the two supports only from emitters to absorbers. Missing stored
-//! cells contribute no endpoint.
+//! The graph restricts the endpoints to the holes of the **left** recorded
+//! join, and `endpoints` states which variable of a step meets which hole
+//! through the step's substitution. A node is a cell and the hole of its own
+//! variable, so positions and multiplicities do not count. A forward endpoint
+//! emits, a backward endpoint absorbs, and a mixed endpoint does both. Edges
+//! cross between the two supports only from emitters to absorbers.
 //!
-//! This gate is presentation-sensitive. Changing a certificate's representative
-//! can change its support and therefore the verdict, even when replay
-//! identifies the certificates. The admitted graft remains a certificate
-//! invariant. Reversing one unordered pair can also change the verdict because
-//! it changes the selected seam. Pairwise admission is therefore not a
-//! substitute for running the binary gate at each actual fold step.
+//! A renaming of a cell's variables does not change the verdict. The gate
+//! still reads the cells that a representative records, and their variance
+//! metadata, which replay-equivalence does not compare. The admitted graft
+//! remains a certificate invariant. Reversing one unordered pair can also
+//! change the verdict because it changes the selected seam. Pairwise admission
+//! is therefore not a substitute for running the binary gate at each actual
+//! fold step.
 //!
 //! The chosen emit-to-absorb criterion is strictly less conservative than a
 //! union-of-variances test: sequential producer-to-consumer seams are admitted
@@ -36,11 +37,17 @@
 //!
 //! # Presentation witnesses
 //!
-//! Cell metadata retains both faces of a fused rule. The presentation witnesses
-//! therefore use a replay-equivalent, alpha-renamed representative whose
-//! seam-named support differs, rather than assuming fusion erases mixed
-//! variance. Corpus checks compare semantic verdicts and replay, not an
-//! incidental count of pairs.
+//! Cell metadata retains both faces of a fused rule. An alpha-renamed
+//! representative records its holes under other names. Its substitutions
+//! carry the seam holes, so it meets the seam as the two-step representative
+//! does. Corpus checks compare semantic verdicts and replay, not an incidental
+//! count of pairs.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the seam gate reads
+//!   each hole through the substitutions that the steps record, not by its name
+//!   (§ gate-substitution-read).
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -89,7 +96,7 @@ pub enum CompositionObstruction<A: CellAlphabet = SequentAlphabet>
 /// - requires: both inputs replay, the cells are invertible, and `a.joins_at ==
 ///   b.overlap.peak`.
 /// - ensures: both paths concatenate in order, retaining the left overlap and
-///   right join.
+///   right join, and recorded on the left peak as [`graft`] records them.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -102,11 +109,12 @@ pub enum CompositionObstruction<A: CellAlphabet = SequentAlphabet>
 pub fn compose_invertible<A>(
     a: &Tracelet<A>,
     b: &Tracelet<A>,
+    store: &CellStore<A>,
 ) -> Tracelet<A>
 where
     A: CellAlphabet,
 {
-    graft(a, b)
+    graft(a, b, store)
 }
 
 /// Compose directed certificates when their seam variable flow is acyclic.
@@ -145,17 +153,23 @@ where
     let graph = VarFlowGraph::build(a, b, store)?;
     let cycle = cycle_witness(&graph).map_err(|error| CompositionObstruction::Graph { error })?;
     cycle.map_or_else(
-        || Ok(graft(a, b)),
+        || Ok(graft(a, b, store)),
         |witness| Err(graph.obstruction(&witness)),
     )
 }
 
 /// Concatenate both recorded paths at a sequential seam.
 ///
+/// The right certificate recorded its steps on its own peak skolemized. Its
+/// join metavariables that the left peak does not hold stay metavariables
+/// when the composite replays, so the composite records its paths again on
+/// the left peak ([`Tracelet::recorded`]).
+///
 /// # Specification
 /// - ensures: retains the left overlap and right join, with both paths
-///   concatenated.
+///   concatenated and recorded on the left peak.
 /// - panics: none.
+/// - intension: one copy and one firing by match of each step.
 ///
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
@@ -166,6 +180,7 @@ where
 fn graft<A>(
     a: &Tracelet<A>,
     b: &Tracelet<A>,
+    store: &CellStore<A>,
 ) -> Tracelet<A>
 where
     A: CellAlphabet,
@@ -178,6 +193,7 @@ where
         path_b,
         joins_at: b.joins_at.clone(),
     }
+    .recorded(store)
 }
 
 /// Dense seam-flow graph, addressed by interned endpoint identifiers.
@@ -210,17 +226,13 @@ impl<A: CellAlphabet> VarFlowGraph<A>
         store: &CellStore<A>,
     ) -> Result<Self, CompositionObstruction<A>>
     {
-        let a_cells = participating_cells(a);
-        let b_cells = participating_cells(b);
+        let holes = seam_holes::<A>(&a.joins_at);
+        let a_ends = endpoints(a, &holes, store);
+        let b_ends = endpoints(b, &holes, store);
         let mut builder = GraphBuilder::default();
-        for hole in seam_holes::<A>(&a.joins_at) {
-            let a_endpoints = endpoints(&a_cells, &hole, store);
-            let b_endpoints = endpoints(&b_cells, &hole, store);
-            if a_endpoints.is_empty() || b_endpoints.is_empty() {
-                continue;
-            }
-            for a_endpoint in &a_endpoints {
-                for b_endpoint in &b_endpoints {
+        for (a_endpoints, b_endpoints) in a_ends.iter().zip(&b_ends) {
+            for a_endpoint in a_endpoints {
+                for b_endpoint in b_endpoints {
                     let node_a = builder.intern(a_endpoint.0, &a_endpoint.1)?;
                     let node_b = builder.intern(b_endpoint.0, &b_endpoint.1)?;
                     if bool::from(emits(a_endpoint.2)) && bool::from(absorbs(b_endpoint.2)) {
@@ -455,33 +467,6 @@ fn absorbs(role: SeamRole) -> VarianceFlowRole
     VarianceFlowRole::from(matches!(role, SeamRole::Backward | SeamRole::Both))
 }
 
-/// Collect distinct recorded cells in first-appearance order.
-///
-/// # Specification
-/// - ensures: each recorded cell occurs exactly once, without introducing a
-///   cell.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
-///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
-#[spec(ensures: |ret| ret.iter().all(|cell| tracelet.path_a.iter().chain(&tracelet.path_b).any(|step| step.cell == *cell)) && tracelet.path_a.iter().chain(&tracelet.path_b).all(|step| ret.iter().filter(|cell| **cell == step.cell).count() == 1))]
-#[inline]
-fn participating_cells<A>(tracelet: &Tracelet<A>) -> Vec<CellId>
-where
-    A: CellAlphabet,
-{
-    let mut seen = BTreeSet::new();
-    let mut cells = Vec::new();
-    for step in tracelet.path_a.iter().chain(&tracelet.path_b) {
-        if seen.insert(step.cell) {
-            cells.push(step.cell);
-        }
-    }
-    cells
-}
-
 /// Collect the distinct holes of a seam term.
 ///
 /// # Specification
@@ -510,35 +495,88 @@ where
     holes
 }
 
-/// Read live metadata endpoints carrying the selected seam hole.
+/// The seam endpoints of `side` at each hole of `holes`, in the order of
+/// `holes`.
+///
+/// A variable of a step's cell carries a hole when the step's substitution
+/// binds it to an image that holds the hole ([`CellAlphabet::image_holds`]).
+/// A wire, which the left-hand side does not bind, carries the hole that its
+/// name spells. Each carrying variable gives the endpoints that the cell's
+/// metadata holds for the variable's own hole, with their roles
+/// ([`CellAlphabet::hole_flow`]). A step whose cell the store does not hold
+/// gives no endpoint.
 ///
 /// # Specification
-/// - ensures: every returned endpoint belongs to an offered live cell and its
-///   hole flow.
+/// - ensures: one list for each hole of `holes`. Each endpoint names the cell
+///   of a step of `side` that the store holds, and an entry of that cell's hole
+///   flow for the hole of a variable that carries the hole. No list holds one
+///   endpoint twice.
 /// - panics: none.
+/// - intension: one read of each left-hand-side image for each step and hole.
 ///
 /// # Adequacy
-/// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
-///   flow edges, changed boundaries and lost certificate steps.
+/// - hypothesis: L3 — two certificates that share a seam hole by flow meet
+///   there, and a cell variable that only spells the seam hole's name is no
+///   endpoint. Keying an endpoint by its variable's name, or dropping the image
+///   read, changes the verdict.
+/// - witness: `tests::composition::an_unrelated_hole_spelled_alike_is_no_seam_endpoint`
 /// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
-#[spec(ensures: |ret| ret.iter().all(|&(cell, ref var, role)| cells.contains(&cell) && matches!(store.get(cell), Maybe::Present(entry) if A::hole_flow(entry.meta(), hole).contains(&(var.clone(), role)))))]
+#[spec(ensures: |ret| ret.len() == holes.len() && ret.iter().zip(holes).all(|(ends, hole)| ends.iter().enumerate().all(|(index, endpoint)|
+    !ends.iter().take(index).any(|earlier| earlier == endpoint)
+    && side.path_a.iter().chain(&side.path_b).any(|step| step.cell == endpoint.0 && matches!(store.get(endpoint.0), Maybe::Present(entry)
+        if A::metavariables(entry.lhs()).iter()
+            .filter(|var| matches!(A::image(&step.subst, var), Maybe::Present(image) if bool::from(A::image_holds(image, hole))))
+            .chain(entry.wires().iter().filter(|wire| A::hole_of(wire) == *hole))
+            .any(|var| A::hole_flow(entry.meta(), &A::hole_of(var)).contains(&(endpoint.1.clone(), endpoint.2))))))))]
 #[inline]
 fn endpoints<A>(
-    cells: &[CellId],
-    hole: &A::Hole,
+    side: &Tracelet<A>,
+    holes: &[A::Hole],
     store: &CellStore<A>,
-) -> Vec<(CellId, A::Var, SeamRole)>
+) -> Vec<Vec<(CellId, A::Var, SeamRole)>>
 where
     A: CellAlphabet,
 {
-    let mut out = Vec::new();
-    for &cell in cells {
-        let Maybe::Present(entry) = store.get(cell)
+    let mut out: Vec<Vec<(CellId, A::Var, SeamRole)>> = holes.iter().map(|_| Vec::new()).collect();
+    // A cell gives the same endpoints for one of its own holes at every step,
+    // and two of its holes give disjoint ones, so each is given once.
+    let mut given: BTreeSet<(usize, CellId, A::Hole)> = BTreeSet::new();
+    for step in side.path_a.iter().chain(&side.path_b) {
+        let Maybe::Present(entry) = store.get(step.cell)
         else {
             continue;
         };
-        for (var, role) in A::hole_flow(entry.meta(), hole) {
-            out.push((cell, var, role));
+        let mut give = |index: usize, var: &A::Var| {
+            let own = A::hole_of(var);
+            if !given.insert((index, step.cell, own.clone())) {
+                return;
+            }
+            if let Some(ends) = out.get_mut(index) {
+                ends.extend(
+                    A::hole_flow(entry.meta(), &own)
+                        .into_iter()
+                        .map(|(flowing, role)| (step.cell, flowing, role)),
+                );
+            }
+        };
+        for var in &A::metavariables(entry.lhs()) {
+            let Maybe::Present(image) = A::image(&step.subst, var)
+            else {
+                continue;
+            };
+            for (index, hole) in holes.iter().enumerate() {
+                if bool::from(A::image_holds(image, hole)) {
+                    give(index, var);
+                }
+            }
+        }
+        for wire in entry.wires() {
+            let spelled = A::hole_of(wire);
+            for (index, hole) in holes.iter().enumerate() {
+                if *hole == spelled {
+                    give(index, wire);
+                }
+            }
         }
     }
     out

@@ -1316,14 +1316,8 @@ mod tests
             ConsPat::op("add", [ProdPat::ctor("Zero", [])], ConsPat::top()),
         );
         let steps = [
-            CellApp {
-                cell: add,
-                at: Pos::root(),
-            },
-            CellApp {
-                cell: add,
-                at: Pos::root(),
-            },
+            CellApp::unrecorded(add, Pos::root()),
+            CellApp::unrecorded(add, Pos::root()),
         ];
         (store, peak, steps)
     }
@@ -1562,10 +1556,7 @@ mod tests
     /// trivial.
     fn root_step() -> CellApp
     {
-        CellApp {
-            cell: CellId::from(0_usize),
-            at: Pos::root(),
-        }
+        CellApp::unrecorded(CellId::from(0_usize), Pos::root())
     }
 
     #[test]
@@ -1764,14 +1755,14 @@ mod tests
         let second = store.insert(toy_cell(c.clone(), d));
         let peak = Toy::add(a, c);
         let steps = [
-            CellApp {
-                cell: first,
-                at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
-            },
-            CellApp {
-                cell: second,
-                at: ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
-            },
+            CellApp::unrecorded(
+                first,
+                ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+            ),
+            CellApp::unrecorded(
+                second,
+                ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+            ),
         ];
         let order =
             event_order(&store, &peak, &steps).expect("the independent ground steps replay");
