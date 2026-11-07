@@ -1833,7 +1833,8 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # from its record; a lower that moved ahead, a worktree on another head and a
 # replayed upper read from the merge base; on the trunk, an open lower reads
 # the upper from its record, and a merged one refuses it (#6055, #6062,
-# `change_base`).
+# `change_base`). A call count that `wc` pads, as darwin's does, reads as its
+# number (#6086).
 # `.config/pr-stack/replay-cases.bash` replays a tip through a stub of
 # `createCommitOnBranch` on a local origin: a matching tree moves the branch,
 # and another tree names each differing path with its mode and its blob on
