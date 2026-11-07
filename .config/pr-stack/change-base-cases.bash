@@ -30,6 +30,13 @@ gh() {
   if [[ -n ${open_lower:-} ]]; then printf '%s\n' "$open_lower"; fi
 }
 
+# The REST calls counted so far, as a bare number. darwin's `wc` writes its
+# count right-aligned in a field of eight columns, and GNU `wc` writes none;
+# the arithmetic expansion reads both as the number (#6086).
+calls() {
+  echo $(($(wc -l < "$work/calls")))
+}
+
 # A scratch origin at `$1/origin.git` and a clone at `$1/branch` on `own`,
 # stacked on `below` with one commit, both pushed. `stacked` names the head of
 # `below` that `own` records.
@@ -58,9 +65,9 @@ judged() {
   local status=0 from
   from=$(change_base "$1" own 2) || status=$?
   if (( status == 0 )); then
-    echo "change $(git diff --name-only "$from" origin/own | paste -sd ' ' -), calls $(wc -l < "$work/calls")"
+    echo "change $(git diff --name-only "$from" origin/own | paste -sd ' ' -), calls $(calls)"
   else
-    echo "refused, $([[ $from == *"git rebase --onto origin/$1 ${stacked:0:12}"* ]] && echo "replays from the record" || echo "replays from another commit"), calls $(wc -l < "$work/calls")"
+    echo "refused, $([[ $from == *"git rebase --onto origin/$1 ${stacked:0:12}"* ]] && echo "replays from the record" || echo "replays from another commit"), calls $(calls)"
   fi
 }
 
@@ -139,5 +146,16 @@ got=$(
 )
 [[ $got == "refused, replays from the record, calls 1" ]] || fail "#6062: a branch on the trunk whose record no open pull request carries is refused with the replay" "$got"
 
+# A `wc` that pads its count, as darwin's does, reads as the bare number all
+# the same: two calls read as `2`.
+got=$(
+  wc() { printf '%8d\n' "$(command wc -l)"; }
+  : > "$work/calls"
+  gh > /dev/null
+  gh > /dev/null
+  calls
+)
+[[ $got == 2 ]] || fail "#6086: a count that wc pads, as on darwin, reads as the bare number" "$got"
+
 (( failed == 0 )) || exit 1
-echo "pr-stack change base OK: 6 cases refuse a stale parent with the replay, read from the merge base where the base holds the record, and read from the record above an open pull request on the trunk"
+echo "pr-stack change base OK: 7 cases refuse a stale parent with the replay, read from the merge base where the base holds the record, read from the record above an open pull request on the trunk, and read a padded call count as its number"
