@@ -949,6 +949,20 @@ pub const KIND_DEF_RULED: WireTag = WireTag(0x0E);
 /// reader predating this kind refuses it as an unknown declaration kind
 /// rather than misreading it, which is why the format version holds.
 pub const KIND_DEF_COVERED: WireTag = WireTag(0x10);
+/// Declaration tag: a literal identity test, whose segment closes with the
+/// base it compares at and its polarity.
+///
+/// The segment holds one root, the declared type, as [`KIND_AXIOM`]'s does.
+/// After the root come the base's atom byte, [`BASE_INTEGER`] or
+/// [`BASE_STRING`], and the polarity byte, [`IDENTITY_SAME`] or
+/// [`IDENTITY_DIFFERENT`]. A reader predating this kind refuses it as an
+/// unknown declaration kind rather than misreading it, which is why the format
+/// version holds.
+pub const KIND_LITERAL_IDENTITY: WireTag = WireTag(0x11);
+/// Identity polarity tag: the test holds where its literals are the same.
+pub const IDENTITY_SAME: WireTag = WireTag(0);
+/// Identity polarity tag: the test holds where its literals differ.
+pub const IDENTITY_DIFFERENT: WireTag = WireTag(1);
 /// Cover step tag: a `var`, naming an arm.
 pub const COVER_VAR: WireTag = WireTag(0);
 /// Cover step tag: a `split`, over its cases and its branches.

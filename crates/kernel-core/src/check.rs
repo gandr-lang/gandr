@@ -643,13 +643,74 @@ fn entry_unfoldings(
                 DeclarationContent::Data { .. }
                 | DeclarationContent::Codata { .. }
                 | DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
             .collect(),
     )
     .presenting(judgement.presentations.clone())
     .identifying(judgement.entries)
+    .testing(judgement.entries)
     .ruling(arena, judgement.entries)
+}
+
+/// Admit `declared` as the one type a literal identity test at `test`'s base
+/// stands at: `U(B → B → F(1 + 1))`, its summands the unit type.
+///
+/// # Specification
+/// - requires: nothing; a node that does not resolve fails the shape.
+/// - ensures: `Ok` exactly when `declared` is that type, node for node.
+/// - provides: the admission obligation of a literal identity test.
+/// - fails: [`KernelError::LiteralIdentityType`] at any other type.
+/// - panics: none.
+///
+/// # Errors
+/// - [`KernelError::LiteralIdentityType`] — `declared` is not the test's type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each test admits at its base's type and is refused at the
+///   other base's and at an integer answer.
+/// - witness: `check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
+#[spec(ensures: |ret| ret.is_err() || matches!(arena.value_type(declared), Some(&ValueType::Thunk(_))))]
+fn literal_identity_typed(
+    arena: &TermArena,
+    declared: ValueTypeId,
+    test: gandr_kernel_term::LiteralIdentity,
+) -> Result<(), KernelError>
+{
+    let refused = || KernelError::LiteralIdentityType {
+        actual: value_type_witness(arena, declared),
+    };
+    let compared =
+        |id: ValueTypeId| arena.value_type(id) == Some(&ValueType::Base(test.base().base_type()));
+    let unit = |id: &ValueTypeId| matches!(arena.value_type(*id), Some(ValueType::Product(units)) if units.is_empty());
+    let Some(&ValueType::Thunk(outer)) = arena.value_type(declared)
+    else {
+        return Err(refused());
+    };
+    let Some(&CompType::Arrow {
+        domain: first,
+        codomain: inner,
+    }) = arena.comp_type(outer)
+    else {
+        return Err(refused());
+    };
+    let Some(&CompType::Arrow {
+        domain: second,
+        codomain: answer,
+    }) = arena.comp_type(inner)
+    else {
+        return Err(refused());
+    };
+    let Some(&CompType::Returner(boolean)) = arena.comp_type(answer)
+    else {
+        return Err(refused());
+    };
+    let typed = compared(first)
+        && compared(second)
+        && matches!(arena.value_type(boolean), Some(ValueType::Sum(summands))
+            if summands.len() == 2 && summands.iter().all(unit));
+    if typed { Ok(()) } else { Err(refused()) }
 }
 
 /// `value` read through the definitions it names: a constant that a
@@ -3452,6 +3513,7 @@ fn resolve_constant(
         | DeclarationContent::Data { .. }
         | DeclarationContent::Codata { .. }
         | DeclarationContent::Axiom { .. }
+        | DeclarationContent::LiteralIdentity { .. }
         | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
     }
 }) && ret.presentations() == judgement.presentations)]
@@ -3469,12 +3531,14 @@ fn admitted_unfoldings(
                 DeclarationContent::Data { .. }
                 | DeclarationContent::Codata { .. }
                 | DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
                 | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
             })
             .collect(),
     )
     .presenting(judgement.presentations.clone())
     .identifying(judgement.entries)
+    .testing(judgement.entries)
     .ruling(arena, judgement.entries)
 }
 
@@ -7237,7 +7301,7 @@ fn check_sealing_provenance(
         && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
             && match *declaration.content() {
                 DeclarationContent::Def { body, .. } => arena.value(body).is_some(),
-                DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
+                DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } | DeclarationContent::AbstractType { .. } => true,
             })))]
 #[inline]
 pub(crate) fn check_declaration(
@@ -7457,6 +7521,7 @@ where
                         DeclarationContent::Data { .. }
                         | DeclarationContent::Codata { .. }
                         | DeclarationContent::Axiom { .. }
+                        | DeclarationContent::LiteralIdentity { .. }
                         | DeclarationContent::AbstractType { .. } => None,
                     })
                     .collect::<Vec<_>>();
@@ -7508,6 +7573,7 @@ where
         },
         DeclarationContent::Def { .. }
         | DeclarationContent::Axiom { .. }
+        | DeclarationContent::LiteralIdentity { .. }
         | DeclarationContent::AbstractType { .. } => {
             (judgement, occurrence::Accessibility::unwalked())
         },
@@ -7825,6 +7891,11 @@ where
             Ok(())
         },
         DeclarationContent::Axiom { .. } => Ok(()),
+        // A literal identity test's obligation is its type: the kernel computes
+        // the test, so it stands only at the one type its base gives.
+        DeclarationContent::LiteralIdentity { declared, test } => {
+            literal_identity_typed(arena, declared, test)
+        },
         // A sealed atom's admission obligation is that its kind is a universe
         // of value types — the atom is a value type, so a computation universe
         // is no kind for it — and that its representation forms below that
@@ -10782,6 +10853,74 @@ mod tests
                 Err(KernelError::AbstractTypeKindNotUniverse { .. })
             ),
             "an atom whose kind is not a universe would leave formation with a level to infer"
+        );
+    }
+
+    #[test]
+    fn a_literal_identity_test_admits_only_at_its_base_s_type()
+    {
+        use gandr_kernel_term::IdentityBase;
+        use gandr_kernel_term::LiteralIdentity;
+        use gandr_kernel_term::Polarity;
+        // `U(B → B → F answer)`, staged for `test`.
+        let staged = |environment: &mut Environment,
+                      test: LiteralIdentity,
+                      compared: BaseType,
+                      boolean: bool| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let base = arena.value_type_base(compared);
+            let answer = if boolean {
+                let unit = arena.value_type_unit();
+                arena.value_type_sum(&[unit, unit])
+            }
+            else {
+                arena.value_type_base(BaseType::Integer)
+            };
+            let returner = arena.comp_type_returner(answer);
+            let inner = arena.comp_type_arrow(base, returner);
+            let outer = arena.comp_type_arrow(base, inner);
+            let declared = arena.value_type_thunk(outer);
+            staging.literal_identity(LevelSignature::monomorphic(), declared, test)
+        };
+        let mut environment = Environment::new();
+        for (base, compared) in [
+            (IdentityBase::Integer, BaseType::Integer),
+            (IdentityBase::Text, BaseType::String),
+        ] {
+            for polarity in [Polarity::Same, Polarity::Different] {
+                let test = LiteralIdentity::new(base, polarity);
+                let admitted = staged(&mut environment, test, compared, true);
+                let admitted = environment
+                    .add_decl(admitted)
+                    .expect("a test admits at its base's type");
+                assert!(
+                    environment.audit(admitted).axioms().is_empty(),
+                    "the kernel computes a test, so its audit reports no axiom"
+                );
+                assert_eq!(
+                    environment.audit(admitted).primitives(),
+                    [admitted.position()],
+                    "and it reports the test as the kernel primitive it is"
+                );
+            }
+        }
+        let text = LiteralIdentity::new(IdentityBase::Text, Polarity::Same);
+        let integers = staged(&mut environment, text, BaseType::Integer, true);
+        assert!(
+            matches!(
+                environment.add_decl(integers),
+                Err(KernelError::LiteralIdentityType { .. })
+            ),
+            "a text test over integers would answer where its type owes no boolean"
+        );
+        let counted = staged(&mut environment, text, BaseType::String, false);
+        assert!(
+            matches!(
+                environment.add_decl(counted),
+                Err(KernelError::LiteralIdentityType { .. })
+            ),
+            "a test answering an integer is refused"
         );
     }
 

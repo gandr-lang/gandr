@@ -1538,11 +1538,13 @@ fn decoded_fibre(
                 DeclarationContent::Data { .. }
                 | DeclarationContent::Codata { .. }
                 | DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
                 | DeclarationContent::AbstractType { .. } => crate::replay::Unfoldable::Opaque,
             })
             .collect(),
     )
     .identifying(entries)
+    .testing(entries)
     .ruling(arena, entries);
     crate::replay::read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(fibre)
 }

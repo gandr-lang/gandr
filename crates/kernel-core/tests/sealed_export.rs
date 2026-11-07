@@ -153,6 +153,7 @@ fn the_export_of_a_sealed_module_replays()
             DeclarationContent::AbstractType { scope, .. } => Some((position, scope)),
             DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. } => None,
         })

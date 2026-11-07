@@ -6,6 +6,8 @@ extern crate alloc;
 #[cfg(test)]
 mod codata;
 #[cfg(test)]
+mod literal_identity;
+#[cfg(test)]
 mod native_formers;
 #[cfg(test)]
 mod recursive_data;

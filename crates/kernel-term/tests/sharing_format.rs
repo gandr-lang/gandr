@@ -1558,7 +1558,7 @@ fn definition_over(
 /// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
 /// - witness: `tests::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
 #[spec(
-        ensures: |ret| ret == artifact.declarations().get(position.0).and_then(|marked| match *marked.declaration().content() { DeclarationContent::Def { body, .. } => Some(body), DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => None }),
+        ensures: |ret| ret == artifact.declarations().get(position.0).and_then(|marked| match *marked.declaration().content() { DeclarationContent::Def { body, .. } => Some(body), DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } | DeclarationContent::AbstractType { .. } => None }),
     )]
 fn decoded_body(
     artifact: &DecodedArtifact,
@@ -1571,6 +1571,7 @@ fn decoded_body(
         DeclarationContent::Data { .. }
         | DeclarationContent::Codata { .. }
         | DeclarationContent::Axiom { .. }
+        | DeclarationContent::LiteralIdentity { .. }
         | DeclarationContent::AbstractType { .. } => None,
     }
 }
@@ -3005,7 +3006,7 @@ fn segment_text() -> impl Strategy<Value = String>
                 && arena.value_type(marked.declaration().declared_id()) == Some(&ValueType::unit())
                 && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => position.rem_euclid(3) == 0
                 && arena.value(body).is_some_and(|value| position.checked_sub(1).map_or_else(|| value.components() == Some(&[]),
-            |previous| value == &Value::Constant(ConstantIndex::from(previous)))), DeclarationContent::Axiom { .. } => position.rem_euclid(3) == 1, DeclarationContent::AbstractType { .. } => position.rem_euclid(3) == 2, DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } => false }),
+            |previous| value == &Value::Constant(ConstantIndex::from(previous)))), DeclarationContent::Axiom { .. } => position.rem_euclid(3) == 1, DeclarationContent::AbstractType { .. } => position.rem_euclid(3) == 2, DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::LiteralIdentity { .. } => false }),
     )]
 fn referencing_sequence(
     arena: &mut TermArena,

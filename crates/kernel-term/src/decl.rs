@@ -567,6 +567,17 @@ pub enum DeclarationContent
         /// The declared value type's root id.
         declared: ValueTypeId,
     },
+    /// A literal identity test: a declared value type and the test the
+    /// kernel computes at it. Admission holds it to the one type its base
+    /// gives, and an audit reports it as a kernel primitive, not as an axiom,
+    /// because the kernel runs it.
+    LiteralIdentity
+    {
+        /// The declared value type's root id.
+        declared: ValueTypeId,
+        /// The test the kernel computes.
+        test: crate::LiteralIdentity,
+    },
     /// A sealed abstract type: a minted nominal atom, declared at a universe
     /// kind, carrying the representation it was sealed over and the scope of
     /// the admission that minted it.
@@ -1065,6 +1076,7 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
     }
@@ -1112,6 +1124,7 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
     }
@@ -1154,6 +1167,7 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
     }
@@ -1193,6 +1207,7 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
     }
@@ -1233,6 +1248,7 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
     }
@@ -1277,6 +1293,7 @@ impl Declaration
             DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
     }
@@ -1305,7 +1322,7 @@ impl Declaration
     #[spec(
         captures: entry = (match self.content {
             DeclarationContent::AbstractType { kind, representation, interface, .. } => Some((kind, representation, interface)),
-            DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
+            DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } => None,
         }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
         ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
             && match entry.0 {
@@ -1339,7 +1356,8 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
-            | DeclarationContent::Axiom { .. } => self,
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. } => self,
         }
     }
 
@@ -1362,7 +1380,7 @@ impl Declaration
     #[spec(
         captures: entry = (match self.content {
             DeclarationContent::AbstractType { kind, representation, scope, .. } => Some((kind, representation, scope)),
-            DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } => None,
+            DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Def { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } => None,
         }, core::mem::discriminant(&self.content), self.provenance.len(), self.name.0.len()),
         ensures: |ret| ret.provenance.len() == entry.2 && ret.name.0.len() == entry.3
             && match entry.0 {
@@ -1396,7 +1414,8 @@ impl Declaration
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
-            | DeclarationContent::Axiom { .. } => self,
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. } => self,
         }
     }
 }
@@ -1847,6 +1866,52 @@ impl<'arena> DeclarationBuilder<'arena>
         Declaration {
             levels,
             content: DeclarationContent::Axiom { declared },
+            provenance: Vec::new(),
+            name: StructuredName::default(),
+            related: Vec::new(),
+            presentation: crate::presented::Presentation::default(),
+            laws: Vec::new(),
+            operation_rules: crate::operation_rules::OperationRules::default(),
+            stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
+        }
+    }
+
+    /// Finalize a literal identity test over an already-minted declared type.
+    ///
+    /// # Specification
+    /// - requires: declared resolves in the borrowed arena. That it is the one
+    ///   type the test's base gives is an admission fact.
+    /// - ensures: returns the test over that root with the supplied levels,
+    ///   empty provenance and no name; all staged arena content remains
+    ///   allocated.
+    /// - provides: a consuming, body-free finisher that suppresses rollback.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the wire round trip of each base and polarity reads
+    ///   back the same content.
+    /// - witness: `encode::tests::a_literal_identity_test_closes_its_segment_with_its_base_and_polarity`
+    #[spec(
+        requires: self.arena.value_type(declared).is_some(),
+        ensures: |ret| ret.content == DeclarationContent::LiteralIdentity { declared, test }
+                && ret.name.0.is_empty()
+                && ret.provenance.is_empty(),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(
+        self,
+        levels: LevelSignature,
+        declared: ValueTypeId,
+        test: crate::LiteralIdentity,
+    ) -> Declaration
+    {
+        let _kept = ManuallyDrop::new(self);
+        Declaration {
+            levels,
+            content: DeclarationContent::LiteralIdentity { declared, test },
             provenance: Vec::new(),
             name: StructuredName::default(),
             related: Vec::new(),
