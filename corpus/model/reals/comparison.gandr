@@ -21,6 +21,8 @@
 import std.io;
 // The exact reals' host interface.
 import std.reals;
+// The native list type.
+import std.list (List);
 // The subject's shared declarations: `belowThreeHalves` and `decided`.
 import "./reals-base.gandr";
 
