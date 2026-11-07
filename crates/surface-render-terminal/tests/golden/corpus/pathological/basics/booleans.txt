@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-  ╭▸ corpus/pathological/basics/booleans.gandr:6:25
+  ╭▸ corpus/pathological/basics/booleans.gandr:7:25
   │
-6 │ def counted : Integer = true;
+7 │ def counted : Integer = true;
   │               ┬──────   ┯━━━
   │               │         │
   │               │         its type does not convert: expected `Integer`, found `Bool`

@@ -14507,7 +14507,7 @@ mod tests
         };
         assert_eq!(
             opened(&mut server, "model/cancellation/answered.gandr"),
-            ["8-8:import `./cancel-base.gandr` is never used:[1]"],
+            ["10-10:import `./cancel-base.gandr` is never used:[1]"],
             "a scope reading only builtins reads nothing through its import, which fades whole"
         );
         assert_eq!(
@@ -14606,21 +14606,21 @@ mod tests
         };
         let (uri, text, judged) = opened(&mut server, "model/cancellation/answered.gandr");
         assert_eq!(
-            ask(&mut server, &uri, 8, &judged),
+            ask(&mut server, &uri, 10, &judged),
             [
                 serde_json::json!({"title": "Remove the unused import `./cancel-base.gandr`",
                 "kind": "quickfix", "diagnostics": hinted(&judged), "isPreferred": true,
-                "edit": {"changes": {&uri: [lines(8, 9)]}}})
+                "edit": {"changes": {&uri: [lines(10, 11)]}}})
             ],
             "the import alone on its line is removed with its line break"
         );
         assert_eq!(
-            ask(&mut server, &uri, 11, &judged),
+            ask(&mut server, &uri, 13, &judged),
             [Value::Null; 0],
             "a range elsewhere is offered no removal"
         );
         assert_eq!(
-            refusals(&mut server, &uri, without(&text, &[8_usize].into())),
+            refusals(&mut server, &uri, without(&text, &[10_usize].into())),
             0,
             "the scope checks without its import"
         );

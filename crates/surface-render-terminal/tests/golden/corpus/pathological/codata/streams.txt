@@ -62,9 +62,9 @@ error[UnguardedCorecursion]: `deferred[>](…)` must be the whole arm of a copat
    ╰ help: write the productive self-call as a copattern arm's whole body
 
 error[UnguardedCorecursion]: `bare[>](…)` must be the whole arm of a copattern block, so each observation yields before `bare` runs again
-   ╭▸ corpus/pathological/codata/streams.gandr:85:3
+   ╭▸ corpus/pathological/codata/streams.gandr:86:3
    │
-85 │   bare[>] n
+86 │   bare[>] n
    │   ━━━━━━━ not the whole arm of a copattern
    │
    ├ note: `bare` is refused with UnguardedCorecursion, as its expectation states

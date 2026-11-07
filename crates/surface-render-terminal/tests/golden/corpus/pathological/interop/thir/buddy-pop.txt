@@ -1,32 +1,32 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:46:27
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:47:27
    │
-25 │ ┌  def popShared(
-26 │ │    blocks : Vals,
+26 │ ┌  def popShared(
+27 │ │    blocks : Vals,
    │ │    ────── checked; while checking the body of this function; binds blocks : Vals
-27 │ │    heads : Vals,
+28 │ │    heads : Vals,
    │ │    ───── checked; while checking the body of this function; binds heads : Vals
-28 │ │    order : Nat,
+29 │ │    order : Nat,
    │ │    ───── checked; while checking the body of this function; binds order : Nat
-29 │ │    b : Nat,
+30 │ │    b : Nat,
    │ │    ─ checked; while checking the body of this function; binds b : Nat
-30 │ │    rest : Ixs,
+31 │ │    rest : Ixs,
    │ │    ──── checked; while checking the body of this function; binds rest : Ixs
-31 │ │    h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
+32 │ │    h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
    │ │    ─ checked; while checking the body of this function; binds h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order)
-32 │ │    held : Path(
+33 │ │    held : Path(
    │ │    ──── checked; while checking the body of this function; binds held : ?
    ┆ ┆
-36 │ │    link : chain(rest, blocks),
+37 │ │    link : chain(rest, blocks),
    │ │    ──── checked; while checking the body of this function; binds link : chain(rest, blocks)
-37 │ │    apart : notIn(rest, b)
+38 │ │    apart : notIn(rest, b)
    │ │    ───── checked; while checking the body of this function; binds apart : notIn(rest, b)
    ┆ ┆
-44 │ │┌   *{
-45 │ ││     SomeV (IntV b),
-46 │ ││     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
+45 │ │┌   *{
+46 │ ││     SomeV (IntV b),
+47 │ ││     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
    │ ││                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
-47 │ ││   }
+48 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked; while checking the body of this thunk
@@ -36,34 +36,34 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:72:27
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:74:27
    │
-51 │ ┌  def popListedAsEmpty(
-52 │ │    blocks : Vals,
+53 │ ┌  def popListedAsEmpty(
+54 │ │    blocks : Vals,
    │ │    ────── checked; while checking the body of this function; binds blocks : Vals
-53 │ │    heads : Vals,
+55 │ │    heads : Vals,
    │ │    ───── checked; while checking the body of this function; binds heads : Vals
-54 │ │    order : Nat,
+56 │ │    order : Nat,
    │ │    ───── checked; while checking the body of this function; binds order : Nat
-55 │ │    b : Nat,
+57 │ │    b : Nat,
    │ │    ─ checked; while checking the body of this function; binds b : Nat
-56 │ │    rest : Ixs,
+58 │ │    rest : Ixs,
    │ │    ──── checked; while checking the body of this function; binds rest : Ixs
-57 │ │    h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
+59 │ │    h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
    │ │    ─ checked; while checking the body of this function; binds h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order)
-58 │ │    held : Path(
+60 │ │    held : Path(
    │ │    ──── checked; while checking the body of this function; binds held : ?
    ┆ ┆
-62 │ │    link : chain(rest, blocks),
+64 │ │    link : chain(rest, blocks),
    │ │    ──── checked; while checking the body of this function; binds link : chain(rest, blocks)
-63 │ │    apart : notIn(rest, b)
+65 │ │    apart : notIn(rest, b)
    │ │    ───── checked; while checking the body of this function; binds apart : notIn(rest, b)
    ┆ ┆
-70 │ │┌   *{
-71 │ ││     SomeV (IntV b),
-72 │ ││     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
+72 │ │┌   *{
+73 │ ││     SomeV (IntV b),
+74 │ ││     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
    │ ││                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
-73 │ ││   }
+75 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked; while checking the body of this thunk

@@ -22,15 +22,15 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/interop/thir/example.gandr:24:29
+   ╭▸ corpus/pathological/interop/thir/example.gandr:25:29
    │
-22 │   spec : *{Item, Value, Value -> Type} -> Type,
+23 │   spec : *{Item, Value, Value -> Type} -> Type,
    │   ┬───   ───────────────────────────────────── the type it synthesises
    │   │
    │   formed; while forming this type under its binder; binds spec : Item * Value * (Value -> Type) -> Type
-23 │   post : Value -> Type
+24 │   post : Value -> Type
    │   ──── formed; while forming this type under its binder; binds post : Value -> Type
-24 │ ) -> (post(Int(1))) -> wpFn(spec, exampleBody, True, post) =
+25 │ ) -> (post(Int(1))) -> wpFn(spec, exampleBody, True, post) =
    │                        ┬────┯━━━──────────────────────────
    │                        │    │
    │                        │    its type does not convert: expected `(Item, Value, Value -> Type) -> Type`, found `Item * Value * (Value -> Type) -> Type`

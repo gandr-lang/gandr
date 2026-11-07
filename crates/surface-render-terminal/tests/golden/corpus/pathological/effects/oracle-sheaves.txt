@@ -1,0 +1,99 @@
+error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
+   ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:83:81
+   │
+83 │ def staticOpenMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { type(Tree s p q) });
+   │                                                                                 ━━━━━━━━━━━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `staticOpenMode` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
+
+error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
+   ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:53:3
+   │
+48 │ ┌ def openFunext(
+49 │ │   f : Two -> Two,
+   │ │   ┬   ────────── the type it synthesises
+   │ │   │
+   │ │   checked; while checking the body of this function; binds f : Two -> Two
+50 │ │   g : Two -> Two,
+   │ │   ─ checked against `(g : Two -> Two) -> ((x : Two) -> Path[.A = Two](f x, g x)) -> -F Path[.A = Two -> Two](f, g)`; while checking the body of this function; binds g : Two -> Two
+51 │ │   h : (x : Two) -> Path[.A = Two](f x, g x)
+   │ │   ─ checked against `((x : Two) -> Path[.A = Two](f x, g x)) -> -F Path[.A = Two -> Two](f, g)`; while checking the body of this function; binds h : (x : Two) -> Path[.A = Two](f x, g x)
+52 │ │ ) -> Path[.A = Two -> Two](f, g) =
+53 │ │   Path.funext f g
+   │ │   ┯━━━━━━━━━━━━━│
+   │ └───│─────────────┤
+   │     │             checked; while checking the body of this thunk
+   │     functions past the first-order boundary: found `Two -> Two`
+   │
+   ├ note: `openFunext` is refused with FunextUnsupported, as its expectation states
+   ╰ note: tracked by #1315 <https://github.com/gandr-lang/gandr/issues/1315>
+
+error[DataFieldLevel]: a constructor field lives in a larger universe than its datatype
+   ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:60:23
+   │
+58 │ data SmallModality : Type where
+   │                      ──── the type it is checked against
+59 │   /// The family and its return.
+60 │   | MkSmall : (mode : Type -> Type, ret : (q : Type, q) -> mode(q)) --> SmallModality
+   │                       ━━━━━━━━━━━━ above the declared universe
+   │
+   ├ note: `SmallModality` is refused with DataFieldLevel, as its expectation states
+   ╰ help: lower each constructor field to its datatype's universe
+
+error[LevelMismatch]: this code lives in a larger universe than the one expected
+   ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:68:20
+   │
+28 │ data Tree(s : Type, p : +U (s -> -F Type), x : Type) : Type where
+   │               ──── the type it is checked against
+   ┆
+68 │ def lemTree : Tree Type decides Two = Leaf L;
+   │               ┬────┯━━━────────────
+   │               │    │
+   │               │    a universe at a level not admitted: expected `Type`, found `Type[+, 1]`
+   │               formed; while checking the next premise of this
+   │
+   ├ note: `lemTree` is refused with LevelMismatch, as its expectation states
+   ╰ help: lower the code to the expected universe
+
+error[NotSynthesisable]: the type of a function cannot be inferred where it stands
+   ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:78:57
+   │
+78 │ def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) });
+   │ ┬────────────┬─────────┬────────────────────────┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
+   │ │            │         │                        │       │
+   │ │            │         │                        │       needs a type to be checked against
+   │ │            │         │                        checked against `-F Mode`; while finishing the type of this
+   │ │            │         checked against `(s -> Type) -> -F Mode`; while checking the body of this function; binds p : s -> Type
+   │ │            checked against `(s : Type) -> (s -> Type) -> -F Mode`; while checking the body of this function; binds s : Type
+   │ checked against `(s : Type, s -> Type) -> Mode`; while checking the body of this thunk
+   │
+   ├ note: `openMode` is refused with NotSynthesisable, as its expectation states
+   ╰ help: write a type ascription for this form
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:93:31
+   │
+73 │   | MkMode : (mode : Type -> Type) --> Mode
+   │                      ──────────── the type it is checked against
+   ┆
+89 │ def treesNamed(q : Type) -> Type = return (Tree Two branches q)
+   │ ─────────────────────────────────────────────────────────────── the type it synthesises
+   ┆
+93 │ def namedMode : Mode = MkMode treesNamed;
+   │                        ┬──────┯━━━━━━━━━
+   │                        │      │
+   │                        │      its type does not convert: expected `Type -> Type`, found `+U (Type -> -F Type)`
+   │                        checked against `Mode`; while finishing the type of this
+   │
+   ├ note: `namedMode` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[OutOfFragment.cell_member]: the cell member is not supported yet
+    ╭▸ corpus/pathological/effects/oracle-sheaves.gandr:103:12
+    │
+103 │   | skip : CellAsk k <-> k L
+    │            ━━━━━━━━━ a form the fragment does not admit
+    │
+    ├ note: `CellShfy` is refused with OutOfFragment.cell_member, as its expectation states
+    ╰ note: tracked by #2662 <https://github.com/gandr-lang/gandr/issues/2662>

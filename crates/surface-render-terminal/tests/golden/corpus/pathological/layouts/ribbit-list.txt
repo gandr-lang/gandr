@@ -1,13 +1,13 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:33:24
+   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:35:24
    │
-30 │    def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
+32 │    def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
    │    │            ─ checked against `(a : Ints) -> -F Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this function; binds l : Ints
    │ ┌──┘
    │ │
-31 │ │┌   match l where
-32 │ ││     | Nil => Path.here Nil
-33 │ ││     | Cons(x, rest) => Path.here (Cons x rest)
+33 │ │┌   match l where
+34 │ ││     | Nil => Path.here Nil
+35 │ ││     | Cons(x, rest) => Path.here (Cons x rest)
    │ ││                        ┯━━━━━━━━━━━━━━━━━━━━━│
    │ └│────────────────────────│─────────────────────│
    │  └────────────────────────│─────────────────────checked against `(a : Ints) -> Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this thunk
@@ -18,9 +18,9 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EquivUnsupported]: `equiv` needs two closed pure translators between types built from units, integers, strings, tuples, sums, lists and data types that do not hold themselves
-   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:37:47
+   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:40:47
    │
-37 │ def decided : Path[.A = Type](Ints, Packed) = equiv packInts unpack;
+40 │ def decided : Path[.A = Type](Ints, Packed) = equiv packInts unpack;
    │                                               ━━━━━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Ints`
    │
    ├ note: `decided` is refused with EquivUnsupported, as its expectation states

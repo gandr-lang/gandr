@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/iso-endpoint.gandr:15:77
+   ╭▸ corpus/pathological/identity/iso-endpoint.gandr:18:77
    │
-15 │ def wrongEndpoint : Path[.A = Circle](Base, Base) ≅ Int = *{wind, *{spin, *{retr, retr}}};
+18 │ def wrongEndpoint : Path[.A = Circle](Base, Base) ≅ Int = *{wind, *{spin, *{retr, retr}}};
    │                                                                           ┬─┯━━━───────
    │                                                                           │ │
    │                                                                           │ its type does not convert: expected `(a : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](spin (wind a), a)`, found `(n : Int) -> Path[.A = Int](wind (spin n), n)`

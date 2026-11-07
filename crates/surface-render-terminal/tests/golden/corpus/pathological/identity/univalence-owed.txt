@@ -1,16 +1,16 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/univalence-owed.gandr:24:3
+   ╭▸ corpus/pathological/identity/univalence-owed.gandr:25:3
    │
-20 │   def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type](a, a)](
+21 │   def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type](a, a)](
    │   │             ─ checked against `(a : Type) -> -F Path[.A = Path[.A = Type](a, a)](ua (idtoequiv a a (Path.here a)), Path.here a)`; while checking the body of this function; binds a : Type
    │ ┌─┘
    │ │
-21 │ │   ua (idtoequiv a a (Path.here a)),
+22 │ │   ua (idtoequiv a a (Path.here a)),
    │ │   ──────────────────────────────── an endpoint the point does not convert to
-22 │ │   Path.here a
+23 │ │   Path.here a
    │ │   ─────────── an endpoint the point does not convert to
-23 │ │ ) =
-24 │ │   Path.here (Path.here a)
+24 │ │ ) =
+25 │ │   Path.here (Path.here a)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━│
    │ └───│─────────────────────┤
    │     │                     checked against `(a : Type) -> Path[.A = Path[.A = Type](a, a)](ua (idtoequiv a a (Path.here a)), Path.here a)`; while checking the body of this thunk
@@ -20,15 +20,15 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/univalence-owed.gandr:33:3
+   ╭▸ corpus/pathological/identity/univalence-owed.gandr:34:3
    │
-29 │ ┌ def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)](
-30 │ │   ua (idtoequiv AtStratum.Tel AtStratum.Tel AtStratum.opposite),
+30 │ ┌ def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)](
+31 │ │   ua (idtoequiv AtStratum.Tel AtStratum.Tel AtStratum.opposite),
    │ │   ───────────────────────────────────────────────────────────── an endpoint the point does not convert to
-31 │ │   AtStratum.opposite
+32 │ │   AtStratum.opposite
    │ │   ────────────────── an endpoint the point does not convert to
-32 │ │ ) =
-33 │ │   Path.here AtStratum.opposite
+33 │ │ ) =
+34 │ │   Path.here AtStratum.opposite
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│──────────────────────────┤
    │     │                          checked; while checking the body of this thunk
@@ -38,21 +38,21 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
-   ╭▸ corpus/pathological/identity/univalence-owed.gandr:45:3
+   ╭▸ corpus/pathological/identity/univalence-owed.gandr:46:3
    │
-38 │ ┌ def funextFromHomotopy(
-39 │ │   a : Type,
+39 │ ┌ def funextFromHomotopy(
+40 │ │   a : Type,
    │ │   ─ checked; while checking the body of this function; binds a : Type
-40 │ │   b : Type,
+41 │ │   b : Type,
    │ │   ─ checked; while checking the body of this function; binds b : Type
-41 │ │   f : a -> b,
+42 │ │   f : a -> b,
    │ │   ─ checked against `(f : a -> b) -> (g : a -> b) -> ((x : a) -> Path[.A = b](f x, g x)) -> -F Path[.A = a -> b](f, g)`; while checking the body of this function; binds f : a -> b
-42 │ │   g : a -> b,
+43 │ │   g : a -> b,
    │ │   ─ checked against `(g : a -> b) -> ((x : a) -> Path[.A = b](f x, g x)) -> -F Path[.A = a -> b](f, g)`; while checking the body of this function; binds g : a -> b
-43 │ │   h : (x : a) -> Path[.A = b](f x, g x)
+44 │ │   h : (x : a) -> Path[.A = b](f x, g x)
    │ │   ─ checked against `((x : a) -> Path[.A = b](f x, g x)) -> -F Path[.A = a -> b](f, g)`; while checking the body of this function; binds h : (x : a) -> Path[.A = b](f x, g x)
-44 │ │ ) -> Path[.A = a -> b](f, g) =
-45 │ │   Path.funext f g
+45 │ │ ) -> Path[.A = a -> b](f, g) =
+46 │ │   Path.funext f g
    │ │   ┯━━━━━━━━━━━━━│
    │ └───│─────────────┤
    │     │             checked; while checking the body of this thunk

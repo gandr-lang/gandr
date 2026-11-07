@@ -16,7 +16,9 @@
 
 /// The two answers to a query.
 data Two : Type where
+  /// The left answer.
   | L : Two
+  /// The right answer.
   | R : Two
 
 /// The type with no element.
@@ -24,18 +26,20 @@ data Empty : Type where {}
 
 /// A computation tree over a container.
 data Tree(s : Type, p : +U (s -> -F Type), x : Type) : Type where
+  /// The leaf that holds the result `v`.
   | Leaf : (v : x) --> Tree s p x
-  | Node : (a : s, k : +U (p(a) -> -F Tree s p x)) --> Tree s p x
+  /// The node that asks `a` and continues at each answer by `k`.
+  | Node : (a : s, k : p(a) -> Tree s p x) --> Tree s p x
 
 /// Function extensionality as a bare signature. gandr postulates nothing, so
 /// the signature leaves one obligation.
 @[ owes(1) ]
 def funextAxiom : (
   a : Type,
-  b : +U (a -> -F Type),
+  b : a -> Type,
   f : (x : a) -> b(x),
   g : (x : a) -> b(x),
-  h : (x : a) -> Path[.A = b(x)](f x, g x)
+  (x : a) -> Path[.A = b(x)](f x, g x)
 ) -> Path[.A = (x : a) -> b(x)](f, g);
 
 /// Function extensionality at two open functions. `Path.funext` decides two
@@ -52,7 +56,8 @@ def openFunext(
 /// the universe of the type.
 @[ refuses("DataFieldLevel") ]
 data SmallModality : Type where
-  | MkSmall : (mode : Type -> Type, ret : (q : Type, v : q) -> mode(q)) --> SmallModality
+  /// The family and its return.
+  | MkSmall : (mode : Type -> Type, ret : (q : Type, q) -> mode(q)) --> SmallModality
 
 /// The excluded-middle oracle: a query names a type, and an answer decides it.
 def decides(q : Type) -> Type = return (type(q + (q -> Empty)))
@@ -64,12 +69,13 @@ def lemTree : Tree Type decides Two = Leaf L;
 
 /// A family of types, the one field of a modality that the next three fill.
 data Mode : Type[+, 1] where
+  /// The family.
   | MkMode : (mode : Type -> Type) --> Mode
 
 /// The trees of an open container as a lambda that returns a type. The field
 /// does not check it.
 @[ refuses("NotSynthesisable") ]
-def openMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { return (Tree s p q) });
+def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) });
 
 /// The trees of an open container as a static lambda. The lowering reads its
 /// body as a computation, which a type is not.
@@ -77,7 +83,7 @@ def openMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { return
 def staticOpenMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { type(Tree s p q) });
 
 /// Each query has two answers.
-def branches(a : Two) -> -F Type { return Two }
+def branches(a : Two) -> Type { return Two }
 
 /// The trees of a fixed container as a named function.
 def treesNamed(q : Type) -> Type = return (Tree Two branches q)
@@ -89,6 +95,9 @@ def namedMode : Mode = MkMode treesNamed;
 /// Sheafification at a fixed container, its first equation a cell.
 @[ refuses("OutOfFragment.cell_member") ]
 data CellShfy : Type where
+  /// The tree that returns `v`.
   | CellRet : (v : Two) --> CellShfy
+  /// The tree that asks and continues by `k`.
   | CellAsk : (k : +U (Two -> -F CellShfy)) --> CellShfy
+  /// The cell that drops a query whose answer is at hand.
   | skip : CellAsk k <-> k L

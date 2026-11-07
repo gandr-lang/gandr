@@ -1,0 +1,17 @@
+error[UnresolvedTypeHead]: no type named `T` is written bare
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:19:37
+   │
+19 │ def encodeAny(T : Theory, m : Model(T)) -> String = "";
+   │                                     ━ no type head of this name and arity
+   │
+   ├ note: `encodeAny` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: declare a type named `T`, or import the module that exports it
+
+error[InertRead]: `manifest` reads the inert field `version`; only another inert field reads one
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:25:59
+   │
+25 │   concat (concat "name = " m.name) (concat "\nversion = " m.version)
+   │                                                           ━━━━━━━━━ an inert field read
+   │
+   ├ note: `manifest` is refused with InertRead, as its expectation states
+   ╰ help: read an inert field only from a manifest step or inert field

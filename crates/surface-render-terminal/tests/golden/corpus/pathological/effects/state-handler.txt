@@ -8,9 +8,9 @@ error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computa
    ╰ help: write a computation in this position
 
 error[MalformedForm]: an operand is missing in this handle expression
-    ╭▸ corpus/pathological/effects/state-handler.gandr:116:4
+    ╭▸ corpus/pathological/effects/state-handler.gandr:117:4
     │
-116 │   }
+117 │   }
     │    ━ an operand is missing here
     │
     ├ note: `unansweredForConsole` is refused with MalformedForm, as its expectation states
@@ -71,24 +71,24 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ModelUnanswered]: no module in scope is a model of `State.Eff` answering this scope at the types its manifest and subject force: `Passing` is not; name one after its subject, `} with M`, or write its clauses, `} with { … }`
-   ╭▸ corpus/pathological/effects/state-handler.gandr:76:3
+   ╭▸ corpus/pathological/effects/state-handler.gandr:77:3
    │
-76 │ ┏   handle st : State.Eff with sort S = Unit + Unit {
-77 │ ┃     pure fun (s) { pure 1 }
-78 │ ┃   }
+77 │ ┏   handle st : State.Eff with sort S = Unit + Unit {
+78 │ ┃     pure fun (s) { pure 1 }
+79 │ ┃   }
    │ ┗━━━┛ a model implicit no module answers
    │
    ├ note: `unansweredAtTwo` is refused with ModelUnanswered, as its expectation states
    ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/effects/state-handler.gandr:86:3
+   ╭▸ corpus/pathological/effects/state-handler.gandr:87:3
    │
-85 │   def inScopeAtInteger() -> Integer =
+86 │   def inScopeAtInteger() -> Integer =
    │                             ─────── the type it synthesises
-86 │ ┏   handle st : State.Eff with sort S = Integer {
-87 │ ┃     pure 1
-88 │ ┃   }
+87 │ ┏   handle st : State.Eff with sort S = Integer {
+88 │ ┃     pure 1
+89 │ ┃   }
    │ ┗━━━┛ its type does not convert: expected `Integer -> Integer`, found `Integer`
    │
    ├ note: while checking the body of this thunk
@@ -99,28 +99,28 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ModelAmbiguous]: more than one module in scope is a model of `State.Eff` answering this scope: `Passing` and `Forgetting`; name the one meant after its subject, `} with M`
-    ╭▸ corpus/pathological/effects/state-handler.gandr:106:3
+    ╭▸ corpus/pathological/effects/state-handler.gandr:107:3
     │
-106 │ ┏   handle st : State.Eff with sort S = Integer {
-107 │ ┃     pure fun (s) { pure s }
-108 │ ┃   }
+107 │ ┏   handle st : State.Eff with sort S = Integer {
+108 │ ┃     pure fun (s) { pure s }
+109 │ ┃   }
     │ ┗━━━┛ a model implicit more than one module answers
     │
     ├ note: `ambiguousInScope` is refused with ModelAmbiguous, as its expectation states
     ╰ help: supply the intended model by name in brackets before the parentheses
 
 error[CapabilityAmplified]: this capability grants less than the one expected here
-    ╭▸ corpus/pathological/effects/state-handler.gandr:128:5
+    ╭▸ corpus/pathological/effects/state-handler.gandr:129:5
     │
-126 │ ┌  def amplifiedAtImplicit() -> Integer =
-127 │ │┌   handle s : State.Eff with sort S = Bool {
-128 │ ││     readGivenAt 0
+127 │ ┌  def amplifiedAtImplicit() -> Integer =
+128 │ │┌   handle s : State.Eff with sort S = Bool {
+129 │ ││     readGivenAt 0
     │ ││     ━━━━━━━━━━━━━ a capability granting less: expected `Cap {get, put} at s`, found `Cap {get, put}`
-129 │ ││   } with {
-130 │ ││     | pure(y) => pure y
-131 │ ││     | oper get(k) => k true
-132 │ ││     | oper put(v, k) => k ()
-133 │ ││   }
+130 │ ││   } with {
+131 │ ││     | pure(y) => pure y
+132 │ ││     | oper get(k) => k true
+133 │ ││     | oper put(v, k) => k ()
+134 │ ││   }
     │ ││   │
     │ └│───│
     │  └───checked against `() -> Integer`; while checking the body of this thunk

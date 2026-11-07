@@ -1,8 +1,8 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/layouts/rust-default.gandr:14:46
+   ╭▸ corpus/pathological/layouts/rust-default.gandr:15:46
    │
-13 │ ┌ def nested() -> Layout =
-14 │ │   structLayout (Field "a" U8 (Field "inner" (Field "x" U16 (Field "y" U8 Done)) Done))
+14 │ ┌ def nested() -> Layout =
+15 │ │   structLayout (Field "a" U8 (Field "inner" (Field "x" U16 (Field "y" U8 Done)) Done))
    │ │   ┬─────────────┬─────────────┬──────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───────│
    │ └───│─────────────│─────────────│──────────────│───────────────────────────────────────┤
    │     │             │             │              │                                       checked against `() -> Layout`; while checking the body of this thunk

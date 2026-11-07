@@ -1,34 +1,34 @@
 error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an instance of `std.io.Console.Eff` handled where this call stands: name the one it means, `say[out = b](…)`
-   ╭▸ corpus/pathological/control/named-instances.gandr:22:7
+   ╭▸ corpus/pathological/control/named-instances.gandr:23:7
    │
-22 │       say ();
+23 │       say ();
    │       ━━━━━━ an instance with several in scope
    │
    ├ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
    ╰ help: supply the intended instance by name
 
 error[InstanceUnanswered]: `say` performs `std.io.Console.Eff` through its instance `out`, and no instance of `std.io.Console.Eff` is handled where this call stands: handle one around the call, `handle c : std.io.Console.Eff { … }`, or supply one by name, `say[out = c](…)`
-   ╭▸ corpus/pathological/control/named-instances.gandr:36:49
+   ╭▸ corpus/pathological/control/named-instances.gandr:37:49
    │
-36 │ def unanswered() -> [std.io.Console.Eff] Unit { say () }
+37 │ def unanswered() -> [std.io.Console.Eff] Unit { say () }
    │                                                 ━━━━━━ an instance with none in scope
    │
    ├ note: `unanswered` is refused with InstanceUnanswered, as its expectation states
    ╰ help: handle the interface or supply its instance by name
 
 error[DuplicateDefinition]: `o` is defined twice
-   ╭▸ corpus/pathological/control/named-instances.gandr:40:41
+   ╭▸ corpus/pathological/control/named-instances.gandr:41:41
    │
-40 │ def twice() -> [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { o.print "twice" }
+41 │ def twice() -> [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { o.print "twice" }
    │                 ─ first written here    ━ written again here
    │
    ├ note: `twice` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `o` its own name, or delete one of them
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/control/named-instances.gandr:45:52
+   ╭▸ corpus/pathological/control/named-instances.gandr:47:52
    │
-45 │ def defaulted() -> [o : std.io.Console.Eff] Unit { std.io.Console.print "defaulted" }
+47 │ def defaulted() -> [o : std.io.Console.Eff] Unit { std.io.Console.print "defaulted" }
    │ ┬──────────────────┬┬──────────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
    │ │                  ││                              │
    │ │                  ││                              its type does not convert: expected `-F [o : std.io.Console.Eff] Unit`, found `-F [std.io.Console.Eff] Unit`
@@ -40,20 +40,20 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[CapabilityAmplified]: this capability grants less than the one expected here
-   ╭▸ corpus/pathological/control/named-instances.gandr:52:16
+   ╭▸ corpus/pathological/control/named-instances.gandr:56:16
    │
-50 │ ┌  def misplaced() -> Integer =
-51 │ │┌   handle p : std.process.Exit.Eff {
-52 │ ││     say[.out = p] ();
+54 │ ┌  def misplaced() -> Integer =
+55 │ │┌   handle p : std.process.Exit.Eff {
+56 │ ││     say[.out = p] ();
    │ ││     ┬──────────┯────
    │ ││     │          │
    │ ││     │          a capability granting less: expected `Cap {print} at p`, found `Cap {exit}`
    │ ││     checked against `-F [std.process.Exit.Eff, p : std.process.Exit.Eff] Integer`; while checking the argument of this application
-53 │ ││     pure 0
-54 │ ││   } with {
-55 │ ││     | pure(x) => pure x
-56 │ ││     | oper exit(code, k) => pure 1
-57 │ ││   }
+57 │ ││     pure 0
+58 │ ││   } with {
+59 │ ││     | pure(x) => pure x
+60 │ ││     | oper exit(code, k) => pure 1
+61 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Integer`; while checking the body of this thunk
@@ -63,9 +63,9 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
    ╰ help: use the required capability
 
 error[UnresolvedName]: `z` is not defined
-   ╭▸ corpus/pathological/control/named-instances.gandr:62:25
+   ╭▸ corpus/pathological/control/named-instances.gandr:66:25
    │
-62 │ def lost(body : +U (-F [z : std.io.Console.Eff] Unit)) -> Unit { pure *{} }
+66 │ def lost(body : +U (-F [z : std.io.Console.Eff] Unit)) -> Unit { pure *{} }
    │                         ━ not found in this scope
    │
    ├ note: `lost` is refused with UnresolvedName, as its expectation states
