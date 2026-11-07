@@ -3667,9 +3667,8 @@ struct Lowerer<'run, 'source>
     /// it.
     modelled: BTreeMap<SlotIndex, ValueTypeId>,
     /// Each slot a check after minting refused: a derived component that
-    /// names one that did not lower, a family whose parameters disagree
-    /// with its indices, or a constructor whose field states no type for it
-    /// ([`Self::refuse_unclassified`]).
+    /// names one that did not lower, or a family whose parameters disagree
+    /// with its indices.
     faults: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
     /// Each flow's instance over an import's source that the import's match
     /// refuses: it declares nothing.
@@ -3737,10 +3736,10 @@ struct Lowerer<'run, 'source>
     /// reaches after it, so the application, the call or the constructor
     /// around it mints it.
     awaiting: BTreeSet<NodeIndex>,
-    /// Each constructor classified by the field it stands in, with the
-    /// refusal it earns when the constructor around it reads as no family's
-    /// application: the field then states no type for it.
-    unclassified: BTreeMap<NodeIndex, LoweringRefusal<'source>>,
+    /// Each constructor classified by the field it stands in, with where the
+    /// mint names the wildcards of the classifier it inserts when the
+    /// constructor around reads as no family's application (#6113).
+    fielded: BTreeMap<NodeIndex, native::Fielded>,
     /// Each thunk a definition is, with the answer its signature states for
     /// its body: `C` for `+U C`, `-F B` for `() -> B`.
     thunked: BTreeMap<NodeIndex, native::Answer>,
@@ -4582,6 +4581,9 @@ struct Sink<'run>
     /// Every derived operation's transport, with the path type it returns an
     /// element of: what an operation over it reads where no type is answered.
     identities: BTreeMap<ComputationId, identity::Identity>,
+    /// How many wildcards the mint inserted in each form, past the ones the
+    /// planner nominated there: the place the next one takes (#6113).
+    wildcards: BTreeMap<gandr_core_term::hole::HoleForm, u32>,
 }
 
 /// Lower one source into `arena`, declaring its names over `outermost`: the
@@ -4953,6 +4955,8 @@ struct SinkTables
     reholds: BTreeSet<ComputationId>,
     /// [`Sink::identities`].
     identities: BTreeMap<ComputationId, identity::Identity>,
+    /// [`Sink::wildcards`].
+    wildcards: BTreeMap<gandr_core_term::hole::HoleForm, u32>,
 }
 
 impl SinkTables
@@ -4974,6 +4978,7 @@ impl SinkTables
             breaks: BTreeSet::new(),
             reholds: BTreeSet::new(),
             identities: BTreeMap::new(),
+            wildcards: BTreeMap::new(),
         }
     }
 }
@@ -5000,6 +5005,7 @@ impl<'run> Sink<'run>
             breaks,
             reholds,
             identities,
+            wildcards,
         } = tables;
         Self {
             arena,
@@ -5013,6 +5019,7 @@ impl<'run> Sink<'run>
             breaks,
             reholds,
             identities,
+            wildcards,
         }
     }
 
@@ -5032,6 +5039,7 @@ impl<'run> Sink<'run>
             breaks,
             reholds,
             identities,
+            wildcards,
             ..
         } = self;
         SinkTables {
@@ -5044,6 +5052,7 @@ impl<'run> Sink<'run>
             breaks,
             reholds,
             identities,
+            wildcards,
         }
     }
 }
@@ -5096,7 +5105,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.unjoin_refused();
         self.mint_foreign(sink);
         self.mint(sink)?;
-        self.refuse_unclassified();
         self.mint_joints(sink);
         self.mint_abstracts(sink);
         self.mint_models(sink);
@@ -5149,7 +5157,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(ensures: self.classifiers.is_empty()
         && self.argued.is_empty()
         && self.awaiting.is_empty()
-        && self.unclassified.is_empty()
+        && self.fielded.is_empty()
         && self.thunked.is_empty()
         && self.inherited.is_empty()
         && self.stand_ins.is_empty()
@@ -5203,7 +5211,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.classifiers.clear();
         self.argued.clear();
         self.awaiting.clear();
-        self.unclassified.clear();
+        self.fielded.clear();
         self.thunked.clear();
         self.inherited.clear();
         self.stand_ins.clear();
@@ -5938,7 +5946,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             argued: BTreeMap::new(),
             parameter_typed: BTreeMap::new(),
             awaiting: BTreeSet::new(),
-            unclassified: BTreeMap::new(),
+            fielded: BTreeMap::new(),
             thunked: BTreeMap::new(),
             dependent_answers: BTreeMap::new(),
             inherited: BTreeMap::new(),
@@ -19170,68 +19178,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Refuse each declaration that holds a constructor the mint left
-    /// unclassified: the constructor around its field reads as no family's
-    /// application, so the field states no type for it (#5373).
-    ///
-    /// # Specification
-    /// - requires: the mint sweep of the current source has run.
-    /// - ensures: each unrefused slot of the current source with no fault, the
-    ///   innermost whose span holds a constructor of [`Self::unclassified`]
-    ///   left unminted as unclassified, holds that constructor's refusal as its
-    ///   fault: the refusal of the constructor written first in the slot.
-    /// - provides: a nested pair at a type the lowering cannot read refused by
-    ///   name, never dropped as unminted.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a pair in a field of a pair at a signature's
-    ///   arguments, and one in a field of a pair at a type a definition's call
-    ///   computes, each refused at the inner pair.
-    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_is_refused_by_name_5373`
-    #[spec(
-        captures: before = self.faults.len(),
-        ensures: self.faults.len() >= before
-            && self.faults.len() <= before.saturating_add(self.unclassified.len()),
-    )]
-    fn refuse_unclassified(&mut self)
-    {
-        let mut refused: Vec<(ByteSpan, LoweringRefusal<'source>)> = self
-            .unclassified
-            .iter()
-            .filter(|&(&node, _)| {
-                matches!(
-                    self.lowered_at(node),
-                    Maybe::Absent(lowered::Absent::Unclassified)
-                )
-            })
-            .filter_map(|(_, &refusal)| match refusal.span() {
-                Maybe::Present(span) => Some((span, refusal)),
-                Maybe::Absent(_) => None,
-            })
-            .collect();
-        refused.sort_unstable_by_key(|&(span, _)| span);
-        for (span, refusal) in refused {
-            let holder = self
-                .collected
-                .slots
-                .iter()
-                .enumerate()
-                .skip(self.current.slots)
-                .filter(|&(_, slot)| {
-                    matches!(slot.refusal, Maybe::Absent(_))
-                        && slot.introduced_by.span.start() <= span.start()
-                        && span.end() <= slot.introduced_by.span.end()
-                })
-                .min_by_key(|&(_, slot)| slot.introduced_by.span.length())
-                .map(|(position, _)| SlotIndex::from(position));
-            if let Some(slot) = holder {
-                let _first = self.faults.entry(slot).or_insert(refusal);
-            }
-        }
-    }
-
     /// Record every label planned against an entry that lowered, with what
     /// it names.
     ///
@@ -24865,7 +24811,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   kind; otherwise the available signature — written, a function tail's,
     ///   the type a model derives, or the annotation an unsigned definition's
     ///   whole value is written under — and body select Completed, Uncompleted
-    ///   or Bodied.
+    ///   or Bodied, but a definition written as a value or a function tail
+    ///   whose body did not mint is the body's absence, which [`Self::outcome`]
+    ///   refuses by name, never an obligation the signature owes (#6113).
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -24885,6 +24833,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
     /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
+    /// - witness: `lower::tests::a_written_definition_minting_no_body_is_refused_by_name_6113`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present((_at, refusal)) = slot.refusal {
@@ -24962,6 +24911,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
+                let written = matches!(
+                    slot.definition,
+                    Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function, .. })
+                );
                 match ret {
                     | Maybe::Present(DeclarationOutcome::Completed {
                         declared_type,
@@ -24972,12 +24925,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Present(DeclarationOutcome::Uncompleted { declared_type }) => {
                         declared == Maybe::Present(declared_type)
                             && matches!(body, Maybe::Absent(_))
+                            && !written
                     },
                     | Maybe::Present(DeclarationOutcome::Bodied { body: value }) => {
                         matches!(declared, Maybe::Absent(_)) && body == Maybe::Present(value)
                     },
                     | Maybe::Absent(reason) => {
-                        declared == Maybe::Absent(reason) && matches!(body, Maybe::Absent(_))
+                        (declared == Maybe::Absent(reason) && matches!(body, Maybe::Absent(_)))
+                            || (written
+                                && matches!(declared, Maybe::Present(_))
+                                && body == Maybe::Absent(reason))
                     },
                     | Maybe::Present(DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) | DeclarationOutcome::Codata(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World) => false,
                 }
@@ -25187,6 +25144,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     declared_type,
                     body,
                 })
+            },
+            // A definition written as a value or a function tail whose body
+            // did not mint leaves the signature nothing to complete: the
+            // outcome refuses it by name, never as an obligation (#6113).
+            (Maybe::Present(_), Maybe::Absent(reason))
+                if matches!(
+                    slot.definition,
+                    Maybe::Present(Half {
+                        operand: Operand::Written(_) | Operand::Function,
+                        ..
+                    })
+                ) =>
+            {
+                Maybe::Absent(reason)
             },
             (Maybe::Present(declared_type), Maybe::Absent(_)) => {
                 Maybe::Present(DeclarationOutcome::Uncompleted { declared_type })
@@ -29666,6 +29637,30 @@ mod tests
         }
     }
 
+    /// Run every pass of `lowerer` up to and through the mint sweep, minting
+    /// into `arena` and recording into `origins`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn minted(
+        lowerer: &mut super::Lowerer<'_, '_>,
+        arena: &mut CoreArena,
+        origins: &mut super::OriginTable,
+    )
+    {
+        lowerer.declare();
+        lowerer.seed().unwrap();
+        lowerer.survey().unwrap();
+        lowerer.classify().unwrap();
+        lowerer.refuse_unsynthesised().unwrap();
+        lowerer.propagate_manifests();
+        while lowerer.refuse_unrepresented().0 {
+            lowerer.propagate_manifests();
+        }
+        let mut sink = super::Sink::new(arena, origins, super::SinkTables::new());
+        lowerer.mint(&mut sink).unwrap();
+    }
+
     #[test]
     fn a_declaration_minting_neither_half_is_refused_by_name_455()
     {
@@ -29678,30 +29673,8 @@ mod tests
         let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
         let collected = crate::module::collect(&pbg, &tree, &Unit::single(), &mut fuel).unwrap();
         let mut lowerer = super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
-        lowerer.declare();
-        lowerer.seed().unwrap();
-        lowerer.survey().unwrap();
-        lowerer.classify().unwrap();
-        lowerer.refuse_unsynthesised().unwrap();
-        lowerer.propagate_manifests();
-        while lowerer.refuse_unrepresented().0 {
-            lowerer.propagate_manifests();
-        }
         let mut origins = super::OriginTable::new();
-        let mut sink = super::Sink {
-            arena: &mut arena,
-            origins: &mut origins,
-            exits: super::BTreeSet::new(),
-            distributed: super::BTreeMap::new(),
-            host: super::capability::Host::Unminted,
-            loops: super::BTreeSet::new(),
-            breaks: super::BTreeSet::new(),
-            reholds: super::BTreeSet::new(),
-            identities: super::BTreeMap::new(),
-            theories: super::BTreeMap::new(),
-            foreign: super::BTreeMap::new(),
-        };
-        lowerer.mint(&mut sink).unwrap();
+        minted(&mut lowerer, &mut arena, &mut origins);
         let [ref slot] = *lowerer.collected.slots
         else {
             panic!("`f` is the one declared name");
@@ -29731,6 +29704,48 @@ mod tests
             "the refusal names `f`: {refusal:?}"
         );
         assert_eq!(refusal.classify(), FailureClass::EngineFault);
+    }
+
+    #[test]
+    fn a_written_definition_minting_no_body_is_refused_by_name_6113()
+    {
+        let pbg = grammar();
+        let tree = parsed(&pbg, SourceText::from("def f : Integer ; def f = 1 ;"));
+        let mut arena = CoreArena::new();
+        let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
+        let collected = crate::module::collect(&pbg, &tree, &Unit::single(), &mut fuel).unwrap();
+        let mut lowerer = super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
+        let mut origins = super::OriginTable::new();
+        minted(&mut lowerer, &mut arena, &mut origins);
+        let [ref slot] = *lowerer.collected.slots
+        else {
+            panic!("`f` is the one declared name");
+        };
+        let Maybe::Present(crate::module::Half {
+            operand: crate::module::Operand::Written(body),
+            ..
+        }) = slot.definition
+        else {
+            panic!("`f` has a definition written as a value");
+        };
+        // The signature mints and the body does not, with no refusal filed
+        // against the name: #6113's nested pair at a computed type.
+        *lowerer.lowered.get_mut(body.node).expect("the body's node") =
+            Maybe::Absent(super::lowered::Absent::Unminted);
+        let declarations = lowerer.assemble(&mut origins, super::SlotIndex::from(0_usize));
+        let [ref declaration] = *declarations
+        else {
+            panic!("`f` is assembled, not dropped: {declarations:?}");
+        };
+        let DeclarationOutcome::Refused(refusal) = declaration.outcome()
+        else {
+            panic!("`f` is refused, not owed: {:?}", declaration.outcome());
+        };
+
+        assert!(
+            matches!(refusal, LoweringRefusal::Unminted { name, .. } if name == SurfaceName::from("f")),
+            "the refusal names `f`: {refusal:?}"
+        );
     }
 
     #[test]
