@@ -12,7 +12,10 @@
 //! gives the class of each cell, as Brown's collapsing scheme does on a bar
 //! complex. [`collapse()`] checks a scheme on a set of cells and keeps their
 //! critical cells. [`greedy()`] builds an acyclic matching on a finite
-//! complex. [`equivalence()`] gives the equivalence on the complex's own
+//! complex, and [`Matching::stated`] takes the pairs that a caller states, as
+//! a Tietze move states one pair. [`Matched`] reads either matching as a
+//! scheme over any complex. [`equivalence()`] gives the equivalence on the
+//! complex's own
 //! [`Composites`], with a witness for each inverse law, and on its complex it
 //! is a [`Reduction`] that composes in sequence. A [`Sum`] sets reductions of
 //! one type side by side. [`reduct()`] gives its abelianisation: the critical
@@ -29,7 +32,7 @@
 //! | [`Scheme`], [`Class`] | a matching that gives the class of each cell, and the class: critical, or paired up or down |
 //! | [`Composites`], [`Definition`], [`Closure`], [`Images`] | a scheme whose cells compose in the free (n,1)-category, the definition of a redundant cell by its partner, whether a witness closes, and the images that a substitution reads |
 //! | [`collapse()`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
-//! | [`greedy()`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, and the matching read as a scheme |
+//! | [`greedy()`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, a matching that a caller states pair by pair, and a matching read as a scheme over any complex |
 //! | [`reduct()`], [`Reduct`], [`Place`] | the reduct along an acyclic matching: the critical cells, the Morse boundary of each and the walk of its gradient |
 //! | [`equivalence()`], [`Equivalence`], [`EquivalenceOf`], [`Removal`], [`Bound`], [`Refusal`] | the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name |
 //! | [`Reduction`], [`Then`], [`Answer`] | a reduction: the collapse, the inclusion, both inverse witnesses and the replay, two reductions in sequence, and what a step gives |
@@ -109,6 +112,7 @@ mod equivalence;
 mod error;
 mod gradient;
 mod greedy;
+mod matching;
 mod poset;
 mod reduct;
 mod reduction;
@@ -139,9 +143,9 @@ pub use equivalence::Removal;
 pub use equivalence::equivalence;
 pub use error::MorseError;
 pub use gradient::Place;
-pub use greedy::Matched;
-pub use greedy::Matching;
 pub use greedy::greedy;
+pub use matching::Matched;
+pub use matching::Matching;
 pub use reduct::Reduct;
 pub use reduct::reduct;
 pub use reduction::Answer;

@@ -1,5 +1,4 @@
-//! The greedy acyclic matching on a finite complex, and a matching read as a
-//! scheme.
+//! The greedy acyclic matching on a finite complex.
 //!
 //! The greedy matching reads the cells in the caller's order, each cell after
 //! its faces. It pairs each free cell with the first free cell above it at the
@@ -16,176 +15,12 @@ use alloc::vec::Vec;
 use anodized::spec;
 
 use crate::collapse::Class;
-use crate::collapse::Scheme;
 use crate::complex::Complex;
 use crate::complex::Incidence;
 use crate::complex::Invertibility;
-use crate::complex::Standing;
 use crate::gradient::Mark;
 use crate::gradient::Place;
-
-/// A matching on a finite list of cells: the class of each cell in the list.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Matching<Cell>
-{
-    /// The cells, in the caller's order.
-    cells: Vec<Cell>,
-    /// The class of each cell, in the same order.
-    classes: Vec<Class<Cell>>,
-    /// The place of each cell in the list.
-    places: BTreeMap<Cell, Place>,
-}
-
-impl<Cell> Matching<Cell>
-where
-    Cell: Clone + Ord,
-{
-    /// The cells, in the caller's order.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn cells(&self) -> &[Cell]
-    {
-        &self.cells
-    }
-
-    /// The class of each cell, in the order of [`Matching::cells`].
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn classes(&self) -> &[Class<Cell>]
-    {
-        &self.classes
-    }
-
-    /// The class of `cell`: its class in the list, or critical for a cell
-    /// that the list does not hold, since no pair holds it.
-    ///
-    /// # Specification
-    /// - ensures: a listed cell's class is its entry in [`Matching::classes`],
-    ///   and an unlisted cell is critical.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a listed vertex, a listed edge and a cell past the
-    ///   list separate the three answers.
-    /// - witness: `tests::greedy::a_cell_the_list_does_not_hold_is_critical`
-    #[spec(ensures: |ref ret| self.places.contains_key(cell) || *ret == Class::Critical)]
-    #[inline]
-    #[must_use]
-    pub fn class(
-        &self,
-        cell: &Cell,
-    ) -> Class<Cell>
-    {
-        self.places
-            .get(cell)
-            .and_then(|place| self.classes.get(usize::from(*place)))
-            .map_or(Class::Critical, Clone::clone)
-    }
-
-    /// The critical cells, in the order of [`Matching::cells`].
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn critical(&self) -> impl Iterator<Item = &Cell>
-    {
-        self.cells
-            .iter()
-            .zip(&self.classes)
-            .filter(|&(_, class)| *class == Class::Critical)
-            .map(|(cell, _)| cell)
-    }
-
-    /// The matching read as a scheme over `complex`, so that
-    /// [`collapse()`](crate::collapse()) checks it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn on<'matching, C>(
-        &'matching self,
-        complex: &'matching mut C,
-    ) -> Matched<'matching, C>
-    where
-        C: Complex<Cell = Cell>,
-    {
-        Matched {
-            complex,
-            matching: self,
-        }
-    }
-}
-
-/// A matching read as a scheme over its complex.
-#[derive(Debug)]
-pub struct Matched<'matching, C>
-where
-    C: Complex,
-{
-    /// The complex the matching pairs the cells of.
-    complex: &'matching mut C,
-    /// The matching.
-    matching: &'matching Matching<C::Cell>,
-}
-
-impl<C> Complex for Matched<'_, C>
-where
-    C: Complex,
-{
-    type Cell = C::Cell;
-    type Fault = C::Fault;
-
-    /// Whether `cell` lies in the complex.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn standing(
-        &mut self,
-        cell: &Self::Cell,
-    ) -> Result<Standing, Self::Fault>
-    {
-        self.complex.standing(cell)
-    }
-
-    /// Push each face of `cell` onto `faces`, with its incidence.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn faces(
-        &mut self,
-        cell: &Self::Cell,
-        faces: &mut Vec<(Self::Cell, Incidence)>,
-    ) -> Result<(), Self::Fault>
-    {
-        self.complex.faces(cell, faces)
-    }
-}
-
-impl<C> Scheme for Matched<'_, C>
-where
-    C: Complex,
-{
-    /// The class of `cell` under the matching.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn class(
-        &mut self,
-        cell: &Self::Cell,
-    ) -> Result<Class<Self::Cell>, Self::Fault>
-    {
-        Ok(self.matching.class(cell))
-    }
-}
+use crate::matching::Matching;
 
 /// Where the greedy matching holds a cell.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -322,7 +157,7 @@ impl Greedy
 /// - witness: `tests::greedy::the_hollow_triangle_keeps_one_vertex_and_one_edge_critical`
 /// - witness: `tests::greedy::a_face_at_the_incidence_two_stays_unpaired`
 /// - witness: `tests::euler::the_two_counts_agree_where_every_boundary_is_a_sphere`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |matching| matching.classes.len() == cells.len()))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |matching| matching.classes().len() == cells.len()))]
 #[inline]
 pub fn greedy<C>(
     complex: &mut C,
@@ -402,9 +237,5 @@ where
                 .map_or(Class::Critical, |cell| Class::Collapsible(cell.clone())),
         })
         .collect();
-    Ok(Matching {
-        cells: cells.to_vec(),
-        classes,
-        places,
-    })
+    Ok(Matching::listed(cells.to_vec(), classes, places))
 }
