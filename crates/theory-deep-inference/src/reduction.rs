@@ -6,11 +6,13 @@
 //! holds at each entry. The template is the part that the rows share, and its
 //! size is the size `s` that [`FamilyCostReport`](crate::FamilyCostReport)
 //! gives. The collapse reads a member's row from its peak. The inclusion puts
-//! the row's arms in place in the carrier. A row is exact, so each witness is
-//! an identity, and it closes only between equal composites. The replay checks
-//! that the collapse gives each row back after the inclusion, and that each
-//! member equals its instance. The fold is untrusted, and the replay decides
-//! it.
+//! the row's arms in place in the carrier's peak and join, and the instance
+//! keeps the carrier's skeleton with no copy. A row is exact, so each witness
+//! is an identity, and it closes only between equal composites: a member
+//! equals an instance when its skeleton is the carrier's and its peak and its
+//! join are the instance's. The replay checks that the collapse gives each row
+//! back after the inclusion, and that each member equals its instance. The
+//! fold is untrusted, and the replay decides it.
 //!
 //! A family of families reduces in two steps. The
 //! [`Sum`](gandr_theory_discrete_morse::Sum) of the reductions of each family
@@ -71,14 +73,23 @@ pub struct TemplateReduction<'family, A: CellAlphabet>
     members: Vec<MemberIndex>,
 }
 
-/// A composite of a template reduction: a certificate, or a row of the
-/// template.
+/// A composite of a template reduction: a member of the family, an instance
+/// of the template, or a row of the template.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Folded<'family, A: CellAlphabet>
 {
-    /// A certificate: a member of the family, borrowed, or an instance of the
-    /// template.
-    Member(Cow<'family, Tracelet<A>>),
+    /// A member of the family, borrowed.
+    Member(&'family Tracelet<A>),
+    /// An instance of the template: the carrier with the arms of a row in
+    /// place, held as its peak and its join, because the rest of it is the
+    /// carrier's.
+    Instance
+    {
+        /// The instance's peak.
+        peak: A::Cmd,
+        /// The instance's join.
+        join: A::Cmd,
+    },
     /// The guard of the arm at each entry of the template.
     Row(TemplateRow),
     /// A row of a member template, with that template's row in a template of
@@ -105,7 +116,8 @@ pub enum FoldFault
     NoMember(MemberIndex),
     /// The template does not read a member's peak, or does not rebuild a row.
     Obstruction(TemplateObstruction),
-    /// A collapse or a section reads a member alone, and it received a row.
+    /// A collapse or a section reads a certificate, a member or an instance,
+    /// and it received a row.
     NotAMember,
     /// An inclusion or a retraction reads a row alone, and it received another
     /// composite.
@@ -262,7 +274,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         let family: &'family [Tracelet<A>] = self.family;
         family
             .get(usize::from(*cell))
-            .map(|member| Folded::Member(Cow::Borrowed(member)))
+            .map(Folded::Member)
             .ok_or_else(|| refused(FoldFault::NoMember(*cell)))
     }
 
@@ -276,17 +288,15 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         composite: &Self::Composite,
     ) -> Answer<Self, Self::Composite>
     {
-        match *composite {
-            Folded::Member(ref member) => self
-                .template
-                .row(&member.overlap.peak)
-                .map(Folded::Row)
-                .map_err(obstructed),
-            Folded::Row(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotAMember)),
-        }
+        let peak = match *composite {
+            Folded::Member(member) => &member.overlap.peak,
+            Folded::Instance { ref peak, .. } => peak,
+            Folded::Row(_) | Folded::Nested { .. } => return Err(refused(FoldFault::NotAMember)),
+        };
+        self.template.row(peak).map(Folded::Row).map_err(obstructed)
     }
 
-    /// The instance of a row.
+    /// The instance of a row: its peak and its join, with the arms in place.
     ///
     /// # Specification
     /// trivial.
@@ -299,10 +309,12 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         match *composite {
             Folded::Row(ref row) => self
                 .template
-                .instance(row)
-                .map(|instance| Folded::Member(Cow::Owned(instance)))
+                .boundary(row)
+                .map(|(peak, join)| Folded::Instance { peak, join })
                 .map_err(obstructed),
-            Folded::Member(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotARow)),
+            Folded::Member(_) | Folded::Instance { .. } | Folded::Nested { .. } => {
+                Err(refused(FoldFault::NotARow))
+            },
         }
     }
 
@@ -318,7 +330,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     ) -> Answer<Self, Option<Self::Witness>>
     {
         match *composite {
-            Folded::Member(_) => Ok(Some(Identity)),
+            Folded::Member(_) | Folded::Instance { .. } => Ok(Some(Identity)),
             Folded::Row(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotAMember)),
         }
     }
@@ -337,7 +349,9 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     {
         match *composite {
             Folded::Row(_) => Ok(None),
-            Folded::Member(_) | Folded::Nested { .. } => Err(refused(FoldFault::NotARow)),
+            Folded::Member(_) | Folded::Instance { .. } | Folded::Nested { .. } => {
+                Err(refused(FoldFault::NotARow))
+            },
         }
     }
 
@@ -381,7 +395,8 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         Ok(Identity)
     }
 
-    /// Whether `source` and `target` are equal.
+    /// Whether `source` and `target` are equal: a member and an instance
+    /// compare in place, through the carrier's skeleton.
     ///
     /// # Specification
     /// trivial.
@@ -393,12 +408,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         target: &Self::Composite,
     ) -> Answer<Self, Closure>
     {
-        Ok(if source == target {
-            Closure::Closes
-        }
-        else {
-            Closure::Open
-        })
+        Ok(alike(self.template.carrier(), source, target))
     }
 
     /// Check each member in family order: its row and the boundary of its
@@ -491,21 +501,73 @@ where
             Rebuilt::Unretracted
         });
     }
-    let carrier = template.carrier();
-    let skeleton = carrier.path_a == certificate.path_a
+    Ok(
+        if join == certificate.joins_at
+            && same_skeleton(template.carrier(), certificate) == Closure::Closes
+        {
+            Rebuilt::Same
+        }
+        else {
+            Rebuilt::Forged
+        },
+    )
+}
+
+/// The identity between `certificate` and the skeleton of `carrier`: it
+/// closes when their paths are equal and their overlaps are equal but the peak.
+///
+/// # Specification
+/// trivial.
+fn same_skeleton<A>(
+    carrier: &Tracelet<A>,
+    certificate: &Tracelet<A>,
+) -> Closure
+where
+    A: CellAlphabet,
+{
+    if carrier.path_a == certificate.path_a
         && carrier.path_b == certificate.path_b
         && carrier.overlap.left == certificate.overlap.left
         && carrier.overlap.right == certificate.overlap.right
         && carrier.overlap.kind == certificate.overlap.kind
         && carrier.overlap.unifier == certificate.overlap.unifier
         && carrier.overlap.seam == certificate.overlap.seam
-        && carrier.overlap.right_renamed() == certificate.overlap.right_renamed();
-    Ok(if skeleton && join == certificate.joins_at {
-        Rebuilt::Same
+        && carrier.overlap.right_renamed() == certificate.overlap.right_renamed()
+    {
+        Closure::Closes
     }
     else {
-        Rebuilt::Forged
-    })
+        Closure::Open
+    }
+}
+
+/// The identity between `left` and `right` in a reduction over the template
+/// with `carrier`: it closes only between one composite, and a member equals
+/// an instance when its skeleton is the carrier's and its peak and its join
+/// are the instance's.
+///
+/// # Specification
+/// trivial.
+fn alike<A>(
+    carrier: &Tracelet<A>,
+    left: &Folded<'_, A>,
+    right: &Folded<'_, A>,
+) -> Closure
+where
+    A: CellAlphabet,
+{
+    match (left, right) {
+        (&Folded::Member(member), &Folded::Instance { ref peak, ref join })
+        | (&Folded::Instance { ref peak, ref join }, &Folded::Member(member))
+            if member.overlap.peak == *peak && member.joins_at == *join =>
+        {
+            same_skeleton(carrier, member)
+        },
+        (&Folded::Member(_), &Folded::Instance { .. })
+        | (&Folded::Instance { .. }, &Folded::Member(_)) => Closure::Open,
+        _ if left == right => Closure::Closes,
+        _ => Closure::Open,
+    }
 }
 
 /// A family of guarded templates folded into one template of templates: a
@@ -762,7 +824,9 @@ impl<'family, A: CellAlphabet> Reduction for TemplateFold<'family, A>
         let part = composite.part();
         match *composite.value() {
             Folded::Nested { ref inner, .. } => Ok(Summand::new(part, Folded::Row(inner.clone()))),
-            Folded::Member(_) | Folded::Row(_) => Err(refused_in(part, FoldFault::NotNested)),
+            Folded::Member(_) | Folded::Instance { .. } | Folded::Row(_) => {
+                Err(refused_in(part, FoldFault::NotNested))
+            },
         }
     }
 
@@ -780,7 +844,9 @@ impl<'family, A: CellAlphabet> Reduction for TemplateFold<'family, A>
         let part = composite.part();
         match *composite.value() {
             Folded::Row(_) => Ok(Some(Summand::new(part, Identity))),
-            Folded::Member(_) | Folded::Nested { .. } => Err(refused_in(part, FoldFault::NotARow)),
+            Folded::Member(_) | Folded::Instance { .. } | Folded::Nested { .. } => {
+                Err(refused_in(part, FoldFault::NotARow))
+            },
         }
     }
 
@@ -797,7 +863,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateFold<'family, A>
     {
         match *composite.value() {
             Folded::Nested { .. } => Ok(None),
-            Folded::Member(_) | Folded::Row(_) => {
+            Folded::Member(_) | Folded::Instance { .. } | Folded::Row(_) => {
                 Err(refused_in(composite.part(), FoldFault::NotNested))
             },
         }

@@ -295,6 +295,40 @@ impl<A: CellAlphabet> Tracelet<A>
         )
     }
 
+    /// This certificate with other ends: its overlap at `peak`, its paths
+    /// copied, and `join` in place of its join.
+    ///
+    /// # Specification
+    /// - ensures: a certificate whose peak is `peak` and whose join is `join`,
+    ///   and whose every other part equals this one's.
+    /// - panics: none.
+    /// - intension: one copy of each part but the two ends, which are moved in.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fused certificate given another peak and join, and
+    ///   its own two ends. A lost path or a lost part of the overlap changes
+    ///   the comparison with a copy. The executable clause compares the overlap
+    ///   and the join, and the lengths of the paths.
+    /// - witness: `tracelet::tests::a_certificate_with_other_ends_keeps_every_other_part`
+    #[inline]
+    #[must_use]
+    #[spec(captures: [expected_overlap = self.overlap.with_peak(peak.clone()), expected_join = join.clone()], ensures: |output|
+        output.overlap == expected_overlap && output.joins_at == expected_join
+            && output.path_a.len() == self.path_a.len() && output.path_b.len() == self.path_b.len())]
+    pub fn with_ends(
+        &self,
+        peak: A::Cmd,
+        join: A::Cmd,
+    ) -> Self
+    {
+        Self {
+            overlap: self.overlap.with_peak(peak),
+            path_a: self.path_a.clone(),
+            path_b: self.path_b.clone(),
+            joins_at: join,
+        }
+    }
+
     /// Replay the certificate and keep every step that fired.
     ///
     /// # Specification
@@ -982,6 +1016,30 @@ mod tests
         );
         assert_eq!(2_usize, tracelet.path_a.len(), "a two-step path");
         assert_eq!(1_usize, tracelet.path_b.len(), "a single fused step");
+    }
+
+    #[test]
+    fn a_certificate_with_other_ends_keeps_every_other_part()
+    {
+        let (_store, tracelet) = fused_fixture();
+        let other = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
+        );
+        let mut expected = tracelet.clone();
+        expected.overlap.peak = other.clone();
+        expected.joins_at = other.clone();
+        assert_eq!(
+            expected,
+            tracelet.with_ends(other.clone(), other),
+            "only the two ends change"
+        );
+        assert_eq!(
+            tracelet,
+            tracelet.with_ends(tracelet.overlap.peak.clone(), tracelet.joins_at.clone()),
+            "its own ends give it back"
+        );
     }
 
     #[test]

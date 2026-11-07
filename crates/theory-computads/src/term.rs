@@ -67,6 +67,7 @@ use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
+use gandr_theory_cell_complexes::binding;
 use gandr_theory_cell_complexes::command_subterm;
 use gandr_theory_cell_complexes::path_order;
 use gandr_theory_levitation::AbstractionDepth;
@@ -314,16 +315,14 @@ impl Scope
     /// # Adequacy
     /// - hypothesis: L3 — as [`conditioned_cell`].
     /// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
-    #[spec(ensures: |ret| ret.len() == instance.0.len())]
+    #[spec(ensures: |ret| ret.len() == instance.len())]
     fn renumber(
         &self,
-        instance: &Term,
+        instance: &[Head],
     ) -> Vec<Head>
     {
-        instance
-            .0
-            .iter()
-            .zip(instance.depths())
+        let mut open = OpenApplications::default();
+        Depths::new(instance, &mut open)
             .map(|(head, Count(depth))| {
                 let Head::Occ(binds, Count(between)) = *head
                 else {
@@ -840,7 +839,63 @@ impl Term
                 .collect(),
         )
     }
+
+    /// The term with a copy of each image that `image_of` gives in place of
+    /// its metavariable, once, a scoped one's image renumbered by its scope.
+    ///
+    /// # Specification
+    /// - ensures: each metavariable that `image_of` answers is replaced by a
+    ///   copy of its image, which is not visited again; every other node is
+    ///   kept. So the term keeps or grows its length, because an image holds
+    ///   one node or more.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a triangular map read through
+    ///   [`TermSubst::apply_once`] separates one pass from full application,
+    ///   and the images of a match put back in place rebuild the matched term.
+    /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
+    /// - witness: `term::tests::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[spec(ensures: |output| output.0.len() >= self.0.len())]
+    fn instantiate<'image, F>(
+        &self,
+        image_of: F,
+    ) -> Self
+    where
+        F: Fn(&Name) -> Maybe<TermRef<'image>, binding::Absent>,
+    {
+        let mut nodes = Vec::with_capacity(self.0.len());
+        for head in &self.0 {
+            let (var, scope) = match *head {
+                Head::Var(ref var) => (var, None),
+                Head::Scoped(ref var, ref scope) => (var, Some(scope)),
+                Head::Konst(_)
+                | Head::Ctor(..)
+                | Head::Op(..)
+                | Head::Results(_)
+                | Head::Inst(..)
+                | Head::Abs(_)
+                | Head::Occ(..)
+                | Head::Free(..) => {
+                    nodes.push(head.clone());
+                    continue;
+                },
+            };
+            match (image_of(var), scope) {
+                (Maybe::Present(image), None) => nodes.extend(image.0.iter().cloned()),
+                (Maybe::Present(image), Some(scope)) => nodes.extend(scope.renumber(image.0)),
+                (Maybe::Absent(_), _) => nodes.push(head.clone()),
+            }
+        }
+        Self(nodes)
+    }
 }
+
+/// A subterm read in place: the run of a prefix table that one subterm
+/// occupies.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TermRef<'term>(&'term [Head]);
 
 /// A position: a path of child indices from the root.
 #[repr(transparent)]
@@ -894,13 +949,66 @@ impl TermSubst
         term: &Term,
     ) -> Term
     {
-        let mut nodes = Vec::with_capacity(term.0.len());
-        for head in &term.0 {
-            let bound = match *head {
-                Head::Var(ref var) => self.0.get(var).map(|image| (image, None)),
-                Head::Scoped(ref var, ref scope) => {
-                    self.0.get(var).map(|image| (image, Some(scope)))
-                },
+        term.instantiate(|var| self.image(var))
+    }
+
+    /// The image bound to `var`, read in place.
+    ///
+    /// # Specification
+    /// - provides: [`binding::Absent::Unbound`] when `var` is unbound.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bound and an unbound name are read; an image of
+    ///   another name changes the read.
+    /// - witness: `term::tests::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[spec(ensures: |output| match output {
+        Maybe::Present(image) => self.0.get(var).is_some_and(|bound| bound.0.as_slice() == image.0),
+        Maybe::Absent(_) => !self.0.contains_key(var),
+    })]
+    fn image(
+        &self,
+        var: &Name,
+    ) -> Maybe<TermRef<'_>, binding::Absent>
+    {
+        self.0
+            .get(var)
+            .map_or(Maybe::Absent(binding::Absent::Unbound), |image| {
+                Maybe::Present(TermRef(&image.0))
+            })
+    }
+
+    /// The lockstep walk of a match: the bindings that make `pattern`
+    /// instantiate to `target` past those this substitution holds, read in
+    /// place, keyed by metavariable.
+    ///
+    /// # Specification
+    /// - ensures: each metavariable of `pattern` that this substitution leaves
+    ///   unbound, once, with the subterm of `target` at its place; a bound or a
+    ///   repeated metavariable meets an equal subterm, a scoped one a subterm
+    ///   that its scope admits, and every other node equals the target's.
+    /// - fails: `None` on a head clash, a conflicting binding, a subterm that a
+    ///   scope refuses or a target longer than the pattern reaches.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TermAlphabet`]'s `match_cmd`, whose commit and
+    ///   refusals read the walk.
+    /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
+    #[spec(ensures: |output| output.as_ref().is_none_or(|found| found.keys().all(|var| !self.0.contains_key(*var))))]
+    fn match_walk<'pattern, 'target>(
+        &self,
+        pattern: &'pattern Term,
+        target: &'target Term,
+    ) -> Option<BTreeMap<&'pattern Name, TermRef<'target>>>
+    {
+        let mut found: BTreeMap<&'pattern Name, TermRef<'target>> = BTreeMap::new();
+        let mut at = Count(0);
+        for head in &pattern.0 {
+            let target_head = target.0.get(at.0)?;
+            let (var, scope) = match *head {
+                Head::Var(ref var) => (var, None),
+                Head::Scoped(ref var, ref scope) => (var, Some(scope)),
                 Head::Konst(_)
                 | Head::Ctor(..)
                 | Head::Op(..)
@@ -908,15 +1016,35 @@ impl TermSubst
                 | Head::Inst(..)
                 | Head::Abs(_)
                 | Head::Occ(..)
-                | Head::Free(..) => None,
+                | Head::Free(..) => {
+                    if head != target_head {
+                        return None;
+                    }
+                    at = at.next();
+                    continue;
+                },
+            };
+            let end = target.end_of(at);
+            let image = TermRef(target.0.get(at.0 .. end.0)?);
+            if scope.is_some_and(|scope| {
+                !bool::from(scope.admits(image.0, &mut OpenApplications::default()))
+            }) {
+                return None;
+            }
+            let bound = match self.image(var) {
+                Maybe::Present(bound) => Some(bound),
+                Maybe::Absent(_) => found.get(var).copied(),
             };
             match bound {
-                Some((image, None)) => nodes.extend(image.0.iter().cloned()),
-                Some((image, Some(scope))) => nodes.extend(scope.renumber(image)),
-                None => nodes.push(head.clone()),
+                Some(bound) if bound != image => return None,
+                Some(_) => {},
+                None => {
+                    found.insert(var, image);
+                },
             }
+            at = end;
         }
-        Term(nodes)
+        (at == Count(target.0.len())).then_some(found)
     }
 
     /// The term with the substitution applied to its fixpoint.
@@ -1458,6 +1586,7 @@ impl CellAlphabet for TermAlphabet
 {
     type Cmd = Term;
     type Hole = Name;
+    type Image<'term> = TermRef<'term>;
     type Meta = TermMeta;
     type Orientation = TermOrient;
     type Pos = TermPos;
@@ -1486,7 +1615,7 @@ impl CellAlphabet for TermAlphabet
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body clones `subst` into its staging map and compares each bound image it meets"
+            reason = "parity: the body reads each bound image it meets, and the check reads `subst` once to instantiate the pattern"
         )
     )]
     #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_once(pattern) == *target } else { *subst == before })]
@@ -1496,47 +1625,13 @@ impl CellAlphabet for TermAlphabet
         subst: &mut Self::Subst,
     ) -> SubstitutionDecision
     {
-        let mut found = subst.clone();
-        let mut at = Count(0);
-        for head in &pattern.0 {
-            let Some(target_head) = target.0.get(at.0)
-            else {
-                return SubstitutionDecision::from(false);
-            };
-            let variable = match *head {
-                Head::Var(ref var) => Some((var, None)),
-                Head::Scoped(ref var, ref scope) => Some((var, Some(scope))),
-                Head::Konst(_)
-                | Head::Ctor(..)
-                | Head::Op(..)
-                | Head::Results(_)
-                | Head::Inst(..)
-                | Head::Abs(_)
-                | Head::Occ(..)
-                | Head::Free(..) => None,
-            };
-            if let Some((var, scope)) = variable {
-                let end = target.end_of(at);
-                let image = target.slice(at, end);
-                if scope.is_some_and(|scope| {
-                    !bool::from(scope.admits(&image.0, &mut OpenApplications::default()))
-                }) || found.0.get(var).is_some_and(|bound| *bound != image)
-                {
-                    return SubstitutionDecision::from(false);
-                }
-                found.0.insert(var.clone(), image);
-                at = end;
-                continue;
-            }
-            if head != target_head {
-                return SubstitutionDecision::from(false);
-            }
-            at = at.next();
-        }
-        if at != Count(target.0.len()) {
+        let Some(found) = subst.match_walk(pattern, target)
+        else {
             return SubstitutionDecision::from(false);
+        };
+        for (var, image) in found {
+            subst.0.insert(var.clone(), Term(image.0.to_vec()));
         }
-        *subst = found;
         SubstitutionDecision::from(true)
     }
 
@@ -1721,6 +1816,80 @@ impl CellAlphabet for TermAlphabet
                 .map(|(var, image)| (var.clone(), image.clone()))
                 .collect(),
         )
+    }
+
+    /// The image bound to `var`, read in place.
+    ///
+    /// # Specification
+    /// - ensures: as [`TermSubst::image`].
+    /// - provides: as [`TermSubst::image`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TermSubst::image`], through the trait.
+    /// - witness: `term::tests::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[inline]
+    #[spec(ensures: |output| output == subst.image(var))]
+    fn image<'subst>(
+        subst: &'subst Self::Subst,
+        var: &Self::Var,
+    ) -> Maybe<Self::Image<'subst>, binding::Absent>
+    {
+        subst.image(var)
+    }
+
+    /// Matching by the lockstep walk, and no copy.
+    ///
+    /// # Specification
+    /// - ensures: as the trait states: positive exactly when the copying match
+    ///   from an empty substitution is positive, and then each metavariable of
+    ///   `pattern` visited once, with the subterm of `target` at its place.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TermSubst::match_walk`], read from an empty
+    ///   substitution.
+    /// - witness: `term::tests::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[inline]
+    #[spec(ensures: |output| bool::from(output) == TermSubst::default().match_walk(pattern, target).is_some())]
+    fn match_images<'pattern, 'target, F>(
+        pattern: &'pattern Self::Cmd,
+        target: &'target Self::Cmd,
+        mut visit: F,
+    ) -> SubstitutionDecision
+    where
+        Self::Var: 'pattern,
+        F: FnMut(&'pattern Self::Var, Self::Image<'target>),
+    {
+        let Some(found) = TermSubst::default().match_walk(pattern, target)
+        else {
+            return SubstitutionDecision::from(false);
+        };
+        for (var, image) in found {
+            visit(var, image);
+        }
+        SubstitutionDecision::from(true)
+    }
+
+    /// The images that `image_of` gives, put in place once.
+    ///
+    /// # Specification
+    /// - ensures: as [`Term::instantiate`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Term::instantiate`], through the trait.
+    /// - witness: `term::tests::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[inline]
+    #[spec(ensures: |output| cmd.vars().next().is_some() || output == *cmd)]
+    fn apply_images<'image, F>(
+        cmd: &Self::Cmd,
+        image_of: F,
+    ) -> Self::Cmd
+    where
+        F: Fn(&Self::Var) -> Maybe<Self::Image<'image>, binding::Absent>,
+    {
+        cmd.instantiate(image_of)
     }
 
     /// The term's metavariables, left to right with repeats.

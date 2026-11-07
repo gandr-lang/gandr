@@ -79,6 +79,7 @@ pub use crate::toy::ToyMeta;
 pub use crate::toy::ToyOrient;
 pub use crate::toy::ToyPos;
 pub use crate::toy::ToyProv;
+pub use crate::toy::ToyRef;
 pub use crate::toy::ToySubst;
 pub use crate::toy::ToyVar;
 pub use crate::toy::toy_cell;
