@@ -155,3 +155,18 @@ fn every_refusing_source_renders_as_its_golden()
          {orphans:?}"
     );
 }
+
+#[test]
+fn cyclic_circuit_wiring_names_its_port_5805()
+{
+    let refusals = rendered(&repository());
+    let rendered = refusals
+        .get(Path::new(
+            "pathological/circuit/circuit-cyclic-wiring.gandr",
+        ))
+        .expect("the cyclic circuit fixture is refused");
+    assert!(
+        rendered.contains("port `z`"),
+        "the cyclic circuit refusal names its port: {rendered}"
+    );
+}

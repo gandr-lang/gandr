@@ -175,7 +175,7 @@ fn one_port_of_a_many_out_frame_is_refused_by_the_derivation()
     assert!(
         report.diagnostics.iter().any(|diagnostic| matches!(
             diagnostic.fault,
-            DescriptionFault::Signature(SignatureFault::Derivation(_))
+            DescriptionFault::Signature(SignatureFault::Derivation { .. })
         )),
         "{:?}",
         report.diagnostics
@@ -1262,9 +1262,10 @@ fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
     };
     assert!(matches!(
         diagnostic.fault,
-        DescriptionFault::Signature(SignatureFault::Derivation(
-            gandr_theory_levitation::CircuitDerivationError::CyclicWiring(_)
-        ))
+        DescriptionFault::Signature(SignatureFault::Derivation {
+            error: gandr_theory_levitation::CircuitDerivationError::CyclicWiring(_),
+            ..
+        })
     ));
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
 }
@@ -1293,9 +1294,10 @@ fn a_doubling_body_declines_on_the_derivation_node_budget()
     let report = described(source.as_str());
     assert!(report.diagnostics.iter().any(|diagnostic| matches!(
         diagnostic.fault,
-        DescriptionFault::Signature(SignatureFault::Derivation(
-            gandr_theory_levitation::CircuitDerivationError::NodeBudget { .. }
-        ))
+        DescriptionFault::Signature(SignatureFault::Derivation {
+            error: gandr_theory_levitation::CircuitDerivationError::NodeBudget { .. },
+            ..
+        })
     )));
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
 }
@@ -3457,9 +3459,10 @@ fn an_unmarked_merge_keeps_the_boundary_reading_5763()
     };
     assert_eq!(
         diagnostic.fault,
-        DescriptionFault::Signature(SignatureFault::Derivation(
-            gandr_theory_levitation::CircuitDerivationError::SharedPort("z".into())
-        ))
+        DescriptionFault::Signature(SignatureFault::Derivation {
+            rule: Name::from("merge"),
+            error: gandr_theory_levitation::CircuitDerivationError::SharedPort("z".into()),
+        })
     );
     assert!(
         SourceText::from(source)

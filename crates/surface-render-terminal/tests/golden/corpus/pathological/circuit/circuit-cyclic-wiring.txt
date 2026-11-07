@@ -1,11 +1,11 @@
-error[MalformedForm]: a keyword or symbol of this def value is out of place
+error[MalformedForm]: the wiring of the rule `spin` reaches the port `z` from itself
    ╭▸ corpus/pathological/circuit/circuit-cyclic-wiring.gandr:7:3
    │
  7 │ ┏   rule spin : (data x : Nat) ==> (z : Nat) {
  8 │ ┃     node : f(w) --> (z);
  9 │ ┃     node : g(z) --> (w);
 10 │ ┃   };
-   │ ┗━━━┛ out of place
+   │ ┗━━━┛ what the description check refuses
    │
    ├ note: `Loop` is refused with MalformedForm, as its expectation states
-   ╰ help: move the keyword or symbol to its place in the def value
+   ╰ help: wire the rule so that no port reaches itself

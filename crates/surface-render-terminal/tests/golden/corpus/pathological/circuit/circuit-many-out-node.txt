@@ -1,10 +1,10 @@
-error[MalformedForm]: a keyword or symbol of this def value is out of place
+error[MalformedForm]: the wiring of the rule `split` reads the port `z`, one output of a many-out node, on its own
   ╭▸ corpus/pathological/circuit/circuit-many-out-node.gandr:6:3
   │
 6 │ ┏   rule split : (data x : Nat) ==> (z : Nat) {
 7 │ ┃     node : tee(x) --> (z, w);
 8 │ ┃   };
-  │ ┗━━━┛ out of place
+  │ ┗━━━┛ what the description check refuses
   │
   ├ note: `Wide` is refused with MalformedForm, as its expectation states
-  ╰ help: move the keyword or symbol to its place in the def value
+  ╰ help: read all the outputs of the many-out node together
