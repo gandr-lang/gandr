@@ -37,6 +37,19 @@ def secured_stated : Config[
 /// `tls` convert with the values that the bracket fixes.
 def secured_local : Config[.port = 443, .tls = true] = local;
 
+/// The host a configuration fixes to a name.
+def home : String = "localhost";
+
+/// The port of a configuration whose host is the name `home`.
+def home_port(c : Config[.host = home]) -> Integer { c.port }
+
+/// The coercion gives `local` the host `home`. The kernel reads the name
+/// `home` as its value when it replays the coercion.
+///
+/// - see: #5683
+@[ runs("443") ]
+def local_port : Integer = home_port (local);
+
 /// The same configuration by its face.
 def faced : Config[secure ↦ *{.port = 443, .tls = true}] = *{.host = "localhost"};
 
