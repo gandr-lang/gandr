@@ -7889,9 +7889,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
-            Former::Name | Former::Constructor if headed => self.type_head(site),
+            Former::Name | Former::Constructor if headed => self.type_head(site, cursor),
             Former::Name => self.name(site),
-            Former::Constructor => self.constructor(site),
+            Former::Constructor => self.constructor(site, Some(cursor)),
             Former::Hole if site.name == FormName::SPLICE => self.splice(site, cursor),
             Former::Hole => {
                 // A wildcard stands for a value the equations force; where a
@@ -7957,7 +7957,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::LazyRecord => self.copattern(site, cursor),
             Former::Binary | Former::Unary => self.operator(site, pieces),
             Former::Projection => self.projection(site, pieces),
-            Former::TypeHead => self.type_head(site),
+            Former::TypeHead => self.type_head(site, cursor),
             Former::TypePath => self.type_path(site, pieces),
             Former::Universe => self.universe(site, cursor),
             Former::TypeApplication => self.type_application(site, cursor),
@@ -9769,6 +9769,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn constructor(
         &mut self,
         site: Site,
+        mut cursor: Option<Cursor<'_>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
@@ -9811,7 +9812,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let quoted = match self.atom(name) {
             Maybe::Present(atom) => Plan::Atom(atom),
             Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
-                Plan::Universe(Universe::FUSS_FREE)
+                Plan::Universe(match cursor.as_mut() {
+                    Some(cursor) => self.universe_of(site, cursor)?,
+                    None => Universe::FUSS_FREE,
+                })
             },
             Maybe::Absent(_) => {
                 if self.module_value(site, name)? == Maybe::Present(()) {
@@ -14605,6 +14609,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn type_head(
         &mut self,
         site: Site,
+        mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
@@ -14637,7 +14642,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let plan = match self.atom(name) {
             Maybe::Present(atom) => Plan::Atom(atom),
             Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
-                Plan::Universe(Universe::FUSS_FREE)
+                Plan::Universe(self.universe_of(site, &mut cursor)?)
             },
             Maybe::Absent(_) => {
                 return Err(LoweringRefusal::UnresolvedTypeHead {
