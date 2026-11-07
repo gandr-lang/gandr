@@ -4,10 +4,11 @@
 //! stays. A redundant cell is a face of its partner, one dimension up. A
 //! collapsible cell is the partner of a redundant cell, one dimension down.
 //! The scheme is a matching when each partner names its cell back, and the
-//! incidence of each redundant cell in its partner's boundary is one or minus
-//! one. The matching is acyclic when no gradient path returns to its start. A
-//! gradient path runs from a redundant cell up to its partner, and then down
-//! to another redundant face of that partner.
+//! complex admits each pair: by default, the incidence of each redundant cell
+//! in its partner's boundary is one or minus one. The matching is acyclic when
+//! no gradient path returns to its start. A gradient path runs from a
+//! redundant cell up to its partner, and then down to another redundant face
+//! of that partner.
 //!
 //! A bar complex has more cells than a caller can list, so [`collapse`] checks
 //! a scheme on the cells the caller gives. The walk of the gradient follows
@@ -103,8 +104,9 @@ pub struct Faults
     pub unpaired: Count,
     /// The partners that do not lie in the complex.
     pub outside: Count,
-    /// The redundant cells whose incidence in their partner's boundary is not
-    /// one or minus one.
+    /// The redundant cells that cannot pair with their partner: the
+    /// complex's [`Complex::pairing`] refuses them. By default, their
+    /// incidence in the partner's boundary is not one or minus one.
     pub uninvertible: Count,
     /// The edges of the gradient that close a cycle.
     pub cycles: Count,
@@ -119,8 +121,9 @@ pub struct Collapse<Cell>
     critical: Vec<Cell>,
     /// What the check finds wrong.
     faults: Faults,
-    /// The redundant cells that the walk reaches.
-    visited: Count,
+    /// The pairs that the walk reaches: each redundant cell with its partner,
+    /// the given cells first and then each one past them.
+    pairs: Vec<(Cell, Cell)>,
 }
 
 impl<Cell> Collapse<Cell>
@@ -148,16 +151,39 @@ impl<Cell> Collapse<Cell>
         self.faults
     }
 
-    /// The redundant cells that the walk reaches: the given ones, and each
-    /// redundant face of a partner past them.
+    /// The number of redundant cells that the walk reaches: the given ones,
+    /// and each redundant face of a partner past them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn visited(&self) -> Count
+    pub fn visited(&self) -> Count
     {
-        self.visited
+        Count(self.pairs.len())
+    }
+
+    /// The pairs that the walk reaches: each redundant cell with its partner,
+    /// the given cells first and then each one past them, each once.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pairs(&self) -> &[(Cell, Cell)]
+    {
+        &self.pairs
+    }
+
+    /// The critical cells and the pairs, moved out of the check.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<Cell>, Vec<(Cell, Cell)>)
+    {
+        (self.critical, self.pairs)
     }
 }
 
@@ -167,11 +193,11 @@ impl<Cell> Collapse<Cell>
 /// The check reads the class of each given cell. A collapsible cell's partner
 /// must lie in the complex and name the cell back. Then the walk starts at
 /// each redundant cell. Its partner must lie in the complex and name it back,
-/// and its incidence in the partner's boundary must be one or minus one. The
-/// walk goes on to each other redundant face of the partner, also past the
-/// given cells. The gradient graph has an edge from each redundant cell to
-/// each redundant face it goes on to, and the check counts the edges that
-/// close a cycle.
+/// and the complex's [`Complex::pairing`] must admit the pair: by default, an
+/// incidence of one or minus one. The walk goes on to each other redundant
+/// face of the partner, also past the given cells. The gradient graph has an
+/// edge from each redundant cell to each redundant face it goes on to, and
+/// the check counts the edges that close a cycle.
 ///
 /// # Specification
 /// - requires: each given cell lies in the complex.
@@ -179,8 +205,8 @@ impl<Cell> Collapse<Cell>
 ///   critical, in the given order. Each count of the faults counts the cells or
 ///   edges that its field names. The walk reaches at most `budget` redundant
 ///   cells.
-/// - provides: the critical cells, the faults and the number of redundant cells
-///   the walk reaches.
+/// - provides: the critical cells, the faults, and the pairs that the walk
+///   reaches.
 /// - fails: the scheme's own fault stops the check and comes back as
 ///   [`MorseError::Complex`]. A walk that reaches more than `budget` redundant
 ///   cells stops at once with [`MorseError::PastBudget`].
@@ -199,9 +225,10 @@ impl<Cell> Collapse<Cell>
 /// - hypothesis: L3 — a triangle's matching onto one vertex keeps that vertex
 ///   critical with no fault. Four broken schemes each raise their own count by
 ///   one: a partner that names another cell, a partner outside the complex, an
-///   incidence of two, and two pairs whose gradient turns back. A budget one
-///   short of the walk refuses it, and the exact budget does not. A failing
-///   scheme gives its fault back.
+///   incidence of two, and two pairs whose gradient turns back. A pair that the
+///   complex refuses under a context raises its count at the incidence one. A
+///   budget one short of the walk refuses it, and the exact budget does not. A
+///   failing scheme gives its fault back.
 /// - witness: `tests::collapse::the_matching_of_a_triangle_collapses_onto_one_vertex`
 /// - witness: `tests::collapse::a_partner_that_names_another_cell_is_unpaired`
 /// - witness: `tests::collapse::a_partner_outside_the_complex_is_counted`
@@ -209,7 +236,8 @@ impl<Cell> Collapse<Cell>
 /// - witness: `tests::collapse::a_scheme_whose_gradient_turns_back_closes_a_cycle`
 /// - witness: `tests::collapse::a_walk_past_its_budget_is_refused`
 /// - witness: `tests::collapse::a_fault_of_the_scheme_is_given_back_as_its_own`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |done| done.visited.0 <= usize::from(budget)))]
+/// - witness: `tests::equivalence::a_pair_under_a_context_is_refused_at_the_incidence_one`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |done| done.pairs.len() <= usize::from(budget)))]
 #[inline]
 pub fn collapse<'cells, Cells, S>(
     scheme: &mut S,
@@ -292,7 +320,7 @@ where
                 Class::Critical | Class::Collapsible(_) => {},
             }
         }
-        if incidence.invertibility() == Invertibility::NotInvertible {
+        if scheme.pairing(cell, partner, incidence)? == Invertibility::NotInvertible {
             faults.uninvertible = faults.uninvertible.one_more();
         }
         while let Some((face, beyond)) = fresh.pop() {
@@ -311,6 +339,6 @@ where
     Ok(Collapse {
         critical,
         faults,
-        visited: Count(redundant.len()),
+        pairs: redundant,
     })
 }

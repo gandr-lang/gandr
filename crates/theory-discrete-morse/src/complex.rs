@@ -168,4 +168,43 @@ pub trait Complex
         cell: &Self::Cell,
         faces: &mut Vec<(Self::Cell, Incidence)>,
     ) -> Result<(), Self::Fault>;
+
+    /// Whether `face` can pair with `cell`, where `incidence` is the
+    /// incidence of `face` in the boundary of `cell`.
+    ///
+    /// A pair removes the face, and the cell defines it from its other faces.
+    /// Over the integers, a unit incidence is enough. A complex whose cells
+    /// compose in context asks more: the face occurs once, with no context. An
+    /// occurrence under a context has the incidence one and defines nothing.
+    ///
+    /// # Specification
+    /// - requires: `face` is a face of `cell`.
+    /// - ensures: the default answers [`Incidence::invertibility`] of
+    ///   `incidence`. A complex that states its own condition answers
+    ///   [`Invertibility::NotInvertible`] for each pair outside it.
+    /// - fails: with the caller's fault, when the complex cannot decide.
+    /// - panics: none.
+    /// - executable: none — an implementation replaces the condition; the
+    ///   default is one call of [`Incidence::invertibility`].
+    ///
+    /// # Errors
+    /// - [`Complex::Fault`]: the complex cannot decide.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an incidence of two pairs no cells under the default.
+    ///   A complex that refuses an occurrence under a context refuses its pair,
+    ///   although the incidence is one.
+    /// - witness: `tests::collapse::an_incidence_of_two_pairs_no_cells`
+    /// - witness: `tests::equivalence::a_pair_under_a_context_is_refused_at_the_incidence_one`
+    #[inline]
+    fn pairing(
+        &mut self,
+        face: &Self::Cell,
+        cell: &Self::Cell,
+        incidence: Incidence,
+    ) -> Result<Invertibility, Self::Fault>
+    {
+        let _ = (face, cell);
+        Ok(incidence.invertibility())
+    }
 }
