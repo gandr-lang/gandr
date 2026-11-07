@@ -3,7 +3,7 @@ name = "gandr-theory-ordered-algebras"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "One law checker for the ordered semirings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics, and the usage semiring of the core language's grades"
+description = "One law checker for the ordered semirings and commutative rings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics, the usage semiring of the core language's grades, and the exact Clifford+T amplitudes with their gates"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -11,12 +11,21 @@ keywords = ["gandr", "no-std", "ordered-semiring", "quantale"]
 categories = ["mathematics", "no-std"]
 publish.workspace = true
 autotests = false
+autobenches = false
 
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
 name = "tests"
 path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench that times the sum and the
+# product of random amplitudes and a circuit of 2^8 gates on 2^4 qubits, with
+# percentiles and allocations.
+[[bench]]
+harness = false
+name = "amplitudes"
+path = "benches/amplitudes.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. The exact-reals crate supplies the dyadics the
@@ -25,9 +34,12 @@ path = "tests/lib.rs"
 anodized.workspace = true
 gandr-theory-exact-reals.workspace = true
 
-# The suite builds dyadic halves from a big-integer mantissa.
+# The suite builds dyadic halves from a big-integer mantissa and generates
+# amplitudes and circuits; the bench counts allocations.
 [dev-dependencies]
+allocation-counter.workspace = true
 num-bigint.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

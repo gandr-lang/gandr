@@ -1,10 +1,131 @@
-// `std.quantum`: the home of the qubit type. `Qubit` is one quantum bit, and it
-// carries no comonoid: no binder copies or discards a qubit. Only a linear
-// function's parameter holds one, so a gate is a linear function from `Qubit`
-// to `Qubit`.
+// `std.quantum`: the home of the qubit type and of the exact amplitudes of
+// Clifford+T circuits. `Qubit` is one quantum bit, and it carries no
+// comonoid: no binder copies or discards a qubit. Only a linear function's
+// parameter holds one, so a gate is a linear function from `Qubit` to
+// `Qubit`.
 //
 // A source names the type in its import list, `import std.quantum (Qubit);`.
 // The atom is native, so no declaration here states it. The lowering answers
 // it only in a source that imports it from this module.
 //
+// An amplitude of a Clifford+T circuit lies in the ring `ℤ[1/√2, i]`, so it
+// stays exact. `Amp a b c d k` is `(a + b√2 + (c + d√2)i) / 2^k`, and
+// `amplitude` gives it at its least `k`, so equal amplitudes have equal
+// forms. The scale counts in unary, so each reduction recurses on it.
+// `gandr-theory-ordered-algebras` holds the same ring, with its laws checked
+// and the gates' matrices proved unitary.
+//
 // - see: #5739
+// - see: #5740
+
+/// The exponent `k` of an amplitude's denominator `2^k`, as a unary number.
+pub data Scale : Type where
+  /// The scale zero: no denominator.
+  | Whole : Scale
+  /// The scale one above `k`.
+  | Halved : (k : Scale) --> Scale
+
+/// An amplitude of a Clifford+T circuit, `(a + b√2 + (c + d√2)i) / 2^k`.
+pub data Amplitude : Type where
+  /// The amplitude `(a + b√2 + (c + d√2)i) / 2^k`.
+  | Amp : (a : Integer, b : Integer, c : Integer, d : Integer, k : Scale) --> Amplitude
+
+/// The sum of two scales.
+def rec plusScale(j : Scale, k : Scale) -> Scale =
+  match k where
+    | Whole => j
+    | Halved(m) => Halved (plusScale[<] j m)
+
+/// `n · 2^k`.
+def rec lift(n : Integer, k : Scale) -> Integer =
+  match k where
+    | Whole => n
+    | Halved(m) => 2 * lift[<] n m
+
+/// Whether `n` is even.
+def even(n : Integer) -> Bool { int.mod n 2 == 0 }
+
+/// Whether all four integers are even.
+def allEven(a : Integer, b : Integer, c : Integer, d : Integer) -> Bool =
+  match even a where
+    | false => false
+    | true => match even b where
+      | false => false
+      | true => match even c where
+        | false => false
+        | true => even d
+
+/// The amplitude `(a + b√2 + (c + d√2)i) / 2^k` at its least scale: while
+/// the scale is positive and all four integers are even, each halving takes
+/// one from the scale.
+pub def rec amplitude(a : Integer, b : Integer, c : Integer, d : Integer, k : Scale) -> Amplitude =
+  match k where
+    | Whole => Amp a b c d Whole
+    | Halved(m) => match allEven a b c d where
+      | true => amplitude[<] (int.div a 2) (int.div b 2) (int.div c 2) (int.div d 2) m
+      | false => Amp a b c d k
+
+/// Zero.
+pub def zero : Amplitude = Amp 0 0 0 0 Whole;
+
+/// One.
+pub def one : Amplitude = Amp 1 0 0 0 Whole;
+
+/// `i`, the square root of minus one.
+pub def imaginary : Amplitude = Amp 0 0 1 0 Whole;
+
+/// `1/√2 = √2/2`, the entry of the Hadamard gate.
+pub def sqrtHalf : Amplitude = Amp 0 1 0 0 (Halved Whole);
+
+/// `ω = e^{iπ/4} = (√2 + √2 i)/2`, the phase of the gate `T`.
+pub def omega : Amplitude = Amp 0 1 0 1 (Halved Whole);
+
+/// The exact sum: both amplitudes at the sum of their scales, then one
+/// reduction.
+pub def plus(x : Amplitude, y : Amplitude) -> Amplitude =
+  match x where
+    | Amp(a, b, c, d, j) => match y where
+      | Amp(e, f, g, h, k) => amplitude (lift a k + lift e j) (lift b k + lift f j) (lift c k + lift g j) (lift d k + lift h j) (plusScale j k)
+
+/// The exact product: sixteen products of coefficients at the sum of the
+/// two scales, then one reduction.
+pub def times(x : Amplitude, y : Amplitude) -> Amplitude =
+  match x where
+    | Amp(a, b, c, d, j) => match y where
+      | Amp(e, f, g, h, k) => amplitude (a * e + 2 * b * f - c * g - 2 * d * h) (a * f + b * e - c * h - d * g) (a * g + 2 * b * h + c * e + 2 * d * f) (a * h + b * g + c * f + d * e) (plusScale j k)
+
+/// The negation.
+pub def negate(x : Amplitude) -> Amplitude =
+  match x where
+    | Amp(a, b, c, d, k) => Amp (0 - a) (0 - b) (0 - c) (0 - d) k
+
+/// The complex conjugate, `(a + b√2 − (c + d√2)i) / 2^k`.
+pub def conjugate(x : Amplitude) -> Amplitude =
+  match x where
+    | Amp(a, b, c, d, k) => Amp a b (0 - c) (0 - d) k
+
+/// The squared modulus `x · x̄`, an amplitude with no imaginary part.
+pub def norm(x : Amplitude) -> Amplitude { times x (conjugate x) }
+
+/// The state of one qubit: the amplitudes of `|0⟩` and of `|1⟩`.
+pub data Ket : Type where
+  /// The state `x|0⟩ + y|1⟩`.
+  | Ket : (x : Amplitude, y : Amplitude) --> Ket
+
+/// The state `|0⟩`.
+pub def ground : Ket = Ket one zero;
+
+/// The Hadamard gate `H`: `x|0⟩ + y|1⟩` goes to `((x + y)|0⟩ + (x − y)|1⟩)/√2`.
+pub def hadamard(s : Ket) -> Ket =
+  match s where
+    | Ket(x, y) => Ket (times sqrtHalf (plus x y)) (times sqrtHalf (plus x (negate y)))
+
+/// The phase gate `S`: the amplitude of `|1⟩` turns by `i`.
+pub def phase(s : Ket) -> Ket =
+  match s where
+    | Ket(x, y) => Ket x (times imaginary y)
+
+/// The gate `T`, an eighth of a turn: the amplitude of `|1⟩` turns by `ω`.
+pub def eighth(s : Ket) -> Ket =
+  match s where
+    | Ket(x, y) => Ket x (times omega y)
