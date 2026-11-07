@@ -19,7 +19,7 @@ source "$here/stack.bash"
 cases=$here/cut.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-cut.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-export XDG_RUNTIME_DIR=$work
+export GANDR_HOST_LOCK_DIR=$work
 repo=case/case
 trunk=main
 failed=0
