@@ -1,13 +1,15 @@
-//! The inert fields of a model. A theory's operation marked `@[ inert ]` is a
-//! field the manifest step reads, a package's name or version: a model's
-//! component for it is inert, and only another inert component reads it. A
-//! content key names what an item references, not what that holds, so an
-//! edit to an inert value moves no other item's key exactly when nothing else
-//! reads it (#533 § p2); the package address then leaves the inert components
-//! out.
+//! Inert declarations. A theory's operation marked `@[ inert ]` is a field
+//! the manifest step reads, a package's name or version: a model's component
+//! for it is inert. A definition marked `@[ inert ]` is inert too, so a map
+//! or a render over inert fields has a declaration to live in. Only another
+//! inert declaration reads an inert one. A content key names what an item
+//! references, not what that holds, so an edit to an inert value moves no
+//! other item's key exactly when nothing else reads it (#533 § p2); the
+//! package address then leaves the inert declarations out.
 //!
 //! # Witnesses
 //! - `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+//! - `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
@@ -24,28 +26,40 @@ use crate::module::SlotIndex;
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Whether `slot` is a model's inert component: a member declared in a
+    /// Whether the declaration at `slot` is inert: a definition marked
+    /// `@[ inert ]`, or a model's inert component, a member declared in a
     /// module ascribed `Model(T)` under the name of an operation `T` marks
     /// `@[ inert ]`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: affirmative exactly for a declared member of a module whose
-    ///   ascription derives a model signature with an inert component of the
-    ///   member's name.
+    /// - ensures: affirmative exactly for a marked definition, and for a
+    ///   declared member of a module whose ascription derives a model signature
+    ///   with an inert component of the member's name.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::inert_read`].
     /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
-    #[spec(ensures: |ret| ret == Inertness::Content || matches!(slot.role, Role::Declared))]
-    pub(super) fn inert_component(
+    /// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
+    #[spec(ensures: |ret| ret == Inertness::Content
+        || self.collected.inert.contains(&slot)
+        || self.collected.slots.get(usize::from(slot)).is_some_and(|entry| matches!(entry.role, Role::Declared)))]
+    pub(super) fn inertness(
         &self,
-        slot: &DeclarationSlot<'_>,
+        slot: SlotIndex,
     ) -> Inertness
     {
-        let (Role::Declared, Container::Module(module)) = (slot.role, slot.container)
+        if self.collected.inert.contains(&slot) {
+            return Inertness::Inert;
+        }
+        let Some(&DeclarationSlot {
+            role: Role::Declared,
+            container: Container::Module(module),
+            name,
+            ..
+        }) = self.collected.slots.get(usize::from(slot))
         else {
             return Inertness::Content;
         };
@@ -60,7 +74,7 @@ impl<'source> Lowerer<'_, 'source>
         let inert = matches!(
             self.collected.models.get(&model),
             Maybe::Present(signature) if signature.components.iter().any(|component| {
-                component.inert && component.name.as_ref() == slot.name.as_ref()
+                component.inert && component.name.as_ref() == name.as_ref()
             })
         );
         if inert {
@@ -71,18 +85,18 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Refuse the read, at `site`, of `reached` when it is an inert component
-    /// and the declaration `site` belongs to is none.
+    /// Refuse the read, at `site`, of `reached` when it is inert and the
+    /// declaration `site` belongs to is not.
     ///
     /// # Specification
     /// - requires: `site` is a name or a path read as a value, and `reached` is
     ///   what it resolved to: the slot it names, or the inert component a
     ///   selection off a model binder reads.
-    /// - ensures: nothing when the read component is not inert, or when the
-    ///   reading declaration is itself an inert component.
-    /// - provides: the one check every read of an inert field passes.
+    /// - ensures: nothing when the read declaration is not inert, or when the
+    ///   reading declaration is itself inert.
+    /// - provides: the one check every read of an inert declaration passes.
     /// - fails: [`LoweringRefusal::InertRead`] at `site`, naming the reading
-    ///   declaration and the inert component.
+    ///   declaration and the inert declaration.
     /// - panics: none.
     ///
     /// # Errors
@@ -92,8 +106,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a top-level declaration reading a package's name by
     ///   its path, a member of the model reading it by its name, a function
     ///   selecting it off a model binder, and a model's version read from
-    ///   another model's, each asserted as the exact refusal or reading.
+    ///   another model's, each asserted as the exact refusal or reading; an
+    ///   inert definition reading an inert field and another inert definition,
+    ///   and a content definition refused at its read of an inert definition.
     /// - witness: `tests::modules::models::an_inert_field_is_read_only_by_another_3029`
+    /// - witness: `tests::modules::models::an_inert_definition_is_read_only_by_an_inert_reader_6141`
     #[spec(ensures: |ret| match ret {
         | Err(LoweringRefusal::InertRead { span, reached: read, .. }) => span == site.at.span
             && match reached {
@@ -111,17 +128,17 @@ impl<'source> Lowerer<'_, 'source>
     {
         let read = match reached {
             Read::Slot(slot) => match self.collected.slots.get(usize::from(slot)) {
-                Some(entry) if self.inert_component(entry) == Inertness::Inert => entry.name,
+                Some(entry) if self.inertness(slot) == Inertness::Inert => entry.name,
                 Some(_) | None => return Ok(()),
             },
             Read::Selected(name) => name,
         };
-        let reader = match self.collected.owner_of(site.at.node) {
-            Maybe::Present(own) => self.collected.slots.get(usize::from(own)),
-            Maybe::Absent(_) => None,
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(());
         };
-        match reader {
-            Some(entry) if self.inert_component(entry) == Inertness::Content => {
+        match self.collected.slots.get(usize::from(own)) {
+            Some(entry) if self.inertness(own) == Inertness::Content => {
                 Err(LoweringRefusal::InertRead {
                     span: site.at.span,
                     member: entry.name,

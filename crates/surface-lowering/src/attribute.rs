@@ -54,12 +54,12 @@
 //!
 //! # Attributes: a closed registry and a side table
 //!
-//! The registry is closed: `checks` and `explicit_exits` take no payload,
-//! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
-//! integer, `refuses`, `runs`, `normalizes` and `doc` a text, `distributes`
-//! a text or a tuple of texts, read in written order, `respects` and
-//! `entry` one declared name or a tuple of them, `identity` a tuple of two or
-//! three declared names, `form` one bare word, `explicit` or `sugared`, and
+//! The registry is closed: `checks`, `explicit_exits` and `inert` take no
+//! payload, `explicit_runs` none or a text naming its one option, `effects`,
+//! `owes` an integer, `refuses`, `runs`, `normalizes` and `doc` a text,
+//! `distributes` a text or a tuple of texts, read in written order, `respects`
+//! and `entry` one declared name or a tuple of them, `identity` a tuple of two
+//! or three declared names, `form` one bare word, `explicit` or `sugared`, and
 //! `deprecated` none or a record of the texts `since` and `note`, either
 //! left out. The attribute block
 //! admits one payload per attribute and refuses an attribute written twice,
@@ -555,6 +555,11 @@ impl RegisteredAttribute
     /// the runs of its draws, one for each sequence of answers, give the
     /// outcomes its payload states with their exact weights.
     pub const DISTRIBUTES: Self = Self("distributes");
+    /// `inert`: the top-level definition it decorates is inert, as a theory's
+    /// operation marked `@[ inert ]` is. Only another inert declaration and the
+    /// manifest step read it, and a package's address leaves it out. A
+    /// module's member takes no mark.
+    pub const INERT: Self = Self("inert");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -760,7 +765,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 19_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -795,6 +800,7 @@ const REGISTRY: [(&str, AttributeSchema); 19_usize] = [
         RegisteredAttribute::BUILTIN.0,
         AttributeSchema::Word(gandr_kernel_term::Builtin::WORDS),
     ),
+    (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
 ];
 
 impl AttributeRegistry
@@ -1963,6 +1969,7 @@ mod tests
                 "builtin",
                 AttributeSchema::Word(&["irSignature", "irPair", "irArgs", "irDecode"]),
             ),
+            ("inert", AttributeSchema::Marker),
         ];
 
         for (spelling, schema) in expected {
@@ -2024,6 +2031,7 @@ mod tests
             ("distribute", "distributes"),
             ("boundary", "boundary"),
             ("builtins", "builtin"),
+            ("inrt", "inert"),
         ];
 
         for (written, nearest) in expected {
