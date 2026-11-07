@@ -443,16 +443,16 @@ impl Refinement
         return exact(self.upper.sub(&self.lower, Precision::MAX, Rounding::Floor));
     }
 
-    /// Halve the enclosure at its midpoint, and the step that states the
-    /// halving of the enclosure that the step `premise` concludes.
+    /// Halve the enclosure at the point that `split` takes, and the step that
+    /// states the halving of the enclosure that the step `premise` concludes.
     ///
     /// # Specification
     /// - requires: the step `premise` concludes the current enclosure.
-    /// - ensures: the step is [`Step::Split`] at the midpoint, on the side its
-    ///   cut holds of. A midpoint that is the root itself gives way to the
-    ///   midpoint of the lower half. The new end replaces the old end of its
-    ///   side, so the enclosure holds half its width or less.
-    /// - fails: refuses a midpoint wider than the quota as
+    /// - ensures: the step is [`Step::Split`] at the point of `split`, on the
+    ///   side its cut holds of. A point that is the root itself gives way to
+    ///   the point of the lower half. The new end replaces the old end of its
+    ///   side, so the enclosure narrows.
+    /// - fails: refuses a point wider than the quota as
     ///   [`CertificateCheck::WidthQuota`].
     /// - panics: none.
     /// - executable: none — the clause speaks of the cut that the step replays
@@ -461,25 +461,28 @@ impl Refinement
     ///   exact squares.
     ///
     /// # Errors
-    /// - [`CertificateCheck::WidthQuota`]: a midpoint is too wide.
+    /// - [`CertificateCheck::WidthQuota`]: a point is too wide.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — as [`refine`], which halves each refinement here.
+    /// - hypothesis: L2 — as [`refine`], which halves each refinement here, and
+    ///   generated cuts over unaligned hulls under both splits.
     /// - witness: `tests::certificate::refinement_holds_for_generated_radicands`
+    /// - witness: `tests::dovetail::both_splits_enclose_each_generated_cut`
     pub(crate) fn halve(
         &mut self,
         premise: StepId,
         quotas: &CheckerQuotas,
+        split: Split,
     ) -> Result<Step, CertificateCheck>
     {
-        let middle = midpoint(&self.lower, &self.upper)?;
+        let middle = split.point(&self.lower, &self.upper)?;
         if middle.width() > quotas.width {
             return Err(CertificateCheck::WidthQuota);
         }
         let (point, side) = match membership(&middle, &self.radicand)? {
             Membership::Lower => (middle, Side::Lower),
             Membership::Upper => (middle, Side::Upper),
-            Membership::Root => (midpoint(&self.lower, &middle)?, Side::Lower),
+            Membership::Root => (split.point(&self.lower, &middle)?, Side::Lower),
         };
         match side {
             Side::Lower => self.lower = point.clone(),
@@ -518,6 +521,62 @@ pub(crate) fn midpoint(
         .map_err(|_overflow| CertificateCheck::WidthQuota)?;
     let sum = exact(low.add(high, Precision::MAX, Rounding::Floor))?;
     return exact(sum.mul(&half, Precision::MAX, Rounding::Floor));
+}
+
+/// The point at which the machine splits an enclosure or a piece of a
+/// domain.
+///
+/// The checker admits a split at any point strictly inside the enclosure, so
+/// the policy changes the certificates that the machine writes and never what
+/// the checker admits. A scheduler keeps one policy, and its checkpoint
+/// records it.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Split
+{
+    /// The midpoint of the ends, so each half has half the width.
+    #[default]
+    Midpoint,
+    /// The dyadic with the fewest mantissa bits strictly between the ends,
+    /// as [`Dyadic::simplest`] finds it.
+    Simplest,
+}
+
+impl Split
+{
+    /// The point at which the policy splits the interval from `low` to
+    /// `high`.
+    ///
+    /// # Specification
+    /// - requires: `low` is below `high`.
+    /// - ensures: the midpoint, or the dyadic with the fewest mantissa bits,
+    ///   strictly between `low` and `high`.
+    /// - fails: refuses a point whose exponent overflows as
+    ///   [`CertificateCheck::WidthQuota`].
+    /// - panics: none.
+    /// - executable: none — the clause speaks of every dyadic of the interval.
+    ///
+    /// # Errors
+    /// - [`CertificateCheck::WidthQuota`]: the point is not representable.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Dyadic::simplest`], and generated cuts,
+    ///   comparisons and quantified formulas under both splits.
+    /// - witness: `tests::dyadic::the_simplest_point_has_the_fewest_bits`
+    /// - witness: `tests::dovetail::both_splits_enclose_each_generated_cut`
+    /// - witness: `tests::quantifier::quantified_formulas_settle_to_certificates_that_replay`
+    pub(crate) fn point(
+        self,
+        low: &Dyadic,
+        high: &Dyadic,
+    ) -> Result<Dyadic, CertificateCheck>
+    {
+        return match self {
+            Self::Midpoint => midpoint(low, high),
+            Self::Simplest => {
+                Dyadic::simplest(low, high).map_err(|_overflow| CertificateCheck::WidthQuota)
+            },
+        };
+    }
 }
 
 /// The certificate of an enclosure of the registered cut at `cut` no wider
@@ -574,7 +633,7 @@ pub fn refine(
         }
         let premise = StepId::try_from(steps.len().saturating_sub(1))
             .map_err(|_wide| CertificateCheck::StepQuota)?;
-        steps.push(refinement.halve(premise, quotas)?);
+        steps.push(refinement.halve(premise, quotas, Split::Midpoint)?);
     }
     return Ok(Certificate::new(FormatVersion::CURRENT, steps));
 }

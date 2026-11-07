@@ -37,16 +37,28 @@
 //!
 //! A product forms the exact product of the two mantissas and rounds it once.
 //! Its work is one multiplication of the operand widths.
+//!
+//! # References
+//!
+//! - `vault:01a1b32b-755c-7b73-85f1-3055991c2bee` — exemplar: the source page
+//!   of Wolfgang Bertram, "On Conway's Numbers and Games, the Von Neumann
+//!   Universe, and Pure Set Theory", 2025, `arXiv:2501.04412`. Its Theorem 2.34
+//!   puts the simplest number of an interval at the common prefix of the ends'
+//!   sign expansions. [`Dyadic::simplest`] agrees inside one integer cell.
+//!   Across cells it takes the coarsest power of two, which has fewer bits than
+//!   the integer nearest zero.
 
 use core::cmp::Ordering;
 use core::fmt;
 use core::ops::Add as _;
+use core::ops::BitXor as _;
 use core::ops::Div as _;
 use core::ops::Mul as _;
 use core::ops::Neg;
 use core::ops::Rem as _;
 use core::ops::Shl as _;
 use core::ops::Shr as _;
+use core::ops::Sub as _;
 
 use anodized::spec;
 use num_bigint::BigInt;
@@ -234,6 +246,9 @@ pub enum DyadicError
     PrecisionOutOfRange,
     /// The divisor of a quotient is zero.
     DivisionByZero,
+    /// An open interval's lower end is not below its upper end, so the
+    /// interval holds no dyadic.
+    EmptyInterval,
 }
 
 impl fmt::Display for DyadicError
@@ -260,6 +275,7 @@ impl fmt::Display for DyadicError
             Self::ExponentOutOfRange => f.write_str("the exponent of the result is out of range"),
             Self::PrecisionOutOfRange => f.write_str("the precision is out of range"),
             Self::DivisionByZero => f.write_str("the divisor is zero"),
+            Self::EmptyInterval => f.write_str("the open interval holds no dyadic"),
         }
     }
 }
@@ -467,6 +483,60 @@ impl Dyadic
     pub fn width(&self) -> BitWidth
     {
         return self.term().width();
+    }
+
+    /// The dyadic with the fewest mantissa bits strictly between `lower` and
+    /// `upper`.
+    ///
+    /// Zero is the answer when the interval holds it. Otherwise the answer is
+    /// the one point of the coarsest grid `2^k` that meets the interval. Two
+    /// points of one grid put an even multiple between them, and that is a
+    /// point of the next grid. A point of a finer grid needs at least as many
+    /// bits. Inside one integer cell the point is the number of least
+    /// birthday, the simplest number of the surreals. Across integer cells the
+    /// surreals take the integer nearest zero, and this function takes the
+    /// coarsest power of two. The ends meet one grid only when their leading
+    /// bits lie one place apart or less, so the work is linear in their bits.
+    ///
+    /// # Specification
+    /// - ensures: the result lies strictly between `lower` and `upper`, and no
+    ///   dyadic strictly between them has a narrower mantissa.
+    /// - fails: returns [`DyadicError::EmptyInterval`] when `lower` is not
+    ///   below `upper`, and [`DyadicError::ExponentOutOfRange`] when the
+    ///   point's exponent leaves the range of `i32`.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of every dyadic of the interval.
+    ///
+    /// # Errors
+    /// - [`DyadicError::EmptyInterval`]: `lower` is not below `upper`.
+    /// - [`DyadicError::ExponentOutOfRange`]: the point's exponent does not fit
+    ///   an `i32`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — on generated intervals the point lies inside, and a
+    ///   search of every grid from the finest end up finds no narrower
+    ///   mantissa. L3 — an interval across zero, a negative interval, adjacent
+    ///   ends, and an interval that its ends close are each answered or refused
+    ///   by name.
+    /// - witness: `tests::dyadic::the_simplest_point_has_the_fewest_bits`
+    /// - witness: `tests::dyadic::the_simplest_point_of_each_boundary`
+    #[inline]
+    pub fn simplest(
+        lower: &Self,
+        upper: &Self,
+    ) -> Result<Self, DyadicError>
+    {
+        if lower >= upper {
+            return Err(DyadicError::EmptyInterval);
+        }
+        if lower.sign() == Sign::Negative && upper.sign() == Sign::Positive {
+            return Ok(Self::ZERO);
+        }
+        if upper.sign() != Sign::Positive {
+            // An interval at or below zero mirrors one at or above it.
+            return simplest_above_zero(&upper.neg(), &lower.neg()).map(|point| (&point).neg());
+        }
+        return simplest_above_zero(lower, upper);
     }
 
     /// The sign.
@@ -2051,4 +2121,67 @@ impl Unrounded
             exactness: Exactness::Inexact,
         });
     }
+}
+
+/// The dyadic with the fewest mantissa bits strictly between `low` and
+/// `high`, for `0 <= low < high`. It is the greatest power of two below
+/// `high` when that power lies above `low`. Otherwise it is the point of the
+/// coarsest grid that meets the interval, found on the ends' common grid.
+///
+/// # Specification
+/// trivial.
+fn simplest_above_zero(
+    low: &Dyadic,
+    high: &Dyadic,
+) -> Result<Dyadic, DyadicError>
+{
+    // The place of a positive value's leading bit.
+    let top = |value: &Dyadic| {
+        return i64::from(value.exponent.0)
+            .saturating_add(i64::try_from(value.width().0).unwrap_or(i64::MAX))
+            .saturating_sub(1);
+    };
+    let high_top = top(high);
+    // A mantissa of one bit is one: `high` is then a power of two itself.
+    let below = if high.width().0 == 1 {
+        high_top.saturating_sub(1)
+    }
+    else {
+        high_top
+    };
+    if low.sign() == Sign::Zero || top(low) < below {
+        let place = i32::try_from(below).map_err(|_wide| DyadicError::ExponentOutOfRange)?;
+        return Dyadic::new(BigInt::from(1_u8), Exponent(place));
+    }
+    // No power of two lies between the ends, so their leading bits lie one
+    // place apart at most. Lifting both to the finer exponent then shifts by
+    // no more than their widths.
+    let exponent = low.exponent.0.min(high.exponent.0);
+    let lift = |value: &Dyadic| {
+        let shift =
+            usize::try_from(i64::from(value.exponent.0).saturating_sub(i64::from(exponent)))
+                .map_err(|_wide| DyadicError::ExponentOutOfRange)?;
+        return Ok(value.mantissa().shl(shift));
+    };
+    let first = lift(low)?.add(1_u8);
+    let last = lift(high)?.sub(1_u8);
+    let (point, exponent) = match first.cmp(&last) {
+        // The ends are adjacent on their grid, so the point is their
+        // midpoint on the grid below.
+        Ordering::Greater => (
+            (&first).add(&last),
+            exponent
+                .checked_sub(1)
+                .ok_or(DyadicError::ExponentOutOfRange)?,
+        ),
+        Ordering::Equal => (first, exponent),
+        // The integer of the range with the most trailing zeros keeps the
+        // common prefix of its ends and the first bit where they differ.
+        Ordering::Less => {
+            let place = usize::try_from((&first).bitxor(&last).bits().saturating_sub(1))
+                .map_err(|_wide| DyadicError::ExponentOutOfRange)?;
+            ((&last).shr(place).shl(place), exponent)
+        },
+    };
+    return Dyadic::new(point, Exponent(exponent));
 }

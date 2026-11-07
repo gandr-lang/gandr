@@ -196,6 +196,7 @@ pub use crate::plan::Root;
 pub use crate::plan::Scope;
 pub use crate::plan::Site;
 pub use crate::plan::Sort;
+pub use crate::schema::Split;
 pub use crate::schema::radicand;
 pub use crate::schema::refine;
 pub use crate::schema::square_root;

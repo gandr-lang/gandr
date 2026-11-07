@@ -6,6 +6,7 @@
 use core::cell::Cell;
 use core::num::NonZeroU32;
 
+use gandr_theory_exact_reals::Bound;
 use gandr_theory_exact_reals::Budget;
 use gandr_theory_exact_reals::Certificate;
 use gandr_theory_exact_reals::CheckerQuotas;
@@ -13,6 +14,7 @@ use gandr_theory_exact_reals::Conclusion;
 use gandr_theory_exact_reals::Demand;
 use gandr_theory_exact_reals::Dovetail;
 use gandr_theory_exact_reals::Dyadic;
+use gandr_theory_exact_reals::Endpoint;
 use gandr_theory_exact_reals::Evidence;
 use gandr_theory_exact_reals::EvidenceTable;
 use gandr_theory_exact_reals::Exponent;
@@ -22,15 +24,19 @@ use gandr_theory_exact_reals::NodeId;
 use gandr_theory_exact_reals::NumericInterval;
 use gandr_theory_exact_reals::Obligation;
 use gandr_theory_exact_reals::Open;
+use gandr_theory_exact_reals::Orientation;
 use gandr_theory_exact_reals::Outcome;
 use gandr_theory_exact_reals::PlanBuilder;
 use gandr_theory_exact_reals::PlanError;
 use gandr_theory_exact_reals::Position;
+use gandr_theory_exact_reals::Precision;
 use gandr_theory_exact_reals::Quantum;
 use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::Root;
+use gandr_theory_exact_reals::Rounding;
 use gandr_theory_exact_reals::Rounds;
+use gandr_theory_exact_reals::Split;
 use gandr_theory_exact_reals::StepCount;
 use gandr_theory_exact_reals::Steps;
 use gandr_theory_exact_reals::Stop;
@@ -39,6 +45,7 @@ use gandr_theory_exact_reals::ValidatedPlan;
 use gandr_theory_exact_reals::admit;
 use gandr_theory_exact_reals::check;
 use gandr_theory_exact_reals::refine;
+use gandr_theory_exact_reals::square_root;
 use gandr_theory_exact_reals::square_root_of_two;
 use num_bigint::BigInt;
 use proptest::prelude::*;
@@ -50,6 +57,23 @@ use proptest::prelude::*;
 fn laws() -> Evidence
 {
     return Evidence::from(0_u32);
+}
+
+/// The closed interval from `lower` to `upper`.
+///
+/// # Specification
+/// trivial.
+fn closed(
+    lower: Dyadic,
+    upper: Dyadic,
+) -> NumericInterval
+{
+    return NumericInterval::new(
+        Bound::closed(lower),
+        Bound::closed(upper),
+        Orientation::Proper,
+    )
+    .unwrap();
 }
 
 /// The dyadic `mantissa · 2^exponent`.
@@ -584,10 +608,10 @@ fn each_form_settles_or_suspends_by_name()
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
-    /// Generated comparisons with the square root of two, asked for either
-    /// pole and run under generated quanta, budgets and rounds: the work stays
-    /// within the budget, each certificate replays to its demand, and two
-    /// schedulers given one input agree.
+    /// Generated comparisons with the square root of two over a generated
+    /// hull, asked for either pole and run under generated quanta, budgets,
+    /// rounds and splits: the work stays within the budget, each certificate
+    /// replays to its demand, and two schedulers given one input agree.
     #[test]
     fn every_certificate_replays_to_its_evidence(
         mantissa in 1_i64 .. 4096,
@@ -596,10 +620,13 @@ proptest! {
         steps in 1_u32 .. 8,
         budget in 0_u64 .. 400,
         rounds in 0_u64 .. 80,
+        upper in 2_i64 .. 40,
+        simplest in any::<bool>(),
     ) {
         let point = dyadic(BigInt::from(mantissa), Exponent::from(shift.checked_neg().unwrap()));
+        let split = if simplest { Split::Simplest } else { Split::Midpoint };
         let mut builder = PlanBuilder::new();
-        let root = square_root_of_two(&mut builder, laws()).unwrap();
+        let root = square_root(&mut builder, Dyadic::from(2_i64), closed(Dyadic::ONE, Dyadic::from(upper)), laws()).unwrap();
         let constant_node = builder.real(Real::Constant(point.clone())).unwrap();
         let below = builder.open(Open::Less(constant_node, root)).unwrap();
         let above = builder.open(Open::Less(root, constant_node)).unwrap();
@@ -619,8 +646,9 @@ proptest! {
                 Obligation::new(&plan, opens[index % 2], demand).unwrap()
             })
             .collect();
-        let mut first = Dovetail::new(&plan, obligations.clone(), quantum(Steps::from(u64::from(steps))), CheckerQuotas::default());
-        let mut second = Dovetail::new(&plan, obligations.clone(), quantum(Steps::from(u64::from(steps))), CheckerQuotas::default());
+        let start = || Dovetail::with_split(&plan, obligations.clone(), (quantum(Steps::from(u64::from(steps))), CheckerQuotas::default()), split);
+        let mut first = start();
+        let mut second = start();
         let report = first.run(Budget::from(budget), Rounds::from(rounds), || false);
         let again = second.run(Budget::from(budget), Rounds::from(rounds), || false);
         prop_assert!(report.work().steps <= budget);
@@ -655,6 +683,44 @@ proptest! {
                 .collect();
             let both = poles.contains(&Conclusion::Holds { open }) && poles.contains(&Conclusion::Fails { open });
             prop_assert!(!both, "one comparison is certified at both poles");
+        }
+    }
+
+    /// Generated square roots over generated hulls, enclosed to a generated
+    /// width under each split: each certificate replays to an enclosure of
+    /// the cut no wider than asked, whose ends square to either side of the
+    /// radicand.
+    #[test]
+    fn both_splits_enclose_each_generated_cut(
+        mantissa in 1_i64 .. 4096,
+        shift in 0_i32 .. 8_i32,
+        upper in 1_i64 .. 200,
+        bits in 1_i32 .. 60_i32,
+    ) {
+        let radicand = dyadic(BigInt::from(mantissa), Exponent::from(shift.checked_neg().unwrap()));
+        let square = |value: &Dyadic| value.mul(value, Precision::MAX, Rounding::Floor).unwrap().into_value();
+        prop_assume!(square(&Dyadic::from(upper)) > radicand);
+        let mut builder = PlanBuilder::new();
+        let root = square_root(&mut builder, radicand.clone(), closed(Dyadic::ZERO, Dyadic::from(upper)), laws()).unwrap();
+        let mut table = EvidenceTable::new();
+        table.register(laws(), Judgement::CutLaws).unwrap();
+        let plan = admit(builder.finish(Root::Real(root)).unwrap(), &Quotas::default(), &table).unwrap();
+        let cut = find(&plan, |_, node| matches!(*node, Node::Real(Real::Cut(_))));
+        let width = Exponent::from(bits.checked_neg().unwrap());
+        let target = dyadic(BigInt::from(1_u8), width);
+        for split in [Split::Midpoint, Split::Simplest] {
+            let obligation = Obligation::new(&plan, cut, Demand::Encloses { width }).unwrap();
+            let mut dovetail = Dovetail::with_split(&plan, [obligation], (quantum(Steps::from(64_u64)), CheckerQuotas::default()), split);
+            let report = dovetail.run(ample(), Rounds::from(u64::MAX), || false);
+            let Conclusion::Encloses { real, interval } = replayed(&plan, certificate(report.outcome(Position::from(0)))) else {
+                panic!("an enclosure is certified under {split:?}");
+            };
+            prop_assert_eq!(real, cut);
+            let (Endpoint::Finite(low), Endpoint::Finite(high)) = (interval.lower().endpoint.clone(), interval.upper().endpoint.clone()) else {
+                panic!("the enclosure under {split:?} is finite");
+            };
+            prop_assert!(square(&low) < radicand && radicand < square(&high), "{:?} misses the root under {:?}", interval, split);
+            prop_assert!(high.sub(&low, Precision::MAX, Rounding::Floor).unwrap().into_value() <= target);
         }
     }
 }
