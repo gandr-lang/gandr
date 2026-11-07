@@ -3043,12 +3043,13 @@ impl<'pbg> MeldState<'pbg>
     ///   ends a top-level declaration, `labels` are its labels, and `text` is
     ///   its text.
     /// - ensures: when no candidate continues the nearest open form, the
-    ///   nearest open frontier is the nearest declaration-started one, and one
-    ///   of the labels' declared molds ends a form of the declaration's rule,
-    ///   mints the ghost end and flags one [`Oblig::MissingTile`] at the
-    ///   frontier, pushes `text` as that mold, closes the declaration with it
-    ///   and returns true; leaves the state untouched and returns false
-    ///   otherwise, as when a bracket inside the declaration is still open.
+    ///   nearest open frontier is the nearest declaration-started one, the
+    ///   completions of that frontier end at no paired closer, and one of the
+    ///   labels' declared molds ends a form of the declaration's rule, mints
+    ///   the ghost end and flags one [`Oblig::MissingTile`] at the frontier,
+    ///   pushes `text` as that mold, closes the declaration with it and returns
+    ///   true; leaves the state untouched and returns false otherwise, as when
+    ///   a bracket inside the declaration is still open.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3057,7 +3058,11 @@ impl<'pbg> MeldState<'pbg>
     ///   input only when the separator before the next declaration closes it. A
     ///   well-formed declaration takes its `;` as its own end, and a close
     ///   there would charge a corpus source an obligation. A separator inside
-    ///   an unclosed bracket of the declaration stays inside it.
+    ///   an unclosed bracket of the declaration stays inside it, also when the
+    ///   bracket is a tile of the declaration's own rule, as the parameters of
+    ///   a `def` are: a `def` that lost the `)` of its parameters keeps the
+    ///   reading of the repair at the end of the input (#5911).
+    /// - witness: `tests::acceptance::a_def_without_its_closer_keeps_its_reading_5911`
     /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
@@ -3094,6 +3099,12 @@ impl<'pbg> MeldState<'pbg>
         else {
             return SeparatorTaken::from(false);
         };
+        // A frontier inside a bracket of the declaration's own rule, as the
+        // parameters of a `def`, waits for its closer: the repair at the
+        // declaration's end places that closer where the rest parses.
+        if self.pbg.closing_class(frontier_mold).is_some() {
+            return SeparatorTaken::from(false);
+        }
         let Ok(rule) = self.pbg.rule_of(frontier_mold).map(|rule| rule.name)
         else {
             return SeparatorTaken::from(false);
