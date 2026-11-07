@@ -2,9 +2,13 @@
 ///
 /// A bridge relates endpoints but does not identify them.
 /// It has no reflexivity, transport, or eliminator.
+/// At the universe, a bridge is a relation between two types.
+/// At a type former, it lifts the relations of its parts.
 ///
 /// The bridge fold reads a fibre from its carrier and endpoints.
 /// The checker uses that fibre to validate each bridge introduction.
+/// The fold reads a list cell by cell, a base type or a sum by its identity,
+/// and a function code by extensionality.
 ///
 /// - see: corpus/pathological/identity/bridge.gandr
 /// - see: #3519 — bridge fold laws

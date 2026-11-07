@@ -8,6 +8,7 @@
 //! It checks the inverse-of-product row.
 //!
 //! - see: #338
+//! - see: `circle-group.gandr` — the loop laws as paths
 //! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
 //!
 //! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"

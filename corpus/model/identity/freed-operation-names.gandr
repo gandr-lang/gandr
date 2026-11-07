@@ -2,6 +2,7 @@
 ///
 /// The operation formers still contain `Path.here` and `Path.ap`.
 /// The bare names exist only after a source binds them.
+/// A library then keeps the short words for its own functions.
 ///
 /// A call resolves to its local binder.
 /// The operation remains available below its former.

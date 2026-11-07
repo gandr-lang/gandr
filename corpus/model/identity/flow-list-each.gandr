@@ -5,6 +5,8 @@
 ///
 /// The list flow uses that recursive translator.
 /// The checker rides source lists through the result.
+/// At each cell, the image binds the translator's image of the rigid tail, and
+/// it is natural. So the translator is natural at every list.
 ///
 /// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
 ///

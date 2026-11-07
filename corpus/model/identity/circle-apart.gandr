@@ -5,6 +5,8 @@
 ///
 /// The empty match eliminates an equality between those distinct normal forms.
 /// The proof supplies the apartness fact used by the circle sources.
+/// The HoTT book reaches this fact through a universe and univalence.
+/// This source uses the apartness rule at the words instead.
 ///
 /// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
 ///

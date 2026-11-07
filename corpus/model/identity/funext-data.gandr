@@ -22,6 +22,7 @@ def figureWidth(figure : Figure) -> Integer =
     | Box(h, w) => w
 
 /// The `throughFigure` function reads width through the figure translation.
+/// The figure translation swaps the sides.
 def throughFigure(shape : Shape) -> Integer =
   figureWidth (Shapes.toFigure shape)
 
@@ -29,6 +30,7 @@ def throughFigure(shape : Shape) -> Integer =
 def widths : Path(width, throughFigure) = Path.funext width throughFigure;
 
 /// The `drawn` function translates a shape into its figure.
+/// The figure translation swaps the sides.
 def drawn(shape : Shape) -> Figure =
   match shape where
     | Circle(r) => Round r

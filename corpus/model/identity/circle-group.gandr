@@ -4,7 +4,10 @@
 /// The loops commute because their winding numbers commute.
 ///
 /// The checker proves each law by word conversion or `Path.ap`.
-/// The source does not state the univalence and h-level results it lacks.
+///
+/// Limits: `ΩS¹≡ℤ` needs univalence. `isSetΩS¹` and `toPropElim` need the
+/// h-level ladder. `basedΩS¹ x ≡ ℤ` at every point needs equivalences as
+/// structure.
 ///
 /// - see: #422 — `spinHom`
 /// - see: #473 — `spinHom`

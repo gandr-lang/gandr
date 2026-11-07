@@ -1,0 +1,90 @@
+test: passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005
+package: gandr-workflow-prose
+command: mise run debug:test gandr-workflow-prose passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005 --break gandr_workflow_prose::passage::head_of$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-prose/15d6585efd868be7/out/gandr_workflow_prose-15d6585efd868be7"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-prose/15d6585efd868be7/out/gandr_workflow_prose-15d6585efd868be7' (x86_64).
+(lldb) settings set -- target.run-args  "passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex gandr_workflow_prose::passage::head_of$
+Breakpoint 1: where = gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::head_of + 50 at passage.rs:539:16, address = 0x0000000000164df2
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_workflow_prose-15d6585efd868be7`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000000244998
+(lldb) run
+
+running 1 test
+test passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2692983 launched: 'target/debug-trace/debug/build/gandr-workflow-prose/15d6585efd868be7/out/gandr_workflow_prose-15d6585efd868be7' (x86_64)
+Process 2692983 stopped
+* thread #2, name = 'passage::tests:', stop reason = breakpoint 1.1
+       frame #0: 0x00005555556b8df2 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::head_of(run={kind:Inner, first:0, lines:size=9}) at passage.rs:539:16
+   536 	/// trivial.
+   537 	fn head_of(run: &Run<'_>) -> Head
+   538 	{
+-> 539 	    let body = run
+    	               ^
+   540 	        .lines
+   541 	        .iter()
+   542 	        .rposition(|&(_, text)| {
+(lldb) bt 24
+* thread #2, name = 'passage::tests:', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555556b8df2 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::head_of(run={kind:Inner, first:0, lines:size=9}) at passage.rs:539:16
+     frame #1: 0x00005555556b4a65 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::comment_shape(path={0:"corpus/a.gandr"}, text={0:"//! Pairs sum.\n//!\n//! Why.\n//!\n//! How.\n//!\n//! Limits: no frame rule.\n//!\n//! - see: #1 — x\n\ndef x = 1;\n"}, passages=size=4) at passage.rs:477:64
+     frame #2: 0x00005555556581e9 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005::{closure#0}((null)={}, paragraphs=size=4) at passage.rs:1477:17
+     frame #3: 0x000055555565f2c2 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005 at passage.rs:1484:13
+     frame #4: 0x00005555556571a7 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005::{closure#0}((null)={}) at passage.rs:1464:69
+     frame #5: 0x0000555555692476 gandr_workflow_prose-15d6585efd868be7`<gandr_workflow_prose::passage::tests::a_limits_paragraph_stands_only_after_the_how_paragraph_6005::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #6: 0x000055555573d3eb gandr_workflow_prose-15d6585efd868be7`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #7: 0x000055555573d3e9 gandr_workflow_prose-15d6585efd868be7`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #8: 0x000055555574a935 gandr_workflow_prose-15d6585efd868be7`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #9: 0x000055555574a930 gandr_workflow_prose-15d6585efd868be7`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #10: 0x000055555574a930 gandr_workflow_prose-15d6585efd868be7`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #11: 0x000055555574a91b gandr_workflow_prose-15d6585efd868be7`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #12: 0x000055555574a91b gandr_workflow_prose-15d6585efd868be7`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #13: 0x000055555574a91b gandr_workflow_prose-15d6585efd868be7`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #14: 0x000055555574a906 gandr_workflow_prose-15d6585efd868be7`test::run_test::{closure#0} at lib.rs:677:43
+     frame #15: 0x00005555557452f4 gandr_workflow_prose-15d6585efd868be7`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #16: 0x0000555555745279 gandr_workflow_prose-15d6585efd868be7`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #17: 0x000055555574da92 gandr_workflow_prose-15d6585efd868be7`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #18: 0x000055555574da83 gandr_workflow_prose-15d6585efd868be7`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #19: 0x000055555574da83 gandr_workflow_prose-15d6585efd868be7`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #20: 0x000055555574da73 gandr_workflow_prose-15d6585efd868be7`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #21: 0x000055555574da73 gandr_workflow_prose-15d6585efd868be7`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #22: 0x000055555574da73 gandr_workflow_prose-15d6585efd868be7`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #23: 0x000055555574da64 gandr_workflow_prose-15d6585efd868be7`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+(lldb) frame variable --depth 3
+(gandr_workflow_prose::passage::Run *) run = 0x00007ffff7bfded0 {kind:Inner, first:0, lines:size=9}
+(lldb) up
+frame #1: 0x00005555556b4a65 gandr_workflow_prose-15d6585efd868be7`gandr_workflow_prose::passage::comment_shape(path={0:"corpus/a.gandr"}, text={0:"//! Pairs sum.\n//!\n//! Why.\n//!\n//! How.\n//!\n//! Limits: no frame rule.\n//!\n//! - see: #1 — x\n\ndef x = 1;\n"}, passages=size=4) at passage.rs:477:64
+   474 	        .position(|line| !line.trim().is_empty() && !line.starts_with("#!"));
+   475 	    let mut runs = runs.into_iter();
+   476 	    let opened = match runs.next() {
+-> 477 	        Some(run) if Some(run.first) == opening => Opened::Run(head_of(&run)),
+    	                                                               ^
+   478 	        Some(run) => {
+   479 	            return CommentShape {
+   480 	                path: path.0.to_owned(),
+(lldb) frame variable --depth 3
+(gandr_workflow_prose::passage::Text) path = {0:"corpus/a.gandr"}
+(gandr_workflow_prose::passage::Text) text = {0:"//! Pairs sum.\n//!\n//! Why.\n//!\n//! How.\n//!\n//! Limits: no frame rule.\n//!\n//! - see: #1 — x\n\ndef x = 1;\n"}
+(&[gandr_workflow_prose::passage::Passage]) passages = size=4 {
+  [0] = {path:"corpus/a.gandr", line:{0:1}, source:Comment, text:"Pairs sum."}
+  [1] = {path:"corpus/a.gandr", line:{0:3}, source:Comment, text:"Why."}
+  [2] = {path:"corpus/a.gandr", line:{0:5}, source:Comment, text:"How."}
+  [3] = {path:"corpus/a.gandr", line:{0:7}, source:Comment, text:"Limits: no frame rule."}
+}
+(alloc::vec::Vec<gandr_workflow_prose::passage::Run, alloc::alloc::Global>) runs = size=1 {
+  [0] = {kind:Inner, first:0, lines:size=9}
+}
+(core::option::Option<usize>) opening = Some(0) {
+  0 = 0
+}
+(alloc::vec::into_iter::IntoIter<gandr_workflow_prose::passage::Run, alloc::alloc::Global>) runs = {buf:{pointer:{kind:Inner, first:0, lines:size=9}}, phantom:{}, cap:4, alloc:{value:{0:{}}}, ptr:{pointer:{kind:Doc, first:0, lines:size=0}}, end:{kind:Doc, first:0, lines:size=0}}
+(gandr_workflow_prose::passage::Run) run = {kind:Inner, first:0, lines:size=9}
+(gandr_workflow_prose::passage::Run *) run = 0x00007ffff7bfdea8 {kind:Inner, first:0, lines:size=9}

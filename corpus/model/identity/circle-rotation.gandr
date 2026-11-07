@@ -1,9 +1,13 @@
 /// This source states rotation group laws for the circle.
 ///
 /// Rotation has four inverse laws and a universal property.
+/// It follows cubical Agda's
+/// `Cubical/HITs/S1/Base.agda` and `S1/Properties.agda`.
 ///
 /// The checker computes rotation by the loop and checks each path over words.
-/// The source leaves structured-equivalence and univalence results unstated.
+///
+/// Limits: `rotIsEquiv` needs equivalences as structure. `invS¹Equiv` and
+/// `invS¹Path` need univalence as well.
 ///
 /// - see: corpus/model/identity/circle-group.gandr
 import "./circle-base.gandr";
@@ -14,6 +18,8 @@ import "./circle-apart.gandr";
 def unitSquared : Path(mul Base Base, mul Base Base) = Path.here Base;
 
 /// The `rotInv1` cases prove rotation by `b` then its inverse returns `a`.
+/// The proof owes no square of the two loops, because the circle's paths are
+/// its words, which form a set.
 def rotInv1(a : Circle, b : Circle) -> Path[.A = Circle](mul (mul b a) (invLooper b), a) =
   match a where
     | Base => match b where
