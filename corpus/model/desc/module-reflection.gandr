@@ -1,19 +1,42 @@
-// A function reads a module's signature as a value and a model through its
-// type.
+// A function reads a module's signature as a value, and a model as its
+// entries at a type that the signature's value computes.
 //
 // A render over a module reads both parts. The presentation of a `theory`
 // block is a `Theory` value, so an ordinary function folds a signature. A
-// model is a record at `Model(T)`, so a function reads each field it names.
+// model is a record at `Model(T)`. A generic render needs the model at a type
+// that it computes from the value, and an equivalence relates the two types.
 //
 // `declared` folds `std.build`'s `Gandr.Package` into eleven constants at
 // `String`. The members of the theories it includes come first, in the order
 // of its `include` lines. `toolchain` reads the content fields of a model by
-// their names.
+// their names. `std.build`'s `modelType` computes the entries' type of a
+// presentation, one entry for each constant. The maps between a package's
+// model and its entries, their two round trips and their equivalence check
+// here, beside those of the local theory `Flagged`, which has a string and a
+// boolean constant. `encode` folds a presentation and its entries into one
+// line for each constant. `render` is that fold for a package's model, inert
+// because it reads inert fields.
+//
+// Limits: an entry is a string, a boolean or opaque, and the render escapes
+// no character. The render writes one table in the order of the presentation,
+// where the manifest step writes three tables in its own order (#4725).
 //
 // - see: #4730
+// - see: #6046
 // - see: #6071
 // - see: `../../pathological/desc/module-reflection.gandr` — what does not reach a module
-import std.build (Gandr);
+import std.build (
+  Gandr,
+  Entries,
+  Entry,
+  NoEntries,
+  Ended,
+  modelType,
+  encode,
+  packageEntries,
+  packagePresentation,
+  render
+);
 import std.string (concat);
 
 /// The sort of the first port in a port chain, or `-` for an empty chain.
@@ -81,3 +104,146 @@ def toolchain(m : Model Gandr.Package) -> String =
 /// The toolchain lines of `std`'s model.
 @[ runs("\"gandr = >= 0.0\\nsystems = \"") ]
 def stdToolchain() -> String { toolchain Package }
+
+/// The lines of `std`'s model through `std.build`'s render: one line for each
+/// constant, in the order of the presentation.
+@[ inert ]
+@[ runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"std\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr/tree/main/library/std\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"") ]
+def packageLines() -> String { render Package }
+
+/// The package model whose entries are `e`.
+@[ inert ]
+def packageOf(e : modelType(packagePresentation)) -> Model(Gandr.Package) =
+  match e where
+    | Entry(version, e1) => match e1 where
+      | Entry(gandr, e2) => match e2 where
+        | Entry(features, e3) => match e3 where
+          | Entry(systems, e4) => match e4 where
+            | Entry(spelling, e5) => match e5 where
+              | Entry(name, e6) => match e6 where
+                | Entry(authors, e7) => match e7 where
+                  | Entry(licence, e8) => match e8 where
+                    | Entry(documentation, e9) => match e9 where
+                      | Entry(endpoint, e10) => match e10 where
+                        | Entry(sources, e11) => *{
+                          version = version,
+                          gandr = gandr,
+                          features = features,
+                          systems = systems,
+                          spelling = spelling,
+                          name = name,
+                          authors = authors,
+                          licence = licence,
+                          documentation = documentation,
+                          endpoint = endpoint,
+                          sources = sources
+                        }
+
+/// A package model comes back from its entries.
+@[ inert ]
+def packageBack(m : Model(Gandr.Package)) -> Path[.A = Model(Gandr.Package)](
+  packageOf (packageEntries m),
+  m
+) =
+  Path.here m
+
+/// Entries come back from their package model.
+@[ inert ]
+def packageEntriesBack(e : modelType(packagePresentation)) -> Path[.A = modelType(packagePresentation)](
+  packageEntries (packageOf e),
+  e
+) =
+  match e where
+    | Entry(version, e1) => match e1 where
+      | Entry(gandr, e2) => match e2 where
+        | Entry(features, e3) => match e3 where
+          | Entry(systems, e4) => match e4 where
+            | Entry(spelling, e5) => match e5 where
+              | Entry(name, e6) => match e6 where
+                | Entry(authors, e7) => match e7 where
+                  | Entry(licence, e8) => match e8 where
+                    | Entry(documentation, e9) => match e9 where
+                      | Entry(endpoint, e10) => match e10 where
+                        | Entry(sources, e11) => match e11 where
+                          | Ended => Path.here
+                            (Entry version (Entry
+                              gandr
+                              (Entry
+                                features
+                                (Entry
+                                  systems
+                                  (Entry
+                                    spelling
+                                    (Entry
+                                      name
+                                      (Entry
+                                        authors
+                                        (Entry
+                                          licence
+                                          (Entry
+                                            documentation
+                                            (Entry
+                                              endpoint
+                                              (Entry
+                                                sources
+                                                Ended)))))))))) : modelType(packagePresentation))
+
+/// A package model and its entries are equivalent. The maps are inert, so a
+/// run of a program converts nothing.
+@[ inert ]
+@[ checks ]
+def packageEquivalence : Model(Gandr.Package) ≃ modelType(packagePresentation) = *{
+  packageEntries,
+  *{*{packageOf, packageBack}, *{packageOf, packageEntriesBack}}
+};
+
+/// A theory of a label and a flag.
+theory Flagged where {
+  /// The label.
+  oper label : String;
+  /// The flag.
+  oper shown : Bool;
+}
+
+/// The entries of a model of `Flagged`.
+def flaggedEntries(m : Model(Flagged)) -> modelType(Flagged) { Entry m.label (Entry m.shown Ended) }
+
+/// The model of `Flagged` whose entries are `e`.
+def flaggedOf(e : modelType(Flagged)) -> Model(Flagged) =
+  match e where
+    | Entry(label, r) => match r where
+      | Entry(shown, t) => *{label = label, shown = shown}
+
+/// A model comes back from its entries.
+def flaggedBack(m : Model(Flagged)) -> Path[.A = Model(Flagged)](flaggedOf (flaggedEntries m), m) {
+  Path.here m
+}
+
+/// Entries come back from their model.
+def flaggedEntriesBack(e : modelType(Flagged)) -> Path[.A = modelType(Flagged)](
+  flaggedEntries (flaggedOf e),
+  e
+) =
+  match e where
+    | Entry(label, r) => match r where
+      | Entry(shown, t) => match t where
+        | Ended => Path.here (Entry label (Entry shown Ended) : modelType(Flagged))
+
+/// A model of `Flagged` and its entries are equivalent.
+@[ checks ]
+def flaggedEquivalence : Model(Flagged) ≃ modelType(Flagged) = *{
+  flaggedEntries,
+  *{*{flaggedOf, flaggedBack}, *{flaggedOf, flaggedEntriesBack}}
+};
+
+/// A model of `Flagged`.
+module Shown : Model(Flagged) where {
+  /// The label.
+  def label = "here";
+  /// The flag.
+  def shown = true;
+}
+
+/// The lines of `Shown`: a string and a boolean.
+@[ runs("\"label = \\\"here\\\"\\nshown = true\\n\"") ]
+def shownLines() -> String { encode Flagged (flaggedEntries Shown) }
