@@ -162,13 +162,11 @@ impl<'source> Lowerer<'_, 'source>
                 domain,
                 Maybe::Absent(binder_site::Absent::Unwritten),
             );
-            self.parameters.push(super::super::Parameter {
-                binder: domain,
-                frame: bound,
-                declared: Maybe::Present(domain),
-                component: None,
-                listed: super::super::Listed::Elsewhere,
-            });
+            self.parameters.push(super::super::Parameter::elsewhere(
+                domain,
+                bound,
+                Maybe::Present(domain),
+            ));
             chained = Frame::Inner(bound);
         }
         self.read(result, Reading::Result(frame));

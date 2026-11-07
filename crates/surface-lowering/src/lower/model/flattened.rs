@@ -90,7 +90,6 @@ use crate::form::TileName;
 use crate::form::Universe;
 use crate::form::read_pieces;
 use crate::lower::Code;
-use crate::lower::Listed;
 use crate::lower::Lowerer;
 use crate::lower::Parameter;
 use crate::lower::Plan;
@@ -711,13 +710,12 @@ impl<'source> Lowerer<'_, 'source>
                 .scope
                 .extend_typed(frame, entry.name, declared.node, written);
             self.scope.mention(bound);
-            self.parameters.push(Parameter {
-                binder: entry.binder.node,
-                frame: bound,
-                declared: Maybe::Present(declared.node),
-                component: Some(ComponentPlace::from(place)),
-                listed: Listed::Elsewhere,
-            });
+            self.parameters.push(Parameter::component(
+                entry.binder.node,
+                bound,
+                declared.node,
+                ComponentPlace::from(place),
+            ));
             components.push(FlatComponent {
                 name: component.name.clone(),
                 frame: bound,
