@@ -2251,7 +2251,8 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 # it supersedes, the concerns ledger and the sources the change adds, and the
 # lines `pr:open` prints for them, or none (`opening.jq`): the body must work
 # the branch's issue (#2462), answer the sources (#2499) and the reading axes
-# (#2522) its issues request, and name the concerns it touches (#2523); each
+# (#2522) its issues request, name the concerns it touches (#2523), and state
+# the facts it keeps once it drops many comment lines (#6004); each
 # in `.config/claims/signed.json` the issues a body works and the lines
 # `pr:open` refuses them with until each is sectioned and carries
 # `shape:signed`, or none (`signed.jq`, #3134). Each
