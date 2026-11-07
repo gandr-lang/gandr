@@ -619,7 +619,7 @@ jobs:
             query($owner: String!, $name: String!, $oid: GitObjectID!) {
               repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { statusCheckRollup {
                 contexts(first: 100) { nodes { __typename
-                  ... on CheckRun { name status conclusion startedAt }
+                  ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { databaseId } } }
                   ... on StatusContext { context state startedAt: createdAt } } } } } } } }' \
             --jq '.data.repository.object.statusCheckRollup.contexts.nodes // []' \
             | jq -c --argjson required "$required" -f .config/pr-stack/required.jq)

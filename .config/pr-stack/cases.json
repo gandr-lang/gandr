@@ -1559,6 +1559,58 @@
     "output": "{\"failed\":[\"test the workspace (linux)\"],\"pending\":[]}"
   },
   {
+    "name": "#5777: a re-run of an older run that fails after the newer run passed leaves the context green",
+    "program": "required.jq",
+    "args": {
+      "required": ["lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-06T17:33:46Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262382545 } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-06T17:32:11Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262511416 } }
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "#5777: a re-run of an older run that passes after the newer run failed leaves the context red",
+    "program": "required.jq",
+    "args": {
+      "required": ["lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-06T17:33:46Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262382545 } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-06T17:32:11Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262511416 } }
+      }
+    ],
+    "output": "{\"failed\":[\"lint the pull request title\"],\"pending\":[]}"
+  },
+  {
     "name": "a required check run GitHub left in progress beside its conclusion is read by the conclusion, never waited for (#1858)",
     "program": "required.jq",
     "args": {
@@ -3976,6 +4028,34 @@
       }
     ],
     "output": "{\"check\":\"test the workspace (linux)\",\"run\":\"https://example.invalid/runs/1/job/2\"}"
+  },
+  {
+    "name": "#5777: a failed re-run of an older run after the newer run passed is not red, so it cuts nothing",
+    "program": "red.jq",
+    "args": {
+      "required": ["lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-06T17:33:46Z",
+        "detailsUrl": "https://example.invalid/runs/42262382545/job/2",
+        "checkSuite": { "workflowRun": { "databaseId": 42262382545 } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-06T17:32:11Z",
+        "detailsUrl": "https://example.invalid/runs/42262511416/job/1",
+        "checkSuite": { "workflowRun": { "databaseId": 42262511416 } }
+      }
+    ],
+    "output": "null"
   },
   {
     "name": "#5073: a cancelled, a timed-out and a startup-failed required check are not red, and cut nothing; a failure under a newer success is not red either",
