@@ -18,6 +18,16 @@
 //! cycle and a constraint outside that fragment go to the poset's
 //! loop-checking, which returns the replayable evidence. The maintenance is
 //! outside the trusted base: it proposes, and the poset's validator decides.
+//!
+//! # References
+//!
+//! - `Grodin-2026-potential_functions_types` — background: Eq. (1) bounds the
+//!   true cost of a sequence of operations by a potential function and the
+//!   amortised costs. The potential maintenance counts its raises and
+//!   relaxations. Its potentials are a valuation of the constraints, and it
+//!   states no potential function or amortised bound in this sense. Harrison
+//!   Grodin, Ethan Chu, Runming Li, Jan Hoffmann and Robert Harper, "Potential
+//!   Functions as Types", 2026, `arXiv:2607.08547`.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

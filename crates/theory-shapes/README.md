@@ -29,6 +29,9 @@ Finite shapes for gandr: decidable subshapes of finite carriers, the outer pusho
 - Cyril Cohen, Thierry Coquand, Simon Huber and Anders Mörtberg. "Cubical Type Theory: a constructive interpretation of the univalence axiom". TYPES 2015, [doi:10.4230/LIPIcs.TYPES.2015.5](https://doi.org/10.4230/LIPIcs.TYPES.2015.5) — the interval, its face lattice and Glue.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the shape parameter is a store of names, read from `gandr-theory-nominal-automata` at a `Boundary`.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces frame, whose face formulas form a lattice with a free monotone part, where the monotone band decides.
+- `Cherubini-2024-foundation_synthetic_stone_duality` — dependency: Felix Cherubini, Thierry Coquand, Freek Geerligs and Hugo Moeneclaey. "A Foundation for Synthetic Stone Duality". 2024, [arXiv:2412.03203](https://arxiv.org/abs/2412.03203) — § 1.2's Stone duality axiom and Definition 1.1.7 in the finite case: a subshape is a map from its carrier to `2`, and the monotone band refutes by a vertex, a homomorphism to `2`.
+- `Sterling-2026-domains_classifying_topoi` — background: Jonathan Sterling and Lingyuan Ye. "Domains and Classifying Topoi". 2026, [arXiv:2505.13096](https://arxiv.org/abs/2505.13096) — § 1.4's finitely presented algebra as the functions on its spectrum, and § 1.5's cube as the spectrum of the free distributive lattice, both checked on the lattices that faces generate.
+- `Doré-2023-computing_spaces_type_theory` — background: Maximilian Doré. "Computing Spaces in Type Theory". Doctoral thesis, University of Oxford, 2023 — § 4.2's bounds: the one-dimensional cartesian problem in P, the Dedekind problem NP-complete, and the problem coNP-hard in the dimension, so the monotone band has a term budget.
 
 ## Provided features
 

@@ -45,6 +45,20 @@
 //!   Foundation for Synthetic Stone Duality", 2024, `arXiv:2412.03203` — § 6,
 //!   the cohomology of a compact Hausdorff space through a tower of finite
 //!   levels, the interval and the circle among them.
+//! - `Hansen-2020-laplacians_cellular_sheaves_theory_applications` —
+//!   background: Theorem 1.6.1 and § 1.7 read the cohomology off the kernel of
+//!   the Hodge Laplacian, with an inner product on each stalk. The crate
+//!   computes the cohomology of each degree by exact ranks over the rationals,
+//!   with no inner product. Jakob Hansen, "Laplacians of Cellular Sheaves:
+//!   Theory and Applications", doctoral thesis, University of Pennsylvania,
+//!   2020.
+//! - `Ljungström-2025-computational_synthetic_cohomology_theory_homotopy_type_theory`
+//!   — background: cohomology as maps into Eilenberg–MacLane spaces, with any
+//!   coefficient group, and computed in the type theory itself. The crate
+//!   computes cellular cohomology outside the type theory, over the rationals
+//!   alone. Axel Ljungström and Anders Mörtberg, "Computational Synthetic
+//!   Cohomology Theory in Homotopy Type Theory", _Mathematical Structures in
+//!   Computer Science_ 35, 2025, `doi:10.1017/S0960129525000131`.
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the cell family
 //!   of the presented-spaces frame, a sheaf over a finite graded poset.
 //!
