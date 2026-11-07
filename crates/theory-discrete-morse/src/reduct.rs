@@ -368,8 +368,8 @@ impl Walk
 ///
 /// # Specification
 /// - requires: `scheme` is an acyclic matching on `cells`, as
-///   [`collapse`](crate::collapse) finds with no fault and as
-///   [`greedy`](crate::greedy) makes one. `cells` lists each cell of the
+///   [`collapse`](crate::collapse()) finds with no fault and as
+///   [`greedy`](crate::greedy()) makes one. `cells` lists each cell of the
 ///   complex once, each after its faces, and each partner lies in the list.
 /// - ensures: the cells of the reduct are the critical cells among `cells`, by
 ///   rank and then by place. The rank of a cell is one more than the rank of
