@@ -1,11 +1,13 @@
-// A cancellation taken: the scope's clause abandons the rest of the scope,
-// which holds its task's end, so the end is cancelled rather than left open.
-//
-// - see: #1334 — `cancelled`
-
-// The task's protocol.
+//! `abandoned` gives a cancellation that abandons a task continuation.
+//!
+//! The exit clause abandons the rest of its scope. The exit clause cancels the task end.
+//!
+//! The handler starts a task. The task sends its note. The task closes. The exit operation abandons the continuation before a receive.
+//!
+//! - see: #1334 — `cancelled`
+// The import gives the task protocol.
 import "./cancel-base.gandr";
-// Early exit's host interface.
+// The import gives the early-exit host interface.
 import std.process;
 
 /// A scope cancelled at its exit while its task's end is open.

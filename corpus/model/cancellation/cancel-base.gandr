@@ -1,9 +1,8 @@
-//! The cancellation subject's shared declarations, written once and imported by
-//! every source that reads them (`import "./cancel-base.gandr";`): a task hands
-//! its parent what it found over its end. A cancellation point is an operation
-//! a capability scope answers; its clause resumes the rest of the scope once or
-//! abandons it, and an abandoned end is cancelled for its peer
-//! [Fowler-2019-exceptional_asynchronous_session_types].
+//! `cancel-base` gives the task protocol for cancellation sources.
+//!
+//! A task sends its note on `Join`. A cancellation clause resumes its scope once. The clause can abandon that scope. The clause cancels an abandoned end for its peer.
+//!
+//! Each cancellation source imports `Cancel`. The checker uses `Join` to type a parent end.
 //!
 //! - cites: [Fowler-2019-exceptional_asynchronous_session_types]
 //!
