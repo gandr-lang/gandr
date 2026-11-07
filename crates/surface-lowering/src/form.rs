@@ -102,6 +102,22 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a cursor does not split its pieces as an application.
+    pub(crate) mod application {
+        /// The application does not have the next piece it needs.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The head, an argument, or the closer is absent.
+            Missing,
+            /// No opening parenthesis follows the head.
+            Unopened,
+            /// Two arguments have no comma between them.
+            Unseparated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a form's children hold no repair.
     pub mod repair {
         /// The parser inserted nothing among the children.
@@ -5073,6 +5089,51 @@ impl<'pieces> Cursor<'pieces>
         found
     }
 
+    /// Read an application: its head and its comma-separated arguments.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a head followed by `(`, each argument and its comma, and `)`
+    ///   are read in order; the cursor stops past the closer.
+    /// - provides: the one application splitting shared by description readers.
+    /// - fails: the absent reason names the first missing or misplaced piece.
+    /// - panics: none.
+    /// - executable: none — the cursor's transition follows a variable-length
+    ///   slice.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and two-argument applications, each with their
+    ///   separator, distinguish the cardinality boundary.
+    /// - witness: `form::tests::a_cursor_splits_an_application`
+    pub(crate) fn application(&mut self) -> Maybe<(Placed, Vec<Placed>), application::Absent>
+    {
+        let head = match self.read() {
+            Maybe::Present(piece) => piece.placed(),
+            Maybe::Absent(_) => return Maybe::Absent(application::Absent::Missing),
+        };
+        if let Maybe::Absent(_) = self.tile(TileName::PAREN_OPEN) {
+            return Maybe::Absent(application::Absent::Unopened);
+        }
+        let mut arguments = Vec::new();
+        loop {
+            if let Maybe::Present(_) = self.tile(TileName::PAREN_CLOSE) {
+                return Maybe::Present((head, arguments));
+            }
+            let argument = match self.read() {
+                Maybe::Present(piece) => piece.placed(),
+                Maybe::Absent(_) => return Maybe::Absent(application::Absent::Missing),
+            };
+            arguments.push(argument);
+            if let Maybe::Present(_) = self.tile(TileName::COMMA) {
+                continue;
+            }
+            if let Maybe::Present(_) = self.at(TileName::PAREN_CLOSE) {
+                continue;
+            }
+            return Maybe::Absent(application::Absent::Unseparated);
+        }
+    }
+
     /// Read the run of operands at the cursor.
     ///
     /// # Specification
@@ -5945,6 +6006,47 @@ mod tests
                 count: OperandCount::from(3_usize),
             },
             "a juxtaposition names its first two operands and counts them all"
+        );
+    }
+
+    #[test]
+    fn a_cursor_splits_an_application()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let placed = |node: usize, start: usize, end: usize| Placed {
+            node: crate::fixture::node(node),
+            span: at(start, end),
+        };
+        let head = placed(1_usize, 0_usize, 1_usize);
+        let first = placed(3_usize, 2_usize, 3_usize);
+        let second = placed(5_usize, 5_usize, 6_usize);
+        let pieces = [
+            Piece::Operand(head),
+            Piece::Tile {
+                label: TileName::PAREN_OPEN,
+                at: placed(2_usize, 1_usize, 2_usize),
+            },
+            Piece::Operand(first),
+            Piece::Tile {
+                label: TileName::COMMA,
+                at: placed(4_usize, 3_usize, 4_usize),
+            },
+            Piece::Operand(second),
+            Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                at: placed(6_usize, 6_usize, 7_usize),
+            },
+        ];
+        let mut cursor = Cursor::new(&pieces, at(0_usize, 7_usize));
+        assert_eq!(
+            cursor.application(),
+            Maybe::Present((head, alloc::vec![first, second])),
+            "the splitter keeps the head and its argument order"
+        );
+        assert_eq!(
+            cursor.here(),
+            at(7_usize, 7_usize),
+            "the closer is consumed"
         );
     }
 
