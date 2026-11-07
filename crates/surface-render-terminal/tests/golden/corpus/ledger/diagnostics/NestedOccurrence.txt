@@ -2,8 +2,8 @@ error[NestedOccurrence]: the datatype occurs nested inside another type in its f
    ╭▸ corpus/ledger/diagnostics/NestedOccurrence.gandr:12:1
    │
 12 │ ┏ data Rose : Type where
-13 │ ┃   | Node : (kids : Test(Rose)) --> Rose
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type inside another former, at a place it does not hold strictly positively
+13 │ ┃   | Node : (kids : Test Rose) --> Rose
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type inside another former, at a place it does not hold strictly positively
    │
    ├ note: `Rose` is refused with NestedOccurrence, as its expectation states
    ╰ help: place the datatype only where each enclosing type holds it strictly positively

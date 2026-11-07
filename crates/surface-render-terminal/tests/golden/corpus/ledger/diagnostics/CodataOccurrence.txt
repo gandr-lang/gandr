@@ -1,8 +1,8 @@
 error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
   ╭▸ corpus/ledger/diagnostics/CodataOccurrence.gandr:7:10
   │
-7 │   tail : Swap(b, a);
-  │          ━━━━━━━━━━ the codata type named off an observation's result
+7 │   tail : Swap b a;
+  │          ━━━━━━━━ the codata type named off an observation's result
   │
   ├ note: `Swap` is refused with CodataOccurrence, as its expectation states
   ╰ help: write the codata type only as an observation's result, with its parameters in order

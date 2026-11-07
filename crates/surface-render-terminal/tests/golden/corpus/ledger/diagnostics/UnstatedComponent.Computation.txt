@@ -1,7 +1,7 @@
 error[UnstatedComponent.Computation]: the model signature cannot state `start`, which has a port at a computation sort, which a model does not read yet
    ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Computation.gandr:11:26
    │
-11 │ def counterModel : Model(Counter) ;
+11 │ def counterModel : Model Counter ;
    │                          ━━━━━━━ the signature this model derives
    │
    ├ note: `counterModel` is refused with UnstatedComponent.Computation, as its expectation states

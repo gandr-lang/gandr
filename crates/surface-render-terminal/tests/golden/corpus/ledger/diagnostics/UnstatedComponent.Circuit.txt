@@ -13,7 +13,7 @@ error[UndescribedMember.NestedOperation]: this member rewrites a term with an op
 error[UnstatedComponent.Circuit]: the model signature cannot state `twice`, which is a circuit rule, whose sphere a model does not read yet
    ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Circuit.gandr:14:19
    │
-14 │ def model : Model(T) ;
+14 │ def model : Model T ;
    │                   ━ the signature this model derives
    │
    ├ note: `model` is refused with UnstatedComponent.Circuit, as its expectation states

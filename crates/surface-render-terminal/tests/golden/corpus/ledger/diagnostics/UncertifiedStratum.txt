@@ -1,8 +1,8 @@
 error[UncertifiedStratum]: `equiv` needs each list cell's round trip to return the cell, its tail unread
    ╭▸ corpus/ledger/diagnostics/UncertifiedStratum.gandr:50:17
    │
-46 │ def emptied(xs : List(Bool)) -> -F List(Bool) =
-   │                  ────────── the type it synthesises
+46 │ def emptied(xs : List Bool) -> -F List Bool =
+   │                  ───────── the type it synthesises
    ┆
 50 │ def collapsed = equiv emptied keep ;
    │                 ━━━━━━━━━━━━━━━━━━ a list cell its round trip does not return: found `List Bool`

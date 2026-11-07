@@ -1,7 +1,7 @@
 error[UnstatedComponent.Abstraction]: the model signature cannot state `nu`, which abstracts an atom over a port, whose models are nominal sets'
    ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Abstraction.gandr:12:30
    │
-12 │ def restrictionModel : Model(Restriction) ;
+12 │ def restrictionModel : Model Restriction ;
    │                              ━━━━━━━━━━━ the signature this model derives
    │
    ├ note: `restrictionModel` is refused with UnstatedComponent.Abstraction, as its expectation states

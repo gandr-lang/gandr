@@ -2,8 +2,8 @@ error[BuiltinRepeated]: an earlier declaration holds the built-in role `irPair`
   ╭▸ corpus/ledger/diagnostics/BuiltinRepeated.gandr:6:1
   │
 6 │ ┏ data Again(a : Type, b : a -> Type) : Type where
-7 │ ┃   | MkAgain : (x : a, y : b(x)) --> Again(a, b)
-  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role marked twice
+7 │ ┃   | MkAgain : (x : a, y : b(x)) --> Again a b
+  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role marked twice
   │
   ├ note: `Again` is refused with BuiltinRepeated, as its expectation states
   ╰ help: remove the `builtin` mark from one of the two declarations

@@ -10,7 +10,7 @@ error[UndescribedMember.LhsNotOperation]: this member rewrites from something ot
 error[UnstatedComponent.Unsorted]: the model signature cannot state `loose`, which binds a variable no occurrence gives a sort
    ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unsorted.gandr:11:19
    │
-11 │ def model : Model(T) ;
+11 │ def model : Model T ;
    │                   ━ the signature this model derives
    │
    ├ note: `model` is refused with UnstatedComponent.Unsorted, as its expectation states

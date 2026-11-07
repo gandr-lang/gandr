@@ -2,10 +2,10 @@ error[BuiltinNotCanonical]: this declaration departs from the canonical form of 
   ╭▸ corpus/ledger/diagnostics/BuiltinNotCanonical.gandr:3:1
   │
 3 │ ┏ data Swapped(d : Type) : Type[+, 1] where
-4 │ ┃   | Stop : (e : d) --> Swapped(d)
-5 │ ┃   | Read : (a : Type, f : (a -> d) -> Swapped(d)) --> Swapped(d)
-6 │ ┃   | Ask : (a : Type, f : a -> Swapped(d)) --> Swapped(d)
-  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role's holder in another form
+4 │ ┃   | Stop : (e : d) --> Swapped d
+5 │ ┃   | Read : (a : Type, f : (a -> d) -> Swapped d) --> Swapped d
+6 │ ┃   | Ask : (a : Type, f : a -> Swapped d) --> Swapped d
+  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role's holder in another form
   │
   ├ note: `Swapped` is refused with BuiltinNotCanonical, as its expectation states
   ╰ help: write the holder in the canonical form of its role
