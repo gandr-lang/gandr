@@ -113,6 +113,7 @@ INSERT INTO reference VALUES('Tarau-2008-ranking_catamorphisms_unranking_anamorp
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Waas-2025-stratified_homotopy_theory_generalized_simple_homotopy_theory_foundations_applications_intersections','theory-discrete-morse','reduction','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Willsey-2021-egg_fast_extensible_equality_saturation','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','9d949b38848b499a5cfd920ea5c04c5cc8630d6e');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','access','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','a6d3b5e613083b88b2f9096f172eabdc6890b4b7');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
@@ -448,6 +449,7 @@ INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kerne
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','bc468ed7bf854d175494383216341bc52e916430','2026-10-29','715ec7ca272d78491f01e8f72c273f72564822ce');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','2a6bd5457b0841455e1db0206b2e709077fe173c');
+INSERT INTO reference VALUES('vault:01a178aa-4f9c-7221-a972-619f184e507e','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7','surface-grammar','mold','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5f59-7323-a77d-6f8114cedbba','core-checker','fill','lineage','f5c6fcb3d6e11921354cb06ce23eed12219e5134','2026-10-30','8fab72057caf7d961aa5f6b3ba9ab565e2f15c97');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
@@ -546,6 +548,7 @@ INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surfa
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','workspace','background','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','ec86c18a244f7869da25774f1cd9e8c036e54687');
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-driver','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-e578-7e31-8903-9f223de2dd91','surface-lowering','description','anchor','9c69093bd6aa7636622a7efb9b6e3b3ffaa60bf6','2026-11-06','e13d3fb39f8f7fe56f23ff5743148a1ee632395e');
+INSERT INTO reference VALUES('vault:01a178aa-f8ad-73d0-bbe7-c395c922e4f9','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb','core-nbe','traced','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','5630fb4598d9bfdaafb4ddf50a51da4d99bc1bb6','2026-10-27','e18d7dd7526358fee7a1b74909f23cbf4c6580e3');
@@ -636,6 +639,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','reduction','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','sum','anchor','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','d0cdb8d1085104a2bb11fc971d543c12d4765c7e');
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-probability','','exemplar','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','234f19cce3f96fa69a4cea4c6ff5b3cbaadb754d');
