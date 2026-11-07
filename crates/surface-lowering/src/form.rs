@@ -512,8 +512,6 @@ pub struct TileName(&'static str);
 
 impl TileName
 {
-    /// The acquire keyword `acquire`, opening a statement.
-    pub const ACQUIRE: Self = Self("acquire");
     /// The arrow `->` of a function type and of a function's result.
     pub const ARROW: Self = Self("->");
     /// The linear arrow `⊸` of a linear function type and of a linear
