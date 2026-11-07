@@ -28,11 +28,23 @@
 //! - A loop that follows a protocol passes: each pass opens with the placement
 //!   of an endpoint the loop threads, and every path to the next pass acts on
 //!   that endpoint first, so each pass waits on its peer or makes a move of the
-//!   protocol before it runs again ([`follows`]). A path that runs again with
-//!   the endpoint untouched owes the entry, as any loop does.
+//!   protocol before it runs again ([`follows`]). Such a loop need not exit: it
+//!   is a demonic iteration, a greatest fixed point over the protocol. A path
+//!   that runs again with the endpoint untouched owes the entry, as any loop
+//!   does.
 //! - A decode of a computation code no definition unfolds is refused as a
 //!   [`CheckRefusal::ShapeMismatch`] wanting a returner: its row is not seen,
 //!   so it cannot state the entry.
+//!
+//! # References
+//!
+//! - `vault:01a1b567-b34b-77a2-9ace-075796f0eb3e` — exemplar: the source page
+//!   of Peter Hancock and Pierre Hyvernat, "Programming Interfaces and Basic
+//!   Topology", Annals of Pure and Applied Logic 137, 2006. Its Definition 11
+//!   builds a demonic iteration from a family of states and a step that makes
+//!   one command and response cycle from each state into the family again.
+//!   [`follows`] checks that condition on a loop's pass. Its Definition 9 is
+//!   the angelic iteration, a least fixed point whose program reaches its exit.
 
 #[cfg(test)]
 mod tests;
@@ -349,6 +361,13 @@ pub enum Protocol
 
 /// Whether every pass of the loop whose fixpoint body is `body` acts on an
 /// endpoint the loop threads before it runs the next pass.
+///
+/// The check reads the loop as a demonic iteration over its protocol. The
+/// states at the loop head are the family, and one pass is the step. The step
+/// lands in the family again only after a move: a send, a receive, a
+/// selection, an offer or a close. The loop need not exit, so it owes no
+/// measure. A loop that must exit is an angelic iteration, and its evidence is
+/// a measure, not this check.
 ///
 /// # Specification
 /// - requires: `body` is the body of a fixpoint, its own binder innermost.
