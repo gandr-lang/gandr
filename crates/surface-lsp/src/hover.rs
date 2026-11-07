@@ -3333,7 +3333,9 @@ mod tests
     /// What `circle-base.gandr` writes of itself, as its `//!` lines read.
     const CIRCLE_BASE: &str = "This source supplies the identity subject's shared circle \
                                declarations.\n\nThe declarations provide the circle, its loop \
-                               words, and\ntheir integer model.\n\nEach subject source imports \
+                               words, and\ntheir integer model.\nWinding and spinning follow the \
+                               HoTT book's § 8.1. The circle follows\ncubical Agda's \
+                               `Cubical/HITs/S1/Base.agda`.\n\nEach subject source imports \
                                these declarations to state its own law.\nThe checker evaluates \
                                their rules and path operations.\n\n- see: \
                                corpus/model/identity/circle.gandr";
@@ -3374,7 +3376,7 @@ mod tests
         );
         assert_eq!(
             (range.start.line, range.end.line),
-            (Line::from(0_u32), Line::from(8_u32)),
+            (Line::from(0_u32), Line::from(10_u32)),
             "about the whole run"
         );
         let commented = include_str!(
