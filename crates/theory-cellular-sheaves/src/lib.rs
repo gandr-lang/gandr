@@ -27,6 +27,7 @@
 //! | [`Sheaf`] | the poset, a stalk width for each cell, and an entry map for each pair of a cell and a cell above it |
 //! | [`Gluing`], [`Section`], [`Obstruction`], [`Agreement`] | the verdict on the sections of a cover, the glued section or each pair that differs, and the verdict on one pair |
 //! | [`CochainComplex`], [`Matrix`], [`Cohomology`] | the coboundaries over the rationals, their ranks and the cohomology by degree |
+//! | [`Rational`], [`Integer`] | an exact rational in lowest terms over 128-bit integers, which `theory-probability` also takes as a weight, and its parts |
 //! | [`Tower`], [`Image`] | the levels of a tower, where each bonding map sends each cell, and the rank of the map it induces on cohomology |
 //! | [`Oriented`], [`Reduced`] | the poset as a complex over the integers for a matching, and the cochains reduced along it |
 //! | [`Entry`], [`Width`], [`Dimension`], [`CoverIndex`], [`Level`], [`Incidence`] | the names of an entry, a width, a dimension, a cover member, a level and an incidence |
@@ -119,9 +120,11 @@ pub use index::CoverIndex;
 pub use index::Dimension;
 pub use index::Entry;
 pub use index::Incidence;
+pub use index::Integer;
 pub use index::Level;
 pub use index::Width;
 pub use matrix::Matrix;
+pub use matrix::Rational;
 pub use reduce::Oriented;
 pub use reduce::Reduced;
 pub use sheaf::Agreement;

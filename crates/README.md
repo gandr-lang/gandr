@@ -80,7 +80,7 @@ crates/
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
 ├── theory-discrete-morse/         acyclic matchings: their check and the greedy matching
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
-├── theory-exact-reals/            canonical dyadics with directed rounding, oriented intervals with outward-rounded arithmetic, and the scoped plan DAG with its canonical bytes, beside the kernel and never inside it
+├── theory-exact-reals/            canonical dyadics, outward-rounded intervals and the scoped plan DAG, outside the kernel
 ├── theory-graded-posets/          graded posets with cells as data
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
@@ -88,6 +88,7 @@ crates/
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-ordered-algebras/       one law checker for ordered semirings, a counterexample for each broken law, and the max-plus, Lawvere and usage instances
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
+├── theory-probability/            finite distributions with exact weights
 ├── theory-shapes/                 finite shapes: decidable subshapes, inclusions, the outer pushout, and face entailment in three bands, derived or refuted
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point

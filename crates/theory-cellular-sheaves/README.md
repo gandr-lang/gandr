@@ -34,6 +34,7 @@ This crate holds cellular sheaves over finite graded posets for gandr: a stalk o
 - `Sheaf`: the stalks and the entry maps over a graded poset, checked to compose.
 - `Gluing`, `Section`, `Obstruction`: the verdict on the sections of a cover.
 - `CochainComplex`, `Matrix`, `Cohomology`: the coboundaries over the rationals, their ranks and the cohomology by degree.
+- `Rational`, `Integer`: an exact rational in lowest terms over 128-bit integers, and its parts. The sum uses the least common denominator, and the product cancels common factors before it multiplies. `theory-probability` takes it as a weight.
 - `Tower`, `Image`: the levels of a tower, where each bonding map sends each cell, and the rank of each induced map.
 - `Oriented`, `Reduced`: the poset as a complex over the integers for a matching, and the cochains reduced along it.
 - `SheafError`: every refusal, by the cell, the degree or the level it concerns.
