@@ -63,7 +63,14 @@
 //! choice reverses if an expectation needs a looser relation than equality — an
 //! obligation count bounded rather than exact — which would arrive as a fifth
 //! schema rather than a change to this one.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: A data block owns
+//!   its rule reports.
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
@@ -1404,12 +1411,14 @@ where
 ///   its own halves keeps its own; a witness that checks beside its refused
 ///   function keeps the default, and so does a function that checks beside its
 ///   refused witness. A declaration refused at refused terms produces the
-///   terms' cause, and the terms state what their first asker states.
+///   terms' cause, and the terms state what their first asker states. A data
+///   refusal settles each data report whose refusal it names.
 /// - witness: `settle::tests::a_module_settled_after_its_leading_report_settles_as_a_whole_one_776`
 /// - witness: `settle::tests::an_application_s_attribute_states_its_refused_names_1274`
 /// - witness: `settle::tests::a_witness_that_checks_keeps_the_default_beside_its_refused_function_3706`
 /// - witness: `settle::tests::a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840`
 /// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
+/// - witness: `settle::tests::a_data_refusal_covers_its_rules_6063`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
@@ -1426,19 +1435,88 @@ where
 {
     // The declarations the earlier report settled lead the module's, the
     // closure's; the rest are settled here.
-    let mut later = module.declarations().iter();
+    let later = module.declarations().iter().skip(earlier.len());
     // A lowering refusal consumes no verdict.
-    let consumed = later
-        .by_ref()
+    let consumed = module
+        .declarations()
+        .iter()
         .take(earlier.len())
         .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
         .count();
     let mut judged = verdicts.judged().iter().skip(consumed);
     let mut declarations = Vec::with_capacity(module.declarations().iter().len());
     declarations.extend_from_slice(earlier);
+    let mut data_refusals = BTreeMap::new();
+    let mut matched_data_refusals = BTreeSet::new();
+    let mut answers = verdicts.judged().iter().skip(consumed);
+    for declaration in later.clone() {
+        if matches!(declaration.outcome(), DeclarationOutcome::Data(_)) {
+            let expectations = expected(
+                roots.root_at(declaration.span().start()),
+                arena,
+                module,
+                declaration,
+            )?;
+            if let &Stated::Verdict(Outcome::Refuses(refusal)) = &expectations.stated {
+                let _replaced = data_refusals.insert(
+                    declaration.span().start(),
+                    (
+                        declaration.span(),
+                        declaration.name(),
+                        refusal,
+                        expectations,
+                    ),
+                );
+            }
+        }
+        let refusal = match declaration.outcome() {
+            DeclarationOutcome::Refused(refusal) => Some(Refusal::Lowering(refusal).name()),
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World => {
+                let Some(answer) = answers.next()
+                else {
+                    break;
+                };
+                if answer.constant() != declaration.constant() {
+                    break;
+                }
+                match answer.verdict() {
+                    Verdict::Refused(refusal) => {
+                        Some(Refusal::Checking(caused(module, verdicts, refusal)).name())
+                    },
+                    Verdict::Data
+                    | Verdict::Checked { .. }
+                    | Verdict::Synthesised { .. }
+                    | Verdict::Owed(_)
+                    | Verdict::Suspended(_) => None,
+                }
+            },
+        };
+        let Some(refusal) = refusal
+        else {
+            continue;
+        };
+        let family = data_refusals
+            .range(..= declaration.span().start())
+            .next_back()
+            .filter(|entry| {
+                entry.1.0.end() >= declaration.span().end() && entry.1.1 == declaration.name()
+            });
+        let Some(family) = family
+        else {
+            continue;
+        };
+        if family.1.2 == refusal {
+            let _inserted = matched_data_refusals.insert(*family.0);
+        }
+    }
     for lowered in later {
         let root = roots.root_at(lowered.span().start());
-        let expectations = expected(root, arena, module, lowered)?;
         let (produced, owed) = match lowered.outcome() {
             DeclarationOutcome::Refused(refusal) => {
                 (Produced::Unlowered(refusal), ObligationCount::from(0_usize))
@@ -1481,6 +1559,18 @@ where
                 | Verdict::Suspended(_),
             )
             | Produced::Guarded(_) => produced,
+        };
+        let family = data_refusals
+            .range(..= lowered.span().start())
+            .next_back()
+            .filter(|entry| entry.1.0.end() >= lowered.span().end() && entry.1.1 == lowered.name());
+        let expectations = match family {
+            Some(family) if matched_data_refusals.contains(family.0) => match produced.refusal() {
+                Maybe::Present(actual) if actual.name() == family.1.2 => family.1.3.clone(),
+                Maybe::Present(_) | Maybe::Absent(_) => Expectations::unattributed(),
+            },
+            Some(family) => family.1.3.clone(),
+            None => expected(root, arena, module, lowered)?,
         };
         // A name an application or a module's header binds writes no half:
         // when it is refused, the attributes before that form state its
@@ -2609,6 +2699,79 @@ mod tests
                 "`{source}` leaves its pinned obligations surviving"
             );
         }
+    }
+
+    #[test]
+    fn a_data_refusal_covers_its_rules_6063()
+    {
+        let report = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(include_str!(
+                "settle/fixtures/data-refusal-rules-6063.gandr"
+            )),
+        );
+        assert_eq!(
+            report.tally().settlement(),
+            Settlement::Settled,
+            "the data and rule reports settle under one data refusal"
+        );
+        let fixed = report
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name().as_ref() == "FixedShfy")
+            .collect::<Vec<_>>();
+        let settlements = fixed
+            .iter()
+            .map(|declaration| declaration.settlement())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            settlements.as_slice(),
+            &[
+                Settlement::Settled,
+                Settlement::Settled,
+                Settlement::Settled,
+            ],
+            "the data and rule reports settle"
+        );
+
+        let signature = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(include_str!(
+                "settle/fixtures/data-refusal-signature-6063.gandr"
+            )),
+        );
+        assert_eq!(
+            signature.tally().settlement(),
+            Settlement::Settled,
+            "a data signature refusal stays settled"
+        );
+
+        let missing = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(include_str!(
+                "settle/fixtures/data-refusal-mismatch-6063.gandr"
+            )),
+        );
+        let fixed = missing
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name().as_ref() == "FixedShfy")
+            .collect::<Vec<_>>();
+        let spans = fixed
+            .iter()
+            .map(|declaration| declaration.span())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            spans.len(),
+            2_usize,
+            "the missing refusal names the data type and its rules"
+        );
+        assert!(
+            fixed
+                .iter()
+                .all(|declaration| declaration.settlement() == Settlement::Unsettled),
+            "the data type and its rules reject the missing refusal"
+        );
     }
 
     #[test]

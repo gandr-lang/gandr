@@ -1,0 +1,26 @@
+// A data type's attribute states a refusal in its rule.
+//
+// The rule applies `L`, which its signature does not declare. The data type
+// checks.
+//
+// Settlement reads the data report and the rule report as one declaration.
+//
+// - see: #6063
+
+/// A two-constructor carrier.
+data Two : Type where
+  /// The left constructor.
+  | L : Two
+  /// The right constructor.
+  | R : Two
+
+/// A data type whose rule has an ill-formed description.
+@[ refuses("IllFormedDescription") ]
+data FixedShfy : Type where {
+  /// A return from the carrier.
+  | FixedRet : (v : Two) --> FixedShfy
+  /// A continuation from the carrier.
+  | FixedAsk : (k : Two -> FixedShfy) --> FixedShfy
+  /// A rule that applies an undeclared constructor.
+  rule : FixedAsk k <=> k L;
+}
