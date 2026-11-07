@@ -65,11 +65,7 @@ struct Integers
 fn integers(arena: &mut CoreArena) -> Integers
 {
     let carrier = arena.value_type_base(BaseType::Integer);
-    let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(1_u8.to_string())
-        .expect("the digits are decimal");
-    let one = arena.value_literal(gandr_kernel_term::Literal::Integer(
-        gandr_kernel_term::IntegerLiteral::new(gandr_kernel_term::Sign::NonNegative, magnitude),
-    ));
+    let one = crate::fixture::integer(arena, 1_u8.to_string());
     let cell = arena.value_type_path(carrier, one, one);
     let reflexive = arena.value_here(one);
     Integers {

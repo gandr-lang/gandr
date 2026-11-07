@@ -4135,24 +4135,17 @@ fn a_linear_function_and_its_call_are_readmitted_5853()
 {
     // def id   : U ((x : Integer) ⊸ F Integer) = thunk { λ̂x. return x } ;
     // def same : Path[.A = Integer](⟨id 7⟩, 7) = here(7) ;
-    let literal = |arena: &mut CoreArena, digits: &str| {
-        let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits))
-            .expect("the digits are decimal");
-        arena.value_literal(gandr_kernel_term::Literal::Integer(
-            gandr_kernel_term::IntegerLiteral::new(gandr_kernel_term::Sign::NonNegative, magnitude),
-        ))
-    };
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let returns_integer = arena.comp_type_returner(integer);
-    let one = literal(&mut arena, "1");
+    let one = crate::fixture::integer(&mut arena, String::from("1"));
     let arrow = arena.comp_type_linear_arrow(integer, one, returns_integer);
     let suspended_arrow = arena.value_type_thunk(arrow);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let returns_bound = arena.computation_return(bound);
     let lambda = arena.computation_linear_lambda(returns_bound);
     let identity = arena.value_thunk(lambda);
-    let seven = literal(&mut arena, "7");
+    let seven = crate::fixture::integer(&mut arena, String::from("7"));
     let named = arena.value_constant(ConstantIndex::from(0_usize));
     let forced = arena.computation_force(named);
     let applied = arena.computation_application(forced, seven);
