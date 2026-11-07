@@ -1820,6 +1820,10 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # measures from it, one with no record is refused with the replay from the
 # old tip, and one on a trunk no rebase rewrote opens. A record taken after
 # the branch's own commit writes nothing (#5990, `rewritten_base`).
+# `.config/pr-stack/replay-cases.bash` replays a tip through a stub of
+# `createCommitOnBranch` on a local origin: a matching tree moves the branch,
+# and another tree names each differing path with its mode and its blob on
+# each side, the mode reason kept for a mode alone (#6020, `signed_replay`).
 # `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
 # repository, once per case in `.config/pr-stack/behind.json`: a lower that
 # lacks the trunk change the upper builds on arms `pr:await` while it is
@@ -1904,6 +1908,7 @@ fi
 .config/pr-stack/watcher.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/rewritten-base-cases.bash || failed=1
+.config/pr-stack/replay-cases.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 .config/pr-stack/replays.bash || failed=1
 .config/pr-stack/queue.bash || failed=1
