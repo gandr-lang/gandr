@@ -2953,15 +2953,17 @@ echo "$url"
 # A pull request that closes no issue, as one advancing an epic's unit does,
 # takes the area and epic of the issue its branch names (`<lane>-<n>-…`, or
 # `<lane>-<seat>-<n>-…` from a numbered seat, #3836), and failing that the
-# lane's own `area:<lane>` label. An issue carrying the pull request's
-# `from:` line is the filing, so a second run files nothing. Two runs that
-# overlap, on one host or two, each read the board before the other files
-# (#5149). So a run that opens a collector reads the board again. When an
-# earlier issue carries its `from:` line, or an earlier collector of its
-# area is open, the run closes its own collector as that issue's duplicate,
-# and adds its rows to the earlier collector when it lacks them. `pr:watch`
-# runs it when its pull request merges; `stall:watch` pages a verdict still
-# unfiled. `--dry-run` prints the decision and changes nothing.
+# lane's own `area:<lane>` label. The lane is one or more lowercase words
+# that hyphens join, as `diagnostic-help` (#6012). An issue carrying the
+# pull request's `from:` line is the filing, so a second run files nothing.
+# Two runs that overlap, on one host or two, each read the board before the
+# other files (#5149). So a run that opens a collector reads the board
+# again. When an earlier issue carries its `from:` line, or an earlier
+# collector of its area is open, the run closes its own collector as that
+# issue's duplicate, and adds its rows to the earlier collector when it
+# lacks them. `pr:watch` runs it when its pull request merges; `stall:watch`
+# pages a verdict still unfiled. `--dry-run` prints the decision and changes
+# nothing. `.config/claims/branch-unit.bash` runs its cases.
 ["refactor:file"]
 description = "File a merged pull request's yes or maybe refactoring verdict on its area's refactor collector and page the coordinator"
 usage = '''
@@ -2992,13 +2994,17 @@ state=$(jq -r .state <<< "$pr")
 area=$(jq -c '[.closingIssuesReferences.nodes[].labels.nodes[].name | select(startswith("area:")) | ltrimstr("area:")] | first' <<< "$pr")
 epic=$(jq -r '[.closingIssuesReferences.nodes[].parent.number | values] | first // empty' <<< "$pr")
 head=$(jq -r .headRefName <<< "$pr")
-if [[ $area == null && $head =~ ^[a-z]+(-[0-9]+)?-([1-9][0-9]*)-[a-z] ]]; then
-  unit=$(gh api "repos/$repo/issues/${BASH_REMATCH[2]}" --jq '{area: ([.labels[].name | select(startswith("area:")) | ltrimstr("area:")] | first),
-    epic: ((.parent_issue_url // "" | capture("/issues/(?<n>[0-9]+)$").n) // "")}')
-  area=$(jq -c .area <<< "$unit")
-  [[ -n $epic ]] || epic=$(jq -r .epic <<< "$unit")
-fi
 lane=${head%%-*}
+if [[ $head =~ ^([a-z]+(-[a-z]+)*)(-[0-9]+)?-([1-9][0-9]*)-[a-z] ]]; then
+  lane=${BASH_REMATCH[1]}
+  named=${BASH_REMATCH[4]}
+  if [[ $area == null ]]; then
+    unit=$(gh api "repos/$repo/issues/$named" --jq '{area: ([.labels[].name | select(startswith("area:")) | ltrimstr("area:")] | first),
+      epic: ((.parent_issue_url // "" | capture("/issues/(?<n>[0-9]+)$").n) // "")}')
+    area=$(jq -c .area <<< "$unit")
+    [[ -n $epic ]] || epic=$(jq -r .epic <<< "$unit")
+  fi
+fi
 if [[ $area == null ]] && gh label list -R "$repo" --search "area:$lane" --json name --jq '.[].name' | grep -Fxq "area:$lane"; then
   area=$(jq -cn --arg lane "$lane" '$lane')
 fi
