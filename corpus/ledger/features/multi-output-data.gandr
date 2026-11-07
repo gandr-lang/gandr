@@ -34,9 +34,9 @@ def ports : *{left : Expr, right : Expr} = Share (Lit 1);
 /// A pair that duplicates a value into two ports of one parameter.
 @[ checks ]
 data Pair(a : Type) : Type where
-  | Leaf : (x : a) --> Pair(a)
-  | Dup : (p : Pair(a)) --> (one : Pair(a), two : Pair(a))
+  | Leaf : (x : a) --> Pair a
+  | Dup : (p : Pair a) --> (one : Pair a, two : Pair a)
 
 /// A parameterised family's record: each port takes its entry's type.
 @[ checks ]
-def doubled : *{one : Pair(Integer), two : Pair(Integer)} = Dup (Leaf 1);
+def doubled : *{one : Pair Integer, two : Pair Integer} = Dup (Leaf 1);

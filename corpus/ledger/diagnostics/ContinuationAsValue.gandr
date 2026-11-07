@@ -14,7 +14,7 @@ module Cancel :> *{
 }
 
 @[ checks ]
-def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit =
+def resume_stack(j : Stack (-F Unit) (-F Unit)) -> -F Unit =
   j *{}
 
 @[ refuses("ContinuationAsValue") ]

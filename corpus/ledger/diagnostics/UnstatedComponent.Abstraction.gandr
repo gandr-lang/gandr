@@ -9,4 +9,4 @@ theory Restriction where
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
 
 @[ refuses("UnstatedComponent.Abstraction") ]
-def restrictionModel : Model(Restriction) ;
+def restrictionModel : Model Restriction ;

@@ -10,4 +10,4 @@ theory T where
   rule crossed : low (zero ()) ==> zero ();
 
 @[ refuses("UnstatedComponent.IllSorted") ]
-def model : Model(T) ;
+def model : Model T ;

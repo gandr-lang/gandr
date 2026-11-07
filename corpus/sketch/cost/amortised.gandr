@@ -17,10 +17,10 @@ import std.cost (Cost, Credit, save, spend);
 /// A queue as two lists: pushes go on the back, and pops read the front.
 pub data Batched(a : Type) : Type where
   /// The front, read in order, and the back, read in reverse.
-  | Lists : (front : List(a), back : List(a)) --> Batched(a)
+  | Lists : (front : List a, back : List a) --> Batched a
 
 /// Adds an element at the back, at one step. The potential grows by one.
-pub def push[a : Type](q : Batched(a), x : a) -> [Cost] Batched(a) #spec{
+pub def push[a : Type](q : Batched a, x : a) -> [Cost] Batched a #spec{
   measure {
     | potential length(q.back)
     | cost 2
@@ -32,7 +32,7 @@ pub def push[a : Type](q : Batched(a), x : a) -> [Cost] Batched(a) #spec{
 
 /// Takes the front element. An empty front reverses the back first, and the
 /// potential pays for the reversal.
-pub def pop[a : Type](q : Batched(a)) -> [Cost] Maybe(*{a, Batched(a)}) #spec{
+pub def pop[a : Type](q : Batched a) -> [Cost] Maybe *{a, Batched a} #spec{
   measure {
     | potential length(q.back)
     | cost 1
@@ -55,10 +55,10 @@ pub def pop[a : Type](q : Batched(a)) -> [Cost] Maybe(*{a, Batched(a)}) #spec{
 /// The same queue keeps its potential as credit beside the back list.
 pub data Banked(a : Type) : Type where
   /// The two lists, and one credit for each element of the back.
-  | Lists : (front : List(a), back : List(a), paid : Credit(length(back), Unit) @0) --> Banked(a)
+  | Lists : (front : List a, back : List a, paid : Credit length(back) Unit @0) --> Banked a
 
 /// Adds an element at the back, charging one step and saving one more.
-pub def pushBanked[a : Type](q : Banked(a), x : a) -> [Cost] Banked(a) #spec{
+pub def pushBanked[a : Type](q : Banked a, x : a) -> [Cost] Banked a #spec{
   measure { cost 2 }
 } {
   charge 1;
@@ -66,7 +66,7 @@ pub def pushBanked[a : Type](q : Banked(a), x : a) -> [Cost] Banked(a) #spec{
 }
 
 /// Takes the front element, and pays a reversal from the back's credit.
-pub def popBanked[a : Type](q : Banked(a)) -> [Cost] Maybe(*{a, Banked(a)}) #spec{
+pub def popBanked[a : Type](q : Banked a) -> [Cost] Maybe *{a, Banked a} #spec{
   measure { cost 1 }
 } {
   match q.front where

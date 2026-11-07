@@ -28,7 +28,7 @@ import std.abi (|->, **);
 /// null. Nobody has checked its body, so the vendor's documentation states it.
 @[trusted(by : assumed, note : "the vendor's documented contract, demo 2.4")]
 extern C from "lib:demo" {
-  fun deref_or(p : Ptr(i32), d : i32) -> i32 #spec{
+  fun deref_or(p : Ptr i32, d : i32) -> i32 #spec{
     ghost v : i32
     requires { p |-> v }
     ensures r {
@@ -42,9 +42,9 @@ extern C from "lib:demo" {
 /// is evidence, not proof.
 @[trusted(by : tested("glibc string/test-memcpy"), note : "non-overlapping buffers only")]
 extern C from "lib:c" {
-  fun memcpy(dst : Ptr(u8), src : Ptr(u8), n : usize) -> Ptr(u8) #spec{
-    ghost bytes : Bytes(n)
-    ghost before : Bytes(n)
+  fun memcpy(dst : Ptr u8, src : Ptr u8, n : usize) -> Ptr u8 #spec{
+    ghost bytes : Bytes n
+    ghost before : Bytes n
     requires { src |-> bytes ** dst |-> before }
     ensures r {
       | r == dst
@@ -67,5 +67,5 @@ extern Rust from "crate:demo" {
 }
 
 /// The word behind a pointer that may be null, zero otherwise.
-pub def readOrZero(p : Ptr(i32)) -> i32 =
+pub def readOrZero(p : Ptr i32) -> i32 =
   deref_or(p, 0)

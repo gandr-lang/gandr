@@ -14,8 +14,8 @@
 /// `k : Fin(m)` for the current `m`.
 def cursor(grow : () -> Bool, done : () -> Bool) -> [Partial] Nat =
   var m : Nat @0 = 3
-  var k : Fin(m) = fin 0
-  loop over (m : Nat @0, k : Fin(m)) {
+  var k : Fin m = fin 0
+  loop over (m : Nat @0, k : Fin m) {
     if grow () {
       m = m + 2;
       k = Fin.shift 2 k
@@ -28,7 +28,7 @@ def cursor(grow : () -> Bool, done : () -> Bool) -> [Partial] Nat =
 
 /// A shared cell holds the same cursor and packs its index with it. Each write
 /// stores a new pair, and the cell's type never changes.
-def sharedCursor(cell : Ref(Σ (m : Nat @0), Fin(m)), grow : () -> Bool, done : () -> Bool) -> [Partial] Unit =
+def sharedCursor(cell : Ref (Σ (m : Nat @0)) (Fin m), grow : () -> Bool, done : () -> Bool) -> [Partial] Unit =
   loop =
     let *{m, k} = cell.get ()
     if grow () {

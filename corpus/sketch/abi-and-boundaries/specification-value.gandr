@@ -28,7 +28,7 @@ import std.spec (Spec);
 import std.mem (Heap);
 
 /// The word behind a pointer that may be null, or a default.
-pub def derefOr(p : Ptr(i32), d : i32) -> Spec(State(Heap), i32) =
+pub def derefOr(p : Ptr i32, d : i32) -> Spec (State Heap) i32 =
   #spec{
     ghost v : i32
     requires { p |-> v }
@@ -42,11 +42,11 @@ pub def derefOr(p : Ptr(i32), d : i32) -> Spec(State(Heap), i32) =
 @[realizes(derefOr)]
 @[trusted(by : assumed, note : "the vendor's documented contract, demo 2.4")]
 extern C from "lib:demo" {
-  fun deref_or(p : Ptr(i32), d : i32) -> i32;
+  fun deref_or(p : Ptr i32, d : i32) -> i32;
 }
 
 /// A value held between two bounds.
-pub def clamped(x : i32, lo : i32, hi : i32) -> Spec(Pure, i32) =
+pub def clamped(x : i32, lo : i32, hi : i32) -> Spec Pure i32 =
   #spec=
     requires { lo <= hi }
     ensures r {

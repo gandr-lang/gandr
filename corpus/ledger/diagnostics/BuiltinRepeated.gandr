@@ -1,7 +1,7 @@
 /// `BuiltinRepeated`: a second declaration claims a role that an earlier declaration holds.
 @[ builtin(irPair) ]
 data Pair(a : Type, b : a -> Type) : Type where
-  | MkPair : (x : a, y : b(x)) --> Pair(a, b)
+  | MkPair : (x : a, y : b(x)) --> Pair a b
 @[ refuses("BuiltinRepeated"), builtin(irPair) ]
 data Again(a : Type, b : a -> Type) : Type where
-  | MkAgain : (x : a, y : b(x)) --> Again(a, b)
+  | MkAgain : (x : a, y : b(x)) --> Again a b

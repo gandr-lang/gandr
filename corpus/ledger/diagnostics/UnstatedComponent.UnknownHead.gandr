@@ -8,4 +8,4 @@ theory T where
   rule stray : succ (zero ()) ==> zero ();
 
 @[ refuses("UnstatedComponent.UnknownHead") ]
-def model : Model(T) ;
+def model : Model T ;

@@ -2,6 +2,6 @@
 @[ builtin(irSignature) ]
 @[ checks ]
 data Codes(d : Type) : Type[+, 1] where
-  | Stop : (e : d) --> Codes(d)
-  | Ask : (a : Type, f : a -> Codes(d)) --> Codes(d)
-  | Read : (a : Type, f : (a -> d) -> Codes(d)) --> Codes(d)
+  | Stop : (e : d) --> Codes d
+  | Ask : (a : Type, f : a -> Codes d) --> Codes d
+  | Read : (a : Type, f : (a -> d) -> Codes d) --> Codes d

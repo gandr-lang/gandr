@@ -13,13 +13,13 @@
 /// A list whose every next cell holds pairs of the cell before.
 data Nest(A : Type) : Type where
   /// The empty nest.
-  | Nil : Nest(A)
+  | Nil : Nest A
   /// An element, then a nest of pairs.
-  | Cons : (head : A, tail : Nest(A * A)) --> Nest(A)
+  | Cons : (head : A, tail : Nest (A * A)) --> Nest A
 
 /// The number of elements a nest holds. The recursive call runs at `A * A`,
 /// and the stated signature lets it check.
-def size[A : Type](xs : Nest(A)) -> Nat =
+def size[A : Type](xs : Nest A) -> Nat =
   match xs where
     | Nil => 0
     | Cons(_, tail) => 1 + 2 * size tail

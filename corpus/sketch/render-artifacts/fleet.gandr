@@ -24,7 +24,7 @@ import std.codec.json (Json);
 module Aws;
 
 /// The fleet a deployment states: its buckets and its instances.
-pub type Fleet = *{ buckets : List(Aws.Bucket), instances : List(Aws.Instance) };
+pub type Fleet = *{ buckets : List Aws.Bucket, instances : List Aws.Instance };
 
 /// A change the plan applies to one resource.
 @[derive(Json)]
@@ -49,7 +49,7 @@ pub def offers : Fleet = *{
 pub def live : Aws.State = ~aws.state(region = "eu-central-1");
 
 /// The changes from the live state to the fleet, each after what it reads.
-pub def plan(now : Aws.State, fleet : Fleet) -> List(Change) =
+pub def plan(now : Aws.State, fleet : Fleet) -> List Change =
   topoSort(diff(now.resources, resources fleet), fun (c) { c.reads })
 
 /// The plan as the API's change set.
