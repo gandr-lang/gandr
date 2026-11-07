@@ -51,7 +51,7 @@ pr_fields='number state headRefName baseRefName isDraft createdAt isInMergeQueue
 # 1 point (#5061): GitHub prices a page by the nodes it asks for, so a
 # page of 100 costs 4 points whatever the number open.
 pulls_reading() {
-  gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
+  gh api graphql --paginate -F owner='{owner}' -F name='{repo}' \
     -f query="query(\$owner: String!, \$name: String!, \$endCursor: String) { repository(owner: \$owner, name: \$name) { pullRequests(states: OPEN, first: 25, after: \$endCursor) { pageInfo { hasNextPage endCursor } nodes { $pr_fields } } } }" \
     --jq '.data.repository.pullRequests.nodes[]' \
     | jq -cs .
@@ -67,7 +67,7 @@ pr_reading() {
     printf '%s\n' "$found"
     return
   fi
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+  gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$1" \
     -f query="query(\$owner: String!, \$name: String!, \$number: Int!) { repository(owner: \$owner, name: \$name) { pullRequest(number: \$number) { $pr_fields } } }" \
     --jq '.data.repository.pullRequest'
 }
@@ -396,7 +396,7 @@ stack_of() {
 # The members of the server stack pull request `$1` belongs to, bottom to
 # top, as a JSON array of `{number, state}`; empty when it belongs to none.
 stack_entries() {
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+  gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$1" \
     -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { entries(first: 100) { nodes { pullRequest { number state } } } } } } }' \
     --jq '[.data.repository.pullRequest.stack.entries.nodes[]?.pullRequest]'
 }
@@ -780,7 +780,7 @@ cancel_stale() {
 # lower case, when nothing was queued or pushed since; empty otherwise. A
 # removal for `failed_checks` is its own merge-group run failing (#3745).
 queue_removal() {
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+  gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$1" \
     -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } } } } }' \
     --jq '.data.repository.pullRequest.timelineItems.nodes[0] | select(.__typename == "RemovedFromMergeQueueEvent") | .reason // "" | ascii_downcase'
 }
@@ -835,7 +835,7 @@ relink_fork() {
 # each the merged pull request's `pushed_heads`.
 landed_heads() {
   local branch=$1 base
-  for base in $(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F head="$branch" -f query='
+  for base in $(gh api graphql -F owner='{owner}' -F name='{repo}' -F head="$branch" -f query='
     query($owner: String!, $name: String!, $head: String!) {
       repository(owner: $owner, name: $name) {
         pullRequests(headRefName: $head, states: OPEN, first: 1) {
@@ -853,7 +853,7 @@ landed_heads() {
 # `MERGED`) had, one commit id a line: each one's last head and every head a
 # force push replaced or set.
 pushed_heads() {
-  gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F head="$1" -F state="$2" -f query='
+  gh api graphql -F owner='{owner}' -F name='{repo}' -F head="$1" -F state="$2" -f query='
     query($owner: String!, $name: String!, $head: String!, $state: PullRequestState!) {
       repository(owner: $owner, name: $name) {
         pullRequests(headRefName: $head, states: [$state], last: 5) {
@@ -1107,7 +1107,7 @@ carried_queued() {
 # `{number, head, base, oid}` when it closed unmerged (#5695); `null` when it
 # merged, or when no pull request has the branch as its head.
 closed_pr() {
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -f head="$1" \
+  gh api graphql -F owner='{owner}' -F name='{repo}' -f head="$1" \
     -f query='query($owner: String!, $name: String!, $head: String!) { repository(owner: $owner, name: $name) { pullRequests(headRefName: $head, states: [CLOSED, MERGED], last: 1) { nodes { number state headRefName baseRefName headRefOid } } } }' \
     --jq '.data.repository.pullRequests.nodes[0] // null | if . != null and .state == "CLOSED" then {number, head: .headRefName, base: .baseRefName, oid: .headRefOid} else null end'
 }

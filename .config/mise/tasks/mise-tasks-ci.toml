@@ -2948,7 +2948,7 @@ root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 source "$root/.config/gh/repo.bash"
 repo=$(repo_name)
-pr=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$number" -f query='
+pr=$(gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$number" -f query='
   query($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
@@ -3242,7 +3242,7 @@ source "$root/.config/claims/deps.bash"
 repo=${GH_REPO:-'{owner}/{repo}'}
 # Every issue, 100 a page at one point, newest first as the REST list gives
 # them: REST takes a page for each 100 issues and pull requests (#5688).
-issues=$(gh api graphql --paginate -F owner="${repo%/*}" -F name="${repo#*/}" -f query='
+issues=$(gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query='
   query($owner: String!, $name: String!, $endCursor: String) {
     repository(owner: $owner, name: $name) {
       issues(first: 100, after: $endCursor, orderBy: {field: CREATED_AT, direction: DESC}) {
@@ -3497,9 +3497,10 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 rules=$root/.config/dead-weight
 source "$root/.config/issues/keep.bash"
+source "$root/.config/gh/repo.bash"
 # Each row's link names the repository as text, which gh's `{owner}/{repo}`
-# cannot give. So a run by hand, with GH_REPO unset, reads the name (#5749).
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+# cannot give (#5749).
+repo=$(repo_name)
 write=${REPORT_FILE:-}
 grace=14
 budget=28000
@@ -4386,8 +4387,6 @@ if [[ -z "$number" ]]; then number=$(gh pr view --json number --jq .number); fi
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
-owner=${repo%/*}
-name=${repo#*/}
 deadline=$((SECONDS + 5400))
 queued=false
 previous=
@@ -4430,7 +4429,7 @@ job_times() {
 conflicts() {
   local ahead other files own file shared
   own=$(gh pr view "$number" -R "$repo" --json files --jq '.files[].path')
-  ahead=$(gh api graphql --paginate -f owner="$owner" -f name="$name" -f branch="$base" -f query="
+  ahead=$(gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f branch="$base" -f query="
     query(\$owner: String!, \$name: String!, \$branch: String!, \$endCursor: String) {
       repository(owner: \$owner, name: \$name) {
         mergeQueue(branch: \$branch) {

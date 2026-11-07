@@ -51,7 +51,7 @@ stall_reading() {
   local repo=$1 trunk=$2 memory=$3 required raw areas
   required=$(gh api "repos/$repo/rules/branches/$trunk" \
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique') || return 1
-  raw=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F query=@"$stall_dir/query.graphql") || return 1
+  raw=$(gh api graphql -F owner='{owner}' -F name='{repo}' -F query=@"$stall_dir/query.graphql") || return 1
   areas=$(yq -p toml -o json -I 0 '.lane' "$stall_dir/../issues/lanes.toml") || return 1
   jq -c '.data.repository' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \

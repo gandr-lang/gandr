@@ -59,7 +59,7 @@ deps_issues() {
   query+=' blockedBy(first: 100) { totalCount nodes { number state } } blocking(first: 100) { totalCount nodes { number state } } subIssues(first: 100) { totalCount nodes { number state } } } }'
   # A number that names nothing is a NOT_FOUND error beside the data, and gh
   # then prints the whole reply and exits 1. Any other error refuses the read.
-  reply=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -f query="$query") || status=$?
+  reply=$(gh api graphql -F owner='{owner}' -F name='{repo}' -f query="$query") || status=$?
   if ! jq -e '.data.repository != null and all(.errors[]?; .type == "NOT_FOUND")' <<< "$reply" > /dev/null 2>&1; then
     echo "deps_issues: the read of #$* failed (exit $status)" >&2
     return 1
@@ -88,7 +88,7 @@ deps_issues() {
 # so none comes back short.
 deps_open_graph() {
   local repo=$1 graph number
-  graph=$(gh api graphql --paginate -F owner="${repo%/*}" -F name="${repo#*/}" -f query='
+  graph=$(gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query='
     query($owner: String!, $name: String!, $endCursor: String) {
       repository(owner: $owner, name: $name) {
         issues(states: OPEN, first: 100, after: $endCursor) {
