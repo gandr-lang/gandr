@@ -15,6 +15,9 @@
 # with the case's `output`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+# shellcheck source=../mise/disabled-tools.bash
+source "$here/../mise/disabled-tools.bash"
+disabled=$(disabled_tools github:cli/cli)
 root=$(git -C "$here" rev-parse --show-toplevel)
 cases=$here/filed-once.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-filed-once.XXXXXX")
@@ -47,7 +50,7 @@ run() {
   shift 2
   mkdir -p "$work/runtime-$host" "$work/state-$host"
   (cd "$work/$clone" && env PATH="$work/gh:$PATH" STUB_GH="$work/stub" STUB_SUBS="$subs" GH_BUDGET_TTL=0 \
-    MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+    MISE_DISABLE_TOOLS="$disabled" \
     MISE_CONFIG_DIR="$mise_config" MISE_TRUSTED_CONFIG_PATHS="$work/a:$work/b" \
     XDG_CONFIG_HOME="$work/config" XDG_RUNTIME_DIR="$work/runtime-$host" XDG_STATE_HOME="$work/state-$host" \
     "$@") > "$work/out-$host" 2>&1

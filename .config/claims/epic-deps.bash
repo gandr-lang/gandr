@@ -6,6 +6,9 @@
 # one line each, and its exit status, compared with `output` and `status`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+# shellcheck source=../mise/disabled-tools.bash
+source "$here/../mise/disabled-tools.bash"
+disabled=$(disabled_tools github:cli/cli)
 cases=$here/epic-deps.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-epic-deps.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -39,7 +42,7 @@ for (( i = 0; i < count; i++ )); do
   status=0
   output=$(EPIC_CHILDREN=$(jq -c ".[$i].children" "$cases") EPIC_REFUSED=$(jq -c ".[$i].refused" "$cases") \
     GH_REPO=case/case PATH="$work/bin:$PATH" \
-    MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+    MISE_DISABLE_TOOLS="$disabled" \
     mise run --quiet epic:deps 7 2> "$work/err") || status=$?
   expected=$(jq -r ".[$i].output[]" "$cases")
   if [[ $output != "$expected" || $status != "$(jq -r ".[$i].status" "$cases")" ]]; then

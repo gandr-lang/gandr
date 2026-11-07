@@ -2393,7 +2393,10 @@ done < <(jq -c '.[]' .config/claims/patched.json)
 # in `.config/claims/board.json` a stub `gh` answers with a merged pull
 # request whose verdict is `no` and the case's count of refactor issues, 250
 # bytes of body each, and the dry run prints the case's decision. The pinned
-# `gh` is disabled for the run, so the stub answers.
+# `gh` is disabled for the run, so the stub answers. The tools the host
+# disables stay disabled (`disabled-tools.bash`).
+source .config/mise/disabled-tools.bash
+disabled=$(disabled_tools github:cli/cli)
 mkdir -p "$scratch/gh"
 # Each case's stub answers differently: no reading is kept between them.
 export GH_BUDGET_TTL=0
@@ -2406,7 +2409,7 @@ jq -n '{state: "MERGED", body: "## Refactoring\n\nno\n", headRefName: "triage-7-
 while IFS= read -r case; do
   jq -n --argjson count "$(jq .issues <<< "$case")" \
     '[range($count) | {number: (. + 1), state: "CLOSED", body: ("a refactor body of the argument-limit case, " * 6)}]' > "$scratch/gh/issues.json"
-  decision=$(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/gh" MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+  decision=$(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/gh" MISE_DISABLE_TOOLS="$disabled" \
     mise run --quiet refactor:file 7 --dry-run 2> "$scratch/err") || true
   if [[ $(jq -r '.act // empty' <<< "$decision" 2> /dev/null) != $(jq -r .act <<< "$case") ]]; then
     printf 'board case FAILED: %s\n  gave: %s\n%s\n' "$(jq -r .name <<< "$case")" "$decision" "$(cat "$scratch/err")" >&2

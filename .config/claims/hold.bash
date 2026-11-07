@@ -5,6 +5,9 @@
 # holds no open pull request, so the held one stands in no stack.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+# shellcheck source=../mise/disabled-tools.bash
+source "$here/../mise/disabled-tools.bash"
+disabled=$(disabled_tools github:cli/cli)
 cases=$here/hold.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-hold.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -66,7 +69,7 @@ for (( index = 0; index < count; index++ )); do
   [[ $owner != true ]] || args+=(--owner)
   status=0
   output=$(GH_REPO=case/case STUB_HOLD_COMMENT="$comment" STUB_HOLD_WRITES="$writes" STUB_HOLD_STATE="$state" PATH="$work/bin:$PATH" \
-    MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+    MISE_DISABLE_TOOLS="$disabled" \
     mise run --quiet pr:hold "${args[@]}" "$number" "$reason" 2> "$work/err") || status=$?
   got=$(< "$comment")
   if [[ $refused == true ]]; then
