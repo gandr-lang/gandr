@@ -35,6 +35,7 @@ anodized.workspace = true
 blake3.workspace = true
 gandr-core-incremental.workspace = true
 gandr-storage-records.workspace = true
+gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-format.workspace = true

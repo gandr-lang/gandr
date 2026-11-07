@@ -160,6 +160,7 @@ use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_surface_corpus::Declined;
 use gandr_surface_diagnostics::AnnotationKind;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
@@ -174,6 +175,7 @@ use gandr_surface_dispatcher::Polled;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_dispatcher::Shown;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
@@ -184,6 +186,7 @@ use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::lay_out_written;
 use gandr_surface_dispatcher::path_imports;
+use gandr_surface_dispatcher::shown;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
@@ -611,6 +614,15 @@ pub struct Rechecked
 {
     /// The diagnostics, in the order `gandr check --goals` prints them.
     pub diagnostics: Vec<Diagnostic>,
+    #[cfg_attr(not(clippy), allow(unfulfilled_lint_expectations))]
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::missing_docs_in_private_items,
+            reason = "The language server owns this state."
+        )
+    )]
+    pub deferred: Vec<(usize, String)>,
     /// Each binder the judgement's accepted declarations write in the
     /// document and never read, as the document's own text measures it,
     /// ascending.
@@ -780,6 +792,7 @@ where
     let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>, laid| {
         Polled::Whole(Rechecked {
             diagnostics: vec![diagnostic],
+            deferred: Vec::new(),
             unused: Vec::new(),
             unreached: Vec::new(),
             form: Maybe::Absent(formless::Absent::Unparsed),
@@ -915,9 +928,33 @@ where
             .collect(),
         Composed::Refused(_) => Vec::new(),
     };
+    let deferred = match *submission.composed() {
+        Composed::Settled { ref report, .. } => {
+            let path = uri.path();
+            report
+                .declarations()
+                .iter()
+                .filter_map(|declaration| {
+                    if shown(declaration, Verb::Check(Goals::Reported)) != Shown::Counted {
+                        return None;
+                    }
+                    let Maybe::Present(span) = own(declaration.span(), submission.base())
+                    else {
+                        return None;
+                    };
+                    Some((
+                        usize::from(declaration.constant()),
+                        format!("{}: {}", Path::new(&path).display(), declaration.at(span)),
+                    ))
+                })
+                .collect()
+        },
+        Composed::Refused(_) => Vec::new(),
+    };
     let diagnostics = diagnostics_of(submission, (uri, placed), text, verbosity, spelling);
     Polled::Whole(Rechecked {
         diagnostics,
+        deferred,
         unused,
         unreached,
         form,
@@ -1014,6 +1051,15 @@ pub struct Admitted
     pub fault: Maybe<Diagnostic, agreed::Absent>,
     /// The synchronisation's timing.
     pub timing: Timing,
+    #[cfg_attr(not(clippy), allow(unfulfilled_lint_expectations))]
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::missing_docs_in_private_items,
+            reason = "The language server owns this state."
+        )
+    )]
+    pub declined: Vec<(usize, Declined)>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1223,33 +1269,51 @@ pub fn settle(
 {
     let Finished { ran, timing, wall } = finished;
     let started = Instant::now();
-    let (fault, crossed) = session.as_mut().map_or(
+    let (fault, crossed, declined) = session.as_mut().map_or(
         (
             Maybe::Absent(agreed::Absent::Agreed),
             Maybe::Absent(admitted::Absent::Unadmitted),
+            Vec::new(),
         ),
         |session| match session.settle(ran) {
-            Ok(Maybe::Present(admitted)) => (
-                Maybe::Absent(agreed::Absent::Agreed),
-                Maybe::Present(Crossing {
-                    crossed: usize::from(admitted.crossed()),
-                    judged: usize::from(admitted.judged()),
-                }),
-            ),
+            Ok(Maybe::Present(admitted)) => {
+                let resumed =
+                    usize::from(admitted.judged()).saturating_sub(usize::from(admitted.crossed()));
+                (
+                    Maybe::Absent(agreed::Absent::Agreed),
+                    Maybe::Present(Crossing {
+                        crossed: usize::from(admitted.crossed()),
+                        judged: usize::from(admitted.judged()),
+                    }),
+                    admitted
+                        .declined
+                        .iter()
+                        .map(|&declined| {
+                            (
+                                usize::from(declined.constant).saturating_sub(resumed),
+                                declined,
+                            )
+                        })
+                        .collect(),
+                )
+            },
             Ok(Maybe::Absent(_)) => (
                 Maybe::Absent(agreed::Absent::Agreed),
                 Maybe::Absent(admitted::Absent::Unadmitted),
+                Vec::new(),
             ),
             Err(disagreement) => (
                 Maybe::Present(Diagnostic::at_origin(
                     SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
                 )),
                 Maybe::Absent(admitted::Absent::Disagreed),
+                Vec::new(),
             ),
         },
     );
     Admitted {
         fault,
+        declined,
         timing: Timing {
             admitted: Maybe::Present(wall.saturating_add(started.elapsed())),
             crossed,
