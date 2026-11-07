@@ -61,5 +61,27 @@
     "action": { "number": 5, "act": "land", "told": false },
     "landing": { "status": 3, "line": "#4 is queued; the stack's next unit lands once it merges" },
     "output": "told: ; warnings: 0"
+  },
+  {
+    "name": "#6164: a head with no CI run is closed and reopened with the token, and its seat is told `pr-rerun`",
+    "action": { "number": 5, "act": "rerun" },
+    "output": "told: pr-rerun #5: GitHub started no CI run on this head: a push while the pull request conflicts with its base starts none, and a base edit starts none. The landing watcher closed and reopened it, which starts CI. It lands once its checks are green.; warnings: 0; gh: pr close 5 -R case/case | pr reopen 5 -R case/case"
+  },
+  {
+    "name": "#6164: a close that fails tells `pr-unrun` with the refusal, and warns",
+    "action": { "number": 5, "act": "rerun" },
+    "gh_fail": "close",
+    "output": "told: pr-unrun #5: GitHub started no CI run on this head, and the landing watcher could not close and reopen it: HTTP 422: Validation Failed. Close and reopen it, or push the branch again, then `pr:land 5`.; warnings: 1; gh: pr close 5 -R case/case"
+  },
+  {
+    "name": "#6164: a reopen that fails twice tells `pr-unrun` to reopen the closed pull request, and warns",
+    "action": { "number": 5, "act": "rerun" },
+    "gh_fail": "reopen",
+    "output": "told: pr-unrun #5: GitHub started no CI run on this head. The landing watcher closed this pull request to start CI and could not reopen it: HTTP 422: Validation Failed. Reopen it, then `pr:land 5`.; warnings: 1; gh: pr close 5 -R case/case | pr reopen 5 -R case/case | pr reopen 5 -R case/case"
+  },
+  {
+    "name": "#6164: without the token, a head with no CI run is told `pr-unrun`, and nothing is closed",
+    "action": { "number": 5, "act": "unrun" },
+    "output": "told: pr-unrun #5: GitHub started no CI run on this head: a push while the pull request conflicts with its base starts none, and a base edit starts none. Close and reopen it, or push the branch again, then `pr:land 5`.; warnings: 0"
   }
 ]
