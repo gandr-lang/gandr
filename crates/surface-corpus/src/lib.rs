@@ -40,6 +40,7 @@
 //! The example lowers a module of two declarations, one owing a hole and one
 //! stating the refusal it earns, checks it, settles it on the fixture root and
 //! reads the tally: settled, a ledger of one, unsealed.
+//! `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests.
 //!
 //! ```
 //! use gandr_core_checker::AbstractType;
@@ -348,7 +349,9 @@ pub use crate::run::RunSpelling;
 pub use crate::run::Runner;
 pub use crate::run::TracedRun;
 pub use crate::settle::DeclarationReport;
+pub use crate::settle::Declined;
 pub use crate::settle::Filler;
+pub use crate::settle::KernelImage;
 pub use crate::settle::Produced;
 pub use crate::settle::SettleFault;
 pub use crate::settle::Settlement;

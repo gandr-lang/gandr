@@ -83,8 +83,10 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::Judged;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ObligationCount;
+use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Verdict;
 use gandr_core_term::CoreArena;
+use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::AttributeEntry;
 use gandr_surface_lowering::AttributeTable;
@@ -489,6 +491,61 @@ impl fmt::Display for Surviving
     }
 }
 
+/// Whether the kernel has an image of a declaration the checker judged.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: names the former the bridge declines, and the class of that
+///   decline, when the bridge declines the declaration.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`crate::SettleReport::decline`] carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module with an endpoint loop beside a plain definition
+///   marks the loop alone.
+/// - witness: `report::tests::a_declined_declaration_counts_apart_from_the_settled_6047`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum KernelImage
+{
+    /// The bridge offers the declaration to the kernel.
+    Offered,
+    /// The bridge declines the declaration: the kernel has no image of the
+    /// former, so the checker's verdict stands alone.
+    Declined
+    {
+        /// The former the kernel has no image of.
+        former: UnadmittedFormer,
+        /// The class of the bridge's decline, which names the issue that
+        /// gives the kernel an image of the former.
+        class: FailureClass,
+    },
+}
+
+/// A declaration the bridge declines for a former the kernel has no image of.
+///
+/// # Specification
+/// - requires: the dispatcher reads it off the bridge's outcome for `constant`.
+/// - ensures: carries the admission position, the former and the class of the
+///   decline.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`crate::SettleReport::decline`] carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`KernelImage`].
+/// - witness: `report::tests::a_declined_declaration_counts_apart_from_the_settled_6047`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Declined
+{
+    /// The declaration's admission position.
+    pub constant: ConstantIndex,
+    /// The former the kernel has no image of.
+    pub former: UnadmittedFormer,
+    /// The class of the bridge's decline.
+    pub class: FailureClass,
+}
+
 /// One declared name, settled: what it states beside what it produced.
 ///
 /// # Specification
@@ -496,8 +553,9 @@ impl fmt::Display for Surviving
 ///   counts represented.
 /// - ensures: A settlement-produced report retains source identity, admission
 ///   position, stated and produced outcomes, owed obligations, the requested
-///   run outcome, the path of a law the host admits, and the path and source of
-///   a law its module omits that a source discharged.
+///   run outcome, the path of a law the host admits, the path and source of a
+///   law its module omits that a source discharged, and whether the kernel has
+///   an image of it.
 /// - panics: none.
 /// - executable: none — The record has no module, original attributes or
 ///   checker report; `settle` and the report’s comparison methods carry the
@@ -549,6 +607,9 @@ pub struct DeclarationReport<'source>
     /// when the declaration is one its module omits and it checked: the row
     /// the cells report lists.
     discharged: Maybe<(Vec<SurfaceName<'source>>, Filler), discharged::Absent>,
+    /// Whether the kernel has an image of the declaration: declined when the
+    /// bridge declines it, so its verdict stands alone.
+    image: KernelImage,
 }
 
 impl<'source> DeclarationReport<'source>
@@ -625,6 +686,32 @@ impl<'source> DeclarationReport<'source>
     pub const fn constant(&self) -> ConstantIndex
     {
         self.constant
+    }
+
+    /// Whether the kernel has an image of the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn image(&self) -> KernelImage
+    {
+        self.image
+    }
+
+    /// Mark the declaration as one the bridge declines for `former`, of
+    /// `class`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn decline(
+        &mut self,
+        former: UnadmittedFormer,
+        class: FailureClass,
+    )
+    {
+        self.image = KernelImage::Declined { former, class };
     }
 
     /// Whether the name carries an expectation.
@@ -968,13 +1055,16 @@ impl fmt::Display for DeclarationReport<'_>
 {
     /// Writes one line: the settlement, the name and its span, what it
     /// states, what it produced with the refusal's class, the obligations
-    /// that survive when any do, and the audit row of a law the host admits.
+    /// that survive when any do, the audit row of a law the host admits, and
+    /// the former a declaration has no kernel image for.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the declaration’s settlement, name, span, stated and
     ///   produced outcomes, refusal class when present, nonzero residual
-    ///   obligations, and `audit: M.law admitted` for an admitted law.
+    ///   obligations, `audit: M.law admitted` for an admitted law, and `no
+    ///   kernel image: Former (class, #n)` for a declaration the bridge
+    ///   declines.
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -1031,6 +1121,17 @@ impl fmt::Display for DeclarationReport<'_>
                 write!(f, ".{segment}")?;
             }
             f.write_str(" admitted")?;
+        }
+        if let KernelImage::Declined { former, class } = self.image {
+            write!(
+                f,
+                "; no kernel image: {} ({class}",
+                crate::refusal::former_tag(former)
+            )?;
+            if let FailureClass::Unimplemented(issue) = class {
+                write!(f, ", {issue}")?;
+            }
+            f.write_str(")")?;
         }
         Ok(())
     }
@@ -1762,6 +1863,7 @@ where
             traced,
             admitted,
             discharged,
+            image: KernelImage::Offered,
         });
     }
     if let Some(surplus) = judged.next() {

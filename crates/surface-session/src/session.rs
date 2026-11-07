@@ -337,6 +337,7 @@ use gandr_storage_artifact::build;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::Declined;
 use gandr_surface_corpus::Produced;
 use gandr_surface_dispatcher::Admission;
 use gandr_surface_dispatcher::ArtifactPositions;
@@ -857,6 +858,9 @@ pub struct Admitted
     /// Where each declaration that crossed stands in the artifact, when the
     /// admission was asked to record it.
     positions: Maybe<ArtifactPositions, positioned::Absent>,
+    /// Each declaration the bridge declines for a former the kernel has no
+    /// image of, in admission order.
+    declined: Vec<Declined>,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
     /// How many declarations the readmission offered the kernel again; the
@@ -2324,10 +2328,11 @@ impl<Store, Blocks> Session<Store, Blocks>
             let Admitted {
                 kernel,
                 positions,
+                declined,
                 checkpoint,
                 ..
             } = admitted;
-            submission.composed = submission.composed.admitted(kernel, positions);
+            submission.composed = submission.composed.admitted(kernel, positions, &declined);
             submission.kernel = Maybe::Present(checkpoint);
         }
         Ok(submission)
@@ -3317,6 +3322,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         Ok(Maybe::Present(Admitted {
             kernel,
             positions: resumption.positions,
+            declined: resumption.declined,
             checkpoint,
             crossed: DeclarationCount::from(
                 usize::from(resumption.judged).saturating_sub(usize::from(resumption.resumed)),
