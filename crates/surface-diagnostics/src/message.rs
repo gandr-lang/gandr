@@ -2661,6 +2661,25 @@ pub mod tests
                     clause: computation,
                 },
             },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::LinearSlotConsumed {
+                    lambda: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::LinearSlotUnconsumed {
+                    lambda: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ShadowCaptured {
+                    lambda: computation,
+                    by: Capture::Task,
+                },
+            },
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::NotHeld,
@@ -2847,6 +2866,10 @@ pub mod tests
             CheckRefusal::UndischargedLaw { at: value_type },
             CheckRefusal::NonCovariantMotive { at: computation },
             CheckRefusal::RideUnsupported { at: computation },
+            CheckRefusal::MultiplicityUnsupported {
+                at: comp_type,
+                multiplicity: value,
+            },
             CheckRefusal::RunNotAdmitted {
                 at: value,
                 fault: gandr_core_checker::RunFault::WrongLabel(gandr_core_checker::RunStep::from(
