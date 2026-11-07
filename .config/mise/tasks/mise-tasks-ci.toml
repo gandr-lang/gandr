@@ -4278,6 +4278,18 @@ stacking_current || exit 2
 # `.config/gate-scope/passed.bash`). The gate reads the work, so work that
 # HEAD does not hold is refused first.
 passed=$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash
+# A stacked head keeps each generated artifact its own commits hold, while the
+# base below them moved (#6144). Before the push, `stale.bash` runs the check
+# of each artifact that one side wrote from inputs the other side changed. The
+# old base is the gated head less its own commits; a head the stack did not
+# move reads an empty change and runs nothing.
+replay=$(git rev-parse --show-toplevel)/.config/replay/stale.bash
+replayed() {
+  local fork old
+  fork=$(git merge-base HEAD "origin/$base")
+  old=$(git rev-parse --verify --quiet "$gated~$(git rev-list --count "$fork..HEAD")") || old=$fork
+  "$replay" "$old" "$fork" HEAD
+}
 if ! "$passed" require pr:open HEAD 2> /dev/null; then
   [[ $("$passed" tree) == "$(git rev-parse 'HEAD^{tree}')" ]] \
     || { echo "the work holds changes that HEAD does not; commit or drop them, then run \`pr:open\` again" >&2; exit 2; }
@@ -4348,11 +4360,15 @@ mise run --quiet body:prose "$body"
 # The head that is pushed carries the gate (#5091): a restack above rebases
 # the branch onto the top and changes its tree. The gate on the branch's own
 # commits counts while the rebase keeps their patches (`passed.bash carry`),
-# and the merge queue checks the combination. The stack is first come, first
-# served: no `pr:open` waits on another, and no seat gates again because
-# another seat opened first. A rebase that changes a patch gates the new head.
+# and the merge queue checks the combination. A generated artifact is the
+# exception: the merge queue requires no check of the recovery records, so
+# `replayed` reads each artifact the move makes due (#6144). The stack is first
+# come, first served: no `pr:open` waits on another, and no seat gates again
+# because another seat opened first. A rebase that changes a patch gates the
+# new head.
 "$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
 "$passed" require pr:open HEAD || exit 2
+replayed || exit 2
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
@@ -4381,6 +4397,7 @@ if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
       top_number=$(jq -r .number <<< "$top")
       "$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
       "$passed" require pr:open HEAD || exit 2
+      replayed || exit 2
       git push --quiet --force-with-lease origin HEAD
       gh pr edit "$number" -R "$repo" --base "$base" > /dev/null
       echo "#$number opened beside #$beside on one base; it moves onto #$top_number"

@@ -1,0 +1,66 @@
+[
+  {
+    "name": "#6144: the trunk moves the grammar under commits that record the recovery sweep, so the records are due",
+    "moved": [
+      "crates/surface-grammar/src/surface/term.rs",
+      "crates/surface-lowering/src/lower.rs",
+      "ledger/syntax.md"
+    ],
+    "own": [
+      "crates/surface-parser/src/meld.rs",
+      "crates/surface-parser/tests/recovery/fixture/surface/circuit-cells.recovery"
+    ],
+    "crates": ["surface-grammar", "surface-lowering", "surface-parser"],
+    "due": ["the recovery records"]
+  },
+  {
+    "name": "#6144: a base that moves no path a row reads makes nothing due",
+    "moved": ["docs/README.md", ".github/workflows/ci.yml"],
+    "own": [
+      "crates/surface-parser/src/meld.rs",
+      "crates/surface-parser/tests/recovery/fixture/surface/circuit-cells.recovery"
+    ],
+    "crates": ["surface-parser"],
+    "due": []
+  },
+  {
+    "name": "#6144: two sides that touch a row's inputs and neither of its paths leave it not due",
+    "moved": ["corpus/model/basics/annotations.gandr"],
+    "own": ["crates/surface-grammar/src/mold.rs"],
+    "crates": ["surface-grammar"],
+    "due": []
+  },
+  {
+    "name": "#6144: the base moves a crate's sources under commits that rewrite its debug traces, so that crate's traces are due and no other crate's",
+    "moved": ["crates/core-checker/src/lib.rs"],
+    "own": ["crates/core-checker/tests/debug-traces/judgement.tests.a_goal_8.txt"],
+    "crates": ["core-checker", "core-nbe", "surface-parser"],
+    "due": ["the debug traces and goldens of core-checker"]
+  },
+  {
+    "name": "#6144: the base rewrites the highlight roles under commits that change the grammar and its traces, and the two rows that share the grammar's suite run it once",
+    "moved": ["crates/surface-grammar/tests/highlight/fixture/model/basics/annotations.roles"],
+    "own": [
+      "crates/surface-grammar/src/mold.rs",
+      "crates/surface-grammar/tests/debug-traces/mold.tests.a_rule_9.txt"
+    ],
+    "crates": ["surface-grammar"],
+    "due": [
+      "the highlight roles, the frozen tables and the grammar fingerprint, the debug traces and goldens of surface-grammar"
+    ]
+  },
+  {
+    "name": "#6144: the base moves the input table's script under a regenerated table, so the table is due",
+    "moved": ["contrib/gandr-vscode/scripts/input-table.mts"],
+    "own": ["contrib/gandr-vscode/src/input/table.json"],
+    "crates": [],
+    "due": ["the input table"]
+  },
+  {
+    "name": "#6144: the base moves a corpus source under a rewritten comment ledger, so the ledger is due",
+    "moved": ["corpus/model/basics/annotations.gandr"],
+    "own": ["corpus/uncommented.ledger"],
+    "crates": [],
+    "due": ["the comment ledger"]
+  }
+]
