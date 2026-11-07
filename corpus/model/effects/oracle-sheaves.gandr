@@ -1,0 +1,221 @@
+// This source ports the parts of Ahman and Bauer's oracle sheaves that gandr
+// checks.
+//
+// The port tests whether gandr states an intensional sheaf. A tree keeps each
+// query that it asks, and no truncation hides an answer. Membership at a leaf
+// is a tree of paths, so a proof of it records the queries too.
+//
+// The parameters `s` and `p` of each family are a container: queries and the
+// answers to each. The oracle modality of a container is its trees, their bind
+// and their fold. A sheaf is an algebra whose two equations are `Path` fields.
+//
+// - see: #4728
+// - see: `../../pathological/effects/oracle-sheaves.gandr` — where the port stops
+// - cites: [Ahman-2026-sheaves_oracle_computations]
+//
+// [Ahman-2026-sheaves_oracle_computations]: https://arxiv.org/abs/2602.22135v2 "Ahman and Bauer, Sheaves as Oracle Computations"
+
+/// The two answers to a query.
+data Two : Type where
+  | L : Two
+  | R : Two
+
+/// The naturals, the results of the trees below.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+/// A computation tree over a container. A leaf holds a result, and a node asks
+/// a query and continues at each answer to it.
+@[ checks ]
+data Tree(s : Type, p : +U (s -> -F Type), x : Type) : Type where
+  | Leaf : (v : x) --> Tree s p x
+  | Node : (a : s, k : +U (p(a) -> -F Tree s p x)) --> Tree s p x
+
+/// Bind substitutes a tree at each leaf: the monad's multiplication and map.
+@[ checks ]
+def rec bindTree(
+  s : Type,
+  p : +U (s -> -F Type),
+  x : Type,
+  y : Type,
+  t : Tree s p x,
+  f : +U (x -> -F Tree s p y)
+) -> Tree s p y =
+  match t where
+    | Leaf(v) => f v
+    | Node(a, k) => Node a (fun (u) { bindTree[<] s p x y (k u) f })
+
+/// The fold runs a tree against an oracle that answers each query.
+@[ checks ]
+def rec answer(
+  s : Type,
+  p : +U (s -> -F Type),
+  x : Type,
+  o : +U ((a : s) -> -F p(a)),
+  t : Tree s p x
+) -> x =
+  match t where
+    | Leaf(v) => v
+    | Node(a, k) => answer[<] s p x o (k (o a))
+
+/// Each query has two answers.
+def branches(a : Two) -> -F Type { return Two }
+
+/// One query, then a leaf at each answer.
+@[ checks ]
+def asked : Tree Two branches Nat = Node
+  L
+  (fun (u) { match u -> -F Tree Two branches Nat { | L => Leaf Zero | R => Leaf (Succ Zero) } });
+
+/// The oracle answers right.
+def right(a : Two) -> Two { R }
+
+/// The run follows the right answer.
+@[ runs("Succ Zero") ]
+def ran : () -> Nat = answer Two branches Nat right asked;
+
+/// Bind adds one at the leaf, and the run follows the right answer.
+@[ runs("Succ (Succ Zero)") ]
+def bound : () -> Nat = answer
+  Two
+  branches
+  Nat
+  right
+  (bindTree Two branches Nat Nat asked (fun (n) { (Leaf (Succ n) : Tree Two branches Nat) }));
+
+/// A modality on types: a monad. Its operations quantify over `Type`, so it
+/// takes the universe above `Type`.
+@[ checks ]
+data Modality : Type[+, 1] where
+  | MkModality : (
+    mode : Type -> Type,
+    ret : (q : Type, v : q) -> mode(q),
+    seq : (q : Type, r : Type, m : mode(q), f : q -> mode(r)) -> mode(r)
+  ) --> Modality
+
+/// The oracle modality is the least that forces its container: a tree folds
+/// into any monad that answers each query.
+@[ checks ]
+def rec least(
+  s : Type,
+  p : +U (s -> -F Type),
+  mode : Type -> Type,
+  ret : (q : Type, v : q) -> mode(q),
+  seq : (q : Type, r : Type, m : mode(q), f : q -> mode(r)) -> mode(r),
+  asks : (a : s) -> mode(p(a)),
+  q : Type,
+  t : Tree s p q
+) -> mode(q) =
+  match t where
+    | Leaf(v) => ret q v
+    | Node(a, k) => seq (p a) q (asks a) (fun (u) { least[<] s p mode ret seq asks q (k u) })
+
+/// The trees at the fixed container, as a static family.
+def treesTwo : Type -> Type = fun (q) { type(Tree Two branches q) };
+
+/// A leaf at the fixed container.
+def retTwo(q : Type, v : q) -> Tree Two branches q = Leaf v
+
+/// Bind at the fixed container.
+def seqTwo(
+  q : Type,
+  r : Type,
+  m : Tree Two branches q,
+  f : q -> Tree Two branches r
+) -> Tree Two branches r =
+  bindTree Two branches q r m f
+
+/// The oracle modality of the fixed container, as a value.
+@[ checks ]
+def oracleTwo : Modality = MkModality treesTwo retTwo seqTwo;
+
+/// A sheaf for a modality: a map that extends a family over each dense
+/// proposition, and agrees with it there, at a separated type.
+@[ checks ]
+data Sheaf(mode : Type -> Type, x : Type) : Type[+, 1] where
+  | MkSheaf : (
+    extend : (q : Type, d : mode(q), h : q -> x) -> x,
+    agrees : (q : Type, d : mode(q), h : q -> x, u : q) -> Path[.A = x](extend q d h, h u),
+    separated : (y : x, z : x, e : mode(Path[.A = x](y, z))) -> Path[.A = x](y, z)
+  ) --> Sheaf mode x
+
+/// An oracle algebra: a structure map with the two sheaf equations as paths.
+/// `skip` drops a query whose answer is at hand, and `sep` assumes an answer.
+@[ checks ]
+data OracleAlgebra(s : Type, p : +U (s -> -F Type), x : Type) : Type where
+  | MkAlgebra : (
+    ask : (a : s, h : p(a) -> x) -> x,
+    skip : (a : s, h : p(a) -> x, u : p(a)) -> Path[.A = x](ask a h, h u),
+    sep : (y : x, z : x, a : s, e : p(a) -> Path[.A = x](y, z)) -> Path[.A = x](y, z)
+  ) --> OracleAlgebra s p x
+
+/// Membership: a leaf holds what a tree of the oracle proves equal to it, and
+/// a node holds what each subtree holds. No truncation hides the tree.
+@[ checks ]
+def rec holds(s : Type, p : +U (s -> -F Type), x : Type, v : x, t : Tree s p x) -> -F Type =
+  match t where
+    | Leaf(y) => return (Tree s p (type(Path[.A = x](v, y))))
+    | Node(a, k) => return (+U ((u : p(a)) -> -F holds[<](s, p, x, v, k(u))))
+
+/// A tree is equifoliate when its subtrees are, and when all of them hold the
+/// same members.
+@[ checks ]
+def rec equifoliate(s : Type, p : +U (s -> -F Type), x : Type, t : Tree s p x) -> -F Type =
+  match t where
+    | Leaf(y) => return Unit
+    | Node(a, k) => return (type(*{
+      sub : (u : p(a)) -> equifoliate[<](s, p, x, k(u)),
+      same : (v : x, u : p(a), w : p(a), m : holds(s, p, x, v, k(u))) -> holds(s, p, x, v, k(w))
+    }))
+
+/// An equifoliate tree: a tree with its witness.
+@[ checks ]
+def equiTree(s : Type, p : +U (s -> -F Type), x : Type) -> -F Type {
+  return (type(*{t : Tree s p x, e : equifoliate(s, p, x, t)}))
+}
+
+/// A leaf is equifoliate.
+@[ checks ]
+def equiLeaf(s : Type, p : +U (s -> -F Type), x : Type, v : x) -> equiTree(s, p, x) =
+  *{(Leaf v : Tree s p x), *{}}
+
+/// The leaf arm of the proof that two members are equal: two witnesses at one
+/// leaf give a tree of paths between the members.
+@[ checks ]
+def leafEqual(
+  s : Type,
+  p : +U (s -> -F Type),
+  x : Type,
+  z : x,
+  v : x,
+  w : x,
+  mv : Tree(s, p, Path[.A = x](v, z)),
+  mw : Tree(s, p, Path[.A = x](w, z))
+) -> Tree(s, p, Path[.A = x](v, w)) =
+  bindTree s p (type(Path[.A = x](v, z))) (type(Path[.A = x](v, w))) mv (fun (e1 : Path[.A = x](
+    v,
+    z
+  )) {
+    bindTree s p (type(Path[.A = x](w, z))) (type(Path[.A = x](v, w))) mw (fun (e2 : Path[.A = x](
+      w,
+      z
+    )) {
+      (Leaf (Path.step e1 (Path.back e2)) : Tree(s, p, Path[.A = x](v, w)))
+    })
+  })
+
+/// The node arm of the proof: each subtree of an equifoliate node is
+/// equifoliate.
+@[ checks ]
+def subOf(
+  s : Type,
+  p : +U (s -> -F Type),
+  x : Type,
+  a : s,
+  k : +U (p(a) -> -F Tree s p x),
+  e : equifoliate(s, p, x, (Node a k : Tree s p x)),
+  u : p(a)
+) -> equifoliate(s, p, x, k(u)) =
+  match e where
+    | *{.sub = sub, .same = same} => sub u

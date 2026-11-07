@@ -1,0 +1,94 @@
+// Each declaration here is a point where the port of Ahman and Bauer's oracle
+// sheaves stops.
+//
+// The record of the port names the first definition that gandr cannot state.
+// A stop that one declaration shows is refused here by its code.
+//
+// gandr postulates no axiom, declines truncation and path constructors, and
+// takes no level as a parameter. No lambda into types fills a modality's family
+// under binders. A cell over a continuation presents no sheaf equation.
+//
+// - see: #4728
+// - see: `../../model/effects/oracle-sheaves.gandr` — the parts that check
+// - cites: [Ahman-2026-sheaves_oracle_computations]
+//
+// [Ahman-2026-sheaves_oracle_computations]: https://arxiv.org/abs/2602.22135v2 "Ahman and Bauer, Sheaves as Oracle Computations"
+
+/// The two answers to a query.
+data Two : Type where
+  | L : Two
+  | R : Two
+
+/// The type with no element.
+data Empty : Type where {}
+
+/// A computation tree over a container.
+data Tree(s : Type, p : +U (s -> -F Type), x : Type) : Type where
+  | Leaf : (v : x) --> Tree s p x
+  | Node : (a : s, k : +U (p(a) -> -F Tree s p x)) --> Tree s p x
+
+/// Function extensionality as a bare signature. gandr postulates nothing, so
+/// the signature leaves one obligation.
+@[ owes(1) ]
+def funextAxiom : (
+  a : Type,
+  b : +U (a -> -F Type),
+  f : (x : a) -> b(x),
+  g : (x : a) -> b(x),
+  h : (x : a) -> Path[.A = b(x)](f x, g x)
+) -> Path[.A = (x : a) -> b(x)](f, g);
+
+/// Function extensionality at two open functions. `Path.funext` decides two
+/// closed functions only.
+@[ refuses("FunextUnsupported") ]
+def openFunext(
+  f : Two -> Two,
+  g : Two -> Two,
+  h : (x : Two) -> Path[.A = Two](f x, g x)
+) -> Path[.A = Two -> Two](f, g) =
+  Path.funext f g
+
+/// A modality at `Type`. Its operations quantify over `Type`, a field above
+/// the universe of the type.
+@[ refuses("DataFieldLevel") ]
+data SmallModality : Type where
+  | MkSmall : (mode : Type -> Type, ret : (q : Type, v : q) -> mode(q)) --> SmallModality
+
+/// The excluded-middle oracle: a query names a type, and an answer decides it.
+def decides(q : Type) -> Type = return (type(q + (q -> Empty)))
+
+/// A tree of the excluded-middle oracle. Its queries name types, one universe
+/// above the shape parameter of `Tree`.
+@[ refuses("LevelMismatch") ]
+def lemTree : Tree Type decides Two = Leaf L;
+
+/// A family of types, the one field of a modality that the next three fill.
+data Mode : Type[+, 1] where
+  | MkMode : (mode : Type -> Type) --> Mode
+
+/// The trees of an open container as a lambda that returns a type. The field
+/// does not check it.
+@[ refuses("NotSynthesisable") ]
+def openMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { return (Tree s p q) });
+
+/// The trees of an open container as a static lambda. The lowering reads its
+/// body as a computation, which a type is not.
+@[ refuses("OutOfFragment.WrongSort") ]
+def staticOpenMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { type(Tree s p q) });
+
+/// Each query has two answers.
+def branches(a : Two) -> -F Type { return Two }
+
+/// The trees of a fixed container as a named function.
+def treesNamed(q : Type) -> Type = return (Tree Two branches q)
+
+/// A named function into types has a thunk type, not the static family type.
+@[ refuses("TypeMismatch") ]
+def namedMode : Mode = MkMode treesNamed;
+
+/// Sheafification at a fixed container, its first equation a cell.
+@[ refuses("OutOfFragment.cell_member") ]
+data CellShfy : Type where
+  | CellRet : (v : Two) --> CellShfy
+  | CellAsk : (k : +U (Two -> -F CellShfy)) --> CellShfy
+  | skip : CellAsk k <-> k L
