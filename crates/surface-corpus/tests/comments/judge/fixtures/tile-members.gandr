@@ -22,4 +22,4 @@ theory T where
 codata Stream(a : Type) : Type[-] where
   head : a;
   /// what follows
-  tail : Stream(a);
+  tail : Stream a;

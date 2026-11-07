@@ -1,6 +1,5 @@
 def answer = 42;
 def broken = missing;
-def wrong : Integer;
-def wrong = "text";
+def wrong : Integer = "text";
 @[ owes(1) ]
 def later : Integer;

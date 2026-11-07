@@ -5,5 +5,4 @@ data NatAdd : Type where {
   rule : add Zero n ==> n;
   rule : add (Succ m) n ==> Succ (add m n);
 }
-def two : +U (-F NatAdd);
-def two = thunk { become add (Succ Zero) (Succ Zero) };
+def two() -> NatAdd { become add (Succ Zero) (Succ Zero) }

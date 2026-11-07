@@ -1,4 +1,4 @@
 codata Stream(a : Type) : Type where {
   head[1] : a;
-  tail[ω] : Stream(a);
+  tail[ω] : Stream a;
 }

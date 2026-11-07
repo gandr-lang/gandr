@@ -5,6 +5,6 @@ data Prog : N -> Type where {
   | Tell : (s : Integer, k : Prog(Z)) --> Prog(Z) rule : Tell s (Tell u k) <=> Tell u k;
 }
 data Skip : N -> Type where {
-  | Halt : Skip(Z) oper skip : (k : Skip(Z)) --> Skip(Z);
+  | Halt : Skip Z oper skip : (k : Skip Z) --> Skip Z;
   rule : skip k ==> k;
 }

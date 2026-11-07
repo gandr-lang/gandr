@@ -1,7 +1,7 @@
-codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }
-def rec upward(n : Integer) -> Stream(Integer) { &{.head => n, .tail => upward[>] (n + 1)} }
-def second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }
-def third() -> -F Integer { (upward 1).tail.tail.head }
-def counted() -> -F Integer { (upward 1).1.tail.0 }
-def deeper(s : +U Stream(Integer)) -> -F Integer { s.head.tail }
-def grouped() -> -F Integer { (upward 1).tail.tail.head }
+codata Stream(a : Type) : Type[-] where { head : a; tail : Stream a; }
+def rec upward(n : Integer) -> Stream Integer { &{.head => n, .tail => upward[>] (n + 1)} }
+def second(s : +U (Stream Integer)) -> Integer { s.tail.head }
+def third() -> Integer { (upward 1).tail.tail.head }
+def counted() -> Integer { (upward 1).1.tail.0 }
+def deeper(s : +U (Stream Integer)) -> Integer { s.head.tail }
+def grouped() -> Integer { (upward 1).tail.tail.head }

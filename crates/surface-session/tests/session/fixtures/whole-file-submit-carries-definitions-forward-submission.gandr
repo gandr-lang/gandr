@@ -1,3 +1,2 @@
 def greeting = "the value zone";
-def shown : String;
-def shown = greeting;
+def shown : String = greeting;

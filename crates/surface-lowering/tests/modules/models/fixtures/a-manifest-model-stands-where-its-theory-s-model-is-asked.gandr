@@ -11,14 +11,14 @@ theory Sg where {
   oper mul : (x : M, y : M) --> M;
   rule assoc : mul (mul x y) z ==> mul x (mul y z);
 }
-def any(m : Model(Counter)) -> -F Model(Counter) { return m }
-def closed(m : Model(Counter) with sort C = Integer) -> -F Model(Counter) {
+def any(m : Model Counter) -> Model Counter { m }
+def closed(m : Model Counter with sort C = Integer) -> Model Counter {
   become any m
 }
-def open(x : Type, m : Model(Counter) with sort C = x) -> -F Model(Counter) {
+def open(x : Type, m : Model Counter with sort C = x) -> Model Counter {
   become any m
 }
-def anySg(s : Model(Sg)) -> -F Model(Sg) { return s }
-def lawful(m : Model(Sg) with sort M = Integer) -> -F Model(Sg) {
+def anySg(s : Model Sg) -> Model Sg { s }
+def lawful(m : Model Sg with sort M = Integer) -> Model Sg {
   become anySg m
 }

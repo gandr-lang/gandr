@@ -32,9 +32,9 @@ def rec tower(n : Nat) -> Type {
   }
 }
 
-def towered(u : Integer, w : Integer) -> tower(Succ(Zero)) { *{u, w} }
+def towered(u : Integer, w : Integer) -> tower(Succ Zero) { *{u, w} }
 
-def towerFirst(v : tower(Succ(Zero))) -> Integer { v.0 }
+def towerFirst(v : tower(Succ Zero)) -> Integer { v.0 }
 
 def sem(a : Ty, _d : Ctx) -> Type {
   match a {
@@ -50,6 +50,6 @@ def rec env(g : Ctx, d : Ctx) -> Type {
   }
 }
 
-def lookup(d : Ctx, v : env(Extend(Empty, Base), d)) -> Integer { v.1 }
+def lookup(d : Ctx, v : env(Extend Empty Base, d)) -> Integer { v.1 }
 
-def single(d : Ctx, n : Integer) -> env(Extend(Empty, Base), d) { *{*{}, n} }
+def single(d : Ctx, n : Integer) -> env(Extend Empty Base, d) { *{*{}, n} }

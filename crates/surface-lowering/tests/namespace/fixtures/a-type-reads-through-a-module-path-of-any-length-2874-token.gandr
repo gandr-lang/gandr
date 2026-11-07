@@ -1,3 +1,2 @@
 pub data Token : Type where { | Tok : Token }
-pub def made : Token;
-def made = Tok;
+pub def made : Token = Tok;

@@ -4,7 +4,7 @@ theory Pair where {
   oper a : A;
   oper b : B;
 }
-def derived : (x : Type) -> (Model(Pair) with sort B = x);
+def derived : (x : Type) -> (Model Pair with sort B = x);
 def written : (x : Type) -> *{a0 : Type, a : a0, b : x};
-def both : Model(Pair) with sort A = Integer with sort B = Unit + Unit;
+def both : Model Pair with sort A = Integer with sort B = Unit + Unit;
 def bothWritten : *{a : Integer, b : Unit + Unit};

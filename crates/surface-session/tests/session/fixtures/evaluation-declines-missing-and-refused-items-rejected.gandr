@@ -1,2 +1,1 @@
-def broken : String;
-def broken = 1;
+def broken : String = 1;

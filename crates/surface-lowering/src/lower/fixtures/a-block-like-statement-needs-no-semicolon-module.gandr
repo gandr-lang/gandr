@@ -1,13 +1,13 @@
-def counted() -> -F [Partial] Integer {
+def counted() -> [Partial] Integer {
   var n = 0;
   while n < 3 { n += 1; }
   if n == 3 { n += 10; } else { n += 20; }
   { n *= 2; }
   access n as v { resume v (v + 10) }
   n -= 1;
-  return n
+  n
 }
-def ended() -> -F [Partial] Unit {
+def ended() -> [Partial] Unit {
   var n = 0;
   while n < 3 { n += 1; }
 }

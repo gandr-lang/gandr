@@ -1,3 +1,2 @@
-@[ checks ]
 /// x
 def x = 1;

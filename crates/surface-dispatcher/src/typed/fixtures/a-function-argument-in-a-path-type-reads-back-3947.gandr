@@ -15,12 +15,12 @@ def pass(
 def user(
   b : Type,
   e : Path[.A = *{x : b, y : b} -> b](
-    thunk { fun (w) { first b w } },
-    thunk { fun (w) { first b w } }
+    fun (w) { first b w },
+    fun (w) { first b w }
   )
 ) -> Path[.A = *{x : b, y : b} -> b](
-  thunk { fun (w) { first b w } },
-  thunk { fun (w) { first b w } }
+  fun (w) { first b w },
+  fun (w) { first b w }
 ) {
   pass b (fun (w) { first b w }) e
 }

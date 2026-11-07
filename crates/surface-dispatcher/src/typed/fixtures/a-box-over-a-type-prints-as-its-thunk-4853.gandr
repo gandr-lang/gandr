@@ -4,4 +4,4 @@ theory Counter where
   oper step : (c : C) --> C;
 
 def countersOn(x : Type) -> Type =
-  return type(Model(Counter) with sort C = x)
+  return type(Model Counter with sort C = x)

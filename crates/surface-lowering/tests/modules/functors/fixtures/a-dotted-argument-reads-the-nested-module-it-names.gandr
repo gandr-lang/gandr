@@ -2,8 +2,8 @@ module Outer where {
   module Other where { def seed = 1; } module Seed :> *{
     type T,
     seed : T,
-    next : +U[ω] (T -> -F T)
-  } where { type T = Integer; def seed = 0; def next = thunk { fun (n) { return n } }; }
+    next : T -> T
+  } where { type T = Integer; def seed = 0; def next = thunk { fun (n) { n } }; }
 }
 module A = MkCounter(Outer.Seed);
 module B = MkCounter(Outer.Nope);

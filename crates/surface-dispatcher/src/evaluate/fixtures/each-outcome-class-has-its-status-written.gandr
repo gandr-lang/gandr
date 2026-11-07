@@ -1,6 +1,4 @@
 def later : Integer;
 def answer = 42;
-def copy : Integer;
-def copy = later;
-def bad : Integer;
-def bad = "text";
+def copy : Integer = later;
+def bad : Integer = "text";

@@ -3,9 +3,9 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def rec skim(n : Nat) -> -F Nat {
+def rec skim(n : Nat) -> Nat {
   match n {
-    | Zero => return n
+    | Zero => n
     | Succ(p) => {
       let _ = match p {
         | Zero => return p

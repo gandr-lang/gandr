@@ -3,7 +3,7 @@ def bare(c : Color) -> -F Integer =
   match c
     | Red => pure 0
     | _ => pure 1
-def marked(c : Color) -> -F Integer =
+def marked(c : Color) -> Integer =
   match c where
     | Red => pure 0
     | _ => pure 1

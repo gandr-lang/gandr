@@ -1,3 +1,3 @@
 data N : Type where { | Z : N }
-data Two : (n : N, m : N) --> Type where { | Both : (n : N, m : N) --> Two(n, m) }
+data Two : (n : N, m : N) --> Type where { | Both : (n : N, m : N) --> Two n m }
 data Short : (n : N, m : N) --> Type where { | One : (n : N) --> Short(n) }

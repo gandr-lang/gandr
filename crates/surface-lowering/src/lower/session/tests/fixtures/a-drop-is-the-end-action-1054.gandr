@@ -1,8 +1,8 @@
-def dropped() -> -F Unit {
+def dropped() -> Unit {
   let desk = fork (seat : end) { drop seat };
   drop desk
 }
-def closed() -> -F Unit {
+def closed() -> Unit {
   let desk = fork (seat : end) { close seat };
   close desk
 }

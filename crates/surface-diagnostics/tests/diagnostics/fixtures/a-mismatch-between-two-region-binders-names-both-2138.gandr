@@ -1,9 +1,9 @@
-def read[r : Region](k : (() -> Integer) at r) -> -F Integer { force k }
+def read[r : Region](k : (() -> Integer) at r) -> Integer { force k }
 
 def crossed[r : Region, s : Region](
   k : (() -> Integer) at r,
   j : (() -> Integer) at s
-) -> -F Integer {
+) -> Integer {
   let m : (() -> Integer) at s = k;
   read m
 }

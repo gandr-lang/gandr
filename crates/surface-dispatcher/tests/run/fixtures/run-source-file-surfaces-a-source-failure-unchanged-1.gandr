@@ -1,2 +1,1 @@
-def answer : +U (-F Integer);
-def answer = thunk { return 42 };
+def answer() -> Integer { 42 }

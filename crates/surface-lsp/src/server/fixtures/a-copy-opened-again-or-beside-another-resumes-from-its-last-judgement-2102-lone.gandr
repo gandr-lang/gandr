@@ -1,4 +1,2 @@
-def a : Integer;
-def a = 1;
-def b : Integer;
-def b = a;
+def a : Integer = 1;
+def b : Integer = a;

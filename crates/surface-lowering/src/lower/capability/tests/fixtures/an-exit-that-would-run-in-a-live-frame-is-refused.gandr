@@ -1,4 +1,4 @@
-def one() -> -F Integer { 1 }
+def one() -> Integer { 1 }
 def became() -> -F Integer {
   handle c : std.process.Exit.Eff {
     become one ()

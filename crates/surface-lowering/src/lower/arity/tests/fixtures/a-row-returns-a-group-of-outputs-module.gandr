@@ -1,4 +1,4 @@
 def spin(n : Integer) -> [Partial] (q : Integer, r : Integer) { (n, n) }
-def explicit(n : Integer) -> -F [Partial] (Integer, Integer) { (n, n) }
+def explicit(n : Integer) -> [Partial] (Integer, Integer) { (n, n) }
 def caller(n : Integer) -> [Partial] Integer { let *{q, r} = spin n; q }
 def none(n : Integer) -> [Partial] () { () }

@@ -1,5 +1,5 @@
-def named[m : Type, combine : (x : m) -> m](x : m) -> -F m { become combine x }
-def bare[m : Type, combine : m -> m](x : m) -> -F m { become combine x }
-def twin(m : Type, combine : m -> m, x : m) -> -F m { become combine x }
-def keyed[c : (y : t) -> t](t : Type, v : t) -> -F t { become c v }
-def keyedTwin(t : Type, c : t -> t, v : t) -> -F t { become c v }
+def named[m : Type, combine : m -> m](x : m) -> m { become combine x }
+def bare[m : Type, combine : m -> m](x : m) -> m { become combine x }
+def twin(m : Type, combine : m -> m, x : m) -> m { become combine x }
+def keyed[c : t -> t](t : Type, v : t) -> t { become c v }
+def keyedTwin(t : Type, c : t -> t, v : t) -> t { become c v }

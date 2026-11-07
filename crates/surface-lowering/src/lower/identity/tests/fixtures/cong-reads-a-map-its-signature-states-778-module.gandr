@@ -2,11 +2,9 @@ data Circle : Type where {
   | Base : Circle
   | loop : Base <-> Base
 }
-def sugared : Circle -> Circle;
-def sugared = thunk { fun (a) { a } };
-def explicit : +U (Circle -> -F Circle);
-def explicit = thunk { fun (a) { return a } };
-def overSugared : Path[.A = Path[.A = Circle](Base, Base)](Path.ap sugared loop, loop);
-def overSugared = Path.here loop;
-def overExplicit : Path[.A = Path[.A = Circle](Base, Base)](Path.ap explicit loop, loop);
-def overExplicit = Path.here loop;
+def sugared(a : Circle) -> Circle { a }
+def explicit(a : Circle) -> Circle { a }
+def overSugared : Path[.A = Path[.A = Circle](Base, Base)](Path.ap sugared loop, loop) = Path.here
+  loop;
+def overExplicit : Path[.A = Path[.A = Circle](Base, Base)](Path.ap explicit loop, loop) = Path.here
+  loop;

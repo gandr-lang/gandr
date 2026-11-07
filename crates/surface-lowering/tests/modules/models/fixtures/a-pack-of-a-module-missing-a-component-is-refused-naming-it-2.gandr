@@ -1,3 +1,3 @@
 module Bare where {
-  def start() -> -F Integer { 0 }
+  def start() -> Integer { 0 }
 }

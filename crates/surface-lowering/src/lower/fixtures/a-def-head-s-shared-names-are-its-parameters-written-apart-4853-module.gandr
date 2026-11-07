@@ -1,8 +1,8 @@
-def shared(m n : Integer) -> -F Integer { return m }
-def apart(m : Integer, n : Integer) -> -F Integer { return m }
-def bound(a : Type, x y : a) -> -F a { return y }
-def bound_apart(a : Type, x : a, y : a) -> -F a { return y }
-def three(b : Bool, k m n : Integer) -> -F Integer { return k }
-def three_apart(b : Bool, k : Integer, m : Integer, n : Integer) -> -F Integer { return k }
-def linked(a : Type, x y : a, p : Path[.A = a](x, y)) -> -F a { return y }
-def linked_apart(a : Type, x : a, y : a, p : Path[.A = a](x, y)) -> -F a { return y }
+def shared(m n : Integer) -> Integer { m }
+def apart(m : Integer, n : Integer) -> Integer { m }
+def bound(a : Type, x y : a) -> a { y }
+def bound_apart(a : Type, x : a, y : a) -> a { y }
+def three(b : Bool, k m n : Integer) -> Integer { k }
+def three_apart(b : Bool, k : Integer, m : Integer, n : Integer) -> Integer { k }
+def linked(a : Type, x y : a, p : Path[.A = a](x, y)) -> a { y }
+def linked_apart(a : Type, x : a, y : a, p : Path[.A = a](x, y)) -> a { y }

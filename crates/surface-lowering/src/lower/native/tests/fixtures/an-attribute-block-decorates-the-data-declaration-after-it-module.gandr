@@ -1,4 +1,2 @@
-@[ checks ]
 data Flag : Type where { | On : Flag | Off : Flag }
-@[ checks ]
 def on = On;

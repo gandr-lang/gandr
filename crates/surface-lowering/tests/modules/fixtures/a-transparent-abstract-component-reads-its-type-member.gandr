@@ -1,5 +1,3 @@
 module M : *{ type T, value : T } where { type T = Integer; def value = 1; }
-def used : M.T;
-def used = M.value;
-def wrong : M.T;
-def wrong = "text";
+def used : M.T = M.value;
+def wrong : M.T = "text";

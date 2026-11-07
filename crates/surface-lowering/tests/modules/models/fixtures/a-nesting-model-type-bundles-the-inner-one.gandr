@@ -3,7 +3,7 @@ theory Pointed where {
   oper z : T;
 }
 theory Outer where {
-  oper inner : Model(Pointed);
+  oper inner : Model Pointed;
 }
-def derived : Model(Outer);
+def derived : Model Outer;
 def written : *{inner : *{t : Type, z : t}};

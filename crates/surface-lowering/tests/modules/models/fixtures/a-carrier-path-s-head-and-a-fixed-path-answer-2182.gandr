@@ -2,5 +2,5 @@ theory Counter where {
   sort C : Type;
   oper zero : C;
 }
-def plain(a : Model(Counter), c : a.C) -> -F Integer { return 0 }
-def fixed(b : Model(Counter) with sort C = Integer, c : b.C) -> -F Integer { c }
+def plain(a : Model Counter, c : a.C) -> Integer { 0 }
+def fixed(b : Model Counter with sort C = Integer, c : b.C) -> Integer { c }

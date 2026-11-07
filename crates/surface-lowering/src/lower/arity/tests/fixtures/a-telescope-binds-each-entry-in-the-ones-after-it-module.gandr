@@ -1,6 +1,6 @@
-def dependent : (a : Type, x : a) -> a;
-def mixed : (x : Integer, String) -> Integer;
+def dependent : (a : Type, a) -> a;
+def mixed : (Integer, String) -> Integer;
 def plain : (Integer, String) -> Integer;
 def endpoint : (n : Integer) -> Path[.A = Integer](n, n);
-def tail(n : Integer) -> -F Integer { return n }
-def spelled : (n : Integer) -> Integer;
+def tail(n : Integer) -> Integer { n }
+def spelled : Integer -> Integer;

@@ -1,10 +1,10 @@
-def two(t : Integer + Integer) -> -F Integer { match t { | +{.1 = x} => return x | _ => return 0 } }
-def three(s : String + String + Integer) -> -F Integer {
-  match s { | +{.2 = n} => return n | _ => return 0 }
+def two(t : Integer + Integer) -> Integer { match t { | +{.1 = x} => x | _ => 0 } }
+def three(s : String + String + Integer) -> Integer {
+  match s { | +{.2 = n} => n | _ => 0 }
 }
-def grouped(s : Integer + (String + Unit)) -> -F Integer {
-  match s { | +{.0 = n} => return n | +{.1 = r} => return 1 }
+def grouped(s : Integer + (String + Unit)) -> Integer {
+  match s { | +{.0 = n} => n | +{.1 = r} => 1 }
 }
-def nested(t : (Integer + Integer) * Integer) -> -F Integer {
-  match t { | *{+{.1 = x}, y} => return x | *{_, y} => return y }
+def nested(t : (Integer + Integer) * Integer) -> Integer {
+  match t { | *{+{.1 = x}, y} => x | *{_, y} => y }
 }

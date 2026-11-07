@@ -2,5 +2,5 @@ theory Carrier where {
   sort Ob : Type;
   sort T(A : Type) : Type;
   sort At(o : Ob, A : Type) : Type;
-  oper same : (x : T(a)) --> T(a);
+  oper same : (x : T a) --> T a;
 }

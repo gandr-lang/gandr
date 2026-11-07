@@ -1,13 +1,9 @@
-pub def shown : Integer;
-def shown = 2;
+pub def shown : Integer = 2;
 def hidden : Integer;
 pub def hidden = 1;
-@[ checks ]
-pub def checked : Integer;
-def checked = 4;
+pub def checked : Integer = 4;
 pub @[ checks ]
-def early : Integer;
-def early = 5;
+def early : Integer = 5;
 def secret = 3;
 pub data Bit : Type where { | O : Bit }
 data Hid : Type where { | H : Hid }
@@ -21,5 +17,5 @@ theory Closed where {
 }
 pub module Open where { def x = 6; }
 module Shut where { def y = 7; }
-pub module Methods where { def width(self : shared Integer) -> -F Integer { pure self } }
-module Hidden where { def depth(self : shared Integer) -> -F Integer { pure self } }
+pub module Methods where { def width(self : shared Integer) -> Integer { pure self } }
+module Hidden where { def depth(self : shared Integer) -> Integer { pure self } }

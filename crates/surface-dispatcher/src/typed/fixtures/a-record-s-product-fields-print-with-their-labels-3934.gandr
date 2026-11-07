@@ -2,6 +2,6 @@ def held(
   b : Type,
   s : *{x : b, y : b, z : b, f : Path[.A = b](x, y), g : Path[.A = b](y, z)},
   t : *{n : Integer, a : Type, v : a}
-) -> -F Integer {
-  return 0
+) -> Integer {
+  0
 }

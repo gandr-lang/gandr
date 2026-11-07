@@ -4,5 +4,5 @@ theory Pointed where {
   oper zero : Ob;
   oper one : () --> Ob;
   oper base : Integer;
-  oper loop : Hom(a, a);
+  oper loop : Hom a a;
 }

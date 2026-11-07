@@ -1,11 +1,9 @@
 data Circle : Type where { | Base : Circle | loop : Base <-> Base }
-def empty : Path[.A = Circle](Base, Base);
-def empty = Path.here Base;
-def word : Path[.A = Circle](Base, Base);
-def word = back loop ∷ loop;
-def rec size(p : Path[.A = Circle](Base, Base)) -> -F Integer {
+def empty : Path[.A = Circle](Base, Base) = Path.here Base;
+def word : Path[.A = Circle](Base, Base) = back loop ∷ loop;
+def rec size(p : Path[.A = Circle](Base, Base)) -> Integer {
   match p {
-    | here => return 0
+    | here => 0
     | loop ∷ q => become size[<] q
     | back(loop) ∷ q => become size[<] q
   }

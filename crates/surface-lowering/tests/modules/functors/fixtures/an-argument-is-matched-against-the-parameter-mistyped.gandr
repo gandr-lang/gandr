@@ -1,6 +1,6 @@
-module Wrong :> *{ type T, seed : Integer, next : +U[ω] (T -> -F T) } where {
+module Wrong :> *{ type T, seed : Integer, next : T -> T } where {
   type T = Integer;
   def seed = 0;
-  def next = thunk { fun (n) { return n } };
+  def next = thunk { fun (n) { n } };
 }
 module A = MkCounter(Wrong);

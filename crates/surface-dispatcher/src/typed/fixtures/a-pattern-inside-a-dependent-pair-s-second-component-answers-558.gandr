@@ -1,9 +1,9 @@
-def nested(p : *{x : Integer, inner : *{y : Integer, q : Path[.A = Integer](x, y)}}) -> -F Integer {
+def nested(p : *{x : Integer, inner : *{y : Integer, q : Path[.A = Integer](x, y)}}) -> Integer {
   match p {
     | *{x, *{y, q}} => y
   }
 }
-def flat(p : *{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}) -> -F Integer {
+def flat(p : *{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}) -> Integer {
   match p {
     | *{x, y, q} => y
   }

@@ -4,10 +4,10 @@ theory Unital where {
   oper mul : (x : M, y : M) --> M;
   rule unitL : mul (e ()) x ==> x;
 }
-def derived : Model(Unital);
+def derived : Model Unital;
 def written : *{
   m : Type,
   e : m,
-  mul : (x : m, y : m) -> m,
+  mul : (m, m) -> m,
   unitL : (x : m) -> Path[.A = m](mul e x, x)
 };

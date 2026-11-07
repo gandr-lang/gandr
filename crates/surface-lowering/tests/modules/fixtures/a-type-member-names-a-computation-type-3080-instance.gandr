@@ -1,5 +1,5 @@
 module Pt :> *{ type V, v : V } where { type V = Integer; def v = 3; }
-module Mk(S : *{ type V, v : V }) where { type K = -F S.V; def k() -> K { return S.v } }
+module Mk(S : *{ type V, v : V }) where { type K = -F S.V; def k() -> K { S.v } }
 module I = Mk(Pt);
 def through() -> I.K { I.k () }
-def lie() -> I.K { return true }
+def lie() -> I.K { true }

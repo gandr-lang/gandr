@@ -1,9 +1,9 @@
-def last(t : *{Integer, Bool, Integer}) -> -F Integer {
+def last(t : Integer * Bool * Integer) -> Integer {
   match t {
-    | *{x, y, z} => return z
+    | *{x, y, z} => z
   }
 }
-def side(c : Integer) -> -F Integer {
+def side(c : Integer) -> Integer {
   let small = c < 128;
   match small {
     | +{.0 = u} => 1

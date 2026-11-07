@@ -1,9 +1,9 @@
 module P where
   def inv[t : Type, a : t, b : t](p : Path[.A = t](a, b)) -> Path[.A = t](b, a) = Path.back p;
-  def plain(n : Integer) -> -F Integer { return n }
+  def plain(n : Integer) -> Integer { n }
   module Q where
     def flip[t : Type, a : t, b : t](p : Path[.A = t](a, b)) -> Path[.A = t](b, a) = Path.back p;
   def inside(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](y, x) = Q.flip p;
 def viaModule(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](y, x) = P.inv p;
 def viaNested(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](y, x) = P.Q.flip p;
-def viaPlain() -> -F Integer { become P.plain 3 }
+def viaPlain() -> Integer { become P.plain 3 }

@@ -1,2 +1,2 @@
-def a = thunk { return 1 };
+def a = thunk { 1 };
 def b = a;

@@ -1,3 +1,2 @@
-def later : +U (-F Integer);
-def main : +U (-F Integer);
-def main = thunk { become force later };
+def later : () -> Integer;
+def main() -> Integer { become force later }

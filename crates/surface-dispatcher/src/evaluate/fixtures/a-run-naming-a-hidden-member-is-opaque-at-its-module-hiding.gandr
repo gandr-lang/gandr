@@ -4,7 +4,6 @@ theory Pointed where {
 }
 module Stepped : Model(Pointed) where {
   type T = Integer -> Integer;
-  def step(x : Integer) -> -F Integer { x }
-  def z : T;
-  def z = fun (n) { become step n };
+  def step(x : Integer) -> Integer { x }
+  def z : T = fun (n) { become step n };
 }

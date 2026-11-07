@@ -1,4 +1,3 @@
-@[ checks ]
 data NatApart : Type where {
   | Zero : NatApart
   | Succ : (n : NatApart) --> NatApart

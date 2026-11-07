@@ -6,5 +6,4 @@ data NatAssoc : Type where {
   rule : add (Succ m) n ==> Succ (add m n);
   rule : add (add m n) k ==> add m (add n k);
 }
-def three : +U (-F NatAssoc);
-def three = thunk { become add (Succ (Succ Zero)) (Succ Zero) };
+def three() -> NatAssoc { become add (Succ (Succ Zero)) (Succ Zero) }

@@ -1,2 +1,2 @@
 def log[r : Row](s : String) -> -F [std.io.Console.Eff | r] Unit { std.io.Console.print s }
-def alone[r : Row]() -> -F [r] Unit { pure *{} }
+def alone[r : Row]() -> [r] Unit { pure *{} }

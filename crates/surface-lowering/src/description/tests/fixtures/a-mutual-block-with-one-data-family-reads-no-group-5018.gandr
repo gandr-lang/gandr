@@ -9,8 +9,8 @@ rec {
 }
 rec {
   data Left(a : Type) : Type where {
-    | Here : (x : a) --> Left(a)
-    | There : (r : Right) --> Left(a)
+    | Here : (x : a) --> Left a
+    | There : (r : Right) --> Left a
   }
   data Right : Type where {
     | Stop : Right

@@ -2,9 +2,9 @@ theory Monoid where {
   sort M : Type;
   oper one : () --> (z : M);
 }
-def count(presented : Theory) -> -F Integer {
+def count(presented : Theory) -> Integer {
   match presented {
-    | Presents(sorts, opers, rules) => return 1
-    | _ => return 0
+    | Presents(sorts, opers, rules) => 1
+    | _ => 0
   }
 }

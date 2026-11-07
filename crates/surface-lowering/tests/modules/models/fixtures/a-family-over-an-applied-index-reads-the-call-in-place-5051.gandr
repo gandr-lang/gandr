@@ -1,17 +1,17 @@
 theory Scoped where {
   sort C : Type;
   sort T(g : C) : Type;
-  sort M(g : C, a : T(g)) : Type;
-  oper ext : (g : C, a : T(g)) --> C;
-  oper wk : (g : C, a : T(g)) --> T(ext(g, a));
-  oper q : (g : C, a : T(g)) --> M(ext(g, a), wk(g, a));
+  sort M(g : C, a : T g) : Type;
+  oper ext : (g : C, a : T g) --> C;
+  oper wk : (g : C, a : T g) --> T ext(g, a);
+  oper q : (g : C, a : T g) --> M ext(g, a) wk(g, a);
 }
-def derived : Model(Scoped);
+def derived : Model Scoped;
 def written : *{
   c : Type,
-  t : (g : c) -> Type,
-  m : (g : c, a : t(g)) -> Type,
-  ext : (g : c, a : t(g)) -> c,
+  t : c -> Type,
+  m : (g : c, t(g)) -> Type,
+  ext : (g : c, t(g)) -> c,
   wk : (g : c, a : t(g)) -> t(ext(g, a)),
   q : (g : c, a : t(g)) -> m(ext(g, a), wk(g, a))
 };

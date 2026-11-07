@@ -1,12 +1,12 @@
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 data Grid : (r : Nat, c : Nat) --> Type where {
-  | GNil : Grid(Zero, Zero)
-  | GRow : (r : Nat, c : Nat, rest : Grid(r, c)) --> Grid(Succ(r), c)
-  | GCol : (r : Nat, c : Nat, rest : Grid(r, c)) --> Grid(r, Succ(c))
+  | GNil : Grid Zero Zero
+  | GRow : (r : Nat, c : Nat, rest : Grid r c) --> Grid(Succ(r), c)
+  | GCol : (r : Nat, c : Nat, rest : Grid r c) --> Grid(r, Succ c)
 }
-def rows(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> -F Nat {
-  match g { | GRow(r, c, rest) => return r | GCol(r, c, rest) => return c }
+def rows(n : Nat, m : Nat, g : Grid (Succ n) m) -> Nat {
+  match g { | GRow(r, c, rest) => r | GCol(r, c, rest) => c }
 }
-def cols(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> -F Nat {
-  match g { | GRow(r, c, rest) => return r | GCol(r, c, rest) => return c }
+def cols(n : Nat, m : Nat, g : Grid(m, Succ n)) -> Nat {
+  match g { | GRow(r, c, rest) => r | GCol(r, c, rest) => c }
 }

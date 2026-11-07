@@ -1,2 +1,1 @@
-def name : String;
-def name = 42;
+def name : String = 42;

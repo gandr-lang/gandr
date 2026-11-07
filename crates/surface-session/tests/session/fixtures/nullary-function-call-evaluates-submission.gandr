@@ -1,3 +1,2 @@
-def step() -> -F Integer { return 1 }
-def called : +U (-F Integer);
-def called = thunk { become step () };
+def step() -> Integer { 1 }
+def called() -> Integer { become step () }

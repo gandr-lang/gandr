@@ -1,6 +1,6 @@
-def not(b : Bool) -> -F Bool {
+def not(b : Bool) -> Bool {
   match b {
-    | true => return +{.1 = *{}}
-    | false => return +{.0 = *{}}
+    | true => +{.1 = *{}}
+    | false => +{.0 = *{}}
   }
 }

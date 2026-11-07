@@ -3,8 +3,8 @@ data Shape : Type where {
   | Dot : (tag : Integer) --> Shape
   | Line : (start : Integer, tag : Integer) --> Shape
 }
-data Twin(a : Type) : Type where { | Both : (first : a, second : a) --> Twin(a) }
-def lowOf(band : Band) -> -F Integer { band.low }
-def above(band : Band) -> -F Bool { band.high >= 1 }
-def tagOf(shape : Shape) -> -F Integer { shape.tag }
-def secondAbove(twin : Twin(Integer)) -> -F Bool { twin.second >= 1 }
+data Twin(a : Type) : Type where { | Both : (first : a, second : a) --> Twin a }
+def lowOf(band : Band) -> Integer { band.low }
+def above(band : Band) -> Bool { band.high >= 1 }
+def tagOf(shape : Shape) -> Integer { shape.tag }
+def secondAbove(twin : Twin Integer) -> Bool { twin.second >= 1 }

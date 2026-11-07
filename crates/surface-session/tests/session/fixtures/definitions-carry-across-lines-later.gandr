@@ -1,4 +1,3 @@
 def y = 5;
 def z = y;
-def w : Integer;
-def w = y;
+def w : Integer = y;

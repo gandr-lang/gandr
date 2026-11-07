@@ -7,15 +7,14 @@ data T : Type where {
   | V : T
 }
 
-def ext(g : N) -> -F N { return S g }
+def ext(g : N) -> N { S g }
 
-def k(g : N, t : T) -> -F T { return t }
+def k(g : N, t : T) -> T { t }
 
 def w : *{
   c : Type,
-  tm : +U (c -> -F Type),
-  e : (g : c) -> c,
-  a : (g : c, t : tm(e(g))) -> tm(g),
-  b : (g : c, t : tm(e(g))) -> tm(g)
-};
-def w = *{N, *{thunk { fun (g) { return T } }, *{ext, *{k, k}}}};
+  tm : c -> Type,
+  e : c -> c,
+  a : (g : c, tm(e(g))) -> tm(g),
+  b : (g : c, tm(e(g))) -> tm(g)
+} = *{N, *{fun (g) { return T }, *{ext, *{k, k}}}};

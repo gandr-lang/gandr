@@ -13,4 +13,4 @@ def plus(
   /// summand.
   m : Nat,
   k : Nat
-) -> -F Nat { n }
+) -> Nat { n }

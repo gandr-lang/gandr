@@ -1,4 +1,4 @@
-def pairs(p : Integer * Bool) -> -F Type { return Integer }
+def pairs(p : Integer * Bool) -> Type { return Integer }
 def curried(t : Type) -> Integer * Bool -> Type = return fun (p) { t };
 def pair : pairs(*{3, true});
 def again : curried(Unit)(*{3, false});

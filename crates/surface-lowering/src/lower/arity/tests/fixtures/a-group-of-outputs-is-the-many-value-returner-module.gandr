@@ -1,9 +1,9 @@
-def named(m : Integer) -> (q : Integer, r : String) { return m }
-def unnamed(m : Integer) -> (Integer, String) { return m }
-def none(m : Integer) -> () { return m }
-def one(m : Integer) -> (q : Integer) { return m }
-def bare(m : Integer) -> Integer { return m }
-def grouped(m : Integer) -> (Integer) { return m }
-def dependent(m : Integer) -> (a : Type, x : a) { return m }
-def explicit(m : Integer) -> -F (Integer, String) { return m }
-def signed : +U (Integer -> -F (Integer, String));
+def named(m : Integer) -> (q : Integer, r : String) { m }
+def unnamed(m : Integer) -> (Integer, String) { m }
+def none(m : Integer) -> () { m }
+def one(m : Integer) -> (q : Integer) { m }
+def bare(m : Integer) -> Integer { m }
+def grouped(m : Integer) -> (Integer) { m }
+def dependent(m : Integer) -> (a : Type, x : a) { m }
+def explicit(m : Integer) -> (Integer, String) { m }
+def signed : Integer -> (Integer, String);

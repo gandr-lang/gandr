@@ -1,40 +1,39 @@
 theory Cat where {
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper id : (a : Ob) --> Hom a a;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
   rule unitL : comp (id a) f <=> f;
 }
 
 module Fns : Model(Cat) where {
   type Ob = Type;
-  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);
-  def ident(t : Type, x : t) -> -F t { return x }
+  type Hom(a : Ob, b : Ob) = a -> b;
+  def ident(t : Type, x : t) -> t { x }
   def compose(
     t : Type,
     u : Type,
     v : Type,
-    f : +U[ω] (t -> -F u),
-    g : +U[ω] (u -> -F v),
+    f : t -> u,
+    g : u -> v,
     x : t
-  ) -> -F v {
-    let y = f x;
-    become g y
+  ) -> v {
+    become g (f x)
   }
-  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident t } }
+  def id(t : Type) -> t -> t { thunk { become ident t } }
   def comp(
     t : Type,
     u : Type,
     v : Type,
-    f : +U[ω] (t -> -F u),
-    g : +U[ω] (u -> -F v)
-  ) -> -F (+U[ω] (t -> -F v)) {
-    return thunk { become compose t u v f g }
+    f : t -> u,
+    g : u -> v
+  ) -> t -> v {
+    thunk { become compose t u v f g }
   }
-  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](
+  def unitL(p : Type, q : Type, f : p -> q) -> Path[.A = (p -> q)](
     comp p p q (id p) f,
     f
   ) {
-    return Path.here f
+    Path.here f
   }
 }

@@ -5,16 +5,14 @@ data Int : Type where {
   rule : S (P x) ==> x;
   rule : P (S x) ==> x;
 }
-def rec tell(n : Int) -> -F Int {
+def rec tell(n : Int) -> Int {
   match n {
     | Z => Z
     | S(x) => S (tell[<] x)
     | P(x) => P (tell[<] x)
   }
 }
-def one : Integer;
-def one = 1;
+def one : Integer = 1;
 def owed : Integer;
 def lost = nowhere;
-def bad : Integer;
-def bad = "bad";
+def bad : Integer = "bad";

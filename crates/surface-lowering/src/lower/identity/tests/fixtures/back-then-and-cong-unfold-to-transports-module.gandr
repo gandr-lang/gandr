@@ -1,4 +1,4 @@
-def flip(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> -F Path[.A = Integer](b, a) {
+def flip(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> Path[.A = Integer](b, a) {
   become Path.back p
 }
 def join(
@@ -7,13 +7,13 @@ def join(
   c : Integer,
   p : Path[.A = Integer](a, b),
   q : Path[.A = Integer](b, c)
-) -> -F (Path[.A = Integer](a, c)) {
+) -> Path[.A = Integer](a, c) {
   become Path.step p q
 }
-def dbl(x : Integer) -> -F Integer {
+def dbl(x : Integer) -> Integer {
   become x + x
 }
-def image(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> -F Path[.A = Integer](
+def image(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> Path[.A = Integer](
   dbl a,
   dbl b
 ) {

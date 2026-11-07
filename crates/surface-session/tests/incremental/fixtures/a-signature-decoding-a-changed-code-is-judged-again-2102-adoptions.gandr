@@ -1,4 +1,2 @@
-def code : Type;
-def code = Integer;
-def three : code;
-def three = 3;
+def code : Type = Integer;
+def three : code = 3;

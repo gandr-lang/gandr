@@ -1,2 +1,2 @@
 type D = -F Integer;
-def two() -> D { return "two" }
+def two() -> D { "two" }

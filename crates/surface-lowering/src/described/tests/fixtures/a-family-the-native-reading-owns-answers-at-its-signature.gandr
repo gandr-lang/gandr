@@ -1,5 +1,5 @@
 data Two : Type where { | L : Two | R : Two }
 data Tree : Type where {
   | Leaf : Tree
-  | Node : (f : +U (Two -> -F Tree)) --> Tree
+  | Node : (f : Two -> Tree) --> Tree
 }

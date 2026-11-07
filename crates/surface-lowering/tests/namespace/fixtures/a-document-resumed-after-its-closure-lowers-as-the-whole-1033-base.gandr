@@ -4,7 +4,6 @@ pub theory Nat where {
   oper succ : (n : Nat) --> Nat;
 }
 pub data Point : Type where { | One : Point }
-pub def one : Point;
-def one = One;
+pub def one : Point = One;
 def pending = ?;
-def inc(n : Integer) -> -F Integer { return n + 1 }
+def inc(n : Integer) -> Integer { n + 1 }

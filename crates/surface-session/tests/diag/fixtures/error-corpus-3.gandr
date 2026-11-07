@@ -1,2 +1,1 @@
-def y : +U (-F Integer);
-def y = thunk { become force 1 };
+def y() -> Integer { become force 1 }

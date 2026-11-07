@@ -1,5 +1,4 @@
 /// One.
-@[ checks ]
 data One : Type where {
   | It : One
 }

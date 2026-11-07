@@ -3,8 +3,8 @@ module Gate :> *{ type T } where { type T = end; }
 type Local = !Integer >> end;
 type Again = Local;
 type Count = Integer;
-def asked(seat : Base.Ask) -> -F Unit { let n = recv seat; close seat }
-def sent(seat : Local) -> -F Unit { send seat 1; close seat }
-def again(seat : Again) -> -F Unit { send seat 2; close seat }
-def counted(n : Count) -> -F Integer { pure n }
+def asked(seat : Base.Ask) -> Unit { let n = recv seat; close seat }
+def sent(seat : Local) -> Unit { send seat 1; close seat }
+def again(seat : Again) -> Unit { send seat 2; close seat }
+def counted(n : Count) -> Integer { pure n }
 def sealed(seat : Gate.T) -> -F Unit { close seat }

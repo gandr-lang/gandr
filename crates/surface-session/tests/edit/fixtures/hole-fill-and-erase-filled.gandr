@@ -1,2 +1,1 @@
-def answer : Integer;
-def answer = 42;
+def answer : Integer = 42;

@@ -1,8 +1,6 @@
 @[ refuses("NotSynthesisable") ]
-def a : +U (-F Integer);
-def a = thunk { become force (thunk { return 3 }) };
+def a() -> Integer { become force (thunk { 3 }) }
 @[ refuses("ShapeMismatch") ]
-def b : Integer;
-def b = thunk { return 3 };
+def b : Integer = thunk { 3 };
 @[ refuses("MalformedLiteral") ]
 def c : f64 = 1e99999999;

@@ -1,12 +1,12 @@
 data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
 data Vec(a : Type) : Nat -> Type where {
-  | Nil : Vec(a, Z)
-  | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n))
+  | Nil : Vec a Z
+  | Cons : (n : Nat, x : a, xs : Vec a n) --> Vec(a, S n)
 }
-data Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where {
-  | Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v)
+data Sized(a : Type) : (n : Nat, v : Vec a n) --> Type where {
+  | Measured : (n : Nat, v : Vec a n) --> Sized a n v
 }
-data Twice(a : Type) : a -> a -> Type where { | Both : (x : a) --> Twice(a, x, x) }
-data Turned : (n : Nat, v : Vec(Integer, n)) --> Type where {
-  | Swap : (n : Nat, v : Vec(Integer, n)) --> Turned(v, n)
+data Twice(a : Type) : a -> a -> Type where { | Both : (x : a) --> Twice a x x }
+data Turned : (n : Nat, v : Vec Integer n) --> Type where {
+  | Swap : (n : Nat, v : Vec Integer n) --> Turned v n
 }

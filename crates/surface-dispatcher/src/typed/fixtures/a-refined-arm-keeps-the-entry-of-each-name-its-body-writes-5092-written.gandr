@@ -3,11 +3,11 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 data Two : (p : Nat, q : Nat) --> Type where {
-  | T : (x : Nat, y : Nat) --> Two(x, y)
+  | T : (x : Nat, y : Nat) --> Two x y
 }
 data At2 : (p : Nat, q : Nat) --> Type where {
-  | A2 : (x : Nat, y : Nat) --> At2(x, y)
+  | A2 : (x : Nat, y : Nat) --> At2 x y
 }
-def pair(p : Nat, q : Nat, t : Two(p, q)) -> At2(p, q) {
+def pair(p : Nat, q : Nat, t : Two p q) -> At2 p q {
   match t { | T(x, y) => A2 x y }
 }

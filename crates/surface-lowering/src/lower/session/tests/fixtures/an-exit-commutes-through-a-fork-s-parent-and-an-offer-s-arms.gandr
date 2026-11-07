@@ -1,22 +1,22 @@
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def forked(n : Nat) -> -F Unit {
+def forked(n : Nat) -> Unit {
   let d = fork (c : end) { close c };
   close d;
   let m = match n { | Zero => return *{} | Succ(p) => pure *{} };
-  return m
+  m
 }
-def forked_by_hand(n : Nat) -> -F Unit {
+def forked_by_hand(n : Nat) -> Unit {
   let d = fork (c : end) { close c };
   close d;
-  match n { | Zero => return *{} | Succ(p) => return *{} }
+  match n { | Zero => *{} | Succ(p) => *{} }
 }
-def offered(n : Nat) -> -F Unit {
+def offered(n : Nat) -> Unit {
   let d = fork (c : +{go : end}) { select c go; close c };
   offer d {
-    | go => { close d; let m = match n { | Zero => return *{} | Succ(p) => pure *{} }; return m }
+    | go => { close d; let m = match n { | Zero => return *{} | Succ(p) => pure *{} }; m }
   }
 }
-def offered_by_hand(n : Nat) -> -F Unit {
+def offered_by_hand(n : Nat) -> Unit {
   let d = fork (c : +{go : end}) { select c go; close c };
-  offer d { | go => { close d; match n { | Zero => return *{} | Succ(p) => return *{} } } }
+  offer d { | go => { close d; match n { | Zero => *{} | Succ(p) => *{} } } }
 }

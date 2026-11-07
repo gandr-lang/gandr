@@ -2,10 +2,10 @@ data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
 }
-def up(n : Int) -> -F Int {
+def up(n : Int) -> Int {
   S n
 }
-def rec descend(k : Int, b : Int) -> -F Path[.A = Int](b, b) {
+def rec descend(k : Int, b : Int) -> Path[.A = Int](b, b) {
   match b {
     | Z => Path.here Z
     | S(x) => Path.step (Path.ap up (descend[<] k x)) (Path.here (S x))

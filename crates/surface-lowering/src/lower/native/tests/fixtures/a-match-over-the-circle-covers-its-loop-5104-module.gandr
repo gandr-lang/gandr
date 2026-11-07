@@ -1,5 +1,5 @@
 data Circle : Type where { | Base : Circle | loop : Base <-> Base }
-def invLooper(x : Circle) -> -F Circle {
+def invLooper(x : Circle) -> Circle {
   match x {
     | Base => Base
     | loop => Path.back loop

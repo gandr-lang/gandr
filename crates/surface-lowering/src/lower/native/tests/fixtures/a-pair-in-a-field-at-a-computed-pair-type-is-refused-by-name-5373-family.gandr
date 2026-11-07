@@ -1,3 +1,3 @@
 data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
-data P(a : Type, b : a -> Type) : Type where { | MkP : (x : a, y : b(x)) --> P(a, b) }
+data P(a : Type, b : a -> Type) : Type where { | MkP : (x : a, y : b(x)) --> P a b }
 def twoType(u : Nat) -> Type = return (P Nat (fun (n) { return (P Nat (fun (m) { return Unit })) }))

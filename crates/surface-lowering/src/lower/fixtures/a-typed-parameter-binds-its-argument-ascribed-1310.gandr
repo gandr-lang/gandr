@@ -1,2 +1,1 @@
-def x : +U (Integer -> -F Integer);
-def x = thunk { fun (y : Integer) { return y } };
+def x : Integer -> Integer = fun (y : Integer) { y };

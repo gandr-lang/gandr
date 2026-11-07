@@ -2,11 +2,11 @@ def kept(i : Bool ≅ Integer) -> Bool ≅ Integer { i }
 def made(i : Bool ≅ Integer) -> Bool ≃ Integer {
   match i { | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}} }
 }
-def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) {
+def forwardOf(i : Bool ≅ Integer) -> Bool -> Integer {
   let e = made i;
   match e { | *{t, *{g, s}, *{h, r}} => t }
 }
-def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) {
+def backOf(i : Bool ≅ Integer) -> Integer -> Bool {
   let j = kept i;
   match j { | *{.from = k} => k }
 }

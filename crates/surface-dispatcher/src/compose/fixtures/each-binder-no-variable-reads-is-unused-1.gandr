@@ -2,12 +2,11 @@ data Nat : Type where {
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 }
-def pick(n : Nat, m : Nat) -> -F Nat {
+def pick(n : Nat, m : Nat) -> Nat {
   let k = Succ n;
   match n {
     | Zero => n
     | Succ(p) => n
   }
 }
-def id : Nat -> Nat;
-def id = thunk { fun (y) { Zero } };
+def id(y : Nat) -> Nat { Zero }

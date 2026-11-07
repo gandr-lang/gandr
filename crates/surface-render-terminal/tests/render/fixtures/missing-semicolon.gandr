@@ -1,4 +1,3 @@
 def a : Integer;
 def a = 1
-def b : Integer;
-def b = 2;
+def b : Integer = 2;

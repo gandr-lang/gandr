@@ -1,8 +1,8 @@
 data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
 data Vec(a : Type) : Nat -> Type where {
-  | Nil : Vec(a, Z)
-  | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n))
+  | Nil : Vec a Z
+  | Cons : (n : Nat, x : a, xs : Vec a n) --> Vec(a, S n)
 }
-def one() -> -F Vec(Integer, S(Z)) { return Cons Z 3 (Nil : Vec(Integer, Z)) }
-def two() -> -F Vec(Integer, S(S(Z))) { return Cons Z 3 (Nil : Vec(Integer, Z)) }
+def one() -> Vec Integer (S Z) { Cons Z 3 (Nil : Vec Integer Z) }
+def two() -> Vec Integer (S (S Z)) { Cons Z 3 (Nil : Vec Integer Z) }
 data Pt : Nat -> Type where { | P : Pt(Z) | loop : P <-> P }

@@ -4,8 +4,8 @@ pub theory Mag where {
 }
 pub module Times : Model(Mag) where {
   type M = Integer;
-  def mul(a : Integer, b : Integer) -> -F Integer { become a * b }
+  def mul(a : Integer, b : Integer) -> Integer { become a * b }
 }
 pub module Squaring(S : Model(Mag)) where {
-  def square(x : S.M) -> -F S.M { become S.mul (x, x) }
+  def square(x : S.M) -> S.M { become S.mul (x, x) }
 }
