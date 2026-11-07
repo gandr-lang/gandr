@@ -79,7 +79,8 @@ def rec fibs(n : Integer) -> Stream =
 def rec deferred(n : Integer) -> Stream =
   &{.head => return n, .tail => become deferred[>] n}
 
-/// bare is refused because its productive call stands outside a copattern block.
+/// bare is refused because its productive call stands outside
+/// a copattern block.
 @[ refuses("UnguardedCorecursion") ]
 def rec bare(n : Integer) -> Stream =
   bare[>] n

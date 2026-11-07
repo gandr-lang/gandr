@@ -1,9 +1,12 @@
-//! `observed-families` declares a family of codata with observations at families of data.
+//! `observed-families` declares a family of codata with observations at
+//! families of data.
 //!
-//! The lowering reads the type of an observation as it reads the type of a constructor field.
+//! The lowering reads the type of an observation as it reads the type of
+//! a constructor field.
 //! Thus an observation can name a family that the source declares or imports.
 //!
-//! `Light` has an observation at the local `Colour` and one at the imported `List(Colour)`.
+//! `Light` has an observation at the local `Colour` and one at
+//! the imported `List(Colour)`.
 //! The test makes a green light and reads its colour.
 //!
 //! - see: #2665

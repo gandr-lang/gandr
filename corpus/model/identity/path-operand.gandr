@@ -67,7 +67,8 @@ def rec still(b : Nat) -> Path[.A = Nat](b, b) =
 def mapped(f : Circle -> Nat) -> Path[.A = Nat](f Base, f Base) =
   Path.back (Path.ap f loop)
 
-/// The `mappedOver` proof reads a parameter map that depends on an earlier type.
+/// The `mappedOver` proof reads a parameter map that depends on
+/// an earlier type.
 def mappedOver(b : Type, g : b -> Nat, u : b, v : b, q : Path[.A = b](u, v)) -> Path[.A = Nat](
   g v,
   g u

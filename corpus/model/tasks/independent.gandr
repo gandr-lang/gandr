@@ -1,8 +1,10 @@
 //! `independent` forks two tasks whose plays do not order each other.
 //!
-//! Each task sends notes on its end. Each channel web is series-parallel without a prime node.
+//! Each task sends notes on its end. Each channel web is series-parallel
+//! without a prime node.
 //!
-//! The parent joins the tasks in reverse fork order. The annotations state each channel's prime count.
+//! The parent joins the tasks in reverse fork order. The annotations state each
+//! channel's prime count.
 //!
 //! - see: `forced.gandr` — a task whose reply waits on its request
 //! - see: #3338 — the run trace and the web a source states for a channel

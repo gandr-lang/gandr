@@ -1,8 +1,11 @@
 //! `cancel-base` gives the task protocol for cancellation sources.
 //!
-//! A task sends its note on `Join`. A cancellation clause resumes its scope once. The clause can abandon that scope. The clause cancels an abandoned end for its peer.
+//! A task sends its note on `Join`. A cancellation clause resumes its scope
+//! once. The clause can abandon that scope. The clause cancels an abandoned end
+//! for its peer.
 //!
-//! Each cancellation source imports `Cancel`. The checker uses `Join` to type a parent end.
+//! Each cancellation source imports `Cancel`. The checker uses `Join` to type
+//! a parent end.
 //!
 //! - cites: [Fowler-2019-exceptional_asynchronous_session_types]
 //!

@@ -1,6 +1,7 @@
 // Booleans as values, misused: a literal is a value of `Bool` and of no other
 // type.
 
-/// `true` where the declaration states an integer: the literal is a `Bool`, and a `Bool` is no `Integer`.
+/// `true` where the declaration states an integer: the literal is a `Bool`, and
+/// a `Bool` is no `Integer`.
 @[ refuses("TypeMismatch") ]
 def counted : Integer = true;

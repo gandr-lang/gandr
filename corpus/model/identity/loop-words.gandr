@@ -48,7 +48,8 @@ def tell_words(c : Words) -> Integer =
     | Loop(x) => 1
     | Unloop(x) => 2
 
-/// The refused fold cannot carry the cancellation path to a path from two to one.
+/// The refused fold cannot carry the cancellation path to a path from
+/// two to one.
 @[ refuses("EndpointMismatch") ]
 def two_is_one() -> Path[.A = Integer](2, 1) =
   Path.ap tell_words both_cancel

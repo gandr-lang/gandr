@@ -1,4 +1,5 @@
-/// This source compares a defined composite with `Path.step` at stuck endpoints.
+/// This source compares a defined composite with `Path.step`
+/// at stuck endpoints.
 ///
 /// The `concat` body is `Path.step p q`.
 /// A held call can supply an endpoint to either spelling.

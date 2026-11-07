@@ -28,7 +28,8 @@ pub def multiplies(s : Model Semigroup) -> Integer =
   match s where
     | *{.mul = m} => 0
 
-/// `asSemigroup` gives the checker an endomorphism monoid when it requires a semigroup.
+/// `asSemigroup` gives the checker an endomorphism monoid when it
+/// requires a semigroup.
 @[ runs("0") ]
 def asSemigroup() -> Integer { multiplies endoMonoid }
 

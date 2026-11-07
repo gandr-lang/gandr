@@ -1,7 +1,8 @@
 //! `monoid` extends theories through `include`.
 //!
 //! An include adds its members before the local members. `UnitAndZero` joins
-//! `Monoid` and `LeftZero` at `Semigroup`. The checker completes the joined rules.
+//! `Monoid` and `LeftZero` at `Semigroup`. The checker completes
+//! the joined rules.
 //!
 //! `Endo` models `Monoid` with integer endofunctions. `composed` returns `8`.
 //!

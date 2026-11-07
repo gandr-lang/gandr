@@ -1,8 +1,11 @@
 //! `resumed` gives a cancellation that resumes a task continuation.
 //!
-//! The exit clause resumes the rest of its scope once. The resumed continuation reads the task end exactly once. The resumed continuation closes the task end exactly once.
+//! The exit clause resumes the rest of its scope once. The resumed continuation
+//! reads the task end exactly once. The resumed continuation closes the task
+//! end exactly once.
 //!
-//! The handler starts a task. The task sends its note. The task closes. The exit operation resumes the continuation before a receive.
+//! The handler starts a task. The task sends its note. The task closes. The
+//! exit operation resumes the continuation before a receive.
 //!
 //! - see: #1334 — `resumed`
 // The import gives the task protocol.

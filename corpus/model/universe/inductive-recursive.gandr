@@ -33,7 +33,8 @@ rec {
 @[ checks ]
 def toNat(x : Nat) -> -F UPi { return NatC }
 
-/// The `idDecoded` value is the identity at the decode of the function code from
+/// The `idDecoded` value is the identity at the decode of the
+/// function code from
 /// naturals to naturals. That decode runs to the dependent arrow between them.
 @[ checks ]
 def idDecoded : elPi(PiC NatC toNat);
@@ -43,16 +44,19 @@ def idDecoded = thunk { fun (x) { return x } };
 @[ runs("Succ Zero") ]
 def appliedDecoded() -> -F Nat { idDecoded (Succ Zero) }
 
-/// The `idNat` value uses the same identity at the plain arrow between naturals.
+/// The `idNat` value uses the same identity at the plain
+/// arrow between naturals.
 /// The codomain `elPi(toNat(x))` runs to `Nat` and ignores its binder.
 @[ checks ]
 def idNat : +U (Nat -> -F Nat);
 def idNat = idDecoded;
 
-/// The `UM` universe and its `elM` decoder form one block at a level. A field of
+/// The `UM` universe and its `elM` decoder form one block at a level.
+/// A field of
 /// a code decodes the code before it, at the level of the field.
 rec {
-  /// The `UM` codes at each level name the naturals and the dependent functions.
+  /// The `UM` codes at each level name the naturals and
+  /// the dependent functions.
   @[ checks ]
   data UM : Nat -> Type where {
     /// The naturals, at each level.

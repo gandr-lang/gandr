@@ -138,7 +138,8 @@ pub module Syntax : Model(STLC) where
   def app(g : Ctx, a : ObjTy, b : ObjTy, t : Tm(g, Arr a b), u : Tm g a) -> Tm g b =
     Ap g a b t u
 
-/// A renamer from `g` to `d`: it sends each variable of `g` to a variable of `d`.
+/// A renamer from `g` to `d`: it sends each variable of `g` to a
+/// variable of `d`.
 pub type Ren(d : Ctx, g : Ctx) = (a : ObjTy) -> (Var g a -> Var d a);
 
 /// The semantic type of `a` at the context `g`. At an arrow it is the

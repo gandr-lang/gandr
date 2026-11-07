@@ -1,4 +1,5 @@
-/// A capital naming no constructor, declaration or type is unresolved, as a lowercase name naming nothing is.
+/// A capital naming no constructor, declaration or type is unresolved, as a
+/// lowercase name naming nothing is.
 ///
 /// - see: #2653
 @[ refuses("UnresolvedName") ]

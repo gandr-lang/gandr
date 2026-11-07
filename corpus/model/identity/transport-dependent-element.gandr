@@ -1,6 +1,7 @@
 //! This source transports a path element in a dependent family.
 //!
-//! Based path induction carries reflexivity at reflexivity to reflexivity at `q`.
+//! Based path induction carries reflexivity at reflexivity to
+//! reflexivity at `q`.
 //! The result is a path from `q` to itself.
 //!
 //! The checker forms the motive from the path binder.

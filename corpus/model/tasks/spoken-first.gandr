@@ -1,8 +1,10 @@
 //! `spokenFirst` has a task speak before the parent asks it.
 //!
-//! The task's send, the parent receipt and the parent answer reverse the forced chain. A forced web does not settle this run.
+//! The task's send, the parent receipt and the parent answer reverse the forced
+//! chain. A forced web does not settle this run.
 //!
-//! The task sends notes, then reads the parent answer. The annotations state the web the runner reports against a forced web.
+//! The task sends notes, then reads the parent answer. The annotations state
+//! the web the runner reports against a forced web.
 //!
 //! - see: `forced.gandr` — the same exchange, asked first
 //! - see: #3338 — the run trace and the web a source states for a channel

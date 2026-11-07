@@ -57,7 +57,8 @@ def rebuilt(p : *{
   match p where
     | *{.n = m, .v = w} => Path.here (*{m, w})
 
-/// `againAt` splits a three-field record under a motive that reads its scrutinee.
+/// `againAt` splits a three-field record under a motive that
+/// reads its scrutinee.
 /// Its arm rebuilds the record.
 def againAt(
   b : Type,

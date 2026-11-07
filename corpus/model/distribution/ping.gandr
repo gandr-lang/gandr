@@ -1,4 +1,5 @@
-// Two programs exchange a ping over `std.net.Eff`, the host interface for streams to
+// Two programs exchange a ping over `std.net.Eff`, the host interface
+// for streams to
 // peers named by their keys.
 //
 // One process serves and another pings it, the first step from one process
@@ -7,7 +8,8 @@
 //
 // `gandr run ping.gandr` serves, and `gandr run ping.gandr <key>@<ip:port>`
 // dials the server that key and socket name, then prints its answer. The
-// host binds its network on the run's first `std.net.Eff` operation, at the socket
+// host binds its network on the run's first `std.net.Eff` operation,
+// at the socket
 // `--net-bind` names, under the key `GANDR_NET_SECRET` holds.
 //
 // - see: `crates/surface-driver/tests/net.rs` — the two processes
@@ -38,7 +40,8 @@ pub def ping(peer : String) -> [std.net.Eff] String =
   std.net.disconnect stream
   pong
 
-/// `ping` under a handler written here, a second model of `std.net.Eff` whose every
+/// `ping` under a handler written here, a second model of
+/// `std.net.Eff` whose every
 /// received frame is `pong`. The same term returns what the server answers.
 @[ runs("\"pong\"") ]
 def pingAnswered() -> String =

@@ -73,7 +73,8 @@ def placed_replicas(d : Deploy[
   served ↦ *{.port = 443, .tls = true, .region = "eu", .zone = "a", .tier = 1, .replicas = 3}
 ]) -> Integer { d.replicas }
 
-/// `wide_deployment` stands at the system by the coercion in: each of its fields
+/// `wide_deployment` stands at the system by the coercion in: each
+/// of its fields
 /// converts with the value that the system fixes.
 @[ runs("3") ]
 def local_replicas : Integer = placed_replicas (wide_deployment);

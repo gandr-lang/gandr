@@ -55,7 +55,7 @@
 //! - Reversal: a reader that needs the attachment inside the tree, at which
 //!   point the parser places trivia there and the record reads it.
 //!
-//! Comment reflow is accounted for here and not built. A reflow pass would
+//! Comment reflow runs after layout at 80 columns. A reflow pass would
 //! rewrap each comment's text at the page width — paragraph breaks and code
 //! fences kept, a URL never broken, where `rustfmt`'s `wrap_comments` goes
 //! wrong — running over the attached comments before layout and reading the
@@ -363,6 +363,8 @@ pub struct FormatOptions
 {
     /// The width a line is laid out to fit.
     pub page: PageWidth,
+    /// The width a comment line is reflowed to fit.
+    pub comment: PageWidth,
     /// The spelling the source is laid out in, unless its head declares one.
     pub form: Form,
     /// The rewrites of the form's direction that run.
@@ -381,6 +383,7 @@ impl Default for FormatOptions
     {
         Self {
             page: PageWidth::from(100_u32),
+            comment: PageWidth::from(80_u32),
             form: Form::Source,
             rewrites: Selection::Every,
         }
@@ -976,6 +979,7 @@ pub fn format_beside(
                 ),
                 &layout,
                 ending,
+                options.comment,
             )
         };
         let unchecked = match unchecked(&[]) {
@@ -1025,7 +1029,15 @@ pub fn format_beside(
         // A call's parentheses that a layout block reads, `match t -> -F
         // List(Integer) where`, are kept: every type application is written
         // back as the call before the layout is refused.
-        let laid = match write(grammar, tree, &flat, (rewrites, &apart), &layout, ending) {
+        let laid = match write(
+            grammar,
+            tree,
+            &flat,
+            (rewrites, &apart),
+            &layout,
+            ending,
+            options.comment,
+        ) {
             Err(FormatError::Unbalanced)
                 if let Some(whole) = everywhere
                     && recall == Recall::Forms =>
@@ -1353,6 +1365,325 @@ impl Written<'_>
         }
     }
 }
+/// A line-comment marker.
+///
+/// # Specification
+///
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CommentMarker
+{
+    /// A module comment marker.
+    Module,
+    /// A documentation comment marker.
+    Documentation,
+    /// A line comment marker.
+    Line,
+}
+
+impl From<CommentMarker> for &'static str
+{
+    /// Return the text that writes this marker.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(marker: CommentMarker) -> Self
+    {
+        match marker {
+            CommentMarker::Module => "//!",
+            CommentMarker::Documentation => "///",
+            CommentMarker::Line => "//",
+        }
+    }
+}
+
+/// One physical line of a comment run.
+///
+/// # Specification
+///
+/// trivial.
+enum CommentLine<'text>
+{
+    /// A line that has no line-comment marker.
+    Other,
+    /// A line-comment marker and its text.
+    Line
+    {
+        /// The indentation, marker and following space.
+        prefix: SourceText<'text>,
+        /// The line-comment marker.
+        marker: CommentMarker,
+        /// The text after the prefix.
+        body: SourceText<'text>,
+    },
+}
+
+/// Split a source line at its line-comment marker.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_line(line: SourceText<'_>) -> CommentLine<'_>
+{
+    let line = <&str>::from(line);
+    let indentation = line
+        .find(|character: char| !matches!(character, ' ' | '\t'))
+        .unwrap_or(line.len());
+    let (indentation, rest) = line.split_at(indentation);
+    let marker = if rest.starts_with("//!") {
+        CommentMarker::Module
+    }
+    else if rest.starts_with("///") && !rest.starts_with("////") {
+        CommentMarker::Documentation
+    }
+    else if rest.starts_with("//") {
+        CommentMarker::Line
+    }
+    else {
+        return CommentLine::Other;
+    };
+    let marker_text = <&str>::from(marker);
+    let Some(body) = rest.strip_prefix(marker_text)
+    else {
+        return CommentLine::Other;
+    };
+    let leading = body
+        .len()
+        .saturating_sub(body.trim_start_matches([' ', '\t']).len());
+    let prefix = indentation
+        .len()
+        .saturating_add(marker_text.len())
+        .saturating_add(leading);
+    let (prefix, body) = line.split_at(prefix);
+    CommentLine::Line {
+        prefix: SourceText::from(prefix),
+        marker,
+        body: SourceText::from(body),
+    }
+}
+
+/// Reflow the comment lines written after `start`.
+///
+/// # Specification
+/// trivial.
+fn reflow_comments(
+    text: &mut String,
+    start: ByteOffset,
+    width: PageWidth,
+    ending: Ending,
+)
+{
+    let Some(run) = text.get(usize::from(start) ..)
+    else {
+        return;
+    };
+    let mut fence_marker = None;
+    let mut fenced = false;
+    let reflows = run.lines().any(|line| {
+        let line = SourceText::from(line.trim_end_matches('\r'));
+        let CommentLine::Line { marker, body, .. } = comment_line(line)
+        else {
+            fence_marker = None;
+            fenced = false;
+            return false;
+        };
+        if Some(marker) != fence_marker {
+            fence_marker = Some(marker);
+            fenced = false;
+        }
+        let content = <&str>::from(body).trim_start();
+        if content.starts_with("```") {
+            fenced = !fenced;
+            return false;
+        }
+        !fenced
+            && matches!(
+                comment_line_reflows(line, body, width),
+                CommentReflow::Needed
+            )
+    });
+    if !reflows {
+        return;
+    }
+    let reflowed = reflow_comment_run(SourceText::from(run), width, ending);
+    let changed = reflowed.as_str() != run;
+    if changed {
+        text.replace_range(usize::from(start) .., reflowed.as_str());
+    }
+}
+
+/// Whether a comment line needs reflow.
+///
+/// # Specification
+///
+/// trivial.
+enum CommentReflow
+{
+    /// The line exceeds the comment width.
+    Needed,
+    /// The line stays as written.
+    Unneeded,
+}
+
+/// Decide whether one unfenced comment line needs reflow.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_line_reflows(
+    line: SourceText<'_>,
+    body: SourceText<'_>,
+    width: PageWidth,
+) -> CommentReflow
+{
+    let line = <&str>::from(line);
+    let body = <&str>::from(body);
+    let content = body.trim_start();
+    let width = usize::try_from(u32::from(width)).unwrap_or(usize::MAX);
+    if line.chars().count() > width
+        && body.split_whitespace().nth(1).is_some()
+        && !content.is_empty()
+        && !content.starts_with(['#', '|'])
+        && !content.starts_with("- see:")
+        && !content.starts_with("- cites:")
+        && !(content.starts_with('[') && content.contains("]:"))
+    {
+        CommentReflow::Needed
+    }
+    else {
+        CommentReflow::Unneeded
+    }
+}
+
+/// Reflow each eligible line of one comment run.
+///
+/// # Specification
+///
+/// trivial.
+fn reflow_comment_run(
+    text: SourceText<'_>,
+    width: PageWidth,
+    ending: Ending,
+) -> String
+{
+    let text = <&str>::from(text);
+    let ending = <&str>::from(ending.spelling());
+    let mut reflowed = String::with_capacity(text.len());
+    let mut fence_marker = None;
+    let mut fenced = false;
+    for raw in text.split_inclusive('\n') {
+        let (line, break_) = raw
+            .strip_suffix(ending)
+            .map_or((raw, ""), |line| (line, ending));
+        let line_text = SourceText::from(line);
+        let CommentLine::Line {
+            prefix,
+            marker,
+            body,
+        } = comment_line(line_text)
+        else {
+            fence_marker = None;
+            fenced = false;
+            reflowed.push_str(raw);
+            continue;
+        };
+        if Some(marker) != fence_marker {
+            fence_marker = Some(marker);
+            fenced = false;
+        }
+        let content = <&str>::from(body).trim_start();
+        if content.starts_with("```") {
+            fenced = !fenced;
+            reflowed.push_str(line);
+        }
+        else if fenced
+            || !matches!(
+                comment_line_reflows(line_text, body, width),
+                CommentReflow::Needed
+            )
+        {
+            reflowed.push_str(line);
+        }
+        else {
+            wrap_comment_line(&mut reflowed, prefix, body, width);
+        }
+        reflowed.push_str(break_);
+    }
+    reflowed
+}
+
+/// Write one comment line with breaks at its word boundaries.
+///
+/// # Specification
+///
+/// trivial.
+fn wrap_comment_line(
+    text: &mut String,
+    prefix: SourceText<'_>,
+    body: SourceText<'_>,
+    width: PageWidth,
+)
+{
+    let prefix = <&str>::from(prefix);
+    let body = <&str>::from(body);
+    let width = usize::try_from(u32::from(width)).unwrap_or(usize::MAX);
+    let words: Vec<&str> = body.split_whitespace().collect();
+    let hanging = body.trim_start().starts_with("- ");
+    let mut first = true;
+    let mut at = 0_usize;
+    while at < words.len() {
+        let continuation = !first && hanging;
+        let indentation =
+            prefix
+                .chars()
+                .count()
+                .saturating_add(if continuation { 2_usize } else { 0_usize });
+        let mut used = indentation;
+        let mut end = at;
+        while let Some(word) = words.get(end) {
+            let space = usize::from(end != at);
+            let next = word.chars().count().saturating_add(space);
+            if end != at && used.saturating_add(next) > width {
+                break;
+            }
+            used = used.saturating_add(next);
+            end = end.saturating_add(1);
+        }
+        if end == at {
+            end = end.saturating_add(1);
+        }
+        let carried = end.saturating_sub(at);
+        let remaining = words.len().saturating_sub(end);
+        if remaining > 0_usize && remaining < 3_usize && carried >= 3_usize {
+            let moved = words.len().saturating_sub(3_usize);
+            if moved.saturating_sub(at) >= 3_usize {
+                end = moved;
+            }
+        }
+        if !first {
+            text.push('\n');
+        }
+        text.push_str(prefix);
+        if continuation {
+            text.push_str("  ");
+        }
+        for (index, word) in words
+            .iter()
+            .skip(at)
+            .take(end.saturating_sub(at))
+            .enumerate()
+        {
+            if index > 0_usize {
+                text.push(' ');
+            }
+            text.push_str(word);
+        }
+        at = end;
+        first = false;
+    }
+}
 
 /// The source whose leaves are `flat` written at `layout`, each clean form
 /// respelled by `rewrites` — the rewrites chosen and the spans they do not
@@ -1369,6 +1700,7 @@ fn write<'source>(
     (rewrites, apart): (Option<rewrite::Rewrites<'_, 'source>>, &merge::Apart),
     layout: &LayoutOptions,
     ending: Ending,
+    comment: PageWidth,
 ) -> Result<Written<'source>, FormatError>
 {
     let source = tree.source();
@@ -1400,11 +1732,12 @@ fn write<'source>(
                 },
             }
         }
-        let start = text.len();
+        let start = ByteOffset::from(text.len());
         let mut span = unit.span;
         let Owner::Form(form) = first.owner
         else {
             text.push_str(<&str>::from(first.text));
+            reflow_comments(&mut text, start, comment, ending);
             written.extend_from_slice(unit.leaves);
             continue;
         };
@@ -1553,8 +1886,8 @@ fn write<'source>(
                 Layout::Repaired
             },
         };
-        if let Ok(formatted) = ByteSpan::new(ByteOffset::from(start), ByteOffset::from(text.len()))
-        {
+        reflow_comments(&mut text, start, comment, ending);
+        if let Ok(formatted) = ByteSpan::new(start, ByteOffset::from(text.len())) {
             pieces.push(Piece {
                 source: span,
                 formatted,
@@ -1739,9 +2072,9 @@ impl Ending
     }
 }
 
-/// Check that `text` parses to the root digest of `parsed`, spells the
-/// tokens and comments of `leaves`, its leaves, in order, and keeps each
-/// comment with its owner in its role.
+/// Check that `text` parses to the root digest of `parsed`, spells the tokens
+/// and block comments of `leaves`, and keeps each line comment's words with
+/// its owner in its role.
 ///
 /// # Specification
 /// trivial.
@@ -1763,10 +2096,8 @@ fn verify(
     }
     let before = comments(parsed.tree());
     let after = comments(reparsed.tree());
-    if before
-        .iter()
-        .map(Comment::attachment)
-        .ne(after.iter().map(Comment::attachment))
+    if comment_runs(parsed.tree().source(), &before)
+        .ne(&comment_runs(reparsed.tree().source(), &after))
     {
         return Err(FormatError::Changed(Change::Attachment));
     }
@@ -1777,13 +2108,12 @@ fn verify(
 /// source lowers otherwise, or the lowering lists a run or mints a reduct.
 type Elaborations = Option<Elaboration>;
 
-/// Check that `text`, the source rewritten, spells the tokens and comments of
-/// `written`, the leaves it was laid out from, in order, and keeps each
-/// comment in its role; then lower it after `before` in `unit` into `arena`
-/// beside `lowered`, the source's lowering, and say which declarations
-/// lowered otherwise — where some did and `checked` gives a checker, those it
-/// does not elaborate alike, the source elaborated into `checked`'s slot the
-/// first time one does.
+/// Check that `text`, the source rewritten, spells the tokens and block
+/// comments of `written`, and keeps each line comment's words in its role;
+/// then lower it after `before` in `unit` into `arena` beside `lowered`, and
+/// say which declarations lowered otherwise — where some did and `checked`
+/// gives a checker, those it does not elaborate alike, the source elaborated
+/// into `checked`'s slot the first time one does.
 ///
 /// # Specification
 /// trivial.
@@ -1800,10 +2130,10 @@ fn verify_rewritten(
     if material(written).ne(material(&again.leaves)) {
         return Err(FormatError::Changed(Change::Material));
     }
-    if comments(parsed.tree())
-        .iter()
-        .map(kept)
-        .ne(comments(reparsed.tree()).iter().map(kept))
+    let before_comments = comments(parsed.tree());
+    let after_comments = comments(reparsed.tree());
+    if kept_runs(parsed.tree().source(), &before_comments)
+        .ne(&kept_runs(reparsed.tree().source(), &after_comments))
     {
         return Err(FormatError::Changed(Change::Attachment));
     }
@@ -1845,21 +2175,183 @@ fn verify_rewritten(
     ))
 }
 
-/// What a rewrite keeps of a comment: its text, its kind and its role, the
-/// owner being a node the rewrite may have replaced.
+/// The words of one comment run.
 ///
 /// # Specification
+///
 /// trivial.
-fn kept<'source>(comment: &Comment<'source>) -> (SourceFragment<'source>, CommentKind, Role)
+#[repr(transparent)]
+#[derive(Debug, Eq, PartialEq)]
+struct CommentWords<'source>(Vec<&'source str>);
+
+impl<'source> From<SourceText<'source>> for CommentWords<'source>
 {
-    let attachment = comment.attachment();
-    (attachment.text, attachment.kind, attachment.role)
+    /// Collect the words in this source text.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn from(text: SourceText<'source>) -> Self
+    {
+        Self(<&str>::from(text).split_whitespace().collect())
+    }
 }
 
-/// The tokens and comments of `leaves`, in order. An empty tile, as the one a
-/// juxtaposition holds or a layout block's virtual separator, is no material:
-/// no source writes it, so a rewrite that writes `f a` leaves it to the parse,
-/// and the tree digest and the lowering keep the structure it marks.
+impl CommentWords<'_>
+{
+    /// Add the words from the adjacent comment line.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn extend(
+        &mut self,
+        words: Self,
+    )
+    {
+        self.0.extend(words.0);
+    }
+}
+
+/// The owner, kind, role, marker and words of one comment run.
+///
+/// # Specification
+///
+/// trivial.
+#[derive(Debug, Eq, PartialEq)]
+struct CommentRun<'source>
+{
+    /// The syntax node that owns the run.
+    key: Option<NodeKey>,
+    /// The kind of each comment in the run.
+    kind: CommentKind,
+    /// The source role of the run.
+    role: Role,
+    /// The marker of each comment in the run.
+    marker: CommentMarker,
+    /// The words in the run.
+    words: CommentWords<'source>,
+}
+
+/// The kind, role, marker and words of one kept comment run.
+///
+/// # Specification
+///
+/// trivial.
+#[derive(Debug, Eq, PartialEq)]
+struct KeptCommentRun<'source>
+{
+    /// The kind of each comment in the run.
+    kind: CommentKind,
+    /// The source role of the run.
+    role: Role,
+    /// The marker of each comment in the run.
+    marker: CommentMarker,
+    /// The words in the run.
+    words: CommentWords<'source>,
+}
+
+impl<'source> From<CommentRun<'source>> for KeptCommentRun<'source>
+{
+    /// Discard the owner from this comment run.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn from(run: CommentRun<'source>) -> Self
+    {
+        Self {
+            kind: run.kind,
+            role: run.role,
+            marker: run.marker,
+            words: run.words,
+        }
+    }
+}
+
+/// The line-comment runs, grouped by their owner and marker.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_runs<'source>(
+    source: SourceText<'source>,
+    comments: &[Comment<'source>],
+) -> Vec<CommentRun<'source>>
+{
+    let source = <&str>::from(source);
+    let mut runs = Vec::new();
+    let mut previous: Option<ByteOffset> = None;
+    for comment in comments {
+        if comment.kind == CommentKind::Block {
+            previous = None;
+            continue;
+        }
+        let mut adjacent = previous
+            .and_then(|end| source.get(usize::from(end) .. usize::from(comment.span.start())))
+            .is_some_and(|between| between.trim().is_empty());
+        for line in <&str>::from(comment.text).lines() {
+            let CommentLine::Line { marker, body, .. } = comment_line(SourceText::from(line))
+            else {
+                adjacent = false;
+                continue;
+            };
+            let words = CommentWords::from(body);
+            let Some(run) = runs.last_mut()
+            else {
+                runs.push(CommentRun {
+                    key: comment.key,
+                    kind: comment.kind,
+                    role: comment.role,
+                    marker,
+                    words,
+                });
+                adjacent = true;
+                continue;
+            };
+            if adjacent
+                && run.key == comment.key
+                && run.kind == comment.kind
+                && run.marker == marker
+            {
+                run.words.extend(words);
+            }
+            else {
+                runs.push(CommentRun {
+                    key: comment.key,
+                    kind: comment.kind,
+                    role: comment.role,
+                    marker,
+                    words,
+                });
+            }
+            adjacent = true;
+        }
+        previous = Some(comment.span.end());
+    }
+    runs
+}
+
+/// The line-comment runs a rewrite keeps.
+///
+/// # Specification
+///
+/// trivial.
+fn kept_runs<'source>(
+    source: SourceText<'source>,
+    comments: &[Comment<'source>],
+) -> Vec<KeptCommentRun<'source>>
+{
+    comment_runs(source, comments)
+        .into_iter()
+        .map(KeptCommentRun::from)
+        .collect()
+}
+
+/// The tokens and block comments of `leaves`, in order. An empty tile, as the
+/// one a juxtaposition holds or a layout block's virtual separator, is no
+/// material: no source writes it, so a rewrite that writes `f a` leaves it to
+/// the parse, and the tree digest and the lowering keep the structure it marks.
 ///
 /// # Specification
 /// trivial.
@@ -1869,7 +2361,10 @@ fn material<'leaves, 'source>(
 {
     leaves
         .iter()
-        .filter(|leaf| leaf.material != Material::Whitespace && !<&str>::from(leaf.text).is_empty())
+        .filter(|leaf| {
+            !matches!(leaf.material, Material::Whitespace | Material::LineComment)
+                && !<&str>::from(leaf.text).is_empty()
+        })
         .map(|leaf| (leaf.material, leaf.text))
 }
 

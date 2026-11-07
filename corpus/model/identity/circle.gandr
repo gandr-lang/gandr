@@ -5,7 +5,8 @@
 /// Winding and spinning prove the round trips by induction.
 ///
 /// The lowering mints the cancellation rules for loop words.
-/// The kernel checks each round trip against the path types in the presentation.
+/// The kernel checks each round trip against the path types
+/// in the presentation.
 ///
 /// - see: corpus/model/identity/loop-space.gandr
 import "./circle-base.gandr";

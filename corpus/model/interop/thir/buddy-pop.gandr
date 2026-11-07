@@ -1,8 +1,15 @@
-//! One function of a buddy allocator, popping a free block, meets its free-list specification.
+//! One function of a buddy allocator, popping a free block, meets
+//! its free-list specification.
 //!
-//! Corten's case study verifies a buddy allocator against a representation predicate over Rust's value forest. This is its second rung after Corten's `example`, a function that reads, matches on and writes through a place.
+//! Corten's case study verifies a buddy allocator against a representation
+//! predicate over Rust's value forest. This is its second rung after Corten's
+//! `example`, a function that reads, matches on and writes through a place.
 //!
-//! The body is THIR written as data, its precondition computed by a weakest-precondition fold over it. A read or a write is an existential, a value the place holds with its equation, so stuck places stay in path endpoints. The proof cases on the free list and carries each equation by `Path.ap` and transport.
+//! The body is THIR written as data, its precondition computed by a
+//! weakest-precondition fold over it. A read or a write is an existential, a
+//! value the place holds with its equation, so stuck places stay in path
+//! endpoints. The proof cases on the free list and carries each equation by
+//! `Path.ap` and transport.
 //!
 //! - cites: [Farka-2026-corten_foundational_verification_rust_programs], 2026,
 //!   § 3 and § 8
@@ -138,7 +145,8 @@ pub data MemExpr : Type where
   | Assign : (p : PlaceExpr, e : MemExpr) --> MemExpr
   /// `{ s; e }`.
   | Seq : (s : MemExpr, e : MemExpr) --> MemExpr
-  /// `match e { None => n, Some(x) => m }`, `m` reading the payload as local zero.
+  /// `match e { None => n, Some(x) => m }`, `m` reading the payload
+  /// as local zero.
   | MatchOpt : (e : MemExpr, n : MemExpr, m : MemExpr) --> MemExpr
   /// `return e`.
   | Return : (e : MemExpr) --> MemExpr
@@ -193,7 +201,8 @@ pub def derefAt(m : Maybe Val, acc : Steps) -> Maybe Loc =
       | None => None
       | Some(l) => Some (At l acc)
 
-/// The location the place `p` names at the locals `env`, `acc` the path already below it.
+/// The location the place `p` names at the locals `env`, `acc` the path
+/// already below it.
 pub def rec locate(p : PlaceExpr, env : Vals, acc : Steps) -> Maybe Loc =
   match p where
     | Deref(x) => derefAt (nth env x) acc
@@ -204,8 +213,10 @@ pub def rec locate(p : PlaceExpr, env : Vals, acc : Steps) -> Maybe Loc =
         | None => None
         | Some(n) => locate[<] q env (Down n acc)
 
-/// The core transformer: what `e` needs at the locals `env` and the state `s` to end in `k` or return into `r`.
-/// A read needs the root at any fraction and a value its place holds, a write the whole root and the root it makes.
+/// The core transformer: what `e` needs at the locals `env` and the state `s`
+/// to end in `k` or return into `r`.
+/// A read needs the root at any fraction and a value its place holds, a write
+/// the whole root and the root it makes.
 pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s : State) -> Type =
   match e where
     | Var(x) => match nth env x where
@@ -255,18 +266,21 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
     } }) r s
     | Return(a) => wpMem[<] a env r r s
 
-/// A function's transformer: its body run as a return, guarded so the return reaches the caller's continuation.
+/// A function's transformer: its body run as a return, guarded so the return
+/// reaches the caller's continuation.
 pub def wpMemFn(body : MemExpr, env : Vals, post : Out -> Type, s : State) -> Type =
   wpMem (Return body) env post post s
 
-/// `pop`'s arm at a head `b`: the head's link written to the heads, then `b` answered.
+/// `pop`'s arm at a head `b`: the head's link written to the heads,
+/// then `b` answered.
 pub def someArm : MemExpr = Seq
   (Assign
     (Index (Field (Deref (Succ Zero)) (Succ Zero)) (Succ (Succ Zero)))
     (Read (Field (Index (Field (Deref (Succ Zero)) Zero) Zero) Zero)))
   (SomeE (Var Zero));
 
-/// `pop`'s body, its locals `self` then `order`, and `b` inside the arm that binds it.
+/// `pop`'s body, its locals `self` then `order`, and `b` inside the arm
+/// that binds it.
 pub def popBody : MemExpr = MatchOpt
   (Read (Index (Field (Deref Zero) (Succ Zero)) (Succ Zero)))
   NoneE
@@ -297,7 +311,8 @@ pub def headOf(ixs : Ixs) -> Val =
     | INil => NoneV
     | ICons(b, _rest) => SomeV (IntV b)
 
-/// One listed block: its link is the head of the rest, which is `tail`, and it does not repeat.
+/// One listed block: its link is the head of the rest, which is `tail`, and it
+/// does not repeat.
 pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type =
   return type(*{
     held : Path[.A = Maybe Val](
@@ -308,20 +323,23 @@ pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type =
     apart : notIn(rest, b)
   })
 
-/// Each listed block links to the next through the blocks, and no block repeats.
+/// Each listed block links to the next through the blocks, and
+/// no block repeats.
 pub def rec chain(ixs : Ixs, blocks : Vals) -> Type =
   match ixs where
     | INil => return Unit
     | ICons(b, rest) => linked b rest blocks (chain[<] rest blocks)
 
-/// The free list of `order` is `ixs`: the heads hold its head, and its blocks chain.
+/// The free list of `order` is `ixs`: the heads hold its head, and
+/// its blocks chain.
 pub def freeAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Type =
   return type(*{
     head : Path[.A = Maybe Val]((Some (headOf ixs) : Maybe Val), nth heads order),
     wf : chain(ixs, blocks)
   })
 
-/// `pop`'s postcondition at the free list `ixs`: empty answers `None` and keeps the state.
+/// `pop`'s postcondition at the free list `ixs`: empty answers `None` and
+/// keeps the state.
 pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> Type =
   match o where
     | Ends(res, s) => match ixs where
@@ -387,13 +405,15 @@ pub def headsAt(heads : Vals, order : Nat, w : Val, m : Maybe Val) -> Maybe Val 
     | None => None
     | Some(_x) => Some (Tree (setN heads order w))
 
-/// The root the write to `self.heads[order]` makes, given what the heads held there.
+/// The root the write to `self.heads[order]` makes, given what the
+/// heads held there.
 pub def setHeadsAt(blocks : Vals, heads : Vals, order : Nat, w : Val, m : Maybe Val) -> Maybe Val =
   match headsAt heads order w m where
     | None => None
     | Some(hs) => setField (buddy blocks heads) (Succ Zero) hs
 
-/// The write to `self.heads[order]` makes the root with the heads set there, given `order` held one.
+/// The write to `self.heads[order]` makes the root with the heads set there,
+/// given `order` held one.
 pub def headsSet(
   blocks : Vals,
   heads : Vals,
@@ -510,7 +530,8 @@ pub def afterRead(
     }
   }}}
 
-/// `pop` at a list starting at `b`: the read finds `b`, `pop` writes its link to the heads, and it answers `b`.
+/// `pop` at a list starting at `b`: the read finds `b`, `pop` writes its link
+/// to the heads, and it answers `b`.
 pub def popSome(
   blocks : Vals,
   heads : Vals,
@@ -580,8 +601,10 @@ pub def popFromEmpty(
   match fl where
     | *{head, wf} => popNone blocks heads order head
 
-/// `pop` meets its specification: from the free list of `order`, it answers the list's head and leaves the rest free.
-/// Its predicate and specification take 61 lines and its proof 204, against about 2800 lines of Rocq for Corten's whole allocator.
+/// `pop` meets its specification: from the free list of `order`, it answers the
+/// list's head and leaves the rest free.
+/// Its predicate and specification take 61 lines and its proof 204, against
+/// about 2800 lines of Rocq for Corten's whole allocator.
 pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt(
   blocks,
   heads,

@@ -1,5 +1,6 @@
 // What divergence as a row entry refuses: a loop at a row without
-// `Partial`, a call of a diverging function from one, a handler of `Partial`, and an
+// `Partial`, a call of a diverging function from one, a handler of
+// `Partial`, and an
 // unread call of a diverging function dropped. Each would let a computation
 // that never returns stand where one that returns is expected. What checks is
 // in `../../model/control/divergence.gandr`.
@@ -34,7 +35,8 @@ def spin(x : Bool) -> [Partial] Bool =
 def spinFirst(x : Bool) -> Bool =
   spin x
 
-/// A handler of `Partial` has no operation to answer and runs its subject, which
+/// A handler of `Partial` has no operation to answer and runs
+/// its subject, which
 /// may still run forever: it leaves `Partial` in its row, which the empty row
 /// does not include.
 @[ refuses("TypeMismatch") ]

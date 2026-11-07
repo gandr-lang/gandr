@@ -3,7 +3,8 @@
 /// A manifest sort fixes a carrier while a model remains usable as its theory.
 /// Two models can share a manifest carrier.
 ///
-/// The checker inserts each forgetting map when a caller requests a general model.
+/// The checker inserts each forgetting map when a caller requests
+/// a general model.
 /// A model binder exposes each operation for its resolved carrier.
 ///
 /// - see: #2120
@@ -57,13 +58,15 @@ pub def observeShown(m : Model ReadCounter) -> Integer =
 /// The `asIs` reader returns its integer unchanged.
 def asIs(r : Integer) -> Integer { r }
 
-/// The `upReadings` record fixes the reading sort and leaves the count sort as a field.
+/// The `upReadings` record fixes the reading sort and leaves the count sort
+/// as a field.
 pub def upReadings : Model ReadCounter with sort R = Integer = *{
   type(Unit + (Unit + Unit)),
   *{Up.zero, *{Up.incr, *{Up.read, asIs}}}
 };
 
-/// The checker forgets manifest readings when `observeShown` requests a `ReadCounter`.
+/// The checker forgets manifest readings when `observeShown`
+/// requests a `ReadCounter`.
 @[ runs("1") ]
 def observedReadings() -> Integer { observeShown upReadings }
 
@@ -91,7 +94,8 @@ def negatedBoth : Model ReadCounter with sort C = Unit + (Unit + Unit) with sort
 @[ runs("1") ]
 def observedNegatedBoth() -> Integer { observeShown negatedBoth }
 
-/// The `stepShared` function steps and reads a value through a counter that shares its carrier.
+/// The `stepShared` function steps and reads a value through a counter that
+/// shares its carrier.
 def stepShared(a : Model Counter, b : Model Counter with sort C = a.C, c : a.C) -> Integer =
   match b where
     | *{.zero = z, .incr = i, .read = r} => r (i c)
@@ -100,7 +104,8 @@ def stepShared(a : Model Counter, b : Model Counter with sort C = a.C, c : a.C) 
 @[ runs("1") ]
 def sharedUp() -> Integer { stepShared upModel upManifest Up.zero }
 
-/// The checker resolves the shared carrier from `a` when `observeShared` requests a counter.
+/// The checker resolves the shared carrier from `a` when `observeShared`
+/// requests a counter.
 pub def observeShared(a : Model Counter, b : Model Counter with sort C = a.C) -> Integer =
   observe b
 
@@ -129,7 +134,8 @@ def stepZero(a : Model Counter) -> Integer =
 def selectedAlike() -> Path(stepZero upModel, stepZero downModel) =
   Path.ap stepZero oneCounter
 
-/// The `stepManifest` function reads a manifest counter after one step from zero.
+/// The `stepManifest` function reads a manifest counter after one
+/// step from zero.
 def stepManifest(a : Model Counter with sort C = Unit + (Unit + Unit)) -> Integer =
   let z = a.zero
   let i = a.incr
@@ -154,7 +160,8 @@ pub theory Pairing where
   oper left : A;
   oper right : B;
 
-/// The `firstManifest` record fixes the first carrier and leaves the second as a field.
+/// The `firstManifest` record fixes the first carrier and leaves the second
+/// as a field.
 def firstManifest : Model Pairing with sort A = Integer = *{type(Unit), *{1, *{}}};
 
 /// The `bothManifest` record fixes both carriers.

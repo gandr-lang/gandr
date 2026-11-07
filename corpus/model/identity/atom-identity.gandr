@@ -19,7 +19,8 @@ pub def related(a : Unit, b : Unit) -> Type { return Unit }
 /// Reflexivity relates every point to itself.
 pub def reflexivity(a : Unit) -> related(a, a) { *{} }
 
-/// The transport law contracts each point and its evidence to a reflexive centre.
+/// The transport law contracts each point and its evidence to
+/// a reflexive centre.
 def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{y : Unit, s : related(a, y)}](
   *{b, r},
   *{a, reflexivity a}
@@ -78,7 +79,8 @@ def backAlong : Path[.A = Path[.A = Point.T](Point.other, Point.origin)](
   *{}
 ) = Path.here (*{});
 
-/// Based path induction carries an identity of path evidence through its path family.
+/// Based path induction carries an identity of path evidence through
+/// its path family.
 def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other)](
   originOther,
   originOther
@@ -98,13 +100,15 @@ def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other
   *{}
 ) = Path.here (*{});
 
-/// The path relation uses identities of the unit type rather than the unit type.
+/// The path relation uses identities of the unit type rather than
+/// the unit type.
 pub def pathRelated(a : Unit, b : Unit) -> Type { return type(Path[.A = Unit](a, b)) }
 
 /// Reflexivity relates each point to itself.
 pub def pathReflexivity(a : Unit) -> pathRelated(a, a) { Path.here a }
 
-/// The law for the path relation contracts an identity and its evidence to the unit.
+/// The law for the path relation contracts an identity and its evidence
+/// to the unit.
 def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = *{
   y : Unit,
   s : pathRelated(a, y)
@@ -113,7 +117,8 @@ def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = *{
   *{a, pathReflexivity a}
 ) { *{*{}, *{}} }
 
-/// The `PathPoint` module seals unit points with `pathRelated` as their identity.
+/// The `PathPoint` module seals unit points with `pathRelated`
+/// as their identity.
 module PathPoint :> *{ type T, origin : T, other : T } where {
   /// The module gives its points the `pathRelated` identity relation.
   @[ identity(*{pathRelated, pathReflexivity, pathContraction}) ]

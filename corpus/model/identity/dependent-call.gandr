@@ -18,7 +18,8 @@ import "./circle-rotation.gandr";
 def loopImage(f : Circle -> Int) -> Path[.A = Int](f Base, f Base) =
   Path.ap f loop
 
-/// The second `toLoopThroughImage` field reads the first field through `loopImage`.
+/// The second `toLoopThroughImage` field reads the first
+/// field through `loopImage`.
 def toLoopThroughImage(f : Circle -> Int) -> *{
   point : Int,
   around : Path[.A = Int](point, point)

@@ -23,8 +23,10 @@ def stall[r : Row](s : String) -> [Partial | r] Unit { pure *{} }
 @[ refuses("ImplicitUnsolved") ]
 def unread() -> Unit { ignored (thunk { log "unread" }) }
 
-/// `log` and `stall` made to share a row nothing reads: `[std.io.Console.Eff | r]`
-/// against `[Partial | r′]`, each open row holding an interface the other lacks,
+/// `log` and `stall` made to share a row nothing reads:
+/// `[std.io.Console.Eff | r]`
+/// against `[Partial | r′]`, each open row holding an interface
+/// the other lacks,
 /// is never decided.
 @[ refuses("ImplicitUnsolved") ]
 def undecided() -> Unit =

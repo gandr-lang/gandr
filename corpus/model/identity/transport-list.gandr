@@ -42,7 +42,8 @@ def flipped_list() -> List Bool { moved_list both }
 @[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
 def flipped_value : List Bool = Path.walk (fun (X) { List X }) negation both;
 
-/// The `moved_inline` function states list transport with an inline equivalence.
+/// The `moved_inline` function states list transport with
+/// an inline equivalence.
 /// The kernel rejects the inline type as a path by shape.
 def moved_inline(xs : List Bool) -> List Bool =
   Path.walk (fun (X) { List X }) (equiv not not) xs

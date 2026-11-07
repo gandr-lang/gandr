@@ -1,8 +1,12 @@
 //! `state-wp` observes state as predicate transformers.
 //!
-//! A transformer maps a postcondition and initial state to a precondition. It has type `((A, S) => Type, S) => Type`.
+//! A transformer maps a postcondition and initial state to a precondition. It
+//! has type `((A, S) => Type, S) => Type`.
 //!
-//! The handler maps `get` and `put` into state predicates. The scope satisfies state laws. The observation is a monad morphism from state programs. The normaliser computes a precondition through the fold in `tree-state-wp.gandr`.
+//! The handler maps `get` and `put` into state predicates. The scope satisfies
+//! state laws. The observation is a monad morphism from state programs. The
+//! normaliser computes a precondition through the
+//! fold in `tree-state-wp.gandr`.
 //!
 //! - see: #2754
 //! - cites: [Maillard-2019-dijkstra_monads_all]

@@ -214,7 +214,8 @@ def before(o : Order, a : Scalar, b : Scalar) -> Bool =
         | false => true
         | true => n >= m
 
-/// A field inserted into fields already in memory order, after every field it does not go before.
+/// A field inserted into fields already in memory order, after every field it
+/// does not go before.
 def rec insert(sorted : Fields, o : Order, n : String, s : Scalar) -> Fields =
   match sorted where
     | Done => Field n s Done
@@ -225,7 +226,8 @@ def rec insert(sorted : Fields, o : Order, n : String, s : Scalar) -> Fields =
         | false => Field m t (insert[<] rest o n s)
     }
 
-/// Fields in memory order, by a stable insertion sort, as rustc's `sort_by_key` is stable.
+/// Fields in memory order, by a stable insertion sort, as rustc's
+/// `sort_by_key` is stable.
 def rec order(fs : Fields, o : Order) -> Fields =
   match fs where
     | Done => Done
@@ -240,7 +242,8 @@ def rec count(fs : Fields) -> Integer =
       c + 1
     }
 
-/// The placement of fields from an offset, each at the next multiple of its alignment.
+/// The placement of fields from an offset, each at the next multiple
+/// of its alignment.
 def rec placeFrom(fs : Fields, o : Integer) -> Placed =
   match fs where
     | Done => End
@@ -272,7 +275,8 @@ def room(n : Niche) -> Integer =
     | NoNiche => 0
     | NicheAt(off, width, available) => available
 
-/// The largest niche of fields placed from an offset, the first in memory order among equals.
+/// The largest niche of fields placed from an offset, the first in memory
+/// order among equals.
 def rec nicheFrom(fs : Fields, o : Integer, best : Niche) -> Niche =
   match fs where
     | Done => best
@@ -286,14 +290,16 @@ def rec nicheFrom(fs : Fields, o : Integer, best : Niche) -> Niche =
         | false => nicheFrom[<] rest (off + b) (NicheAt off b v)
     }
 
-/// The layout of fields in memory order after a prefix of a size and an alignment.
+/// The layout of fields in memory order after a prefix of a size
+/// and an alignment.
 def laidOut(sorted : Fields, prefix : Integer, prefixAlign : Integer) -> Laid =
   let w = widest sorted
   let a = bigger w prefixAlign
   let e = endFrom sorted prefix
   Laid (up e a) a (placeFrom sorted prefix) (nicheFrom sorted prefix NoNiche)
 
-/// The layout of a struct's fields under a bias, as `univariant_biased` lays them out.
+/// The layout of a struct's fields under a bias, as `univariant_biased`
+/// lays them out.
 def biased(fs : Fields, bias : Bias) -> Laid =
   laidOut (order fs (InStruct bias)) 0 1
 
@@ -304,7 +310,8 @@ def nicheOffset(l : Laid) -> Integer =
       | NoNiche => 0
       | NicheAt(off, width, available) => off
 
-/// A struct's layout, as `univariant` chooses it: niches first, unless niches last puts the niche further from both edges' padding.
+/// A struct's layout, as `univariant` chooses it: niches first, unless niches
+/// last puts the niche further from both edges' padding.
 def univariant(fs : Fields) -> Laid =
   let first = biased fs NicheFirst
   let c = count fs
@@ -377,7 +384,8 @@ def rec largestSize(ls : Laids) -> Integer =
         | Laid(size, a, placed, nn) => bigger size w
     }
 
-/// The index of the last largest variant, counting from `i`, as `max_by_key` keeps the last.
+/// The index of the last largest variant, counting from `i`, as `max_by_key`
+/// keeps the last.
 def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Integer) -> Integer =
   match ls where
     | NoLaid => bestIndex
@@ -386,7 +394,8 @@ def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Int
         | true => largestFrom[<] rest (i + 1) i size
         | false => largestFrom[<] rest (i + 1) bestIndex bestSize
 
-/// The variant at an index, where the count starts at `i`, or an empty layout past the end.
+/// The variant at an index, where the count starts at `i`, or an empty layout
+/// past the end.
 def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid =
   match ls where
     | NoLaid => Laid 0 1 End NoNiche
@@ -435,7 +444,8 @@ def rec around(
               }
     }
 
-/// The niche-filled layout: the largest variant's niche holds which of the variants around it is there.
+/// The niche-filled layout: the largest variant's niche holds which of the
+/// variants around it is there.
 def nicheFilled(ls : Laids) -> Filled =
   let n = variantCount ls
   match n >= 2 where
@@ -463,7 +473,8 @@ def nicheFilled(ls : Laids) -> Filled =
             }
     }
 
-/// The smallest alignment of a variant's first field after the tag, 256 when no variant has a field.
+/// The smallest alignment of a variant's first field after the tag, 256 when no
+/// variant has a field.
 def rec firstAlign(ls : Laids) -> Integer =
   match ls where
     | NoLaid => 256

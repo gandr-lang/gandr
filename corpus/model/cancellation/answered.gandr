@@ -1,8 +1,10 @@
 //! `answered` gives a cancellation that returns nine.
 //!
-//! The exit clause answers its scope. The abandoned subject does not run. The `pure` clause does not run.
+//! The exit clause answers its scope. The abandoned subject does not run. The
+//! `pure` clause does not run.
 //!
-//! The handler invokes the exit operation. The exit clause abandons the continuation. The clause returns nine.
+//! The handler invokes the exit operation. The exit clause abandons the
+//! continuation. The clause returns nine.
 //!
 //! - see: #1334 — `answered`
 // The import gives the shared declarations.

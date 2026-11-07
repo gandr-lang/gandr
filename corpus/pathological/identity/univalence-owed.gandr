@@ -3,7 +3,8 @@
 // of the identity record is not reflexivity: two paths between types that
 // transport alike are not one path. `idtoequiv` after `ua` is the record once
 // its inverses are determined by its map, which needs function extensionality
-// from a homotopy at any two functions; `Path.funext` decides closed first-order
+// from a homotopy at any two functions; `Path.funext`
+// decides closed first-order
 // functions only, and `ua` gives the rest
 // (`../../model/identity/funext-from-ua.gandr`).
 //

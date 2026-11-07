@@ -1,7 +1,8 @@
 // This source shows `f64` literals and operations.
 //
 // An `f64` suffix or annotation types fractions as IEEE 754 binary64.
-// The operations include exponentials, arithmetic, comparisons and integer rounding.
+// The operations include exponentials, arithmetic, comparisons
+// and integer rounding.
 //
 // The runtime calculates these values with `float64`.
 //

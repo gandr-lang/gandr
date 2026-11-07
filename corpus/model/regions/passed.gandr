@@ -1,6 +1,7 @@
 //! `passed` returns a thunk at its input region.
 //!
-//! The caller reads the returned thunk before that region ends. The pathological
+//! The caller reads the returned thunk before that region
+//! ends. The pathological
 //! twin refuses a result held in no region as `TypeMismatch`.
 //!
 //! `pass` returns its argument unchanged. The `passed` run returns `4`. Rust

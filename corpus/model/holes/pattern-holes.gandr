@@ -1,6 +1,7 @@
 //! This source shows pattern holes in matches.
 //!
-//! A pattern hole stands for an unwritten arm or payload. The checker cannot decide coverage.
+//! A pattern hole stands for an unwritten arm or payload. The checker
+//! cannot decide coverage.
 //!
 //! The checker refuses the match until coverage reads no hole.
 //!

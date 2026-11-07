@@ -1,0 +1,218 @@
+test: format::comment_runs_wrap_at_eighty_columns_3589
+package: gandr-surface-format
+command: mise run debug:test gandr-surface-format format::comment_runs_wrap_at_eighty_columns_3589 --break wrap_comment_line
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-format/76e56d4d11df776e/out/tests-76e56d4d11df776e"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-format/76e56d4d11df776e/out/tests-76e56d4d11df776e' (x86_64).
+(lldb) settings set -- target.run-args  "format::comment_runs_wrap_at_eighty_columns_3589" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex wrap_comment_line
+Breakpoint 1: where = tests-76e56d4d11df776e`gandr_surface_format::wrap_comment_line + 157 at lib.rs:1526:33, address = 0x0000000000a8c7dd
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-76e56d4d11df776e`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000244bc18
+(lldb) run
+
+running 1 test
+test format::comment_runs_wrap_at_eighty_columns_3589 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1476064 launched: 'target/debug-trace/debug/build/gandr-surface-format/76e56d4d11df776e/out/tests-76e56d4d11df776e' (x86_64)
+Process 1476064 stopped
+* thread #2, name = 'format::comment', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555fe07dd tests-76e56d4d11df776e`gandr_surface_format::wrap_comment_line(text="", prefix="// ", body="alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi", width=80) at lib.rs:1526:33
+   1523	    width: usize,
+   1524	)
+   1525	{
+-> 1526	    let words: Vec<&str> = body.split_whitespace().collect();
+                                         ^
+   1527	    let hanging = body.trim_start().starts_with("- ");
+   1528	    let mut first = true;
+   1529	    let mut at = 0_usize;
+(lldb) bt 24
+* thread #2, name = 'format::comment', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555fe07dd tests-76e56d4d11df776e`gandr_surface_format::wrap_comment_line(text="", prefix="// ", body="alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi", width=80) at lib.rs:1526:33
+     frame #1: 0x0000555555fe16b8 tests-76e56d4d11df776e`gandr_surface_format::reflow_comment_run(text="// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi", width=80, ending=Lf) at lib.rs:1508:13
+     frame #2: 0x0000555555fdf216 tests-76e56d4d11df776e`gandr_surface_format::reflow_comments(text="// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi", start=0, width={0:80}, ending=Lf) at lib.rs:1454:20
+     frame #3: 0x0000555555fe3b98 tests-76e56d4d11df776e`gandr_surface_format::write(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:21, items:203}, alloc:{}, marker:{}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, tree={source:{0:"// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n"}, grammar:{0:2253204490714826584}, nodes:size=31, starts:size=3, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=31, digest:Some({0:"ՠ[\xfe\U00000014\x92\x9b\xefaL\xac?\xbed\U0000000f\xd4?\xc7\xf3\xa0\U00000002`\xd6\f\xa8\xfe\xdeuU\U00000017\xf1e"})}}, flat={leaves:size=27, repaired:size=0}, (null)=<unavailable>, layout={page_width:{0:40}, computation_width:{0:80}, line_ending:Lf}, ending=Lf, comment={0:80}) at lib.rs:1783:9
+     frame #4: 0x0000555555e2572e tests-76e56d4d11df776e`gandr_surface_format::format_beside::{closure#0} at lib.rs:1032:26
+     frame #5: 0x0000555555e27f42 tests-76e56d4d11df776e`anodized::__::eval_once::<core::result::Result<gandr_surface_format::Formatted, gandr_surface_format::FormatError>, gandr_surface_format::format_beside::{closure#0}>(closure={_ref__parsed:{tree:{source:{0:"// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n"}, grammar:{0:2253204490714826584}, nodes:size=31, starts:size=3, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=31, digest:Some({…})}}, obligations:size=0}, _ref__grammar:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({…}), length:174, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, _ref__options__page:{__0:40}, _ref__options__comment:{__0:80}, _ref__options__form:0x00007ffff7bfd7c0, _ref__options__rewrites:Every, _ref__beside:Alone, _ref__checker:None}) at __.rs:32:5 [inlined]
+     frame #6: 0x0000555555e27f15 tests-76e56d4d11df776e`gandr_surface_format::format_beside(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:21, items:203}, alloc:{}, marker:{}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, parsed={tree:{source:{0:"// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n"}, grammar:{0:2253204490714826584}, nodes:size=31, starts:size=3, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=31, digest:Some({0:"ՠ[\xfe\U00000014\x92\x9b\xefaL\xac?\xbed\U0000000f\xd4?\xc7\xf3\xa0\U00000002`\xd6\f\xa8\xfe\xdeuU\U00000017\xf1e"})}}, obligations:size=0}, options=<unavailable>, (null)=<unavailable>) at lib.rs:805:1
+     frame #7: 0x0000555555e27dd0 tests-76e56d4d11df776e`gandr_surface_format::format::{closure#0} at lib.rs:739:5
+     frame #8: 0x0000555555dc3501 tests-76e56d4d11df776e`anodized::__::eval_once::<core::result::Result<gandr_surface_format::Formatted, gandr_surface_format::FormatError>, gandr_surface_format::format::{closure#0}>(closure={_ref__grammar:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({…}), length:174, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, _ref__parsed:{tree:{source:{0:"// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n"}, grammar:{0:2253204490714826584}, nodes:size=31, starts:size=3, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=31, digest:Some({…})}}, obligations:size=0}, _ref__options:{page:{0:40}, comment:{0:80}, form:Source, rewrites:Every}}) at __.rs:32:5 [inlined]
+     frame #9: 0x0000555555dc34c7 tests-76e56d4d11df776e`gandr_surface_format::format(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:21, items:203}, alloc:{}, marker:{}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, parsed={tree:{source:{0:"// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n"}, grammar:{0:2253204490714826584}, nodes:size=31, starts:size=3, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=31, digest:Some({0:"ՠ[\xfe\U00000014\x92\x9b\xefaL\xac?\xbed\U0000000f\xd4?\xc7\xf3\xa0\U00000002`\xd6\f\xa8\xfe\xdeuU\U00000017\xf1e"})}}, obligations:size=0}, options=<unavailable>) at lib.rs:731:1
+     frame #10: 0x0000555555d9fc8b tests-76e56d4d11df776e`tests::format::formatted::<&str, u32>(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:21, items:203}, alloc:{}, marker:{}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, source="// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n", width=40) at format.rs:53:5
+     frame #11: 0x0000555555d9fadb tests-76e56d4d11df776e`tests::format::text::<&str, u32>(grammar={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=174, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:174, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3025, rctxs:size=3025, bounds:size=3025, owners:size=3025, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:21, items:203}, alloc:{}, marker:{}}}, menus:size=203, mold_labels:size=3025, adjacencies:size=7236, successor_starts:size=3026, has_pred:size=3025, has_succ:size=3025, form_first:size=210, is_first:size=3025, form_last:size=281, complete_last:size=232, is_complete_last:size=3025, required_tail:size=49, is_required_tail:size=3025, closing:size=3025, twins:size=3025, fingerprint:{0:2253204490714826584}}, automaton:{kinds:size=3025, observations:size=3025, width:48, sets:size=864}, application:Some({0:1518}), type_application:Some({0:2223}), flat:size=3}, source="// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n//! alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// - see: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```gandr\n// verbatim alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n// ```\n// | alpha | beta | gamma | delta | epsilon | zeta | eta | theta | iota | kappa |\n// token\ndef a = 1;\n", width=40) at format.rs:66:5
+     frame #12: 0x0000555555da39d7 tests-76e56d4d11df776e`tests::format::comment_runs_wrap_at_eighty_columns_3589 at format.rs:221:16
+     frame #13: 0x0000555555da1357 tests-76e56d4d11df776e`tests::format::comment_runs_wrap_at_eighty_columns_3589::{closure#0}((null)={}) at format.rs:217:46
+     frame #14: 0x0000555555db7e06 tests-76e56d4d11df776e`<tests::format::comment_runs_wrap_at_eighty_columns_3589::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #15: 0x0000555555ddf11b tests-76e56d4d11df776e`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #16: 0x0000555555ddf119 tests-76e56d4d11df776e`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #17: 0x0000555555dec665 tests-76e56d4d11df776e`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #18: 0x0000555555dec660 tests-76e56d4d11df776e`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #19: 0x0000555555dec660 tests-76e56d4d11df776e`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #20: 0x0000555555dec64b tests-76e56d4d11df776e`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #21: 0x0000555555dec64b tests-76e56d4d11df776e`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #22: 0x0000555555dec64b tests-76e56d4d11df776e`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #23: 0x0000555555dec636 tests-76e56d4d11df776e`test::run_test::{closure#0} at lib.rs:677:43
+(lldb) frame variable --depth 3
+(alloc::string::String *) text = 0x00007ffff7bf8a50 ""
+(&str) prefix = "// " {
+  [0] = '/'
+  [1] = '/'
+  [2] = ' '
+}
+(&str) body = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi" {
+  [0] = 'a'
+  [1] = 'l'
+  [2] = 'p'
+  [3] = 'h'
+  [4] = 'a'
+  [5] = ' '
+  [6] = 'b'
+  [7] = 'e'
+  [8] = 't'
+  [9] = 'a'
+  [10] = ' '
+  [11] = 'g'
+  [12] = 'a'
+  [13] = 'm'
+  [14] = 'm'
+  [15] = 'a'
+  ...
+}
+(unsigned long) width = 80
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(lldb) up
+frame #1: 0x0000555555fe16b8 tests-76e56d4d11df776e`gandr_surface_format::reflow_comment_run(text="// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi", width=80, ending=Lf) at lib.rs:1508:13
+   1505	            reflowed.push_str(line);
+   1506	        }
+   1507	        else {
+-> 1508	            wrap_comment_line(&mut reflowed, prefix, body, width);
+             ^
+   1509	        }
+   1510	        reflowed.push_str(break_);
+   1511	    }
+(lldb) frame variable --depth 3
+(&str) text = "// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi" {
+  [0] = '/'
+  [1] = '/'
+  [2] = ' '
+  [3] = 'a'
+  [4] = 'l'
+  [5] = 'p'
+  [6] = 'h'
+  [7] = 'a'
+  [8] = ' '
+  [9] = 'b'
+  [10] = 'e'
+  [11] = 't'
+  [12] = 'a'
+  [13] = ' '
+  [14] = 'g'
+  [15] = 'a'
+  ...
+}
+(unsigned long) width = 80
+(gandr_surface_format::Ending) ending = Lf
+(&str) ending = "\n" {
+  [0] = '\n'
+}
+(alloc::string::String) reflowed = ""
+(&str) fence_marker = "//" {
+  [0] = '/'
+  [1] = '/'
+}
+(bool) fenced = false
+(core::str::iter::SplitInclusive<char32_t>) iter = {0:{start:87, end:174, matcher:{haystack:"// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n/// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi", finger:87, finger_back:174, needle:U+000A U'\n', utf8_size:'\x01', utf8_encoded:('\n', '\0', '\0', '\0')}, allow_trailing_empty:false, finished:false}}
+(&str) raw = "// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi\n" {
+  [0] = '/'
+  [1] = '/'
+  [2] = ' '
+  [3] = 'a'
+  [4] = 'l'
+  [5] = 'p'
+  [6] = 'h'
+  [7] = 'a'
+  [8] = ' '
+  [9] = 'b'
+  [10] = 'e'
+  [11] = 't'
+  [12] = 'a'
+  [13] = ' '
+  [14] = 'g'
+  [15] = 'a'
+  ...
+}
+(&str) line = "// alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi" {
+  [0] = '/'
+  [1] = '/'
+  [2] = ' '
+  [3] = 'a'
+  [4] = 'l'
+  [5] = 'p'
+  [6] = 'h'
+  [7] = 'a'
+  [8] = ' '
+  [9] = 'b'
+  [10] = 'e'
+  [11] = 't'
+  [12] = 'a'
+  [13] = ' '
+  [14] = 'g'
+  [15] = 'a'
+  ...
+}
+(&str) break_ = "\n" {
+  [0] = '\n'
+}
+(&str) marker = "//" {
+  [0] = '/'
+  [1] = '/'
+}
+(&str) prefix = "// " {
+  [0] = '/'
+  [1] = '/'
+  [2] = ' '
+}
+(&str) body = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi" {
+  [0] = 'a'
+  [1] = 'l'
+  [2] = 'p'
+  [3] = 'h'
+  [4] = 'a'
+  [5] = ' '
+  [6] = 'b'
+  [7] = 'e'
+  [8] = 't'
+  [9] = 'a'
+  [10] = ' '
+  [11] = 'g'
+  [12] = 'a'
+  [13] = 'm'
+  [14] = 'm'
+  [15] = 'a'
+  ...
+}
+(&str) content = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi" {
+  [0] = 'a'
+  [1] = 'l'
+  [2] = 'p'
+  [3] = 'h'
+  [4] = 'a'
+  [5] = ' '
+  [6] = 'b'
+  [7] = 'e'
+  [8] = 't'
+  [9] = 'a'
+  [10] = ' '
+  [11] = 'g'
+  [12] = 'a'
+  [13] = 'm'
+  [14] = 'm'
+  [15] = 'a'
+  ...
+}

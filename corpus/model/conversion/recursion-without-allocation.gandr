@@ -1,4 +1,5 @@
-//! A doubly recursive function of twelve levels answers true without allocating.
+//! A doubly recursive function of twelve levels answers
+//! true without allocating.
 //!
 //! Boespflug, Dénès and Grégoire make 2^27 trivial calls, so the run measures
 //! calls without garbage collection. Their native code gained most on that
