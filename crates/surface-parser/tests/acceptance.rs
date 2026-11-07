@@ -1457,23 +1457,27 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 #[test]
 fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Box<dyn Error>>
 {
-    for damaged in [
-        "def f() -> A\n  admit (D (P \"x\" p (P \"n\" q N)) r) s\n",
-        "def f() -> A\n  admit (D (P x p (P n q N)) r) s\n",
-        "def f() -> A\n  admit (D (P 8 p (P 9 q N)) r) s\n",
-    ] {
-        let alone = parse(built(), SourceText::from(damaged))?;
+    let documented = include_str!("acceptance/unformatted/a-documented-follower-5747.gandr");
+    for (first, second) in [("\"x\"", "\"n\""), ("x", "n"), ("8", "9")] {
+        let damaged = |follower: &str| {
+            format!(
+                include_str!(
+                    "acceptance/unformatted/a-declaration-recovers-as-at-the-end-whatever-follows-5747.gandr"
+                ),
+                first = first,
+                second = second,
+                follower = follower
+            )
+        };
+        let alone = damaged("");
+        let alone = parse(built(), SourceText::from(alone.as_str()))?;
         assert_eq!(
             1,
             alone.obligations().len(),
             "the damaged declaration alone owes only its `=`"
         );
-        for follower in [
-            "def g() -> A = b;\n",
-            "/// `g`.\n@[ runs(\"Admitted\") ]\ndef g() -> A = b;\n",
-            "data G where { }\n",
-        ] {
-            let source = format!("{damaged}\n{follower}");
+        for follower in ["def g() -> A = b;", documented, "data G where { }"] {
+            let source = damaged(follower);
             let result = parse(built(), SourceText::from(source.as_str()))?;
             assert_eq!(
                 alone.obligations(),
