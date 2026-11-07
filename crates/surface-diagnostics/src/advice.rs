@@ -240,6 +240,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => String::from("write one view after `abort`: `abort v`"),
         LoweringRefusal::OutOfFragment {
+            form,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } if form.as_ref() == "lambda_expression" => {
+            String::from("write one parameter per lambda: `fun (a) { fun (b) { … } }`")
+        },
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Arity(_),
             ..
         } => String::from("give the form its declared number of operands"),
