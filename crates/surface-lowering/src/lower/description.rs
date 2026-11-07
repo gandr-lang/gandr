@@ -27,7 +27,6 @@ use gandr_core_term::CodataSignature;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
-use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -37,7 +36,6 @@ use gandr_core_term::description::DecodeError;
 use gandr_core_term::description::LocalBinding;
 use gandr_core_term::description::ParameterDepth;
 use gandr_core_term::description::ParameterLevel;
-use gandr_core_term::description::TypeArity;
 use gandr_core_term::description::TypeBinding;
 use gandr_core_term::description::decode_codata;
 use gandr_core_term::description::decode_signature;
@@ -49,7 +47,6 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::ConstructorTag;
-use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::LeafBytes;
 use gandr_theory_levitation::Name;
@@ -204,12 +201,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the ordinary mint sweep has lowered the written classifiers.
-    /// - ensures: a decoded data family's signature is pushed onto the module's
-    ///   data list and a codata family's onto its codata list, each index
-    ///   recorded by its slot; decoding failures remain located diagnostics and
-    ///   refuse only their slot; a `theory` block or a top-level `oper`, which
-    ///   declares no family, is left alone. Newly allocated nodes receive
-    ///   provenance without replacing older origins.
+    /// - ensures: a codata family's signature is pushed onto the module's
+    ///   codata list and its index is recorded by its slot. A data declaration
+    ///   keeps its native signature. Decoding failures remain located
+    ///   diagnostics and refuse only their slot; a `theory` block or a
+    ///   top-level `oper`, which declares no family, is left alone. Newly
+    ///   allocated nodes receive provenance without replacing older origins.
     /// - fails: the existing fuel or molded-grammar refusal remains an engine
     ///   error.
     /// - panics: none.
@@ -231,14 +228,15 @@ impl<'source> Lowerer<'_, 'source>
     )]
     #[spec(
         captures: [before = self.data.len(), codata_before = self.codata.len()],
-        ensures: |result| result.is_err() || (self.data.len() >= before && self.codata.len() >= codata_before && self.described.keys().chain(self.codata_described.keys()).all(|position| self.collected.slots.get(usize::from(*position)).is_some())),
+        ensures: |result| result.is_err() || (self.data.len() == before && self.codata.len() >= codata_before && self.described.keys().chain(self.codata_described.keys()).all(|position| self.collected.slots.get(usize::from(*position)).is_some())),
     )]
     pub(super) fn mint_descriptions(
         &mut self,
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let mut types = core::mem::take(&mut self.described_types);
+        let types = core::mem::take(&mut self.described_types);
+        let mut written = BTreeMap::new();
         for position in self.current.slots .. self.collected.slots.len() {
             self.fuel.spend()?;
             let Some(slot) = self.collected.slots.get(position)
@@ -261,14 +259,6 @@ impl<'source> Lowerer<'_, 'source>
             let at = entry.at;
             let constant = slot.constant;
             let before = sink.arena.watermark();
-            // A codata family is a computation type: no later description
-            // reads it as a value type, so it binds no nominal name.
-            if entry.description.polarity == DeclPolarity::Data {
-                types.insert(entry.description.id.name.clone(), TypeBinding::Nominal {
-                    declaration: constant,
-                    arity: TypeArity(entry.parameters.len()),
-                });
-            }
             let result = self.decode_family(sink.arena, entry, constant, &types);
             if let Maybe::Present(origin) = self.origin_at(at.node) {
                 for id in sink.arena.values_since(before) {
@@ -279,18 +269,19 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 // A self application stands where the observation writes its
                 // result, which the occurrence guard points at.
-                let written: BTreeMap<CompTypeId, NodeIndex> = match result {
-                    Ok(Decoded::Codata(ref signature)) => signature
-                        .observations()
-                        .iter()
-                        .zip(&entry.written.observations)
-                        .filter_map(|(&observed, written)| match written.itself {
-                            Maybe::Present(ref applied) => Some((observed, applied.at)),
-                            Maybe::Absent(_) => None,
-                        })
-                        .collect(),
-                    Ok(Decoded::Data(_)) | Err(_) => BTreeMap::new(),
-                };
+                written.clear();
+                if let Ok(signature) = result.as_ref() {
+                    written.extend(
+                        signature
+                            .observations()
+                            .iter()
+                            .zip(&entry.written.observations)
+                            .filter_map(|(&observed, written)| match written.itself {
+                                Maybe::Present(ref applied) => Some((observed, applied.at)),
+                                Maybe::Absent(_) => None,
+                            }),
+                    );
+                }
                 for id in sink.arena.comp_types_since(before) {
                     let placed = match written.get(&id).map(|&node| self.origin_at(node)) {
                         Some(Maybe::Present(placed)) => placed,
@@ -300,20 +291,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
             match result {
-                Ok(Decoded::Data(signature)) => {
-                    let index = DataIndex::from(self.data.len());
-                    self.constructors.push(
-                        entry
-                            .description
-                            .ctors
-                            .iter()
-                            .map(|constructor| String::from(constructor.name.as_ref()))
-                            .collect(),
-                    );
-                    self.data.push(Arc::new(signature));
-                    let _first = self.described.insert(SlotIndex::from(position), index);
-                },
-                Ok(Decoded::Codata(signature)) => {
+                Ok(signature) => {
                     let index = CodataIndex::from(self.codata.len());
                     self.codata.push(Arc::new(signature));
                     let _first = self
@@ -534,9 +512,8 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Interpret a family under every explicit parameter, with no carrier
-    /// alias: a data family as its data signature, a codata family as its
-    /// codata signature.
+    /// Interpret a codata family under every explicit parameter, with no
+    /// carrier alias.
     ///
     /// # Specification
     /// - requires: `entry` and its classifier nodes belong to this lowering
@@ -559,18 +536,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   a tail written at its parameters swapped keeps them swapped.
     /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `description::tests::a_codata_self_reference_keeps_its_written_arguments_2188`
-    #[spec(ensures: |result| match result.as_ref() {
-        Ok(&Decoded::Data(ref signature)) => signature.parameters().len() == entry.parameters.len(),
-        Ok(&Decoded::Codata(ref signature)) => signature.parameters().len() == entry.parameters.len(),
-        Err(_) => true,
-    })]
+    #[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.parameters().len() == entry.parameters.len()))]
     fn decode_family(
         &self,
         arena: &mut CoreArena,
         entry: &DescribedDeclaration,
         constant: ConstantIndex,
         types: &BTreeMap<Name, TypeBinding>,
-    ) -> Result<Decoded, DecodeError>
+    ) -> Result<CodataSignature, DecodeError>
     {
         let Maybe::Present(classifier) = entry.classifier
         else {
@@ -615,59 +588,48 @@ impl<'source> Lowerer<'_, 'source>
         let arguments = arguments?;
         let self_sort = NameRef::from(entry.description.id.name.as_ref());
         let depth = ParameterDepth(parameters.len());
-        if entry.description.polarity == DeclPolarity::Codata {
-            let itself = arena.comp_type_codata(constant, arguments);
-            // An observation names the family by its code, and the lowering
-            // read the type of each other observation, so no value type stands
-            // for the family.
-            let context = DecodeContext {
-                self_sort,
-                self_type: kind,
-                types,
-                locals: &locals,
-                depth,
-            };
-            let fields: Result<Vec<_>, _> = entry
-                .written
-                .observations
-                .iter()
-                .filter(|written| matches!(written.itself, Maybe::Absent(_)))
-                .map(|written| match self.value_type_at(written.at) {
-                    Maybe::Present(field) => Ok(field),
-                    Maybe::Absent(_) => Err(DecodeError::MalformedCode),
-                })
-                .collect();
-            let decoded = decode_codata(
-                arena,
-                &entry.description,
-                (context, itself),
-                parameters,
-                &fields?,
-                kind,
-            )?;
-            // The code names the family alone; its result is the family at
-            // the arguments written, uniform or not.
-            let mut observations = decoded.observations().to_vec();
-            for (observed, written) in observations.iter_mut().zip(&entry.written.observations) {
-                if let Maybe::Present(ref applied) = written.itself {
-                    *observed = self.self_application(arena, &applied.steps, constant)?;
-                }
-            }
-            return Ok(Decoded::Codata(CodataSignature::new(
-                decoded.parameters().to_vec(),
-                observations,
-                kind,
-            )));
-        }
-        let self_type = arena.value_type_data(constant, arguments);
+        let itself = arena.comp_type_codata(constant, arguments);
+        // An observation names the family by its code, and the lowering
+        // read the type of each other observation, so no value type stands
+        // for the family.
         let context = DecodeContext {
             self_sort,
-            self_type,
+            self_type: kind,
             types,
             locals: &locals,
             depth,
         };
-        decode_signature(arena, &entry.description, context, parameters, kind).map(Decoded::Data)
+        let fields: Result<Vec<_>, _> = entry
+            .written
+            .observations
+            .iter()
+            .filter(|written| matches!(written.itself, Maybe::Absent(_)))
+            .map(|written| match self.value_type_at(written.at) {
+                Maybe::Present(field) => Ok(field),
+                Maybe::Absent(_) => Err(DecodeError::MalformedCode),
+            })
+            .collect();
+        let decoded = decode_codata(
+            arena,
+            &entry.description,
+            (context, itself),
+            parameters,
+            &fields?,
+            kind,
+        )?;
+        // The code names the family alone; its result is the family at
+        // the arguments written, uniform or not.
+        let mut observations = decoded.observations().to_vec();
+        for (observed, written) in observations.iter_mut().zip(&entry.written.observations) {
+            if let Maybe::Present(ref applied) = written.itself {
+                *observed = self.self_application(arena, &applied.steps, constant)?;
+            }
+        }
+        Ok(CodataSignature::new(
+            decoded.parameters().to_vec(),
+            observations,
+            kind,
+        ))
     }
 
     /// The codata family at `constant` applied as `steps` write it: each
@@ -727,15 +689,6 @@ impl<'source> Lowerer<'_, 'source>
         }
         Ok(arena.comp_type_codata(constant, values))
     }
-}
-
-/// A described family's decoded signature.
-enum Decoded
-{
-    /// A data family's.
-    Data(DataSignature),
-    /// A codata family's.
-    Codata(CodataSignature),
 }
 
 /// One step of [`presentation_term`]'s walk.
