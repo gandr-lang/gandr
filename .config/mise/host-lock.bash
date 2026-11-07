@@ -77,12 +77,16 @@ host_lock() {
   done
 }
 
-# The user's runtime directory, one per user on the host whatever a run's
-# environment: `XDG_RUNTIME_DIR`, else `/run/user/<uid>` where a service's
-# environment lacks it, else macOS's per-user temporary directory, read with
-# `getconf` so a run with `TMPDIR` unset reads the same, else `/tmp`.
+# The directory of the host locks: `GANDR_HOST_LOCK_DIR`, which a harness sets
+# to keep its locks apart without moving the user's runtime directory (#6182).
+# Without it, the user's runtime directory, one per user on the host whatever
+# a run's environment: `XDG_RUNTIME_DIR`, else `/run/user/<uid>` where a
+# service's environment lacks it, else macOS's per-user temporary directory,
+# read with `getconf` so a run with `TMPDIR` unset reads the same, else `/tmp`.
 host_lock_dir() {
-  if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
+  if [[ -n ${GANDR_HOST_LOCK_DIR:-} ]]; then
+    printf '%s\n' "$GANDR_HOST_LOCK_DIR"
+  elif [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
     printf '%s\n' "$XDG_RUNTIME_DIR"
   elif [[ -d /run/user/$UID ]]; then
     printf '%s\n' "/run/user/$UID"

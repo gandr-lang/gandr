@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The host lock's behaviour (#3105), pinned once for its three callers: in a
-# scratch runtime directory, two holders take a lock's two slots and a third
+# scratch lock directory, two holders take a lock's two slots and a third
 # taker with `--no-wait` refuses, naming both; another lock name is
 # unaffected; a holder killed outright frees its slot; a waiter takes the
 # slot a holder leaves; and a slot stays held while a child of a killed
@@ -9,7 +9,9 @@
 # daemon` does. A gate releases its slot as it exits, whether it ends or is
 # stopped by `TERM`, while a daemon one of its steps started keeps the
 # descriptor open (#4421). A lane holds one slot, and a heavy check run alone
-# takes one (#4911).
+# takes one (#4911). The lock directory comes before the runtime directory,
+# so a harness keeps its locks apart without moving the runtime directory
+# (#6182).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 scratch=$(mktemp -d)
@@ -20,7 +22,7 @@ cleanup() {
   rm -rf "$scratch"
 }
 trap cleanup EXIT
-export XDG_RUNTIME_DIR=$scratch
+export GANDR_HOST_LOCK_DIR=$scratch
 unset GANDR_GATE_SLOT GATE_NO_WAIT
 failed=0
 fail() {
@@ -225,5 +227,13 @@ status=0
 (cd "$scratch/core-1" && GANDR_GATE_SLOT=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 "$gated" true) > /dev/null 2>&1 || status=$?
 [[ $status == 0 ]] || fail "#4911: a heavy check inside a gate took a slot of its own"
 
+# The lock directory (#6182): with both variables set, a lock takes its file
+# under `GANDR_HOST_LOCK_DIR`, and the runtime directory holds no lock.
+mkdir -p "$scratch/runtime"
+GANDR_HOST_LOCK_DIR=$scratch/apart XDG_RUNTIME_DIR=$scratch/runtime bash -c 'source "$1"; host_lock --no-wait apart 1 apart' _ "$helper" 2> /dev/null \
+  || fail "#6182: a lock under its own directory was refused"
+[[ -e $scratch/apart/gandr/apart.1.lock ]] || fail "#6182: a lock took no file under GANDR_HOST_LOCK_DIR"
+[[ -z $(ls -A "$scratch/runtime") ]] || fail "#6182: a lock wrote under XDG_RUNTIME_DIR while GANDR_HOST_LOCK_DIR was set"
+
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; a heavy check run alone held a slot"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"

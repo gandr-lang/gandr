@@ -2,10 +2,11 @@
 # The filings of `issue:file` and `refactor:file` against one GitHub (#5149),
 # run by `check:claims` over the cases in `filed-once.json`. The GitHub is the
 # stub `filed-once-gh.bash`. The runs come from two clones of the tree under
-# test, each with a runtime and a state directory of its own, as two hosts
-# have. A commit of the working tree, written through an index of its own,
-# is what the clones check out, so a change not yet committed is tested too.
-# The real index and `HEAD` do not change.
+# test, each with a host lock and a state directory of its own, as two hosts
+# have. The runtime directory stays the host's (#6182). A commit of the
+# working tree, written through an index of its own, is what the clones check
+# out, so a change not yet committed is tested too. The real index and `HEAD`
+# do not change.
 #
 # A case of kind `epic` runs `issue:file --epic 4481` from one clone, over an
 # epic that holds the case's `subs` sub-issues. A case of kind `race` runs
@@ -48,11 +49,11 @@ jq -n '{state: "MERGED", headRefName: "triage-7-filed",
 run() {
   local clone=$1 host=$2
   shift 2
-  mkdir -p "$work/runtime-$host" "$work/state-$host"
+  mkdir -p "$work/locks-$host" "$work/state-$host"
   (cd "$work/$clone" && env PATH="$work/gh:$PATH" STUB_GH="$work/stub" STUB_SUBS="$subs" GH_BUDGET_TTL=0 \
     MISE_DISABLE_TOOLS="$disabled" \
     MISE_CONFIG_DIR="$mise_config" MISE_TRUSTED_CONFIG_PATHS="$work/a:$work/b" \
-    XDG_CONFIG_HOME="$work/config" XDG_RUNTIME_DIR="$work/runtime-$host" XDG_STATE_HOME="$work/state-$host" \
+    XDG_CONFIG_HOME="$work/config" GANDR_HOST_LOCK_DIR="$work/locks-$host" XDG_STATE_HOME="$work/state-$host" \
     "$@") > "$work/out-$host" 2>&1
 }
 
