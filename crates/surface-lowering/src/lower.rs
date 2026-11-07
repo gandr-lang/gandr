@@ -5201,10 +5201,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the iterated pair's levels are each kept, and their
-    ///   types print by the level's name; a member whose definition names a
-    ///   data type keeps that type's name.
-    /// - witness: `typed::tests::a_shared_level_prints_by_its_name_5826`
+    /// - hypothesis: L3 — a member's own name names the record its definition
+    ///   mints, beside three bases written by that name; a record written in
+    ///   place keeps no name.
+    /// - witness: `lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
     #[spec(ensures: self.defining.len() <= self.collected.top_types.len())]
     fn define_members(
         &mut self,
