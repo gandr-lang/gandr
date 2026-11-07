@@ -2,3 +2,8 @@
 # line: the item's path as the evidence records spell it, a tab, and the
 # decision that keeps it, such as a public API by design. The report skips a
 # kept item by its path. A line that starts with `#` is a comment.
+gandr_surface_lowering::description::DescribedDeclaration::rules	a reader of a lowered description; tests witness the lowering through it (#5675)
+gandr_surface_lowering::lower::closure::ClosureLowering::grammar	a reader of a closure lowering; tests witness the lowering through it (#5675)
+gandr_surface_lowering::model::LoweredTheory::<'_>::model	a reader of a lowered theory's model signature; tests witness the lowering through it (#5675)
+gandr_surface_lowering::module::LoweredModule::<'source>::in_scope	a reader of a lowered module's scope; tests/scopes.rs witnesses the binders through it (#5675)
+gandr_surface_lowering::module::LoweredModule::<'source>::source_documentation	a reader of a lowered module's documentation; tests witness each source's text through it (#5675)
