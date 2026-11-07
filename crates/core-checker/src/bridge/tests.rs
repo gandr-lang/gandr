@@ -4127,6 +4127,84 @@ fn element_identity_and_a_compound_endpoint_are_readmitted()
     );
 }
 
+/// A linear function, its abstraction and a call of it cross to the kernel:
+/// the arrow as the dependent arrow without its multiplicity, and the kernel
+/// replays the call in an endpoint through the function (#5853).
+#[test]
+fn a_linear_function_and_its_call_are_readmitted_5853()
+{
+    // def id   : U ((x : Integer) ⊸ F Integer) = thunk { λ̂x. return x } ;
+    // def same : Path[.A = Integer](⟨id 7⟩, 7) = here(7) ;
+    let literal = |arena: &mut CoreArena, digits: &str| {
+        let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits))
+            .expect("the digits are decimal");
+        arena.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(gandr_kernel_term::Sign::NonNegative, magnitude),
+        ))
+    };
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let one = literal(&mut arena, "1");
+    let arrow = arena.comp_type_linear_arrow(integer, one, returns_integer);
+    let suspended_arrow = arena.value_type_thunk(arrow);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_bound = arena.computation_return(bound);
+    let lambda = arena.computation_linear_lambda(returns_bound);
+    let identity = arena.value_thunk(lambda);
+    let seven = literal(&mut arena, "7");
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(named);
+    let applied = arena.computation_application(forced, seven);
+    let called = arena.value_returned(applied);
+    let path = arena.value_type_path(integer, called, seven);
+    let here = arena.value_here(seven);
+    let module = [
+        declaration(
+            At(0),
+            Maybe::Present(suspended_arrow),
+            Maybe::Present(identity),
+        ),
+        declaration(At(1), Maybe::Present(path), Maybe::Present(here)),
+    ];
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        verdicts
+            .iter()
+            .all(|verdict| matches!(verdict, Verdict::Checked { .. })),
+        "the judgement accepts both: {verdicts:?}"
+    );
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(Readmitted::outcome)
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(**outcome, Outcome::Defined { .. })),
+        "the kernel re-derives both, and replays the call through `id`: {outcomes:?}"
+    );
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let declared = artifact
+        .declarations()
+        .first()
+        .map(|marked| marked.declaration().declared_id())
+        .unwrap();
+    let Some(&KernelValueType::Thunk(function)) = artifact.arena().value_type(declared)
+    else {
+        panic!("the linear function crosses as a thunk");
+    };
+    assert!(
+        matches!(
+            artifact.arena().comp_type(function),
+            Some(&gandr_kernel_term::CompType::Pi { .. })
+        ),
+        "its arrow crosses as the dependent arrow, and the multiplicity is dropped"
+    );
+}
+
 #[test]
 fn a_reflexive_transport_at_a_path_motive_is_readmitted_336()
 {

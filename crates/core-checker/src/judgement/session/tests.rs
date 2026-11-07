@@ -4,6 +4,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -382,15 +383,60 @@ fn check_unit(
 {
     let unit = arena.value_type_unit();
     let returner = arena.comp_type_returner(unit);
+    check_at(arena, term, returner)
+}
+
+/// Check `term` against `expected`, formed first.
+///
+/// # Specification
+/// trivial.
+fn check_at(
+    arena: &mut CoreArena,
+    term: ComputationId,
+    expected: CompTypeId,
+) -> Result<(), CheckRefusal>
+{
     let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
-    let returner = form_comp_type(&mut context, returner)?;
-    let checked = check_comp(&mut context, term, returner).map(|_| ());
+    let expected = form_comp_type(&mut context, expected)?;
+    let checked = check_comp(&mut context, term, expected).map(|_| ());
     assert_eq!(
         context.depth(Zone::Linear),
         gandr_core_term::BinderDepth::default(),
         "a run leaves the linear zone as it found it"
     );
     checked
+}
+
+/// The integer literal `digits` spells.
+///
+/// # Specification
+/// trivial.
+fn integer(
+    arena: &mut CoreArena,
+    Spelled(digits): Spelled,
+) -> ValueId
+{
+    let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits))
+        .expect("the digits are decimal");
+    arena.value_literal(Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+        gandr_kernel_term::Sign::NonNegative,
+        magnitude,
+    )))
+}
+
+/// `(x : Integer) ⊸ codomain` at the multiplicity `digits` spells.
+///
+/// # Specification
+/// trivial.
+fn linear_arrow(
+    arena: &mut CoreArena,
+    digits: Spelled,
+    codomain: CompTypeId,
+) -> CompTypeId
+{
+    let domain = arena.value_type_base(BaseType::Integer);
+    let multiplicity = integer(arena, digits);
+    arena.comp_type_linear_arrow(domain, multiplicity, codomain)
 }
 
 /// The child end of `fork`.
@@ -2917,5 +2963,138 @@ fn a_buffer_no_slot_holds_is_never_returned()
             defect: LinearityDefect::BufferRead { site: free },
         }),
         "a reply no placement holds live is no buffer to return: returning it would forge one"
+    );
+}
+
+/// A linear function's body reads its parameter's copy exactly once: the
+/// identity checks, a second read is refused at that read, and a body that
+/// never reads the copy is refused at the lambda (#5853).
+#[test]
+fn a_linear_function_reads_its_parameter_once_5853()
+{
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer_type);
+    let arrow = linear_arrow(&mut arena, Spelled("1"), returns_integer);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(parameter);
+    let identity = arena.computation_linear_lambda(returned);
+    assert_eq!(
+        check_at(&mut arena, identity, arrow),
+        Ok(()),
+        "the linear identity reads its parameter once"
+    );
+    // λ̂x. (return x) to y. return x: the second read names x past y.
+    let again = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let returned_again = arena.computation_return(again);
+    let twice = arena.computation_bind(returned, returned_again);
+    let reread = arena.computation_linear_lambda(twice);
+    assert_eq!(
+        check_at(&mut arena, reread, arrow),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(again)),
+            defect: LinearityDefect::LinearSlotConsumed { lambda: reread },
+        }),
+        "the second read finds the copy spent"
+    );
+    let zero = integer(&mut arena, Spelled("0"));
+    let returned_zero = arena.computation_return(zero);
+    let dropped = arena.computation_linear_lambda(returned_zero);
+    assert_eq!(
+        check_at(&mut arena, dropped, arrow),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(dropped)),
+            defect: LinearityDefect::LinearSlotUnconsumed { lambda: dropped },
+        }),
+        "a body that never reads the copy leaves it unspent"
+    );
+}
+
+/// A linear arrow forms at the multiplicity one alone: zero and two are each
+/// refused by name at the arrow (#5853, #5867).
+#[test]
+fn a_linear_arrow_admits_the_multiplicity_one_alone_5853()
+{
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer_type);
+    for digits in ["0", "2"] {
+        let arrow = linear_arrow(&mut arena, Spelled(digits), returns_integer);
+        let Some(&gandr_core_term::CompType::LinearArrow { multiplicity, .. }) =
+            arena.comp_type(arrow)
+        else {
+            panic!("the arrow is linear");
+        };
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert_eq!(
+            form_comp_type(&mut context, arrow).map(|_| ()),
+            Err(CheckRefusal::MultiplicityUnsupported {
+                at: arrow,
+                multiplicity,
+            }),
+            "the multiplicity {digits} is refused by name"
+        );
+    }
+    let arrow = linear_arrow(&mut arena, Spelled("1"), returns_integer);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert!(
+        form_comp_type(&mut context, arrow).is_ok(),
+        "the multiplicity one forms"
+    );
+}
+
+/// A thunk may be forced any number of times, so one that reads a linear
+/// parameter is refused by its capturer, and the same read outside the thunk
+/// checks (#5853).
+#[test]
+fn a_thunk_reading_a_linear_parameter_is_refused_5853()
+{
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer_type);
+    let arrow = linear_arrow(&mut arena, Spelled("1"), returns_integer);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(parameter);
+    let suspended = arena.value_thunk(returned);
+    let forced = arena.computation_force(suspended);
+    let captured = arena.computation_linear_lambda(forced);
+    assert_eq!(
+        check_at(&mut arena, captured, arrow),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(suspended)),
+            defect: LinearityDefect::ShadowCaptured {
+                lambda: captured,
+                by: Capture::Thunk,
+            },
+        }),
+        "a thunk may be forced any number of times"
+    );
+    let direct = arena.computation_linear_lambda(returned);
+    assert_eq!(
+        check_at(&mut arena, direct, arrow),
+        Ok(()),
+        "the same read outside the thunk checks"
+    );
+}
+
+/// A type inside a linear body reads the parameter's shadow free: the codomain
+/// `F Path(x, x)` reads it twice, and the body's one value read spends the copy
+/// (#5853).
+#[test]
+fn a_type_in_a_linear_body_reads_the_shadow_free_5853()
+{
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let looped = arena.value_type_path(integer_type, parameter, parameter);
+    let returns_loop = arena.comp_type_returner(looped);
+    let arrow = linear_arrow(&mut arena, Spelled("1"), returns_loop);
+    let here = arena.value_here(parameter);
+    let returned = arena.computation_return(here);
+    let itself = arena.computation_linear_lambda(returned);
+    assert_eq!(
+        check_at(&mut arena, itself, arrow),
+        Ok(()),
+        "the codomain's reads are free, and the body's one read spends the copy"
     );
 }
