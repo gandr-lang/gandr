@@ -77,7 +77,8 @@
 # A defect fix lands with what was observed and the check that failed before
 # it (#2524): a body closing a `kind:defect` issue `#n` has a non-empty
 # `## Observation`, and the change adds a regression naming `#n`: a corpus
-# `/// - see: #n` line in a source's references (#4900), a Rust test whose
+# `// - see: #n` or `/// - see: #n` line in a source's references (#4900,
+# #6071), a Rust test whose
 # name ends `_n` (or carries `_n_`), a `.config` JSON case whose `"name"`
 # cites `#n`, a case of a `.config` shell script named `*cases.bash` whose
 # `fail "#n: …"` message names it (#4421), or, in an editor extension's
@@ -308,7 +309,7 @@ def concerns:
 # Whether an added line `{path, text}` is a regression naming issue `$n`.
 def regression($n):
   ($n | tostring) as $n
-  | if (.path | endswith(".gandr")) then .text | test("^\\s*///\\s*- see: #\($n)\\b")
+  | if (.path | endswith(".gandr")) then .text | test("^\\s*///?\\s*- see: #\($n)\\b")
     elif (.path | endswith(".rs")) then .text | test("\\bfn\\s+\\w*_\($n)(_\\w*)?\\s*[(<]")
     elif (.path | startswith(".config/") and endswith(".json")) then .text | test("\"name\":\\s*\"[^\"]*#\($n)\\b")
     elif (.path | startswith(".config/") and endswith("cases.bash")) then .text | test("\\bfail\\s+\"#\($n):")
@@ -328,7 +329,7 @@ def defects:
   | select($closed | index($n))
   | [if $observed then empty else "`## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there" end,
      if ([$added[] | select(regression($n))] | length) > 0 then empty
-     else "a regression naming #\($n): a corpus `/// - see: #\($n)` line, a Rust test named `…_\($n)`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change" end]
+     else "a regression naming #\($n): a corpus `// - see: #\($n)` or `/// - see: #\($n)` line, a Rust test named `…_\($n)`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change" end]
   | select(length > 0)
   | "the body closes #\($n), a `kind:defect`, without \(join(", and without ")); add \(if length > 1 then "both" else "it" end), then run `pr:open` again";
 

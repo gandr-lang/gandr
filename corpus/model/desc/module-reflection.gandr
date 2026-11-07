@@ -11,6 +11,7 @@
 // their names.
 //
 // - see: #4730
+// - see: #6071
 // - see: `../../pathological/desc/module-reflection.gandr` — what does not reach a module
 import std.build (Gandr);
 import std.string (concat);
