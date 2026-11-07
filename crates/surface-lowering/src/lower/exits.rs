@@ -1654,7 +1654,7 @@ pub(super) fn commute(
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper_by(arity)));
                     },
-                    Some(&Computation::Lambda(under)) => {
+                    Some(&(Computation::Lambda(under) | Computation::LinearLambda(under))) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper()));
                     },
@@ -2174,6 +2174,7 @@ fn rebuild(
         | Computation::BindAll { .. }
         | Computation::Split { .. }
         | Computation::Lambda(_)
+        | Computation::LinearLambda(_)
         | Computation::Session(
             SessionAction::Fork { .. }
             | SessionAction::Receive { .. }
@@ -2224,6 +2225,9 @@ fn rebuild(
         },
         (Computation::Lambda(under), &[commuted]) if commuted != under => {
             sink.arena.computation_lambda(commuted)
+        },
+        (Computation::LinearLambda(under), &[commuted]) if commuted != under => {
+            sink.arena.computation_linear_lambda(commuted)
         },
         (
             Computation::Split {

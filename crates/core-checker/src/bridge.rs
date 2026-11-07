@@ -7343,7 +7343,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.restated.binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::ReturnAll(ref values) => Some(values.len()), Computation::Ascribe { .. } | Computation::BindAll { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.restated.binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::ReturnAll(ref values) => Some(values.len()), Computation::Ascribe { .. } | Computation::BindAll { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -7476,7 +7476,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 self.frames.push(Frame::TelescopeMotive { at });
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))));
             },
-            Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
+            // A linear lambda crosses as the lambda it reads as: the kernel
+            // holds the host, and the supply is the checker's.
+            Computation::Lambda(body) | Computation::LinearLambda(body) => {
+                (Frame::Lambda { at }, TermNode::Computation(body))
+            },
             Computation::Fixpoint { body, evidence } => (
                 Frame::Fixpoint { at, evidence },
                 TermNode::Computation(body),
@@ -7847,7 +7851,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             CompTypeView::Arrow { domain, codomain } => {
                 (Frame::ArrowDomain { at, codomain }, domain)
             },
-            CompTypeView::Pi { domain, codomain } => (Frame::PiDomain { at, codomain }, domain),
+            // `((x : A) ˆ m ⊸ B)•` is `(x : A•) → B•`: the kernel reads the
+            // linear arrow as the dependent arrow, and drops the multiplicity.
+            CompTypeView::Pi { domain, codomain }
+            | CompTypeView::LinearArrow {
+                domain, codomain, ..
+            } => (Frame::PiDomain { at, codomain }, domain),
             CompTypeView::Returns { effects, .. } => {
                 if effects.purity() != gandr_core_term::effect::Purity::Pure {
                     return Err(Refusal::OutOfFragment {

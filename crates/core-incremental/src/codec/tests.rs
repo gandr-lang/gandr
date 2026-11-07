@@ -317,6 +317,7 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::StaticLambda(a),
         ContentNode::StaticApplication(a, b),
         ContentNode::Lambda(a),
+        ContentNode::LinearLambda(a),
         ContentNode::Application(a, b),
         ContentNode::Return(a),
         ContentNode::Bind(a, b),
@@ -368,6 +369,11 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::Pi {
             domain: a,
             codomain: b,
+        },
+        ContentNode::LinearArrow {
+            domain: a,
+            multiplicity: b,
+            codomain: c,
         },
         ContentNode::Returns {
             results: vec![a, b],
@@ -1173,6 +1179,16 @@ fn session_refusals_round_trip_with_their_endpoints()
         },
         Linearity::ContinuationAsValue {
             clause: Site::Node(NodeIndex::from(7_usize)),
+        },
+        Linearity::LinearSlotConsumed {
+            lambda: Site::Node(NodeIndex::from(8_usize)),
+        },
+        Linearity::LinearSlotUnconsumed {
+            lambda: Site::Node(NodeIndex::from(8_usize)),
+        },
+        Linearity::ShadowCaptured {
+            lambda: Site::Unreached,
+            by: Capture::Recursion,
         },
     ] {
         refusals.push(Refusal::Linearity { at, defect });
@@ -3053,6 +3069,10 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
         Refusal::UndischargedLaw { at },
         Refusal::NonCovariantMotive { at },
         Refusal::RideUnsupported { at },
+        Refusal::MultiplicityUnsupported {
+            at: ty(),
+            multiplicity: at,
+        },
         Refusal::ForwardUnsupported { at },
         Refusal::Boundary { at },
         Refusal::EffectSignatureConflict {

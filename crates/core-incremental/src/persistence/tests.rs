@@ -446,6 +446,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::UndischargedLaw { .. }) => "undischarged-law",
         Typing::Refused(Refusal::NonCovariantMotive { .. }) => "non-covariant-motive",
         Typing::Refused(Refusal::RideUnsupported { .. }) => "ride-unsupported",
+        Typing::Refused(Refusal::MultiplicityUnsupported { .. }) => "multiplicity-unsupported",
         Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",
         Typing::Refused(Refusal::DialogueUnmatched { .. }) => "dialogue-unmatched",
         Typing::Refused(Refusal::DialogueInverted { .. }) => "dialogue-inverted",

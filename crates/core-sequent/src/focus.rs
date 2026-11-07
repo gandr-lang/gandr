@@ -1267,7 +1267,7 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(ref components) => self.commands.len() >= components.len(),
-                Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
+                Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons => self.producers.len() >= 2,
@@ -1847,6 +1847,7 @@ impl<'run> Focusing<'run>
                     | Computation::Ride { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Lambda(_)
+                    | Computation::LinearLambda(_)
                     | Computation::Fixpoint { .. }
                     | Computation::Application(..)
                     | Computation::Return(_)
@@ -1987,6 +1988,7 @@ impl<'run> Focusing<'run>
             | Computation::Ride { .. }
             | Computation::TelescopeTransport { .. }
             | Computation::Lambda(_)
+            | Computation::LinearLambda(_)
             | Computation::Fixpoint { .. }
             | Computation::Application(..)
             | Computation::Return(_)
@@ -2836,7 +2838,9 @@ impl<'run> Focusing<'run>
                     self.tasks.push(Task::Value(argument));
                 }
             },
-            Computation::Lambda(body) => {
+            // A linear lambda's supply is checked and erased: it runs as the
+            // lambda it reads as.
+            Computation::Lambda(body) | Computation::LinearLambda(body) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Lambda { continuation });
                 self.tasks.push(Task::Computation {

@@ -251,6 +251,9 @@ pub enum FrameRole
     ValueBridge,
     /// A synthesising computation in checking position waits on its type.
     CompBridge,
+    /// A type is being formed inside a linear function's body, where the
+    /// type reads the parameter's shadow and no copy of it.
+    Forming,
     /// A quote waits on the formation of the type it quotes.
     Quote,
     /// A later child of a type former waits for the one under way.
@@ -460,6 +463,7 @@ impl fmt::Display for FrameRole
             Self::BindBody => "BindBody",
             Self::ValueBridge => "ValueBridge",
             Self::CompBridge => "CompBridge",
+            Self::Forming => "Forming",
             Self::Quote => "Quote",
             Self::FormNext => "FormNext",
             Self::FormPi => "FormPi",

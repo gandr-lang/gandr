@@ -1230,7 +1230,8 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                 | Computation::Session(_)
                 | Computation::Memory(_)
                 | Computation::World(_)
-                | Computation::Decompose(_) => break,
+                | Computation::Decompose(_)
+                | Computation::LinearLambda(_) => break,
             }
         }
         Ok(read)
@@ -1568,6 +1569,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | CompType::Returns { .. }
                     | CompType::With(..)
                     | CompType::Arrow { .. }
+                    | CompType::LinearArrow { .. }
                     | CompType::Pi { .. }
                     | CompType::Codata { .. }
                     | CompType::Unknown => {
@@ -1712,28 +1714,29 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     (Some(left), Some(right)) => match *left {
                         CompType::Returner { effects: ref first, .. } => match *right {
                             CompType::Returner { effects: ref second, .. } if matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, 1_usize.saturating_add(first.types().count()), 0)),
-                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::LinearArrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Returns { results: ref left_results, effects: ref first } => match *right {
                             CompType::Returns { results: ref right_results, effects: ref second } if left_results.len() == right_results.len() && matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, left_results.len().saturating_add(first.types().count()), 0)),
-                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::LinearArrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Codata { declaration: ref a, arguments: ref left } => match *right {
                             CompType::Codata { declaration: ref b, arguments: ref right } if a == b && left.len() == right.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) },
-                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::LinearArrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::With(ref a) => match *right {
                             CompType::With(ref b) if a.len() == b.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(a.iter().zip(b.iter()).rev().map(|(a, b)| (Node::CompType(*a, here), Node::CompType(*b, there))))); Ok((Alike::Same, a.len(), 0)) },
-                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::LinearArrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) || matches!((left, right), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. })) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
+                        CompType::LinearArrow { .. } => if matches!(right, &CompType::LinearArrow { .. }) { Ok((Alike::Same, 3, 0)) } else { Ok((Alike::Different, 0, 0)) },
                         CompType::Element { code, ref target } => match *right {
                             CompType::Element { code: other_code, target: ref other_target } if target == other_target => {
                                 if let Ok((Node::CompType(_, here), Node::CompType(_, there))) = roots {
                                     self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
                                 } else { Err(ConversionFault::MachineInvariant) }
                             },
-                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::LinearArrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Unknown => Ok((Alike::Different, 0, 0)),
                     },
@@ -2289,6 +2292,33 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         Ok(Alike::Same)
                     },
                     (
+                        &CompType::LinearArrow {
+                            domain,
+                            multiplicity,
+                            codomain,
+                        },
+                        &CompType::LinearArrow {
+                            domain: other_domain,
+                            multiplicity: other_multiplicity,
+                            codomain: other_codomain,
+                        },
+                    ) => {
+                        let (inside, other_inside) = self.crossed(here, there);
+                        pending.push((
+                            Node::CompType(codomain, inside),
+                            Node::CompType(other_codomain, other_inside),
+                        ));
+                        pending.push((
+                            Node::Code(multiplicity, here),
+                            Node::Code(other_multiplicity, there),
+                        ));
+                        pending.push((
+                            Node::ValueType(domain, here),
+                            Node::ValueType(other_domain, there),
+                        ));
+                        Ok(Alike::Same)
+                    },
+                    (
                         &CompType::Pi { domain, codomain },
                         &CompType::Pi {
                             domain: other_domain,
@@ -2367,6 +2397,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | CompType::Returns { .. }
                         | CompType::With(..)
                         | CompType::Arrow { .. }
+                        | CompType::LinearArrow { .. }
                         | CompType::Pi { .. }
                         | CompType::Element { .. }
                         | CompType::Codata { .. }
@@ -3417,6 +3448,16 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         },
                         CompType::Pi { domain, codomain } => {
                             types.push(Node::ValueType(domain, place));
+                            let inside = self.crossed_alone(place);
+                            types.push(Node::CompType(codomain, inside));
+                        },
+                        CompType::LinearArrow {
+                            domain,
+                            multiplicity,
+                            codomain,
+                        } => {
+                            types.push(Node::ValueType(domain, place));
+                            atoms.push(self.atom(Node::Code(multiplicity, place))?);
                             let inside = self.crossed_alone(place);
                             types.push(Node::CompType(codomain, inside));
                         },

@@ -163,8 +163,16 @@ fn a_bound_trace_records_verdicts_but_not_declines()
         let mut domain = crate::DomainArena::new();
         let left_closure = domain.comp_closure_node(returned, crate::Environment::new());
         let right_closure = domain.comp_closure_node(forced, crate::Environment::new());
-        let left = domain.comp_lambda(left_closure, crate::CompTermFace::Reduced);
-        let right = domain.comp_lambda(right_closure, crate::CompTermFace::Reduced);
+        let left = domain.comp_lambda(
+            left_closure,
+            crate::Abstraction::Intuitionistic,
+            crate::CompTermFace::Reduced,
+        );
+        let right = domain.comp_lambda(
+            right_closure,
+            crate::Abstraction::Intuitionistic,
+            crate::CompTermFace::Reduced,
+        );
         let first = domain.value_unit(crate::TermFace::Reduced);
         let second = domain.value_unit(crate::TermFace::Reduced);
         let pair = domain.value_tuple([first, first], crate::TermFace::Reduced);

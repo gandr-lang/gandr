@@ -84,6 +84,7 @@ fn every_role_has_its_own_name()
         FrameRole::BindBody,
         FrameRole::ValueBridge,
         FrameRole::CompBridge,
+        FrameRole::Forming,
         FrameRole::Quote,
         FrameRole::FormNext,
         FrameRole::FormPi,

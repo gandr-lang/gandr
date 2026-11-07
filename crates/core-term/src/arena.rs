@@ -498,6 +498,7 @@ impl CoreArena
                 | Computation::Decompose(_)
                 | Computation::TelescopeTransport { .. }
                 | Computation::Lambda(_)
+                | Computation::LinearLambda(_)
                 | Computation::Fixpoint { .. }
                 | Computation::Application(..)
                 | Computation::Return(_)
@@ -1611,6 +1612,33 @@ impl CoreArena
         self.alloc_computation(Computation::Lambda(body))
     }
 
+    /// Mint a linear lambda over an already-allocated computation body, whose
+    /// parameter binds in the linear zone.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena.
+    /// - ensures: appends the linear lambda and returns a fresh id strictly
+    ///   above `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::LinearLambda(body)))]
+    #[inline]
+    pub fn computation_linear_lambda(
+        &mut self,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::LinearLambda(body))
+    }
+
     /// Mint a fixpoint over an already-allocated body, carrying its
     /// termination claim.
     ///
@@ -2477,6 +2505,40 @@ impl CoreArena
     ) -> CompTypeId
     {
         self.alloc_comp_type(CompType::Arrow { domain, codomain })
+    }
+
+    /// Mint a linear arrow type over an already-allocated domain, multiplicity
+    /// and codomain, the codomain scoped under the shadow's binder.
+    ///
+    /// # Specification
+    /// - requires: `domain` names a value-type node, `multiplicity` a value
+    ///   node and `codomain` a computation-type node, all already allocated in
+    ///   this arena.
+    /// - ensures: appends the linear arrow and returns a fresh id strictly
+    ///   above each child.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::LinearArrow { domain, multiplicity, codomain }))]
+    #[inline]
+    pub fn comp_type_linear_arrow(
+        &mut self,
+        domain: ValueTypeId,
+        multiplicity: ValueId,
+        codomain: CompTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        })
     }
 
     /// Mint a dependent arrow over an already-allocated domain and a codomain

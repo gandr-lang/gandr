@@ -306,7 +306,11 @@ fn a_pair_needing_an_unfolding_or_a_binder_is_deferred()
         "and two closures over different bodies compare only once their binders open"
     );
 
-    let lambda = domain.comp_lambda(suspended, CompTermFace::Reduced);
+    let lambda = domain.comp_lambda(
+        suspended,
+        crate::Abstraction::Intuitionistic,
+        CompTermFace::Reduced,
+    );
     let applied = stuck_comp(
         &mut domain,
         variable(),
@@ -376,7 +380,11 @@ fn computations_settle_by_their_weak_heads()
         "two returners compare by the values they carry"
     );
 
-    let lambda = domain.comp_lambda(suspended, CompTermFace::Reduced);
+    let lambda = domain.comp_lambda(
+        suspended,
+        crate::Abstraction::Intuitionistic,
+        CompTermFace::Reduced,
+    );
     assert_eq!(
         Ok(Settlement::StructurallyApart),
         convert_computations(&core, &domain, lambda, left),

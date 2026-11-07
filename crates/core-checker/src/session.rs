@@ -199,7 +199,8 @@ pub enum Capture
     Task,
 }
 
-/// How an endpoint escaped its one linear use.
+/// How an endpoint, a buffer, a continuation or a linear function's parameter
+/// escaped its one linear use.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LinearityDefect
 {
@@ -308,6 +309,30 @@ pub enum LinearityDefect
     {
         /// The clause's body.
         clause: ComputationId,
+    },
+    /// A linear function's body read its parameter after its copy was spent:
+    /// the supply holds one copy.
+    LinearSlotConsumed
+    {
+        /// The linear lambda.
+        lambda: ComputationId,
+    },
+    /// A linear function's body ended with its parameter's copy unread, or
+    /// one arm of a case read the copy and another did not.
+    LinearSlotUnconsumed
+    {
+        /// The linear lambda.
+        lambda: ComputationId,
+    },
+    /// A linear function's parameter was read as a value where its read may
+    /// run other than once: inside a thunk, a stack, a recursion, a
+    /// continuation or a fold's step.
+    ShadowCaptured
+    {
+        /// The linear lambda.
+        lambda: ComputationId,
+        /// What may run the read.
+        by: Capture,
     },
 }
 
