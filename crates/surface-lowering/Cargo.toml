@@ -47,12 +47,14 @@ self_cell.workspace = true
 
 # The kernel's content digest witnesses that two spellings readmit as one
 # declaration content; the univalence witnesses name the stratum they lower.
-# The collapse probes check their matchings through the Morse crate.
+# The collapse probes check their matchings through the Morse crate. The
+# e-graph suite closes each corpus block under congruence.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-kernel-core.workspace = true
 gandr-surface-parser.workspace = true
 gandr-theory-discrete-morse.workspace = true
+gandr-theory-e-graphs.workspace = true
 gandr-theory-sites.workspace = true
 
 [features]

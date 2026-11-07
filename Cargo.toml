@@ -52,6 +52,7 @@ members = [
   "crates/theory-deep-inference",
   "crates/theory-discrete-morse",
   "crates/theory-dynamic-graphs",
+  "crates/theory-e-graphs",
   "crates/theory-exact-reals",
   "crates/theory-graded-posets",
   "crates/theory-graphs",
@@ -858,6 +859,7 @@ default-features = false
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
+# - theory-e-graphs
 # - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-coherent-resolutions]
 path = "crates/theory-coherent-resolutions"
@@ -915,6 +917,17 @@ default-features = false
 # - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-dynamic-graphs]
 path = "crates/theory-dynamic-graphs"
+default-features = false
+
+# A proof-producing e-graph over the term table of a Lawvere theory:
+# congruence closure with a proof forest, explanations and their replay, the
+# worklist rebuild, e-class analyses and the phases of a saturation.
+# features:
+# - none: alloc-only classes over the caller's table.
+# consumers:
+# - surface-lowering (dev)
+[workspace.dependencies.gandr-theory-e-graphs]
+path = "crates/theory-e-graphs"
 default-features = false
 
 # Canonical dyadics and oriented intervals with outward-rounded arithmetic.
@@ -1374,6 +1387,7 @@ features = ["span-locations"]
 # - theory-coherent-resolutions (dev)
 # - theory-deep-inference (dev)
 # - theory-dynamic-graphs (dev)
+# - theory-e-graphs (dev)
 # - theory-exact-reals (dev)
 # - theory-graphs (dev)
 # - theory-levitation (dev)
