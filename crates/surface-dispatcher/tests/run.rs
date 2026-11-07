@@ -629,6 +629,83 @@ fn a_script_encloses_the_square_root_of_two_5700()
     }
 }
 
+/// #5707: the randomness exemplar run as a script exits with the sum of two
+/// draws of two bits, from 0 to 6, and prints nothing. The host declines a
+/// draw of 0, 65 or -1 bits and names the cause on standard error first. Each
+/// such run is stuck at the draw, and it prints nothing.
+#[test]
+fn a_script_draws_fair_bits_5707()
+{
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/probability/draws.gandr");
+    let mut console = Captured::default();
+    let mut script = Script::new(exemplar);
+    let run = script.run(&mut console);
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+                ..
+            } if (0_u8 ..= 6_u8).any(|sum| status == ExitStatus::from(sum))
+        ),
+        "the exemplar exits with a sum from 0 to 6: {run:?}"
+    );
+    assert_eq!(
+        (console.lines(), console.errors()),
+        (&[][..], &[][..]),
+        "nothing is printed, and no refusal"
+    );
+
+    for (name, width, cause) in [
+        (
+            "zero",
+            "0",
+            "std.rand.Eff.draw: a width of 0 bits lies outside 1 to 64",
+        ),
+        (
+            "wide",
+            "65",
+            "std.rand.Eff.draw: a width of 65 bits lies outside 1 to 64",
+        ),
+        (
+            "negative",
+            "(0 - 1)",
+            "std.rand.Eff.draw: a width of -1 bits lies outside 1 to 64",
+        ),
+    ] {
+        let source = format!(
+            include_str!("run/unformatted/a-script-draws-fair-bits-5707.gandr"),
+            width = width
+        );
+        let scratch = Scratch::write(
+            Path::new(&format!("rand-{name}-5707")),
+            SourceText::from(source.as_str()),
+        );
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        let run = script.run(&mut console);
+        assert!(
+            matches!(run, ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Ended(Evaluation::Stuck(_)),
+                    ..
+                },
+                ..
+            }),
+            "{name}: the run is stuck at the declined draw: {run:?}"
+        );
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (&[][..], &[cause.to_owned()][..]),
+            "{name}: standard error names the cause, and nothing is printed"
+        );
+    }
+}
+
 /// #5704: a script's profile sets the quotas of its run. Under `default`, an
 /// enclosure of the square root of two no wider than `2^-300` exits 0 and
 /// prints its lower end. Under `bounded`, whose finest precision is

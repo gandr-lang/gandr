@@ -1,0 +1,8 @@
+// `std.rand`: the home of randomness' host interface, `std.rand.Eff`, whose
+// operation draws fair bits from the entropy source of the operating system.
+// A source names the interface where it imports this module,
+// `import std.rand;`, and nowhere else. The interface is native, so no
+// declaration here states it. The randomness capability, distributions and
+// seeded generators wait for demand.
+//
+// - see: #5707
