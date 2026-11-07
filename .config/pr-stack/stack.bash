@@ -148,6 +148,16 @@ record_stack_base() {
   git rev-parse "$1" > "$(git rev-parse --git-path gandr-stack-base)"
 }
 
+# Record the commit a new worktree starts from as its stack base (#5990):
+# `wt:warm` runs it at creation. It writes only while the worktree records
+# no base and `HEAD` is still a commit of `origin/$trunk`, so a rerun after
+# the branch's own commits never moves the record onto them.
+record_start() {
+  [[ -z $(stack_base) ]] || return 0
+  git merge-base --is-ancestor HEAD "origin/$trunk" 2> /dev/null || return 0
+  record_stack_base HEAD
+}
+
 # The commit below the checked-out branch `$1`'s own commits, where its rebase
 # onto the top's branch `$2` starts (#1298). Its own commits are those above
 # `origin/$trunk` and the branch's stack base (`stack_base`, #3877) that no
@@ -331,7 +341,9 @@ restack_moved() {
 # earlier run stacked carries its old top's commits, and the top's head may
 # have moved since, so `evidence:base` no longer names it. The recorded stack
 # base (`stack_base`, #3877) still does, and it measures from there when it
-# lies past what `evidence:base` names (#4064).
+# lies past what `evidence:base` names (#4064). A new worktree records the
+# commit it starts from (`.config/wt.toml`, #5990), so a branch cut from a
+# `landing` that the landing rebase rewrites since measures from that commit.
 measured_from() {
   local base stacked
   git fetch --quiet origin "$trunk"
@@ -339,6 +351,33 @@ measured_from() {
   stacked=$(stack_base)
   if [[ -n $stacked ]] && git merge-base --is-ancestor "$base" "$stacked"; then base=$stacked; fi
   printf '%s\n' "$base"
+}
+
+# Refuse a branch with no recorded stack base that carries commits
+# `origin/$trunk` holds by patch (#5990). The landing rebase rewrites the
+# trunk: a branch cut from the old tip keeps the old commits under their old
+# hashes, and its merge base falls back to an old commit of `main`. So
+# `evidence:base` would read every old commit as the branch's own change.
+# The fork the refusal names is the newest commit the rebase noted under
+# `refs/notes/rebased`, the old tip, or else the newest commit the trunk
+# holds by patch. Prints the refusal and returns 1, or prints nothing.
+rewritten_base() {
+  local held fork commit
+  [[ -z $(stack_base) ]] || return 0
+  git fetch --quiet origin "$trunk"
+  held=$(git cherry "origin/$trunk" HEAD | grep -c '^-' || true)
+  (( held > 0 )) || return 0
+  git fetch --quiet origin '+refs/notes/rebased:refs/notes/rebased' 2> /dev/null || true
+  for commit in $(git rev-list HEAD --not "origin/$trunk"); do
+    if git notes --ref=rebased show "$commit" > /dev/null 2>&1; then
+      fork=$commit
+      break
+    fi
+  done
+  [[ -n ${fork:-} ]] || fork=$(git cherry "origin/$trunk" HEAD | awk '$1 == "-" { last = $2 } END { print last }')
+  printf '%s carries %s commit(s) that origin/%s holds by patch, and its worktree records no stack base: a rewrite of %s left them under its own commits, so every one would read as its change. Replay its own commits with `git rebase --onto origin/%s %s`, then run the task again\n' \
+    "$(git branch --show-current)" "$held" "$trunk" "$trunk" "$trunk" "${fork:0:12}"
+  return 1
 }
 
 # `evidence:base`, the measurement `measured_from` takes once the trunk is

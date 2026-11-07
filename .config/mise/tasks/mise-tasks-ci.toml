@@ -2069,7 +2069,9 @@ list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading"
 # `.config/pr-stack/warm.jq` names each such unit from the dep-info lines
 # that name the primary, and the step removes it. Cargo then builds it again
 # in this worktree. The removal is safe to re-run, and a run that stops
-# half-way leaves a unit cargo builds again.
+# half-way leaves a unit cargo builds again. The step first records the
+# commit the worktree starts from as its stack base (`record_start`, #5990),
+# inside the command `wt` already runs, so no host approves a new one.
 ["wt:warm"]
 description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone, and remove each copied unit that reads the primary's sources"
 tools.jq = "1.8.1"
@@ -2079,6 +2081,8 @@ set -euo pipefail
 primary=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
 here=$(git rev-parse --show-toplevel)
 [[ "$(realpath "$primary")" != "$(realpath "$here")" ]] || exit 0
+source "$here/.config/pr-stack/stack.bash"
+record_start
 probe=$(mktemp "$(realpath "$(git rev-parse --git-common-dir)")/wt-warm-probe.XXXXXX")
 copy=$(mktemp -u "$(dirname "$here")/.wt-warm-probe.$(basename "$here").XXXXXX")
 trap 'rm -f "$probe" "$copy"' EXIT
@@ -4084,7 +4088,12 @@ issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "
 mentions=$(jq -Rrs -L "$claims" 'include "sections"; superseded[]' "$body" \
   | while IFS= read -r key; do { git grep -nIF -e "$key" || true; } | jq -R . | jq -s --arg key "$key" '{($key): .}'; done \
   | jq -s 'add // {}')
-# Measured on a fetched trunk (#3148, `measured_from`).
+# Measured on a fetched trunk (#3148, `measured_from`), and refused first when
+# the branch rides a rewritten trunk with no stack base (#5990).
+if ! refusal=$(rewritten_base); then
+  echo "$refusal" >&2
+  exit 2
+fi
 from=$(measured_from)
 concerns_at() { { git show "$1:ledger/concerns.sql"; printf '%s\n' "$2"; } | sqlite3 -json; }
 ids=$(concerns_at HEAD 'SELECT id, issue FROM concern ORDER BY id;')
