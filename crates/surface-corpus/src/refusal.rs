@@ -2819,7 +2819,13 @@ impl Refusal<'_>
         RefusalName::UnexportedName) | (LoweringRefusal::ShadowedBuiltin { .. },
         RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
         RefusalName::OutOfFragment(_)) | (LoweringRefusal::BareFeedback { .. },
-        RefusalName::BareFeedback) | (LoweringRefusal::IllFormedDescription { .. },
+        RefusalName::BareFeedback) | (LoweringRefusal::IllFormedDescription {
+            kind: gandr_surface_lowering::WfKind::CyclicCircuitWiring
+                | gandr_surface_lowering::WfKind::CircuitDerivationBudget
+                | gandr_surface_lowering::WfKind::SplitCircuitOutputs
+                | gandr_surface_lowering::WfKind::SharedCircuitPort,
+            ..
+        }, RefusalName::MalformedForm) | (LoweringRefusal::IllFormedDescription { .. },
         RefusalName::IllFormedDescription) | (LoweringRefusal::GradedBridge { .. },
         RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
         RefusalName::MalformedLiteral) | (LoweringRefusal::NoUniverseAbove { .. },
@@ -2928,6 +2934,14 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             ..
         } => RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary))),
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
+        LoweringRefusal::IllFormedDescription {
+            kind:
+                gandr_surface_lowering::WfKind::CyclicCircuitWiring
+                | gandr_surface_lowering::WfKind::CircuitDerivationBudget
+                | gandr_surface_lowering::WfKind::SplitCircuitOutputs
+                | gandr_surface_lowering::WfKind::SharedCircuitPort,
+            ..
+        } => RefusalName::MalformedForm,
         LoweringRefusal::IllFormedDescription { .. } => RefusalName::IllFormedDescription,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
