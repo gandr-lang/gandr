@@ -209,6 +209,14 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FragmentBoundary::BareArms => "arms with no `where` before them",
         },
         LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
+        LoweringRefusal::IllFormedDescription {
+            kind:
+                gandr_surface_lowering::WfKind::CyclicCircuitWiring
+                | gandr_surface_lowering::WfKind::CircuitDerivationBudget
+                | gandr_surface_lowering::WfKind::SplitCircuitOutputs
+                | gandr_surface_lowering::WfKind::SharedCircuitPort,
+            ..
+        } => "a circuit wiring that derives no boundary",
         LoweringRefusal::IllFormedDescription { .. } => "what the description check refuses",
         LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
@@ -763,6 +771,14 @@ mod tests
                 FragmentBoundary::BareArms => "arms with no `where` before them",
             },
             LoweringRefusal::BareFeedback { .. } => "fed back, and read under no observation",
+            LoweringRefusal::IllFormedDescription {
+                kind:
+                    gandr_surface_lowering::WfKind::CyclicCircuitWiring
+                    | gandr_surface_lowering::WfKind::CircuitDerivationBudget
+                    | gandr_surface_lowering::WfKind::SplitCircuitOutputs
+                    | gandr_surface_lowering::WfKind::SharedCircuitPort,
+                ..
+            } => "a circuit wiring that derives no boundary",
             LoweringRefusal::IllFormedDescription { .. } => "what the description check refuses",
             LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
             LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",

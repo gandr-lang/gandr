@@ -2803,8 +2803,12 @@ impl Reader<'_, '_>
                 ));
             }
         }
-        let derived = derive_boundaries(&read.body)
-            .map_err(|error| at_rule(SignatureFault::Derivation(error)))?;
+        let derived = derive_boundaries(&read.body).map_err(|error| {
+            at_rule(SignatureFault::Derivation {
+                rule: presented.name.clone(),
+                error,
+            })
+        })?;
         let vars = derive_cell_var_meta(&derived.source);
         let sphere = RuleFace::new(
             derived.source,
