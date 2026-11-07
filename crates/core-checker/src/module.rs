@@ -1612,9 +1612,14 @@ fn decide(
     context.deferrals_mut().signing = Signing::Body;
     let mut signed = finish(context, outer);
     // The holes the signature's formation nominated and bound are read through
-    // their solutions, so the body is judged against the type they fix. A hole
-    // still unbound, a model slot's among them, waits for the body.
+    // their solutions, so the body is judged against the type they fix. A
+    // model slot the signature decides binds first, so a decode in the type
+    // runs the call that omits it (#6158). A hole still unbound, an undecided
+    // slot's among them, waits for the body.
     let formed = direction.and_then(|written| {
+        context
+            .resolve_models(declaration.models(), Signing::Signature)
+            .map_err(|(at, refusal)| call_failure(refusal, at))?;
         let filled = match context.deferrals().solutions(context.arena()) {
             Ok(solutions) if !solutions.is_empty() => formed_filled(context, written, &solutions)?,
             Ok(_) | Err(_) => written,
@@ -2214,7 +2219,7 @@ fn implicits(
     if first.is_err() {
         return (body, direction, first, Solutions::new());
     }
-    if let Err((at, refusal)) = context.resolve_models(models) {
+    if let Err((at, refusal)) = context.resolve_models(models, Signing::Body) {
         return (
             body,
             direction,

@@ -1349,7 +1349,10 @@ fn a_model_slot_resolves_to_the_candidate_its_sort_admits_739()
         candidates: Vec::from([flag, up]),
     };
     let definitions = crate::code::CodeDefinitions::new();
-    assert_eq!(deferrals.resolve(&mut arena, &definitions, &[slot]), Ok(()));
+    assert_eq!(
+        deferrals.resolve(&mut arena, &definitions, &[slot], super::Signing::Body),
+        Ok(())
+    );
     let solutions = deferrals.solutions(&arena);
     assert!(
         solutions.as_ref().is_ok_and(|solved| solved
@@ -1392,7 +1395,10 @@ fn a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755()
         candidates: Vec::from([flag, up]),
     };
     let definitions = crate::code::CodeDefinitions::new();
-    assert_eq!(deferrals.resolve(&mut arena, &definitions, &[slot]), Ok(()));
+    assert_eq!(
+        deferrals.resolve(&mut arena, &definitions, &[slot], super::Signing::Body),
+        Ok(())
+    );
     let solutions = deferrals.solutions(&arena);
     assert!(
         solutions.as_ref().is_ok_and(|solved| solved
@@ -1430,8 +1436,69 @@ fn a_model_slot_two_candidates_answer_is_ambiguous_739()
         );
     let definitions = crate::code::CodeDefinitions::new();
     assert_eq!(
-        deferrals.resolve(&mut arena, &definitions, &[slot]),
+        deferrals.resolve(&mut arena, &definitions, &[slot], super::Signing::Body),
         Err((at, CheckRefusal::ModelAmbiguous { at, survivors }))
+    );
+}
+
+/// A slot the declared type leaves undecided waits for the body (#6158): at
+/// the signature, a slot two candidates of the forced sort answer and one no
+/// candidate answers bind nothing and are not refused; after the body, the
+/// same slots are refused.
+#[test]
+fn a_slot_the_signature_leaves_undecided_waits_for_the_body_6158()
+{
+    // `Up` and `Tens`, both over the integers, and `Flag` alone, over the
+    // unit type, where the argument forces the integers.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (holes, at, [integer, unit]) = forced_slot(&mut arena, &mut deferrals);
+    let ambiguous = gandr_core_term::model::ModelSlot {
+        holes: Vec::from(holes),
+        fixed: Vec::new(),
+        candidates: Vec::from([
+            candidate(&mut arena, integer, ConstantIndex::from(1_usize)),
+            candidate(&mut arena, integer, ConstantIndex::from(3_usize)),
+        ]),
+    };
+    let unanswered = gandr_core_term::model::ModelSlot {
+        holes: Vec::from(holes),
+        fixed: Vec::new(),
+        candidates: Vec::from([candidate(&mut arena, unit, ConstantIndex::from(2_usize))]),
+    };
+    let definitions = crate::code::CodeDefinitions::new();
+    for slot in [&ambiguous, &unanswered] {
+        assert_eq!(
+            deferrals.resolve(
+                &mut arena,
+                &definitions,
+                core::slice::from_ref(slot),
+                super::Signing::Signature
+            ),
+            Ok(()),
+            "the signature refuses no slot it leaves undecided"
+        );
+        assert!(
+            !deferrals
+                .solutions(&arena)
+                .is_ok_and(|solved| solved.contains_key(&holes[1])),
+            "the step stays unbound for the body"
+        );
+    }
+    let after = deferrals.resolve(&mut arena, &definitions, &[ambiguous], super::Signing::Body);
+    assert!(
+        matches!(after, Err((named, CheckRefusal::ModelAmbiguous { at: hole, .. })) if named == at && hole == at),
+        "after the body, two elaborations are refused: {after:?}"
+    );
+    let after = deferrals.resolve(
+        &mut arena,
+        &definitions,
+        &[unanswered],
+        super::Signing::Body,
+    );
+    assert!(
+        matches!(after, Err((named, CheckRefusal::ModelUnanswered { at: hole, .. })) if named == at && hole == at),
+        "after the body, no elaboration is refused: {after:?}"
     );
 }
 
@@ -1458,7 +1525,10 @@ fn two_candidates_passing_one_member_are_one_elaboration_2333()
         candidates: Vec::from([included, including]),
     };
     let definitions = crate::code::CodeDefinitions::new();
-    assert_eq!(deferrals.resolve(&mut arena, &definitions, &[slot]), Ok(()));
+    assert_eq!(
+        deferrals.resolve(&mut arena, &definitions, &[slot], super::Signing::Body),
+        Ok(())
+    );
     let solutions = deferrals.solutions(&arena);
     assert!(
         solutions.as_ref().is_ok_and(|solved| solved
@@ -1480,13 +1550,16 @@ fn a_model_slot_no_candidate_answers_is_refused_739()
     let flag = candidate(&mut arena, unit, ConstantIndex::from(2_usize));
     let definitions = crate::code::CodeDefinitions::new();
     let [refuted, empty] = [Vec::from([flag]), Vec::new()].map(|candidates| {
-        deferrals.resolve(&mut arena, &definitions, &[
-            gandr_core_term::model::ModelSlot {
+        deferrals.resolve(
+            &mut arena,
+            &definitions,
+            &[gandr_core_term::model::ModelSlot {
                 holes: Vec::from(holes),
                 fixed: Vec::new(),
                 candidates,
-            },
-        ])
+            }],
+            super::Signing::Body,
+        )
     });
     for refusal in [refuted, empty] {
         assert!(
@@ -1544,7 +1617,12 @@ fn a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317()
     let mut open = collecting();
     let definitions = crate::code::CodeDefinitions::new();
     assert_eq!(
-        deferrals.resolve(&mut arena, &definitions, &[slot(integer)]),
+        deferrals.resolve(
+            &mut arena,
+            &definitions,
+            &[slot(integer)],
+            super::Signing::Body
+        ),
         Ok(())
     );
     let solutions = deferrals.solutions(&arena);
@@ -1563,7 +1641,12 @@ fn a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317()
             gandr_core_term::model::Survivors::with,
         );
     assert_eq!(
-        open.resolve(&mut arena, &definitions, &[slot(bound)]),
+        open.resolve(
+            &mut arena,
+            &definitions,
+            &[slot(bound)],
+            super::Signing::Body
+        ),
         Err((at, CheckRefusal::ModelAmbiguous { at, survivors })),
         "a fixed type reading the callee's binder refutes neither"
     );

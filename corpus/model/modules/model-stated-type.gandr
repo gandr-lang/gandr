@@ -1,0 +1,48 @@
+// This source shows a comparison in a stated type that the checker decodes.
+// The comparison's call omits its model of `Eq`.
+//
+// A type that decodes a code compares two values to choose the code. So the
+// decode runs the comparison before the checker judges the body.
+//
+// The operands' sort decides the model before the checker judges the body.
+// So the decode of the stated type runs the comparison, as a path endpoint
+// runs it.
+//
+// - see: #6158 — `pathed`, `written`
+// - see: `../../pathological/modules/model-stated-type.gandr` — a slot that the signature leaves undecided
+
+/// Two codes.
+data Code : Type where
+  /// The first.
+  | Yes : Code
+  /// The second.
+  | No : Code
+
+/// The code of a flag.
+def ofFlag(b : Bool) -> Code =
+  match b where
+    | true => Yes
+    | false => No
+
+/// The type that a code decodes to.
+def decoded(c : Code) -> -F Type =
+  match c where
+    | Yes => return String
+    | No => return Unit
+
+/// Equality of codes by a gandr definition, so no native operation takes part.
+module EqCode : Model(Eq) with sort Carrier = Code where
+  /// Any two codes compare equal.
+  def eq(a : Code, b : Code) -> Bool { true }
+  /// Each code equals itself.
+  def refl(a : Code) -> Path[.A = Bool](eq a a, true) { Path.here true }
+  /// The comparison is symmetric.
+  def sym(a : Code, b : Code) -> Path[.A = Bool](eq a b, eq b a) { Path.here true }
+
+/// The comparison as a path endpoint.
+@[ checks ]
+def pathed : Path[.A = Code](ofFlag (Yes == No), Yes) = Path.here Yes;
+
+/// The comparison in a stated type that the checker decodes.
+@[ checks ]
+def written : decoded(ofFlag(Yes == No)) = "x";

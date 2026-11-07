@@ -893,11 +893,15 @@ impl Deferrals
 
     /// Resolve each slot of `models` the running judgement met to the one
     /// candidate the solver's store leaves, binding the slot's holes as that
-    /// candidate's components.
+    /// candidate's components. At [`Signing::Signature`] only a slot the
+    /// signature decides binds, so a decode in the declared type runs the
+    /// call that omits it (#6158); every other slot waits for the body.
     ///
     /// # Specification
-    /// - requires: the judgement over the body has run, so every equation its
-    ///   arguments force has been posed.
+    /// - requires: at [`Signing::Body`], the judgement over the body has run,
+    ///   so every equation its arguments force has been posed; at
+    ///   [`Signing::Signature`], the declared type has formed, and the holes it
+    ///   nominated are the ones met.
     /// - ensures: for each slot, in order, some hole of which the judgement met
     ///   and some hole of which the solver left unbound: each candidate is
     ///   tried in a trial of the store ([`Metas::trial`]), which puts back what
@@ -916,12 +920,16 @@ impl Deferrals
     ///   component at the hole's place, kept in `answered` for
     ///   [`Self::solutions`]. A slot whose met holes are all bound, one none of
     ///   whose holes the judgement met, and a candidate of another arity, or
-    ///   carrying another number of fixed sorts, are left out.
-    /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
-    ///   no candidate is left, naming the type the first met hole the solver
-    ///   bound to a type's code stands for; [`CheckRefusal::ModelAmbiguous`]
-    ///   there, naming the first candidate left and every one not converting
-    ///   with it, when two elaborations are left.
+    ///   carrying another number of fixed sorts, are left out. At
+    ///   [`Signing::Signature`], a slot left with no elaboration or with two
+    ///   binds nothing and is not refused: the resolution after the body
+    ///   decides it, with the equations the body poses. No slot is no work.
+    /// - fails: at [`Signing::Body`] only, [`CheckRefusal::ModelUnanswered`] at
+    ///   the slot's first hole when no candidate is left, naming the type the
+    ///   first met hole the solver bound to a type's code stands for;
+    ///   [`CheckRefusal::ModelAmbiguous`] there, naming the first candidate
+    ///   left and every one not converting with it, when two elaborations are
+    ///   left.
     /// - panics: none.
     ///
     /// # Errors
@@ -939,16 +947,19 @@ impl Deferrals
     ///   type fixes the sort resolves to the candidate of that sort alone; two
     ///   candidates passing the same members are one elaboration; a slot with a
     ///   hole the judgement never met resolves on the others, and its
-    ///   elaboration answers that hole.
+    ///   elaboration answers that hole; at the signature, two candidates of the
+    ///   forced sort and none bind nothing and refuse nothing, and the same
+    ///   slot after the body is refused.
     /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
     /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
     /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
     /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
     /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
     /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
+    /// - witness: `elaboration::tests::a_slot_the_signature_leaves_undecided_waits_for_the_body_6158`
     #[spec(ensures: |ret| match ret {
-        | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
-        | Err((at, refusal)) => matches!(refusal, CheckRefusal::ModelUnanswered { at: named, .. } if named == at),
+        | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => part == Signing::Body && at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
+        | Err((at, refusal)) => part == Signing::Body && matches!(refusal, CheckRefusal::ModelUnanswered { at: named, .. } if named == at),
         | Ok(()) => true,
     })]
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Deferrals"))]
@@ -957,8 +968,12 @@ impl Deferrals
         arena: &mut CoreArena,
         definitions: &crate::code::CodeDefinitions,
         models: &[ModelSlot],
+        part: Signing,
     ) -> Result<(), (ValueId, CheckRefusal)>
     {
+        if models.is_empty() {
+            return Ok(());
+        }
         let met: BTreeMap<HoleId, ValueId> = self
             .nominated
             .iter()
@@ -1030,8 +1045,8 @@ impl Deferrals
                     elaborated = Some(candidate);
                 }
             }
-            match (count, elaborated) {
-                (1, Some(candidate)) => {
+            match (count, elaborated, part) {
+                (1, Some(candidate), _) => {
                     // The solver is a function of the store and the
                     // equations, so solving the survivor's again binds the
                     // holes as its trial did.
@@ -1043,7 +1058,10 @@ impl Deferrals
                         }
                     }
                 },
-                (0, _) | (_, None) => {
+                // The signature leaves the slot undecided: it binds nothing,
+                // and the resolution after the body decides it.
+                (_, _, Signing::Signature) => {},
+                (0, _, Signing::Body) | (_, None, Signing::Body) => {
                     // The first component the call's arguments solved to a
                     // type's code is the type no candidate answers at.
                     let forced = holes
@@ -1061,7 +1079,7 @@ impl Deferrals
                         );
                     return Err((first, CheckRefusal::ModelUnanswered { at: first, forced }));
                 },
-                _ => {
+                (_, _, Signing::Body) => {
                     return Err((first, CheckRefusal::ModelAmbiguous {
                         at: first,
                         survivors,
