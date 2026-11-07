@@ -10,6 +10,9 @@
 # - `rewritten`: it is open and was force-pushed with its last commit
 #   changed; the stack is the lower and the upper, and `pushed_heads` reads
 #   the lower's earlier head as the server would when `held` is true.
+# A case's `artifacts`, when given, is the table of generated artifacts the
+# restack reads before its push (#6144, `REPLAY_ARTIFACTS`): a row whose check
+# fails refuses the restack with nothing pushed.
 # The restack's result is one line compared with the case's `output`:
 # `moved: <the subjects main..upper holds>`, or `refused: <the refusal up to
 # its first semicolon>` and `, moved` should the refused restack have moved
@@ -78,10 +81,15 @@ for (( i = 0; i < count; i++ )); do
       pushed_heads() { printf '%s\n' "$lower_head"; }
     fi
   fi
+  unset REPLAY_ARTIFACTS
+  if [[ $(jq -r ".[$i].artifacts // empty" "$cases") ]]; then
+    jq -c ".[$i].artifacts" "$cases" > "$dir/artifacts.json"
+    export REPLAY_ARTIFACTS=$dir/artifacts.json
+  fi
   if restack "$stack" > "$dir/out" 2>&1; then
     actual="moved: $(git log --format=%s origin/main..origin/upper | paste -sd ',' - | sed 's/,/, /g')"
   else
-    actual="refused: $(grep -o -E '(conflicts in|[^ ]+ does not contain) [^;]*' "$dir/out" | head -n 1 || true)"
+    actual="refused: $(grep -o -E '(conflicts in|[^ ]+ does not contain) [^;]*|leaves the artifacts above stale' "$dir/out" | head -n 1 || true)"
     [[ $(git rev-parse origin/upper) == "$upper_head" ]] || actual+=", moved"
   fi
   cd - > /dev/null
