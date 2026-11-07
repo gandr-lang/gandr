@@ -1,16 +1,18 @@
-// A model does not reach a function through its theory's value, nor an inert
-// field outside the manifest step.
+// A model does not reach a function through a theory variable, nor an inert
+// field or a package's entries outside an inert declaration.
 //
 // A generic encoder over a module needs the type of a model from the value of
-// its theory. It also reads every field of the model.
+// its theory, and it reads every field of the model. `std.build` computes
+// the entries' type from the value instead, and its maps read inert fields.
 //
 // `Model` reads the name of a theory, so a `Theory` variable names no model
-// type. Only the manifest step reads an inert field of a model.
+// type. Only the manifest step and an inert declaration read an inert field
+// of a model, and the entries of a package's model hold its inert fields.
 //
 // - see: #4730
-// - see: #6046 — what a generic encoder over a module needs
+// - see: #6046 — the entries' type that a theory's value computes
 // - see: `../../model/desc/module-reflection.gandr` — what reaches a module
-import std.build (Gandr);
+import std.build (Gandr, modelType, packageEntries, packagePresentation, render);
 import std.string (concat);
 
 /// An encoder for the model of any theory. `Model(T)` over the variable `T`
@@ -23,3 +25,12 @@ def encodeAny(T : Theory, m : Model T) -> String = "";
 @[ refuses("InertRead") ]
 def manifest(m : Model (Gandr.Package)) -> String =
   concat (concat "name = " m.name) (concat "\nversion = " m.version)
+
+/// A package's entries, read by a declaration with no `@[ inert ]`. The
+/// entries hold the model's inert fields, so this is refused.
+@[ refuses("InertRead") ]
+def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) { packageEntries m }
+
+/// A package's lines, written by a declaration with no `@[ inert ]`.
+@[ refuses("InertRead") ]
+def written(m : Model (Gandr.Package)) -> String { render m }
