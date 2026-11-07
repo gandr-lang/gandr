@@ -37,7 +37,7 @@ INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','equivalence','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
-INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions','theory-deep-inference','reduction','exemplar','2d9240fef6e0a8e25c76db406c83ddfa1a0fe2b0','2026-11-07','ca45b40a906c65e000da738a7afaca52b8354958');
+INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions','theory-deep-inference','reduction','exemplar','f01741441dc411ff1eb29142d99d54c48965102a','2026-11-07','abb9aefd3bf06b8310883061acfc2472f6b68e32');
 INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
@@ -50,7 +50,7 @@ INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checke
 INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-cellular-sheaves','reduce','exemplar','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cefb8f38f0d424c785ee151c639ea3772dacb53d');
 INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-discrete-morse','reduct','exemplar','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','e2806ee9859d5431b49caf4b760e4fe27ba94efa');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background','3cc295c4012bcfe85b1893fcf530d1d65daddea8','2026-11-07','3e3ee54c5f13f677b33e85f939b2276527df2059');
+INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','equivalence','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','reduction','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-exact-reals','graph','exemplar','6099d43c994e63da017541bf4588861828115dc1','2026-11-07','e18d0d9572b33421d9960d9d8bf1df8b5df19439');
@@ -69,7 +69,7 @@ INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere::brown','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','triple','dependency',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','surface-dispatcher','cells::fusion','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-cell-complexes','alphabet','newest','4932b17daeb4a275c0daef9c897b1675b3db7053','2026-11-07','bf6997119a02467715b6559415cec8dcf840a52a');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-deep-inference','shift','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','6bc30c8da526d378521d82a4fbbbe26219b64de2');
@@ -134,13 +134,13 @@ INSERT INTO reference VALUES('arXiv:1804.07832','theory-circuit-algebras','','ba
 INSERT INTO reference VALUES('arXiv:1908.05808','storage-artifact','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:1908.05808','storage-records','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2001.11001','theory-levitation','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2005.04453','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2005.04453','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('arXiv:2012.01847','theory-circuit-algebras','normal_form::spider','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2102.06275','surface-lowering','model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2104.14686','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2104.14686','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2104.14686','theory-computads','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2104.14686','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2104.14686','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('arXiv:2105.02842','theory-virtual-doctrines','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2109.06049','theory-circuit-algebras','overlap','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2109.12106','theory-circuit-algebras','','background',NULL,NULL,NULL);
@@ -172,7 +172,7 @@ INSERT INTO reference VALUES('arXiv:2501.17869','theory-virtual-doctrines','','b
 INSERT INTO reference VALUES('arXiv:2504.08946','core-incremental','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2504.08946','surface-session','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2504.08946','theory-order-maintenance','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2505.20009','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2505.20009','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('arXiv:2505.20121','theory-path-orders','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2505.20121','theory-path-orders','lpo','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2508.16848','surface-grammar','','background',NULL,NULL,NULL);
@@ -270,7 +270,7 @@ INSERT INTO reference VALUES('doi:10.1017/s0960129522000123','theory-circuit-alg
 INSERT INTO reference VALUES('doi:10.1017/s0960129522000317','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1017/s0960129522000317','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1017/s0960129522000317','theory-computads','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1017/s0960129522000317','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1017/s0960129522000317','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('doi:10.1023/a:1023064908962','surface-lowering','lower::capability::theory','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1051/ita:2002009','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1073/pnas.50.5.869','surface-lowering','model','background',NULL,NULL,NULL);
@@ -278,7 +278,7 @@ INSERT INTO reference VALUES('doi:10.1090/s0002-9947-00-02653-2','core-checker',
 INSERT INTO reference VALUES('doi:10.1093/logcom/1.4.497','core-unify','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1098/rsta.2005.1650','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1109/lics.1999.782635','theory-path-orders','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.1109/lics52264.2021.9470758','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1109/lics52264.2021.9470758','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('doi:10.1109/tpds.2020.2984632','storage-chunker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1142/s0219199720500558','theory-decomposition-spaces','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/1187436.1210590','theory-dynamic-graphs','','background',NULL,NULL,NULL);
@@ -381,7 +381,7 @@ INSERT INTO reference VALUES('doi:10.2140/agt.2021.21.1267','theory-decompositio
 INSERT INTO reference VALUES('doi:10.2168/lmcs-11(1:3)2015','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.2168/lmcs-11(4:3)2015','theory-path-orders','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.2168/lmcs-11(4:3)2015','theory-path-orders','lpo','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.2168/lmcs-4(1:9)2008','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.2168/lmcs-4(1:9)2008','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('doi:10.23638/lmcs-16(1:10)2020','surface-lowering','model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.23658/taltech.47/2025','theory-graded-posets','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.32408/compositionality-4-5','storage-schema','','background',NULL,NULL,NULL);
@@ -390,13 +390,13 @@ INSERT INTO reference VALUES('doi:10.4204/eptcs.275.6','core-term','relocation',
 INSERT INTO reference VALUES('doi:10.4204/eptcs.275.6','core-term','support','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4204/eptcs.275.6','core-unify','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4204/eptcs.323.4','theory-coherent-resolutions','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.4204/eptcs.323.4','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.4204/eptcs.323.4','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('doi:10.4204/eptcs.372.23','theory-decomposition-spaces','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.4204/eptcs.372.23','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.4204/eptcs.372.23','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('doi:10.4204/eptcs.380.7','theory-graded-posets','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4230/lipics.calco.2019.20','theory-circuit-algebras','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4230/lipics.concur.2024.35','theory-nominal-automata','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('doi:10.4230/lipics.fscd.2022.22','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.4230/lipics.fscd.2022.22','theory-deep-inference','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','604a0db1784fec8724108b5b6bd8989bfcad061a');
 INSERT INTO reference VALUES('doi:10.4230/lipics.fscd.2023.17','theory-virtual-doctrines','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4230/lipics.fscd.2024.10','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.4230/lipics.fscd.2024.10','theory-levitation','first_order','background',NULL,NULL,NULL);
@@ -424,7 +424,7 @@ INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kerne
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-checker','judgement::native','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','2d9240fef6e0a8e25c76db406c83ddfa1a0fe2b0','2026-11-07','ca45b40a906c65e000da738a7afaca52b8354958');
+INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','f01741441dc411ff1eb29142d99d54c48965102a','2026-11-07','abb9aefd3bf06b8310883061acfc2472f6b68e32');
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
@@ -629,8 +629,9 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere::brown','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','anchor','2d9240fef6e0a8e25c76db406c83ddfa1a0fe2b0','2026-11-07','ca45b40a906c65e000da738a7afaca52b8354958');
-INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','anchor','f01741441dc411ff1eb29142d99d54c48965102a','2026-11-07','abb9aefd3bf06b8310883061acfc2472f6b68e32');
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','sum','anchor','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','d0cdb8d1085104a2bb11fc971d543c12d4765c7e');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-probability','','exemplar','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','234f19cce3f96fa69a4cea4c6ff5b3cbaadb754d');
