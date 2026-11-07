@@ -265,6 +265,21 @@ pub fn integer_literal() -> Literal
     Literal::Integer(IntegerLiteral::new(Sign::NonNegative, Magnitude::zero()))
 }
 
+/// A nonnegative integer literal from decimal `digits`, minted fresh in
+/// `arena`.
+///
+/// # Specification
+/// trivial.
+pub fn integer(
+    arena: &mut CoreArena,
+    digits: String,
+) -> ValueId
+{
+    let magnitude = Magnitude::from_decimal_text(digits).expect("the fixture has decimal digits");
+    let literal = Literal::Integer(IntegerLiteral::new(Sign::NonNegative, magnitude));
+    arena.value_literal(literal)
+}
+
 /// The empty string literal.
 ///
 /// # Specification

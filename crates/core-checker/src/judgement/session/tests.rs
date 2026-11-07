@@ -416,12 +416,7 @@ fn integer(
     Spelled(digits): Spelled,
 ) -> ValueId
 {
-    let magnitude = gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits))
-        .expect("the digits are decimal");
-    arena.value_literal(Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
-        gandr_kernel_term::Sign::NonNegative,
-        magnitude,
-    )))
+    crate::fixture::integer(arena, String::from(digits))
 }
 
 /// `(x : Integer) ⊸ codomain` at the multiplicity `digits` spells.
