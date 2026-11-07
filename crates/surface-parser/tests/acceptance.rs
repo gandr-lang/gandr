@@ -1489,6 +1489,62 @@ fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Bo
     Ok(())
 }
 
+/// A group pattern whose first label has no dot recovers with the one
+/// missing tile, and the declaration around it stays one form.
+///
+/// The missing `.` leaves the positional group `(rem` open, and the `=` after
+/// `rem` starts the entry with a label as a fragment whose head is absent.
+/// When the closer of the group ends only the fragment, the group stays open,
+/// the `=` of the `let` starts a second fragment, and the declaration
+/// recovers with 8 obligations and loses its name (#5795). The closer ends
+/// the group as well.
+#[test]
+fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Box<dyn Error>>
+{
+    let declaration = |entries: &str| {
+        format!(
+            include_str!(
+                "acceptance/unformatted/a-split-group-closes-at-its-written-closer-5795.gandr"
+            ),
+            entries = entries
+        )
+    };
+    let whole = declaration(".rem = r, .quot = q");
+    let whole = parse(built(), SourceText::from(whole.as_str()))?;
+    assert!(
+        bool::from(whole.is_clean()),
+        "the group with both labels molds whole"
+    );
+    let source = declaration("rem = r, .quot = q");
+    let result = parse(built(), SourceText::from(source.as_str()))?;
+    let equals = source
+        .find("rem =")
+        .map(|at| at.saturating_add("rem ".len()))
+        .ok_or("the first entry is written")?;
+    let owed: Vec<(Oblig, usize)> = result
+        .obligations()
+        .iter()
+        .map(|obligation| (obligation.class, usize::from(obligation.span.start())))
+        .collect();
+    assert_eq!(
+        vec![(Oblig::MissingTile, equals)],
+        owed,
+        "the split group owes only the head of its entry with a label"
+    );
+    let root = result.tree().root();
+    let declarations: Vec<String> = children(result.tree(), root)
+        .into_iter()
+        .filter(|&id| matches!(label_of(result.tree(), id), Some(NodeLabel::Meld(_))))
+        .map(|id| text(result.tree(), id))
+        .collect();
+    assert_eq!(
+        vec![source.trim_end()],
+        declarations,
+        "the declaration stays one form, its `let` whole"
+    );
+    Ok(())
+}
+
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
