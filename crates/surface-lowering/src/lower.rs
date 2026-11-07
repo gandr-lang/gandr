@@ -3676,6 +3676,12 @@ struct Lowerer<'run, 'source>
     untranslated: BTreeSet<InstanceIndex>,
     /// The arguments every planned application reads, stretch by stretch.
     operands: ByForm<NodeIndex>,
+    /// The rungs every planned conditional reads, stretch by stretch.
+    else_ifs: ByForm<(
+        NodeIndex,
+        Block,
+        Maybe<native::Answer, native::answered::Absent>,
+    )>,
     /// The segments every planned interpolated string reads, stretch by
     /// stretch.
     segments: ByForm<TextSegment>,
@@ -5914,6 +5920,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             faults: BTreeMap::new(),
             untranslated: BTreeSet::new(),
             operands: ByForm::default(),
+            else_ifs: ByForm::default(),
             segments: ByForm::default(),
             statements: ByForm::default(),
             parameters: ByForm::default(),
@@ -7161,6 +7168,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         self.scope.enter(form);
         self.operands.enter(form);
+        self.else_ifs.enter(form);
         self.segments.enter(form);
         self.statements.enter(form);
         self.parameters.enter(form);
