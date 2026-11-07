@@ -99,6 +99,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a flow's code is demanded by a `via` alone.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each a malformed source.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-quantities-probability) — the exact discrete semantics of a probability effect, which `distributed` settles.
+- `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: data owns rules.
 
 ## License
 

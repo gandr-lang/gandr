@@ -1,0 +1,17 @@
+error[IllFormedDescription]: a rule applies `L`, which the signature does not declare
+   ╭▸ corpus/pathological/desc/data-rule-refusal.gandr:25:3
+   │
+25 │   rule : FixedAsk k <=> k L;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ├ note: `FixedShfy` is refused with IllFormedDescription, as its expectation states
+   ╰ help: declare the operation in the signature, or write the rule over operations it declares
+
+error[IllFormedDescription]: a rule uses `k` where no port binds it over the same sorts
+   ╭▸ corpus/pathological/desc/data-rule-refusal.gandr:25:3
+   │
+25 │   rule : FixedAsk k <=> k L;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+   │
+   ├ note: `FixedShfy` is refused with IllFormedDescription, as its expectation states
+   ╰ help: use the variable where a port binds it over the same sorts, with one argument for each variable it binds
