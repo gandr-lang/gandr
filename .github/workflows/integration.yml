@@ -67,7 +67,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: gh workflow run integration.yml --ref "$DEFAULT_BRANCH"
+        # A dispatch that GitHub refuses with a server error loses the cycle
+        # of this push, so the step tries again, four times at most.
+        run: |
+          for wait in 0 10 30 60; do
+            sleep "$wait"
+            if gh workflow run integration.yml --ref "$DEFAULT_BRANCH"; then exit 0; fi
+          done
+          exit 1
 
   # The cycle's one step (`ci:cycle`): it reads the verdict, fast-forwards
   # `main` on green, takes `landing` into `integration`, keeps the known-red

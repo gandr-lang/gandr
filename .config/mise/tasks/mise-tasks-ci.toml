@@ -1456,6 +1456,17 @@ say() {
   if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n\n' "$1" >> "$GITHUB_STEP_SUMMARY"; fi
 }
 tip() { gh api "repos/$repo/git/ref/heads/$1" --jq .object.sha; }
+# A dispatch that GitHub refuses with a server error loses the cycle, so a
+# dispatch tries again, four times at most.
+dispatch() {
+  local wait
+  for wait in 0 10 30 60; do
+    sleep "$wait"
+    if gh workflow run "$@"; then return 0; fi
+  done
+  return 1
+}
+merged_main=false
 running() {
   gh run list --repo "$repo" --workflow ci.yml --branch integration --event workflow_dispatch --limit 100 \
     --json databaseId,status,conclusion,headSha,url
@@ -1492,14 +1503,32 @@ if [[ $conclusion == success ]]; then
         say "main stays at ${main:0:12}: GitHub refuses its fast-forward to ${sha:0:12}: $(< "$scratch/main.err")"
       fi
       ;;
-    diverged) say "main stays at ${main:0:12}: it does not hold the passing ${sha:0:12} as its ancestor" ;;
+    diverged)
+      # main holds a commit that integration lacks: a fix pushed to main. The
+      # merges API takes main into integration, so the next passing cycle
+      # holds main and moves it forward.
+      if [[ -z $write ]]; then
+        say "main stays at ${main:0:12}: it does not hold the passing ${sha:0:12} as its ancestor; would merge main into integration"
+      elif gh api "repos/$repo/merges" -f base=integration -f head="$main" \
+        -f commit_message="Merge main at ${main:0:12} into integration" > /dev/null 2> "$scratch/main-merge.err"; then
+        merged_main=true
+        say "main stays at ${main:0:12}: it does not hold the passing ${sha:0:12} as its ancestor, so main merges into integration"
+      else
+        say "main stays at ${main:0:12}: it does not merge into integration, and the fixer merges it there by hand: $(< "$scratch/main-merge.err")"
+        exit 1
+      fi
+      ;;
   esac
 fi
 
 say "$(jq -r .line <<< "$decision")"
 conflict=null
 if [[ -n $write ]]; then
-  case $(jq -r .take <<< "$decision") in
+  take=$(jq -r .take <<< "$decision")
+  # After main merges in, integration holds a commit past landing, so
+  # landing merges rather than fast-forwards.
+  if [[ $merged_main == true && $take == fast-forward ]]; then take=merge; fi
+  case $take in
     fast-forward)
       gh api -X PATCH "repos/$repo/git/refs/heads/integration" -f sha="$landing" -F force=false > /dev/null
       ;;
@@ -1600,7 +1629,15 @@ runners() {
   echo null
 }
 
-if [[ $(jq -r .dispatch <<< "$decision") == true && $conflict == null ]]; then
+# A take that does not merge leaves the tip of integration as it stands. The
+# suite still tests that tip once, as when landing holds nothing new, so the
+# fixer's commits never wait on the hand merge.
+start=$(jq -r .dispatch <<< "$decision")
+if [[ $conflict != null ]]; then
+  start=$(jq -r --arg tip "$(tip integration)" '.verdict == null or .verdict.sha != $tip' <<< "$decision")
+  if [[ $start == true ]]; then say "No verdict names the tip of integration, so the suite starts there."; fi
+fi
+if [[ $start == true ]]; then
   choice=$(runners | jq -c -s '{runners: .[0]}' | jq -c -f "$here/runner.jq")
   say "$(jq -r .line <<< "$choice")"
   runner=$(jq -r .runner <<< "$choice")
@@ -1608,7 +1645,7 @@ if [[ $(jq -r .dispatch <<< "$decision") == true && $conflict == null ]]; then
     say "would dispatch ci.yml on integration with the input cycle on the $runner runner"
     exit 0
   fi
-  gh workflow run ci.yml --repo "$repo" --ref integration -f cycle=true -f runner="$runner"
+  dispatch ci.yml --repo "$repo" --ref integration -f cycle=true -f runner="$runner"
   say "The cycle dispatches ci.yml on integration on the $runner runner."
 fi
 {% endraw %}'''
