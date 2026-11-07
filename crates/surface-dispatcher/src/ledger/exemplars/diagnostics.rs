@@ -125,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 68_usize] = [
+const OWED: [(&str, Owed); 69_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -383,6 +383,13 @@ const OWED: [(&str, Owed); 68_usize] = [
         "OutOfFragment.SortParameter",
         Owed::Unreachable(Reason(
             "the lowering mints a universe only at a ground sort",
+        )),
+    ),
+    (
+        "OutOfFragment.Qubit",
+        Owed::Unreachable(Reason(
+            "the bridge withholds a declaration that names a qubit from the kernel, so the \
+             declaration keeps the checker's verdict",
         )),
     ),
     (

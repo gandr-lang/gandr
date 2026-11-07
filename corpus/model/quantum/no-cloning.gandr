@@ -15,11 +15,9 @@
 import std.quantum (Qubit);
 
 /// The identity gate takes its qubit once and returns it.
-@[ checks ]
 def gate(q : Qubit) ⊸ Qubit = q;
 
 /// Three gates nest. Each gate takes the qubit that the inner gate gives.
-@[ checks ]
 def thrice(q : Qubit) ⊸ Qubit = gate (gate (gate (q)));
 
 /// A copy of the qubit spends its one copy twice.
@@ -41,9 +39,11 @@ def zero : Qubit = ?;
 /// A data field holds its value as a binder at `->` does.
 @[ refuses("ComonoidAbsent") ]
 data Box : Type where
+  /// The box that holds the qubit `q`.
   | MkBox : (q : Qubit) --> Box
 
 /// A data parameter holds its value in types only, and a qubit has no discard.
 @[ refuses("ComonoidAbsent") ]
 data Tagged(q : Qubit) : Type where
-  | Tag : Tagged(q)
+  /// The one tag at the qubit `q`.
+  | Tag : Tagged q

@@ -4035,7 +4035,7 @@ fn computation_formers(
 ///   declaration and arity, a record's labels, a patched type's fixed labels, a
 ///   product's or sum's width, a lift's or element's target, a stage, a region,
 ///   a session's protocol and state, a world's shape, and a base type,
-///   universe, abstract type, unknown type or buffer whole.
+///   universe, abstract type, unknown type, buffer or qubit whole.
 ///   [`CertificateEquality::Different`] otherwise, and for two capabilities,
 ///   which [`pair_step`] pairs itself.
 /// - panics: none.
@@ -4124,7 +4124,8 @@ fn value_type_formers(
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)
             | ValueType::Unknown
-            | ValueType::Buffer),
+            | ValueType::Buffer
+            | ValueType::Qubit),
             _,
         ) => a == b,
         (
@@ -6807,6 +6808,9 @@ mod tests
         let unknowns = [(); 2].map(|()| arena.comp_type_unknown());
         let [twin, same] = unknowns.map(|unknown| arena.value_type_thunk(unknown));
         cases.push((twin, same, alloc::vec![], "an unknown computation type"));
+        let [twin, same] = [(); 2].map(|()| arena.value_type_qubit());
+        let buffer = arena.value_type_buffer();
+        cases.push((twin, same, alloc::vec![buffer], "the qubit type"));
 
         for (twin, same, others, what) in cases {
             assert_eq!(
