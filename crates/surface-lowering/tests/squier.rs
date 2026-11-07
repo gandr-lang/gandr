@@ -75,14 +75,12 @@ use gandr_theory_computads::Term;
 use gandr_theory_discrete_morse::Abelian;
 use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Chain;
-use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Composites as _;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Incidence;
-use gandr_theory_discrete_morse::Invertibility;
+use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::Reduction as _;
-use gandr_theory_discrete_morse::Scheme;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_discrete_morse::equivalence;
 use gandr_theory_levitation::FreeTerm;
@@ -1140,92 +1138,6 @@ fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
     );
 }
 
-/// One pair of a scheme's matching, read alone: the pair keeps its classes,
-/// and every other cell is critical. The scheme's faces are read unchanged.
-struct Alone<'scheme, S>
-where
-    S: Scheme,
-{
-    /// The scheme read.
-    scheme: &'scheme mut S,
-    /// The redundant cell of the pair.
-    redundant: S::Cell,
-    /// Its partner one dimension up.
-    partner: S::Cell,
-}
-
-impl<S> Complex for Alone<'_, S>
-where
-    S: Scheme,
-{
-    type Cell = S::Cell;
-    type Fault = S::Fault;
-
-    /// The scheme's standing.
-    ///
-    /// # Specification
-    /// trivial.
-    fn standing(
-        &mut self,
-        cell: &S::Cell,
-    ) -> Result<Standing, S::Fault>
-    {
-        self.scheme.standing(cell)
-    }
-
-    /// The scheme's faces.
-    ///
-    /// # Specification
-    /// trivial.
-    fn faces(
-        &mut self,
-        cell: &S::Cell,
-        faces: &mut Vec<(S::Cell, Incidence)>,
-    ) -> Result<(), S::Fault>
-    {
-        self.scheme.faces(cell, faces)
-    }
-
-    /// The scheme's pairing condition.
-    ///
-    /// # Specification
-    /// trivial.
-    fn pairing(
-        &mut self,
-        face: &S::Cell,
-        cell: &S::Cell,
-        incidence: Incidence,
-    ) -> Result<Invertibility, S::Fault>
-    {
-        self.scheme.pairing(face, cell, incidence)
-    }
-}
-
-impl<S> Scheme for Alone<'_, S>
-where
-    S: Scheme,
-{
-    /// The pair's classes, and critical for every other cell.
-    ///
-    /// # Specification
-    /// trivial.
-    fn class(
-        &mut self,
-        cell: &S::Cell,
-    ) -> Result<Class<S::Cell>, S::Fault>
-    {
-        Ok(if *cell == self.redundant {
-            Class::Redundant(self.partner.clone())
-        }
-        else if *cell == self.partner {
-            Class::Collapsible(self.redundant.clone())
-        }
-        else {
-            Class::Critical
-        })
-    }
-}
-
 /// A cell of a unary block's written presentation.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Written
@@ -1236,17 +1148,14 @@ enum Written
     Rule(usize),
 }
 
-/// A unary block's written presentation as integer chains, with one pair
-/// matched. A rule's faces are the letters of its left side less those of its
-/// right side.
+/// A unary block's written presentation as integer chains. A rule's faces are
+/// the letters of its left side less those of its right side.
 struct Presented<'strings>
 {
     /// The rules.
     strings: &'strings Strings,
     /// The number of letters.
     letters: LetterCount,
-    /// The matched letter, then its rule.
-    pair: (Written, Written),
 }
 
 impl Complex for Presented<'_>
@@ -1314,30 +1223,6 @@ impl Complex for Presented<'_>
     }
 }
 
-impl Scheme for Presented<'_>
-{
-    /// The pair's classes, and critical for every other cell.
-    ///
-    /// # Specification
-    /// trivial.
-    fn class(
-        &mut self,
-        cell: &Written,
-    ) -> Result<Class<Written>, Infallible>
-    {
-        let (letter, rule) = self.pair;
-        Ok(if *cell == letter {
-            Class::Redundant(rule)
-        }
-        else if *cell == rule {
-            Class::Collapsible(letter)
-        }
-        else {
-            Class::Critical
-        })
-    }
-}
-
 /// The `IntOp` block of the corpus, the one unary block whose rule defines a
 /// letter, with that rule's place.
 ///
@@ -1377,8 +1262,8 @@ fn the_intop_letter_drops_by_one_tietze_move_before_brown_collapse_6059()
     // complex holds no cell of `pred`, which is no normal form, so Brown's
     // scheme removes no pair of it. The drop is one Tietze move on the
     // written presentation, the backward (T1) of § 5.1.1 of Ara and others.
-    // The letter with its rule, matched alone on the presentation's chains,
-    // is an equivalence that replays and defines the letter as `P`. Brown's
+    // The letter with its rule, stated alone on the presentation's chains, is
+    // an equivalence that replays and defines the letter as `P`. Brown's
     // critical cells of dimensions one and two spell what the move leaves.
     let (block, RuleIndex(rule)) = intop();
     let (ref left, ref right) = *block.strings.rules.get(rule).expect("the rule is a rule");
@@ -1393,14 +1278,15 @@ fn the_intop_letter_drops_by_one_tietze_move_before_brown_collapse_6059()
     let mut written = Presented {
         strings: &block.strings,
         letters: block.letters,
-        pair: (Written::Letter(letter), Written::Rule(rule)),
     };
+    let tietze = Matching::stated([(Written::Letter(letter), Written::Rule(rule))]);
+    let mut moved = tietze.on(&mut written);
     let presented: Vec<Written> = (0 .. block.letters.0)
         .map(|at| Written::Letter(Letter(at)))
         .chain((0 .. block.strings.rules.len()).map(Written::Rule))
         .collect();
     let room = Budget::from(presented.len());
-    let mut chains = Abelian::new(&mut written);
+    let mut chains = Abelian::new(&mut moved);
     let one = equivalence(&mut chains, &presented, room).expect("one pair is acyclic");
     one.replay(&mut chains, &presented, room)
         .expect("the move replays");
@@ -1468,7 +1354,7 @@ fn the_intop_letter_drops_by_one_tietze_move_before_brown_collapse_6059()
 fn brown_collapse_of_intop_factors_through_its_tietze_moves_6059()
 {
     // Each removal of Brown's scheme on `IntOp`'s bar complex removes a cell
-    // that its partner defines: one Tietze move of the resolution. Matched
+    // that its partner defines: one Tietze move of the resolution. Stated
     // alone, each removal is an equivalence that replays, and the scheme
     // collapses each cell as its moves do, the last removal first.
     let (block, _) = intop();
@@ -1495,11 +1381,8 @@ fn brown_collapse_of_intop_factors_through_its_tietze_moves_6059()
         moved.push(chains.generator(cell).expect("the cell is a generator"));
     }
     for removal in scheme.removals().iter().rev() {
-        let mut alone = Alone {
-            scheme: &mut theory,
-            redundant: removal.redundant().clone(),
-            partner: removal.partner().clone(),
-        };
+        let tietze = Matching::stated([(removal.redundant().clone(), removal.partner().clone())]);
+        let mut alone = tietze.on(&mut theory);
         let mut chains = Abelian::new(&mut alone);
         let one = equivalence(&mut chains, &cells, room).expect("one pair is acyclic");
         assert_eq!(one.removals().len(), 1, "the move removes one pair");

@@ -30,6 +30,7 @@ use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Images;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Invertibility;
+use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::Reduction as _;
 use gandr_theory_discrete_morse::Refusal;
 use gandr_theory_discrete_morse::Scheme;
@@ -225,19 +226,26 @@ fn the_braid_monoid_keeps_two_confluences()
 fn each_removal_of_the_braid_reduction_is_one_tietze_move_6059()
 {
     // A removal is a Tietze removal: its triple's 4-cell shows the confluence
-    // superfluous, a collapsible 3-sphere in § 7.4.6 of Ara and others. Matched
+    // superfluous, a collapsible 3-sphere in § 7.4.6 of Ara and others. Stated
     // alone, the pair is an equivalence that replays, and the reduction
-    // collapses each cell as its moves do, the last removal first.
+    // collapses each cell as its moves do, the last removal first. Each move
+    // reads its own copy of the basis, because the moves are read at once.
     let store = braid();
     let certificates = certificates(&store);
     let basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
     let cells = basis.cells();
     let mut whole = basis.clone();
     let reduction = equivalence(&mut whole, &cells, walk()).expect("the reduction is acyclic");
+    let stated: Vec<Matching<BasisCell>> = reduction
+        .removals()
+        .iter()
+        .map(|removal| Matching::stated([(*removal.redundant(), *removal.partner())]))
+        .collect();
+    let mut copies: Vec<_> = stated.iter().map(|_| basis.clone()).collect();
     let mut moves = Vec::new();
-    for removal in reduction.removals() {
+    for ((removal, matching), copy) in reduction.removals().iter().zip(&stated).zip(&mut copies) {
         let pair = (*removal.redundant(), *removal.partner());
-        let mut alone = basis.clone().with_matching([pair]);
+        let mut alone = matching.on(copy);
         let one = equivalence(&mut alone, &cells, walk()).expect("one pair is acyclic");
         let [ref only] = *one.removals()
         else {
@@ -317,7 +325,8 @@ fn the_reduction_passes_the_collapse_and_a_cycle_is_refused()
         "the reduction is an acyclic matching"
     );
     let ([_, _, c, d], [_, _, sasasas, sasasaa]) = names();
-    let mut cyclic = basis.with_matching([(c, sasasaa), (d, sasasas)]);
+    let stated = Matching::stated([(c, sasasaa), (d, sasasas)]);
+    let mut cyclic = stated.on(&mut basis);
     let checked = collapse(&mut cyclic, &cells, walk()).expect("the walk stays in budget");
     assert_ne!(checked.faults().cycles, Count::default());
     assert!(
@@ -351,7 +360,8 @@ fn a_confluence_under_a_context_is_refused_at_the_incidence_one()
             .expect("the pairing reads"),
         Invertibility::NotInvertible
     );
-    let mut whiskered = basis.with_matching([(b, sasta)]);
+    let stated = Matching::stated([(b, sasta)]);
+    let mut whiskered = stated.on(&mut basis);
     assert!(matches!(
         equivalence(&mut whiskered, &cells, walk()),
         Err(Refusal::Unpairable(count)) if count == Count::from(1_usize)

@@ -746,30 +746,6 @@ impl<'basis, A: CellAlphabet> Basis<'basis, A>
         })
     }
 
-    /// The basis with the matching that `pairs` states in the place of its
-    /// own: each redundant confluence with its partner triple. Nothing trusts
-    /// the matching: [`collapse`](gandr_theory_discrete_morse::collapse())
-    /// checks it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn with_matching<Pairs>(
-        mut self,
-        pairs: Pairs,
-    ) -> Self
-    where
-        Pairs: IntoIterator<Item = (BasisCell, BasisCell)>,
-    {
-        self.classes.clear();
-        for (redundant, partner) in pairs {
-            let _ = self.classes.insert(redundant, Class::Redundant(partner));
-            let _ = self.classes.insert(partner, Class::Collapsible(redundant));
-        }
-        self
-    }
-
     /// The cells of the basis: each confluence, then each triple whose
     /// boundary is built.
     ///
