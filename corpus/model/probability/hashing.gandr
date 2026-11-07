@@ -1,0 +1,45 @@
+// Two distinct keys collide under the multiply-shift family of `std.hash`
+// with an exact probability, over a uniform odd multiplier.
+//
+// A universal family bounds the probability of a collision for any pair of
+// keys. So a hash table that draws its multiplier needs no assumption about
+// its keys. At `w = 8` and `m = 2` the bound is `2 / 2^m`, or `1/2`.
+//
+// `multiplier 8` draws 8 bits and sets the lowest bit, so each of the 128 odd
+// multipliers has the weight `1/128`. The exact model runs each declaration
+// once for each of the 256 answers of that draw. The keys 1 and 2 collide
+// under 32 of the 128 multipliers, at `1/4`. The keys 1 and 63 collide under
+// 64 of them, at `1/2`, so the bound is tight.
+//
+// - see: `library/std/src/hash.gandr` — the family and the multiplier
+// - see: #5713
+
+// The host interface of randomness.
+import std.rand;
+// The multiply-shift family and its multiplier.
+import std.hash (multiplyShift, multiplier);
+
+/// 1 when the keys `x` and `y` of 8 bits have one hash of 2 bits under the
+/// multiplier `a`, else 0.
+def collided(a : Integer, x : Integer, y : Integer) -> Integer =
+  match multiplyShift 8 2 a x == multiplyShift 8 2 a y where
+    | true => 1
+    | false => 0
+
+/// The hash of the key 77 under the multiplier 5: `385 mod 256` is 129, and
+/// its top two bits are 2.
+@[ runs("2") ]
+def hashed() -> Integer =
+  multiplyShift 8 2 5 77
+
+/// The keys 1 and 2 collide at `1/4`, below the bound.
+@[ distributes(("1/4 1", "3/4 0")) ]
+def near() -> [std.rand.Eff] Integer =
+  let a = multiplier 8
+  collided a 1 2
+
+/// The keys 1 and 63 collide at `1/2`, at the bound.
+@[ distributes(("1/2 1", "1/2 0")) ]
+def worst() -> [std.rand.Eff] Integer =
+  let a = multiplier 8
+  collided a 1 63

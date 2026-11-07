@@ -2,7 +2,103 @@
 // operation draws fair bits from the entropy source of the operating system.
 // A source names the interface where it imports this module,
 // `import std.rand;`, and nowhere else. The interface is native, so no
-// declaration here states it. The randomness capability, distributions and
-// seeded generators wait for demand.
+// declaration here states it. `lcg` is a second model of the interface: a
+// seeded generator, written in the language, answers the same draws.
+//
+// One program then runs under three models. `gandr run` answers its draws
+// from the host's entropy. `lcg` answers them from a fixed seed, so each run
+// gives the same draws. The corpus's exact model answers each sequence of
+// draws once and weighs each path.
+//
+// `lcg` steps a linear congruential generator, `x' = (a · x + c) mod 2^w`.
+// It answers a draw of `n` bits with the top `n` bits of the new state, the
+// state divided by `2^(w - n)`. Its constants are those of Knuth's MMIX: `c`
+// is odd and `a mod 4 = 1`. So the state runs through all `2^w` values
+// before it repeats.
+//
+// The handler keeps the last width and its divisor beside the state. A draw
+// at the same width again costs one multiplication, one addition, one
+// `int.mod` and one `int.div`. `lcg` passes each draw that it cannot answer
+// to the model outside it, unchanged. A generator width outside 1 to 64 also
+// sends a draw of that width outside. So the host refuses each such width by
+// name.
+//
+// Limits: a draw wider than the generator gets its answer from the model
+// outside it. The capability of randomness and distributions wait for demand.
 //
 // - see: #5707
+// - see: #5713
+// - see: Knuth, The Art of Computer Programming, volume 2, § 3.2.1 — the
+//   conditions for a full period
+
+/// `2^w` for a width `w` from 0 to 71: `2^(8q) · 2^r` for `w = 8q + r`. A draw
+/// of `w` bits takes `2^w` values.
+pub def span(w : Integer) -> Integer =
+  let low : Integer = match int.mod w 8 where
+    | 0 => 1
+    | 1 => 2
+    | 2 => 4
+    | 3 => 8
+    | 4 => 16
+    | 5 => 32
+    | 6 => 64
+    | _ => 128
+  let high : Integer = match int.div w 8 where
+    | 0 => 1
+    | 1 => 256
+    | 2 => 65536
+    | 3 => 16777216
+    | 4 => 4294967296
+    | 5 => 1099511627776
+    | 6 => 281474976710656
+    | 7 => 72057594037927936
+    | _ => 18446744073709551616
+  high * low
+
+/// `lcg` answers each draw of `n` bits in `body` with the top `n` bits of the
+/// next state, from the state `seed`. Each draw outside `1 ≤ n ≤ w ≤ 64`
+/// passes to the model outside `lcg`.
+pub def lcg[a : Type](w : Integer, seed : Integer, body : () -> [std.rand.Eff] a) -> [std.rand.Eff] a =
+  match 1 <= w && w <= 64 where
+    | false => {
+      let _ = std.rand.draw w;
+      force body
+    }
+    | true => {
+      let modulus = span w;
+      let stepped : Integer -> (Integer -> (Integer -> [std.rand.Eff] a)) = handle r : std.rand.Eff {
+        let x = force body;
+        pure fun (state : Integer) { pure fun (last : Integer) { pure fun (divisor : Integer) { pure x } } }
+      } with {
+        | pure(x) => pure x
+        | oper draw(n, k) => pure fun (state : Integer) { pure fun (last : Integer) { pure fun (divisor : Integer) {
+          match n == last where
+            | true => {
+              let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus;
+              let g = k (int.div next divisor);
+              let g1 = g next;
+              let g2 = g1 last;
+              g2 divisor
+            }
+            | false => match 1 <= n && n <= w where
+              | true => {
+                let d = span (w - n);
+                let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus;
+                let g = k (int.div next d);
+                let g1 = g next;
+                let g2 = g1 n;
+                g2 d
+              }
+              | false => {
+                let outside = std.rand.draw n;
+                let g = k outside;
+                let g1 = g state;
+                let g2 = g1 last;
+                g2 divisor
+              }
+        } } }
+      };
+      let s1 = stepped seed;
+      let s2 = s1 w;
+      s2 1
+    }

@@ -4,3 +4,10 @@
 // A source names the interface where it imports this module,
 // `import std.reals;`, and nowhere else. The interface is native, so no
 // declaration here states it.
+//
+// `admit` takes the canonical bytes of a plan, and `enclose` replies a
+// checked enclosure of its root. `decide`, `step`, `checkpoint`, `restore`
+// and `report` decide an open root by a resumable machine.
+//
+// - see: #5700
+// - see: #5703
