@@ -1260,6 +1260,8 @@ struct Family
     /// The names of the family's loops, in the order a data case over the
     /// family takes their branches after its constructors'.
     loops: Vec<String>,
+    /// Whether the family takes arguments, parameters or indices.
+    applied: bool,
 }
 
 impl Families
@@ -1466,6 +1468,7 @@ impl Families
                     constructors,
                     empty,
                     loops: looped.remove(&family).unwrap_or_default(),
+                    applied: !signature.parameters().is_empty() || !signature.indices().is_empty(),
                 })
             })
             .collect();
@@ -1481,8 +1484,8 @@ impl Families
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each family answers its constructors by tag under its
-    ///   declaration, whichever other family shares its name; each case answers
-    ///   its family's declaration.
+    ///   declaration, whichever other family shares its name, and is applied
+    ///   when it takes arguments; each case answers its family's declaration.
     /// - provides: the [`Constructors`] a [`CoreSource`] names through.
     /// - fails: never.
     /// - panics: none.
@@ -1518,6 +1521,9 @@ impl Families
                     declared,
                     family.loops.iter().map(|name| Name::from(name.as_str())),
                 );
+            }
+            if family.applied {
+                constructors.applied(declared);
             }
         }
         for &(case, family) in &self.cases {
