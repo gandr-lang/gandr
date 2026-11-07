@@ -1110,7 +1110,7 @@ primitive_copy_wrapper!(
     pub struct FormContinuation(bool);
 );
 primitive_copy_wrapper!(
-    /// Whether a separator closed the open declaration as its last tile.
+    /// Whether a separator closes the open declaration as its last tile.
     pub struct SeparatorTaken(bool);
 );
 primitive_copy_wrapper!(
