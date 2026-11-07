@@ -1709,6 +1709,7 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/references/watch.json)
+if ! .config/references/vault-cases.bash; then failed=1; fi
 db=$fresh/references.db
 references_load "$db"
 references_fresh "$db"
@@ -1730,10 +1731,17 @@ if [[ -f $config ]]; then
       git -C "$vault" grep -hoE 'mint: [0-9a-f-]{36}' -- '*.md' | awk '{ print "vault:" $2 }'
     } > "$fresh/known"
     sqlite3 -bail -tabs "$db" 'CREATE TABLE known(key TEXT);' ".import $fresh/known known"
+    sqlite3 -bail "$db" 'CREATE TABLE upstream_known(key TEXT);' 'CREATE TABLE vault_state(checkout TEXT, behind INTEGER, upstream TEXT);'
+    sqlite3 -tabs "$db" "SELECT key FROM cite WHERE kind IN ('cite', 'mirror') AND key GLOB 'vault:*' EXCEPT SELECT key FROM known;" > "$fresh/unresolved-vault"
+    references_vault_upstream "$vault" "$fresh/unresolved-vault" "$fresh/upstream-known" "$fresh/vault-state"
+    sqlite3 -bail -tabs "$db" ".import $fresh/upstream-known upstream_known" ".import $fresh/vault-state vault_state"
     resolved='against the library and the vault $XDG_CONFIG_HOME/gandr/references names'
     unresolved="UNION ALL
+SELECT min(location) || ': ' || key || ' resolves in vault checkout ' || checkout || ', which is ' || behind || ' commit(s) behind ' || upstream || '; run git -C ' || checkout || ' merge --ff-only ' || upstream || ', then run mise run check:references again'
+FROM cite CROSS JOIN vault_state WHERE kind IN ('cite', 'mirror') AND key IN (SELECT key FROM upstream_known) GROUP BY key
+UNION ALL
 SELECT min(location) || ': \`' || key || '\` is no citation key of the library and no vault page''s \`mint:\`; cite the source by its library key, or the page by \`vault:\` and its \`mint:\`'
-FROM cite WHERE kind IN ('cite', 'mirror') AND key NOT IN (SELECT key FROM known) GROUP BY key"
+FROM cite WHERE kind IN ('cite', 'mirror') AND key NOT IN (SELECT key FROM known UNION SELECT key FROM upstream_known) GROUP BY key"
   else
     echo "$config names no library file and vault checkout that exist: write \`library <BibTeX file>\` and \`vault <checkout>\`, one a line" >&2
     failed=1

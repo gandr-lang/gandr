@@ -93,3 +93,17 @@ references_window() {
 references_fidelity() {
   sqlite3 -bail "$1" '.mode list' '.read .config/references/fidelity.sql'
 }
+references_vault_upstream() {
+  local vault=$1 unresolved=$2 known=$3 state=$4 upstream behind
+  : > "$known"
+  : > "$state"
+  upstream=$(git -C "$vault" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2> /dev/null || true)
+  [[ -n $upstream ]] || return 0
+  behind=$(git -C "$vault" rev-list --count "HEAD..$upstream" 2> /dev/null || true)
+  [[ $behind =~ ^[1-9][0-9]*$ && -s $unresolved ]] || return 0
+  awk -F: '{ print "mint: " $2 }' "$unresolved" > "${known%/*}/unresolved-mints"
+  git -C "$vault" grep -hF -f "${known%/*}/unresolved-mints" "$upstream" -- '*.md' 2> /dev/null \
+    | awk '{ print "vault:" $2 }' > "$known" || true
+  [[ -s $known ]] || return 0
+  printf '%s\t%s\t%s\n' "$vault" "$behind" "$upstream" > "$state"
+}
