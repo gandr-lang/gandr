@@ -10,10 +10,8 @@
 /// of the literals. A test over a parameter stays a call, and every other
 /// native operation stays opaque.
 ///
-/// Limits: a comparison in a stated type waits on its model of `Eq` (#6158),
-/// so `decoded_flag` reads the comparison through the body of `sameText`.
-///
 /// - see: #6142 — `texts_same`, `decoded_flag`
+/// - see: #6158 — `decoded_flag`, a comparison in a stated type
 
 /// Two codes.
 data Code : Type where
@@ -46,11 +44,8 @@ def integers_same : Path[.A = Bool](7 == 7, true) = Path.here true;
 /// Two different integers are unequal.
 def integers_different : Path[.A = Bool](7 != 8, true) = Path.here true;
 
-/// Two texts compared in a body, which resolves the model of the comparison.
-def sameText(a : String, b : String) -> Bool { a == b }
-
 /// The code of a text comparison decodes in a type.
-def decoded_flag : decoded(ofFlag(sameText("a", "a"))) = "x";
+def decoded_flag : decoded(ofFlag("a" == "a")) = "x";
 
 /// The code of an integer inequality decodes in a type.
 def decoded_unequal : decoded(ofFlag(7 != 8)) = "x";

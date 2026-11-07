@@ -5500,17 +5500,19 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// Resolve each of the model slots `models` the judgement under way met,
-    /// as [`crate::elaboration::Deferrals::resolve`] does over the arena.
+    /// at the part `part` of the declaration, as
+    /// [`crate::elaboration::Deferrals::resolve`] does over the arena.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn resolve_models(
         &mut self,
         models: &[gandr_core_term::model::ModelSlot],
+        part: crate::elaboration::Signing,
     ) -> Result<(), (ValueId, CheckRefusal)>
     {
         self.deferrals
-            .resolve(self.arena, &self.definitions, models)
+            .resolve(self.arena, &self.definitions, models, part)
     }
 
     /// Forget every stage minted and the fixpoint opened: a declaration's
