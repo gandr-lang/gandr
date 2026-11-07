@@ -1,27 +1,18 @@
-//! The weakest-precondition observation of state: a handler of state into the
-//! predicate transformers `((A, S) => Type, S) => Type`, from a postcondition
-//! on the answer and the final state, and an initial state, to the precondition
-//! the program needs there [Maillard-2019-dijkstra_monads_all], § 3.4,
-//! uncurried, with propositions read as types. A scope answers its carrier, so
-//! the program it runs ends in the transformers' unit at its answer, and each
-//! clause is its operation's image: a read hands the initial state to what runs
-//! after, and a store runs what follows from the stored value. The scope is
-//! checked as a model of state's laws, so the observation identifies what the
-//! laws identify, and is a monad morphism from programs over state (§ 4.4
-//! derives it from the state algebra at the answer `S => Type`). The normaliser
-//! runs no scope yet, so a precondition is computed through the fold
-//! `tree-state-wp.gandr` writes.
+//! `state-wp` observes state as predicate transformers.
+//!
+//! A transformer maps a postcondition and initial state to a precondition. It has type `((A, S) => Type, S) => Type`.
+//!
+//! The handler maps `get` and `put` into state predicates. The scope satisfies state laws. The observation is a monad morphism from state programs. The normaliser computes a precondition through the fold in `tree-state-wp.gandr`.
 //!
 //! - see: #2754
 //! - cites: [Maillard-2019-dijkstra_monads_all]
-//!
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
-// `StateLaws`.
+// The import gives StateLaws.
 import "../effects/state.gandr";
 
-/// The increment observed: read the counter, store one more, and answer the
-/// unit. The scope answers the increment's predicate transformer.
+/// This increment reads the counter, stores one more and returns unit.
+/// The scope returns the increment's predicate transformer.
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
     let n = st.get ();

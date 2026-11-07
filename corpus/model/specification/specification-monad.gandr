@@ -1,18 +1,15 @@
-//! A specification monad as a theory: a monad whose computations are ordered
-//! and whose extension is monotone in both its arguments
-//! [Maillard-2019-dijkstra_monads_all], § 3.3. An operation lands in a sort,
-//! not in `Type`, so the order is a sort indexed by two computations, and
-//! evidence of it is a term its operations build. The monad's laws beside the
-//! indexed sort are refused in the twin.
+//! `SpecificationMonad` states an ordered monad as a theory.
+//!
+//! Its computations have an order. Its extension is monotone in both arguments. An operation lands in a sort. The order indexes two computations. Its evidence is a term that the operations build.
+//!
+//! The twin refuses the monad laws beside the indexed sort.
 //!
 //! - see: #4128
 //! - cites: [Maillard-2019-dijkstra_monads_all]
-//!
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
-/// Values `V`, computations `C` and the order between two computations:
-/// reflexive, transitive, and an extension below another where its
-/// computation and each of its continuations are.
+/// `SpecificationMonad` has values, computations and an order.
+/// The order is reflexive, transitive and monotone under extension.
 theory SpecificationMonad where
   sort V : Type+;
   sort C : Type;
