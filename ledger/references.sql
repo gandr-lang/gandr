@@ -36,6 +36,7 @@ INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','equivalence','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','4c8eb1aafce719d82b019284db472cfe6da9f63c','2026-11-07','3262a443d8f7d07b1986da7072c8db764d8c7c47');
+INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions','theory-deep-inference','reduction','exemplar','2d9240fef6e0a8e25c76db406c83ddfa1a0fe2b0','2026-11-07','ca45b40a906c65e000da738a7afaca52b8354958');
 INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','4c8eb1aafce719d82b019284db472cfe6da9f63c','2026-11-07','3262a443d8f7d07b1986da7072c8db764d8c7c47');
 INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','4c8eb1aafce719d82b019284db472cfe6da9f63c','2026-11-07','3262a443d8f7d07b1986da7072c8db764d8c7c47');
 INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
@@ -421,6 +422,7 @@ INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kerne
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-checker','judgement::native','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','2d9240fef6e0a8e25c76db406c83ddfa1a0fe2b0','2026-11-07','ca45b40a906c65e000da738a7afaca52b8354958');
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
@@ -625,6 +627,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere::brown','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','anchor','2d9240fef6e0a8e25c76db406c83ddfa1a0fe2b0','2026-11-07','ca45b40a906c65e000da738a7afaca52b8354958');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);

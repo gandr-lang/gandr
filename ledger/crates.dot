@@ -356,6 +356,7 @@ digraph crates {
   "theory-decomposition-spaces" -> "theory-graphs";
   "theory-deep-inference" -> "theory-cell-complexes";
   "theory-deep-inference" -> "theory-coherent-resolutions";
+  "theory-deep-inference" -> "theory-discrete-morse";
   "theory-discrete-morse" -> "theory-graded-posets";
   "theory-discrete-morse" -> "theory-stone-duality";
   "theory-dynamic-graphs" -> "theory-graphs";
@@ -385,7 +386,8 @@ digraph crates {
   "workflow-sweep" -> "surface-syntax";
   "workflow-test-timing" -> "workflow-github";
   "theory-cellular-sheaves" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
-  "theory-coherent-resolutions" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
+  "theory-coherent-resolutions" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
+  "theory-deep-inference" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-discrete-morse" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-exact-reals" -> "theory-graded-posets" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
@@ -406,7 +408,8 @@ digraph crates {
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "surface-dispatcher" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "theory-coherent-resolutions" -> "theory-computads" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
-  "theory-computads" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-computads" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-deep-inference" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "theory-discrete-morse" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "core-checker" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
