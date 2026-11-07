@@ -55,6 +55,7 @@ const APPLICATION: &str = include_str!("render/fixtures/application.gandr");
 
 /// A mismatch under a `let` binder.
 const BOUND: &str = include_str!("render/fixtures/bound.gandr");
+const LAMBDA_ARITY: &str = include_str!("render/fixtures/lambda-arity-6065.gandr");
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
@@ -355,6 +356,18 @@ fn a_type_mismatch_renders_as_a_located_report()
         "the diagnostic names its source at the term: {rendered}"
     );
     expect_file!["golden/type-mismatch.txt"].assert_eq(&rendered);
+}
+
+#[test]
+fn a_two_parameter_lambda_names_its_nested_form_6065()
+{
+    let diagnostic = only(
+        Path::new("lambda-arity-6065.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(LAMBDA_ARITY),
+        Verb::Check(Goals::Gated),
+    );
+    expect_file!["golden/lambda-arity-6065.txt"].assert_eq(&plain(&diagnostic, Verbosity::User));
 }
 
 #[test]
