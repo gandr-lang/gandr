@@ -354,7 +354,7 @@ impl Interner
 /// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 #[inline]
 #[must_use]
-#[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { ref parameters, ref constructors, .. } => parameters.iter().chain(constructors.iter().flatten()).all(|id| arena.value_type(*id).is_some()), DeclarationContent::Codata { ref parameters, ref observations, .. } => parameters.iter().all(|id| arena.value_type(*id).is_some()) && observations.iter().all(|id| arena.comp_type(*id).is_some()), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true } }),
+#[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { ref parameters, ref constructors, .. } => parameters.iter().chain(constructors.iter().flatten()).all(|id| arena.value_type(*id).is_some()), DeclarationContent::Codata { ref parameters, ref observations, .. } => parameters.iter().all(|id| arena.value_type(*id).is_some()) && observations.iter().all(|id| arena.comp_type(*id).is_some()), DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } | DeclarationContent::AbstractType { .. } => true } }),
 ensures: |ret| ret.as_image().as_ref().starts_with(tags::MAGIC.as_slice())
     && ret
         .as_image()
@@ -783,8 +783,10 @@ fn encode_minted_atom_table(
 ///   `remaining`, and an interfaced one writes
 ///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
 ///   reflexivity's roots, or, when its interface states a law,
-///   [`tags::KIND_ABSTRACT_LAWFUL`] and the law's root after them; the other
-///   kinds write one root and no slots.
+///   [`tags::KIND_ABSTRACT_LAWFUL`] and the law's root after them; a literal
+///   identity test writes [`tags::KIND_LITERAL_IDENTITY`] and closes with its
+///   base's atom byte and its polarity byte; the other kinds write one root and
+///   no slots.
 /// - provides: one segment with cross-declaration sharing. The predicate checks
 ///   the mark/kind bytes, root memo presence and global-counter transition;
 ///   literal segment fixtures observe field order and slot framing.
@@ -808,6 +810,7 @@ fn encode_minted_atom_table(
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
 /// - witness: `encode::tests::a_type_of_words_closes_its_segment_with_its_cells`
 /// - witness: `encode::tests::an_interfaced_atom_closes_its_segment_with_its_interface`
+/// - witness: `encode::tests::a_literal_identity_test_closes_its_segment_with_its_base_and_polarity`
 /// - witness: `encode::tests::an_indexed_data_declaration_closes_its_segment_with_its_indices`
 /// - witness: `encode::tests::a_codata_declaration_closes_its_segment_with_its_observations`
 #[spec(
@@ -815,9 +818,9 @@ fn encode_minted_atom_table(
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().covers().is_empty() => tags::KIND_DEF_COVERED, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(ref interface), .. } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().covers().is_empty() => tags::KIND_DEF_COVERED, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::LiteralIdentity { .. } => tags::KIND_LITERAL_IDENTITY, DeclarationContent::AbstractType { interface: Maybe::Present(ref interface), .. } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.node(AnyNode::ValueType(marked.declaration().declared_id())).is_some()
-            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.node(AnyNode::Value(body)).is_some(), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.node(AnyNode::CompType(*id)).is_some()), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.node(AnyNode::Value(interface.relation())).is_some() && interner.node(AnyNode::Value(interface.reflexivity())).is_some() && match interface.law() { Maybe::Present(law) => interner.node(AnyNode::Value(law)).is_some(), Maybe::Absent(_) => true }, DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
+            && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.node(AnyNode::Value(body)).is_some(), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.node(AnyNode::CompType(*id)).is_some()), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.node(AnyNode::Value(interface.relation())).is_some() && interner.node(AnyNode::Value(interface.reflexivity())).is_some() && match interface.law() { Maybe::Present(law) => interner.node(AnyNode::Value(law)).is_some(), Maybe::Absent(_) => true }, DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.node(AnyNode::Value(related.left)).is_some() && interner.node(AnyNode::Value(related.right)).is_some())
             && marked.declaration().covers().iter().all(|covered| interner.node(AnyNode::Computation(covered.root)).is_some())
             && interner.by_content.len() >= entry.1
@@ -859,6 +862,7 @@ fn encode_declaration(
         DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
         DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
         DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
+        DeclarationContent::LiteralIdentity { .. } => tags::KIND_LITERAL_IDENTITY,
         DeclarationContent::AbstractType {
             interface: Maybe::Present(ref interface),
             ..
@@ -956,7 +960,8 @@ fn encode_declaration(
             }
             (declared, Some(body), None)
         },
-        DeclarationContent::Axiom { declared } => {
+        DeclarationContent::Axiom { declared }
+        | DeclarationContent::LiteralIdentity { declared, .. } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
             (declared, None, None)
         },
@@ -1013,6 +1018,13 @@ fn encode_declaration(
         out.put_image(entry.0.as_image());
     }
     out.put_uvarint(WireU64::from(u64::from(u32::from(root_declared))));
+    if let DeclarationContent::LiteralIdentity { test, .. } = *content {
+        out.put_tag(identity_base_tag(test.base()));
+        out.put_tag(match test.polarity() {
+            crate::Polarity::Same => tags::IDENTITY_SAME,
+            crate::Polarity::Different => tags::IDENTITY_DIFFERENT,
+        });
+    }
     if let Some((representation, extent)) = root_sealed {
         out.put_uvarint(WireU64::from(u64::from(u32::from(representation))));
         out.put_uvarint(WireU64::from(WireUsize::from(usize::from(extent))));
@@ -1145,6 +1157,19 @@ fn encode_declaration(
             encode_rule_side(out, cell.source());
             encode_rule_side(out, cell.target());
         }
+    }
+}
+
+/// The base-type atom byte a literal identity test's base writes.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn identity_base_tag(base: crate::IdentityBase) -> WireTag
+{
+    match base {
+        crate::IdentityBase::Integer => tags::BASE_INTEGER,
+        crate::IdentityBase::Text => tags::BASE_STRING,
     }
 }
 
@@ -3694,6 +3719,95 @@ mod tests
                 site: crate::error::MalformedSite::Polarity,
             })
         );
+    }
+
+    #[test]
+    fn a_literal_identity_test_closes_its_segment_with_its_base_and_polarity()
+    {
+        use crate::IdentityBase;
+        use crate::LiteralIdentity;
+        use crate::Polarity;
+        for (base, atom) in [
+            (IdentityBase::Integer, BaseType::Integer),
+            (IdentityBase::Text, BaseType::String),
+        ] {
+            for polarity in [Polarity::Same, Polarity::Different] {
+                let test = LiteralIdentity::new(base, polarity);
+                let mut arena = TermArena::new();
+                let mut builder = DeclarationBuilder::new(&mut arena);
+                let compared = builder.arena().value_type_base(atom);
+                let unit = builder.arena().value_type_unit();
+                let boolean = builder.arena().value_type_sum(&[unit, unit]);
+                let answer = builder.arena().comp_type_returner(boolean);
+                let inner = builder.arena().comp_type_arrow(compared, answer);
+                let outer = builder.arena().comp_type_arrow(compared, inner);
+                let declared = builder.arena().value_type_thunk(outer);
+                let identity =
+                    builder.literal_identity(LevelSignature::monomorphic(), declared, test);
+                let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, identity)];
+                let bytes = super::encode(&arena, &declarations);
+                let image = bytes.as_image().as_ref().to_vec();
+                assert_eq!(
+                    image.get(9).copied(),
+                    Some(u8::from(crate::tags::KIND_LITERAL_IDENTITY))
+                );
+                let (base_at, polarity_at) = (image.len() - 2, image.len() - 1);
+                assert_eq!(
+                    (image.get(base_at).copied(), image.get(polarity_at).copied()),
+                    (
+                        Some(u8::from(super::identity_base_tag(base))),
+                        Some(u8::from(match polarity {
+                            Polarity::Same => crate::tags::IDENTITY_SAME,
+                            Polarity::Different => crate::tags::IDENTITY_DIFFERENT,
+                        }))
+                    ),
+                    "the segment closes with the base's atom and the polarity"
+                );
+                let decoded = crate::decode::decode(ArtifactImage::from(image.as_slice()))
+                    .expect("a literal identity test decodes");
+                let content = decoded
+                    .declarations()
+                    .first()
+                    .map(|marked| marked.declaration().content().clone());
+                assert!(
+                    matches!(
+                        content,
+                        Some(crate::decl::DeclarationContent::LiteralIdentity { test: read, .. })
+                            if read == test
+                    ),
+                    "the test reads back whole: {content:?}"
+                );
+                assert_eq!(
+                    super::encode(decoded.arena(), decoded.declarations())
+                        .as_image()
+                        .as_ref(),
+                    image.as_slice()
+                );
+                let mut numeric = image.clone();
+                if let Some(byte) = numeric.get_mut(base_at) {
+                    *byte = u8::from(crate::tags::BASE_NUMERIC);
+                }
+                assert_eq!(
+                    crate::decode::decode(ArtifactImage::from(numeric.as_slice())).err(),
+                    Some(crate::error::DecodeError::UnknownTag {
+                        site: crate::error::TagSite::IdentityBase,
+                        tag: crate::tags::BASE_NUMERIC,
+                    }),
+                    "a numeric base is no identity of literals"
+                );
+                let mut third = image.clone();
+                if let Some(byte) = third.get_mut(polarity_at) {
+                    *byte = 2;
+                }
+                assert_eq!(
+                    crate::decode::decode(ArtifactImage::from(third.as_slice())).err(),
+                    Some(crate::error::DecodeError::UnknownTag {
+                        site: crate::error::TagSite::IdentityPolarity,
+                        tag: crate::WireTag::from(2_u8),
+                    })
+                );
+            }
+        }
     }
 
     #[test]

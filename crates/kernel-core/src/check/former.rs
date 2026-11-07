@@ -206,6 +206,7 @@ pub(super) fn resolve<'session>(
                     DeclarationContent::Codata { .. }
                     | DeclarationContent::Def { .. }
                     | DeclarationContent::Axiom { .. }
+                    | DeclarationContent::LiteralIdentity { .. }
                     | DeclarationContent::AbstractType { .. } => {
                         Err(KernelError::NotADataType { index })
                     },

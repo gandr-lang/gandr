@@ -893,6 +893,57 @@ where
     .comp_type_or(subject)
 }
 
+/// The computation type `subject` with its free index `band` moved to the
+/// innermost free position, and every free index inside it raised by one.
+///
+/// # Specification
+/// - requires: memo entries belong to this arena.
+/// - ensures: the free index `band` reads as index zero, each free index below
+///   it as one more, and each free index past it as it stands. An unreadable
+///   subject returns itself.
+/// - provides: a case on a binder past the innermost one reads its goal as a
+///   case on the innermost binder does, when the goal reads no binder inside
+///   the scrutinee.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case on a binder past an unread one reads its goal at
+///   each injection only through the rotation; a goal kept in place reads the
+///   unread binder for the scrutinee.
+/// - witness: `check::tests::a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110`
+#[spec(ensures: |ret| (band.0 != 0 || ret == subject)
+    && if arena.comp_type(subject).is_some() {
+        arena.comp_type(ret).is_some()
+    } else {
+        ret == subject
+    })]
+#[inline]
+#[must_use]
+pub(crate) fn rotate_comp_type<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: CompTypeId,
+    band: BinderDepth,
+) -> CompTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    if band == BinderDepth::NONE {
+        return subject;
+    }
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Rotate { band },
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
+}
+
 /// The computation type `subject` with its innermost binder instantiated at
 /// `replacement`.
 ///

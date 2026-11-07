@@ -65,6 +65,7 @@ impl RuleScope for Admitted<'_>
             DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => None,
         }
     }
@@ -84,6 +85,7 @@ impl RuleScope for Admitted<'_>
             DeclarationContent::Codata { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => None,
         }
     }

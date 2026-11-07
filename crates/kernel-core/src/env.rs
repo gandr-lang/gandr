@@ -1015,6 +1015,46 @@ impl<'env> Staging<'env>
         }
     }
 
+    /// Finalize a literal identity test over an already-minted declared type.
+    ///
+    /// # Specification
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned test retains that start mark, the supplied level
+    ///   signature, its root and its test. Its arena content and registration
+    ///   remain live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a test staged at its base's type admits and one at
+    ///   another type is refused.
+    /// - witness: `check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::LiteralIdentity { declared, test }
+    )]
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(
+        self,
+        levels: LevelSignature,
+        declared: ValueTypeId,
+        test: gandr_kernel_term::LiteralIdentity,
+    ) -> StagedDeclaration
+    {
+        let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
+        StagedDeclaration {
+            content_start,
+            declaration: self.builder.literal_identity(levels, declared, test),
+        }
+    }
+
     /// Finalize a sealed abstract type at an already-minted universe kind, over
     /// an already-minted representation, with the scope of its minting
     /// admission.
@@ -1075,9 +1115,9 @@ pub struct AdmittedDeclaration
     declaration: Declaration,
     /// Whether it was checked or bypassed.
     admission: Admission,
-    /// The transitive positions of axioms and unchecked admissions this
-    /// declaration rests on, itself included when it is one. Precomputed at
-    /// admission, so the audit is a lookup.
+    /// The transitive positions of axioms, unchecked admissions and literal
+    /// identity tests this declaration rests on, itself included when it is
+    /// one. Precomputed at admission, so the audit is a lookup.
     rested_on: BTreeSet<ConstantIndex>,
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
@@ -1220,18 +1260,24 @@ quenchant_shape::reason_enum! {
 }
 
 /// The transitive audit of a declaration: the axioms and unchecked admissions
-/// it rests on.
+/// it rests on, and the kernel primitives it computes by.
 ///
-/// A declaration whose report is empty on both faces rests on nothing outside
-/// the checked kernel.
+/// A declaration whose report is empty on its axioms and its unchecked
+/// admissions rests on nothing outside the checked kernel. A kernel primitive
+/// is inside it: the kernel computes the primitive by its own rule, and the
+/// report names it so that a reader sees that trusted surface.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AxiomReport
 {
-    /// The positions of axioms it transitively rests on, ascending.
-    axioms: Vec<ConstantIndex>,
-    /// The positions of unchecked admissions it transitively rests on,
-    /// ascending.
-    unchecked: Vec<ConstantIndex>,
+    /// The positions it transitively rests on or computes by, in three runs:
+    /// its axioms, then its unchecked admissions, then its literal identity
+    /// tests, each run ascending. One list keeps the report small where an
+    /// outcome holds it, and takes one allocation.
+    positions: Vec<ConstantIndex>,
+    /// Where the run of unchecked admissions starts in `positions`.
+    unchecked_from: usize,
+    /// Where the run of literal identity tests starts in `positions`.
+    primitives_from: usize,
 }
 
 impl AxiomReport
@@ -1244,7 +1290,9 @@ impl AxiomReport
     #[must_use]
     pub fn axioms(&self) -> &[ConstantIndex]
     {
-        self.axioms.as_slice()
+        self.positions
+            .get(.. self.unchecked_from)
+            .unwrap_or_default()
     }
 
     /// The unchecked admissions this declaration transitively rests on,
@@ -1256,7 +1304,23 @@ impl AxiomReport
     #[must_use]
     pub fn unchecked_admissions(&self) -> &[ConstantIndex]
     {
-        self.unchecked.as_slice()
+        self.positions
+            .get(self.unchecked_from .. self.primitives_from)
+            .unwrap_or_default()
+    }
+
+    /// The kernel primitives this declaration transitively computes by,
+    /// ascending: the literal identity tests it reaches.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn primitives(&self) -> &[ConstantIndex]
+    {
+        self.positions
+            .get(self.primitives_from ..)
+            .unwrap_or_default()
     }
 }
 
@@ -2559,15 +2623,18 @@ impl Environment
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
     /// - witness: `env::tests::a_closed_definition_rests_on_nothing`
-    #[spec(ensures: |ret| match self.entries.get(usize::from(id.position())) {
-        None => ret.axioms.is_empty() && ret.unchecked.is_empty(),
-        Some(entry) => ret.axioms.iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
+    #[spec(ensures: |ret| self.entries.get(usize::from(id.position())).map_or_else(
+        || ret.axioms().is_empty() && ret.unchecked_admissions().is_empty() && ret.primitives().is_empty(),
+        |entry| ret.axioms().iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
             self.entries.get(usize::from(position)).is_some_and(|ancestor|
                 matches!(*ancestor.declaration.content(), DeclarationContent::Axiom { .. }))))
-            && ret.unchecked.iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
+            && ret.unchecked_admissions().iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
                 self.entries.get(usize::from(position)).is_some_and(|ancestor|
                     matches!(ancestor.admission, Admission::Unchecked))))
-    })]
+            && ret.primitives().iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
+                self.entries.get(usize::from(position)).is_some_and(|ancestor|
+                    matches!(*ancestor.declaration.content(), DeclarationContent::LiteralIdentity { .. })))),
+    ))]
     #[inline]
     #[must_use]
     pub fn audit(
@@ -2575,28 +2642,44 @@ impl Environment
         id: CheckedId,
     ) -> AxiomReport
     {
-        let mut axioms = Vec::new();
-        let mut unchecked = Vec::new();
-        if let Some(entry) = self.entries.get(usize::from(id.position())) {
-            for &position in &entry.rested_on {
-                if let Some(ancestor) = self.entries.get(usize::from(position)) {
-                    if matches!(ancestor.admission, Admission::Unchecked) {
-                        unchecked.push(position);
-                    }
-                    if matches!(
-                        *ancestor.declaration.content(),
+        let Some(entry) = self.entries.get(usize::from(id.position()))
+        else {
+            return AxiomReport::default();
+        };
+        let ancestor = |position: ConstantIndex| self.entries.get(usize::from(position));
+        let rested = || entry.rested_on.iter().copied();
+        let mut positions: Vec<ConstantIndex> = rested()
+            .filter(|&position| {
+                ancestor(position).is_some_and(|held| {
+                    matches!(
+                        *held.declaration.content(),
                         DeclarationContent::Axiom { .. }
-                    ) {
-                        axioms.push(position);
-                    }
-                }
-            }
+                    )
+                })
+            })
+            .collect();
+        let unchecked_from = positions.len();
+        positions.extend(rested().filter(|&position| {
+            ancestor(position).is_some_and(|held| matches!(held.admission, Admission::Unchecked))
+        }));
+        let primitives_from = positions.len();
+        positions.extend(rested().filter(|&position| {
+            ancestor(position).is_some_and(|held| {
+                matches!(
+                    *held.declaration.content(),
+                    DeclarationContent::LiteralIdentity { .. }
+                )
+            })
+        }));
+        AxiomReport {
+            positions,
+            unchecked_from,
+            primitives_from,
         }
-        AxiomReport { axioms, unchecked }
     }
 
-    /// Precompute the transitive set of axioms and unchecked admissions a
-    /// declaration rests on.
+    /// Precompute the transitive set of axioms, unchecked admissions and
+    /// kernel primitives a declaration rests on.
     ///
     /// **A declaration depends on what its declared type names as well as on
     /// what its body names**, and the two are separate graphs to walk.
@@ -2622,10 +2705,11 @@ impl Environment
     /// - ensures: the union of the audits of every position the declared type,
     ///   an abstract type's representation or a definition's body names, and of
     ///   every law the definition's folds rest on, with `position` itself
-    ///   included exactly when the declaration is an axiom or is being
-    ///   bypassed. Both reference forms of the type plane are followed — a
-    ///   sealed atom directly, and a code through the term language — so a
-    ///   declaration reachable only through a code stays in the graph.
+    ///   included exactly when the declaration is an axiom, a literal identity
+    ///   test or is being bypassed. Both reference forms of the type plane are
+    ///   followed — a sealed atom directly, and a code through the term
+    ///   language — so a declaration reachable only through a code stays in the
+    ///   graph.
     /// - provides: the precomputed audit an admission stores, which makes the
     ///   report a lookup rather than a walk, and which is what lets "empty on
     ///   both faces" be a fact rather than a false negative.
@@ -2644,11 +2728,11 @@ impl Environment
     #[spec(
         requires: usize::from(position) == self.entries.len(),
         ensures: |ret| ret.contains(&position)
-            == (matches!(*content, DeclarationContent::Axiom { .. }) || matches!(admission, Admission::Unchecked))
+            == (matches!(*content, DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. }) || matches!(admission, Admission::Unchecked))
             && ret.iter().all(|&ancestor| ancestor == position ||
                 (ancestor < position && self.entries.get(usize::from(ancestor)).is_some_and(|entry|
                     matches!(entry.admission, Admission::Unchecked)
-                        || matches!(*entry.declaration.content(), DeclarationContent::Axiom { .. }))))
+                        || matches!(*entry.declaration.content(), DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. }))))
     )]
     fn transitive_rest(
         &self,
@@ -2690,8 +2774,11 @@ impl Environment
                 }
             }
         }
-        let is_axiom = matches!(*content, DeclarationContent::Axiom { .. });
-        if is_axiom || matches!(admission, Admission::Unchecked) {
+        let audited = matches!(
+            *content,
+            DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. }
+        );
+        if audited || matches!(admission, Admission::Unchecked) {
             let _fresh = rested.insert(position);
         }
         rested
@@ -2818,6 +2905,7 @@ fn block_end(
             Some(&DeclarationContent::Def { .. }) => break,
             Some(
                 &(DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
                 | DeclarationContent::AbstractType { .. }
                 | DeclarationContent::Codata { .. }),
             )
@@ -4218,7 +4306,7 @@ mod tests
             super::DeclarationContent::Def { declared, body } =>
                 matches!(environment.arena().value_type(declared), Some(super::ValueType::Product(parts)) if parts.is_empty())
                 && matches!(environment.arena().value(body).and_then(super::Value::components), Some(&[])),
-            super::DeclarationContent::Data { .. } | super::DeclarationContent::Codata { .. } | super::DeclarationContent::Axiom { .. } | super::DeclarationContent::AbstractType { .. } => false,
+            super::DeclarationContent::Data { .. } | super::DeclarationContent::Codata { .. } | super::DeclarationContent::Axiom { .. } | super::DeclarationContent::LiteralIdentity { .. } | super::DeclarationContent::AbstractType { .. } => false,
         })]
     fn stage_unit(environment: &mut Environment) -> StagedDeclaration
     {

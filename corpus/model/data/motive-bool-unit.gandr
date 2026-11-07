@@ -1,0 +1,58 @@
+// A case on a `Bool` and a split of the unit, each of which refines its goal.
+//
+// A match on a `Bool` parameter refines a later binder whose type reads the
+// parameter, as a match on a data parameter does. A split of a `Unit`
+// parameter reads the parameter as `*{}` in its goal. A decoder of sort codes
+// has this shape.
+//
+// The checker reads one motive for each form of case: the goal of the case
+// under one binder of the scrutinee. It generalises that motive over each
+// later binder that an arm or the motive reads. Each arm reads the scrutinee
+// at its own form, and the kernel replays each refined case.
+//
+// - see: #6110
+// - see: #3483 — the generalisation over a binder that an arm reads
+// - see: `eta.gandr` — the unit's η
+
+/// The type that a flag selects.
+def boolType(b : Bool) -> -F Type =
+  match b where
+    | true => return String
+    | false => return Unit
+
+/// The `true` arm reads `x` at `String`.
+def showBool(b : Bool, x : boolType(b)) -> String =
+  match b where
+    | true => x
+    | false => ""
+
+/// `showBool` at `true` returns its argument.
+@[ runs("\"a\"") ]
+def shown() -> String { showBool true "a" }
+
+/// Each arm returns a value of the type that its flag selects.
+def boolBack(b : Bool) -> boolType(b) =
+  match b where
+    | true => "a"
+    | false => *{}
+
+/// Each arm returns one of two values of the type that its flag selects.
+def boolBoth(b : Bool, x : boolType(b), y : boolType(b)) -> boolType(b) =
+  match b where
+    | true => x
+    | false => y
+
+/// The type that the unit selects.
+def unitType(u : Unit) -> -F Type =
+  match u where
+    | *{} => return String
+
+/// The split reads `x` at `String`.
+def showUnit(u : Unit, x : unitType(u)) -> String =
+  match u where
+    | *{} => x
+
+/// The split reads its goal at `*{}`.
+def unitBack(u : Unit) -> Path[.A = Unit](*{}, u) =
+  match u where
+    | *{} => Path.here (*{} : Unit)

@@ -5480,9 +5480,9 @@ fn step_apply(
         },
         DomainComp::Neutral { neutral, .. } => {
             let grown = extend_spine(domain, neutral, Elimination::Apply(argument))?;
-            machine
-                .comps
-                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            let reached = identity_answer(core, domain, grown)?
+                .unwrap_or_else(|| domain.comp_neutral(grown, CompTermFace::Reduced));
+            machine.comps.push(reached);
             Ok(())
         },
         DomainComp::Return { .. } | DomainComp::ReturnAll { .. } => {
@@ -5547,6 +5547,73 @@ fn step_apply(
             }
         },
     }
+}
+
+/// What a literal identity test computes once its call holds both arguments:
+/// the native operation forced and applied to two literals of its base.
+///
+/// # Specification
+/// - requires: nothing; a dangling node is refused.
+/// - ensures: `Some` returner of the answer's injection into `1 + 1`, its
+///   payload the unit, exactly when `neutral` is a rigid native operation that
+///   is a literal identity test, its spine a force and then two applications,
+///   and both arguments literals of the test's base; `None` otherwise, the call
+///   left standing.
+/// - provides: the one native step the normaliser runs, the step the kernel's
+///   reduction runs on the erased call, so a conversion that rests on it
+///   replays.
+/// - fails: [`DomainFault::Dangling`] when the neutral does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// [`EvalFault::Domain`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal and unequal literals at each identity row answer as
+///   the kernel replays them, and a call over a variable stays standing.
+/// - witness: `tests::literal_identity::a_literal_identity_test_answers_alike_in_the_checker_and_the_kernel`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |answer| answer.is_none_or(|id| matches!(domain.computation(id), Some(&DomainComp::Return { .. })))))]
+fn identity_answer(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    neutral: NeutralId,
+) -> Result<Option<DomainCompId>, EvalFault>
+{
+    let held = domain
+        .neutral(neutral)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let (NeutralHead::Primitive(primitive), Unfolding::Rigid) = (held.head(), held.unfolding())
+    else {
+        return Ok(None);
+    };
+    let Some(test) = primitive.literal_identity()
+    else {
+        return Ok(None);
+    };
+    let [
+        Elimination::Force,
+        Elimination::Apply(left),
+        Elimination::Apply(right),
+    ] = *held.spine()
+    else {
+        return Ok(None);
+    };
+    let literal = |argument: DomainValueId| match domain.value(argument) {
+        Some(&DomainValue::Literal { literal, .. }) => match core.value(literal) {
+            Some(&Value::Literal(ref payload)) => Some(payload),
+            _ => None,
+        },
+        _ => None,
+    };
+    let Some(summand) = literal(left)
+        .zip(literal(right))
+        .and_then(|(left, right)| test.answer(left, right))
+    else {
+        return Ok(None);
+    };
+    let unit = domain.value_unit(TermFace::Reduced);
+    let injected = domain.value_injection(summand, unit, TermFace::Reduced);
+    Ok(Some(domain.comp_return(injected, CompTermFace::Reduced)))
 }
 
 /// The binder a fixpoint closure's evidence stages: its staged position, or

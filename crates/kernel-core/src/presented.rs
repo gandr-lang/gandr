@@ -207,6 +207,7 @@ impl Presentations
                         DeclarationContent::Codata { .. }
                         | DeclarationContent::Def { .. }
                         | DeclarationContent::Axiom { .. }
+                        | DeclarationContent::LiteralIdentity { .. }
                         | DeclarationContent::AbstractType { .. } => None,
                     }
                 });

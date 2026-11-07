@@ -479,10 +479,11 @@ pub(crate) fn convert_values(
 
 /// Compare `goal` structurally, setting aside into `pending` every value pair
 /// one of whose sides is a returned endpoint or a constructor of a type
-/// `presentations` presents, every pair of thunks either of whose
-/// computations forces a thunk literal at its head, every value type decoded
-/// from a returned code against a value type of another former, and the
-/// codomains of every dependent arrow met against a plain one.
+/// `presentations` presents, every unit against a neutral, which η relates,
+/// every pair of thunks either of whose computations forces a thunk literal at
+/// its head, every value type decoded from a returned code against a value
+/// type of another former, and the codomains of every dependent arrow met
+/// against a plain one.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -510,19 +511,23 @@ pub(crate) fn convert_values(
 ///   one sets its codomains aside while its domains still separate; a thunk
 ///   pair forcing a thunk literal is set aside, and one forcing none separates
 ///   in place; a path type whose endpoints do not spell its words' point is set
-///   aside against the words.
+///   aside against the words; a unit against a neutral is set aside in either
+///   order, and two neutrals separate.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
 /// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 /// - witness: `conv::tests::a_presented_constructor_is_set_aside_on_either_side`
+/// - witness: `conv::tests::a_unit_against_a_neutral_is_set_aside_6110`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `conv::tests::a_thunk_pair_forcing_a_thunk_is_set_aside_3733`
 /// - witness: `presented::tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
     && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
         SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. }))))
-            || [left, right].iter().all(|&side| matches!(arena.value(side), Some(&Value::Thunk(_)))),
+            || [left, right].iter().all(|&side| matches!(arena.value(side), Some(&Value::Thunk(_))))
+            || [left, right].iter().any(|&side| matches!(arena.value(side), Some(Value::Tuple(parts)) if parts.is_empty())
+                || matches!(arena.value(side), Some(Value::Record(fields)) if fields.is_empty())),
         SetAside::Decoded { code, other } => matches!(arena.value(code), Some(&Value::Returned(_)))
             && !matches!(arena.value_type(other), Some(&ValueType::Element { .. }) | None),
         SetAside::Codomains(Codomains { dependent, plain }) => arena.comp_type(dependent).is_some() && arena.comp_type(plain).is_some(),
@@ -543,8 +548,9 @@ pub(crate) fn pending_endpoints(
 
 /// Compare `goal` structurally, setting aside into `pending` every pair of
 /// path endpoints, every value pair one of whose sides is a returned endpoint
-/// or a constructor of a type `presentations` presents, and the codomains of
-/// every dependent arrow met against a plain one.
+/// or a constructor of a type `presentations` presents, every unit against a
+/// neutral, and the codomains of every dependent arrow met against a plain
+/// one.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -1478,10 +1484,24 @@ fn converge(
                     matches!(arena.computation(head), Some(&Computation::Force(forced))
                         if matches!(arena.value(forced), Some(&Value::Thunk(_))))
                 };
+                // η relates the unit to a neutral of its type, which the
+                // replay reads and this walk does not (#6110).
+                let unit = |value: &Value| {
+                    matches!(*value, Value::Tuple(ref parts) if parts.is_empty())
+                        || matches!(*value, Value::Record(ref fields) if fields.is_empty())
+                };
+                let neutral = |value: &Value| {
+                    matches!(
+                        *value,
+                        Value::Variable(_) | Value::Constant(_) | Value::StaticApplication(..)
+                    )
+                };
                 let set_aside = matches!(*left, Value::Returned(_))
                     || matches!(*right, Value::Returned(_))
                     || presented(left)
                     || presented(right)
+                    || (unit(left) && neutral(right))
+                    || (neutral(left) && unit(right))
                     || matches!(endpoints, Endpoints::Deferred { .. })
                         && matches!((left, right), (&Value::Thunk(_), &Value::Thunk(_)))
                         && (holds_redex(left) || holds_redex(right));

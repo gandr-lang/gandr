@@ -2,9 +2,12 @@
 //!
 //! A pair equals the pair of its projections.
 //! A record equals the record of its fields.
+//! The unit is the tuple of no components, and it equals each value
+//! of its type.
 //!
 //! A neutral product converts to its projected tuple on either side.
 //! Reflexivity proves the resulting path.
+//! Eta reads no grade, so a linear parameter of the unit type stays used once.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
@@ -35,3 +38,12 @@ def etaFiber(e : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(
   e
 ) =
   Path.here e
+
+/// The unit equals each value of its type.
+def etaUnit(u : Unit) -> Path[.A = Unit](*{}, u) =
+  Path.here u
+
+/// Eta relates the endpoints of this path, and the body takes the one copy of
+/// the linear parameter.
+def etaUnitOnce(u : Unit) ⊸ Path[.A = Unit](*{}, u) =
+  Path.here u

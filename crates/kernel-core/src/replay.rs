@@ -483,9 +483,11 @@ impl From<ParameterCount> for u32
     }
 }
 
-/// The definitions a replay may unfold, by admission position, the presented
-/// types whose terms it rewrites, and the relations lawful atoms read their
-/// identities as.
+/// The rules a replay may fire, by admission position.
+///
+/// They are the definitions it may unfold, the presented types whose terms it
+/// rewrites, the relations lawful atoms read their identities as, and the
+/// literal identity tests it computes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Unfoldings
 {
@@ -495,6 +497,9 @@ pub struct Unfoldings
     presentations: crate::presented::Presentations,
     /// The relation of each lawful atom, at its admission position.
     identities: BTreeMap<ConstantIndex, ValueId>,
+    /// The test of each literal identity declaration, at its admission
+    /// position.
+    tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
     /// The fixpoint each ruled definition's body thunks, in ascending order.
     /// Admission decided that the rules of the definition terminate and that
     /// the fixpoint is their decision tree, so its recursion terminates.
@@ -534,6 +539,7 @@ impl Unfoldings
             bodies,
             presentations: crate::presented::Presentations::default(),
             identities: BTreeMap::new(),
+            tests: BTreeMap::new(),
             terminating: Vec::new(),
         }
     }
@@ -623,6 +629,104 @@ impl Unfoldings
     ) -> Option<ValueId>
     {
         self.identities.get(&atom).copied()
+    }
+
+    /// These unfoldings, the replay computing every literal identity test
+    /// among `entries` on two literals.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in.
+    /// - ensures: [`Self::literal_identity`] answers the test of each literal
+    ///   identity declaration among `entries`, at its admission position, and
+    ///   nothing at any other position.
+    /// - provides: where the reduction computes a test forced and applied to
+    ///   two literals.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a test applied to two literals reduces to its answer
+    ///   with the table, and stays stuck without it.
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[inline]
+    #[must_use]
+    pub fn testing(
+        self,
+        entries: &crate::env::Entries,
+    ) -> Self
+    {
+        let mut tests = BTreeMap::new();
+        for (position, entry) in entries.iter().enumerate() {
+            if let gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } =
+                *entry.content()
+            {
+                let _previous = tests.insert(ConstantIndex::from(position), test);
+            }
+        }
+        Self { tests, ..self }
+    }
+
+    /// These unfoldings, the replay computing the test each position of
+    /// `tests` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn testing_at(
+        self,
+        tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
+    ) -> Self
+    {
+        Self { tests, ..self }
+    }
+
+    /// The literal identity test the constant at `constant` computes, when it
+    /// is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<gandr_kernel_term::LiteralIdentity>
+    {
+        self.tests.get(&constant).copied()
+    }
+
+    /// The rules of these unfoldings that no choice stands behind: the
+    /// presented types' rewriting and the literal identity tests, with no
+    /// definition to unfold.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same presentations and tests, every constant opaque, and
+    ///   no lawful atom or ruled fixpoint. The clause checks the count of tests
+    ///   and the empty bodies; the equality of the two tables stays prose-only,
+    ///   since comparing them walks both.
+    /// - provides: the table the kernel's own conversion fires unread.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the kernel's own conversion relates a test applied to
+    ///   two literals to its answer.
+    /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
+    #[spec(ensures: |ret| ret.tests.len() == self.tests.len() && ret.bodies.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn forced(&self) -> Self
+    {
+        Self {
+            presentations: self.presentations.clone(),
+            tests: self.tests.clone(),
+            ..Self::default()
+        }
     }
 
     /// These unfoldings, the replay reading the fixpoint each ruled
@@ -1402,7 +1506,7 @@ pub fn convert(
 {
     let (left, right) = terms(sides);
     let watermark = arena.watermark();
-    let rules = Unfoldings::default().presenting(unfoldings.presentations().clone());
+    let rules = unfoldings.forced();
     let mut run = Replay {
         arena,
         unfoldings: &rules,
@@ -2858,14 +2962,77 @@ enum Settled
     },
 }
 
-/// Whether a term can reduce anywhere inside it.
+/// Whether a term can reduce anywhere inside it, and what it holds that η
+/// relates across a pair.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Rigidity
 {
     /// Built only of formers, variables and constants without a body.
-    Rigid,
+    Rigid
+    {
+        /// It holds a tuple or a record of no components.
+        unit: bool,
+        /// It holds a variable or an opaque constant.
+        neutral: bool,
+    },
     /// It holds a thunk, a binder or a defined constant.
     Flexible,
+}
+
+impl Rigidity
+{
+    /// Whether two α-distinct terms of these rigidities are apart: both are
+    /// rigid, and neither holds a unit where the other holds a neutral, which
+    /// η relates to it (#6110).
+    ///
+    /// # Specification
+    /// trivial.
+    const fn separates(
+        self,
+        other: Self,
+    ) -> Separation
+    {
+        match (self, other) {
+            (
+                Self::Rigid { unit, neutral },
+                Self::Rigid {
+                    unit: other_unit,
+                    neutral: other_neutral,
+                },
+            ) if !((unit && other_neutral) || (neutral && other_unit)) => Separation::Apart,
+            (Self::Rigid { .. } | Self::Flexible, _) => Separation::Open,
+        }
+    }
+}
+
+/// Whether rigidity alone parts two α-distinct terms.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Separation
+{
+    /// No reduction and no η can relate them.
+    Apart,
+    /// A reduction or η may relate them.
+    Open,
+}
+
+/// Whether a term is the unit: the tuple or the record of no components.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnitForm
+{
+    /// The term is the unit, which η relates to each neutral of its type.
+    Unit,
+    /// The term is another.
+    Other,
+}
+
+/// Whether η closes a pair with no premise (#6110).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EtaJoin
+{
+    /// One side is the unit and the other a neutral.
+    Joins,
+    /// η leaves the pair to the other rules.
+    Leaves,
 }
 
 /// What a bind's continuation does at its head with the variable it binds.
@@ -3256,7 +3423,7 @@ where
     ) -> Result<Convertibility, Stop>
     {
         let watermark = self.arena.watermark();
-        let rules = Unfoldings::default().presenting(self.unfoldings.presentations().clone());
+        let rules = self.unfoldings.forced();
         let mut run = Replay {
             arena: &mut *self.arena,
             unfoldings: &rules,
@@ -3434,7 +3601,17 @@ where
                 next,
                 Next::Decision(ConversionDecision::ComparedShared { .. })
             ) {
-                match self.compared(&goal, apart)? {
+                // The unit meets a neutral by η with no premise, a leaf the
+                // engine records as one shared comparison (#6110).
+                let compared = if self.unit_against_neutral(&goal, [&left_shape, &right_shape])
+                    == EtaJoin::Joins
+                {
+                    Compared::Equal
+                }
+                else {
+                    self.compared(&goal, apart)?
+                };
+                match compared {
                     Compared::Equal => {
                         self.take();
                         return self
@@ -5753,9 +5930,10 @@ where
     /// - ensures: two formers of one kind decompose child by child, or close on
     ///   their payloads; two codes close on α-equality or rigid separation; two
     ///   returners, two lambdas, two lazy pairings, and two neutrals with one
-    ///   head and agreeing spines decompose; a non-empty tuple or record
-    ///   against a neutral decomposes into its components or fields against the
-    ///   neutral's projections; every other pair is a refuting leaf.
+    ///   head and agreeing spines decompose; a tuple or record against a
+    ///   neutral decomposes into its components or fields against the neutral's
+    ///   projections, the empty one into none, which is a convertible leaf;
+    ///   every other pair is a refuting leaf.
     /// - provides: the leaf and decomposition rules.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
     /// - panics: none.
@@ -5774,6 +5952,7 @@ where
     /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
     /// - witness: `replay::tests::a_lazy_pairing_meets_a_neutral_by_its_projections`
     /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
+    /// - witness: `replay::tests::the_unit_meets_a_neutral_by_eta_6110`
     #[spec(ensures: |ret| match (left, right) {
         (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
         (&Shape::ReturnAll(ref ones), &Shape::ReturnAll(ref others)) => if ones.len() == others.len() {
@@ -5896,15 +6075,20 @@ where
 
     /// The η premises of a tuple or a record against a neutral: each component
     /// or field against the neutral's projection at it, in the order the tuple
-    /// or the record's labels hold them, the neutral on `side`.
+    /// or the record's labels hold them, the neutral on `side`. The unit is the
+    /// tuple and the record of no components, so it meets a neutral of its type
+    /// with no premise.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: for a non-empty tuple or record value against a neutral
-    ///   value, one value premise per component or field, its other side the
-    ///   returned projection of the neutral at its position or label, in order;
-    ///   a refuting leaf for any other pair.
-    /// - provides: η for products and records.
+    /// - requires: the two sides stand at one type, as every conversion goal
+    ///   does.
+    /// - ensures: for a tuple or record value against a neutral value, one
+    ///   value premise per component or field, its other side the returned
+    ///   projection of the neutral at its position or label, in order; a
+    ///   convertible leaf for an empty tuple or record, and a refuting leaf for
+    ///   any other pair. Two neutrals never reach here, so two neutrals of the
+    ///   unit type stay apart unless they are one term.
+    /// - provides: η for products and records, the unit's among them.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
     /// - panics: none.
     ///
@@ -5914,8 +6098,10 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — a tuple or record of a neutral's own projections
     ///   replays convertible on either side, and swapped components refute at
-    ///   the first.
+    ///   the first. The empty tuple and the empty record replay convertible
+    ///   with a neutral on either side, and two neutrals stay apart.
     /// - witness: `replay::tests::a_tuple_meets_a_neutral_by_its_projections_715`
+    /// - witness: `replay::tests::the_unit_meets_a_neutral_by_eta_6110`
     #[spec(ensures: |ret| match ret {
         Ok(Structure::Premises(ref premises)) => premises.iter().all(|premise| {
             let (held, projected) = match side {
@@ -5925,7 +6111,8 @@ where
             matches!((held, projected), (Term::Value(_), Term::Value(value))
                 if matches!(self.arena.value(value), Some(&Value::Returned(_))))
         }),
-        Ok(Structure::Leaf(verdict)) => verdict == Expect::NotConvertible,
+        Ok(Structure::Leaf(verdict)) => verdict == Expect::NotConvertible
+            || (verdict == Expect::Convertible && self.unit(former) == UnitForm::Unit),
         Err(_) => true,
     })]
     fn projections(
@@ -5945,9 +6132,7 @@ where
             ConversionSide::Right => Premise::values(held, projected),
         };
         let held = self.arena.value(former).ok_or_else(unreadable)?;
-        if let Value::Tuple(ref components) = *held
-            && !components.is_empty()
-        {
+        if let Value::Tuple(ref components) = *held {
             let components = components.to_vec();
             for (position, held) in components.into_iter().enumerate() {
                 let projection = self.arena.computation_tuple_projection(
@@ -5957,9 +6142,7 @@ where
                 premises.push(premise(held, self.arena.value_returned(projection)));
             }
         }
-        else if let Value::Record(ref fields) = *held
-            && !fields.is_empty()
-        {
+        else if let Value::Record(ref fields) = *held {
             let fields: Vec<_> = fields
                 .iter()
                 .map(|(label, &held)| (label.clone(), held))
@@ -5972,7 +6155,68 @@ where
         else {
             return Ok(Structure::Leaf(Expect::NotConvertible));
         }
+        // No premise remains for the unit, which is a convertible leaf.
         Ok(Structure::of(premises))
+    }
+
+    /// Whether `term` is the unit: the tuple or the record of no components.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unit(
+        &self,
+        term: Term,
+    ) -> UnitForm
+    {
+        let Term::Value(value) = term
+        else {
+            return UnitForm::Other;
+        };
+        let held = self.arena.value(value);
+        if matches!(held, Some(&Value::Tuple(ref components)) if components.is_empty())
+            || matches!(held, Some(&Value::Record(ref fields)) if fields.is_empty())
+        {
+            UnitForm::Unit
+        }
+        else {
+            UnitForm::Other
+        }
+    }
+
+    /// Whether one side of `goal` is the unit and the other a neutral: the
+    /// pair that η closes with no premise.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the shapes of the goal's sides, left first.
+    /// - ensures: [`EtaJoin::Joins`] exactly when one shape is a former that is
+    ///   the unit and the other shape is a neutral.
+    /// - provides: the unit's η at a shared comparison, as
+    ///   [`Self::projections`] reads it in a decomposition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shared comparison of the unit and a variable closes
+    ///   convertible on either side, and one of two variables stays apart;
+    ///   reading another former as the unit changes a verdict.
+    /// - witness: `replay::tests::the_unit_meets_a_neutral_by_eta_6110`
+    #[spec(ensures: |ret| ret == EtaJoin::Leaves || (self.unit(goal.left) != self.unit(goal.right)
+        && matches!(shapes, [&Shape::Former, &Shape::Neutral(..)] | [&Shape::Neutral(..), &Shape::Former])))]
+    fn unit_against_neutral(
+        &self,
+        goal: &Goal,
+        shapes: [&Shape; 2],
+    ) -> EtaJoin
+    {
+        let unit = match shapes {
+            [&Shape::Former, &Shape::Neutral(..)] => self.unit(goal.left),
+            [&Shape::Neutral(..), &Shape::Former] => self.unit(goal.right),
+            _ => UnitForm::Other,
+        };
+        match unit {
+            UnitForm::Unit => EtaJoin::Joins,
+            UnitForm::Other => EtaJoin::Leaves,
+        }
     }
 
     /// The structural rule over two value formers.
@@ -6244,13 +6488,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 {
                     Structure::Leaf(Expect::Convertible)
                 }
-                else if matches!(
-                    (
-                        self.rigidity(Term::Value(left)),
-                        self.rigidity(Term::Value(right))
-                    ),
-                    (Rigidity::Rigid, Rigidity::Rigid)
-                ) {
+                else if self
+                    .rigidity(Term::Value(left))
+                    .separates(self.rigidity(Term::Value(right)))
+                    == Separation::Apart
+                {
                     Structure::Leaf(Expect::NotConvertible)
                 }
                 else if owable {
@@ -6293,8 +6535,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   defined head as the goal's premise says — a reading that stops leaves
     ///   the pair open, as [`read_endpoints`] leaves it apart; under
     ///   [`Apart::Defer`], [`Compared::Deferred`] when they are alike so but
-    ///   for computations that reading parts; [`Compared::Separated`] when both
-    ///   are rigid and neither holds, [`Compared::Open`] otherwise.
+    ///   for computations that reading parts; [`Compared::Separated`] when
+    ///   neither holds and their rigidities separate, so η relates no unit of
+    ///   one to a neutral of the other; [`Compared::Open`] otherwise.
     /// - provides: the replay of a closing on two shared nodes.
     /// - fails: [`ReplayRefusal::Unreadable`] on sides of two polarities.
     /// - panics: none.
@@ -6371,9 +6614,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 Apart::Part => {},
             }
         }
-        match (self.rigidity(goal.left), self.rigidity(goal.right)) {
-            (Rigidity::Rigid, Rigidity::Rigid) => Ok(Compared::Separated),
-            (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(Compared::Open),
+        if self
+            .rigidity(goal.left)
+            .separates(self.rigidity(goal.right))
+            == Separation::Apart
+        {
+            Ok(Compared::Separated)
+        }
+        else {
+            Ok(Compared::Open)
         }
     }
 
@@ -6546,7 +6795,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         Ok(Convertibility::Convertible)
     }
 
-    /// Whether anything inside `term` can reduce.
+    /// Whether anything inside `term` can reduce, or meet a neutral by η.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -6555,7 +6804,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   exactly when it resolves throughout and contains no reducible thunk,
     ///   returned endpoint, lambda, bind, case, transport or defined constant,
     ///   including through quoted types, decoded codes and static application
-    ///   operands. A static application over an opaque head is rigid.
+    ///   operands. A static application over an opaque head is rigid. A rigid
+    ///   term records whether it holds a unit and whether it holds a variable
+    ///   or an opaque constant.
     /// - provides: the separation half of [`Self::compared`].
     /// - fails: never — a dangling id is flexible.
     /// - panics: none.
@@ -6571,15 +6822,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Adequacy
     /// - hypothesis: L3: units and distinct variables are rigid while thunks
     ///   and defined constants prevent a shared comparison from closing
-    ///   negatively. This observer covers the root barriers and named pair
-    ///   fixtures, not every quoted type graph.
+    ///   negatively, and a unit never separates from a variable. This observer
+    ///   covers the root barriers and named pair fixtures, not every quoted
+    ///   type graph.
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
-            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. })) => ret == Rigidity::Rigid,
-            Some(held) if held.components() == Some(&[]) => ret == Rigidity::Rigid,
-            Some(&Value::Constant(constant)) => (ret == Rigidity::Rigid) == (self.unfoldings.unfolding(constant) == Unfoldable::Opaque),
+            Some(&(Value::Literal(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. })) => ret == Rigidity::Rigid { unit: false, neutral: false },
+            Some(&Value::Variable(_)) => ret == Rigidity::Rigid { unit: false, neutral: true },
+            Some(_) if self.unit(term) == UnitForm::Unit => ret == Rigidity::Rigid { unit: true, neutral: false },
+            Some(&Value::Constant(constant)) => ret == if self.unfoldings.unfolding(constant) == Unfoldable::Opaque { Rigidity::Rigid { unit: false, neutral: true } } else { Rigidity::Flexible },
             Some(&(Value::Thunk(_) | Value::Returned(_))) | None => ret == Rigidity::Flexible,
             _ => true,
         },
@@ -6597,6 +6850,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             Term::Value(value) => AnyNode::Value(value),
             Term::Computation(computation) => AnyNode::Computation(computation),
         }]);
+        let mut unit = false;
+        let mut neutral = false;
         while let Some(next) = work.pop() {
             match next {
                 AnyNode::Value(value) => match self.arena.value(value) {
@@ -6623,6 +6878,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         );
                     },
                     Some(&Value::Record(ref fields)) => {
+                        // η relates the unit to a neutral of its type (#6110).
+                        unit |= fields.is_empty();
                         work.extend(fields.values().copied().map(AnyNode::Value));
                     },
                     Some(&Value::Restrict { value, ref fixed }) => {
@@ -6634,10 +6891,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Some(&Value::Univalence(equivalence)) => {
                         work.push(AnyNode::Value(equivalence));
                     },
+                    Some(&Value::Variable(_)) => neutral = true,
                     Some(
                         &(Value::Literal(_)
                         | Value::ListNil
-                        | Value::Variable(_)
                         | Value::PathRefl(_)
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
@@ -6659,6 +6916,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         work.extend([AnyNode::Value(first), AnyNode::Value(second)]);
                     },
                     Some(&Value::Tuple(ref components)) => {
+                        unit |= components.is_empty();
                         work.extend(components.iter().copied().map(AnyNode::Value));
                     },
                     Some(&(Value::Injection(_, body) | Value::Lift { body, .. })) => {
@@ -6668,6 +6926,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         if self.unfoldings.unfolding(constant) != Unfoldable::Opaque {
                             return Rigidity::Flexible;
                         }
+                        neutral = true;
                     },
                     Some(&Value::Quote(quoted)) => work.push(AnyNode::ValueType(quoted)),
                     Some(&Value::QuoteComputation(quoted)) => {
@@ -6798,7 +7057,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 },
             }
         }
-        Rigidity::Rigid
+        Rigidity::Rigid { unit, neutral }
     }
 
     /// The shape of `term` in weak head form, with each constant head's status
@@ -8215,6 +8474,49 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             match self.arena.value(read.node) {
                                 Some(&Value::Thunk(body)) => {
                                     focus = read.with(body);
+                                    progress = Progress::Reduced;
+                                },
+                                // A literal identity test forced and applied to
+                                // two literals of its base answers as the
+                                // checker's evaluator does: the left summand of
+                                // `1 + 1` when it holds, the right when not.
+                                Some(&Value::Constant(constant)) => {
+                                    let answered = self
+                                        .unfoldings
+                                        .literal_identity(constant)
+                                        .and_then(|test| {
+                                            let [.., ref second, ref first] = *frames.as_slice()
+                                            else {
+                                                return None;
+                                            };
+                                            let (Frame::Apply(left), Frame::Apply(right)) =
+                                                (first.node, second.node)
+                                            else {
+                                                return None;
+                                            };
+                                            let left = cells.resolve(self.arena, first.with(left));
+                                            let right =
+                                                cells.resolve(self.arena, second.with(right));
+                                            match (
+                                                self.arena.value(left.node),
+                                                self.arena.value(right.node),
+                                            ) {
+                                                (
+                                                    Some(&Value::Literal(ref left)),
+                                                    Some(&Value::Literal(ref right)),
+                                                ) => test.answer(left, right),
+                                                _ => None,
+                                            }
+                                        });
+                                    let Some(summand) = answered
+                                    else {
+                                        break;
+                                    };
+                                    frames.truncate(frames.len().saturating_sub(2));
+                                    let unit = self.arena.value_unit();
+                                    let injected = self.arena.value_injection(summand, unit);
+                                    focus =
+                                        Closure::closed(self.arena.computation_return(injected));
                                     progress = Progress::Reduced;
                                 },
                                 Some(_) => break,

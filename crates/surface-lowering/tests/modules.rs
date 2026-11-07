@@ -1341,6 +1341,7 @@ fn modules_lower_to_named_member_declarations()
             let body = match *marked.declaration().content() {
                 DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
                 DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
                 | DeclarationContent::Data { .. }
                 | DeclarationContent::Codata { .. }
                 | DeclarationContent::AbstractType { .. } => None,

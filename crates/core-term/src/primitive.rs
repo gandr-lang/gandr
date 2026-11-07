@@ -63,9 +63,11 @@
 //! result.
 //!
 //! Native execution belongs to the sequent runtime. The pure normalizer runs
-//! no native operation: it holds a call as a neutral standing on the operation,
-//! forced and applied to its arguments, the shape erasure gives the kernel, so
-//! two calls convert exactly when their operations and their arguments do.
+//! one kind of native operation only, a literal identity test: `int.eq`, `eq`,
+//! `ne` and `string.eq` on two literals answer as the kernel computes them.
+//! It holds every other call as a neutral standing on the operation, forced
+//! and applied to its arguments, the shape erasure gives the kernel, so two
+//! such calls convert exactly when their operations and their arguments do.
 //! Persistence records the table name and ordered operands, never a function
 //! pointer or process-local address.
 //!
@@ -89,12 +91,27 @@
 //! not certify the host arithmetic implementation or introduce arithmetic
 //! equations into conversion. No unchecked admission is used.
 //!
+//! A literal identity test is the exception: the bridge admits its row as the
+//! kernel's literal identity form, `LiteralIdentity`, which the kernel admits
+//! only at the row's type and computes on two literals by its own comparison
+//! of canonical payloads. The audit reports it as a kernel primitive, not as
+//! an axiom. The checker's evaluator computes the same answer, so a conversion
+//! that rests on it replays.
+//!
 //! **Choice.** Explicit, auditable runtime assumptions rather than silently
 //! skipping kernel admission or adding host arithmetic to the trusted kernel.
-//! Revisit when a certified arithmetic implementation can replace an opaque
-//! signature while preserving the runtime contract. The checker witness
+//! Identity of literals is no arithmetic: it is equality of canonical
+//! payloads, which the kernel already decides. Revisit when a certified
+//! arithmetic implementation can replace an opaque signature while preserving
+//! the runtime contract. The checker witness
 //! `bridge::tests::native_operations_cross_as_audited_assumptions` checks the
 //! exported axiom, reference remapping and audit.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the four identity
+//!   rows compute in the kernel, priced as permanent trusted surface, and every
+//!   other row stays an opaque assumption.
 
 use alloc::string::String;
 use core::cmp::Ordering;
@@ -111,10 +128,13 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
+use gandr_kernel_term::IdentityBase;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
+use gandr_kernel_term::LiteralIdentity;
 use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::Polarity;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
@@ -759,6 +779,64 @@ impl Primitive
     pub const fn result(self) -> PrimitiveType
     {
         self.0.result
+    }
+
+    /// The literal identity test this row is, when it is one: equality or
+    /// inequality of two integers or two texts, answering a boolean.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly for a row answering a boolean over two
+    ///   arguments that are both integers or both texts, by [`Operation::Eq`]
+    ///   or [`Operation::Ne`]: `int.eq`, `eq`, `ne` and `string.eq`. The test's
+    ///   base is the arguments' type, and its polarity is [`Polarity::Same`]
+    ///   for equality.
+    /// - provides: the rows the checker's evaluator and the kernel compute on
+    ///   literals, read off the table rather than listed by name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on every pair of literals the test answers what the
+    ///   row's own evaluation answers, and every other row is no test.
+    /// - witness: `primitive::tests::an_identity_row_answers_as_its_evaluation`
+    #[spec(ensures: |ret| ret.is_none_or(|test| self.0.result == PrimitiveType::Boolean
+        && matches!(self.0.operation, Operation::Eq | Operation::Ne)
+        && (test.polarity() == Polarity::Same) == matches!(self.0.operation, Operation::Eq)))]
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(self) -> Option<LiteralIdentity>
+    {
+        let base = match *self.0.arguments {
+            [PrimitiveType::Integer, PrimitiveType::Integer] => IdentityBase::Integer,
+            [PrimitiveType::Text, PrimitiveType::Text] => IdentityBase::Text,
+            _ => return None,
+        };
+        let polarity = match self.0.operation {
+            Operation::Eq => Polarity::Same,
+            Operation::Ne => Polarity::Different,
+            Operation::First
+            | Operation::Add
+            | Operation::Sub
+            | Operation::Mul
+            | Operation::Div
+            | Operation::Mod
+            | Operation::Neg
+            | Operation::Lt
+            | Operation::Le
+            | Operation::Gt
+            | Operation::Ge
+            | Operation::And
+            | Operation::Or
+            | Operation::Not
+            | Operation::Append
+            | Operation::Exp
+            | Operation::FromInteger
+            | Operation::Round
+            | Operation::ToInteger
+            | Operation::FromIntegerToWidth => return None,
+        };
+        (self.0.result == PrimitiveType::Boolean).then_some(LiteralIdentity::new(base, polarity))
     }
 
     /// Mint the curried computation signature described by this row.

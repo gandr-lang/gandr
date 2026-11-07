@@ -380,7 +380,7 @@ impl MemoKey for GoalSupport
 /// - [`ConversionFault::Domain`] — a node does not resolve.
 #[spec(ensures: |ret| match glued {
     Glued::Value(id) => match domain.value_guard(id) {
-        Ok(Guard::Rigid(_)) => ret.is_ok(),
+        Ok(Guard::Rigid(..)) => ret.is_ok(),
         Ok(Guard::Flexible) => match domain.value(id) {
             Some(&DomainValue::Neutral { neutral, .. }) => if domain.neutral(neutral).is_some() { ret.is_ok() }
                 else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) },
@@ -390,7 +390,7 @@ impl MemoKey for GoalSupport
         Err(fault) => ret == Err(ConversionFault::Domain(fault)),
     },
     Glued::Computation(id) => match domain.comp_guard(id) {
-        Ok(Guard::Rigid(_)) => ret.is_ok(),
+        Ok(Guard::Rigid(..)) => ret.is_ok(),
         Ok(Guard::Flexible) => match domain.computation(id) {
             Some(&DomainComp::Neutral { neutral, .. }) => if domain.neutral(neutral).is_some() { ret.is_ok() }
                 else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) },

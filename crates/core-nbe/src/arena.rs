@@ -781,7 +781,7 @@ impl DomainArena
     #[spec(ensures: |ret| matches!(ret, Guard::Flexible) ==
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
-                !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
+                !matches!(self.value_guard(argument), Ok(Guard::Rigid(..))),
             Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::BindAll(..) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint{ .. } => true,
             Elimination::Force => false,
         })))]
