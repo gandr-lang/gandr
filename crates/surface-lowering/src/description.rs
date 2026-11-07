@@ -523,14 +523,14 @@ impl DescriptionDiagnostic
                 ref rule,
                 ref error,
             }) => {
-                let (kind, port) = match error {
-                    gandr_theory_levitation::CircuitDerivationError::CyclicWiring(port) => {
+                let (kind, port) = match *error {
+                    gandr_theory_levitation::CircuitDerivationError::CyclicWiring(ref port) => {
                         (WfKind::CyclicCircuitWiring, Some(port))
                     },
-                    gandr_theory_levitation::CircuitDerivationError::SplitOutputs(port) => {
+                    gandr_theory_levitation::CircuitDerivationError::SplitOutputs(ref port) => {
                         (WfKind::SplitCircuitOutputs, Some(port))
                     },
-                    gandr_theory_levitation::CircuitDerivationError::SharedPort(port) => {
+                    gandr_theory_levitation::CircuitDerivationError::SharedPort(ref port) => {
                         (WfKind::SharedCircuitPort, Some(port))
                     },
                     gandr_theory_levitation::CircuitDerivationError::NodeBudget { .. } => {
