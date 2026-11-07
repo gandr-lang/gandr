@@ -11,8 +11,9 @@
 //! left sides, and the chains of overlaps of two left sides. The suite builds
 //! the bar complex of each such block of the corpus, truncated at a word
 //! length, collapses it through the scheme of `theory-coherent-resolutions`,
-//! and compares the chains of dimensions two and three with the rules and the
-//! pairs that completion certifies.
+//! and compares the chains of dimensions two, three and four with the rules,
+//! the pairs that completion certifies and the critical triples of the block's
+//! cells.
 //!
 //! The suite also computes Squier's homology over the rationals on the small
 //! complex of every block of the corpus: one cell for each symbol, each rule
@@ -60,6 +61,7 @@ use gandr_theory_coherent_resolutions::TermPlace;
 use gandr_theory_coherent_resolutions::TermTable;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::Variable;
+use gandr_theory_coherent_resolutions::critical_triples;
 use gandr_theory_computads::EtaElaboration;
 use gandr_theory_computads::Term;
 use gandr_theory_discrete_morse::Budget;
@@ -139,6 +141,24 @@ impl Strings
         else {
             Reducibility::Irreducible
         }
+    }
+
+    /// The longest left side that ends `word`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ending(
+        &self,
+        word: &Word,
+    ) -> Word
+    {
+        self.rules
+            .iter()
+            .map(|&(ref left, _)| left)
+            .filter(|left| word.0.ends_with(&left.0))
+            .max_by_key(|left| left.0.len())
+            .expect("a chain ends with a left side")
+            .clone()
     }
 }
 
@@ -587,8 +607,9 @@ where
 pub struct RuleIndex(pub usize);
 
 /// What Brown's collapsing scheme leaves on a unary block: the essential cells
-/// of dimension two as words, and those of dimension three as their peak, the
-/// left side at its start and the left side at its end.
+/// of dimension two as words, those of dimension three as their peak and their
+/// two left sides, and those of dimension four as their peak and their three
+/// left sides, each from the start of the peak.
 #[derive(Debug, Default, Eq, PartialEq)]
 struct Collapse
 {
@@ -597,6 +618,9 @@ struct Collapse
     /// The peak and the two left sides of each essential cell of dimension
     /// three.
     pairs: BTreeSet<(Word, Word, Word)>,
+    /// The peak and the three left sides of each essential cell of dimension
+    /// four.
+    triples: BTreeSet<(Word, Word, Word, Word)>,
 }
 
 /// Collapse the bar complex of `strings` through Brown's collapsing scheme of
@@ -648,16 +672,18 @@ fn collapse(
             },
             [ref x, ref u, ref v] => {
                 let peak = x.then(u).then(v);
-                let tail = u.then(v);
-                let end = strings
-                    .rules
-                    .iter()
-                    .map(|&(ref left, _)| left)
-                    .filter(|left| tail.0.ends_with(&left.0))
-                    .max_by_key(|left| left.0.len())
-                    .expect("a chain ends with a left side")
-                    .clone();
-                let _new = out.pairs.insert((peak, x.then(u), end));
+                let _new = out
+                    .pairs
+                    .insert((peak, x.then(u), strings.ending(&u.then(v))));
+            },
+            [ref x, ref u, ref v, ref w] => {
+                let peak = x.then(u).then(v).then(w);
+                let _new = out.triples.insert((
+                    peak,
+                    x.then(u),
+                    strings.ending(&u.then(v)),
+                    strings.ending(&u.then(v).then(w)),
+                ));
             },
             _ => {},
         }
@@ -725,8 +751,9 @@ pub fn certified(cells: &DeclarationCells) -> Option<Certificates>
     }
 }
 
-/// A unary block read as strings: its rules, its letter count, and the
-/// certified pairs of its presented reading as their peak and two left sides.
+/// A unary block read as strings: its rules, its letter count, the certified
+/// pairs of its presented reading as their peak and two left sides, and the
+/// critical triples of its presented cells as their peak and three left sides.
 struct UnaryBlock
 {
     /// The rules as a string rewriting system.
@@ -735,6 +762,8 @@ struct UnaryBlock
     letters: LetterCount,
     /// The certified pairs.
     certified: BTreeSet<(Word, Word, Word)>,
+    /// The critical triples, each left side in the order of the peak.
+    triples: BTreeSet<(Word, Word, Word, Word)>,
 }
 
 /// The block `cells` read as strings when its presented reading's rules are
@@ -789,10 +818,22 @@ fn unary(cells: &DeclarationCells) -> Option<UnaryBlock>
             left_of.get(&pair.overlap.right)?.clone(),
         ));
     }
+    let mut triples = BTreeSet::new();
+    for triple in critical_triples(&presented.store) {
+        let (peak, _) = chain(&spelled(&triple.peak)?)?;
+        let [ref first, ref second, ref third] = triple.steps;
+        let _new = triples.insert((
+            word(&peak),
+            left_of.get(&first.cell)?.clone(),
+            left_of.get(&second.cell)?.clone(),
+            left_of.get(&third.cell)?.clone(),
+        ));
+    }
     Some(UnaryBlock {
         strings: Strings { rules },
         letters: LetterCount(u8::try_from(names.len()).expect("a small alphabet")),
         certified: pairs,
+        triples,
     })
 }
 
@@ -932,12 +973,14 @@ pub fn corpus() -> Vec<PathBuf>
 const CIRCLE: &str = include_str!("squier/fixtures/circle.gandr");
 
 #[test]
-fn the_circles_bar_complex_collapses_onto_its_two_rules_and_two_certified_pairs()
+fn the_circles_bar_complex_collapses_onto_its_two_rules_pairs_and_triples()
 {
     // The letters are `Loop` and `Unloop`, in name order. Brown's scheme keeps
     // `[Loop|Unloop]` and `[Unloop|Loop]`, the two left sides, and
     // `[Loop|Unloop|Loop]` and `[Unloop|Loop|Unloop]`, the two overlaps.
-    // Completion certifies the same two overlaps.
+    // Completion certifies the same two overlaps. It also keeps
+    // `[Loop|Unloop|Loop|Unloop]` and `[Unloop|Loop|Unloop|Loop]`, the two
+    // critical triples. The outer two left sides of each share no letter.
     let grammar = built_in().expect("the built-in grammar builds");
     let mut blocks = Vec::new();
     let lowering = each_block(&grammar, SourceText::from(CIRCLE), |cells| {
@@ -972,20 +1015,42 @@ fn the_circles_bar_complex_collapses_onto_its_two_rules_and_two_certified_pairs(
         "the essential cells of dimension three"
     );
     assert_eq!(block.certified, pairs, "the pairs completion certifies");
+    let triples = BTreeSet::from([
+        (
+            word(&[looped, unlooped, looped, unlooped]),
+            word(&[looped, unlooped]),
+            word(&[unlooped, looped]),
+            word(&[looped, unlooped]),
+        ),
+        (
+            word(&[unlooped, looped, unlooped, looped]),
+            word(&[unlooped, looped]),
+            word(&[looped, unlooped]),
+            word(&[unlooped, looped]),
+        ),
+    ]);
+    assert_eq!(
+        collapse.triples, triples,
+        "the essential cells of dimension four"
+    );
+    assert_eq!(block.triples, triples, "the critical triples of the cells");
 }
 
 #[test]
-fn every_unary_corpus_block_collapses_onto_its_rules_and_certified_pairs_but_one()
+fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
 {
     // Each unary corpus block's essential cells of dimension three are the
-    // pairs completion certifies. Those of dimension two are its rules' left
-    // sides, on every block but `IntOp`: its rule `pred x <=> P x` has a left
-    // side of one letter, so `pred` is no normal form, and the collapse drops
-    // the letter with the rule.
+    // pairs completion certifies, and those of dimension four are the critical
+    // triples of its cells. Those of dimension two are its rules' left sides,
+    // on every block but `IntOp`: its rule `pred x <=> P x` has a left side of
+    // one letter, so `pred` is no normal form, and the collapse drops the
+    // letter with the rule. A block with a triple longer than the truncation
+    // is undecided in dimension four.
     let grammar = built_in().expect("the built-in grammar builds");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
     let mut blocks = 0_usize;
     let mut apart: Vec<String> = Vec::new();
+    let mut undecided: Vec<String> = Vec::new();
     let mut lefts: BTreeSet<Word> = BTreeSet::new();
     for path in corpus() {
         let text = std::fs::read_to_string(&path).expect("a corpus source reads");
@@ -1007,6 +1072,21 @@ fn every_unary_corpus_block_collapses_onto_its_rules_and_certified_pairs_but_one
                 "{}: the essential pairs are the certified ones",
                 named.display()
             );
+            if block
+                .triples
+                .iter()
+                .any(|&(ref peak, ..)| peak.0.len() > WORD_BUDGET)
+            {
+                undecided.push(named.display().to_string());
+            }
+            else {
+                assert_eq!(
+                    collapse.triples,
+                    block.triples,
+                    "{}: the essential cells of dimension four are the critical triples",
+                    named.display()
+                );
+            }
             lefts.clear();
             lefts.extend(
                 block
@@ -1034,6 +1114,10 @@ fn every_unary_corpus_block_collapses_onto_its_rules_and_certified_pairs_but_one
         apart,
         ["model/data/arrows.gandr"],
         "the blocks whose rules a letter's definition shortens"
+    );
+    assert!(
+        undecided.is_empty(),
+        "every block decides dimension four within the truncation: {undecided:?}"
     );
 }
 
