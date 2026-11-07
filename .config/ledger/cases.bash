@@ -5,8 +5,9 @@
 # case in `.config/ledger/cases.json` a stub `gh` answers the one GraphQL
 # query of aliases the check sends: every issue it names answered from the
 # case, or the whole read failed as a rate limit does when any is missing
-# (#4263). `check.bash` runs there, and its exit status and standard error
-# are the case's.
+# (#4263). A case's `commit`, when it has one, is the message of the one
+# commit that the scratch history holds for that case (#6118). `check.bash`
+# runs there, and its exit status and standard error are the case's.
 set -euo pipefail
 root=$PWD
 scratch=$(mktemp -d)
@@ -54,9 +55,14 @@ while IFS= read -r case; do
   for number in $(jq -r '.answers | keys[]' <<< "$case"); do
     jq -r --arg n "$number" '.answers[$n]' <<< "$case" > "$scratch/answers/$number"
   done
+  if message=$(jq -er '.commit' <<< "$case"); then
+    git -C "$repo" -c user.name=case -c user.email=case@example.invalid -c commit.gpgsign=false \
+      commit --quiet --allow-empty --no-verify -m "$message"
+  fi
   status=0
   (cd "$repo" && PATH="$scratch/gh:$PATH" STUB_GH="$scratch/answers" "$root/.config/ledger/check.bash") \
     > /dev/null 2> "$scratch/err" || status=$?
+  git -C "$repo" update-ref -d HEAD 2> /dev/null || true
   if [[ $status != $(jq .exit <<< "$case") || $(< "$scratch/err") != $(jq -r .stderr <<< "$case") ]]; then
     printf 'ledger case FAILED: %s\n  exit %s, wanted %s\n  stderr:\n%s\n' \
       "$(jq -r .name <<< "$case")" "$status" "$(jq .exit <<< "$case")" "$(< "$scratch/err")" >&2

@@ -16,7 +16,7 @@
 # lines: the row's `id`, a `/// Implemented:` line, a `/// Not implemented:`
 # line stating the rest, and a `/// - owes: #n` references line naming an
 # open issue that owes it (crates/surface-corpus/README.md § Comments,
-# #4900).
+# #4900), and that no commit of the branch closes (#6118).
 # The shared sources it was drawn from stay in `corpus`. Every finding is
 # printed before the gate fails.
 #
@@ -147,16 +147,27 @@ done < <(sqlite3 -separator '|' "$db" "
   SELECT id, coalesce(issue, '') FROM feature
   WHERE status IN ('implemented', 'partial') AND coalesce(corpus, '') = '' AND exemplar IS NULL
   ORDER BY id;")
+# A commit names an issue by a closing keyword, or by the `(#n)` at the end of
+# a landed title. `closing <n>` is the pattern of such a name for #n.
+closing() {
+  printf '(^|[^[:alnum:]_])((close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#%s|[(]#%s[)])([^0-9]|$)' "$1" "$1"
+}
+# `names <n> <rev>...`: a commit in the history of the revisions names #n.
+names() {
+  [[ -n $(git log -1 --format=%h --extended-regexp --regexp-ignore-case --grep="$(closing "$1")" "${@:2}" 2> /dev/null) ]]
+}
 # An owed issue that a commit on another remote branch names, and that no
 # commit in the history of HEAD names, still owes here. The tree does not hold
 # its landing yet, as on `integration` before `landing` merges into it. This
-# is the rule of `check:tracking` (#5778). A commit names an issue by a
-# closing keyword, or by the `(#n)` at the end of a landed title.
+# is the rule of `check:tracking` (#5778).
 held_elsewhere() {
-  local pattern="(^|[^[:alnum:]_])((close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#$1|[(]#$1[)])([^0-9]|$)"
-  [[ -z $(git log -1 --format=%h --extended-regexp --regexp-ignore-case --grep="$pattern" HEAD 2> /dev/null) ]] &&
-    [[ -n $(git log -1 --format=%h --extended-regexp --regexp-ignore-case --grep="$pattern" --remotes --not HEAD 2> /dev/null) ]]
+  ! names "$1" HEAD && names "$1" --remotes --not HEAD
 }
+# An open owed issue that a commit of the branch names owes nothing: the
+# landing of that commit closes the issue, and then the head owes a closed
+# issue on the trunk. So the head names the issue that owes the rest before
+# the commit lands (#6118). A commit of the branch is one in the history of
+# HEAD that no remote branch holds, as before `pr:open` pushes the branch.
 while IFS='|' read -r id exemplar; do
   own=corpus/ledger/features/$id.gandr
   if [[ $exemplar != "$own" ]]; then
@@ -174,11 +185,21 @@ while IFS='|' read -r id exemplar; do
   [[ -n $owed ]] || missing+=('a `/// - owes: #n` line')
   if [[ -n $owed ]]; then
     owing=
+    closed=()
     for number in $(grep -oE '#[0-9]+' <<< "$owed" | tr -d '#'); do
       read_issue "$number"
-      if [[ ${issue[$number]} == OPEN$'\t'* ]] || { [[ ${issue[$number]} == CLOSED$'\t'* ]] && held_elsewhere "$number"; }; then owing=$number; break; fi
+      if [[ ${issue[$number]} == OPEN$'\t'* ]] && names "$number" HEAD --not --remotes; then
+        closed+=("#$number")
+      elif [[ ${issue[$number]} == OPEN$'\t'* ]] || { [[ ${issue[$number]} == CLOSED$'\t'* ]] && held_elsewhere "$number"; }; then
+        owing=$number
+        break
+      fi
     done
-    [[ -n $owing ]] || missing+=('an open issue on a `/// - owes:` line that owes the rest')
+    if [[ -z $owing && ${#closed[@]} -gt 0 ]]; then
+      missing+=("an issue on a \`/// - owes:\` line that owes the rest past ${closed[*]}, which a commit of the branch closes")
+    elif [[ -z $owing ]]; then
+      missing+=('an open issue on a `/// - owes:` line that owes the rest')
+    fi
   fi
   for lack in "${missing[@]}"; do
     printf '%s: the head of `%s` lacks %s (#2635)\n' "$id" "$own" "$lack" >&2
