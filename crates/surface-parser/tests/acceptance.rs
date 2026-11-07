@@ -1595,6 +1595,58 @@ fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// A form torn before a juxtaposed type ends at the next separator or
+/// declaration head as it ends before the type written as a call.
+///
+/// The type `Stream a` spells the call `Stream(a)`, and its zero-width tile is
+/// an operator that is still open when the next `;` or declaration head
+/// arrives. The tile is of the sort of a type, and the `;` and the head are
+/// not. The `)` of the call closes the type before them, so the meeting owes
+/// no obligation either way (#6027). Each row tears one form and writes its
+/// types each way: a codata field without its name, and a `def` without its
+/// `=` before a `pub` declaration.
+#[test]
+fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result<(), Box<dyn Error>>
+{
+    let field = |stream: &str| {
+        format!(
+            include_str!("acceptance/unformatted/a-torn-field-ends-at-its-separator-6027.gandr"),
+            stream = stream
+        )
+    };
+    let definition = |list: &str| {
+        format!(
+            include_str!(
+                "acceptance/unformatted/a-def-without-its-equals-ends-at-the-next-head-6027.gandr"
+            ),
+            list = list
+        )
+    };
+    let owed = |source: &str| -> Result<Vec<Oblig>, Box<dyn Error>> {
+        Ok(parse(built(), SourceText::from(source))?
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.class)
+            .collect())
+    };
+    for (juxtaposed, call) in [
+        (field("Stream a"), field("Stream(a)")),
+        (definition("List a"), definition("List(a)")),
+    ] {
+        let called = owed(&call)?;
+        assert!(
+            !called.is_empty(),
+            "the torn form owes its repair: {call:?}"
+        );
+        assert_eq!(
+            called,
+            owed(&juxtaposed)?,
+            "the juxtaposed type owes what its call owes: {juxtaposed:?}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {

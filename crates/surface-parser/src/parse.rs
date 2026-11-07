@@ -663,8 +663,9 @@ fn molded_moving<'pbg>(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the tree [`molded`]'s state over `source` commits to when the
-///   commit owes no obligation; `None` otherwise.
+/// - ensures: the tree [`molded`]'s state over `source` commits to when that
+///   state weighs no repair and the commit owes no obligation; `None`
+///   otherwise.
 /// - provides: the test a left-out tile's placement runs over each copy it
 ///   tries, and the tree it then reads, from one molding ([`place::placed`]).
 /// - panics: none.
@@ -672,7 +673,7 @@ fn molded_moving<'pbg>(
 /// # Adequacy
 /// - hypothesis: L3 — as [`Molder::mold_stream_until_repair`].
 /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
-#[spec(ensures: |ret| ret.is_some() == molded(pbg, source).commit_with_obligations(source).is_ok_and(|(_tree, obligations)| obligations.is_empty()))]
+#[spec(ensures: |ret| ret.is_some() == { let state = molded(pbg, source); !bool::from(state.weighs_repair()) && state.commit_with_obligations(source).is_ok_and(|(_tree, obligations)| obligations.is_empty()) })]
 fn unrepaired<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
