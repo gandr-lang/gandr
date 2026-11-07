@@ -3038,12 +3038,12 @@ fn grade() -> Regex
     ])
 }
 
-/// Build a single nested `else if` shape.
+/// Build a nested `else if` tail.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an if condition, optional answer-type slot and two blocks
-///   separated by else.
+/// - ensures: an if condition, optional answer-type slot and then block
+///   followed by an else branch.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3053,7 +3053,7 @@ fn grade() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "if")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "else")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Block))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "if")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "else")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Block))))]
 fn if_tail() -> Regex
 {
     seq([
@@ -3062,6 +3062,13 @@ fn if_tail() -> Regex
         opt(answer_type()),
         braced_statements(),
         t(TileLabel("else")),
+        repeat(seq([
+            t(TileLabel("if")),
+            h(Sort::Expression),
+            opt(answer_type()),
+            braced_statements(),
+            t(TileLabel("else")),
+        ])),
         block(),
     ])
 }

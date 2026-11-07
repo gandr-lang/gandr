@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x1f44fd8bdb5f4758`
+- Grammar fingerprint: `0x4dc93959998750e0`
 - Rules: 174 — 173 committed, 1 internal
-- Molds: 3025
+- Molds: 3059
 - Attributes: 19
 
 ## Reading a form
@@ -108,7 +108,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`thunk_expression`](../corpus/ledger/syntax/thunk-expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? BLOCK` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? BLOCK` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number |
 | [`match_expression`](../corpus/ledger/syntax/match-expression.gandr) | `match EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ { \| PATTERN => EXPRESSION ⦅ \| PATTERN => EXPRESSION ⦆* } ⦆` | `expression.atom` | `match_expression` | admitted | Keyword, Operator, Other |
 | [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ \| ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Member, Number, VariableParam, Operator, FunctionDef |
-| [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, Type, Member |
+| [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦆* BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, Type, Member |
 | [`for_expression`](../corpus/ledger/syntax/for-expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Number, Type, Member |
 | [`while_expression`](../corpus/ledger/syntax/while-expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | admitted | Keyword, Other, VariableDef, Number, Type, Member |
 | [`loop_expression`](../corpus/ledger/syntax/loop-expression.gandr) | `loop ⟨block⟩` | `expression.atom` | `loop_expression` * | admitted | Keyword, Other, VariableDef, Number, Type, Member |
@@ -350,7 +350,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `thunk_expression` | expression | 6 | `thunk` | — | 0 |
 | `match_expression` | expression | 11 | `match` | — | 3 |
 | `handle_expression` | expression | 78 | `handle` | — | 0 |
-| `if_expression` | expression | 68 | `if` | — | 0 |
+| `if_expression` | expression | 102 | `if` | — | 0 |
 | `for_expression` | expression | 34 | `for` | — | 0 |
 | `while_expression` | expression | 32 | `while` | — | 0 |
 | `loop_expression` | expression | 32 | `loop` | — | 0 |
@@ -454,21 +454,21 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 407 | 57 | 3 |
+| `identifier` | 411 | 57 | 3 |
 | `,` | 273 | 46 | 0 |
-| `:` | 248 | 32 | 0 |
-| `type_identifier` | 203 | 33 | 2 |
-| `=` | 143 | 37 | 0 |
+| `:` | 250 | 32 | 0 |
+| `type_identifier` | 205 | 33 | 2 |
+| `=` | 147 | 37 | 0 |
+| `;` | 133 | 26 | 1 |
 | `)` | 132 | 33 | 0 |
 | `(` | 128 | 32 | 5 |
-| `;` | 127 | 26 | 1 |
+| `.` | 93 | 45 | 3 |
 | `type_variable` | 93 | 15 | 3 |
-| `.` | 92 | 45 | 3 |
-| `]` | 78 | 40 | 0 |
-| `}` | 76 | 40 | 0 |
-| `[` | 59 | 33 | 4 |
-| `number` | 57 | 33 | 3 |
-| `{` | 54 | 26 | 2 |
+| `]` | 79 | 40 | 0 |
+| `}` | 77 | 40 | 0 |
+| `[` | 60 | 33 | 4 |
+| `number` | 58 | 33 | 3 |
+| `{` | 55 | 26 | 2 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 36 | 9 | 0 |
 | `-->` | 31 | 5 | 0 |
@@ -481,20 +481,20 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `arm_bar` | 21 | 9 | 0 |
 | `where` | 21 | 10 | 0 |
 | `<` | 18 | 9 | 3 |
-| `module` | 17 | 13 | 2 |
+| `module` | 18 | 13 | 2 |
+| `import` | 17 | 12 | 1 |
 | `ω` | 17 | 5 | 0 |
-| `import` | 16 | 12 | 1 |
+| `*=` | 16 | 11 | 0 |
+| `+=` | 16 | 11 | 0 |
+| `-=` | 16 | 11 | 0 |
+| `if` | 16 | 5 | 1 |
+| `let` | 16 | 11 | 0 |
 | `rule` | 16 | 5 | 2 |
-| `*=` | 15 | 11 | 0 |
-| `+=` | 15 | 11 | 0 |
-| `-=` | 15 | 11 | 0 |
-| `if` | 15 | 5 | 1 |
-| `let` | 15 | 11 | 0 |
-| `var` | 15 | 11 | 0 |
+| `var` | 16 | 11 | 0 |
 | `with` | 15 | 8 | 1 |
 | `"` | 14 | 6 | 4 |
 | `sort` | 14 | 8 | 1 |
-| `->` | 12 | 8 | 1 |
+| `->` | 13 | 8 | 1 |
 | `data` | 12 | 3 | 1 |
 | `mobile` | 10 | 2 | 0 |
 | `*{` | 9 | 5 | 4 |
@@ -524,6 +524,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `>>` | 3 | 3 | 1 |
 | `@![` | 3 | 3 | 2 |
 | `at` | 3 | 3 | 1 |
+| `else` | 3 | 1 | 0 |
 | `face` | 3 | 3 | 0 |
 | `false` | 3 | 3 | 3 |
 | `feed` | 3 | 2 | 0 |
@@ -542,7 +543,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `.#[` | 2 | 2 | 1 |
 | `:>` | 2 | 2 | 0 |
 | `break` | 2 | 2 | 2 |
-| `else` | 2 | 1 | 0 |
 | `hole_name` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
 | `typed_number` | 2 | 2 | 2 |

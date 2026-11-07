@@ -4,8 +4,8 @@
 //! value written there is returned, and the bind of a returner is written as
 //! its beta step. Each branch is a block read under two nameless binders, the
 //! bound condition and the case's unit payload, so no written name resolves to
-//! either. A conditional whose false branch is one more conditional, `if c {
-//! t } else if d { u } else { e }`, nests that one in its false branch. An
+//! either. A conditional whose false branch is an else-if chain nests each
+//! branch in its false branch. An
 //! answer written after the condition, `-> T`, is the answer every branch's
 //! last computation is read at, as a match's written answer is its arms', and
 //! the type the case is ascribed, so the conditional answers it wherever it
@@ -25,6 +25,7 @@ use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Block;
+use super::FormStretch;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
@@ -94,13 +95,15 @@ enum Otherwise
 {
     /// The block after `else`.
     Block(Block),
-    /// One more conditional after `else`, its false branch a block.
+    /// One or more conditionals after `else`, with a final false branch block.
     If
     {
         /// Its tested computation, read inside the outer false branch.
         condition: NodeIndex,
         /// The block it runs when that holds.
         then: Block,
+        /// The remaining `else if` rungs, in source order.
+        rest: FormStretch,
         /// The block it runs when it does not.
         otherwise: Block,
         /// The answer written after its condition, which its case is
@@ -153,14 +156,23 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::Computation)?;
         let (condition, then, inner, answer) = self.branch(site, &mut cursor, frame)?;
         let otherwise = if let Maybe::Present(_) = cursor.tile(TileName::IF) {
-            let (condition, then, below, own) = self.branch(site, &mut cursor, inner)?;
+            let start = self.else_ifs.mark();
+            let (condition, then, mut below, answer) = self.branch(site, &mut cursor, inner)?;
+            let mut last_answer = answer;
+            while let Maybe::Present(_) = cursor.tile(TileName::IF) {
+                let (condition, then, next, answer) = self.branch(site, &mut cursor, below)?;
+                self.else_ifs.push((condition, then, answer));
+                below = next;
+                last_answer = answer;
+            }
             let otherwise = self.block(site, &mut cursor, below)?;
-            self.ends(site, otherwise, own)?;
+            self.ends(site, otherwise, last_answer)?;
             Otherwise::If {
                 condition,
                 then,
+                rest: self.else_ifs.since(start),
                 otherwise,
-                answer: own,
+                answer,
             }
         }
         else {
@@ -344,16 +356,29 @@ impl<'source> Lowerer<'_, 'source>
             Otherwise::If {
                 condition,
                 then,
+                rest,
                 otherwise,
                 answer,
-            } => match (
-                self.mint_block(then, sink),
-                self.mint_block(otherwise, sink),
-            ) {
-                (Maybe::Present(then), Maybe::Present(otherwise)) => {
-                    self.tested((condition, answer), [then, otherwise], sink, origin)
-                },
-                (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => Maybe::Absent(reason),
+            } => {
+                let mut otherwise = self.mint_block(otherwise, sink);
+                for &(condition, then, answer) in self.else_ifs.read(rest).iter().rev() {
+                    otherwise = match (self.mint_block(then, sink), otherwise) {
+                        (Maybe::Present(then), Maybe::Present(otherwise)) => {
+                            self.tested((condition, answer), [then, otherwise], sink, origin)
+                        },
+                        (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                            Maybe::Absent(reason)
+                        },
+                    };
+                }
+                match (self.mint_block(then, sink), otherwise) {
+                    (Maybe::Present(then), Maybe::Present(otherwise)) => {
+                        self.tested((condition, answer), [then, otherwise], sink, origin)
+                    },
+                    (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                        Maybe::Absent(reason)
+                    },
+                }
             },
         };
         let Maybe::Present(otherwise) = otherwise
