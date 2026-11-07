@@ -1,0 +1,12 @@
+error[ShadowCaptured]: the linear parameter is used inside a thunk, which may use it other than once
+  ╭▸ corpus/ledger/diagnostics/ShadowCaptured.gandr:3:48
+  │
+3 │ def suspended(x : Integer) ⊸ +U (-F Integer) = thunk { pure x } ;
+  │ ┬─────────────┬────────────────────────────────┯━━━━━━━━━━━━━━━──
+  │ │             │                                │
+  │ │             │                                a linear parameter that may be used other than once
+  │ │             checked against `(x : Integer) ⊸ -F (() -> Integer)`; while checking the body of this function; binds x : Integer
+  │ checked against `+U ((x : Integer) ⊸ -F (() -> Integer))`; while checking the body of this thunk
+  │
+  ├ note: `suspended` is refused with ShadowCaptured, as its expectation states
+  ╰ help: use the linear parameter outside the thunk, loop or fold that captures it

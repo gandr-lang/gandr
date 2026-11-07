@@ -2657,6 +2657,7 @@ mod tests
               ") { ${1:computation} \\}"
               ") = ${1:value};"
               ") -> ${1:type} { ${2:computation} \\}"
+              ") ⊸ ${1:type} { ${2:computation} \\}"
               ", ${1:identifier}) { ${2:computation} \\}"
               ", ${1:type_variable}) { ${2:computation} \\}"
               ", ${1:type_identifier}) { ${2:computation} \\}"
