@@ -1,0 +1,49 @@
+// No cloning in the type system: a qubit carries no comonoid, so no binder
+// copies or discards it.
+//
+// A quantum state has no copy and no discard. A program that copies or
+// discards a qubit has no physical meaning, so the checker must refuse it.
+//
+// A gate is a linear function from `Qubit` to `Qubit`, and it takes its qubit
+// once. A body that copies the qubit and a body that discards it are each
+// refused by name. A binder that may use a qubit any number of times is
+// refused too, whether a function, a declaration or a data field writes it.
+//
+// - see: `../../ledger/features/qubit-type.gandr`
+
+// The qubit type, which carries no comonoid.
+import std.quantum (Qubit);
+
+/// The identity gate takes its qubit once and returns it.
+@[ checks ]
+def gate(q : Qubit) ⊸ Qubit = q;
+
+/// Three gates nest. Each gate takes the qubit that the inner gate gives.
+@[ checks ]
+def thrice(q : Qubit) ⊸ Qubit = gate (gate (gate (q)));
+
+/// A copy of the qubit spends its one copy twice.
+@[ refuses("LinearSlotConsumed") ]
+def twice(q : Qubit) ⊸ Qubit * Qubit = *{q, q};
+
+/// A discard of the qubit leaves its one copy unread.
+@[ refuses("LinearSlotUnconsumed") ]
+def discard(q : Qubit) ⊸ Integer = 0;
+
+/// A binder at `->` may use the qubit any number of times.
+@[ refuses("ComonoidAbsent") ]
+def keep(q : Qubit) -> Qubit = q;
+
+/// A program may use a declaration any number of times.
+@[ refuses("ComonoidAbsent") ]
+def zero : Qubit = ?;
+
+/// A data field holds its value as a binder at `->` does.
+@[ refuses("ComonoidAbsent") ]
+data Box : Type where
+  | MkBox : (q : Qubit) --> Box
+
+/// A data parameter holds its value in types only, and a qubit has no discard.
+@[ refuses("ComonoidAbsent") ]
+data Tagged(q : Qubit) : Type where
+  | Tag : Tagged(q)

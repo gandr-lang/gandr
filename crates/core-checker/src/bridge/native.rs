@@ -256,6 +256,7 @@ impl Erasure<'_, '_>
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
                     | ValueType::Buffer
+                    | ValueType::Qubit
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
                     | ValueType::World(_)
@@ -644,6 +645,7 @@ impl Erasure<'_, '_>
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
                     | ValueType::Buffer
+                    | ValueType::Qubit
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
                     | ValueType::World(_)

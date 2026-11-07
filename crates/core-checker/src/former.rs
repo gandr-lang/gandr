@@ -144,6 +144,7 @@ use quenchant_shape::shape::Maybe;
 use crate::CheckRefusal;
 use crate::CheckingContext;
 use crate::TypeNode;
+use crate::comonoid::Grade;
 use crate::declaration::AbstractType;
 use crate::failure::Failure;
 use crate::failure::Pursuit;
@@ -300,7 +301,13 @@ pub fn form_signature_with_failure(
             .map_err(|_cause| bare(CheckRefusal::DataKindNotUniverse(kind), kind))?;
         for &parameter in signature.parameters() {
             let _formed = form_value_type_with_failure(context, parameter)?;
-            context.binders().open(Zone::Intuitionistic, parameter);
+            context
+                .open_intuitionistic(
+                    CoreNode::Type(TypeNode::Value(parameter)),
+                    parameter,
+                    Grade::Zero,
+                )
+                .map_err(|refusal| bare(refusal, parameter))?;
         }
         let stated = signature.results().len() == signature.constructors().len()
             && signature
@@ -317,7 +324,9 @@ pub fn form_signature_with_failure(
         let below = context.depth(Zone::Intuitionistic);
         for &index in signature.indices() {
             let _formed = form_value_type_with_failure(context, index)?;
-            context.binders().open(Zone::Intuitionistic, index);
+            context
+                .open_intuitionistic(CoreNode::Type(TypeNode::Value(index)), index, Grade::Zero)
+                .map_err(|refusal| bare(refusal, index))?;
         }
         while context.depth(Zone::Intuitionistic) != below {
             let _closed = context
@@ -334,7 +343,9 @@ pub fn form_signature_with_failure(
                 if !bool::from(level.lt(&upper)) {
                     return Err(bare(CheckRefusal::DataFieldLevel { field, kind }, field));
                 }
-                context.binders().open(Zone::Intuitionistic, field);
+                context
+                    .open_intuitionistic(CoreNode::Type(TypeNode::Value(field)), field, Grade::Many)
+                    .map_err(|refusal| bare(refusal, field))?;
             }
             let stated = signature.results().get(tag).map_or(&[][..], Vec::as_slice);
             for (position, (&value, &index)) in stated.iter().zip(signature.indices()).enumerate() {

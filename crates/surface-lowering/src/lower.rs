@@ -25709,6 +25709,7 @@ impl Sink<'_>
                 TypeAtom::Fixed(width) => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Fixed(width))),
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
                 TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
+                TypeAtom::Qubit => self.arena.value_type(id) == Some(&ValueType::Qubit),
                 TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
                 TypeAtom::Row => self.arena.value_type(id) == Some(&ValueType::Row),
             },
@@ -25735,6 +25736,7 @@ impl Sink<'_>
             | TypeAtom::Fixed(_)
             | TypeAtom::Void
             | TypeAtom::Buffer
+            | TypeAtom::Qubit
             | TypeAtom::Web
             | TypeAtom::Row => atom_type(self.arena, atom),
         };
@@ -25750,9 +25752,9 @@ impl Sink<'_>
 /// - requires: nothing.
 /// - ensures: the two-summand sum of units for `Boolean`, the unit, the
 ///   integers, the strings, the characters, the binary64 floats, a width's
-///   integers, the empty sum, the buffer, the webs and the row kind for `Unit`,
-///   `Integer`, `Text`, `Character`, `Float64`, `Fixed`, `Void`, `Buffer`,
-///   `Web` and `Row`.
+///   integers, the empty sum, the buffer, the qubit, the webs and the row kind
+///   for `Unit`, `Integer`, `Text`, `Character`, `Float64`, `Fixed`, `Void`,
+///   `Buffer`, `Qubit`, `Web` and `Row`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -25780,6 +25782,7 @@ pub fn atom_type(
         TypeAtom::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
         TypeAtom::Void => arena.value_type_sum(&[]),
         TypeAtom::Buffer => arena.value_type_buffer(),
+        TypeAtom::Qubit => arena.value_type_qubit(),
         TypeAtom::Web => arena.value_type_web(),
         TypeAtom::Row => arena.value_type_row(),
     }

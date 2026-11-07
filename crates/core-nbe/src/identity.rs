@@ -270,6 +270,7 @@ pub fn clause(
             | ValueType::Stack { .. }
             | ValueType::Capability { .. }
             | ValueType::Buffer
+            | ValueType::Qubit
             | ValueType::Lift { .. }
             | ValueType::StaticPi { .. }
             | ValueType::Sigma { .. }

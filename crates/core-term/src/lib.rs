@@ -264,6 +264,7 @@ pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
 pub use crate::arena::CoreArena;
 pub use crate::arena::ElementFields;
+pub use crate::arena::QubitPrecedence;
 pub use crate::arena::ValueId;
 pub use crate::arena::ValueTypeId;
 pub use crate::classifier::Classifier;

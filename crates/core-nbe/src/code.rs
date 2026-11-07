@@ -1547,6 +1547,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | ValueType::StaticPi { .. }
                     | ValueType::Unknown
                     | ValueType::Buffer
+                    | ValueType::Qubit
                     | ValueType::Web
                     | ValueType::Session(_)
                     | ValueType::Flow { .. }
@@ -1655,7 +1656,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 2) }),
                         (&ValueType::Base(a), &ValueType::Base(b)) => Ok((Alike::between(&a, &b), 0, 0)),
                         (&ValueType::Abstract(a), &ValueType::Abstract(b)) => Ok((Alike::between(&a, &b), 0, 0)),
-                        (&ValueType::Buffer, &ValueType::Buffer) | (&ValueType::Web, &ValueType::Web) => Ok((Alike::Same, 0, 0)),
+                        (&ValueType::Buffer, &ValueType::Buffer) | (&ValueType::Qubit, &ValueType::Qubit) | (&ValueType::Web, &ValueType::Web) => Ok((Alike::Same, 0, 0)),
                         (&ValueType::Universe { .. }, &ValueType::Universe { .. }) => Ok((Alike::between(left, right), 0, 0)),
                         (&ValueType::Stack { .. }, &ValueType::Stack { .. })
                         | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. })
@@ -1993,6 +1994,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     else if matches!(
                         (matched_left_value, matched_right_value),
                         (&ValueType::Buffer, &ValueType::Buffer)
+                            | (&ValueType::Qubit, &ValueType::Qubit)
                             | (&ValueType::Web, &ValueType::Web)
                     ) {
                         Ok(Alike::Same)
@@ -2178,6 +2180,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Sigma { .. }
                                 | ValueType::Unknown
                                 | ValueType::Buffer
+                                | ValueType::Qubit
                                 | ValueType::Web
                                 | ValueType::Session(_)
                                 | ValueType::Flow { .. }
@@ -2448,7 +2451,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         Ok(Atom::Constant(_, Rigidity::Flexible) | Atom::Called(..) | Atom::Operator(..) | Atom::Other(_)) => ret == Ok(Rigidity::Flexible),
         Ok(Atom::Quote(id, _)) => match self.core.value_type(id) {
             None => ret == Err(ConversionFault::MachineInvariant),
-            Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer | ValueType::Web)) => ret == Ok(Rigidity::Rigid),
+            Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer | ValueType::Qubit | ValueType::Web)) => ret == Ok(Rigidity::Rigid),
             Some(held) if matches!(*held, ValueType::Product(ref components) if components.is_empty()) => ret == Ok(Rigidity::Rigid),
             Some(_) => matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)),
         },
@@ -3374,6 +3377,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)
                         | ValueType::Buffer
+                        | ValueType::Qubit
                         | ValueType::Web
                         | ValueType::Row => {},
                         ValueType::Capability { ref authority, .. } => {

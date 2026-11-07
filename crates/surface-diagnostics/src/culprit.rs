@@ -507,6 +507,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
             LinearityDefect::ShadowCaptured { .. } => {
                 "a linear parameter that may be used other than once"
             },
+            LinearityDefect::ComonoidAbsent { .. } => "a binder over a qubit",
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => "no held value here",

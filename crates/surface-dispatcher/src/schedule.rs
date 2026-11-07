@@ -322,6 +322,7 @@ fn layout(
                 | ValueType::Capability { .. }
                 | ValueType::Session(_)
                 | ValueType::Buffer
+                | ValueType::Qubit
                 | ValueType::Kept { .. }
                 | ValueType::World(WorldType::Capability(_))),
             ) => return Layout::Unlaid,

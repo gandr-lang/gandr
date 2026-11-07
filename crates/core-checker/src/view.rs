@@ -269,6 +269,9 @@ pub enum ValueTypeView<'arena>
     /// The opaque buffer `Buf`: inhabited only by a receive's binder, live
     /// until it is sent back.
     Buffer,
+    /// The qubit type: one quantum bit, which carries no comonoid, so only the
+    /// linear zone holds it.
+    Qubit,
     /// A session type: the protocol state an endpoint is at, with its
     /// payloads.
     Session(&'arena gandr_core_term::session::SessionType),
@@ -451,6 +454,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Row) => matches!(arena.value_type(value_type), Some(&ValueType::Row)),
     | Ok(ValueTypeView::RowTail(code)) => matches!(arena.value_type(value_type), Some(&ValueType::RowTail(found)) if found == code),
     | Ok(ValueTypeView::Buffer) => matches!(arena.value_type(value_type), Some(&ValueType::Buffer)),
+    | Ok(ValueTypeView::Qubit) => matches!(arena.value_type(value_type), Some(&ValueType::Qubit)),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
@@ -556,6 +560,7 @@ pub fn value_type_view(
             region,
         }),
         ValueType::Buffer => Ok(ValueTypeView::Buffer),
+        ValueType::Qubit => Ok(ValueTypeView::Qubit),
         ValueType::Dialogue(session) => Ok(ValueTypeView::Dialogue(session)),
         ValueType::Web => Ok(ValueTypeView::Web),
         ValueType::Staged { base, stage } => Ok(ValueTypeView::Staged { base, stage }),

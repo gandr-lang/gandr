@@ -2218,7 +2218,7 @@ ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Patched { ref fixed, .. } => fixed.len().saturating_add(1),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 0_usize,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Qubit | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
@@ -2785,6 +2785,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         | ValueType::Abstract(_)
                         | ValueType::Unknown
                         | ValueType::Buffer
+                        | ValueType::Qubit
                         | ValueType::Web
                         | ValueType::Row => {},
                         ValueType::Capability { ref authority, .. } => self.tasks.extend(
@@ -4386,7 +4387,7 @@ ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Patched { ref fixed, .. } => fixed.len().saturating_add(1),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 0_usize,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Qubit | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
@@ -4613,6 +4614,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | ValueType::Abstract(_)
             | ValueType::Unknown
             | ValueType::Buffer
+            | ValueType::Qubit
             | ValueType::Web
             | ValueType::Row => id,
             ValueType::Capability {

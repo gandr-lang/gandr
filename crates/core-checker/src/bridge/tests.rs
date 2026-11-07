@@ -7309,6 +7309,10 @@ fn each_former_the_kernel_refuses_names_its_issue()
             tracked(TrackingIssue::KERNEL_STAGE),
         ),
         (
+            UnadmittedFormer::Qubit,
+            tracked(TrackingIssue::KERNEL_QUBIT),
+        ),
+        (
             UnadmittedFormer::NumericLiteral,
             tracked(TrackingIssue::JUDGEMENT_FORMER),
         ),

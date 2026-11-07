@@ -1,0 +1,10 @@
+// `std.quantum`: the home of the qubit type. `Qubit` is one quantum bit, and it
+// carries no comonoid: no binder copies or discards a qubit. Only a linear
+// function's parameter holds one, so a gate is a linear function from `Qubit`
+// to `Qubit`.
+//
+// A source names the type in its import list, `import std.quantum (Qubit);`.
+// The atom is native, so no declaration here states it. The lowering answers
+// it only in a source that imports it from this module.
+//
+// - see: #5739

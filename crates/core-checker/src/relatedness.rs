@@ -193,6 +193,7 @@ pub fn require_unsealed(
                     | ValueTypeView::Element { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Qubit
                     | ValueTypeView::Session(_)
                     | ValueTypeView::World(_)
                     | ValueTypeView::Row
@@ -477,6 +478,7 @@ fn clause(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Session(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
@@ -825,6 +827,7 @@ fn interpret(
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Session(_)
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }

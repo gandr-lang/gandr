@@ -334,6 +334,16 @@ pub enum LinearityDefect
         /// What may run the read.
         by: Capture,
     },
+    /// A binder of the intuitionistic zone holds a type with no comonoid: the
+    /// qubit type, or a type that holds one. Only a linear function's
+    /// parameter holds a qubit.
+    ComonoidAbsent
+    {
+        /// The binder's type.
+        ty: ValueTypeId,
+        /// The binder's grade.
+        grade: crate::comonoid::Grade,
+    },
 }
 
 /// An endpoint the linear zone held when a run refused.
@@ -413,6 +423,7 @@ pub(crate) fn session_at(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Abstract(_)
@@ -424,14 +435,17 @@ pub(crate) fn session_at(
 }
 
 /// Refuse a declaration whose formed type `declared` is a session type at its
-/// weak head: an endpoint exists only in the linear zone a fork opens.
+/// weak head, or holds a type with no comonoid: an endpoint exists only in the
+/// linear zone a fork opens, and a qubit only at a linear function's
+/// parameter.
 ///
 /// # Specification
 /// - requires: `declared` is formed.
 /// - ensures: nothing changes.
 /// - fails: [`CheckRefusal::Linearity`] naming
-///   [`LinearityDefect::Unrestricted`] at `declared`; the unfolding's refusal
-///   when a decode does not unfold.
+///   [`LinearityDefect::ComonoidAbsent`] at grade ω when `declared` holds a
+///   qubit, and [`LinearityDefect::Unrestricted`] when it is a session type,
+///   each at `declared`; the unfolding's refusal when a decode does not unfold.
 /// - panics: none.
 ///
 /// # Errors
@@ -439,8 +453,10 @@ pub(crate) fn session_at(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration at a written session type and one at a type
-///   alias of it are both refused, and a declaration at a thunk type is not.
+///   alias of it are both refused, a declaration at a qubit is refused, and a
+///   declaration at a thunk type is not.
 /// - witness: `judgement::session::tests::an_endpoint_at_a_top_level_declaration_is_refused`
+/// - witness: `judgement::session::tests::each_binder_over_a_qubit_is_refused_5739`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::Linearity { at, defect: LinearityDefect::Unrestricted }) => {
         at == crate::refusal::CoreNode::Type(crate::refusal::TypeNode::Value(declared))
@@ -452,6 +468,12 @@ pub(crate) fn unrestricted(
     declared: ValueTypeId,
 ) -> Result<(), CheckRefusal>
 {
+    crate::comonoid::require(
+        context.arena(),
+        crate::refusal::CoreNode::Type(crate::refusal::TypeNode::Value(declared)),
+        declared,
+        crate::comonoid::Grade::Many,
+    )?;
     let head = match value_type_view(context.arena(), declared)? {
         ValueTypeView::Element { .. } => context.whnf_value_type(declared)?,
         ValueTypeView::Data { .. }
@@ -485,6 +507,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
@@ -528,6 +551,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Qubit
         | ValueTypeView::World(_)
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)

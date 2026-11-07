@@ -585,6 +585,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Stack { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_) => {
                 return Err(CheckRefusal::Access {

@@ -470,6 +470,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_) => {
