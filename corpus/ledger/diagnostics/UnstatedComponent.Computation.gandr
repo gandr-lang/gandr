@@ -8,4 +8,4 @@ theory Counter where
   oper step : (c : C) --> C;
 
 @[ refuses("UnstatedComponent.Computation") ]
-def counterModel : Model(Counter) ;
+def counterModel : Model Counter ;

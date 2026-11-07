@@ -11,4 +11,4 @@ theory Loose where
   law loose : (a : Carrier) -> Path[.A = Bool](alike a b, true);
 
 @[ refuses("UnstatedComponent.Unbound") ]
-def model : Model(Loose) ;
+def model : Model Loose ;

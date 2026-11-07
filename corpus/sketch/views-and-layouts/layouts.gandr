@@ -26,21 +26,21 @@ pub data Ints : Type where
 
 /// The pointer-tagged layout: the low bit of a word tells the empty list from
 /// a pointer to a cell.
-pub def tagged : Layout(Ints) = #ribbit{
+pub def tagged : Layout Ints = #ribbit{
   Nil  -> _64 ⋉ [0 : 1] : (1)1
   Cons -> & 64 {{head, tail}} ⋉ [0 : 1] : (0)1
 }
 
 /// The packed layout: two elements per pointer, a lone last element inline in
 /// the word.
-pub def packed : Layout(Ints) = #ribbit{
+pub def packed : Layout Ints = #ribbit{
   Nil                    -> _64 ⋉ [0 : 2] : (0)2
-  Cons(x, Nil)           -> _64 ⋉ [0 : 2] : (1)2 ⋉ [2 : 32] : x
-  Cons(x, Cons(y, rest)) -> & 64 {{x, y, rest}} ⋉ [0 : 2] : (2)2
+  Cons x Nil           -> _64 ⋉ [0 : 2] : (1)2 ⋉ [2 : 32] : x
+  Cons(x, Cons y rest) -> & 64 {{x, y, rest}} ⋉ [0 : 2] : (2)2
 }
 
 /// The first element, read through the packed layout's own arms.
-def head(xs : Ints) -> Maybe(i32) =
+def head(xs : Ints) -> Maybe i32 =
   match xs with packed where
     | Empty => none
     | One(x) => some x

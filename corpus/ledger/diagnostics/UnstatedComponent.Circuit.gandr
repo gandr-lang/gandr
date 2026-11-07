@@ -11,4 +11,4 @@ theory T where
   };
 
 @[ refuses("UnstatedComponent.Circuit") ]
-def model : Model(T) ;
+def model : Model T ;

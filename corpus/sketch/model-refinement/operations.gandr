@@ -20,7 +20,7 @@ pub theory Buffer where
   oper empty : E;
 
 /// A buffer of three integers, its capacity fixed by its type.
-def triple : Model(Buffer) with {
+def triple : Model Buffer with {
   | sort E = Integer
   | def size = 3
 } = *{
@@ -31,8 +31,8 @@ def triple : Model(Buffer) with {
 /// Two buffers of one capacity pair up without a check, since their types fix
 /// the capacity.
 def zipSame[n : Integer](
-  a : Model(Buffer) with { def size = n },
-  b : Model(Buffer) with { def size = n }
+  a : Model Buffer with { def size = n },
+  b : Model Buffer with { def size = n }
 ) -> *{left : a.E, right : b.E} =
   *{left = a.empty, right = b.empty}
 

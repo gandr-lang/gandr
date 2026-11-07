@@ -33,14 +33,14 @@ def decode(c : Code) -> Type =
 @[ checks ]
 data Tagged : Code -> Type where
   /// An integer.
-  | AnInt : (i : Integer) --> Tagged(CInt)
+  | AnInt : (i : Integer) --> Tagged CInt
   /// The unit value.
-  | AUnit : Tagged(CUnit)
+  | AUnit : Tagged CUnit
 
 /// A tagged value at its code's decode. Each arm's goal reads its own
 /// constructor's code.
 @[ checks ]
-def untag(c : Code, v : Tagged(c)) -> decode(c) =
+def untag(c : Code, v : Tagged c) -> decode(c) =
   match v where
     | AnInt(i) => i
     | AUnit => *{}

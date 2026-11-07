@@ -15,7 +15,7 @@
 import std.tactic (Tactic, Goal, exact, fail);
 
 /// Closes the goal with the first hypothesis whose type matches it.
-def assumption(hyps : Model(*{ .. })) -> [Tactic] Unit =
+def assumption(hyps : Model *{ .. }) -> [Tactic] Unit =
   let goal = Goal.current ()
   match find(hyps, fun (h) { h.type == goal.type }) where
     | Some(h) => exact h.term
@@ -27,5 +27,5 @@ def swap(p : A, q : B) -> *{B, A} =
 
 /// The scope narrowed by ascription to the two bindings a check reads.
 def bounds(lo : Nat, hi : Nat, step : Nat) -> Bool =
-  let e = ~env : Model(*{ lo : Nat; hi : Nat })
-  e.lo <= e.hi
+  let e = ~env : Model *{ lo : Nat; hi : Nat })
+  e.lo <= e.hi 

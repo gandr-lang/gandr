@@ -3,5 +3,5 @@
 def turned(i : Integer ≅ Integer) -> -F Unit =
   pure *{}
 @[ checks ]
-def turnedAscii(i : Iso(Integer, Integer)) -> -F Unit =
+def turnedAscii(i : Iso Integer Integer) -> -F Unit =
   pure *{}

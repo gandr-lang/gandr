@@ -41,15 +41,15 @@ def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   }
 
 /// The increment as a tree.
-def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
+def incrTree : Prog (Either StateOp Void) Unit = Op (Left Get) (fun (n) {
   (Op (Left (Put (n + 1))) (fun (_u) {
-    (Done (*{}) : Prog(Either(StateOp, Void), Unit))
-  }) : Prog(Either(StateOp, Void), Unit))
+    (Done (*{}) : Prog (Either StateOp Void) Unit)
+  }) : Prog (Either StateOp Void) Unit)
 }) ;
 
 /// The observation as a fold of the tree.
 def rec wp(
-  p : Prog(Either(StateOp, Void), Unit),
+  p : Prog (Either StateOp Void) Unit,
   post : (Unit, Integer) -> Type,
   s : Integer
 ) -> Type =
@@ -71,7 +71,7 @@ def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
 /// specification at `isOne`.
 @[ checks ]
 def incrSpecified : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
 } = *{incrTree, fun (s) { fun (h) { h } }} ;
 
@@ -80,7 +80,7 @@ def incrSpecified : *{
 /// over the successor held read as one call.
 @[ checks ]
 def incrSpecifiedEverywhere : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
 } = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }} ;
 
@@ -92,6 +92,6 @@ def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s 
 /// at every postcondition.
 @[ checks ]
 def doneSpecified : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
-} = *{(Done (*{}) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } }} ;
+} = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }} ;

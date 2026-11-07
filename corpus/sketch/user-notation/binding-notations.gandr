@@ -41,8 +41,8 @@ pub def whileLoop : Notation = #notation{
 /// the fragment binds it there, and the last arm peels one binder per step.
 @[infix(Quantifier, right]
 pub def sigma : Notation = #notation{
-  | ($x : $A) * $B -> Sigma($A, fun ($x) { $B })
-  | exists ($x : $A) . $p -> Sigma($A, fun ($x) { $p })
+  | ($x : $A) * $B -> Sigma $A fun ($x) { $B }
+  | exists ($x : $A) . $p -> Sigma $A fun ($x) { $p }
   | exists ($x : $A), $( $rest ),+ . $p -> Sigma($A, fun ($x) { exists $( $rest ),+ . $p })
 }
 
@@ -50,7 +50,7 @@ pub def sigma : Notation = #notation{
 pub def Quantifier : Precedence = Precedence.lowest;
 
 /// The sum of a list, written with the `for` notation.
-pub def total(xs : List(Nat)) -> Nat =
+pub def total(xs : List Nat) -> Nat =
   var sum = 0
   for x in xs {
     sum += x

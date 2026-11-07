@@ -16,14 +16,14 @@
 import "counters.gandr";
 
 /// A counter of integers, its counts fixed.
-def ints : Model(Counter) with { sort C = Integer } = *{
+def ints : Model Counter with { sort C = Integer } = *{
   .zero = 0,
   .incr = fun (n) { n + 1 },
   .read = fun (n) { n }
 };
 
 /// A reader that treats the counts as abstract.
-def readOnce(c : Model(Counter)) -> Integer =
+def readOnce(c : Model Counter) -> Integer =
   c.read (c.incr c.zero)
 
 /// The argument forgets the fixed sort, and the checker inserts the map.
@@ -35,7 +35,7 @@ def readIntsExplicit() -> Integer =
   readOnce(forget ints at Model Counter)
 
 /// An existential: a seed and a reading over a type nobody outside names.
-def opaqueSeed : Model(*{ type T; read : T -> Integer; seed : T }) = *{
+def opaqueSeed : Model *{ type T; read : T -> Integer; seed : T }) = *{
   .T = String,
   .read = length,
   .seed = "seed"

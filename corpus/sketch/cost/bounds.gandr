@@ -31,7 +31,7 @@ def threeSteps() -> [Cost] Integer #spec{
 
 /// Sums a list at one step for each element. The bound is open in the list,
 /// so the author proves it with a lemma.
-def rec total(xs : List(Nat)) -> [Cost] Nat #spec{
+def rec total(xs : List Nat) -> [Cost] Nat #spec{
   measure { cost length xs with chargesLength(xs) }
 } {
   match xs where
@@ -43,7 +43,7 @@ def rec total(xs : List(Nat)) -> [Cost] Nat #spec{
 
 /// Merges two sorted lists at one step for each element taken. The solver in
 /// scope proves the bound.
-def rec merge(xs : List(Integer), ys : List(Integer)) -> [Cost] List(Integer) #spec{
+def rec merge(xs : List Integer, ys : List Integer) -> [Cost] List Integer #spec{
   measure { cost length xs + length ys with ~smt }
 } {
   match *{xs, ys} where

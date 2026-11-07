@@ -17,12 +17,12 @@ module Evolution where {
 }
 
 @[ checks ]
-def served : Run(Evolution.SeatEnd) ;
+def served : Run Evolution.SeatEnd ;
 
 def served = recorded (received "task") (selected report) (sent "progress") (offered retire)
   closed ;
 
 @[ refuses("RunNotAdmitted") ]
-def retired : () -> Run(Evolution.Kept) ;
+def retired : () -> Run Evolution.Kept ;
 
 def retired = thunk { Flow.ride (fun (X) { Run X }) Evolution.keep served } ;

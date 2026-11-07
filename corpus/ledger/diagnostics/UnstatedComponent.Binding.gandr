@@ -10,4 +10,4 @@ theory T where
   rule collect : new (bind x . nil) <=> nil;
 
 @[ refuses("UnstatedComponent.Binding") ]
-def model : Model(T) ;
+def model : Model T ;

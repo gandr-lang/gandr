@@ -20,9 +20,9 @@ theory GradedCut where
 
   oper bot : () --> Grade;
   oper top : () --> Grade;
-  oper cut : () --> M(bot());
-  oper fail : () --> M(top());
-  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
+  oper cut : () --> M bot();
+  oper fail : () --> M top();
+  oper orBot : (x : M bot(), y : M e) --> M bot();
 
   rule cutLeft : orBot x y ==> x;
 
@@ -33,8 +33,8 @@ theory Category where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper id : (a : Ob) --> Hom a a;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
 
   rule unitL : comp (id a) f ==> f;
   rule unitR : comp f (id b) ==> f;
@@ -46,12 +46,12 @@ theory Category where
 theory TwoCells where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
-  sort Two(src : Hom(x, y), tgt : Hom(x, y)) : Type;
+  sort Two(src : Hom x y, tgt : Hom x y) : Type;
 
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
-  oper vcomp : (s : Two(f, g), t : Two(g, k)) --> Two(f, k);
-  oper whiskerR : (s : Two(f, g), h : Hom(b, c)) --> Two(comp(f, h), comp(g, h));
+  oper id : (a : Ob) --> Hom a a;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
+  oper vcomp : (s : Two f g, t : Two g k) --> Two f k;
+  oper whiskerR : (s : Two f g, h : Hom b c) --> Two comp(f, h) comp(g, h);
 
   rule unitL : comp (id a) f ==> f;
   rule unitR : comp f (id b) ==> f;
@@ -66,10 +66,10 @@ theory EditedViews where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
-  oper view : (f : Hom(x, y)) --> Hom(x, y);
-  oper edit : (f : Hom(x, y)) --> Hom(x, y);
-  oper patch : (f : Hom(x, y)) --> Hom(x, y);
-  oper fresh : (f : Hom(x, y)) --> Hom(x, y);
+  oper view : (f : Hom x y) --> Hom x y;
+  oper edit : (f : Hom x y) --> Hom x y;
+  oper patch : (f : Hom x y) --> Hom x y;
+  oper fresh : (f : Hom x y) --> Hom x y;
 
   rule fuse : view (edit f) ==> fresh f;
   rule step : edit f ==> patch f;

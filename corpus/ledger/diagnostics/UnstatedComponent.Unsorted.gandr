@@ -8,4 +8,4 @@ theory T where
   rule loose : x ==> x;
 
 @[ refuses("UnstatedComponent.Unsorted") ]
-def model : Model(T) ;
+def model : Model T ;
