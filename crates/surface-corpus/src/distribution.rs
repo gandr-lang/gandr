@@ -15,7 +15,9 @@
 //! of the support. Two distributions are equal exactly when their forms are
 //! equal, so the comparison is the equality of the two spellings. A path that
 //! draws past [`Bits::QUOTA`] gives no distribution: its spelling names
-//! `PastQuota`, which no stated distribution spells.
+//! `PastQuota`, which no stated distribution spells. A draw that the exact
+//! model declines gives none either: its spelling names `Unanswered` and the
+//! task or the world that performs the draw.
 //!
 //! # References
 //!
@@ -112,6 +114,70 @@ pub struct PastQuota
     pub drawn: Bits,
 }
 
+/// What performs a draw: the run of the declaration, a task it forks, or a
+/// world it migrates a body to.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Performer
+{
+    /// The run itself, outside any task or world it names.
+    Run,
+    /// The task a fork starts, by the name the fork gives its channel.
+    Task(String),
+    /// The world a `migrate` runs its body at, by its declared name.
+    World(String),
+}
+
+impl fmt::Display for Performer
+{
+    /// Writes the performer as a noun phrase: `the run`, ``the task `x` `` or
+    /// ``the world `x` ``.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Run => f.write_str("the run"),
+            Self::Task(ref name) => write!(f, "the task `{name}`"),
+            Self::World(ref name) => write!(f, "the world `{name}`"),
+        }
+    }
+}
+
+/// Why the runs of a declaration give no distribution.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Undistributed
+{
+    /// A path draws past the quota.
+    PastQuota(PastQuota),
+    /// The exact model declines a draw of one path: what performs the draw,
+    /// and the cause of the decline.
+    Unanswered
+    {
+        /// What performs the declined draw.
+        performer: Performer,
+        /// The cause of the decline, as one clause.
+        cause: String,
+    },
+}
+
+impl From<PastQuota> for Undistributed
+{
+    /// The path past the quota.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(past: PastQuota) -> Self
+    {
+        Self::PastQuota(past)
+    }
+}
+
 /// The spelling of the distribution the runs of the declaration at
 /// `constant` give, one run for each sequence of answers to its draws.
 ///
@@ -120,19 +186,21 @@ pub struct PastQuota
 ///   checker accepted, and that states a distribution.
 /// - ensures: [`spelled`] of the distribution whose weight at each outcome is
 ///   the sum of `2^-bits` over the paths that end in it; a spelling that names
-///   `PastQuota` when a path draws past [`Bits::QUOTA`].
-/// - fails: never; a path past the quota is an outcome of its own, spelled by
-///   name.
+///   `PastQuota` when a path draws past [`Bits::QUOTA`], and one that names
+///   `Unanswered` with the performer when the exact model declines a draw.
+/// - fails: never; a path with no distribution is an outcome of its own,
+///   spelled by name.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two draws of one bit summed give three outcomes at one
-///   quarter, one half and one quarter; a path past the quota is spelled by
-///   name; a run with no draw is one point.
+///   quarter, one half and one quarter; a path past the quota and a declined
+///   draw of a task are each spelled by name; a run with no draw is one point.
 /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
 /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
+/// - witness: `tests::corpus::a_declined_draw_names_its_task_or_world_5712`
 #[inline]
-#[spec(ensures: |ref ret| ["\"", "PastQuota: ", "no distribution: ", "a path of "].iter().any(|&head| ret.as_ref().starts_with(head)))]
+#[spec(ensures: |ref ret| ["\"", "PastQuota: ", "Unanswered: ", "no distribution: ", "a path of "].iter().any(|&head| ret.as_ref().starts_with(head)))]
 pub fn distributed<Run>(
     runner: &mut Run,
     constant: ConstantIndex,
@@ -155,11 +223,19 @@ where
             None => fault = Some(format!("a path of {bits} bits weighs past the integers")),
         }
     });
-    if let Err(PastQuota { drawn }) = walked {
-        return RunSpelling::from(format!(
-            "PastQuota: a path draws {drawn} bits, past the quota of {}",
-            Bits::QUOTA
-        ));
+    match walked {
+        Ok(()) => {},
+        Err(Undistributed::PastQuota(PastQuota { drawn })) => {
+            return RunSpelling::from(format!(
+                "PastQuota: a path draws {drawn} bits, past the quota of {}",
+                Bits::QUOTA
+            ));
+        },
+        Err(Undistributed::Unanswered { performer, cause }) => {
+            return RunSpelling::from(format!(
+                "Unanswered: the exact model answers no draw of {performer}: {cause}"
+            ));
+        },
     }
     if let Some(fault) = fault {
         return RunSpelling::from(fault);
@@ -309,6 +385,7 @@ mod tests
 
     use super::Bits;
     use super::PastQuota;
+    use super::Undistributed;
     use super::distributed;
     use super::stated;
     use crate::expectation::ExpectationFault;
@@ -322,9 +399,9 @@ mod tests
     use crate::run::TracedRun;
 
     /// A runner whose declaration takes each path of `paths`: an outcome
-    /// with the bits its draws take, or a draw past the quota.
+    /// with the bits its draws take, or why the paths give no distribution.
     #[repr(transparent)]
-    struct Paths(Result<Vec<(&'static str, Bits)>, PastQuota>);
+    struct Paths(Result<Vec<(&'static str, Bits)>, Undistributed>);
 
     impl Runner for Paths
     {
@@ -400,7 +477,7 @@ mod tests
             _constant: ConstantIndex,
             _quota: Bits,
             path: &mut dyn FnMut(RunSpelling, Bits),
-        ) -> Result<(), PastQuota>
+        ) -> Result<(), Undistributed>
         {
             let paths = self.0.clone()?;
             for (outcome, bits) in paths {
@@ -439,9 +516,9 @@ mod tests
     #[test]
     fn a_path_past_the_quota_gives_no_distribution()
     {
-        let mut past = Paths(Err(PastQuota {
+        let mut past = Paths(Err(Undistributed::PastQuota(PastQuota {
             drawn: Bits::from(17),
-        }));
+        })));
         assert_eq!(
             distributed(&mut past, ConstantIndex::from(0_usize)).as_ref(),
             "PastQuota: a path draws 17 bits, past the quota of 16"

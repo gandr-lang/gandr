@@ -1,0 +1,53 @@
+// Three worlds each draw two fair bits through `std.rand.Eff`, in a body
+// that the caller migrates there. The caller elects the world whose draw is
+// greatest, or no leader when two draws tie for the greatest.
+//
+// The draws at separate worlds are independent, as separate supports are. So
+// the election has the distribution of three independent uniform draws, and
+// the exact model gives it exactly. Each world leads with weight `7/32`, and
+// no world leads with weight `11/32`.
+//
+// Each `migrate` runs its body at its world, and the host of the run answers
+// the body's draw. The corpus runs `elected` once for each of the 64
+// sequences of answers, and each path weighs `2^-6`. A world leads when its
+// draw beats both other draws, which 14 of the 64 paths give.
+//
+// - see: `model/probability/coin-exchange.gandr` — the exact model across
+//   tasks
+// - see: `model/worlds/twice.gandr` — a migration and its captures
+// - see: `crates/runtime-emitter/src/world.rs` — a body run here, its
+//   operations offered to the run's host
+
+// The host interface of randomness.
+import std.rand;
+
+/// The world the caller stands at.
+pub world desk;
+
+/// The first world that draws.
+pub world east requires [std.rand.Eff];
+
+/// The second world that draws.
+pub world south requires [std.rand.Eff];
+
+/// The third world that draws.
+pub world west requires [std.rand.Eff];
+
+/// The number of the world with the greatest draw, from 1 to 3. Two draws that
+/// tie for the greatest give 0.
+def leader(first : Integer, second : Integer, third : Integer) -> Integer =
+  if first > second && first > third {
+    1
+  } else if second > first && second > third {
+    2
+  } else {
+    if third > first && third > second { 3 } else { 0 }
+  }
+
+/// The leader of one election: each world draws two bits at its own place.
+@[ entry(*{desk, east, south, west}), distributes(("11/32 0", "7/32 1", "7/32 2", "7/32 3")) ]
+pub def elected() -> [std.rand.Eff] Integer =
+  let first = migrate [east] { std.rand.draw 2 };
+  let second = migrate [south] { std.rand.draw 2 };
+  let third = migrate [west] { std.rand.draw 2 };
+  leader first second third

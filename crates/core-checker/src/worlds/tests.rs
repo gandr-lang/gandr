@@ -659,6 +659,77 @@ fn a_second_migration_without_a_capability_is_refused()
     );
 }
 
+/// #5712: a body run at its world holds no frame of its caller, so the host
+/// answers a draw that the body performs, once. The draw's continuation then
+/// holds the capability of a later migration and spends it once, and the
+/// entry checks. The same draw at the entry's own world can reach a handler
+/// of a caller, which can resume it twice, so the draw captures the
+/// capability.
+#[test]
+fn a_body_s_draw_crosses_a_later_migration_s_capability_5712()
+{
+    let mut arena = CoreArena::new();
+    let host = gandr_core_term::effect::host::HostSignatures::new(&mut arena)
+        .expect("the host signatures are consistent");
+    let integer = arena.value_type_base(BaseType::Integer);
+    let drawing =
+        arena.comp_type_returner_with_effects(integer, EffectRow::singleton(host.rand.clone()));
+    let width = arena.value_literal(crate::fixture::integer_literal());
+    let seven = arena.value_literal(crate::fixture::integer_literal());
+    // migrate [seat] { draw(1) }; migrate [seat] { return 7 }
+    let drawn = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let first = migrate(&mut arena, SEAT, drawn);
+    let ascribed = arena.computation_ascribe(first, drawing);
+    let returned = arena.computation_return(seven);
+    let second = migrate(&mut arena, SEAT, returned);
+    let away = arena.computation_bind(ascribed, second);
+    // draw(1); migrate [seat] { return 7 }
+    let drawn_home = arena.computation_perform(host.rand, "draw".into(), width);
+    let ascribed_home = arena.computation_ascribe(drawn_home, drawing);
+    let returned_home = arena.computation_return(seven);
+    let after = migrate(&mut arena, SEAT, returned_home);
+    let home = arena.computation_bind(ascribed_home, after);
+    let declared = arena.value_type_thunk(drawing);
+    let suspended_away = arena.value_thunk(away);
+    let suspended_home = arena.value_thunk(home);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        Declaration::new(
+            At(2).constant(),
+            Maybe::Present(declared),
+            Maybe::Present(suspended_away),
+            At(2).origin(),
+        )
+        .entered(Entry::new(world(OPERATOR), vec![world(SEAT), world(SEAT)])),
+        Declaration::new(
+            At(3).constant(),
+            Maybe::Present(declared),
+            Maybe::Present(suspended_home),
+            At(3).origin(),
+        )
+        .entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert!(
+        matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
+        "the host answers the body's draw once: {:?}",
+        verdicts.get(2)
+    );
+    assert_eq!(
+        verdicts.get(3),
+        Some(&located(
+            computation(drawn_home),
+            LocatedDefect::CapabilityCaptured {
+                world: world(SEAT),
+                by: Capture::Continuation,
+            }
+        )),
+        "a handler of a caller may resume the entry's own draw twice"
+    );
+}
+
 #[test]
 fn a_stated_entry_is_bounded_by_the_host_s()
 {

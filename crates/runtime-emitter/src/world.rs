@@ -1,8 +1,8 @@
 //! Worlds: where a migration runs, and how what it takes and answers
 //! crosses.
 //!
-//! In this process a migration's body runs at its world on a thread of its
-//! own, over a store of its own, and what crosses between the caller's store
+//! In this process a migration's body runs at its world over a store of its
+//! own, and what crosses between the caller's store
 //! and the world's — each capture in, the answer back — crosses by content
 //! through the one chunk store the process holds, committed then dereferenced
 //! ([`crate::crossing`]). A host that binds the world to another process runs
@@ -11,10 +11,14 @@
 //!
 //! # Boundaries
 //!
-//! - **A world run here is a fresh thread.** The world a migration names picks
-//!   no place in one process: each migration the host runs here runs on a
-//!   thread and over a store it starts, and nothing its body leaves there
+//! - **A world run here is a fresh store.** The world a migration names picks
+//!   no place in one process: each migration the host runs here runs over a
+//!   store it starts, on the caller's thread, and nothing its body leaves there
 //!   outlives the migration.
+//! - **The run's host answers the body.** An operation of the body that no
+//!   handler inside the body answers goes to the host of the caller's run, as
+//!   an operation of the caller goes. So a draw at a world takes the next bit
+//!   of the run's path (#5712).
 //! - **Fuel is the caller's.** The body runs on the fuel the caller's run has
 //!   left, so a divergent body stops; what it spends is not charged back.
 //! - **A far run that answers nothing declines.** A body whose run ends stuck
@@ -66,6 +70,7 @@ use crate::run::RunInputs;
 use crate::run::Tier;
 use crate::run::by_policy;
 use crate::run::on_tier;
+use crate::seam::Offer;
 
 /// The chunker's expected boundary events per cut a crossing in this process
 /// runs under: the constant the codec's own suite reads under.
@@ -98,37 +103,35 @@ pub fn chunking() -> TypedChunkerParams
 }
 
 /// Run `body` at its world on `tier`, closed over `captures`, values of
-/// `store`, and answer its answer laid out in `store`.
+/// `store`, and answer its answer laid out in `store`. An operation of the
+/// body that no handler inside it answers goes to `offer`, the host of the
+/// caller's run.
 ///
 /// # Specification
 /// - requires: `body` was lowered from `arena` over `definitions` to run closed
 ///   over as many captures as `captures` holds, innermost first.
 /// - ensures: on success a value freshly laid out in `store`, equal to the
-///   value `body` halts with on a thread of its own, over a fresh store each
-///   capture crossed into, on the fuel `fuel`; nothing when a capture or the
-///   answer does not cross, or the body's run ends with no value.
+///   value `body` halts with over a fresh store each capture crossed into, its
+///   operations offered to `offer`, on the fuel `fuel`; nothing when a capture
+///   or the answer does not cross, or the body's run ends with no value.
 /// - executable: none — the answer is observed by running the body.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a pair held twice, answered by a migration on both tiers,
 ///   reads back as it does in place but as two values where in place it is one:
 ///   the answer crossed back by content, never handed over by address. L3 — a
-///   capture that does not cross declines the run at its migration.
+///   capture that does not cross declines the run at its migration; a body that
+///   performs an operation takes the reply of the caller's host.
 /// - witness: `tests::world::a_migration_crosses_its_capture_in_and_its_answer_back`
 /// - witness: `tests::world::a_capture_that_does_not_cross_declines_at_its_migration`
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        pool_only_threads,
-        reason = "world: a migration runs on a thread of its own, so its store shares no thread with the caller's; it forks nothing"
-    )
-)]
+/// - witness: `tests::world::a_migrated_body_s_operation_reaches_the_caller_s_host_5712`
 #[inline]
 pub(crate) fn migrate(
     tier: Tier,
     (arena, definitions, body): (&CommandArena, &Definitions, &Lowered),
     fuel: Fuel,
     (store, captures): (&mut Store, &[HeapValueId]),
+    offer: Option<&mut (dyn Offer + '_)>,
 ) -> Option<HeapValueId>
 {
     let mut there = Store::new();
@@ -136,23 +139,20 @@ pub(crate) fn migrate(
         .iter()
         .map(|&capture| cross(store, capture, &mut there).ok())
         .collect::<Option<Vec<HeapValueId>>>()?;
-    let ended = std::thread::scope(|threads| {
-        threads
-            .spawn(|| {
-                on_tier(
-                    tier,
-                    body,
-                    (arena, definitions),
-                    fuel,
-                    RunInputs::new(&mut there).closed_over(&captured),
-                )
-            })
-            .join()
-    });
+    let inputs = RunInputs::new(&mut there).closed_over(&captured);
+    let ended = match offer {
+        Some(offer) => on_tier(
+            tier,
+            body,
+            (arena, definitions),
+            fuel,
+            inputs.offered(offer),
+        ),
+        None => on_tier(tier, body, (arena, definitions), fuel, inputs),
+    };
     match ended {
-        Ok(Ok(Ran::Ended(Outcome::Halted(answer)))) => cross(&there, answer, store).ok(),
-        Ok(Ok(Ran::Ended(Outcome::Stuck(_)) | Ran::Aborted) | Err(_)) => None,
-        Err(panicked) => std::panic::resume_unwind(panicked),
+        Ok(Ran::Ended(Outcome::Halted(answer))) => cross(&there, answer, store).ok(),
+        Ok(Ran::Ended(Outcome::Stuck(_)) | Ran::Aborted) | Err(_) => None,
     }
 }
 

@@ -919,17 +919,21 @@ fn a_reads_claim_settles_against_the_carried_footprint_2520()
     );
 }
 
-/// #5710: a `distributes` claim settles against the runs of its declaration,
-/// one for each sequence of answers to its draws, each path of weight `2^-n`
-/// for its `n` bits. Two draws of one bit settle their exact weights; the same
-/// runs stated with other weights are unsettled, the runs' distribution
-/// produced; and a draw of 17 bits passes the quota of 16, refused by name.
-/// The source imports `std.rand`, so it is walked from a fixture root.
-#[test]
-fn a_distribution_settles_over_every_answer_of_its_draws_5710()
+/// The `distributes` claims of the declarations `text` holds, each with the
+/// distribution its runs produce and its settlement. The source is walked
+/// from a fixture root under a scratch directory that `tag` names, since a
+/// source that imports `std.rand` is walked from one.
+///
+/// # Specification
+/// trivial.
+fn distribution_claims(
+    tag: &Path,
+    text: SourceText<'_>,
+) -> Vec<(String, Outcome, Settlement)>
 {
     let scratch = std::env::temp_dir().join(format!(
-        "gandr-dispatcher-distributes-{}",
+        "gandr-dispatcher-{}-{}",
+        tag.display(),
         std::process::id()
     ));
     if scratch.exists() {
@@ -939,13 +943,7 @@ fn a_distribution_settles_over_every_answer_of_its_draws_5710()
     let source = fixture.join("model/distributes.gandr");
     std::fs::create_dir_all(source.parent().expect("a file has a parent"))
         .expect("the directories are created");
-    std::fs::write(
-        &source,
-        include_str!(
-            "corpus/fixtures/a-distribution-settles-over-every-answer-of-its-draws-5710.gandr"
-        ),
-    )
-    .expect("the source is written");
+    std::fs::write(&source, <&str>::from(text)).expect("the source is written");
     let mut claims: Vec<(String, Outcome, Settlement)> = Vec::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![fixture]).visit(
         &Pool::new(Width::SERIAL),
@@ -979,6 +977,23 @@ fn a_distribution_settles_over_every_answer_of_its_draws_5710()
         },
     );
     std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+    claims
+}
+
+/// #5710: a `distributes` claim settles against the runs of its declaration,
+/// one for each sequence of answers to its draws, each path of weight `2^-n`
+/// for its `n` bits. Two draws of one bit settle their exact weights; the same
+/// runs stated with other weights are unsettled, the runs' distribution
+/// produced; and a draw of 17 bits passes the quota of 16, refused by name.
+#[test]
+fn a_distribution_settles_over_every_answer_of_its_draws_5710()
+{
+    let claims = distribution_claims(
+        Path::new("distributes"),
+        SourceText::from(include_str!(
+            "corpus/fixtures/a-distribution-settles-over-every-answer-of-its-draws-5710.gandr"
+        )),
+    );
     let distributed =
         |spelled: &str| Outcome::Distributes(RunSpelling::from(String::from(spelled)));
     let runs = r#""1/4 0", "1/2 1", "1/4 2""#;
@@ -998,6 +1013,47 @@ fn a_distribution_settles_over_every_answer_of_its_draws_5710()
             ),
         ],
         "each claim settles against the distribution of its runs"
+    );
+}
+
+/// #5712: a draw that the exact model declines gives no distribution. The
+/// corpus refuses it by name, with what performs the draw: the run itself,
+/// the task a fork starts, or the world a `migrate` runs its body at.
+#[test]
+fn a_declined_draw_names_its_task_or_world_5712()
+{
+    let claims = distribution_claims(
+        Path::new("declined"),
+        SourceText::from(include_str!(
+            "corpus/fixtures/a-declined-draw-names-its-task-or-world-5712.gandr"
+        )),
+    );
+    let unanswered = |performer: &str, width: u32| {
+        Outcome::Distributes(RunSpelling::from(format!(
+            "Unanswered: the exact model answers no draw of {performer}: a width of {width} \
+             bits lies outside 1 to 64"
+        )))
+    };
+    assert_eq!(
+        claims,
+        vec![
+            (
+                String::from("rooted"),
+                unanswered("the run", 0),
+                Settlement::Unsettled
+            ),
+            (
+                String::from("forked"),
+                unanswered("the task `seat`", 99),
+                Settlement::Unsettled
+            ),
+            (
+                String::from("migrated"),
+                unanswered("the world `far`", 99),
+                Settlement::Unsettled
+            ),
+        ],
+        "each declined draw is refused with what performs it"
     );
 }
 
