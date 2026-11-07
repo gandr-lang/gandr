@@ -944,7 +944,8 @@ where
 ///   order, that stopped or missed; and the number of steps both legs fired.
 /// - panics: none.
 /// - intension: every other point stays a metavariable, which replay
-///   skolemizes, so a step that reads into another entry does not fire.
+///   skolemizes, so a step that reads into another entry does not fire. The
+///   probe records its substitutions first, one match for each step.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — complete, missing-cell, stopped and wrong-join replays of
@@ -978,9 +979,11 @@ fn inheritance_check<A>(
 where
     A: CellAlphabet,
 {
-    let mut probe = carrier.clone();
-    probe.overlap.peak = A::apply_subst(binding, &carrier.overlap.peak);
-    probe.joins_at = A::apply_subst(binding, &carrier.joins_at);
+    let probe = carrier.with_ends(
+        A::apply_subst(binding, &carrier.overlap.peak),
+        A::apply_subst(binding, &carrier.joins_at),
+        store,
+    );
     let trace = probe.replay_trace(store);
     let fired = ReplayStepCount::from(
         trace
@@ -1414,12 +1417,12 @@ impl<A: CellAlphabet> GuardedTemplate<A>
 
     /// The certificate the template holds for one choice of arms: the carrier
     /// with each entry's arm, chosen by `substitution`, put in place in its
-    /// peak and its join.
+    /// peak and its join, and each step's substitution recorded from that peak.
     ///
     /// # Specification
     /// - ensures: for every entry, the arm whose binding equals `substitution`
     ///   restricted to the entry's metavariable, applied to the carrier's peak
-    ///   and join; the carrier's paths and overlap otherwise unchanged. The
+    ///   and join; the carrier's steps and overlap otherwise unchanged. The
     ///   bodies put in place are the template's own arms.
     /// - fails: [`TemplateObstruction::UnboundEntry`] for the first entry
     ///   `substitution` leaves unbound;
@@ -1474,6 +1477,7 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     pub fn instantiate(
         &self,
         substitution: &A::Subst,
+        store: &CellStore<A>,
     ) -> Result<Tracelet<A>, TemplateObstruction>
     {
         let arms = self
@@ -1483,7 +1487,7 @@ impl<A: CellAlphabet> GuardedTemplate<A>
             .map(|(index, entry)| entry.arm(EntryIndex::from(index), substitution))
             .collect::<Result<Vec<&TemplateArm<A>>, TemplateObstruction>>()?;
         let (peak, join) = self.ends(&arms);
-        Ok(self.carrier.with_ends(peak, join))
+        Ok(self.carrier.with_ends(peak, join, store))
     }
 
     /// The row of the certificate at `peak`: the guard of the arm that `peak`
@@ -1542,20 +1546,21 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     }
 
     /// The certificate that the template holds for `row`: the carrier with the
-    /// arm of each entry's guard put in place in its peak and its join.
+    /// arm of each entry's guard put in place in its peak and its join, and
+    /// each step's substitution recorded from that peak.
     ///
     /// # Specification
     /// - ensures: for every entry, the arm whose guard is the row's guard at
     ///   that entry, applied to the carrier's peak and join; the carrier's
-    ///   paths and overlap otherwise unchanged.
+    ///   steps and overlap otherwise unchanged.
     /// - fails: [`TemplateObstruction::GuardPastEntries`] when the row holds
     ///   more guards than the template holds entries;
     ///   [`TemplateObstruction::UnboundEntry`] for the first entry that the row
     ///   holds no guard for; [`TemplateObstruction::ArmOutsideTemplate`] for
     ///   the first entry whose guard names none of its arms.
     /// - panics: none.
-    /// - intension: one copy of the carrier's skeleton, and its peak and join
-    ///   built once each with every arm in place.
+    /// - intension: one copy of the carrier's skeleton, its peak and join built
+    ///   once each with every arm in place, and one match for each step.
     ///
     /// # Errors
     /// As the failure clause states.
@@ -1585,10 +1590,11 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     pub fn instance(
         &self,
         row: &TemplateRow,
+        store: &CellStore<A>,
     ) -> Result<Tracelet<A>, TemplateObstruction>
     {
         let (peak, join) = self.boundary(row)?;
-        Ok(self.carrier.with_ends(peak, join))
+        Ok(self.carrier.with_ends(peak, join, store))
     }
 
     /// The peak and the join of the certificate that the template holds for
@@ -1822,7 +1828,7 @@ impl<A: CellAlphabet> GuardedTemplate<A>
         )
     )]
     #[spec(ensures: |output| output == self.peak_substitution(peak)
-        .and_then(|substitution| self.instantiate(&substitution))
+        .and_then(|substitution| self.instantiate(&substitution, store))
         .map(|instance| instance.replay(store)))]
     #[inline]
     pub fn admit(
@@ -1832,7 +1838,7 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ) -> Result<TraceletReplay, TemplateObstruction>
     {
         let substitution = self.peak_substitution(peak)?;
-        Ok(self.instantiate(&substitution)?.replay(store))
+        Ok(self.instantiate(&substitution, store)?.replay(store))
     }
 
     /// The template's flow: the carrier's, the identity of the whole family.

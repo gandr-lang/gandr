@@ -50,7 +50,10 @@ fn two_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
     let mut store = CellStore::new();
     let cell = store.insert(cell);
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
-    let path = [CellApp { cell, at: at![0] }, CellApp { cell, at: at![1] }];
+    let path = [
+        CellApp::unrecorded(cell, at![0]),
+        CellApp::unrecorded(cell, at![1]),
+    ];
     event_order(&store, &peak, &path).expect("the two-event fixture replays")
 }
 
@@ -77,7 +80,7 @@ fn one_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
     let mut store = CellStore::new();
     let cell = store.insert(cell);
     let peak = Toy::succ(Toy::zero());
-    let path = [CellApp { cell, at: at![] }];
+    let path = [CellApp::unrecorded(cell, at![])];
     event_order(&store, &peak, &path).expect("the one-event fixture replays")
 }
 
@@ -101,7 +104,10 @@ fn dependent_order() -> EventOrder<ToyAlphabet>
     let mut store = CellStore::new();
     let cell = store.insert(add_z());
     let peak = Toy::add(Toy::zero(), Toy::add(Toy::zero(), Toy::zero()));
-    let path = [CellApp { cell, at: at![] }, CellApp { cell, at: at![] }];
+    let path = [
+        CellApp::unrecorded(cell, at![]),
+        CellApp::unrecorded(cell, at![]),
+    ];
     event_order(&store, &peak, &path).expect("the dependent fixture replays")
 }
 
@@ -252,18 +258,9 @@ fn a_precedence_reached_only_through_an_intermediate_event_is_green()
         Toy::zero(),
     );
     let path = [
-        CellApp {
-            cell: collapse,
-            at: at![0, 0],
-        },
-        CellApp {
-            cell: duplicate,
-            at: at![0],
-        },
-        CellApp {
-            cell: peel,
-            at: at![0, 1],
-        },
+        CellApp::unrecorded(collapse, at![0, 0]),
+        CellApp::unrecorded(duplicate, at![0]),
+        CellApp::unrecorded(peel, at![0, 1]),
     ];
     let order = event_order(&store, &peak, &path).expect("the three-event fixture replays");
     let (first, last) = (EventIndex::from(0_usize), EventIndex::from(2_usize));

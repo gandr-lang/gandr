@@ -449,6 +449,12 @@ INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kerne
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','bc468ed7bf854d175494383216341bc52e916430','2026-10-29','715ec7ca272d78491f01e8f72c273f72564822ce');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','c1386dcd6c3c893431171d0b5ed80b4691c42f02','2026-10-29','2a6bd5457b0841455e1db0206b2e709077fe173c');
+INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-cell-complexes','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-cell-complexes-tools','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-coherent-resolutions','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-computads','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-decomposition-spaces','compose','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-virtual-doctrines','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-4f9c-7221-a972-619f184e507e','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','core-term','primitive','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','kernel-term','literal_identity','anchor',NULL,NULL,NULL);

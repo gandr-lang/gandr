@@ -23,8 +23,9 @@
 //!   cuts down to chosen metavariables. A matched subterm and a bound image are
 //!   also read in place, as [`CellAlphabet::Image`]: a match that copies no
 //!   subterm ([`CellAlphabet::match_images`]), the image a substitution holds
-//!   ([`CellAlphabet::image`]) and a substitution read in place
-//!   ([`CellAlphabet::apply_images`]);
+//!   ([`CellAlphabet::image`]), a substitution read in place
+//!   ([`CellAlphabet::apply_images`]) and whether an image holds a hole
+//!   ([`CellAlphabet::image_holds`]);
 //! - the cell vocabulary — orientation and provenance tags, the derived
 //!   per-cell metadata [`CellAlphabet::Meta`], the firing discipline
 //!   ([`CellAlphabet::may_fire`]), and the provenance-to-certificate reading
@@ -50,7 +51,7 @@
 //!
 //! # Cell alphabet
 //!
-//! `CellAlphabet` is one deep trait of 30 methods rather than a set of small
+//! `CellAlphabet` is one deep trait of 31 methods rather than a set of small
 //! ones: an alphabet fixes its pattern grammar (term, metavariable, hole,
 //! position, navigation, splicing, size, order, renaming, skolemization), its
 //! ordered substitution with matching, unification, anti-unification,
@@ -91,7 +92,7 @@
 //! position is the root, cannot do. It lives in
 //! `gandr-theory-cell-complexes-tools`, a test-only crate that every engine
 //! suite reaches through `[dev-dependencies]`, rather than in this crate's
-//! integration target: one implementation of a 30-method trait is shared, not
+//! integration target: one implementation of a 31-method trait is shared, not
 //! copied. The law suite lives there too, so this crate keeps no dev-dependency
 //! on a crate built over it, and the dependency graph stays acyclic in every
 //! edge kind.
@@ -109,6 +110,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CellInvertibility;
 use crate::boundary::FiringPermission;
+use crate::boundary::HoleOccurrence;
 use crate::boundary::PatternSize;
 use crate::boundary::PositionStep;
 use crate::boundary::SubstitutionDecision;
@@ -989,6 +991,34 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn hole_of(var: &Self::Var) -> Self::Hole;
 
+    /// Whether `image` holds `hole`: as a metavariable of `hole`, or as the
+    /// constant that [`CellAlphabet::skolemize`] writes for one.
+    ///
+    /// A replay reads its peak skolemized, so a substitution that it records
+    /// holds a hole of the peak as a constant and a wire as a metavariable.
+    /// The composition gate reads a seam hole through both forms.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when a metavariable of `image` has the hole
+    ///   `hole`, or when `image` holds the constant that
+    ///   [`CellAlphabet::skolemize`] writes for a metavariable of `hole`.
+    /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: one walk of `image`, and no copy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent images hold a hole as a metavariable, as the
+    ///   constant of each category, and not at all. A missed constant, a missed
+    ///   metavariable or a hole read by another spelling changes the decision.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    fn image_holds(
+        image: Self::Image<'_>,
+        hole: &Self::Hole,
+    ) -> HoleOccurrence;
+
     /// Whether `provenance` marks an invertible joinability certificate, as
     /// opposed to an oriented optimization cell.
     ///
@@ -1125,6 +1155,7 @@ mod tests
     {
         use crate::pattern::CmdPat;
         use crate::pattern::ConsPat;
+        use crate::pattern::HoleName;
         use crate::pattern::MetaVar;
         use crate::pattern::ProdPat;
         use crate::polarity::Polarity;
@@ -1237,6 +1268,44 @@ mod tests
             refused.push(var.clone());
         })));
         assert!(refused.is_empty(), "a refused match visits nothing");
+
+        // An image holds a hole as a metavariable, or as the skolem constant
+        // at either category, and holds no hole of another spelling.
+        let ends = cut(ProdPat::meta("p"), ConsPat::meta("q"));
+        let open = cut(
+            ProdPat::ctor("Pair", [ProdPat::meta("y"), ProdPat::ctor("Zero", [])]),
+            ConsPat::op("add", [ProdPat::meta("v")], ConsPat::meta("k")),
+        );
+        let producer = MetaVar::producer("p");
+        let consumer = MetaVar::consumer("q");
+        for (label, read) in [("open", open.clone()), ("skolemized", A::skolemize(&open))] {
+            let mut bound = Subst::new();
+            assert!(bool::from(A::match_cmd(&ends, &read, &mut bound)));
+            let holds = |var: &MetaVar, hole: &str| match A::image(&bound, var) {
+                Maybe::Present(image) => bool::from(A::image_holds(image, &HoleName::from(hole))),
+                Maybe::Absent(_) => panic!("{label}: the match binds both ends"),
+            };
+            assert!(
+                holds(&producer, "y"),
+                "{label}: a producer image holds its hole"
+            );
+            assert!(
+                holds(&consumer, "k"),
+                "{label}: a consumer image holds its end"
+            );
+            assert!(
+                holds(&consumer, "v"),
+                "{label}: a consumer image holds a hole of a frame's argument"
+            );
+            assert!(
+                !holds(&producer, "k") && !holds(&consumer, "y"),
+                "{label}: an image holds no hole of the other image"
+            );
+            assert!(
+                !holds(&producer, "y′") && !holds(&producer, "Zero") && !holds(&consumer, "add"),
+                "{label}: a hole of another spelling, a constructor and an operation are not held"
+            );
+        }
 
         assert_eq!(
             Maybe::Absent(anti_unification::Absent::EmptyFamily),

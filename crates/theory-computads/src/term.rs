@@ -60,6 +60,7 @@ use gandr_theory_cell_complexes::FiringPermission;
 use gandr_theory_cell_complexes::Generalization;
 use gandr_theory_cell_complexes::GeneralizationArm;
 use gandr_theory_cell_complexes::GeneralizationPoint;
+use gandr_theory_cell_complexes::HoleOccurrence;
 use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
@@ -2196,6 +2197,39 @@ impl CellAlphabet for TermAlphabet
     fn hole_of(var: &Self::Var) -> Self::Hole
     {
         var.clone()
+    }
+
+    /// Whether `image` holds `hole`: as a metavariable of that name, or as the
+    /// constant [`CellAlphabet::skolemize`] writes for one.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when a head of `image` is a metavariable or
+    ///   a skolem constant named `hole`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — open and skolemized images hold a hole below a
+    ///   constructor, and a ground image and another spelling hold none. A
+    ///   missed constant, a missed metavariable or a hole read by another
+    ///   spelling changes the decision.
+    /// - witness: `term::tests::an_image_holds_a_hole_as_a_variable_or_as_its_constant`
+    #[inline]
+    #[spec(ensures: |output| bool::from(output) == image.0.iter().any(|head| matches!(*head, Head::Var(ref name) | Head::Scoped(ref name, _) | Head::Konst(ref name) if name == hole)))]
+    fn image_holds(
+        image: Self::Image<'_>,
+        hole: &Self::Hole,
+    ) -> HoleOccurrence
+    {
+        HoleOccurrence::from(image.0.iter().any(|head| match *head {
+            Head::Var(ref name) | Head::Scoped(ref name, _) | Head::Konst(ref name) => name == hole,
+            Head::Ctor(..)
+            | Head::Op(..)
+            | Head::Results(_)
+            | Head::Inst(..)
+            | Head::Abs(_)
+            | Head::Occ(..)
+            | Head::Free(..) => false,
+        }))
     }
 
     /// Positive for the derived provenance.

@@ -159,14 +159,8 @@ fn a_genuinely_overlapping_instantiation_is_refused_at_the_application_site()
         Toy::add(Toy::zero(), Toy::succ(Toy::zero())),
         Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
     );
-    let first = CellApp {
-        cell: z,
-        at: at![0],
-    };
-    let second = CellApp {
-        cell: s,
-        at: at![1],
-    };
+    let first = CellApp::unrecorded(z, at![0]);
+    let second = CellApp::unrecorded(s, at![1]);
     assert_eq!(
         run(&store, &peak, &[first.clone(), second.clone()]),
         run(&store, &peak, &[second, first]),

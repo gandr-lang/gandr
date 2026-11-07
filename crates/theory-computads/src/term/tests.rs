@@ -257,7 +257,7 @@ fn the_criterion_finds_the_listings_first_redex_below_each_position()
             }
             for (cell, rule) in store.iter() {
                 if let Maybe::Present(_) = rewrite_at(rule, &overlap.peak, &at) {
-                    return PairClass::Composite(CellApp { cell, at });
+                    return PairClass::Composite(CellApp::unrecorded(cell, at));
                 }
             }
         }
@@ -1252,4 +1252,39 @@ fn a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not()
         face_cell(&kept),
         "a variable under the same abstractions on both sides is not scoped"
     );
+}
+
+#[test]
+fn an_image_holds_a_hole_as_a_variable_or_as_its_constant()
+{
+    let pattern = Term::from(&ctor("Pair", [FreeTerm::var("p"), FreeTerm::var("q")]));
+    let open = Term::from(&ctor("Pair", [
+        ctor("Succ", [FreeTerm::var("y")]),
+        ctor("Zero", []),
+    ]));
+    for (label, target) in [
+        ("open", open.clone()),
+        ("skolemized", TermAlphabet::skolemize(&open)),
+    ] {
+        let mut bound = TermSubst::default();
+        assert!(
+            bool::from(TermAlphabet::match_cmd(&pattern, &target, &mut bound)),
+            "{label}: the pattern matches"
+        );
+        let holds = |var: &str, hole: &str| match bound.image(&Name::from(var)) {
+            Maybe::Present(image) => {
+                bool::from(TermAlphabet::image_holds(image, &Name::from(hole)))
+            },
+            Maybe::Absent(_) => panic!("{label}: the match binds `{var}`"),
+        };
+        assert!(
+            holds("p", "y"),
+            "{label}: an image holds its hole below a constructor"
+        );
+        assert!(!holds("q", "y"), "{label}: a ground image holds no hole");
+        assert!(
+            !holds("p", "y'") && !holds("p", "Succ"),
+            "{label}: a hole of another spelling and a constructor are not held"
+        );
+    }
 }
