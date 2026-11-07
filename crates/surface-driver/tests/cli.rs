@@ -2261,6 +2261,70 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     );
 }
 
+/// #6046: `std.build`'s inert render runs, in a package's own source, to one
+/// line for each constant of the package's model, and `check` writes the
+/// manifest from the same model: each string line of its `[package]` table is
+/// a line of the render.
+#[test]
+fn the_generic_render_writes_each_package_line_the_manifest_writes_6046()
+{
+    let rendered = "version = \"0.1.0\"\ngandr = \">= 0.0\"\nfeatures = \
+                    \"project-manifest\"\nsystems = \"\"\nspelling = \"\"\nname = \
+                    \"hello\"\nauthors = \"Ada\"\nlicence = \"MIT\"\ndocumentation = \
+                    \"https://d.example\"\nendpoint = \"https://e.example\"\nsources = \"src\"\n";
+    let scratch = Scratch::new(Path::new("render"));
+    scratch.file(
+        Path::new("hello/package.gandr"),
+        Text::from(
+            format!(
+                "{STD_PACKAGE}{LIBRARY}@[ inert ]\n@[ runs({:?}) ]\ndef rendered() -> String {{ \
+                 render Package }}\n",
+                format!("{rendered:?}")
+            )
+            .as_str(),
+        ),
+    );
+    let leaf = scratch.file(
+        Path::new("hello/src/text/greet.gandr"),
+        Text::from("def greeting = \"hello, world\" ;\n"),
+    );
+    let mut command = gandr(&[Path::new("check"), &leaf]);
+    command.current_dir(&scratch.0);
+    let checked = ran(command);
+    assert_eq!(
+        code(&checked),
+        Code(0_i32),
+        "the render runs to its pinned lines: {}",
+        stderr(&checked)
+    );
+    let manifest = std::fs::read_to_string(scratch.0.join("hello/package.gandr.toml"))
+        .expect("the manifest is written");
+    let table: Vec<&str> = manifest
+        .lines()
+        .skip_while(|line| *line != "[package]")
+        .skip(1)
+        .take_while(|line| !line.starts_with("modules"))
+        .collect();
+    assert_eq!(
+        table,
+        [
+            "name = \"hello\"",
+            "version = \"0.1.0\"",
+            "authors = \"Ada\"",
+            "licence = \"MIT\"",
+            "documentation = \"https://d.example\"",
+            "endpoint = \"https://e.example\"",
+        ],
+        "the manifest's string lines: {manifest}"
+    );
+    for line in table {
+        assert!(
+            rendered.lines().any(|written| written == line),
+            "`{line}` is a line of the render: {rendered}"
+        );
+    }
+}
+
 /// #3135: `check` of a package whose toolchain constraints the running
 /// toolchain meets writes its manifest; one asking for a later language
 /// version, a feature the toolchain's ledger does not implement or a system
