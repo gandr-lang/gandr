@@ -683,8 +683,6 @@ impl TileName
     pub const RECORD: Self = Self("*{");
     /// The receive keyword `recv`, opening a statement.
     pub const RECV: Self = Self("recv");
-    /// The release keyword `release`, opening a statement.
-    pub const RELEASE: Self = Self("release");
     /// The returner keyword `pure`.
     pub const PURE: Self = Self("pure");
     /// The function exit `return`.
