@@ -839,9 +839,10 @@ pub enum Former<'source, Node>
         arity: Arity,
         /// Where its name stands to its fields.
         placement: Placement,
-        /// The family applied to its arguments, when it takes any: the type a
-        /// parameterised constructor is written against, `(C : T)`, which
-        /// source that reads back needs.
+        /// The family applied to its arguments, when it takes any, or the
+        /// type a definition computes that a constructor of such a family
+        /// stands at: the type a parameterised constructor is written against,
+        /// `(C : T)`, which source that reads back needs.
         classifier: Option<Node>,
     },
     /// Directed identity `Flow[.A = A](x, y)`: the carrier and the two

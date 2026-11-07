@@ -54,7 +54,9 @@
 //! reading prints otherwise, `print(parse(print(x))) = print(x)` up to
 //! layout. A parameterised constructor is written against its family,
 //! `(MkIx : Ix(3))`, except where its position states its type — a family's
-//! argument, `Vec(MkIx)` — whose parameter the lowering classifies it by.
+//! argument, `Vec(MkIx)` — whose parameter the lowering classifies it by. One
+//! at a type a definition computes is written against that type,
+//! `(Entry v e : modelType(T))`.
 //!
 //! **Explicit** gives every former one spelling: `Integer`, `String`, `Unit`,
 //! `Void`, `Bool`, `#{A, B, …}`, `#{l : A, …}`, `+{A, B, …}`, `&{C, D}`,
@@ -897,9 +899,10 @@ where
 /// - ensures: the root written as [`present_value`] writes a value, but for
 ///   what a reader reads back: a thunk written `thunk { c }`, its body as
 ///   [`present_computation`] writes one, and a parameterised constructor below
-///   the root written against its family, `(MkIx : Ix(3))`, where the root
-///   itself stands bare, its type the definition's. Output has the same
-///   line-ending and width guarantees as [`present_type`].
+///   the root written against its family, `(MkIx : Ix(3))`, or against the type
+///   a definition computes for it, where the root itself stands bare, its type
+///   the definition's. Output has the same line-ending and width guarantees as
+///   [`present_type`].
 /// - provides: the body of a `def name = …` the lowering reads back to the same
 ///   term against the definition's stated type.
 /// - fails: as [`present_type`].

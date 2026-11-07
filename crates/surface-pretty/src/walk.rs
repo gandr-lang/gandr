@@ -729,8 +729,8 @@ pub enum Bodies
     /// so is a definition's value, a thunk a type mentions, a path's
     /// endpoint, which the author wrote; a parameterised constructor there is
     /// source that reads back, written against its family, `(MkIx : Ix(3))`,
-    /// except as a family's argument, whose parameter states its type,
-    /// `Vec(MkIx)`.
+    /// or against the type a definition computes for it, except as a
+    /// family's argument, whose parameter states its type, `Vec(MkIx)`.
     Spelled,
 }
 
@@ -12548,10 +12548,11 @@ impl Walk<'_, '_>
                 classifier,
             } => {
                 // Where the spelling is source a reader reads back, a
-                // parameterised constructor is written against its family,
-                // `(MkIx : Ix 3)`, which its lowering needs, unless its
-                // position states its type. A constructor a type states is
-                // written juxtaposed, `Succ n`, as a family is.
+                // parameterised constructor is written against its
+                // classifier, `(MkIx : Ix 3)`, its family's application or a
+                // type a definition computes, which its lowering needs,
+                // unless its position states its type. A constructor a type
+                // states is written juxtaposed, `Succ n`, as a family is.
                 let annotated = classifier.is_some()
                     && self.bodies == Bodies::Spelled
                     && admits != Admits::Stated;
