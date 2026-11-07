@@ -22,7 +22,9 @@
 //!
 //! **The former decides the mode.** Leaves and eliminations synthesise,
 //! introductions check, and a dispatch on the direction names both cases, so a
-//! rule added in one mode and forgotten in the other does not compile.
+//! rule added in one mode and forgotten in the other does not compile. A lint
+//! and the visibility of modules hold one mode for each former, and a
+//! comparison only at a change of mode, so no review holds them.
 //!
 //! **Types meet in three places.** A synthesising value or computation in
 //! checking position crosses one of two bridges into the conversion module,

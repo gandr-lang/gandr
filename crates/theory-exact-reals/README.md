@@ -8,7 +8,6 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Rounding and its bound](#rounding-and-its-bound)
 - [Intervals](#intervals)
 - [Plans and their bytes](#plans-and-their-bytes)
 - [Validation](#validation)
@@ -24,11 +23,16 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 
 **Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. An interval alone is never evidence of truth. Truth needs a certificate that a checker replays with exact comparisons alone. The crate does not depend on the kernel, and no real number enters kernel conversion.
 
-**How.** A nonzero mantissa is odd, and zero has the exponent zero, so the derived equality agrees with the exact order. A mantissa that fits an `i64` is inline, and the arithmetic on two inline values runs in `i128` with no allocation. A wider mantissa is a `num_bigint::BigInt`. The work of a sum is bounded by the operand widths and the precision, never by the gap between the exponents (see [Rounding and its bound](#rounding-and-its-bound)).
+**How.** A nonzero mantissa is odd, and zero has the exponent zero, so the derived equality agrees with the exact order. A mantissa that fits an `i64` is inline, and the arithmetic on two inline values runs in `i128` with no allocation. A wider mantissa is a `num_bigint::BigInt`. The work of a sum is bounded by the operand widths and the precision, never by the gap between the exponents. The `dyadic` module documentation states the bound.
 
 ## References
 
 - `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — lineage: the exact-reals design. Its domain is canonical dyadics with an inline path and oriented intervals as runtime approximants. Its plan language is a scoped DAG that keeps sharing as edges, and its firewall keeps all of it out of the kernel.
+- `Taylor-2010-lambda_calculus_real_analysis` — exemplar: Taylor, _JLA_ 2:5, 2010, `doi:10.4115/jla.2010.2.5` — a real as a located cut.
+- `Bauer-efficient_computation_dedekind_reals` — exemplar: Bauer, _CCA_, 2008 — the approximants of a formula.
+- `Bauer-2009-dedekind_reals_abstract_stone_duality` — exemplar: Bauer and Taylor, _MSCS_ 19:4, 2009, `doi:10.1017/S0960129509007695` — Moore's arithmetic.
+- `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar: Escardó, _ENTCS_ 87, 2004, `doi:10.1016/j.entcs.2004.09.017` — an open as a semidecidable property.
+- `Bakke-2026-synthetic_sierpinski_cone` — newest: Bakke, Sterling, Williams and Ye, 2026, `arXiv:2605.00773` — the outcomes of a run as a cone.
 
 ## Provided features
 
@@ -92,14 +96,6 @@ cargo nextest run -p gandr-theory-exact-reals
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-exact-reals
 cargo bench -p gandr-theory-exact-reals
 ```
-
-## Rounding and its bound
-
-A result keeps at most `p` significant bits. Let `2^(k - 1) <= |r| < 2^k` for the exact result `r`. The floor is `floor(r / 2^(k - p)) · 2^(k - p)`, and the ceiling is the next point of that grid at or above `r`. A result that already fits is exact.
-
-A sum aligns its operands on the lower exponent. When one operand lies far below the other, the sum replaces it by its sign at a place below the last bit of the result, and the rounded result is the same. The aligned width stays below the operand widths plus `p + 3` bits. The intension of `rounded_sum` in the `dyadic` module states the place and the proof.
-
-A product forms the exact product of the two mantissas and rounds it once. Its work is one multiplication of the operand widths.
 
 ## Intervals
 

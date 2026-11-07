@@ -12,6 +12,14 @@
 //! that completion certifies. The issue counts the rules and the pairs as
 //! dimensions one and two. The bar complex holds the operations in degree one,
 //! so the rules lie in its degree two.
+//!
+//! # References
+//!
+//! - `Malbos-2021-completion_operads_essential_syzygies` — newest: the
+//!   essential syzygies of a convergent presentation, which the certified pairs
+//!   are in degree three.
+//! - `Doré-2023-computing_spaces_type_theory` — newest: § 3.4, a collapse whose
+//!   class is a function, with a walk from each redundant cell.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

@@ -16,7 +16,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. The ledger collects holes; refusal classification separates malformed source, unimplemented features and engine faults. The kernel independently checks the exportable pure fragment.
 
-**Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review.
+**Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong.
 
 **How.** One goal-and-frame machine charges each transition to `CheckBudget`, one for a value goal met again; [`src/lib.rs`](src/lib.rs) states its shape, how a rule and a `Path` are both cells, and each module the boundary it owns.
 
@@ -58,7 +58,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 ## Expected features
 
 - **One arena per context.** Every id a declaration carries resolves in the `CoreArena` the `CheckingContext` was built over; an id that does not is refused as a dangling node.
-- **One arena per report.** `bridge::readmit` takes, mutably, the arena the report was judged over: it refuses an id that does not resolve there as a dangling node, and mints there the reduct of each static step it takes.
+- **One arena per report.** `bridge::readmit` takes, mutably, the arena the report was judged over, and refuses an id that does not resolve there as a dangling node.
 - **One writer per arena.** `CheckingContext::new` holds the arena mutably for the context's life, and the judgement mints into it; a caller reads it through `CheckingContext::arena`.
 - **Ascending admission positions.** Declarations are offered in admission order; a position not above every one admitted before it is refused.
 - **`alloc`.** The crate is `no_std` with `alloc`.
@@ -112,6 +112,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
 - `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban — a fill computes to its induction, and nothing adjoins a cell.
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signature type of § 2.2.
+- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, Strathclyde, 2024 — graded access at `{0, 1, ω}`.
 
 ## License
 

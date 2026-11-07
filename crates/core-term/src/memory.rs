@@ -66,6 +66,9 @@
 //!   and § quant-counts — [`HoldGrade`] and `CapabilityGrade` are the tree's
 //!   two-point grades, and the grade the page drafts keeps the count they
 //!   forget.
+//! - `Wood-2024-framework_semiringannotated_type_systems` — newest: a grade is
+//!   an element of a semiring that bounds the uses of a hypothesis. The access
+//!   rules read [`HoldGrade`] in the semiring `{0, 1, ω}`.
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;

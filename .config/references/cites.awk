@@ -33,7 +33,10 @@
 # line (#3171). A `- ` line that ends in the dash after its key is one key
 # line with its first indented line too. There the key and the dash fit the
 # comment width, the role does not, and `cargo fmt` wraps the role onto the
-# next line.
+# next line. A `- ` line that ends in the role after its dash is one key line
+# with its first indented line too. There the key, the dash and the role fit
+# the comment width, the first word after the role does not, and `cargo fmt`
+# wraps that word onto the next line.
 
 function site(path,    rest) {
   rest = path
@@ -162,13 +165,23 @@ corpus {
     entry = "legacy"
     rest = substr(text, 3)
     tick = substr(rest, 1, 1) == "`" ? index(substr(rest, 2), "`") : 0
-    if (tick > 1 && substr(rest, tick + 2, length(dash)) == dash) cited(substr(rest, 2, tick - 1), substr(rest, tick + 2 + length(dash)))
+    if (tick > 1 && substr(rest, tick + 2, length(dash)) == dash) {
+      said = substr(rest, tick + 2 + length(dash))
+      if (said ~ /^(newest|dependency|anchor|exemplar|lineage|background):[[:space:]]*$/) {
+        entry = "roled"
+        key = substr(rest, 2, tick - 1)
+        role = said
+        sub(/[[:space:]]+$/, "", role)
+      } else cited(substr(rest, 2, tick - 1), said)
+    }
     else if (tick > 1 && substr(rest, tick + 2) ~ /^[[:space:]]*$/) { entry = "bare"; key = substr(rest, 2, tick - 1) }
     else if (tick > 1 && substr(rest, tick + 2) ~ /^ —[[:space:]]*$/) { entry = "dashed"; key = substr(rest, 2, tick - 1) }
   } else if (entry == "bare" && match(text, /^[[:space:]]+— /)) {
     cited(key, substr(text, RSTART + RLENGTH))
   } else if (entry == "dashed" && match(text, /^[[:space:]]+/)) {
     cited(key, substr(text, RSTART + RLENGTH))
+  } else if (entry == "roled" && match(text, /^[[:space:]]+[^[:space:]]/)) {
+    cited(key, role " " substr(text, RSTART + RLENGTH - 1))
   } else if (entry != "" && text ~ /^[[:space:]]+[^[:space:]]/) {
     if (entry == "bare") entry = "legacy"
   } else entry = ""
