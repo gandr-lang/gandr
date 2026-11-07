@@ -16,15 +16,15 @@
 //! cell for it. No three rules of these blocks overlap pairwise. Thus the
 //! complex has no cell of dimension three.
 //!
-//! The critical cells and the certified pairs differ. `NatUnits` and
-//! `NatApart` have the same left-hand sides. Thus their overlap complexes are
-//! equal entry for entry. A matching reads only the complex. Thus it keeps the
-//! same critical cells on both blocks. Completion certifies all four entries
-//! of `NatUnits`. It certifies three entries of `NatApart`, because one pair
-//! of `NatApart` diverges. Joinability is not a property of the complex. Thus
-//! no matching of the complex gives the certified pairs. `NatAssoc` agrees
-//! only because completion reads none of its critical pairs. All three of them
-//! overlap below the root.
+//! The critical cells and the certified pairs agree up to the order of each
+//! pair. `NatUnits` and `NatApart` have the same left-hand sides. Thus their
+//! overlap complexes are equal entry for entry, with an entry for each order
+//! of a pair. A matching reads only the complex. It keeps the second entry of
+//! each pair critical, since the first entry already connects the two rules.
+//! Completion certifies each pair once, with its earlier rule first. On
+//! `NatApart` one pair parts, and completion certifies it through the rule
+//! that it derives. `NatAssoc` agrees only because completion reads none of
+//! its critical pairs. All three of them overlap below the root.
 //!
 //! # References
 //!
@@ -223,7 +223,7 @@ fn triples(complex: &Complex) -> Vec<[CellId; 3]>
 /// - hypothesis: L3 — the peaks of `NatUnits` have two strictly greater entries
 ///   and two equal ones, so a reversed or ignored comparison changes which
 ///   entries the matching pairs and which it keeps critical.
-/// - witness: `tests::collapse::the_matching_keeps_two_of_the_four_pairs_completion_certifies_on_nat_units`
+/// - witness: `tests::collapse::the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units`
 #[spec(captures: count = cells.len(), ensures: |output| output.len() == count
     && output.iter().enumerate().all(|(index, &(_, ref term))| output.iter().skip(index).all(|&(_, ref later)|
         ToyAlphabet::reduction_cmp(later, term) != core::cmp::Ordering::Greater)))]
@@ -279,7 +279,7 @@ struct Critical
 /// - hypothesis: L3 — the second entry of each pair of `NatUnits` finds both of
 ///   its faces under one root. A walk that stops short keeps them apart, and
 ///   the matching then pairs that entry.
-/// - witness: `tests::collapse::the_matching_keeps_two_of_the_four_pairs_completion_certifies_on_nat_units`
+/// - witness: `tests::collapse::the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units`
 #[spec(ensures: |output| parents[usize::from(output)] == output)]
 fn root(
     parents: &mut [CellId],
@@ -328,8 +328,8 @@ fn critical(complex: &Complex) -> Critical
 /// - hypothesis: L3 — on `NatUnits` each unordered pair has two entries, so the
 ///   second entry of each pair closes a cycle. A matching that ignores
 ///   acyclicity pairs it, and one that never pairs keeps all four.
-/// - witness: `tests::collapse::the_matching_keeps_two_of_the_four_pairs_completion_certifies_on_nat_units`
-/// - witness: `tests::collapse::nat_apart_has_the_complex_of_nat_units_and_one_certified_pair_fewer`
+/// - witness: `tests::collapse::the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units`
+/// - witness: `tests::collapse::nat_apart_certifies_the_pair_that_derives_its_rule_through_that_rule`
 #[spec(ensures: |output| output.branchings.iter().all(|cell| complex.branchings.iter().any(|&(held, _)| held == *cell))
     && output.rules.iter().all(|cell| complex.rules.iter().any(|&(held, _)| held == *cell))
     && output.rules.len().saturating_add(complex.branchings.len()) == complex.rules.len().saturating_add(output.branchings.len()))]
@@ -386,8 +386,8 @@ fn matched(
 /// # Adequacy
 /// - hypothesis: L3 — the witnesses pin the certified entries of each block
 ///   exactly. A lost, added or unsorted entry changes the pinned list.
-/// - witness: `tests::collapse::the_matching_keeps_two_of_the_four_pairs_completion_certifies_on_nat_units`
-/// - witness: `tests::collapse::nat_apart_has_the_complex_of_nat_units_and_one_certified_pair_fewer`
+/// - witness: `tests::collapse::the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units`
+/// - witness: `tests::collapse::nat_apart_certifies_the_pair_that_derives_its_rule_through_that_rule`
 #[spec(ensures: |output| output.1.is_sorted())]
 fn certified(store: CellStore<ToyAlphabet>) -> (CellStore<ToyAlphabet>, Vec<Branching>)
 {
@@ -428,7 +428,7 @@ fn branching(
 }
 
 #[test]
-fn the_matching_keeps_two_of_the_four_pairs_completion_certifies_on_nat_units()
+fn the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units()
 {
     let [zero, one, two] = [0_usize, 1, 2].map(CellId::from);
     let (store, certified) = certified(nat_units());
@@ -444,26 +444,30 @@ fn the_matching_keeps_two_of_the_four_pairs_completion_certifies_on_nat_units()
     );
     assert_eq!(
         certified,
-        [
-            branching(zero, one),
-            branching(one, zero),
-            branching(one, two),
-            branching(two, one)
-        ],
-        "completion certifies every entry, since both pairs join"
+        [branching(zero, one), branching(one, two)],
+        "completion certifies each pair once, its earlier rule first"
     );
+    let critical = critical(&complex);
     assert_eq!(
-        critical(&complex),
+        critical,
         Critical {
             rules: vec![one],
             branchings: vec![branching(one, zero), branching(two, one)],
         },
         "the second entry of each pair closes a gradient cycle"
     );
+    assert!(
+        critical
+            .branchings
+            .iter()
+            .map(|cell| branching(cell.right, cell.left))
+            .eq(certified.iter().copied()),
+        "the matching keeps one entry of each pair that completion certifies"
+    );
 }
 
 #[test]
-fn nat_apart_has_the_complex_of_nat_units_and_one_certified_pair_fewer()
+fn nat_apart_certifies_the_pair_that_derives_its_rule_through_that_rule()
 {
     let [zero, one, two, three] = [0_usize, 1, 2, 3].map(CellId::from);
     assert_eq!(
@@ -483,12 +487,8 @@ fn nat_apart_has_the_complex_of_nat_units_and_one_certified_pair_fewer()
     );
     assert_eq!(
         certified,
-        [
-            branching(one, zero),
-            branching(one, two),
-            branching(two, one)
-        ],
-        "the entry that derived the rule has no certificate"
+        [branching(zero, one), branching(one, two)],
+        "the pair that parts joins through the rule that it derives, so each pair keeps one certificate"
     );
     assert_eq!(
         critical(&complex(&store)),

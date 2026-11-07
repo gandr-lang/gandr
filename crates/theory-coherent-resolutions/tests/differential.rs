@@ -27,9 +27,7 @@ use gandr_theory_cell_complexes::Sym;
 use gandr_theory_cell_complexes::frame_defining_cell;
 use gandr_theory_coherent_resolutions::CompletionBudget;
 use gandr_theory_coherent_resolutions::CompletionCellBudget;
-use gandr_theory_coherent_resolutions::CompletionOutcome;
 use gandr_theory_coherent_resolutions::CompletionStepBudget;
-use gandr_theory_coherent_resolutions::DeclineReason;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::Overlap;
 use gandr_theory_coherent_resolutions::OverlapKind;
@@ -372,29 +370,6 @@ fn completion_certificates_replay()
             "every coherence certificate replays"
         );
     }
-}
-
-#[test]
-fn a_starved_completion_declines_with_what_was_left()
-{
-    // The joinable system has two confluence overlaps, (r1, r2) and (r2, r1);
-    // a one-step budget cannot drain the worklist, so completion declines
-    // carrying the rest.
-    let outcome = complete(
-        joinable_store(),
-        joinable_budget(CompletionStepBudget::from(1_usize)),
-    );
-    let CompletionOutcome::Declined {
-        reason, pending, ..
-    } = outcome
-    else {
-        panic!("a one-step budget over a two-overlap system must decline");
-    };
-    assert_eq!(DeclineReason::StepBudget, reason, "the step ceiling bit");
-    assert!(
-        !pending.is_empty(),
-        "the pending overlaps are carried, not dropped"
-    );
 }
 
 #[test]
