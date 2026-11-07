@@ -359,9 +359,6 @@ enum Spelled
     /// Its type, which the printer does not spell faithfully: the text it
     /// wrote.
     Unfaithful(String),
-    /// Its type, which a walk stopped at its visit budget spells no further:
-    /// the printer spells a shared type as its unshared tree (#5826).
-    PastTheBudget,
     /// No type: the lowering refused the declaration, so no form is in
     /// question.
     Untyped,
@@ -387,17 +384,6 @@ fn printed(
                 if ty.fidelity() == Fidelity::Faithful && ty.unspelled().is_empty() =>
             {
                 Spelled::Faithful(String::from(ty.as_ref()))
-            },
-            // A walk that stops at its visit budget spells a shared type no
-            // further (#5826), as the body parity holds it.
-            Maybe::Present(Declared::Typed(ty))
-                if !ty.unspelled().is_empty()
-                    && ty
-                        .unspelled()
-                        .iter()
-                        .all(|&reason| reason == Unspelled::OverBudget) =>
-            {
-                Spelled::PastTheBudget
             },
             Maybe::Present(Declared::Typed(ty)) => Spelled::Unfaithful(String::from(ty.as_ref())),
             Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => Spelled::Untyped,
@@ -552,7 +538,7 @@ fn misses(
             (Spelled::Unfaithful(text), _) | (_, Spelled::Unfaithful(text)) => misses.push(format!(
                 "{name}: `{declaration}`: the printer does not spell its type faithfully: {text}"
             )),
-            (Spelled::PastTheBudget | Spelled::Untyped, _) | (_, Spelled::PastTheBudget | Spelled::Untyped) => {},
+            (Spelled::Untyped, _) | (_, Spelled::Untyped) => {},
         }
     }
     let printed = printed_whole;
@@ -653,10 +639,6 @@ enum Held
     /// A printing that writes a constructor bare where more than one family
     /// or import answers its name, so the lowering refuses it (#5779).
     BareName,
-    /// A printing past the printer's budget: the layout engine refuses the
-    /// document at a ceiling, or the walk stops at its visit budget. The
-    /// printer spells a shared type as its unshared tree (#5826).
-    PastTheBudget,
 }
 
 impl fmt::Display for Held
@@ -677,7 +659,6 @@ impl fmt::Display for Held
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
             Self::SeveralResults => "#5173, a bind of a call's outputs",
             Self::BareName => "#5779, a constructor written bare where its name is ambiguous",
-            Self::PastTheBudget => "#5826, a shared type spelled past the printer's budget",
         })
     }
 }
@@ -809,9 +790,9 @@ fn spelt(
         .map(|printed| (String::from(printed.as_ref()), printed));
     let (typed, (text, bodied)) = match (typed, bodied) {
         (Ok(typed), Ok(bodied)) => (typed, bodied),
-        (Err(PresentationError::Build(_) | PresentationError::Render(_)), _)
-        | (_, Err(PresentationError::Build(_) | PresentationError::Render(_))) => {
-            return Spelt::Held(Held::PastTheBudget);
+        (Err(error @ (PresentationError::Build(_) | PresentationError::Render(_))), _)
+        | (_, Err(error @ (PresentationError::Build(_) | PresentationError::Render(_)))) => {
+            return Spelt::Unfaithful(format!("the printer could not lay it out: {error}"));
         },
         (Err(PresentationError::Unbalanced), _) | (_, Err(PresentationError::Unbalanced)) => {
             return Spelt::Unfaithful(String::from("the printer refused it"));
@@ -849,13 +830,6 @@ fn unfaithful(
         .all(|&reason| reason == Unspelled::Unreadable(Unreadable::SeveralResults))
     {
         Spelt::Held(Held::SeveralResults)
-    }
-    // A walk that stops at its visit budget spells a shared type no further.
-    else if unspelled
-        .iter()
-        .all(|&reason| reason == Unspelled::OverBudget)
-    {
-        Spelt::Held(Held::PastTheBudget)
     }
     // A handler written as `reset` and `shift` leaves the scope of each
     // capability it delimits unnamed, so its region is elided with it.
@@ -1048,7 +1022,8 @@ fn read(
     let slots = model_slots(&module);
     // Each dependent pair's binder and second label as the source writes
     // them, as the language server's spellings name them (#3278), each
-    // labelled sum's and lazy product's labels (#4395), and each model type.
+    // labelled sum's and lazy product's labels (#4395), each model type, and
+    // each type a top-level type member names (#5826).
     let naming = Naming::of(&module, SourceText::from(text.as_str()));
     let named = named_forms(naming.forms(), naming.text());
     let forms = WrittenForms {
@@ -1057,6 +1032,7 @@ fn read(
         sum_labels: named.sum_labels,
         with_labels: named.with_labels,
         models,
+        members: named.members,
         ..WrittenForms::new()
     };
     let source = CoreSource::new(&arena, &names)

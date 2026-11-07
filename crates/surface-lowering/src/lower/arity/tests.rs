@@ -823,6 +823,34 @@ fn a_selection_off_a_record_projects_its_label_855()
     );
 }
 
+/// A selection off a name written at a type member projects the record the
+/// member's definition writes at its label, as a selection off that record
+/// written in place does; a name written at a member that is no record keeps
+/// its refusal (#5826).
+#[test]
+fn a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "type Band = *{low : Integer, high : Integer}; def high(b : Band) -> -F Integer { return \
+         b.high }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "high"),
+        ["thunk", "lambda", "return", "nested", "field.high", "#0"],
+        "the member's record is projected at the label"
+    );
+    assert!(
+        matches!(
+            refused("type Count = Integer; def typed(n : Count) -> -F Integer { n.x }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a name written at a member that is no record keeps its refusal"
+    );
+}
+
 /// A selection off a value no written type states is the field of the record
 /// the value is, projected at its label: off a definition with no signature,
 /// and off a field of it, the inner link read as the value its projection
