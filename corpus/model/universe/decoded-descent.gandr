@@ -62,7 +62,8 @@ def rec countBeside(c : UL, v : elL(c)) -> Nat =
 def lists : List (List Nat);
 def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
 
-/// The `summed` run sums `lists` at the code of lists of lists. Its sum is three.
+/// The `summed` run sums `lists` at the code of lists of lists. Its
+/// sum is three.
 @[ runs("Succ (Succ (Succ Zero))") ]
 def summed() -> Nat =
   let sum = total (ListL (ListL NatL))

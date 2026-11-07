@@ -24,7 +24,8 @@ theory Lambda where
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
 
-/// The identity-return signature has values, computations and representable values.
+/// The identity-return signature has values, computations
+/// and representable values.
 /// Its `lam` body binds a value.
 theory IdentityReturn where
   sort VTy : Type;

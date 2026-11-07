@@ -1,6 +1,7 @@
 // This source shows inert operations.
 //
-// An inert operation identifies a package. It does not define the package content.
+// An inert operation identifies a package. It does not define
+// the package content.
 //
 // The checker allows a manifest step and another inert operation to read it.
 //

@@ -1,8 +1,16 @@
-/// `hello`'s derivation, as `nix derivation show` prints it, read into a record type and a value.
+/// `hello`'s derivation, as `nix derivation show` prints it, read into a record
+/// type and a value.
 ///
-/// The Nix type provider reads a derivation into a record type the checker admits. No check-time site performs that read yet, so this source states the provider's answer by hand.
+/// The Nix type provider reads a derivation into a record type the checker
+/// admits. No check-time site performs that read yet, so this source states the
+/// provider's answer by hand.
 ///
-/// `nix/hello.drv.json` is the read's JSON for this one derivation, each field of `Derivation` one of its keys. A map whose keys are no labels, as the outputs, the input derivations and the environment are, reads as a list of pairs, each key first. `inputs` reads as two fields, and the environment keeps its 17 variables holding a value, for a value prints at most 32 formers deep.
+/// `nix/hello.drv.json` is the read's JSON for this one derivation, each field
+/// of `Derivation` one of its keys. A map whose keys are no labels, as the
+/// outputs, the input derivations and the environment are, reads as a list of
+/// pairs, each key first. `inputs` reads as two fields, and the environment
+/// keeps its 17 variables holding a value, for a value prints at most
+/// 32 formers deep.
 ///
 /// - see: #2763
 /// - see: #2991
@@ -16,7 +24,8 @@ import std.list (List);
 /// An output of a derivation: its name, then the store path it is built at.
 pub type Output = String * String;
 
-/// A derivation a derivation depends on: its store path, then the outputs it reads.
+/// A derivation a derivation depends on: its store path, then the
+/// outputs it reads.
 pub type InputDerivation = String * List String;
 
 /// One variable of a builder's environment: its name, then its value.
@@ -35,7 +44,8 @@ pub type Derivation = *{
   version : Integer
 };
 
-/// `hello`'s derivation, `lpg53dvkfq377crcw2kr64cflmm2q8k8-hello-2.12.2.drv`, field by field, its empty variables left out.
+/// `hello`'s derivation, `lpg53dvkfq377crcw2kr64cflmm2q8k8-hello-2.12.2.drv`,
+/// field by field, its empty variables left out.
 def helloDerivation : Derivation = *{
   name = "hello-2.12.2",
   system = "x86_64-linux",

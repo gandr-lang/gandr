@@ -1,8 +1,10 @@
 //! `forced` has a parent ask its task before it receives the reply.
 //!
-//! The parent's send, the task's receipt and the task's reply form a chain. Only the task close commutes with the parent receipt.
+//! The parent's send, the task's receipt and the task's reply form a chain.
+//! Only the task close commutes with the parent receipt.
 //!
-//! The annotations state the channel web. The parent forks the task, sends a request, reads the reply and closes.
+//! The annotations state the channel web. The parent forks the task, sends a
+//! request, reads the reply and closes.
 //!
 //! - see: `independent.gandr` — two tasks whose plays do not order each other
 //! - see: #3338 — the run trace and the web a source states for a channel

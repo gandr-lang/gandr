@@ -1,4 +1,5 @@
-//! `derive-eq-over-codes` models generic equality from levitated declaration code.
+//! `derive-eq-over-codes` models generic equality from
+//! levitated declaration code.
 //!
 //! `Nat` and `Tagged` give closed codes that `Eq.generic` can traverse.
 //! The pathological twin refuses parameterized and mutually recursive codes.
@@ -22,14 +23,16 @@ data Tagged : Type where
 /// `eqNat` compares naturals by constructor and recurses at `var Nat`.
 def eqNat = Eq.generic Nat;
 
-/// `eqTagged` compares tagged naturals leaf by leaf and uses `Nat` equality for `count`.
+/// `eqTagged` compares tagged naturals leaf by leaf and uses `Nat`
+/// equality for `count`.
 def eqTagged = Eq.generic Tagged;
 
 /// `sameNat` compares two copies of two.
 @[ runs("+{.0 = *{}}") ]
 def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
 
-/// `shorterNat` compares one and two, and the recursion reaches `Zero` on one side.
+/// `shorterNat` compares one and two, and the recursion reaches `Zero`
+/// on one side.
 @[ runs("+{.1 = *{}}") ]
 def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }
 

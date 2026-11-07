@@ -1,4 +1,5 @@
-/// This source states a recursive path with a call under an integer constructor.
+/// This source states a recursive path with a call under
+/// an integer constructor.
 ///
 /// Integer rules can reduce the constructor to the call beneath it.
 /// A recursive transport remains neutral on its path.

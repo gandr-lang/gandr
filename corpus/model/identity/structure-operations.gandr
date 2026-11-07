@@ -1,6 +1,8 @@
-/// This source states representation independence for structures with operations.
+/// This source states representation independence for
+/// structures with operations.
 ///
-/// A carrier equivalence moves an operation argument backward and its result forward.
+/// A carrier equivalence moves an operation argument backward and
+/// its result forward.
 /// `Path.funext` compares the carried operation with its target operation.
 ///
 /// The examples relate two Boolean toggles and tagged Boolean readings.

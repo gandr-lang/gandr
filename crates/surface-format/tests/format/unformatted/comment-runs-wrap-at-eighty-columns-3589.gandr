@@ -1,0 +1,13 @@
+// The formatter moves ordinary comment words to a new line when they exceed the fixed comment width.
+/// The formatter moves documentation words to a new line when they exceed the fixed comment width.
+//! The formatter moves module comment words to a new line when they exceed the fixed comment width.
+// - see: #3589 — The formatter preserves this recorded data line when it exceeds the fixed comment width.
+// - cites: https://example.invalid/a-very-long-citation-target-that-stays-data "Author, A Long Citation Title"
+// [long-book]: https://example.invalid/a-very-long-reference-target-that-stays-data-and-never-wraps
+// - The formatter moves ordinary list words to a new line when the list item exceeds the fixed comment width.
+// ```text
+// The formatter keeps this fenced sentence unchanged when the source line extends beyond the fixed comment width.
+// ```
+// | The formatter | keeps this table row | when its source line extends beyond the fixed comment width |
+// token
+def a = 1;

@@ -1,10 +1,13 @@
-//! A product of two sums over free naturals has one normal form, however it sums.
+//! A product of two sums over free naturals has one normal form,
+//! however it sums.
 //!
 //! Grégoire and Leroy normalise the product of 128 plus `x` and 128 plus `y`.
 //! Its free variables leave matches stuck inside the normal form.
 //!
-//! Each factor runs sixteen successors past a free variable, so the product stops
-//! on matches over `x` and `y`. The path writes both products, the right factor of
+//! Each factor runs sixteen successors past a free variable, so
+//! the product stops
+//! on matches over `x` and `y`. The path writes both products, the
+//! right factor of
 //! one summed in two steps.
 //!
 //! - cites: [Gregoire-2002-a_compiled_implementation_of_strong_reduction], § 6

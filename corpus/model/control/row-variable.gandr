@@ -43,5 +43,6 @@ def quiet[r : Row](s : String) -> [r] Unit =
 @[ runs("*{}") ]
 def quietRun() -> Unit { quiet "handled" }
 
-/// `quiet` beside `Partial`: the variable carries `Partial` through the handler.
+/// `quiet` beside `Partial`: the variable carries `Partial`
+/// through the handler.
 def quietBeside() -> [Partial] Unit { quiet "forwarded" }

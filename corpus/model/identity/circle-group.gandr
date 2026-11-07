@@ -29,7 +29,8 @@ def spinDown(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](
 ) =
   Path.here (back loop ∷ spin n)
 
-/// The `spinHom` induction uses reverse word order because `spin` adds a loop at each word front.
+/// The `spinHom` induction uses reverse word order because `spin` adds a loop
+/// at each word front.
 def rec spinHom(
   a : Int,
   b : Int
@@ -39,7 +40,8 @@ def rec spinHom(
     | S(x) => Path.ap loopOn (spinHom[<] a x)
     | P(x) => Path.ap unloopOn (spinHom[<] a x)
 
-/// The `windHom` induction sums windings in reverse order because `wind` folds its second summand.
+/// The `windHom` induction sums windings in reverse order because `wind` folds
+/// its second summand.
 def rec windHom(
   q : Path[.A = Circle](Base, Base),
   p : Path[.A = Circle](Base, Base)
@@ -61,7 +63,8 @@ def spunComm(
     type(Path[.A = Path[.A = Circle](Base, Base)](spin (plus (wind q) (wind p)), spin a))
   }) (plusComm (wind q) (wind p)) (Path.here (spin (plus (wind q) (wind p))))
 
-/// The `comm` chain applies `sect`, `windHom`, and `plusComm` to commute circle loops.
+/// The `comm` chain applies `sect`, `windHom`, and `plusComm` to
+/// commute circle loops.
 def comm(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)

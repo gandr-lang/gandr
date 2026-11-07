@@ -4,7 +4,8 @@
 //! factorial terms with one normal form. The parity reads back one constant,
 //! so the run dominates it.
 //!
-//! One path compares the recursive and the iterative factorial of six. The other
+//! One path compares the recursive and the iterative factorial of
+//! six. The other
 //! states that the factorial of five is even.
 //!
 //! - cites: [Gregoire-2002-a_compiled_implementation_of_strong_reduction], § 6

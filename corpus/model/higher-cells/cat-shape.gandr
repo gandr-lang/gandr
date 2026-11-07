@@ -13,7 +13,8 @@
 // [HoTT-Book]: https://homotopytypetheory.org/book/ "The Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 /// `CatShape` defines a morphism sort indexed by two objects. It reads each
-/// law at the composite's objects, so the unit laws agree at `comp(id(a), id(a))`.
+/// law at the composite's objects, so the unit laws agree
+/// at `comp(id(a), id(a))`.
 theory CatShape where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;

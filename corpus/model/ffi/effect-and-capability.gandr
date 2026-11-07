@@ -13,6 +13,7 @@ extern "c" from "sensor" {
   def read(channel : i32) -> i64;
 }
 
-/// `reading` names channel zero through the `sensor` extern block before the current lowering reaches its projection.
+/// `reading` names channel zero through the `sensor` extern block before the
+/// current lowering reaches its projection.
 @[ refuses("OutOfFragment.projection_expression") ]
 def reading = sensor.read 0i32;

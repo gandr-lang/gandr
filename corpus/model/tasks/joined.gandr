@@ -1,8 +1,10 @@
 //! `joined` closes a task end before a scope exits.
 //!
-//! A scope clause can drop or resume its remaining continuation twice. After a parent joins, the rest holds no task resource.
+//! A scope clause can drop or resume its remaining continuation twice. After a
+//! parent joins, the rest holds no task resource.
 //!
-//! The handler forks, receives and closes the task. The exit operation resumes the continuation as `*{}`.
+//! The handler forks, receives and closes the task. The exit operation resumes
+//! the continuation as `*{}`.
 //!
 //! - see: `authority.gandr` — a parent exits while its task end stays open
 

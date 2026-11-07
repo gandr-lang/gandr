@@ -1,4 +1,5 @@
-/// This source calls recursions staged past their first parameter at named values.
+/// This source calls recursions staged past their first parameter
+/// at named values.
 ///
 /// It pins how the kernel unfolds a constant at a staged fixpoint's gate.
 ///

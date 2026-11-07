@@ -1,6 +1,7 @@
 //! This source supplies the identity subject's shared circle declarations.
 //!
-//! The declarations provide the circle, its loop words, and their integer model.
+//! The declarations provide the circle, its loop words, and
+//! their integer model.
 //!
 //! Each subject source imports these declarations to state its own law.
 //! The checker evaluates their rules and path operations.

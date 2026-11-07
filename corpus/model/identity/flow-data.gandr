@@ -1,6 +1,7 @@
 /// This source states a data-type flow from a translator.
 ///
-/// A translator moves fields between constructors of the source and target types.
+/// A translator moves fields between constructors of the source
+/// and target types.
 /// The flow moves each source value to its target value.
 ///
 /// The flow classifier stores the translator between the two data types.

@@ -1,9 +1,11 @@
 //! `circuit-feed-wheel` models a guarded feedback rule in a `theory` block.
 //!
 //! `spin` feeds `out` back as `state` after one observed tick.
-//! The pathological source refuses unguarded feedback. The running source refuses a model that states a circuit rule.
+//! The pathological source refuses unguarded feedback. The running source
+//! refuses a model that states a circuit rule.
 //!
-//! The checker reads `state` under the `emit` observation, which guards the loop.
+//! The checker reads `state` under the `emit` observation, which
+//! guards the loop.
 //!
 //! - see: #1031
 //! - cites: [Katis-2002-feedback_trace_fixedpoint_semantics]
@@ -17,7 +19,8 @@ pub theory Wheel where
   sort Nat : Type;
   obs emit : (s : Nat, x : Nat) --> (y : Nat);
 
-  /// `spin` reads `state` and `stream` through `emit`, then feeds `out` back as `state`.
+  /// `spin` reads `state` and `stream` through `emit`, then feeds `out`
+  /// back as `state`.
   rule spin : (data stream : Nat) ==> (out : Nat) {
     node : emit(state, stream) --> (out);
     feed : (out) --> (state);

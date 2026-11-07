@@ -1,5 +1,6 @@
 // A flow between types whose written endpoints disagree with its translator:
-// `A ⇝ B` abbreviates `Flow[.A = Type](A, B)`, and `Flow.into` introduces it at the
+// `A ⇝ B` abbreviates `Flow[.A = Type](A, B)`, and `Flow.into` introduces
+// it at the
 // translator's own domain and codomain, so the relation written backwards is
 // refused where the flow is checked against it.
 //

@@ -34,7 +34,8 @@ def stepOmittedFirst(
 ) -> Path[.A = A](y, w) =
   Path.step g h
 
-/// The composite through `stepOmittedFirst`, read as the composite that names its carrier.
+/// The composite through `stepOmittedFirst`, read as the composite that
+/// names its carrier.
 def stepOmittedThrough(
   A : Type,
   y : A,

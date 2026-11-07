@@ -3,14 +3,16 @@
 // assignment `q.0 = Some(&l)` then re-instantiates `Q` at the local's lifetime,
 // and the destructor stores a view of `l` where only a `'static` value may go.
 // Here the region a slot keeps is part of the slot's type, a built value's type
-// never changes under it, and a destructor is a region's end action that reaches
+// never changes under it, and a destructor is a region's end
+// action that reaches
 // only what the region keeps: the write is refused before anything runs.
 //
 // What the hole is made of: evidence in two currencies. A bound written on a
 // type's definition is a side condition outside the value, re-proved at every
 // explicit use (a call, a coercion) but inherited as an assumption by the one
 // consumer with no use site, the destructor — an explicit `Drop` must repeat
-// the type's bounds exactly and so assumes them, and the generated drop glue has
+// the type's bounds exactly and so assumes them, and the generated
+// drop glue has
 // none — while subtyping by variance changes the type beneath it and nothing
 // re-establishes the bound. The same shape is the ergonomic rule "bounds on the
 // impl, never on the struct": a bound on the definition is re-stated on every

@@ -1,8 +1,11 @@
-/// A record whose last field is a record sharing a label with it prints, and reprints, as a record.
+/// A record whose last field is a record sharing a label with it prints, and
+/// reprints, as a record.
 ///
-/// The inner record's key binds its own field, so the outer record's label stays unread and its fields stay a record.
+/// The inner record's key binds its own field, so the outer record's label
+/// stays unread and its fields stay a record.
 ///
-/// The round trip reads each record type here back from its printed spelling and prints the reading as the same record.
+/// The round trip reads each record type here back from its printed spelling
+/// and prints the reading as the same record.
 ///
 /// - see: #3010 — the reading printed again as a product
 

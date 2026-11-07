@@ -43,7 +43,8 @@ pub def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y))
 ) =
   Path.ap F p
 
-/// The left whisker: a path composed before a path of paths, the level-two composite whose second column holds the 2-cell.
+/// The left whisker: a path composed before a path of paths, the level-two
+/// composite whose second column holds the 2-cell.
 pub def whiskerLeft(
   A : Type,
   x : A,
@@ -56,7 +57,8 @@ pub def whiskerLeft(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) =
   compose[4, 9] (chain 2 (0, 1)) (f, b)
 
-/// The right whisker: a path composed after a path of paths, the level-two composite whose first column holds the 2-cell.
+/// The right whisker: a path composed after a path of paths, the level-two
+/// composite whose first column holds the 2-cell.
 pub def whiskerRight(
   A : Type,
   x : A,
@@ -69,7 +71,8 @@ pub def whiskerRight(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
   compose[4, 9] (chain 2 (1, 0)) (a, g)
 
-/// A dependent function's action on a path: its value at the start carried along the path meets its value at the end.
+/// A dependent function's action on a path: its value at the start carried
+/// along the path meets its value at the end.
 pub def apd(
   A : Type,
   P : A -> Type,
@@ -85,7 +88,8 @@ pub def apd(
     (Path.here p)
     (Path.here (F x))
 
-/// The action of a composite is the action of the outer function on the inner action, by based path induction on the path.
+/// The action of a composite is the action of the outer function on the inner
+/// action, by based path induction on the path.
 pub def apComp(
   A : Type,
   B : Type,
@@ -109,7 +113,8 @@ pub def apComp(
     (Path.here p)
     (Path.here (Path.here (G (F x))))
 
-/// The associator: composition is associative by conversion, since both nestings move along each path in turn.
+/// The associator: composition is associative by conversion, since both
+/// nestings move along each path in turn.
 pub def assoc(
   A : Type,
   x : A,
@@ -122,7 +127,8 @@ pub def assoc(
 ) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) =
   Path.here (Path.step (Path.step f g) h)
 
-/// The left unitor: a reflexivity composed on the left leaves a path, by based path induction on it.
+/// The left unitor: a reflexivity composed on the left leaves a path, by based
+/// path induction on it.
 pub def leftUnit(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](
   join A x x y (Path.here x) p,
   p
@@ -137,14 +143,17 @@ pub def leftUnit(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Pa
     (Path.here p)
     (Path.here (Path.here x))
 
-/// The right unitor: a reflexivity composed on the right leaves a path, by conversion.
+/// The right unitor: a reflexivity composed on the right leaves a
+/// path, by conversion.
 pub def rightUnit(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](
   join A x y y p (Path.here y),
   p
 ) =
   Path.here p
 
-/// A homotopy's naturality along a path, by based path induction on the path. The homotopy at the start then `G`'s action meets `F`'s action then the homotopy at the end.
+/// A homotopy's naturality along a path, by based path induction on the path.
+/// The homotopy at the start then `G`'s action meets `F`'s action then the
+/// homotopy at the end.
 pub def natural(
   A : Type,
   B : Type,

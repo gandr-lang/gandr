@@ -1,4 +1,5 @@
-// This source pays session bisimilarity with a univalence between nominal types.
+// This source pays session bisimilarity with a univalence
+// between nominal types.
 //
 // The univalence record supplies the evidence.
 // Native identity checks the evidence at the owed payload pair.

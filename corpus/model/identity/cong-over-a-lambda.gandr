@@ -4,7 +4,8 @@
 /// A stated lambda type repeats the path type.
 ///
 /// The binder reads the type of the path points.
-/// The elaborator checks `Path.ap` against its own path type when no type occurs.
+/// The elaborator checks `Path.ap` against its own path type when
+/// no type occurs.
 ///
 /// - see: #3773 — lambda action
 /// - see: #3829 — inferred path types
@@ -23,7 +24,8 @@ def whiskerRight(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
   Path.ap (fun (q) { Path.step q g }) a
 
-/// The whisker and its reflexivity form a `Path.step` without a stated path type.
+/// The whisker and its reflexivity form a `Path.step` without a
+/// stated path type.
 def whiskerThenHere(
   A : Type,
   x : A,

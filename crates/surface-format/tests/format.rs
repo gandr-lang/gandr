@@ -65,6 +65,64 @@ fn text<'text>(
 {
     formatted(grammar, source, width).into_text()
 }
+/// The words in a comment sequence.
+///
+/// # Specification
+///
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug, Eq, PartialEq)]
+struct CommentWords<'source>(Vec<&'source str>);
+
+/// Collect the words in comment lines.
+///
+/// # Specification
+///
+/// trivial.
+fn comment_words(source: SourceText<'_>) -> CommentWords<'_>
+{
+    let source = <&str>::from(source);
+    let mut words = Vec::new();
+    for line in source.lines() {
+        let line = line.trim_start();
+        let body = ["//!", "///", "//"]
+            .into_iter()
+            .find_map(|marker| line.strip_prefix(marker))
+            .unwrap_or_default();
+        words.extend(body.strip_prefix(' ').unwrap_or(body).split_whitespace());
+    }
+    CommentWords(words)
+}
+/// Find Gandr sources below `roots`.
+///
+/// # Specification
+/// trivial.
+fn sources_below(roots: &[&Path]) -> Vec<std::path::PathBuf>
+{
+    let mut pending: Vec<std::path::PathBuf> =
+        roots.iter().map(|root| (*root).to_path_buf()).collect();
+    let mut sources = Vec::new();
+    while let Some(path) = pending.pop() {
+        let entries = std::fs::read_dir(&path).expect("a source directory is readable");
+        for entry in entries {
+            let entry = entry.expect("a source directory entry is readable");
+            let path = entry.path();
+            let kind = entry.file_type().expect("a source entry has a type");
+            if kind.is_dir() {
+                pending.push(path);
+            }
+            else if !kind.is_dir()
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension == "gandr")
+            {
+                sources.push(path);
+            }
+        }
+    }
+    sources.sort_unstable();
+    sources
+}
 
 /// The unformatted input `name`, and its goldens at both pages.
 ///
@@ -163,6 +221,111 @@ fn a_bulleted_head_comment_keeps_its_lines_2918()
             text(&grammar, source, page),
             source,
             "a head's `- see:` lines and their indented continuations are never reflowed"
+        );
+    }
+}
+#[test]
+fn comment_runs_wrap_at_eighty_columns_3589()
+{
+    let grammar = grammar();
+    let source = include_str!("format/unformatted/comment-runs-wrap-at-eighty-columns-3589.gandr");
+    let laid = text(&grammar, source, NARROW);
+    assert_eq!(
+        text(&grammar, laid.as_str(), NARROW),
+        laid,
+        "comment runs format once"
+    );
+    assert_eq!(
+        comment_words(SourceText::from(source)),
+        comment_words(SourceText::from(laid.as_str())),
+        "comment runs keep their word sequence"
+    );
+    assert!(
+        laid.lines().any(
+            |line| line.starts_with("// The formatter") && line.chars().nth(40_usize).is_some()
+        ),
+        "comments use their 80-column width beside the narrow page"
+    );
+    assert!(
+        laid.lines()
+            .filter(|line| line.trim_start().starts_with("//"))
+            .all(|line| {
+                line.chars().nth(80_usize).is_none()
+                    || line.contains("fenced sentence")
+                    || line.contains('|')
+                    || line.contains("- see:")
+                    || line.contains("- cites:")
+                    || line.contains("]:")
+            }),
+        "each reflowable comment line fits the comment width"
+    );
+    for continuation in [
+        "// fixed comment width.\n",
+        "/// fixed comment width.\n",
+        "//! fixed comment width.\n",
+    ] {
+        assert!(
+            laid.contains(continuation),
+            "each carried piece holds three words"
+        );
+    }
+    assert!(
+        laid.contains("//   "),
+        "a list continuation uses a hanging indent"
+    );
+    for data in [
+        "// - see: #3589 — The formatter preserves this recorded data line when it exceeds the fixed comment width.\n",
+        "// - cites: https://example.invalid/a-very-long-citation-target-that-stays-data \"Author, A Long Citation Title\"\n",
+        "// [long-book]: https://example.invalid/a-very-long-reference-target-that-stays-data-and-never-wraps\n",
+    ] {
+        assert!(
+            laid.contains(data),
+            "line-oriented comment data stays unchanged"
+        );
+    }
+    assert!(
+        laid.contains("// token\n"),
+        "a one-token comment line stays unchanged"
+    );
+    assert!(
+        laid.contains(
+            r"// ```text
+// The formatter keeps this fenced sentence unchanged when the source line extends beyond the fixed comment width.
+// ```
+"
+        ),
+        "a fence keeps its lines"
+    );
+    assert!(
+        laid.contains(
+            "// | The formatter | keeps this table row | when its source line extends beyond the fixed comment width |\n"
+        ),
+        "a table row stays unchanged"
+    );
+}
+#[test]
+fn corpus_and_std_comment_words_keep_their_sequence_3589()
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let paths = [
+        root.join("corpus/classifier"),
+        root.join("corpus/fragment"),
+        root.join("corpus/model"),
+        root.join("corpus/pathological"),
+        root.join("corpus/pending"),
+        root.join("corpus/surface"),
+        root.join("library/std"),
+    ];
+    let roots: Vec<&Path> = paths.iter().map(std::path::PathBuf::as_path).collect();
+    let grammar = grammar();
+    for path in sources_below(&roots) {
+        let source = std::fs::read_to_string(&path).expect("a corpus source is readable");
+        let laid = text(&grammar, source.as_str(), WIDE);
+        assert_eq!(
+            comment_words(SourceText::from(source.as_str())),
+            comment_words(SourceText::from(laid.as_str())),
+            "{} keeps its comment word sequence",
+            path.display()
         );
     }
 }

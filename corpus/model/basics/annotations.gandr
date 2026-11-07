@@ -2,9 +2,11 @@
 //
 // An annotation `(e : T)` sets a value's type.
 // A definition without a signature declares its value at `T`.
-// A body returns its value at `-F T`, whether it writes `return` or a tail takes it.
+// A body returns its value at `-F T`, whether it writes `return` or a
+// tail takes it.
 //
-// The checker ascribes annotations at pairs, scrutinees, arguments, heads and signatures.
+// The checker ascribes annotations at pairs, scrutinees, arguments,
+// heads and signatures.
 // A bind tuple uses its annotated pattern product.
 //
 // - see: #1107

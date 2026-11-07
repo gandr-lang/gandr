@@ -13,7 +13,8 @@ import "./data-base.gandr";
 // The heaps and `emp`, the type of evidence that a heap is empty.
 import "./stuck-arm-call.gandr";
 
-/// The record type over a call that pairs a natural with evidence that `h` is empty.
+/// The record type over a call that pairs a natural with evidence that
+/// `h` is empty.
 def evidenced(h : Heap) -> Type =
   return type(*{v : Nat, ok : emp(h)})
 

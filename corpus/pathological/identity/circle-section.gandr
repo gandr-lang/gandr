@@ -56,7 +56,8 @@ def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle]
 
 /// A path at every loop whose inverse arm drops its rest's path: each arm
 /// checks at its letter, but at `loop ∷ back(loop) ∷ q` the loop arm carries
-/// the inverse arm's reflexivity to `Path.here(loop ∷ back(loop) ∷ q)`, which is
+/// the inverse arm's reflexivity to `Path.here(loop ∷ back(loop) ∷
+/// q)`, which is
 /// not the path at `q` the cancellation's right side reads. Read as a set,
 /// the loops would identify the two; the words are not read as one.
 @[ refuses("RuleNotRespected") ]

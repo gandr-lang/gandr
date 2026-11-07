@@ -1,7 +1,8 @@
 //! This source checks univalence across certified signature strata.
 //!
 //! `ua[n, k]` derives a path between models' degree telescopes through degree
-//! `n`. It uses shapes of size at most `k` when each vertex is a shared corolla.
+//! `n`. It uses shapes of size at most `k` when each vertex is
+//! a shared corolla.
 //!
 //! The checker uses the Segal condition to certify stages from degree two. It
 //! names a refusal for an uncertified degree, bound, table or shape budget.
@@ -32,7 +33,8 @@ def six = ua[
   6
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
-/// `seven` sets both its bound and degree to seven. At bound seven, eleven of 631 shape
+/// `seven` sets both its bound and degree to seven. At bound seven, eleven
+/// of 631 shape
 /// classes lie below degree six, so the stratum certifies degrees six and seven
 /// vacuously.
 def seven = ua[

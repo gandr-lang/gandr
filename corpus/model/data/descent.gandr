@@ -1,4 +1,5 @@
-// A recursive definition descends through the parameter an innermost match scrutinises.
+// A recursive definition descends through the parameter an
+// innermost match scrutinises.
 //
 // A recursive claim can use the first parameter, an accumulator or a rebuilt
 // value below that parameter.

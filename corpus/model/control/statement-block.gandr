@@ -15,7 +15,8 @@
 import std.process;
 
 /// `statement` performs an exit in a bound block.
-/// The checker synthesises the final computation type and resumes the rest once.
+/// The checker synthesises the final computation type and resumes
+/// the rest once.
 @[ runs("0") ]
 def statement() -> Integer =
   handle c : std.process.Exit.Eff {

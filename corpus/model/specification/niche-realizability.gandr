@@ -1,8 +1,12 @@
 //! `niche-realizability` models a null niche as a realizability predicate.
 //!
-//! A realiser is a predicate on a word and heap. `star` splits disjoint heaps. `pointsTo` describes a singleton. The normaliser computes assertions. The kernel replays each declaration.
+//! A realiser is a predicate on a word and heap. `star` splits disjoint heaps.
+//! `pointsTo` describes a singleton. The normaliser computes assertions. The
+//! kernel replays each declaration.
 //!
-//! `Option<&T>` uses one word for null or a reference. Its realisers equal the tagged layout at every heap. Marshallers meet their triples. `deref_or` meets the niche. The pathological source refuses `_Nonnull`.
+//! `Option<&T>` uses one word for null or a reference. Its realisers equal the
+//! tagged layout at every heap. Marshallers meet their triples. `deref_or`
+//! meets the niche. The pathological source refuses `_Nonnull`.
 //!
 //! - see: #2832
 //! - see: #327 — `derefOrWp`
@@ -383,7 +387,8 @@ pub def nicheTagged(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : vOpt(
     }
   }
 
-/// `nicheTaggedEquiv` makes the two layouts' realisers equivalent at every heap.
+/// `nicheTaggedEquiv` makes the two layouts' realisers equivalent
+/// at every heap.
 pub def nicheTaggedEquiv(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : vOpt(vt, w, h)} ≃ *{
   r : Tagged,
   ok : vTag(vt, r, h)
@@ -430,7 +435,8 @@ pub def derefOrSome(
   match r where
     | *{v, cell} => *{v, *{cell, r}}
 
-/// `derefOrMeets` sends `vOpt` through `deref_or` and returns it at the passed word.
+/// `derefOrMeets` sends `vOpt` through `deref_or` and returns it at
+/// the passed word.
 pub def derefOrMeets(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) -> derefOrWp(w, d, keptOpt, h) =
   match w where
     | Zero => match h where

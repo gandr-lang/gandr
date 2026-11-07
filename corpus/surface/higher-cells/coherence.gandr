@@ -8,8 +8,10 @@
 //
 //   rule triangle : (Path.step(assoc(f, id(b), g), comp(f, unitL(g))))
 //     ==> comp(unitR(f), g);
-//   rule pentagon : (Path.step(assoc(comp(f, g), h, k), assoc(f, g, comp(h, k))))
-//     ==> (Path.step(Path.step(comp(assoc(f, g, h), k), assoc(f, comp(g, h), k)), comp(f, assoc(g, h, k))));
+//   rule pentagon : (Path.step(assoc(comp(f, g), h, k), assoc(f,
+//   g, comp(h, k))))
+//     ==> (Path.step(Path.step(comp(assoc(f, g, h), k), assoc(f, comp(g, h),
+//     k)), comp(f, assoc(g, h, k))));
 //
 // - see: #1510
 

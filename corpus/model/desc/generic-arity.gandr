@@ -47,7 +47,8 @@ def counted_at(presented : Theory) -> Type =
 @[ runs("2") ]
 def typed() -> counted_at(Monoid) { arity Monoid }
 
-/// A binder keeps `counted_at(presented)` rigid, so its occurrences are one type.
+/// A binder keeps `counted_at(presented)` rigid, so its occurrences
+/// are one type.
 def kept(presented : Theory, n : counted_at(presented)) -> counted_at(presented) =
   n
 

@@ -30,7 +30,8 @@ def packedKept : Flow[.A = Type[+, 1]](Packed, Packed) = Flow.stay Packed;
 def packedTwice() -> Flow[.A = Type[+, 1]](Packed, Packed) =
   Flow.then packedKept packedKept
 
-/// The `after` function composes a given large-code flow after the stationary flow.
+/// The `after` function composes a given large-code flow after
+/// the stationary flow.
 def after(f : Flow[.A = Type[+, 1]](Packed, Boxed)) -> Flow[.A = Type[+, 1]](Packed, Boxed) =
   Flow.then packedKept f
 

@@ -13,7 +13,8 @@ import std.io;
 // Early exit's host interface.
 import std.process;
 
-/// Two instances of `std.io.Console.Eff` handled around a call naming neither: the
+/// Two instances of `std.io.Console.Eff` handled around a call
+/// naming neither: the
 /// call is refused naming both, never routed to the innermost.
 @[ refuses("InstanceAmbiguous") ]
 def ambiguous() -> Integer =
@@ -39,13 +40,16 @@ def unanswered() -> [std.io.Console.Eff] Unit { say () }
 @[ refuses("DuplicateDefinition") ]
 def twice() -> [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { o.print "twice" }
 
-/// The default `std.io.Console.Eff` performed under a row whose only `std.io.Console.Eff` is the
+/// The default `std.io.Console.Eff` performed under a row whose only
+/// `std.io.Console.Eff` is the
 /// instance `o`: the two are apart.
 @[ refuses("TypeMismatch") ]
 def defaulted() -> [o : std.io.Console.Eff] Unit { std.io.Console.print "defaulted" }
 
-/// An instance of `std.process.Exit.Eff` supplied where `say` takes an instance of
-/// `std.io.Console.Eff`: its capability grants none of `std.io.Console.Eff`'s operations.
+/// An instance of `std.process.Exit.Eff` supplied where `say` takes
+/// an instance of
+/// `std.io.Console.Eff`: its capability grants none
+/// of `std.io.Console.Eff`'s operations.
 @[ refuses("CapabilityAmplified") ]
 def misplaced() -> Integer =
   handle p : std.process.Exit.Eff {

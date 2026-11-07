@@ -1,4 +1,5 @@
-/// This source states unbiased composition of a path chain at a certified stratum.
+/// This source states unbiased composition of a path chain at
+/// a certified stratum.
 ///
 /// A chain has one composite across all of its bracketings.
 /// The former therefore selects no bracketing.

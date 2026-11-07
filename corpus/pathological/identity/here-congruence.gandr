@@ -1,7 +1,8 @@
 // Two reflexivities whose points no rule relates are not one path: the twin
 // of the model's `peak_is_here` (the HoTT book's § 1.12, `refl`, under
 // judgmental equality). `S(x)` and `P(x)` share no normal form under the
-// integers' cancellations, so `Path.here(P(x))` is no path from `S(x)` to `S(x)`.
+// integers' cancellations, so `Path.here(P(x))` is no path from
+// `S(x)` to `S(x)`.
 //
 // - see: #1723 — `peak_apart`
 

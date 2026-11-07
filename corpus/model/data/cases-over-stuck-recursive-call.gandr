@@ -1,8 +1,13 @@
 /// This source converts two cases over cases of one stuck recursive call.
 ///
-/// It pins how the checker compares `outer(first(look(a, b)))` with the same cases, each written again by a twin of its definition.
+/// It pins how the checker compares `outer(first(look(a, b)))` with the same
+/// cases, each written again by a twin of its definition.
 ///
-/// Each side's outer case eliminates a held endpoint whose computation is itself a case over the held call `look(a, b)`. The kernel reads each side as binds stacked over that call and makes them one by associativity. The checker records those steps, then compares the calls and the cases over one fresh variable, and the kernel replays the comparison.
+/// Each side's outer case eliminates a held endpoint whose computation is
+/// itself a case over the held call `look(a, b)`. The kernel reads each side as
+/// binds stacked over that call and makes them one by associativity. The
+/// checker records those steps, then compares the calls and the cases over one
+/// fresh variable, and the kernel replays the comparison.
 ///
 /// - see: #3086
 /// - see: #879
@@ -33,7 +38,8 @@ def outerTwin(n : Maybe Nat) -> Maybe Nat =
     | None => None
     | Some(y) => Some (Succ y)
 
-/// This function looks the natural `k` places below `n`, stuck until both are constructors.
+/// This function looks the natural `k` places below `n`, stuck until
+/// both are constructors.
 def rec look(n : Nat, k : Nat) -> Maybe Nat =
   match n where
     | Zero => None

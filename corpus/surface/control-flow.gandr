@@ -45,7 +45,8 @@ def pick(n : Nat) -> [Partial] Nat =
 @[ runs("Succ (Succ Zero)") ]
 def pick_two() -> [Partial] Nat { become pick (Succ (Succ Zero)) }
 
-/// A `return` inside the loop leaves the function; `continue` runs the loop again.
+/// A `return` inside the loop leaves the function; `continue` runs
+/// the loop again.
 def leave(n : Nat) -> [Partial] Nat =
   loop {
     match n where

@@ -20,7 +20,8 @@ import "../../../model/data/data-maybe.gandr";
 // `pop`'s body, its transformer, its postcondition and the free list's parts.
 import "../../../model/interop/thir/buddy-pop.gandr";
 
-/// A part of the root cannot write the heads, so the claim from a listed head is refused.
+/// A part of the root cannot write the heads, so the claim from a listed
+/// head is refused.
 @[ refuses("TypeMismatch") ]
 def popShared(
   blocks : Vals,
@@ -46,7 +47,8 @@ def popShared(
     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
   }
 
-/// At a listed head `pop` answers that block, so its claim to answer `None` is refused.
+/// At a listed head `pop` answers that block, so its claim to answer
+/// `None` is refused.
 @[ refuses("TypeMismatch") ]
 def popListedAsEmpty(
   blocks : Vals,

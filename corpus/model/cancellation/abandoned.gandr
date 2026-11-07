@@ -1,8 +1,10 @@
 //! `abandoned` gives a cancellation that abandons a task continuation.
 //!
-//! The exit clause abandons the rest of its scope. The exit clause cancels the task end.
+//! The exit clause abandons the rest of its scope. The exit clause cancels
+//! the task end.
 //!
-//! The handler starts a task. The task sends its note. The task closes. The exit operation abandons the continuation before a receive.
+//! The handler starts a task. The task sends its note. The task closes. The
+//! exit operation abandons the continuation before a receive.
 //!
 //! - see: #1334 — `cancelled`
 // The import gives the task protocol.

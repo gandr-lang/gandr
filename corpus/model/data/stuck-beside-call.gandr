@@ -1,4 +1,5 @@
-// A recursive call can use another stuck recursive call as its descent argument.
+// A recursive call can use another stuck recursive call as
+// its descent argument.
 //
 // An unfolded arm evaluates its definition argument before it recurses.
 //

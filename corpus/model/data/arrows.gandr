@@ -12,7 +12,8 @@
 // - see: `pathological/identity/directed-cell.gandr`
 
 /// `IntOp` has two constructors, two rules and one operation.
-/// The rules reduce both compositions to `x`, and the operation unfolds to a predecessor.
+/// The rules reduce both compositions to `x`, and the operation unfolds
+/// to a predecessor.
 @[ normalizes("pred(S(S(Z))) ~> S(Z)") ]
 data IntOp : Type where {
   | Z : IntOp
@@ -35,7 +36,8 @@ data Circle : Type where
   | loop : Base <-> Base
 
 /// A cell adds paths.
-/// Its rules make `back(loop)` an inverse and reduce cancellation to the empty word.
+/// Its rules make `back(loop)` an inverse and reduce cancellation to
+/// the empty word.
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
   Path.step loop (Path.back loop),
   Path.here Base
