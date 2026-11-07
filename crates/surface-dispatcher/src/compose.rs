@@ -8093,4 +8093,57 @@ mod tests
             "and the path reading it is refused, as the whole judgement refuses it"
         );
     }
+
+    /// #5748: the readmission of `model/desc/record-faces.gandr` crosses one
+    /// formation record for `Config` at the secure port, whose six brackets
+    /// fix `.port = 443` and `.tls = true` by its fields or by its face
+    /// `secure`. That record is the one kernel definition declared at the
+    /// record of `port` and `tls` alone.
+    #[test]
+    fn the_secure_brackets_of_record_faces_cross_one_formation_5748()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(include_str!(
+            "../../../corpus/model/desc/record-faces.gandr"
+        ));
+        let tree = parse(&grammar, source).expect("parses").into_tree();
+        let mut arena = CoreArena::new();
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the module lowers");
+        let declarations = adapt(&module, &arena);
+        let report = check_module(
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &declarations,
+        );
+        let readmission = bridge::readmit(&mut arena, &report);
+        let environment = readmission.environment();
+        let label =
+            |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+        let secure = [label("port"), label("tls")];
+        let formations = environment
+            .entries()
+            .iter()
+            .filter(|entry| {
+                let gandr_kernel_term::DeclarationContent::Def { declared, .. } =
+                    *entry.declaration().content()
+                else {
+                    return false;
+                };
+                matches!(
+                    environment.arena().value_type(declared),
+                    Some(gandr_kernel_term::ValueType::Record(fields)) if fields.keys().eq(secure.iter())
+                )
+            })
+            .count();
+        assert_eq!(
+            formations, 1,
+            "the six secure brackets cross one formation record"
+        );
+    }
 }
