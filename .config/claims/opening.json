@@ -1816,5 +1816,88 @@
       ]
     },
     "output": "the body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `general`, no row: the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"
+  },
+  {
+    "name": "#6004: a change that drops 91 comment lines with no `## Facts kept` is refused, its sources named",
+    "input": {
+      "branch": "workflow-6004-facts",
+      "body": "Advances #6004\n\n## Refactoring\n\nno\n",
+      "comments": [
+        {
+          "path": "corpus/model/specification/niche-realizability.gandr",
+          "removed": 40,
+          "dropped": 38
+        },
+        { "path": "corpus/model/specification/layout-sum.gandr", "removed": 30, "dropped": 30 },
+        { "path": "corpus/model/specification/moves.gandr", "removed": 25, "dropped": 23 },
+        { "path": "crates/surface-corpus/src/root.rs", "removed": 2, "dropped": 0 }
+      ]
+    },
+    "output": "the change drops 91 comment lines that it does not add back, 20 or more (most in `corpus/model/specification/niche-realizability.gandr` (38), `corpus/model/specification/layout-sum.gandr` (30), `corpus/model/specification/moves.gandr` (23)), and the body lacks `## Facts kept`: write the table `| Source | Claim | Class | Where it lands |` with one row for each claim the rewrite drops, or `none — <reason>`, then run `pr:open` again"
+  },
+  {
+    "name": "#6004: a `## Facts kept` row with no class, a `needed` row with no landing and a `borderline` row naming no #2917 finding are refused",
+    "input": {
+      "branch": "workflow-6004-facts",
+      "body": "Advances #6004\n\n## Facts kept\n\n| Source | Claim | Class | Where it lands |\n| --- | --- | --- | --- |\n| `moves.gandr` | the C body is hand-specified | | the head's `Limits` paragraph |\n| `moves.gandr` | three departures from § 4.2 | needed | |\n| `layout-sum.gandr` | the tag sits at offset 0 | borderline | the code states it |\n| `layout-sum.gandr` | the example restates the rule | noise | the code states it |\n\n## Refactoring\n\nno\n",
+      "comments": [
+        { "path": "corpus/model/specification/moves.gandr", "removed": 25, "dropped": 25 }
+      ]
+    },
+    "output": "the `## Facts kept` row `| `moves.gandr` | the C body is hand-specified | | the head's `Limits` paragraph |` has no class: write `needed`, `noise` or `borderline` in its third cell, then run `pr:open` again\nthe `## Facts kept` row `| `moves.gandr` | three departures from § 4.2 | needed | |` is `needed` and names no landing: write where its claim lands in its fourth cell, then run `pr:open` again\nthe `## Facts kept` row `| `layout-sum.gandr` | the tag sits at offset 0 | borderline | the code states it |` is `borderline` and names no finding on #2917: name it in its fourth cell, then run `pr:open` again"
+  },
+  {
+    "name": "#6004: a `## Facts kept` whose every row has its class and its fourth cell opens",
+    "input": {
+      "branch": "workflow-6004-facts",
+      "body": "Advances #6004\n\n## Facts kept\n\n| Source | Claim | Class | Where it lands |\n| --- | --- | --- | --- |\n| `moves.gandr` | three departures from § 4.2 | needed | the head's `Limits` paragraph |\n| `moves.gandr` | the example restates the rule | noise | the code states it |\n| `layout-sum.gandr` | the tag sits at offset 0 | borderline | #2917, the finding on line 12 |\n\n## Refactoring\n\nno\n",
+      "comments": [
+        { "path": "corpus/model/specification/moves.gandr", "removed": 25, "dropped": 25 }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#6004: a `## Facts kept` of `none — <reason>` opens",
+    "input": {
+      "branch": "workflow-6004-facts",
+      "body": "Advances #6004\n\n## Facts kept\n\nnone — the rename rewrites the examples, and each keeps its claim\n\n## Refactoring\n\nno\n",
+      "comments": [{ "path": "corpus/model/syntax/binding.gandr", "removed": 40, "dropped": 40 }]
+    },
+    "output": ""
+  },
+  {
+    "name": "#6004: an empty `## Facts kept` is refused",
+    "input": {
+      "branch": "workflow-6004-facts",
+      "body": "Advances #6004\n\n## Facts kept\n\n## Refactoring\n\nno\n",
+      "comments": [{ "path": "corpus/model/syntax/binding.gandr", "removed": 40, "dropped": 40 }]
+    },
+    "output": "the change drops 40 comment lines that it does not add back, 20 or more (most in `corpus/model/syntax/binding.gandr` (40)), and the body's `## Facts kept` holds no row and no `none — <reason>`: write the table `| Source | Claim | Class | Where it lands |`, or the reason no claim is dropped, then run `pr:open` again"
+  },
+  {
+    "name": "#6004: a defect fix that rewords one comment opens with no `## Facts kept`, as do 19 dropped lines; 20 are refused",
+    "input": {
+      "branch": "kernel-6044-fixed-value",
+      "body": "Advances #6044\n\n## Refactoring\n\nno\n",
+      "comments": [
+        { "path": "crates/kernel/src/unfold.rs", "removed": 1, "dropped": 1 },
+        { "path": "crates/kernel/src/moved.rs", "removed": 30, "dropped": 0 },
+        { "path": "crates/kernel/src/check.rs", "removed": 18, "dropped": 18 }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#6004: twenty dropped comment lines reach the threshold",
+    "input": {
+      "branch": "kernel-6044-fixed-value",
+      "body": "Advances #6044\n\n## Refactoring\n\nno\n",
+      "comments": [
+        { "path": "crates/kernel/src/unfold.rs", "removed": 2, "dropped": 2 },
+        { "path": "crates/kernel/src/check.rs", "removed": 18, "dropped": 18 }
+      ]
+    },
+    "output": "the change drops 20 comment lines that it does not add back, 20 or more (most in `crates/kernel/src/check.rs` (18), `crates/kernel/src/unfold.rs` (2)), and the body lacks `## Facts kept`: write the table `| Source | Claim | Class | Where it lands |` with one row for each claim the rewrite drops, or `none — <reason>`, then run `pr:open` again"
   }
 ]

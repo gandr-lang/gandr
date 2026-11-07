@@ -26,6 +26,8 @@
 #             [{path, line, kind, text, cites: [n], open: [n]}]
 #   budget    the `gh` call sites the change alters (`.config/gh/changed.bash`,
 #             #5061): [{file, scope, api}]
+#   comments  the comment lines the change removes (`comments.bash`, #6004),
+#             one row per source: [{path, removed, dropped}]
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -121,6 +123,16 @@
 # `spec_clause_traversal` waiver or an `economy:` comment carries `#<n>` in
 # its extent, and one such issue is open. A reason string alone is refused
 # with its file and line.
+#
+# A change that drops many comment lines states the facts it keeps (#6004):
+# when the sources under `corpus/`, `library/` and `crates/` drop
+# `facts_threshold` comment lines or more that the change does not add back,
+# the body has `## Facts kept`. Its table `| Source | Claim | Class | Where it
+# lands |` has one row for each claim the rewrite drops, or the section says
+# `none — <reason>`. Each row's class is `needed`, `noise` or `borderline`. A
+# `needed` row names where its claim lands, a `noise` row why it stays out,
+# and a `borderline` row its finding on #2917. A missing section, a row with
+# no class, and a row with no fourth cell for its class are refused.
 
 include "targets";
 include "sections";
@@ -459,4 +471,42 @@ def api_budget:
     | "the body's `## API budget` does not price `\($name)` (\(.file), \(.api)): add \($form), then run `pr:open` again"
     end;
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings, api_budget
+# The dropped comment lines past which a body states the facts it keeps
+# (#6004). A rewrite of a source's comments drops tens of lines, and a fix
+# that rewords one comment drops one or two.
+def facts_threshold: 20;
+
+# The refusals of `## Facts kept` (#6004) for a change that drops
+# `facts_threshold` comment lines or more.
+def facts_kept:
+  (.comments // []) as $sources
+  | ([$sources[].dropped] | add // 0) as $dropped
+  | select($dropped >= facts_threshold)
+  | "`| Source | Claim | Class | Where it lands |`" as $table
+  | ($sources | map(select(.dropped > 0)) | sort_by(-.dropped, .path) | .[:5] | map("`\(.path)` (\(.dropped))") | join(", ")) as $most
+  | (.body | section("Facts kept")) as $section
+  | "the change drops \($dropped) comment lines that it does not add back, \(facts_threshold) or more (most in \($most))" as $count
+  | if $section == null then
+      "\($count), and the body lacks `## Facts kept`: write the table \($table) with one row for each claim the rewrite drops, or `none — <reason>`, then run `pr:open` again"
+    else [$section | lead | rows | select((.cells[0] // "" | ascii_downcase) != "source")] as $rows
+    | if ($rows | length) == 0 then
+        if any($section[]; test("^none\\s+—\\s*\\S")) then empty
+        else "\($count), and the body's `## Facts kept` holds no row and no `none — <reason>`: write the table \($table), or the reason no claim is dropped, then run `pr:open` again"
+        end
+      else $rows[]
+      | (.cells[2] // "" | ascii_downcase) as $class
+      | (.cells[3] // "") as $lands
+      | if ($class | IN("needed", "noise", "borderline") | not) then
+          "the `## Facts kept` row `\(.line)` has no class: write `needed`, `noise` or `borderline` in its third cell, then run `pr:open` again"
+        elif $class == "needed" and ($lands | test("\\S") | not) then
+          "the `## Facts kept` row `\(.line)` is `needed` and names no landing: write where its claim lands in its fourth cell, then run `pr:open` again"
+        elif $class == "noise" and ($lands | test("\\S") | not) then
+          "the `## Facts kept` row `\(.line)` is `noise` and gives no reason: write why the claim stays out in its fourth cell, then run `pr:open` again"
+        elif $class == "borderline" and ($lands | test("#2917\\b") | not) then
+          "the `## Facts kept` row `\(.line)` is `borderline` and names no finding on #2917: name it in its fourth cell, then run `pr:open` again"
+        else empty
+        end
+      end
+    end;
+
+claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings, api_budget, facts_kept
