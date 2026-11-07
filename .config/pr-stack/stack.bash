@@ -1265,6 +1265,22 @@ closed_pr() {
     --jq '.data.repository.pullRequests.nodes[0] // null | if . != null and .state == "CLOSED" then {number, head: .headRefName, base: .baseRefName, oid: .headRefOid} else null end'
 }
 
+# Unstack the chain `$3` and retarget its bottom, pull request `$1`, onto `$2`,
+# the base of the member closed unmerged below it (#6176). GitHub refuses a
+# stacked member's base change. The base changes before any member moves, so
+# GitHub reads each push against the base it lands on: a push onto a base it
+# conflicts with starts no `CI` run, and a base change starts none either. A
+# failed base change links the chain again and names it on stderr.
+base_closed() {
+  local stack
+  stack=$(stack_of "$1")
+  [[ $stack == null ]] || gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :
+  gh pr edit "$1" -R "$repo" --base "$2" > /dev/null && return 0
+  stack_link "$3" || :
+  echo "the base of #$1 did not change to $2, so the cut past the member closed below it moved nothing" >&2
+  return 1
+}
+
 # Cut the pull request `$1` (`closed_pr`), closed unmerged, out from under
 # the chain `$2` stacked on it, bottom to top (#5695), as `cut_bottom` cuts a
 # red one. Each member's own commits, those past the old head below it, are
@@ -1272,15 +1288,17 @@ closed_pr() {
 # base (`chain_replay`). So the closed one's commits are left out. GitHub
 # signs each replayed commit (`signed_replay`), because a runner holds no
 # signing key. The cut is refused with nothing moved when a member is queued
-# (#2531), or when a member's remote tip does not hold the head below it
-# (`chain_gap`). After the replays, the chain is unstacked, since GitHub
-# refuses a stacked member's base change. The bottom is then retargeted onto
-# the closed one's base, and the chain is linked again (`stack_link`). A
-# conflict or a refused replay stops the cut and names the member. The
-# members below it stay moved, and they are retargeted and linked in the same
-# way. Prints one line on stderr.
+# (#2531), or when a member above the bottom does not hold the head below it
+# (`chain_gap`). Before any member moves, the bottom stands on the closed
+# one's base (`base_closed`, #6176). After the replays, the moved members are
+# linked again (`stack_link`). A conflict or a refused replay stops the cut
+# and names the member. The members below it stay moved and linked. A bottom
+# that does not move, or that does not hold the closed one's head, stands on
+# the new base with the closed one's commits. So it is held as a draft
+# (`pr:hold`), and its seat rebases it by hand onto that base and releases it
+# (`pr:release`). Its push then starts `CI`. Prints one line on stderr.
 cut_closed() {
-  local closed=$1 chain=$2 number base below dir gap stack moved status=0 heads=() numbers=()
+  local closed=$1 chain=$2 number base below dir gap moved status=0 heads=() numbers=()
   IFS=$'\t' read -r number base below < <(jq -r '[.number, .base, .oid] | @tsv' <<< "$closed")
   mapfile -t heads < <(jq -r '.[].head' <<< "$chain")
   mapfile -t numbers < <(jq -r '.[].number' <<< "$chain")
@@ -1290,15 +1308,21 @@ cut_closed() {
   fi
   git fetch --quiet origin "$base" "${heads[@]}" "refs/pull/$number/head" || { echo "the fetch of the chain over #$number failed" >&2; return 1; }
   if ! gap=$(chain_gap "$below" "${heads[@]}"); then
-    if (( gap == 0 )); then
-      echo "the cut past #$number is refused: ${heads[0]} does not hold the head of #$number, which moved after the chain stacked on it; rebase ${heads[0]} onto $base without the commits of #$number" >&2
-    else
+    if (( gap > 0 )); then
       echo "the cut past #$number is refused: ${heads[gap]} does not hold ${heads[gap-1]}, the branch below it; rebase it onto ${heads[gap-1]} first" >&2
+    elif base_closed "${numbers[0]}" "$base" "$chain"; then
+      gh pr ready "${numbers[0]}" -R "$repo" --undo > /dev/null || :
+      echo "the cut past #$number is refused: ${heads[0]} does not hold the head of #$number, which moved after the chain stacked on it; #${numbers[0]} stands on $base as a draft: rebase ${heads[0]} onto $base without the commits of #$number, then \`mise run pr:release ${numbers[0]}\`" >&2
     fi
     return 1
   fi
   dir=$(mktemp -d)
   git worktree add --quiet --detach "$dir" "origin/${heads[0]}" || { rm -rf "$dir"; echo "the scratch worktree for the cut past #$number failed" >&2; return 1; }
+  if ! base_closed "${numbers[0]}" "$base" "$chain"; then
+    git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
+    git worktree prune
+    return 1
+  fi
   if ! chain_replay "$dir" "origin/$base" "$below" github "${heads[@]}"; then
     [[ -z $chain_files ]] || echo "the cut of #${numbers[chain_stop]} past #$number onto $base conflicts ($chain_files): rebase it by hand" >&2
     status=1
@@ -1307,10 +1331,10 @@ cut_closed() {
   git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
   git worktree prune
   if (( moved > 0 )); then
-    stack=$(stack_of "${numbers[0]}")
-    [[ $stack == null ]] || gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :
-    gh pr edit "${numbers[0]}" -R "$repo" --base "$base" > /dev/null || status=1
     stack_link "$(jq -c --argjson moved "$moved" '.[: $moved]' <<< "$chain")" || status=1
+  else
+    gh pr ready "${numbers[0]}" -R "$repo" --undo > /dev/null || :
+    echo "#${numbers[0]} stands on $base as a draft with the commits of #$number: rebase it onto $base by hand, then \`mise run pr:release ${numbers[0]}\`" >&2
   fi
   (( status == 0 )) || return "$status"
   echo "#${numbers[0]} cut past #$number, closed unmerged: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$chain") replayed onto $base without its commits" >&2
