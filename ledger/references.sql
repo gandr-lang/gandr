@@ -30,7 +30,12 @@ CREATE TABLE reference(
   PRIMARY KEY(key, crate, module),
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
+INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-dispatcher','cells::fusion','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
+INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-driver','','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','ac8eb7332069b7a14b305c1cb8560db64e423b31');
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
+INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
+INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
 INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-cellular-sheaves','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker','solution','exemplar',NULL,NULL,NULL);
@@ -41,6 +46,8 @@ INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellula
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
+INSERT INTO reference VALUES('Escardó-2004-synthetic_topology_data_types_classical_spaces','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
+INSERT INTO reference VALUES('Escardó-2004-synthetic_topology_data_types_classical_spaces','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells::fusion','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
@@ -48,6 +55,9 @@ INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_lapla
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere::brown','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','surface-dispatcher','cells::fusion','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
+INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-cell-complexes','alphabet','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','8987509bb5ddbb7c61740ca2c9fa2cabc953ab1c');
+INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-deep-inference','shift','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','6bc30c8da526d378521d82a4fbbbe26219b64de2');
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','db60bc4ed0a81c61929941b9f01c0256c2af1168','2026-11-02','bb7ea16a861957dfc8f4ee999b33a4d61bed1863');
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
@@ -73,6 +83,11 @@ INSERT INTO reference VALUES('Ruit-2024-pasting_theorem_iterated_segal_spaces','
 INSERT INTO reference VALUES('Shulman-2017-univalence_inverse_ei_diagrams','theory-sites','wreath','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-closure_conversion_little_pieces','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-reflections_closures','core-sequent','closure','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
+INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
+INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','access','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','a6d3b5e613083b88b2f9096f172eabdc6890b4b7');
+INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-term','memory','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','7928901ea52703359b926253920e6bb1f55c544e');
+INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','theory-ordered-algebras','usage','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','183e44786766ce911063ac7b29f6a0f1d2c75613');
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0906.4931','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0907.4553','theory-sites','','background',NULL,NULL,NULL);
@@ -601,6 +616,7 @@ CREATE TABLE work(
   -- known.
   newer TEXT CONSTRAINT "newer is a locator" CHECK(newer IS NULL OR newer GLOB 'doi:10.*' OR newer GLOB 'arXiv:*')
 ) WITHOUT ROWID;
+INSERT INTO work VALUES('Bauer-efficient_computation_dedekind_reals',2008,NULL);
 INSERT INTO work VALUES('Cockx-2018-elaborating_dependent_copattern_matching',2018,'doi:10.1017/s0956796819000182');
 INSERT INTO work VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems',2022,'doi:10.1145/3571256');
 INSERT INTO work VALUES('Plotkin-2013-handling_algebraic_effects',2013,'doi:10.1017/s0956796816000320');

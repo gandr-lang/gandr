@@ -74,6 +74,13 @@
 //! relation, and two cells firing at one position are refused before any tile
 //! exists, which is why the cells branching as a rewrite system never reaches
 //! the tile set.
+//!
+//! # References
+//!
+//! - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: a
+//!   match is a convex subdiagram, the third conjunct of the guard. Until the
+//!   general check lands, the guard refuses the shift on a store with no
+//!   discharge.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;

@@ -223,6 +223,9 @@
 //! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing
 //!   ratio of iterated composites grows with dimension, so a `measure:` line
 //!   prints both sizes.
+//! - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems`
+//!   — newest: `gandr cells` prints a row's bound as the semiring product of
+//!   its steps' weights.
 //!
 //! # Output the driver cannot write is a fault
 //!

@@ -4,6 +4,7 @@ The identity relations on derivations: when two derivations that fire the same c
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -18,6 +19,10 @@ The identity relations on derivations: when two derivations that fire the same c
 **Why.** Completion and fusion produce many certificates for one boundary, and a consumer that keys, deduplicates or schedules them needs to know when two are the same derivation without replaying both every time. Replay in `gandr-theory-coherent-resolutions` stays the semantic oracle; every relation here is a sound fast path below it, decidable from certificate data, whose positive answer implies replay equivalence and whose negative answer is never read as distinctness. The causal order also answers what a scheduler needs: which steps could fire together, and how much sequential fuel a complete replay consumes.
 
 **How.** One independence relation, the shift guard, decides which adjacent applications commute: incomparable positions, no overlap between the two cells, and the alphabet's convexity discharge, confirmed by replaying both sequentializations from one peak with the engine's `replay_from_peak`. The causal order reads that relation as dependence, layers events by causal depth and orders each layer by a content-derived key that digests the event's causal past, refusing a tie rather than breaking it by arrival. The normal form, the replay plan, the web and the flow are read off that one order; none computes a second dependence relation. Every walk keeps its stack on the heap, so a derivation far longer than the thread's stack is ordered, normalized and projected. Absence and refusal are values: a lookup that finds nothing returns `Maybe` with its reason, and a refused operation returns `Result` with a typed obstruction.
+
+## References
+
+- `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — the convexity conjunct of the shift guard; the general check stays unbuilt.
 
 ## Provided features
 

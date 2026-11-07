@@ -22,6 +22,14 @@
 //!
 //! A block with a binary operation is the concern of the collapse suite,
 //! which reads the bar complex of its Lawvere theory.
+//!
+//! # References
+//!
+//! - `Ara-2025-polygraphs_rewriting_higher_categories` — newest: the critical
+//!   branchings of a convergent polygraph give its coherence cells, and
+//!   Squier's homology counts them.
+//! - `Malbos-2021-completion_operads_essential_syzygies` — newest: completion
+//!   adds the cells of a resolution, and the essential ones are the pairs.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
