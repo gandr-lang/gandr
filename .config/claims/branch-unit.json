@@ -1,0 +1,30 @@
+[
+  {
+    "name": "#6012: a branch of a lane whose name holds a hyphen, `diagnostic-help-4171-…`, reads its unit #4171 and files on the collector of the unit's area",
+    "head": "diagnostic-help-4171-integer-fixture",
+    "units": { "4171": { "area": "core", "epic": "" } },
+    "labels": [],
+    "output": "unit #4171; no lane label read; update #1"
+  },
+  {
+    "name": "#6012: a numbered seat's branch, `triage-2-6006-…`, reads its unit #6006, and its seat number stays apart from the unit",
+    "head": "triage-2-6006-judgement-table",
+    "units": { "6006": { "area": "ci", "epic": "" } },
+    "labels": [],
+    "output": "unit #6006; no lane label read; update #2"
+  },
+  {
+    "name": "#6012: a branch of a lane of one word, `cells-5884-…`, reads its unit #5884",
+    "head": "cells-5884-tile-cache",
+    "units": { "5884": { "area": "core", "epic": "" } },
+    "labels": [],
+    "output": "unit #5884; no lane label read; update #1"
+  },
+  {
+    "name": "#6012: a unit with no area, on a branch of a lane whose name holds a hyphen, falls back to the label of the whole lane",
+    "head": "diagnostic-help-4171-integer-fixture",
+    "units": { "4171": { "area": null, "epic": "" } },
+    "labels": ["area:diagnostic-help"],
+    "output": "unit #4171; lane label area:diagnostic-help read; update #3"
+  }
+]

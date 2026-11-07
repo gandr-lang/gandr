@@ -2431,6 +2431,11 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/board.json)
 (( failed == 0 )) || exit 1
+# `refactor:file` reads the unit and the lane from each branch form (#6012):
+# a lane whose name holds a hyphen, a numbered seat and a lane of one word.
+# Each case in `.config/claims/branch-unit.json` runs its dry run over a stub
+# `gh` and holds the unit it reads, the lane label and the decision.
+.config/claims/branch-unit.bash || exit 1
 # A filing ends with one open issue against one GitHub (#5149): each case in
 # `.config/claims/filed-once.json` runs `issue:file --epic` over an epic at or
 # below GitHub's 100 sub-issues, or two `refactor:file` runs at once from two
