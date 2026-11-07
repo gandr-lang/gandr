@@ -1,0 +1,56 @@
+/// `leftOf` and `mkApplied` force a witness whose type decodes a call that
+/// returns a function type.
+///
+/// Under the arm `B`, the type `holds(B)` of the witness is a call that returns
+/// a function type, so `leftOf` applies the witness.
+/// The call `mk(B)` has the type `holds(B)` too, and `mkApplied` applies its
+/// result the same way.
+/// The kernel admits each declaration as the checker does, and
+/// each fixture runs.
+///
+/// The checker unfolds the type of the witness to the function type before it
+/// applies the witness.
+/// The kernel reads the decode of the returned call by its own evaluator before
+/// it reads the shape of the forced value.
+///
+/// - see: #6057
+/// - see: `refined-binder.gandr`
+
+/// Two branches.
+data Two : Type where
+  | L : Two
+  | R : Two
+
+/// A two-way choice.
+data C : Type where
+  | A : C
+  | B : C
+
+/// The branches at `A`, and a function over the branches at `B`.
+def holds(c : C) -> -F Type =
+  match c where
+    | A => return Two
+    | B => return (+U ((u : Two) -> -F Two))
+
+/// The identity on the branches.
+def idTwo(u : Two) -> Two = u;
+
+/// A witness at each choice: a branch at `A`, and the identity at `B`.
+def mk(c : C) -> holds(c) =
+  match c where
+    | A => L
+    | B => idTwo
+
+/// The witness itself at `A`, and the witness at `B` on the branch `R`.
+def leftOf(c : C, m : holds(c)) -> Two =
+  match c where
+    | A => m
+    | B => m R
+
+/// The identity at `B` applied to `R` is `R`.
+@[ runs("R") ]
+def atB() -> Two = { let w = mk (B); leftOf B w };
+
+/// The result of `mk(B)` on the branch `L` is `L`.
+@[ runs("L") ]
+def mkApplied() -> Two = { let f = mk (B); f L };
