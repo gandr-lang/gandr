@@ -1,0 +1,131 @@
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/ledger/diagnostics/ShapeMismatchLambdaTail.gandr:16:3
+   │
+15 │    def lambda_body() -> +U ((u : Two) -> -F Two) =
+   │    │                    ──────────────────────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+16 │ │┏   fun (u) {
+17 │ │┃     return u
+18 │ │┃   }
+   │ │┃   ╿
+   │ └┃───│
+   │  ┗━━━checked against `() -> (Two -> Two)`; while checking the body of this thunk
+   │      its type is not of the required shape: found `-F (Two -> Two)`
+   │
+   ├ note: `lambda_body` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/ledger/diagnostics/ShapeMismatchLambdaTail.gandr:23:3
+   │
+21 │    def lambda_after_let() -> +U ((u : Two) -> -F Two) =
+   │    │                         ──────────────────────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+22 │ │    let kept = pure Left
+   │ │    ─── checked against `-F (Two -> Two)`; while checking the body under this binding; binds kept : Two
+23 │ │┏   fun (u) {
+24 │ │┃     return u
+25 │ │┃   }
+   │ │┃   ╿
+   │ └┃───│
+   │  ┗━━━checked against `() -> (Two -> Two)`; while checking the body of this thunk
+   │      its type is not of the required shape: found `-F (Two -> Two)`
+   │
+   ├ note: `lambda_after_let` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/ledger/diagnostics/ShapeMismatchLambdaTail.gandr:30:5
+   │
+28 │    def lambda_block_tail() -> +U ((u : Two) -> -F Two) =
+   │    │                          ──────────────────────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+29 │ │    {
+30 │ │┏     fun (u) {
+31 │ │┃       return u
+32 │ │┃     }
+   │ │┗━━━━━┛ its type is not of the required shape: found `-F (Two -> Two)`
+33 │ │    }
+   │ └────┘ checked against `() -> (Two -> Two)`; while checking the body of this thunk
+   │
+   ├ note: `lambda_block_tail` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/ledger/diagnostics/ShapeMismatchLambdaTail.gandr:38:15
+   │
+36 │     def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+   │     │                   ┬─────           ──────────────────────── the type met, where an arrow `A → C` is required
+   │     │                   │
+   │ ┌───┘                   checked against `Two -> -F (Two -> Two)`; while checking the body of this function; binds choice : Two
+   │ │
+37 │ │┌    match choice where
+38 │ ││      | Left => fun (u) {
+   │ ││┏━━━━━━━━━━━━━━━┛
+39 │ ││┃       return u
+40 │ ││┃     }
+   │ ││┗━━━━━┛ its type is not of the required shape: found `-F (Two -> Two)`
+41 │ ││      | Right => return fun (u) {
+42 │ ││        return u
+43 │ ││      }
+   │ ││      │
+   │ └│──────│
+   │  └──────checked against `Two -> (Two -> Two)`; while checking the body of this thunk
+   │         checked against `-F (Two -> Two)`; while checking the next premise of this
+   │
+   ├ note: `lambda_left_arm` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/ledger/diagnostics/ShapeMismatchLambdaTail.gandr:51:16
+   │
+46 │     def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+   │     │                    ┬─────           ──────────────────────── the type met, where an arrow `A → C` is required
+   │     │                    │
+   │ ┌───┘                    checked against `Two -> -F (Two -> Two)`; while checking the body of this function; binds choice : Two
+   │ │
+47 │ │┌    match choice where
+48 │ ││      | Left => return fun (u) {
+49 │ ││        return u
+50 │ ││      }
+51 │ ││      | Right => fun (u) {
+   │ ││┏━━━━━━━━━━━━━━━━┛
+52 │ ││┃       return u
+53 │ ││┃     }
+   │ ││┃     ╿
+   │ └│┃─────│
+   │  └┃─────checked against `Two -> (Two -> Two)`; while checking the body of this thunk
+   │   ┗━━━━━checked against `-F (Two -> Two)`; while finishing the type of this
+   │         its type is not of the required shape: found `-F (Two -> Two)`
+   │
+   ├ note: `lambda_right_arm` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/ledger/diagnostics/ShapeMismatchLambdaTail.gandr:58:15
+   │
+56 │     def lambda_refined_arm(n : Nat, x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
+   │     │                      ┬        ┬                ──────────────────────── the type met, where an arrow `A → C` is required
+   │     │                      │        │
+   │     │                      │        checked against `natOr(n) -> -F (Nat -> Nat)`; while checking the body of this function; binds x : natOr(n)
+   │ ┌───┘                      checked against `(n : Nat) -> natOr(n) -> -F (Nat -> Nat)`; while checking the body of this function; binds n : Nat
+   │ │
+57 │ │┌    match n where
+58 │ ││      | Zero => fun (u) {
+   │ ││┏━━━━━━━━━━━━━━━┛
+59 │ ││┃       return u
+60 │ ││┃     }
+   │ ││┗━━━━━┛ its type is not of the required shape: found `-F (Nat -> Nat)`
+61 │ ││      | Succ(_n) => return fun (u) {
+62 │ ││        return u
+63 │ ││      }
+   │ ││      │
+   │ └│──────│
+   │  └──────checked against `(n : Nat, natOr(n)) -> (Nat -> Nat)`; while checking the body of this thunk
+   │         checked against `-F (Nat -> Nat)`; while checking the next premise of this
+   │
+   ├ note: `lambda_refined_arm` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
