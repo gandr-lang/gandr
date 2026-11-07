@@ -23,6 +23,10 @@ sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
 printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest.' '///' '/// - owes: #2' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
 git -C "$repo" add .
+git -C "$repo" -c user.name=ledger -c user.email=ledger@example.invalid -c commit.gpgSign=false \
+  commit --quiet -m 'chore(repo): ledger base'
+base=$(git -C "$repo" rev-parse HEAD)
+git -C "$repo" update-ref refs/remotes/origin/landing "$base"
 # Each case's stub answers differently: no reading is kept between them.
 export GH_BUDGET_TTL=0
 cat > "$scratch/gh/gh" <<'STUB'
@@ -51,6 +55,12 @@ chmod +x "$scratch/gh/gh"
 failed=0
 while IFS= read -r case; do
   rm -f "$scratch/answers"/*
+  git -C "$repo" reset --quiet --hard "$base"
+  closes=$(jq -r '.closes[]? | "Closes #\(.)"' <<< "$case")
+  if [[ -n $closes ]]; then
+    git -C "$repo" -c commit.gpgSign=false commit --quiet --allow-empty \
+      -m 'test(ledger): closing issue' -m "$closes"
+  fi
   for number in $(jq -r '.answers | keys[]' <<< "$case"); do
     jq -r --arg n "$number" '.answers[$n]' <<< "$case" > "$scratch/answers/$number"
   done
