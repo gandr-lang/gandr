@@ -37,6 +37,7 @@ use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::Ran;
+use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
@@ -626,6 +627,69 @@ fn a_script_encloses_the_square_root_of_two_5700()
             "{name}: standard error names the cause, and nothing is printed"
         );
     }
+}
+
+/// #5704: a script's profile sets the quotas of its run. Under `default`, an
+/// enclosure of the square root of two no wider than `2^-300` exits 0 and
+/// prints its lower end. Under `bounded`, whose finest precision is
+/// `2^-256`, the host declines that enclosure: the run is stuck at it, it
+/// prints nothing, and standard error names the cause.
+#[test]
+fn a_script_s_profile_bounds_its_run_5704()
+{
+    let source = format!(
+        "import std.io;\nimport std.reals;\n\ndef main() -> [std.reals.Eff, std.io.Console.Eff] Integer =\n  let held = std.reals.admit \"{ROOT_TWO}\"\n  let *{{lower, upper}} = std.reals.enclose held 300\n  std.io.Console.print lower\n  0\n"
+    );
+    let scratch = Scratch::write(
+        Path::new("reals-profile-5704"),
+        SourceText::from(source.as_str()),
+    );
+    // Run the source under `profile`: whether it exits 0, whether it is
+    // stuck, and what it printed.
+    let run_under = |profile: RealsProfile| {
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        script.reals(profile);
+        let run = script.run(&mut console);
+        let exited = matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+                ..
+            } if status == ExitStatus::from(0_u8)
+        );
+        let stuck = matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Ended(Evaluation::Stuck(_)),
+                ..
+            },
+            ..
+        });
+        (exited, stuck, console)
+    };
+    let (exited, _, standard) = run_under(RealsProfile::Default);
+    assert!(exited, "under `default` the enclosure exits 0");
+    assert_eq!(
+        (standard.lines().len(), standard.errors()),
+        (1, &[][..]),
+        "under `default` the lower end is printed, and no refusal"
+    );
+    let (_, stuck, bounded) = run_under(RealsProfile::Bounded);
+    assert!(
+        stuck,
+        "under `bounded` the run is stuck at the declined enclosure"
+    );
+    assert_eq!(
+        (bounded.lines(), bounded.errors()),
+        (
+            &[][..],
+            &["std.reals.Eff.enclose: the precision is not from 0 to 256".to_owned()][..]
+        ),
+        "under `bounded` nothing is printed, and standard error names the cause"
+    );
 }
 
 /// #5703: the three comparison exemplars run as scripts. `sqrt 2 < 3/2`

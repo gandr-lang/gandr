@@ -553,8 +553,9 @@ impl Script
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a run under `bounded` refuses a precision that a run
-    ///   under `default` encloses.
-    /// - witness: `tests::reals::a_configured_profile_bounds_the_run_5704`
+    ///   under `default` encloses; a profile that does not reach the run
+    ///   encloses under both.
+    /// - witness: `tests::run::a_script_s_profile_bounds_its_run_5704`
     #[inline]
     pub const fn reals(
         &mut self,
