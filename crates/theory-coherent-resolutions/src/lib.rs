@@ -42,6 +42,13 @@
 //! reaches a critical cell. The collapse tests check Brown's matching in that
 //! form.
 //!
+//! The results hold at two levels. Each confluence certificate is a 3-cell of
+//! a coherent presentation, which holds up to homotopy (Ara and others,
+//! Theorem 7.3.5). The critical triples and the bar complex hold only over the
+//! integers, as chains. The general form is the Squier polygraphic
+//! resolution, with a cell for each critical branching of each arity (Ara and
+//! others, Theorem 23.2.3).
+//!
 //! # Executable specifications
 //!
 //! The item specifications pair executable `#[spec]` predicates with local `#

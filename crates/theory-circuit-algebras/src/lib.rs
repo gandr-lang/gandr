@@ -40,6 +40,11 @@
 //! generators the fragment admits; read at two rules' left-hand sides, each
 //! [`Overlap`] is a pre-critical pair.
 //!
+//! Its results hold at the level of its sources: a canonical diagram is a
+//! morphism of the free symmetric monoidal category (Bonchi and others), and
+//! the spider normal form is the coherence of a special commutative Frobenius
+//! algebra.
+//!
 //! Every walk is a loop over explicit frames, and no walk recurses on the size
 //! of a diagram. A lookup that can miss returns `Maybe` with a named reason. A
 //! refused operation returns `Result` with a typed refusal that names its

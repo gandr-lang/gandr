@@ -19,6 +19,11 @@
 //! An enumeration that can grow past its input takes a budget, and it refuses
 //! the input when the count passes the budget.
 //!
+//! Its results hold for finite posets and finite lattices alone. Berger and
+//! Gehrke state the duality for spectral spaces and all bounded distributive
+//! lattices, and Cherubini and others take it as an axiom (§ 1.2). The crate
+//! does not build that general form.
+//!
 //! # Items
 //!
 //! | Item | What it holds |

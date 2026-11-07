@@ -19,6 +19,10 @@
 //! [`ConvexitySupply`]. [`instantiate_cell`] instantiates one stored cell under
 //! a substitution into the same store.
 //!
+//! Its results hold in dimension two: each rule is a generating 2-cell of a
+//! polygraph, after Street and Burroni. The 3-cells, its coherences, are those
+//! of `gandr-theory-coherent-resolutions`.
+//!
 //! The crate is `no_std`; besides `core`, `alloc` and the shape vocabulary of
 //! `quenchant-shape`, it depends on the four theory crates § A closed tier
 //! names.

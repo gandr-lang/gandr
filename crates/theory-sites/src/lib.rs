@@ -7,6 +7,10 @@
 //! contraction; the empty diagram is the unit of the external product. The
 //! site keeps the second and drops the first: **a stick is not a shape**.
 //!
+//! Its Segal condition holds strictly, over species of sets. Hackney,
+//! Robertson and Yau, and Shulman, state the condition up to homotopy, over
+//! presheaves of spaces or of types. The crate does not build that form.
+//!
 //! # Objects
 //!
 //! A [`Shape`] is the graph a carrier [`Wiring`] presents. Each generator is a

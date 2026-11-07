@@ -4,6 +4,8 @@ The carrier's shapes as a site with stick-free objects: a morphism class over th
 
 A circuit algebra has two units. The identity wire, a bare wire from an input port to an output port with no operation on it, is the unit of contraction; the empty diagram is the unit of the external product. The site keeps the second and drops the first: **a stick is not a shape**.
 
+The Segal condition up to homotopy, over presheaves of types, waits on #5964.
+
 <!-- toc -->
 - [Synopsis](#synopsis)
 - [References](#references)
@@ -53,7 +55,7 @@ The level-two evidence stands in [`ascent`](src/ascent.rs). The carrier refuses 
 - `core_decomposition`, `grounded_stratum`, `deletion_classes`, `codegeneracies`, `corolla`: the point-count grade.
 - `merge`, `scalars`, `labelled_by_arity`, `unit_property`: the external product and the finite check that the empty diagram is its one weak unit.
 - `segal`, `Cocones`, `Cocone`, `Inclusion`, `Graft`, `Leg`, `SegalFailure`, `SegalDefect`: the Segal condition at degree `n`, each shape of degree two to `n` the colimit of its corollas along its grafting pushouts, over the families of maps whose images are disjoint, and refused at the first shape, test shape and family over the blanket families.
-- `SegalStratum`, `Uncertified`, `Vacuity`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`, `StratumImage`, `Unreplayed`, `SitesBuild`: the stratum certified at degree `n` through the corolla and Segal conditions, its image and the replay of its structure, graphical species and their terms at every shape, an equivalence of species as the finite certificate natural along the corolla automorphisms, its extension to the free algebras, and the corolla restriction that reflects a natural isomorphism of the free algebras back to the species.
+- `SegalStratum`, `Uncertified`, `Vacuity`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`, `StratumImage`, `Unreplayed`, `SitesBuild`: the stratum certified at degree `n` through the corolla and Segal conditions, its image and the replay of its structure, graphical species and their terms at every shape, and an equivalence of species with its extension and its restriction, `ua` and `ua-desc` as [`stratum`](src/stratum.rs) states them.
 - `WreathStratum`, `Certificate`, `Cover`, `WreathCocone`, `Cell`, `Spot`, `ColumnGlue`, `segal_above`, `LevelFailure`, `LevelDefect`, `LevelUncertified`: level `n + 1` certified at degree `k` from level `n`'s certificate, its grounded objects direct with automorphisms and each object of degree two to `k` the colimit of its cells, its image and the replay of its cocones.
 
 Each item's rustdoc names its witnesses under `# Adequacy`.
