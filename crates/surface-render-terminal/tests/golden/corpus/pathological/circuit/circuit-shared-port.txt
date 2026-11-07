@@ -6,7 +6,7 @@ error[MalformedForm]: the wiring of the rule `twice` binds the port `m` twice, a
  9 │ ┃     node : f(y) --> (m);
 10 │ ┃     node : g(m) --> (o);
 11 │ ┃   };
-   │ ┗━━━┛ what the description check refuses
+   │ ┗━━━┛ a circuit wiring that derives no boundary
    │
    ├ note: `Shared` is refused with MalformedForm, as its expectation states
-   ╰ help: let one node bind the port, and give each other node a port of its own
+   ╰ help: let one node bind the port. Give each other node its own port.
