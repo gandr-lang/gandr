@@ -1,18 +1,17 @@
-// The host answers an operation made through a capability it holds for the
-// run exactly once, so an end stays open across it: a task exercises the
-// authority its parent hands it, and a parent acts while its task runs.
-//
-// - see: #1334 — `reader`
-
-// The task's protocol.
+//! `reader` and `exiter` use a capability that the parent gives to the task.
+//!
+//! The host answers a held capability operation once. The task uses its parent's authority while the parent acts.
+//!
+//! `reader` sends file text to its parent. `exiter` exits while the task end stays open.
+//!
+//! - see: #1334 — `reader`
 import "./task-base.gandr";
-// The filesystem's host interface.
+// The import gives the filesystem host interface.
 import std.fs;
-// Early exit's host interface.
+// The import gives the early-exit host interface.
 import std.process;
 
-/// A task reading through its parent's capability and handing back what it
-/// read.
+/// A task reads through its parent's capability and returns the text.
 def reader(c : Cap { read }) -> [std.fs.Eff] Unit =
   let found = fork (task : Task.Join) {
     let text = c.read Task.notes;
@@ -22,7 +21,7 @@ def reader(c : Cap { read }) -> [std.fs.Eff] Unit =
   let text = recv found
   close found
 
-/// A parent exiting through its capability while its task's end is open.
+/// A parent exits through its capability while its task's end stays open.
 def exiter(c : Cap { exit }) -> [std.process.Exit.Eff] Unit =
   let found = fork (task : Task.Join) {
     send task Task.notes;
