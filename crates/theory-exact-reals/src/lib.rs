@@ -42,6 +42,9 @@
 //!   approximation pass, the checker and the machine read that rule.
 //! - [`Sets`], [`Ackermann`], [`code`] — a table of hereditarily finite sets,
 //!   the operations of Ackermann's code on it, and the real code as a plan.
+//! - [`PlanGraph`], [`MinimalForm`], [`PlanKey`] — a plan read as a graph, its
+//!   recursive core, and its minimal form under bisimulation with the key that
+//!   the form's bytes give.
 //!
 //! # References
 //!
@@ -80,7 +83,9 @@ pub mod dovetail;
 pub mod dyadic;
 pub mod elementary;
 pub mod elimination;
+pub mod graph;
 pub mod interval;
+pub mod minimal;
 pub mod plan;
 pub mod schema;
 pub mod semidecision;
@@ -149,6 +154,14 @@ pub use crate::elementary::sine;
 pub use crate::elimination::Elimination;
 pub use crate::elimination::EliminationError;
 pub use crate::elimination::eliminate;
+pub use crate::graph::Core;
+pub use crate::graph::GraphBuilder;
+pub use crate::graph::GraphError;
+pub use crate::graph::GraphNode;
+pub use crate::graph::Label;
+pub use crate::graph::LabelBytes;
+pub use crate::graph::Operands;
+pub use crate::graph::PlanGraph;
 pub use crate::interval::Bound;
 pub use crate::interval::Closure;
 pub use crate::interval::Containment;
@@ -156,6 +169,9 @@ pub use crate::interval::Endpoint;
 pub use crate::interval::IntervalError;
 pub use crate::interval::NumericInterval;
 pub use crate::interval::Orientation;
+pub use crate::minimal::ClassId;
+pub use crate::minimal::MinimalForm;
+pub use crate::minimal::PlanKey;
 pub use crate::plan::Cut;
 pub use crate::plan::DeBruijn;
 pub use crate::plan::Domain;
