@@ -447,7 +447,8 @@ impl Search
                         | Real::Pi
                         | Real::Cos(_)
                         | Real::Sin(_)
-                        | Real::Arg(..) => Operation::Product,
+                        | Real::Arg(..)
+                        | Real::Recurrence(_) => Operation::Product,
                     };
                     let interval = combined(operation, &first.interval, &second.interval, quotas)
                         .map_err(suspension)?;

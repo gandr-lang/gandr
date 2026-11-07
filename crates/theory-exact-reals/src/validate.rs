@@ -22,6 +22,7 @@
 //! | [`Check::UnknownEvidence`], [`Check::EvidenceKind`] | an evidence reference that the [`EvidenceTable`] does not register, or registers for another judgement |
 //! | [`Check::DomainEvidence`] | a quantifier whose evidence differs from the evidence its interval domain states |
 //! | [`Check::CutOperand`] | a lower or an upper cut whose first operand is not a cut |
+//! | [`Check::RatioDegree`], [`Check::RatioRoot`] | a recurrence whose numerator has the higher degree, or whose denominator vanishes at a natural number |
 //!
 //! # Items
 //!
@@ -63,6 +64,7 @@ use crate::plan::Quantifier;
 use crate::plan::Real;
 use crate::plan::Scope;
 use crate::plan::Site;
+use crate::recurrence::natural_root;
 
 /// A count of nested nodes or of nested binders.
 #[repr(transparent)]
@@ -358,6 +360,12 @@ pub enum Check
     DomainEvidence,
     /// The first operand of a lower cut or an upper cut is not a cut.
     CutOperand,
+    /// A recurrence's numerator has a higher degree than its denominator, so
+    /// its series converges nowhere but at zero.
+    RatioDegree,
+    /// A recurrence's denominator vanishes at a natural number, so a term of
+    /// its series divides by zero.
+    RatioRoot,
 }
 
 impl fmt::Display for Check
@@ -414,6 +422,12 @@ impl fmt::Display for Check
             ),
             Self::CutOperand => {
                 f.write_str("the first operand of a lower or an upper cut is not a cut")
+            },
+            Self::RatioDegree => {
+                f.write_str("a recurrence's numerator has a higher degree than its denominator")
+            },
+            Self::RatioRoot => {
+                f.write_str("a recurrence's denominator vanishes at a natural number")
             },
         };
     }
@@ -730,6 +744,16 @@ fn payload(
                     return Err(Check::CutHull);
                 }
                 expect(cut.laws, Judgement::CutLaws)?;
+            },
+            Real::Recurrence(ref recurrence) => {
+                if recurrence.numerator.coefficients().len()
+                    > recurrence.denominator.coefficients().len()
+                {
+                    return Err(Check::RatioDegree);
+                }
+                if natural_root(&recurrence.denominator).is_some() {
+                    return Err(Check::RatioRoot);
+                }
             },
         },
         Node::Open(ref open) => match *open {

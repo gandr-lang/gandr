@@ -136,6 +136,25 @@ fn gandr_run_decides_and_encloses_through_the_builtins_5786()
     );
 }
 
+/// #6013: `gandr run` of the exponential exemplar decides that
+/// `1000 · exp 1` lies between `2718` and `2719`, and exits 0. The plan of
+/// `exp 1` is a recurrence node, and the checker replays each certificate
+/// before the host replies.
+#[test]
+fn gandr_run_decides_a_bound_on_e_through_a_recurrence_6013()
+{
+    let ran = run(&Path::new("corpus/model/reals").join("exponential.gandr"));
+    assert_eq!(
+        (
+            ran.status.code(),
+            String::from_utf8_lossy(&ran.stdout),
+            String::from_utf8_lossy(&ran.stderr)
+        ),
+        (Some(0_i32), "holds holds\n".into(), "".into()),
+        "the run prints the two verdicts"
+    );
+}
+
 /// #5705: `gandr run` of the two quantifier exemplars prints `holds` and
 /// exits 0. The overt existential `∃ x ∈ [1, 2] (3 < x · x)` holds by a
 /// witness, and the compact universal `∀ x ∈ [0, 1] (x · x < 2)` holds by a

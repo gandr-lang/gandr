@@ -44,6 +44,9 @@
 //!   builtin nodes. No plan of field operations and cuts defines a
 //!   transcendental real, so each builtin is a node with one rule. The
 //!   approximation pass, the checker and the machine read that rule.
+//! - [`Recurrence`], [`series`], [`series_after`] — the sum of a series whose
+//!   term ratio is a rational function of the index, and its one enclosure
+//!   rule.
 //! - [`Sets`], [`Ackermann`], [`code`] — a table of hereditarily finite sets,
 //!   the operations of Ackermann's code on it, and the real code as a plan.
 //! - [`PlanGraph`], [`MinimalForm`], [`PlanKey`] — a plan read as a graph, its
@@ -91,6 +94,7 @@ pub mod graph;
 pub mod interval;
 pub mod minimal;
 pub mod plan;
+pub mod recurrence;
 pub mod schema;
 pub mod semidecision;
 pub mod validate;
@@ -176,6 +180,7 @@ pub use crate::interval::Orientation;
 pub use crate::minimal::ClassId;
 pub use crate::minimal::MinimalForm;
 pub use crate::minimal::PlanKey;
+pub use crate::plan::Coefficient;
 pub use crate::plan::Cut;
 pub use crate::plan::DeBruijn;
 pub use crate::plan::Domain;
@@ -192,14 +197,20 @@ pub use crate::plan::OpenId;
 pub use crate::plan::Plan;
 pub use crate::plan::PlanBuilder;
 pub use crate::plan::PlanError;
+pub use crate::plan::Polynomial;
 pub use crate::plan::Power;
 pub use crate::plan::Quantifier;
 pub use crate::plan::Real;
 pub use crate::plan::RealId;
+pub use crate::plan::Recurrence;
 pub use crate::plan::Root;
 pub use crate::plan::Scope;
 pub use crate::plan::Site;
 pub use crate::plan::Sort;
+pub use crate::plan::Squarings;
+pub use crate::recurrence::Terms;
+pub use crate::recurrence::series;
+pub use crate::recurrence::series_after;
 pub use crate::schema::Split;
 pub use crate::schema::radicand;
 pub use crate::schema::refine;
