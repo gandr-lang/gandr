@@ -967,9 +967,13 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-ho
 # a summary counting the landings, the regressed and the improved. A new
 # ledger opens with the sentence that says what it is and a lead for its
 # table. A red row links the issues of the functions the pull request
-# regressed, each holding
-# the pull request's row (the hotpath guard's index). A commit without a pull
-# request number reads nothing. GH_REPO names the repository.
+# regressed, each holding the pull request's row (the hotpath guard's index).
+# Each push that lands reads the state of every issue the table links, in one
+# query, and settles a row: `fixed — <issues>` once they are all closed, and
+# `fixed — no issue` for a row that links none (#3348). So the collector
+# counts only the rows with work open, and the body is written only when a
+# row changes. A commit without a pull request number reads nothing. GH_REPO
+# names the repository.
 ["ci:hotpath-landed"]
 description = "Add the landed pull requests' hotpath verdicts to the ledger"
 tools.jq = "1.8.1"
@@ -1028,24 +1032,42 @@ if (( landed == 0 )); then
   echo "the push merges no pull request: no hotpath verdict to read"
   exit 0
 fi
-if [[ ! -s $scratch/rows ]]; then
-  echo "no hotpath regression or improvement past the band in $landed landing(s)"
-  exit 0
-fi
 ledger=$(gh issue list --repo "$repo" --state open --label collector --search "\"$ledger_title\" in:title" --json number,title \
   | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
+if [[ -z $ledger && ! -s $scratch/rows ]]; then
+  echo "no hotpath regression or improvement past the band in $landed landing(s), and no ledger"
+  exit 0
+fi
 if [[ -z $ledger ]]; then
   echo null > "$scratch/body.json"
 else
   gh issue view "$ledger" --repo "$repo" --json body --jq '.body | tojson' > "$scratch/body.json"
 fi
-jq -n --slurpfile body "$scratch/body.json" --rawfile rows "$scratch/rows" \
-  '{body: $body[0], rows: ($rows | split("\n") | map(select(length > 0)))}' \
+# The state of each issue the table's rows and the new ones link (#3348), in
+# one query: a row whose linked issues are all closed settles as `fixed`.
+linked=$(jq -rn --slurpfile body "$scratch/body.json" --rawfile rows "$scratch/rows" \
+  '[(($body[0] // "") | gsub("\r"; "") | split("\n")[]), ($rows | split("\n")[])]
+   | map(select(startswith("|")) | split("|")[5] // "" | match("#[0-9]+"; "g").string | ltrimstr("#"))
+   | unique | .[]')
+states='{}'
+if [[ -n $linked ]]; then
+  fields=$(for n in $linked; do printf 'i%s: issue(number: %s) { state } ' "$n" "$n"; done)
+  if ! states=$(gh api graphql -f query="query { repository(owner: \"${repo%/*}\", name: \"${repo#*/}\") { $fields } }" \
+    --jq '.data.repository | with_entries(.key |= "#" + ltrimstr("i") | .value |= .state)'); then
+    echo "the states of the linked issues do not read: only the rows that link none settle"
+    states='{}'
+  fi
+fi
+jq -n --slurpfile body "$scratch/body.json" --rawfile rows "$scratch/rows" --argjson states "$states" \
+  '{body: $body[0], rows: ($rows | split("\n") | map(select(length > 0))), states: $states}' \
   | jq -r -f .config/hotpath/landed.jq > "$scratch/ledger.md"
 if [[ -z $ledger ]]; then
   ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label collector --label area:workflow \
     --label kind:performance --label priority:medium --label effort:unknown \
     --body-file "$scratch/ledger.md" | sed 's|.*/||')
+elif [[ $(jq -r 'gsub("\r"; "")' "$scratch/body.json") == "$(< "$scratch/ledger.md")" ]]; then
+  echo "ledger #$ledger: no row changes"
+  exit 0
 else
   gh issue edit "$ledger" --repo "$repo" --body-file "$scratch/ledger.md" > /dev/null
 fi
