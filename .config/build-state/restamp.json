@@ -40,5 +40,23 @@
     "change": "modify",
     "tools": "bsd",
     "output": ["a", "a/x"]
+  },
+  {
+    "name": "#5960: in a reused workspace, a file an earlier restamp dated reads as changed when this state's record differs",
+    "change": "modify",
+    "workspace": "reused",
+    "output": ["a", "a/x"]
+  },
+  {
+    "name": "#5960: in a reused workspace, a state with no record dates every source now",
+    "change": "unrecorded",
+    "workspace": "reused",
+    "output": ["a", "a/x", "a/y", "b", "b/c", "b/c/z"]
+  },
+  {
+    "name": "#5960: in a reused workspace, a removed file's directory reads as changed",
+    "change": "remove",
+    "workspace": "reused",
+    "output": ["a"]
   }
 ]
