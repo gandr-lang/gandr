@@ -1,0 +1,14 @@
+def beacon(seat : mu open. !Integer. open) -> Unit =
+  loop {
+    send seat 1;
+    continue
+  }
+
+def asking(seat : mu open. +{more : ?Integer. open, done : end}) -> Unit =
+  loop {
+    select seat more;
+    let heard = recv seat;
+    continue
+  }
+
+def answer = 3;

@@ -32,7 +32,7 @@ The expectation language over a lowered module and its verdicts — the nine cla
 - `Stated`, `Outcome`, `ExpectationFault`, `Membership` and `Expectations`: what a declaration states, and why an expectation states nothing; `expected`: one lowered declaration's expectations, read without settling.
 - `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary and producer refusal views; `RefusalName::closed`: every name no form qualifies.
 - `settle`, `SettleFault`, `Produced`, `produced_refusal::Absent`, `DeclarationReport`, `Filler`, `Settlement` and `Surviving`: the settle comparison; `settle_after`: a module settled after its leading declarations' reports.
-- `SettleReport`, `Tally`, `SettleCounts`, `ClassCounts` and `Seal`: the report and its counts.
+- `SettleReport`, `Tally`, `SettleCounts`, `ClassCounts`, `Seal`, `KernelImage` and `Declined`: the report, its counts and each declaration's kernel image.
 
 ## Expected features
 
@@ -42,7 +42,7 @@ The expectation language over a lowered module and its verdicts — the nine cla
 
 ## Examples
 
-The crate-level doctest (`src/lib.rs`, § Example) is the example. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests.
+The crate-level doctest (`src/lib.rs`, § Example) is the example.
 
 The control subjects write cases that are hard in other languages as gandr writes them. The table of the subjects, with the languages each one compares, is in [`root`](src/root.rs) § The corpus.
 

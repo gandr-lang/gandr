@@ -363,6 +363,7 @@ fn each_unadmitted_former_carries_its_pinned_class()
         (UnadmittedFormer::Buffer, FailureClass::EngineFault),
         (UnadmittedFormer::Qubit, FailureClass::EngineFault),
         (UnadmittedFormer::Abandon, FailureClass::EngineFault),
+        (UnadmittedFormer::EndpointLoop, FailureClass::EngineFault),
     ];
     for (former, class) in rows {
         assert_eq!(

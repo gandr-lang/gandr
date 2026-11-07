@@ -7306,6 +7306,10 @@ fn each_former_the_kernel_refuses_names_its_issue()
             tracked(TrackingIssue::KERNEL_QUBIT),
         ),
         (
+            UnadmittedFormer::EndpointLoop,
+            tracked(TrackingIssue::KERNEL_ENDPOINT_LOOP),
+        ),
+        (
             UnadmittedFormer::NumericLiteral,
             tracked(TrackingIssue::JUDGEMENT_FORMER),
         ),

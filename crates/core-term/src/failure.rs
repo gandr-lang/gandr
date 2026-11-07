@@ -162,6 +162,9 @@ impl TrackingIssue
     pub const KERNEL_STAGE: Self = Self(1631);
     /// A declaration naming a qubit, which the kernel does not replay.
     pub const KERNEL_QUBIT: Self = Self(5936);
+    /// A loop each pass of which moves on an endpoint it threads, which the
+    /// kernel has no image of.
+    pub const KERNEL_ENDPOINT_LOOP: Self = Self(6099);
     /// An infix form the lowering does not read: list concatenation, or a
     /// path cons whose left operand is neither a loop nor `back` of one.
     pub const INFIX_FORM: Self = Self(1997);

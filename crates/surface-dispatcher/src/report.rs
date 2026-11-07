@@ -45,6 +45,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::KernelImage;
 use gandr_surface_corpus::Membership;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Settlement;
@@ -209,8 +210,9 @@ pub enum Shown
 /// - ensures: a declaration unsettled by its obligations alone — it states and
 ///   produces *checks*, owing different counts — is a [`Shown::Goal`] under
 ///   `check --goals`; any other unsettled declaration is a [`Shown::Line`]
-///   under every verb; a settled one is a line under `test` when it is a
-///   fixture, and counted otherwise.
+///   under every verb; a settled one is a line under every verb when the kernel
+///   has no image of it, a line under `test` when it is a fixture, and counted
+///   otherwise.
 /// - provides: the one place a verb's printing is decided, so the verbs share
 ///   the pass and differ only here.
 /// - fails: never.
@@ -218,9 +220,11 @@ pub enum Shown
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the domain is three verbs by settled fixture, settled
-///   plain declaration, goal-shaped and refusal-shaped unsettled declaration,
-///   enumerated against a pinned table.
+///   plain declaration, settled declaration with no kernel image, goal-shaped
+///   and refusal-shaped unsettled declaration, enumerated against a pinned
+///   table.
 /// - witness: `report::tests::each_verb_shows_its_declarations`
+/// - witness: `compose::tests::an_endpoint_loop_settles_with_no_kernel_image_6047`
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| match ret {
@@ -229,8 +233,10 @@ pub enum Shown
     Shown::Line => (declaration.settlement() == Settlement::Unsettled
         && !(unsettled_by(declaration) == Unsettled::Obligations && verb == Verb::Check(Goals::Reported)))
         || (declaration.settlement() == Settlement::Settled
-            && declaration.membership() == Membership::Fixture && verb == Verb::Test),
+            && (matches!(declaration.image(), KernelImage::Declined { .. })
+                || (declaration.membership() == Membership::Fixture && verb == Verb::Test))),
     Shown::Counted => declaration.settlement() == Settlement::Settled
+        && declaration.image() == KernelImage::Offered
         && !(declaration.membership() == Membership::Fixture && verb == Verb::Test),
 })]
 pub fn shown(
@@ -243,6 +249,11 @@ pub fn shown(
             Shown::Goal
         },
         (Settlement::Unsettled, Unsettled::Obligations | Unsettled::Verdict, _) => Shown::Line,
+        (Settlement::Settled, ..)
+            if matches!(declaration.image(), KernelImage::Declined { .. }) =>
+        {
+            Shown::Line
+        },
         (Settlement::Settled, _, Verb::Test) if declaration.membership() == Membership::Fixture => {
             Shown::Line
         },

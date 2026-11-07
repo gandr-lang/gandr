@@ -786,6 +786,7 @@ impl Refusal
     | UnadmittedFormer::StaticLambda => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)),
     | UnadmittedFormer::Stage => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE)),
     | UnadmittedFormer::Qubit => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT)),
+    | UnadmittedFormer::EndpointLoop => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP)),
     | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
     | UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => matches!(ret, FailureClass::EngineFault),
 })]
@@ -815,6 +816,9 @@ const fn readmitted(former: UnadmittedFormer) -> FailureClass
         },
         UnadmittedFormer::Stage => FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE),
         UnadmittedFormer::Qubit => FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT),
+        UnadmittedFormer::EndpointLoop => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP)
+        },
         UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom
         | UnadmittedFormer::ValueLift
@@ -7647,10 +7651,22 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Computation::Lambda(body) | Computation::LinearLambda(body) => {
                 (Frame::Lambda { at }, TermNode::Computation(body))
             },
-            Computation::Fixpoint { body, evidence } => (
-                Frame::Fixpoint { at, evidence },
-                TermNode::Computation(body),
-            ),
+            // An endpoint loop never returns, and every call the kernel's
+            // returner types does: it crosses no term, the receiving loop as
+            // the send-only one.
+            Computation::Fixpoint { body, evidence } => {
+                if matches!(evidence, gandr_kernel_term::FixpointEvidence::Partial)
+                    && crate::divergence::follows(self.arena, body)
+                        .map_err(|_unopened| Refusal::DanglingNode { node })?
+                        == crate::divergence::Protocol::Followed
+                {
+                    return Err(unadmitted(UnadmittedFormer::EndpointLoop));
+                }
+                (
+                    Frame::Fixpoint { at, evidence },
+                    TermNode::Computation(body),
+                )
+            },
             Computation::Application(head, argument) => (
                 Frame::ApplicationHead { at, argument },
                 TermNode::Computation(head),
