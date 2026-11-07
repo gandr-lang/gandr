@@ -151,8 +151,28 @@
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
 //!   presented-spaces-stone-faces reads the face formulas as a lattice whose
 //!   monotone part is free, and the monotone band decides in that free part.
+// refused_by: merge_ladder_exhausted · collision: none (1 contested hunk(s), neither side deleted the other's lines)
 //! - Justin Curry et al. "Discrete Morse Theory for Computing Cellular Sheaf
 //!   Cohomology". 2016. `arXiv:1312.6454` — the cell poset of a sheaf.
+//! - `Cherubini-2024-foundation_synthetic_stone_duality` — dependency: § 1.2,
+//!   the Stone duality axiom, and Definition 1.1.7, in the finite case. A
+//!   subshape is a map from its carrier to `2`, and the monotone band refutes
+//!   by a vertex, a homomorphism to `2`. Felix Cherubini, Thierry Coquand,
+//!   Freek Geerligs and Hugo Moeneclaey, "A Foundation for Synthetic Stone
+//!   Duality", 2024, `arXiv:2412.03203`.
+//! - `Sterling-2026-domains_classifying_topoi` — background: § 1.4 reads a
+//!   finitely presented algebra as the functions on its spectrum, and § 1.5
+//!   reads the cube as the spectrum of the free distributive lattice. The
+//!   suites check both readings on the lattices that faces generate. Jonathan
+//!   Sterling and Lingyuan Ye, "Domains and Classifying Topoi", 2026,
+//!   `arXiv:2505.13096`.
+//! - `Doré-2023-computing_spaces_type_theory` — background: § 4.2 puts the
+//!   one-dimensional cartesian problem in P and the Dedekind problem in NP,
+//!   where it is complete. In the dimension the problem is coNP-hard, by
+//!   monotone entailment. The monotone band decides in the free distributive
+//!   lattice, the Dedekind case, so its normal forms have a term budget.
+//!   Admission tries the conjunctive band first. Maximilian Doré, "Computing
+//!   Spaces in Type Theory", doctoral thesis, University of Oxford, 2023.
 //!
 //! [`FaceTT`]: https://types2026.cse.chalmers.se/abstracts/42.pdf
 //! [Kaposi–Xie]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10

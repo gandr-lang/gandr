@@ -429,7 +429,9 @@ pub enum Composed<'source>
         failures: Failures,
         /// Every builtin the source's declarations and binders shadowed, in
         /// the order shadowed: under the warn-and-allow policy the source's
-        /// binding wins and each is a warning, not a refusal.
+        /// binding wins and each is a warning, not a refusal. The composition
+        /// copies it out of the lowered module's `Recognition` before the
+        /// module's origin table moves.
         shadowed: Vec<ShadowedBuiltin>,
         /// Every exit the lowering inferred where a path through a body ends,
         /// in source order: each a finding of the `explicit-exits` lint where

@@ -30,7 +30,8 @@
 //! checking position crosses one of two bridges into the conversion module,
 //! and a decode's code crosses a third when formation checks it; no rule
 //! compares types itself, and each crossing is counted in the result a face
-//! returns.
+//! returns. Lint and module visibility enforce the mode per former and the
+//! comparison at mode changes, not review.
 //!
 //! **A computation where a value is read runs or is suspended by the type
 //! expected there.** Beside the lowering's three sort-directed bridges, the
@@ -458,6 +459,11 @@
 //!
 //! # References
 //!
+//! - `Wood-2024-framework_semiringannotated_type_systems` — dependency: § 4.2,
+//!   the usage annotations of λR and their subusaging. The access rules add the
+//!   uses of a slot in the usage posemiring, and admit the sum only at or below
+//!   the bound of its grade. James Wood, "A Framework for Semiring-Annotated
+//!   Type Systems", doctoral thesis, University of Strathclyde, 2024.
 //! - Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." _Typed Lambda
 //!   Calculi and Applications (TLCA 1999)_, LNCS 1581, Springer (1999). <https://doi.org/10.1007/3-540-48959-2_17>
 //!   — the value and computation sorts, the thunk and returner shifts `U` and
