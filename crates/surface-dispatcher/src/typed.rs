@@ -6547,7 +6547,7 @@ mod tests
     {
         use gandr_surface_pretty::Unspelled;
 
-        let source = include_str!("../../../corpus/pathological/records/iterated-pair.gandr");
+        let source = include_str!("../../../corpus/model/records/iterated-pair.gandr");
         let table = table(SourceText::from(source));
         let mut whole = Vec::new();
         for (_key, declared) in table.declarations(PageWidth::from(80_u32), Form::Explicit.into()) {

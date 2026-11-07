@@ -2115,7 +2115,7 @@ fn a_session_keeping_tables_settles_the_iterated_pair_5719()
     session.keep(Tables::Kept);
     let mut submitted = submit(
         &mut session,
-        include_str!("../../../corpus/pathological/records/iterated-pair.gandr"),
+        include_str!("../../../corpus/model/records/iterated-pair.gandr"),
     );
     let unchecked: Vec<_> = rows(submitted.composed())
         .into_iter()
