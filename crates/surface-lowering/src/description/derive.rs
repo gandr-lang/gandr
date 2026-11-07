@@ -6,6 +6,7 @@ use alloc::collections::BTreeSet;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
@@ -124,11 +125,37 @@ impl Reader<'_, '_>
         if !run.eat(Spelling(":")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let left = run.take()?;
+        if run.at(Spelling("<=>")).0 || run.at(Spelling("==>")).0 {
+            let here = run.here();
+            return Err(DescriptionDiagnostic {
+                span: ByteSpan::new(here.start(), here.start()).unwrap_or(here),
+                fault: DescriptionFault::Malformed,
+            });
+        }
+        let left = run.take().map_err(|_missing| {
+            let here = run.here();
+            DescriptionDiagnostic {
+                span: ByteSpan::new(here.start(), here.start()).unwrap_or(here),
+                fault: DescriptionFault::Malformed,
+            }
+        })?;
         if !(run.eat(Spelling("<=>")).0 || run.eat(Spelling("==>")).0) {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let right = run.take()?;
+        if run.at(Spelling(";")).0 {
+            let here = run.here();
+            return Err(DescriptionDiagnostic {
+                span: ByteSpan::new(here.start(), here.start()).unwrap_or(here),
+                fault: DescriptionFault::Malformed,
+            });
+        }
+        let right = run.take().map_err(|_missing| {
+            let here = run.here();
+            DescriptionDiagnostic {
+                span: ByteSpan::new(here.start(), here.start()).unwrap_or(here),
+                fault: DescriptionFault::Malformed,
+            }
+        })?;
         if !run.eat(Spelling(";")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
