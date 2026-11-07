@@ -1107,6 +1107,7 @@ impl ModuleReport
                         | ValueType::Session(_)
                         | ValueType::Capability { .. }
                         | ValueType::Buffer
+                        | ValueType::Qubit
                         | ValueType::World(WorldType::Capability(_))),
                     )
                     | None => {},

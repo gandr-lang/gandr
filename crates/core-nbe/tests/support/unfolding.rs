@@ -162,7 +162,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
                     ValueType::Patched { ref fixed, .. } => 2_u64.saturating_add(u64::try_from(fixed.len()).unwrap_or(u64::MAX)),
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
-                    ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 1,
+                    ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Qubit | ValueType::Web | ValueType::Row => 1,
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
                     ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
                     ValueType::World(ref ty) => 1_u64.saturating_add(u64::try_from(ty.types().count()).unwrap_or(u64::MAX)),
@@ -596,6 +596,7 @@ pub fn unfolded(
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
                     | ValueType::Buffer
+                    | ValueType::Qubit
                     | ValueType::Web
                     | ValueType::Row => {},
                     ValueType::Capability { ref authority, .. } => {

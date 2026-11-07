@@ -1087,6 +1087,7 @@ pub(crate) fn crosses(
             | ValueTypeView::Session(_)
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::World(WorldType::Capability(_))

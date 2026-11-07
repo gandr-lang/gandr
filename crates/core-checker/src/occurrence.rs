@@ -1153,6 +1153,7 @@ where
                     | ValueType::Universe { .. }
                     | ValueType::Unknown
                     | ValueType::Buffer
+                    | ValueType::Qubit
                     | ValueType::Row
                     | ValueType::Web),
                 )

@@ -501,6 +501,8 @@ use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::comonoid::Grade;
+use crate::comonoid::Held;
 use crate::context::Atom;
 use crate::context::CheckingContext;
 use crate::conversion::ConversionCount;
@@ -2406,6 +2408,8 @@ enum Frame
         /// The codomain or the second factor, scoped under the domain's
         /// binder.
         under: TypeNode,
+        /// How the binder holds the domain.
+        held: Held,
     },
     /// A dependent arrow or a dependent pair waits on the formation under its
     /// binder, then closes the binder it opened.
@@ -3307,7 +3311,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         unfolded: TypeNode::Computation(head),
                     });
                 };
-                self.context.binders().open(Zone::Intuitionistic, result);
+                self.context.open_intuitionistic(
+                    CoreNode::Term(TermNode::Value(judgement.at)),
+                    result,
+                    Grade::Many,
+                )?;
                 self.wait(Frame::StackNext {
                     judgement,
                     position,
@@ -3656,7 +3664,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .comp_type_returner_with_effects(answer_result, residual);
         comp_bridge(self.context, at, natural, answer, &mut self.conversions)?;
         let expected = self.context.shift_comp_type(answer, Binders::from(1_u32));
-        self.context.binders().open(Zone::Intuitionistic, result);
+        self.context.open_intuitionistic(
+            CoreNode::Term(TermNode::Computation(at)),
+            result,
+            Grade::Many,
+        )?;
         self.wait(Frame::HandlerReturn { at, answer });
         Ok(Step::Descend(Goal::Computation {
             term: on_return,
@@ -3756,7 +3768,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let stack = self.context.shift_value_type(stack, Binders::from(1_u32));
         let expected = self.context.shift_comp_type(answer, Binders::from(2_u32));
         let position = position.next()?;
-        self.context.binders().open(Zone::Intuitionistic, payload);
+        self.context.open_intuitionistic(
+            CoreNode::Term(TermNode::Computation(at)),
+            payload,
+            Grade::Many,
+        )?;
         if owes {
             self.owe(body, stack)?;
         }
@@ -4178,7 +4194,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::MachineInvariant);
         };
         let expected = self.context.shift_comp_type(answer, Binders::from(1_u32));
-        self.context.binders().open(Zone::Intuitionistic, result);
+        self.context.open_intuitionistic(
+            CoreNode::Term(TermNode::Computation(at)),
+            result,
+            Grade::Many,
+        )?;
         self.wait(Frame::HandlerReturn { at, answer });
         Ok(Step::Descend(Goal::Computation {
             term: on_return,
@@ -6791,7 +6811,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Computation::Lambda(body) => {
                 let (domain, codomain) = self.arrow_expected(term, expected)?;
-                self.context.binders().open(Zone::Intuitionistic, domain);
+                self.context.open_intuitionistic(
+                    CoreNode::Term(TermNode::Computation(term)),
+                    domain,
+                    Grade::Many,
+                )?;
                 self.context.open_copy(term);
                 self.wait(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
@@ -7268,7 +7292,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Maybe::Absent(_) => body,
         };
-        self.context.binders().open(Zone::Intuitionistic, result);
+        self.context.open_intuitionistic(
+            CoreNode::Term(TermNode::Computation(at)),
+            result,
+            Grade::Many,
+        )?;
         self.context.open_copy(at);
         self.wait(Frame::BindBody { at, bound: read });
         Ok(Step::Descend(Goal::Computation {
@@ -7408,7 +7436,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         // Each result already stands under the binders of those before it.
         for result in results {
-            self.context.binders().open(Zone::Intuitionistic, result);
+            self.context.open_intuitionistic(
+                CoreNode::Term(TermNode::Computation(at)),
+                result,
+                Grade::Many,
+            )?;
         }
         self.wait(Frame::BindAllBody {
             at,
@@ -8411,6 +8443,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Fixed(_)
             | ValueTypeView::Unit
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::Web
             | ValueTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
@@ -8494,6 +8527,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::FormUnder {
                     domain: first,
                     under: TypeNode::Value(second),
+                    held: Held::Erased(CoreNode::Type(TypeNode::Value(at))),
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
             },
@@ -8600,13 +8634,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
             },
             CompTypeView::Arrow { domain, codomain } => {
+                crate::comonoid::require(
+                    self.context.arena(),
+                    CoreNode::Type(TypeNode::Computation(at)),
+                    domain,
+                    Grade::Many,
+                )?;
                 self.wait(Frame::FormNext(TypeNode::Computation(codomain)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
             CompTypeView::Pi { domain, codomain } => {
+                crate::comonoid::require(
+                    self.context.arena(),
+                    CoreNode::Type(TypeNode::Computation(at)),
+                    domain,
+                    Grade::Many,
+                )?;
                 self.wait(Frame::FormUnder {
                     domain,
                     under: TypeNode::Computation(codomain),
+                    held: Held::Erased(CoreNode::Type(TypeNode::Computation(at))),
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
@@ -8619,6 +8666,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.wait(Frame::FormUnder {
                     domain,
                     under: TypeNode::Computation(codomain),
+                    held: Held::Shadow,
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
@@ -8915,6 +8963,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Qubit
                 | ValueTypeView::RowTail(_)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
@@ -8995,6 +9044,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Qubit
                 | ValueTypeView::Row
                 | ValueTypeView::RowTail(_)
                 | ValueTypeView::Integer
@@ -10705,7 +10755,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => {
-                self.context.binders().open(Zone::Intuitionistic, summand);
+                self.context.open_intuitionistic(
+                    CoreNode::Term(TermNode::Computation(branch)),
+                    summand,
+                    Grade::Many,
+                )?;
                 self.wait(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
                     term: branch,
@@ -10778,8 +10832,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 };
                 let tail = self.context.shift_value_type(tail, Binders::from(1_u32));
                 let expected = self.context.shift_comp_type(expected, Binders::from(2_u32));
-                self.context.binders().open(Zone::Intuitionistic, element);
-                self.context.binders().open(Zone::Intuitionistic, tail);
+                let list_case = CoreNode::Term(TermNode::Computation(at));
+                self.context
+                    .open_intuitionistic(list_case, element, Grade::Many)?;
+                self.context
+                    .open_intuitionistic(list_case, tail, Grade::Many)?;
                 self.wait(Frame::ListCaseCons);
                 Ok(Step::Descend(Goal::Computation {
                     term: on_cons,
@@ -10862,6 +10919,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | ValueTypeView::Kept { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Qubit
                     | ValueTypeView::Row
                     | ValueTypeView::RowTail(_)
                     | ValueTypeView::Session(_)
@@ -11010,12 +11068,34 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::Quote(quoted), Produced::Checked) => {
+                // A universe admits a quoted type only when the type carries a
+                // comonoid: a code is copied and discarded freely.
+                if let TypeNode::Value(ty) = quoted {
+                    crate::comonoid::require(
+                        self.context.arena(),
+                        CoreNode::Type(quoted),
+                        ty,
+                        Grade::Many,
+                    )?;
+                }
                 let quoted = self.quoted(quoted)?;
                 Ok(Step::Ascend(Produced::ValueType(quoted.into())))
             },
             (Frame::FormNext(next), Produced::Checked) => Ok(Step::Descend(Goal::Form(next))),
-            (Frame::FormUnder { domain, under }, Produced::Checked) => {
-                self.context.binders().open(Zone::Intuitionistic, domain);
+            (
+                Frame::FormUnder {
+                    domain,
+                    under,
+                    held,
+                },
+                Produced::Checked,
+            ) => {
+                match held {
+                    Held::Erased(at) => {
+                        self.context.open_intuitionistic(at, domain, Grade::Zero)?;
+                    },
+                    Held::Shadow => self.context.binders().open(Zone::Intuitionistic, domain),
+                }
                 self.wait(Frame::FormBinder);
                 Ok(Step::Descend(Goal::Form(under)))
             },
@@ -11468,8 +11548,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             // The second factor already stands under the binder of the first,
             // which the split opens just before it.
             Opened::Pair { first, second } => {
-                self.context.binders().open(Zone::Intuitionistic, first);
-                self.context.binders().open(Zone::Intuitionistic, second);
+                let split = CoreNode::Term(TermNode::Computation(at));
+                self.context
+                    .open_intuitionistic(split, first, Grade::Many)?;
+                self.context
+                    .open_intuitionistic(split, second, Grade::Many)?;
             },
             Opened::Product(components) => {
                 for (index, shift) in (0_u32 .. binders).enumerate() {
@@ -11482,7 +11565,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     let component = self
                         .context
                         .shift_value_type(component, Binders::from(shift));
-                    self.context.binders().open(Zone::Intuitionistic, component);
+                    self.context.open_intuitionistic(
+                        CoreNode::Term(TermNode::Computation(at)),
+                        component,
+                        Grade::Many,
+                    )?;
                 }
             },
         }
@@ -11715,6 +11802,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Row
             | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
@@ -12309,8 +12397,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let expected = self
                     .context
                     .shift_comp_type(classifier, Binders::from(2_u32));
-                self.context.binders().open(Zone::Intuitionistic, element);
-                self.context.binders().open(Zone::Intuitionistic, result);
+                let fold = CoreNode::Term(TermNode::Computation(at));
+                self.context
+                    .open_intuitionistic(fold, element, Grade::Many)?;
+                self.context
+                    .open_intuitionistic(fold, result, Grade::Many)?;
                 (ListPhase::Cons, Goal::Computation {
                     term: on_cons,
                     direction: Direction::Check(expected),

@@ -1300,6 +1300,12 @@ pub enum ValueType
     /// live in the linear zone; it leaves that zone only by being handed on
     /// whole, through a send, an operation's payload or a resumption.
     Buffer,
+    /// The qubit `Qubit`: the state of one quantum bit. It carries no
+    /// comonoid, so no term copies a qubit and no term discards one. A qubit
+    /// lives in the linear zone, as the parameter of a linear function, and
+    /// the checker refuses an intuitionistic binder of one. No term
+    /// introduces it.
+    Qubit,
     /// A value kept in a region: `A at c`, a value of `A` that may capture a
     /// shared view lent while the region lives, and so lives as long as the
     /// region rather than the access: a capability scope's or a hold's, or a

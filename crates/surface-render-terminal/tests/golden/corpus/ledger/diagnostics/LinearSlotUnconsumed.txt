@@ -1,0 +1,11 @@
+error[LinearSlotUnconsumed]: the linear parameter is not used, or one branch uses it where another does not
+  ╭▸ corpus/ledger/diagnostics/LinearSlotUnconsumed.gandr:3:13
+  │
+3 │ def dropped(x : Integer) ⊸ Integer = 0 ;
+  │ ┬───────────┯───────────────────────────
+  │ │           │
+  │ │           a linear parameter left unused
+  │ checked against `+U ((x : Integer) ⊸ -F Integer)`; while checking the body of this thunk
+  │
+  ├ note: `dropped` is refused with LinearSlotUnconsumed, as its expectation states
+  ╰ help: use the linear parameter exactly once on every path through the body

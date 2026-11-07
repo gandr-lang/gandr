@@ -3098,3 +3098,67 @@ fn a_type_in_a_linear_body_reads_the_shadow_free_5853()
         "the codomain's reads are free, and the body's one read spends the copy"
     );
 }
+
+/// A qubit has no comonoid: a gate takes it once and checks, while an arrow
+/// that would copy it, a bind inside the gate and a declaration at it are each
+/// refused by the grade of the binder that would hold it (#5739).
+#[test]
+fn each_binder_over_a_qubit_is_refused_5739()
+{
+    let mut arena = CoreArena::new();
+    let qubit = arena.value_type_qubit();
+    let returns_qubit = arena.comp_type_returner(qubit);
+    let one = integer(&mut arena, Spelled("1"));
+    let gate_type = arena.comp_type_linear_arrow(qubit, one, returns_qubit);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(parameter);
+    let gate = arena.computation_linear_lambda(returned);
+    assert_eq!(
+        check_at(&mut arena, gate, gate_type),
+        Ok(()),
+        "a gate takes its qubit once"
+    );
+    let copying = arena.comp_type_arrow(qubit, returns_qubit);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        form_comp_type(&mut context, copying).map(|_| ()),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Type(TypeNode::Computation(copying)),
+            defect: LinearityDefect::ComonoidAbsent {
+                ty: qubit,
+                grade: crate::comonoid::Grade::Many,
+            },
+        }),
+        "an intuitionistic arrow's binder copies and discards its value"
+    );
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let again = arena.computation_return(bound);
+    let bind = arena.computation_bind(returned, again);
+    let binding = arena.computation_linear_lambda(bind);
+    let refused = check_at(&mut arena, binding, gate_type);
+    assert!(
+        matches!(
+            refused,
+            Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                defect: LinearityDefect::ComonoidAbsent {
+                    ty,
+                    grade: crate::comonoid::Grade::Many,
+                },
+            }) if at == bind && arena.value_type(ty) == Some(&gandr_core_term::ValueType::Qubit)
+        ),
+        "a bind's binder holds its value at grade ω, so it cannot hold a qubit: {refused:?}"
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        crate::session::unrestricted(&mut context, qubit),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Type(TypeNode::Value(qubit)),
+            defect: LinearityDefect::ComonoidAbsent {
+                ty: qubit,
+                grade: crate::comonoid::Grade::Many,
+            },
+        }),
+        "a declaration is used any number of times"
+    );
+}

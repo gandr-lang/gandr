@@ -361,6 +361,7 @@ fn each_unadmitted_former_carries_its_pinned_class()
         (UnadmittedFormer::Run, FailureClass::EngineFault),
         (UnadmittedFormer::Memory, FailureClass::EngineFault),
         (UnadmittedFormer::Buffer, FailureClass::EngineFault),
+        (UnadmittedFormer::Qubit, FailureClass::EngineFault),
         (UnadmittedFormer::Abandon, FailureClass::EngineFault),
     ];
     for (former, class) in rows {

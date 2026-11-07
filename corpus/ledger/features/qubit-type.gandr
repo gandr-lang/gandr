@@ -1,0 +1,24 @@
+/// `qubit-type`: The qubit type `Qubit`, which carries no comonoid.
+/// Implemented: a source imports the type from the module `std.quantum`, and a gate takes the qubit once as a linear function's parameter. Each binder that may copy or discard a qubit is refused with its grade.
+/// Not implemented: the checker refuses each `let` of a qubit and each type parameter at the type. The kernel does not replay a declaration that names a qubit.
+///
+/// - owes: #5943
+/// - owes: #5944
+/// - owes: #5936
+// A qubit stands only at a linear function's parameter. A gate takes it once,
+// and gates nest. The no-cloning exemplar shows each refusal: a copy, a
+// discard, and a binder at grade ω or grade 0.
+//
+// - see: `../../model/quantum/no-cloning.gandr`
+// - see: `../diagnostics/ComonoidAbsent.gandr`
+
+// The qubit type, which carries no comonoid.
+import std.quantum (Qubit);
+
+/// The identity gate takes its qubit once and returns it.
+@[ checks ]
+def gate(q : Qubit) ⊸ Qubit = q ;
+
+/// A gate applied to the qubit that a gate gives.
+@[ checks ]
+def twice(q : Qubit) ⊸ Qubit = gate(gate(q)) ;

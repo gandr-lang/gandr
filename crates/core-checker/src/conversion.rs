@@ -1647,6 +1647,7 @@ pub fn decode_bridge(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Integer
@@ -2302,6 +2303,7 @@ fn convert(
                     | (ValueTypeView::Float64, ValueTypeView::Float64)
                     | (ValueTypeView::Unit, ValueTypeView::Unit)
                     | (ValueTypeView::Buffer, ValueTypeView::Buffer)
+                    | (ValueTypeView::Qubit, ValueTypeView::Qubit)
                     | (ValueTypeView::Web, ValueTypeView::Web)
                     | (ValueTypeView::Row, ValueTypeView::Row) => true,
                     (ValueTypeView::Fixed(left_width), ValueTypeView::Fixed(right_width)) => {
@@ -2560,6 +2562,7 @@ fn convert(
                         | ValueTypeView::StaticPi { .. }
                         | ValueTypeView::Capability { .. }
                         | ValueTypeView::Buffer
+                        | ValueTypeView::Qubit
                         | ValueTypeView::Staged { .. }
                         | ValueTypeView::Kept { .. }
                         | ValueTypeView::World(_)
@@ -3293,6 +3296,7 @@ fn value_head(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Qubit
         | ValueTypeView::Row
         | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
@@ -3563,6 +3567,7 @@ fn relocated_values(
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
             | ValueTypeView::Session(_)
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }

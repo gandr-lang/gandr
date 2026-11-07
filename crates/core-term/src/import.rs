@@ -181,6 +181,7 @@ impl Image
                 | ValueType::Capability { .. }
                 | ValueType::Unknown
                 | ValueType::Buffer
+                | ValueType::Qubit
                 | ValueType::Session(_)
                 | ValueType::World(_)
                 | ValueType::Web
@@ -1020,6 +1021,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::StaticPi { .. }
                                 | ValueType::Unknown
                                 | ValueType::Buffer
+                                | ValueType::Qubit
                                 | ValueType::Stack { .. } => {},
                             }
                         },

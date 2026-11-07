@@ -480,6 +480,7 @@ pub fn level_of(
                 | ValueTypeView::Dialogue(_)
                 | ValueTypeView::Web
                 | ValueTypeView::Buffer
+                | ValueTypeView::Qubit
                 | ValueTypeView::Row
                 | ValueTypeView::RowTail(_)
                 | ValueTypeView::Unknown => {

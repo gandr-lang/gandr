@@ -785,6 +785,7 @@ impl Refusal
     | UnadmittedFormer::Abstract => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT)),
     | UnadmittedFormer::StaticLambda => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)),
     | UnadmittedFormer::Stage => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE)),
+    | UnadmittedFormer::Qubit => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT)),
     | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
     | UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => matches!(ret, FailureClass::EngineFault),
 })]
@@ -813,6 +814,7 @@ const fn readmitted(former: UnadmittedFormer) -> FailureClass
             FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)
         },
         UnadmittedFormer::Stage => FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE),
+        UnadmittedFormer::Qubit => FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT),
         UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom
         | UnadmittedFormer::ValueLift
@@ -7660,6 +7662,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Buffer,
+                });
+            },
+            ValueTypeView::Qubit => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Qubit,
                 });
             },
             ValueTypeView::Row | ValueTypeView::RowTail(_) => {

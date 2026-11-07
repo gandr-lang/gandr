@@ -1,0 +1,13 @@
+error[LinearSlotConsumed]: the linear parameter is used a second time, and the function holds one copy of it
+  ╭▸ corpus/ledger/diagnostics/LinearSlotConsumed.gandr:3:40
+  │
+3 │ def twice(x : Integer) ⊸ Integer = x + x ;
+  │ ┬─────────┬────────────────────────┬───┯──
+  │ │         │                        │   │
+  │ │         │                        │   a linear parameter already used
+  │ │         │                        checked against `-F Integer`; while checking the arguments of this operation
+  │ │         checked against `(x : Integer) ⊸ -F Integer`; while checking the body of this function; binds x : Integer
+  │ checked against `+U ((x : Integer) ⊸ -F Integer)`; while checking the body of this thunk
+  │
+  ├ note: `twice` is refused with LinearSlotConsumed, as its expectation states
+  ╰ help: use the linear parameter once, or take it at `->` instead of `⊸`
