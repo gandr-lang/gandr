@@ -1,22 +1,27 @@
 # The areas each lane claims from (#3736): `claim:next <lane>` walks the
 # defect and refactor buckets of every area its row lists, the first area's
-# first, before any other bucket. A lane is one seat, since a lane holds one
-# claim at a time: two seats over the same areas are two rows (#4056). A new
-# lane or a new area is a row here.
+# first, before any other bucket. The factory's `queue-next` reads the same
+# rows for each lane's defects. Each `area:` label is in the row of an active
+# lane (#6218), so no defect waits for triage alone. A new lane or a new area
+# is a row here.
 [lane]
-core = ["core", "kernel"]
-theory = ["theory", "kernel"]
-surface = ["surface", "ux"]
+floor = ["surface", "ux", "core", "analysis", "editor", "lsp", "mcp"]
+spaces = ["theory", "kernel", "storage", "runtime", "distribution", "interop"]
+coordinator = ["workflow", "ci"]
 triage = ["workflow", "ci"]
 triage-2 = ["workflow", "ci"]
+surface = ["surface", "ux"]
+diagnostic-help = ["surface", "ux", "core"]
+# Retired lanes. Their rows stay: `claim:take` and the merged-branch read name
+# the lane of an old branch from them.
+core = ["core", "kernel"]
+theory = ["theory", "kernel"]
 program-logic = ["program-logic", "runtime"]
 elaboration = ["elaboration", "storage"]
 toolchain = ["distribution", "surface"]
 references-editor = ["editor", "lsp", "surface"]
-diagnostic-help = ["surface", "ux"]
 sorts = ["core", "kernel"]
 cells = ["theory", "kernel"]
 algebra = ["theory", "kernel"]
 reals = ["theory", "kernel"]
-floor = ["surface", "ux", "core"]
 workflow = ["workflow", "ci"]
