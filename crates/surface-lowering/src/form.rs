@@ -513,23 +513,23 @@ pub struct TileName(&'static str);
 impl TileName
 {
     /// The arrow `->` of a function type and of a function's result.
-    pub const ARROW: Self = Self("->");
+    pub(crate) const ARROW: Self = Self("->");
     /// The linear arrow `⊸` of a linear function type and of a linear
     /// function's result, the tile its ASCII spelling `-o` molds too.
     pub const LINEAR_ARROW: Self = Self("⊸");
     /// The temporary-access eliminator `abort`.
-    pub const ABORT: Self = Self("abort");
+    pub(crate) const ABORT: Self = Self("abort");
     /// The temporary-access lead `access`.
-    pub const ACCESS: Self = Self("access");
+    pub(crate) const ACCESS: Self = Self("access");
     /// The alias keyword `as` of an import.
-    pub const AS: Self = Self("as");
+    pub(crate) const AS: Self = Self("as");
     /// The lazy product's `&`.
     pub const AMPERSAND: Self = Self("&");
     /// The opener `&{` of the lazy record over labels and of the copattern
     /// block.
     pub const LAZY_OPEN: Self = Self("&{");
     /// The attribute-block opener `@[`.
-    pub const ATTRIBUTES: Self = Self("@[");
+    pub(crate) const ATTRIBUTES: Self = Self("@[");
     /// The inner attribute-block opener `@![`, decorating the item it stands
     /// in.
     pub const INNER_ATTRIBUTES: Self = Self("@![");
@@ -538,7 +538,7 @@ impl TileName
     /// The as-pattern's dotted `.@`, `x .@ p`.
     pub const DOT_AT: Self = Self(".@");
     /// The bang `!` marking a shared fork, and the send session type's lead.
-    pub const BANG: Self = Self("!");
+    pub(crate) const BANG: Self = Self("!");
     /// The bar `|` of a record update's base or a row's open tail.
     pub const BAR: Self = Self("|");
     /// The arm bar `|` opening a constructor, a clause or a match arm.
@@ -546,9 +546,9 @@ impl TileName
     /// The theory member `boundary` naming a shape parameter's points.
     pub const BOUNDARY: Self = Self("boundary");
     /// A bracket closer `]`.
-    pub const BRACKET_CLOSE: Self = Self("]");
+    pub(crate) const BRACKET_CLOSE: Self = Self("]");
     /// A bracket opener `[`.
-    pub const BRACKET_OPEN: Self = Self("[");
+    pub(crate) const BRACKET_OPEN: Self = Self("[");
     /// The sequence literal's opener `#[`, closed by `]`.
     pub const SEQUENCE_OPEN: Self = Self("#[");
     /// The index selector's opener `.#[`, closed by `]`.
@@ -556,32 +556,32 @@ impl TileName
     /// The sub-record selector's opener `.*{`, closed by `}`.
     pub const SUB_RECORD_OPEN: Self = Self(".*{");
     /// A brace closer `}`.
-    pub const BRACE_CLOSE: Self = Self("}");
+    pub(crate) const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
-    pub const BRACE_OPEN: Self = Self("{");
+    pub(crate) const BRACE_OPEN: Self = Self("{");
     /// The colon `:` opening a signature tail, an annotation or a typed
     /// parameter.
-    pub const COLON: Self = Self(":");
+    pub(crate) const COLON: Self = Self(":");
     /// The comma separating list members.
-    pub const COMMA: Self = Self(",");
+    pub(crate) const COMMA: Self = Self(",");
     /// The declaration keyword `def`.
-    pub const DEF: Self = Self("def");
+    pub(crate) const DEF: Self = Self("def");
     /// The selection dot `.` of a path.
-    pub const DOT: Self = Self(".");
+    pub(crate) const DOT: Self = Self(".");
     /// The two dots `..` opening a list pattern's rest.
-    pub const DOT_DOT: Self = Self("..");
+    pub(crate) const DOT_DOT: Self = Self("..");
     /// The extern block's keyword `extern`.
     pub const EXTERN: Self = Self("extern");
     /// The lambda keyword `fun`.
     pub const FUN: Self = Self("fun");
     /// The force keyword `force`.
-    pub const FORCE: Self = Self("force");
+    pub(crate) const FORCE: Self = Self("force");
     /// The fork keyword `fork`, opening a statement.
-    pub const FORK: Self = Self("fork");
+    pub(crate) const FORK: Self = Self("fork");
     /// The extern block's keyword `from`, before the library it names.
     pub const FROM: Self = Self("from");
     /// The equals sign `=` opening a definition tail.
-    pub const EQUALS: Self = Self("=");
+    pub(crate) const EQUALS: Self = Self("=");
     /// The compound assignment `+=`, writing a held place the sum of its value
     /// and the right side.
     pub const PLUS_EQUALS: Self = Self("+=");
@@ -593,7 +593,7 @@ impl TileName
     pub const TIMES_EQUALS: Self = Self("*=");
     /// The greater-than sign `>`: an instantiation's productivity claim, a
     /// self-call standing as a copattern arm.
-    pub const GREATER_THAN: Self = Self(">");
+    pub(crate) const GREATER_THAN: Self = Self(">");
     /// The `=>` after an arm's pattern, a clause's patterns, a handler
     /// clause's head or a copattern's label.
     pub const FAT_ARROW: Self = Self("=>");
@@ -601,149 +601,149 @@ impl TileName
     /// rest of the protocol.
     pub const SEQUENCE: Self = Self(">>");
     /// An escape sequence inside a string's own tiles.
-    pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
+    pub(crate) const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
     /// The member `face`, naming a set of a boundary's points: a theory's
     /// shape's, or a record type's labels in its faces block.
     pub const FACE: Self = Self("face");
     /// An identifier written as one of a form's own tiles.
-    pub const IDENTIFIER: Self = Self("identifier");
+    pub(crate) const IDENTIFIER: Self = Self("identifier");
     /// The import keyword `import`.
-    pub const IMPORT: Self = Self("import");
+    pub(crate) const IMPORT: Self = Self("import");
     /// The keyword `include`, opening a module member that takes another
     /// model's members as its own.
-    pub const INCLUDE: Self = Self("include");
+    pub(crate) const INCLUDE: Self = Self("include");
     /// The flow keyword `flow`, opening a translation between theories.
     pub const FLOW: Self = Self("flow");
     /// The interpolation opener `${`.
-    pub const INTERPOLATION: Self = Self("${");
+    pub(crate) const INTERPOLATION: Self = Self("${");
     /// The keyword `law`, opening a theory's or a module's law member.
-    pub const LAW: Self = Self("law");
+    pub(crate) const LAW: Self = Self("law");
     /// The less-than sign `<`: an instantiation's structural-descent claim.
-    pub const LESS_THAN: Self = Self("<");
+    pub(crate) const LESS_THAN: Self = Self("<");
     /// The arrow `↦` of a face in a static bracket, `T[f ↦ v]`, spelled `|->`
     /// in ASCII.
     pub const MAPS_TO: Self = Self("↦");
     /// The sort literal `-` of a universe: the computation types.
-    pub const MINUS: Self = Self("-");
+    pub(crate) const MINUS: Self = Self("-");
     /// The module keyword `module`.
-    pub const MODULE: Self = Self("module");
+    pub(crate) const MODULE: Self = Self("module");
     /// The keyword `via` of an import, before the flow it reads its source
     /// through.
     pub const VIA: Self = Self("via");
     /// A numeral written as one of a form's own tiles: a universe's level or a
     /// bridge's grade.
-    pub const NUMBER: Self = Self("number");
+    pub(crate) const NUMBER: Self = Self("number");
     /// The default grade `ω` of a bridge.
-    pub const OMEGA: Self = Self("ω");
+    pub(crate) const OMEGA: Self = Self("ω");
     /// A parenthesis closer `)`.
-    pub const PAREN_CLOSE: Self = Self(")");
+    pub(crate) const PAREN_CLOSE: Self = Self(")");
     /// A parenthesis opener `(`.
-    pub const PAREN_OPEN: Self = Self("(");
+    pub(crate) const PAREN_OPEN: Self = Self("(");
     /// The keyword `pack`, opening a module packed at its model type.
-    pub const PACK: Self = Self("pack");
+    pub(crate) const PACK: Self = Self("pack");
     /// The keyword `forget`, opening a forgetting map applied to a model.
-    pub const FORGET: Self = Self("forget");
+    pub(crate) const FORGET: Self = Self("forget");
     /// The element path type's head `Path`.
-    pub const PATH: Self = Self("Path");
+    pub(crate) const PATH: Self = Self("Path");
     /// The bridge type's head `Bridge`.
     pub const BRIDGE: Self = Self("Bridge");
     /// The flow type's head `Flow`, where it supplies its carrier by name.
     pub const FLOW_TYPE: Self = Self("Flow");
     /// The capability type's head `Cap`.
-    pub const CAP: Self = Self("Cap");
+    pub(crate) const CAP: Self = Self("Cap");
     /// The keyword `at` placing a capability type in a scope's region.
-    pub const AT: Self = Self("at");
+    pub(crate) const AT: Self = Self("at");
     /// The capability scope's lead `handle`.
-    pub const HANDLE: Self = Self("handle");
+    pub(crate) const HANDLE: Self = Self("handle");
     /// The keyword `hold`: the located hold `hold v` that returns `v` held at
     /// the current world.
     pub const HOLD: Self = Self("hold");
     /// The keyword `migrate`, opening a migration `migrate [w] { t }`.
-    pub const MIGRATE: Self = Self("migrate");
+    pub(crate) const MIGRATE: Self = Self("migrate");
     /// The keyword `mobile`, marking an abstract signature component whose
     /// representation may cross between worlds.
-    pub const MOBILE: Self = Self("mobile");
+    pub(crate) const MOBILE: Self = Self("mobile");
     /// The keyword `world`, opening a world declaration `world w ;`.
-    pub const WORLD: Self = Self("world");
+    pub(crate) const WORLD: Self = Self("world");
     /// The contextual keyword `requires`, before the row a world declaration
     /// `world w requires [ … ] ;` names.
     pub const REQUIRES: Self = Self("requires");
     /// The keyword `offers`, opening a site's offer `offers [ … ] ;`.
     pub const OFFERS: Self = Self("offers");
     /// The sort literal `+` of a universe: the value types.
-    pub const PLUS: Self = Self("+");
+    pub(crate) const PLUS: Self = Self("+");
     /// The opener `+{` of the sum over labels and of an injection into it.
     pub const SUM_OPEN: Self = Self("+{");
     /// A double quote opening or closing a string written among a form's own
     /// tiles.
-    pub const QUOTE: Self = Self("\"");
+    pub(crate) const QUOTE: Self = Self("\"");
     /// The recursion keyword `rec`.
-    pub const REC: Self = Self("rec");
+    pub(crate) const REC: Self = Self("rec");
     /// The product's opener `*{`: a record, a telescope and a signature.
     pub const RECORD: Self = Self("*{");
     /// The receive keyword `recv`, opening a statement.
-    pub const RECV: Self = Self("recv");
+    pub(crate) const RECV: Self = Self("recv");
     /// The returner keyword `pure`.
-    pub const PURE: Self = Self("pure");
+    pub(crate) const PURE: Self = Self("pure");
     /// The function exit `return`.
-    pub const RETURN: Self = Self("return");
+    pub(crate) const RETURN: Self = Self("return");
     /// The temporary-access eliminator `resume`.
-    pub const RESUME: Self = Self("resume");
+    pub(crate) const RESUME: Self = Self("resume");
     /// The tail-call exit `become`.
-    pub const BECOME: Self = Self("become");
+    pub(crate) const BECOME: Self = Self("become");
     /// The loop exit `break`.
-    pub const BREAK: Self = Self("break");
+    pub(crate) const BREAK: Self = Self("break");
     /// The loop re-entry `continue`.
-    pub const CONTINUE: Self = Self("continue");
+    pub(crate) const CONTINUE: Self = Self("continue");
     /// The loop keyword `loop`.
-    pub const LOOP: Self = Self("loop");
+    pub(crate) const LOOP: Self = Self("loop");
     /// The conditional loop keyword `while`.
-    pub const WHILE: Self = Self("while");
+    pub(crate) const WHILE: Self = Self("while");
     /// The keyword `where` that ends a declaration's head and opens its
     /// members.
     pub const WHERE: Self = Self("where");
     /// The list loop keyword `for`.
-    pub const FOR: Self = Self("for");
+    pub(crate) const FOR: Self = Self("for");
     /// The `in` naming the list a `for` loop steps through.
-    pub const IN: Self = Self("in");
+    pub(crate) const IN: Self = Self("in");
     /// The conditional keyword `if`, opening a conditional or its tail.
-    pub const IF: Self = Self("if");
+    pub(crate) const IF: Self = Self("if");
     /// The `else` before a conditional's false branch.
-    pub const ELSE: Self = Self("else");
+    pub(crate) const ELSE: Self = Self("else");
     /// The keyword `run`, opening a run where a value is read.
     pub const RUN: Self = Self("run");
     /// The eager product's `*`.
-    pub const STAR: Self = Self("*");
+    pub(crate) const STAR: Self = Self("*");
     /// The opaque ascription `:>`.
-    pub const SEAL: Self = Self(":>");
+    pub(crate) const SEAL: Self = Self(":>");
     /// The semicolon `;` closing a declaration or a statement.
     pub const SEMICOLON: Self = Self(";");
     /// The splice's lead `~`, before the tactic it runs.
     pub const TILDE: Self = Self("~");
     /// A run of plain text inside a string's own tiles.
-    pub const STRING_FRAGMENT: Self = Self("string_fragment");
+    pub(crate) const STRING_FRAGMENT: Self = Self("string_fragment");
     /// The thunk keyword `thunk`.
-    pub const THUNK: Self = Self("thunk");
+    pub(crate) const THUNK: Self = Self("thunk");
     /// The type-component keyword `type` of a module signature.
-    pub const TYPE: Self = Self("type");
+    pub(crate) const TYPE: Self = Self("type");
     /// The opener `type(` of a type quoted where an expression stands.
-    pub const TYPE_QUOTE_OPEN: Self = Self("type(");
+    pub(crate) const TYPE_QUOTE_OPEN: Self = Self("type(");
     /// A type identifier written as one of a form's own tiles.
-    pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
+    pub(crate) const TYPE_IDENTIFIER: Self = Self("type_identifier");
     /// A type variable written as one of a form's own tiles.
-    pub const TYPE_VARIABLE: Self = Self("type_variable");
+    pub(crate) const TYPE_VARIABLE: Self = Self("type_variable");
     /// The universe keyword `Type`.
-    pub const UNIVERSE: Self = Self("Type");
+    pub(crate) const UNIVERSE: Self = Self("Type");
     /// The unwind of a temporary access, `unwind`.
-    pub const UNWIND: Self = Self("unwind");
+    pub(crate) const UNWIND: Self = Self("unwind");
     /// The mode word `shared` of a temporary access.
-    pub const SHARED: Self = Self("shared");
+    pub(crate) const SHARED: Self = Self("shared");
     /// The mode word `exclusive` of a temporary access, the mode an access
     /// with no word has.
-    pub const EXCLUSIVE: Self = Self("exclusive");
+    pub(crate) const EXCLUSIVE: Self = Self("exclusive");
     /// The mode word `consumed` of a method's receiver, which the call gives
     /// up.
-    pub const CONSUMED: Self = Self("consumed");
+    pub(crate) const CONSUMED: Self = Self("consumed");
     /// The keyword `let`, opening a statement.
     pub const LET: Self = Self("let");
     /// The keyword `var`, opening a statement that holds a value.
@@ -752,65 +752,65 @@ impl TileName
     pub const MATCH: Self = Self("match");
     /// A constructor name written as one of a form's own tiles: a data
     /// declaration's generator or a constructor pattern's head.
-    pub const CONSTRUCTOR: Self = Self("constructor");
+    pub(crate) const CONSTRUCTOR: Self = Self("constructor");
     /// The data declaration keyword `data`.
-    pub const DATA: Self = Self("data");
+    pub(crate) const DATA: Self = Self("data");
     /// The boolean literal `false` written as a pattern's own tile.
-    pub const FALSE: Self = Self("false");
+    pub(crate) const FALSE: Self = Self("false");
     /// A generator's result arrow `-->`.
-    pub const GENERATOR: Self = Self("-->");
+    pub(crate) const GENERATOR: Self = Self("-->");
     /// A cell's invertible arrow `<->`.
-    pub const INVERTIBLE: Self = Self("<->");
+    pub(crate) const INVERTIBLE: Self = Self("<->");
     /// A rule's arrow `==>`, written between two terms of a cell member.
-    pub const REWRITE: Self = Self("==>");
+    pub(crate) const REWRITE: Self = Self("==>");
     /// The invertible rule arrow `<=>`, written between two terms of a cell
     /// member.
-    pub const REVERSIBLE: Self = Self("<=>");
+    pub(crate) const REVERSIBLE: Self = Self("<=>");
     /// The cons `g ∷ p` of a word and of a word's pattern.
-    pub const CONS: Self = Self("∷");
+    pub(crate) const CONS: Self = Self("∷");
     /// The plugging `left |> right`: every output of `left` into the inputs
     /// of `right`, in order.
     pub const PLUG: Self = Self("|>");
     /// The equivalence `A ≃ B` between two types, the tile its ASCII
     /// spelling `<~>` molds too.
-    pub const EQUIVALENCE: Self = Self("≃");
+    pub(crate) const EQUIVALENCE: Self = Self("≃");
     /// The quasi-inverse `A ≅ B` between two types.
-    pub const ISOMORPHISM: Self = Self("≅");
+    pub(crate) const ISOMORPHISM: Self = Self("≅");
     /// The flow `A ⇝ B` between two types, the tile its ASCII spelling `~~>`
     /// molds too.
-    pub const UNIVERSE_FLOW: Self = Self("⇝");
+    pub(crate) const UNIVERSE_FLOW: Self = Self("⇝");
     /// The reserved operation-member keyword `op` of a data block.
-    pub const OP: Self = Self("op");
+    pub(crate) const OP: Self = Self("op");
     /// The reserved operation-member keyword `oper` of a data block, which
     /// also leads a capability scope's operation clause.
-    pub const OPER: Self = Self("oper");
+    pub(crate) const OPER: Self = Self("oper");
     /// The sort keyword `sort` of a theory block and of a manifest sort,
     /// `Model(T) with sort x = A`.
-    pub const SORT: Self = Self("sort");
+    pub(crate) const SORT: Self = Self("sort");
     /// The reserved 2-cell member keyword `rule` of a data block.
-    pub const RULE: Self = Self("rule");
+    pub(crate) const RULE: Self = Self("rule");
     /// The boolean literal `true` written as a pattern's own tile.
-    pub const TRUE: Self = Self("true");
+    pub(crate) const TRUE: Self = Self("true");
     /// The view keyword `with` of a match.
-    pub const WITH: Self = Self("with");
+    pub(crate) const WITH: Self = Self("with");
     /// The session keyword `close`.
-    pub const CLOSE: Self = Self("close");
+    pub(crate) const CLOSE: Self = Self("close");
     /// The session keyword `drop`, which ends an endpoint at `end` as `close`
     /// does.
-    pub const DROP: Self = Self("drop");
+    pub(crate) const DROP: Self = Self("drop");
     /// The closed session type `end`.
-    pub const END: Self = Self("end");
+    pub(crate) const END: Self = Self("end");
     /// The recursive session type's former keyword `mu`, read until the corpus
     /// moves to `rec t => S`.
     pub const MU: Self = Self("mu");
     /// The session keyword `offer`.
-    pub const OFFER: Self = Self("offer");
+    pub(crate) const OFFER: Self = Self("offer");
     /// The receive session type's lead `?`.
-    pub const QUESTION: Self = Self("?");
+    pub(crate) const QUESTION: Self = Self("?");
     /// The session keyword `select`.
-    pub const SELECT: Self = Self("select");
+    pub(crate) const SELECT: Self = Self("select");
     /// The session keyword `send`.
-    pub const SEND: Self = Self("send");
+    pub(crate) const SEND: Self = Self("send");
 
     /// The three tiles that can name a parameter: an identifier, a type
     /// variable and a type identifier, the spellings the parameter list parses.
@@ -832,7 +832,8 @@ impl TileName
     ///   custom grammar labels or all binder positions.
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-    pub const BINDERS: [Self; 3] = [Self::IDENTIFIER, Self::TYPE_VARIABLE, Self::TYPE_IDENTIFIER];
+    pub(crate) const BINDERS: [Self; 3] =
+        [Self::IDENTIFIER, Self::TYPE_VARIABLE, Self::TYPE_IDENTIFIER];
 
     /// The tile's label as a name: the head a built-in form spells, where a
     /// hole it nominates names its function.
