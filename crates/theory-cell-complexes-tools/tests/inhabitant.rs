@@ -120,6 +120,57 @@ fn match_binds_every_metavariable<A>(
     }
 }
 
+/// The law of a match that copies nothing: it decides as the copying match
+/// does, it visits each metavariable of the pattern once with the image that
+/// the copying match binds, and its images put back in place give the target.
+///
+/// # Specification
+/// - requires: the pattern is matchable against the target.
+/// - panics: when the law fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sequent pattern with two categories, a nested toy
+///   pattern and a repeated toy metavariable. A visit of another image, a lost
+///   or a repeated visit, or a lost category breaks the law.
+/// - witness: `tests::inhabitant::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+#[spec(requires: { let mut subst = A::Subst::default(); bool::from(A::match_cmd(pattern, target, &mut subst)) })]
+fn match_copies_nothing<A>(
+    pattern: &A::Cmd,
+    target: &A::Cmd,
+) where
+    A: CellAlphabet,
+{
+    let subst = matched::<A>(pattern, target);
+    let mut visited: Vec<(&A::Var, A::Image<'_>)> = Vec::new();
+    assert!(
+        bool::from(A::match_images(pattern, target, |var, image| {
+            visited.push((var, image));
+        })),
+        "the match that copies nothing decides as the copying match"
+    );
+    let mut named = A::metavariables(pattern);
+    named.sort();
+    named.dedup();
+    let mut seen: Vec<A::Var> = visited.iter().map(|&(var, _)| var.clone()).collect();
+    seen.sort();
+    assert_eq!(
+        named, seen,
+        "each metavariable of the pattern is visited once"
+    );
+    for &(var, image) in &visited {
+        assert_eq!(
+            Maybe::Present(image),
+            A::image(&subst, var),
+            "each visited image is the image that the copying match binds"
+        );
+    }
+    assert_eq!(
+        *target,
+        A::apply_images(pattern, |var| A::image(&subst, var)),
+        "the images put back in place give the target"
+    );
+}
+
 /// The splice law at one position, both ways: splicing back what was read
 /// there is the identity, and reading after a splice returns what was spliced.
 ///
@@ -266,6 +317,29 @@ fn a_successful_match_binds_every_metavariable_the_pattern_names()
         &Toy::add(Toy::var("x"), Toy::var("x")),
         &Toy::add(Toy::var("z"), Toy::var("z")),
     );
+}
+
+#[test]
+fn a_match_that_copies_nothing_reads_the_images_of_the_copying_match()
+{
+    match_copies_nothing::<SequentAlphabet>(&successor_lhs(), &successor_configuration());
+    match_copies_nothing::<ToyAlphabet>(
+        &Toy::add(Toy::var("x"), Toy::succ(Toy::var("y"))),
+        &Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero())),
+    );
+    // A repeated metavariable is visited once.
+    match_copies_nothing::<ToyAlphabet>(
+        &Toy::add(Toy::var("x"), Toy::var("x")),
+        &Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero())),
+    );
+    // A refused match visits nothing.
+    let mut visited: Vec<ToyVar> = Vec::new();
+    assert!(!bool::from(ToyAlphabet::match_images(
+        &Toy::add(Toy::var("x"), Toy::var("x")),
+        &Toy::add(Toy::zero(), Toy::succ(Toy::zero())),
+        |var, _| visited.push(var.clone()),
+    )));
+    assert!(visited.is_empty());
 }
 
 #[test]

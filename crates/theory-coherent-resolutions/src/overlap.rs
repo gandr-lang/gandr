@@ -699,6 +699,41 @@ impl<A: CellAlphabet> Overlap<A>
         &self.right_renamed
     }
 
+    /// This overlap at another peak: its cells, kind, unifier, seam and
+    /// renamed right cell are copied, and `peak` is moved in.
+    ///
+    /// # Specification
+    /// - ensures: an overlap whose peak is `peak`, and whose every other part
+    ///   equals this one's.
+    /// - panics: none.
+    /// - intension: no copy of the old peak.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fused certificate given another peak and its own. A
+    ///   lost or a defaulted part changes the comparison with a copy.
+    /// - witness: `tracelet::tests::a_certificate_with_other_ends_keeps_every_other_part`
+    #[inline]
+    #[must_use]
+    #[spec(captures: expected = peak.clone(), ensures: |output| output.peak == expected
+        && output.left == self.left && output.right == self.right && output.kind == self.kind
+        && output.unifier == self.unifier && output.seam == self.seam
+        && output.right_renamed == self.right_renamed)]
+    pub fn with_peak(
+        &self,
+        peak: A::Cmd,
+    ) -> Self
+    {
+        Self {
+            left: self.left,
+            right: self.right,
+            kind: self.kind,
+            unifier: self.unifier.clone(),
+            seam: self.seam.clone(),
+            peak,
+            right_renamed: self.right_renamed.clone(),
+        }
+    }
+
     /// The composite of a composition: the left cell fired at the root, then
     /// the right cell at the seam — the fused cell's right-hand side.
     ///

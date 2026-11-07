@@ -47,6 +47,7 @@ use gandr_theory_deep_inference::FoldFault;
 use gandr_theory_deep_inference::Folded;
 use gandr_theory_deep_inference::GuardId;
 use gandr_theory_deep_inference::GuardedTemplate;
+use gandr_theory_deep_inference::Identity;
 use gandr_theory_deep_inference::InheritanceCache;
 use gandr_theory_deep_inference::InheritanceVerdict;
 use gandr_theory_deep_inference::LegStepIndex;
@@ -61,6 +62,7 @@ use gandr_theory_deep_inference::TemplateRow;
 use gandr_theory_deep_inference::anti_unify_tracelets;
 use gandr_theory_deep_inference::flows_equal;
 use gandr_theory_deep_inference::tracelet_flow;
+use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::PartIndex;
 use gandr_theory_discrete_morse::Reduction as _;
@@ -2090,7 +2092,7 @@ fn a_family_of_families_reduces_in_two_steps()
     let mut both = sum_of(&templates, &views).then(fold);
     assert_eq!(both.replay(), Ok(()));
     // A member collapses onto its row with its template's row, and includes
-    // back as itself.
+    // back as its instance: its own peak and join, equal to it in place.
     let cell = Summand::new(PartIndex::from(5_usize), MemberIndex::from(3_usize));
     let generator = both.generator(&cell).expect("a member of family 5");
     let collapsed = both
@@ -2104,7 +2106,36 @@ fn a_family_of_families_reduces_in_two_steps()
         Ok(inner.clone()),
         templates[5].row(&families[5][3].overlap.peak)
     );
-    assert_eq!(both.include(&collapsed), Ok(generator));
+    let included = both
+        .include(&collapsed)
+        .expect("the inclusion in two steps");
+    let Folded::Instance { ref peak, ref join } = *included.value()
+    else {
+        panic!("an instance of the row, not {included:?}");
+    };
+    assert_eq!(
+        (&families[5][3].overlap.peak, &families[5][3].joins_at),
+        (peak, join)
+    );
+    assert_eq!(
+        Ok(Closure::Closes),
+        both.closes(
+            &Summand::new(PartIndex::from(5_usize), Identity),
+            &generator,
+            &included
+        )
+    );
+    let mut moved = families[5][3].clone();
+    moved.path_b.clear();
+    assert_eq!(
+        Ok(Closure::Open),
+        both.closes(
+            &Summand::new(PartIndex::from(5_usize), Identity),
+            &Summand::new(PartIndex::from(5_usize), Folded::Member(&moved)),
+            &included
+        ),
+        "a certificate with the instance's ends and another skeleton is not the instance"
+    );
 }
 
 #[test]

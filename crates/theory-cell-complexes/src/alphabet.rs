@@ -20,7 +20,11 @@
 //!   anti-unification ([`CellAlphabet::anti_unify_cmd`], folding a family of
 //!   instances into one pattern), all over the deterministic
 //!   [`CellAlphabet::Subst`] carrier, which [`CellAlphabet::restrict_subst`]
-//!   cuts down to chosen metavariables;
+//!   cuts down to chosen metavariables. A matched subterm and a bound image are
+//!   also read in place, as [`CellAlphabet::Image`]: a match that copies no
+//!   subterm ([`CellAlphabet::match_images`]), the image a substitution holds
+//!   ([`CellAlphabet::image`]) and a substitution read in place
+//!   ([`CellAlphabet::apply_images`]);
 //! - the cell vocabulary — orientation and provenance tags, the derived
 //!   per-cell metadata [`CellAlphabet::Meta`], the firing discipline
 //!   ([`CellAlphabet::may_fire`]), and the provenance-to-certificate reading
@@ -46,13 +50,13 @@
 //!
 //! # Cell alphabet
 //!
-//! `CellAlphabet` is one deep trait of 24 methods rather than a set of small
+//! `CellAlphabet` is one deep trait of 30 methods rather than a set of small
 //! ones: an alphabet fixes its pattern grammar (term, metavariable, hole,
 //! position, navigation, splicing, size, order, renaming, skolemization), its
-//! ordered substitution with matching, unification, anti-unification and
-//! restriction, and its cell vocabulary (orientation and provenance tags,
-//! derived metadata, hole flow, firing permission). An engine is written
-//! against the trait and never against the sequent language.
+//! ordered substitution with matching, unification, anti-unification,
+//! restriction and the reads in place, and its cell vocabulary (orientation
+//! and provenance tags, derived metadata, hole flow, firing permission). An
+//! engine is written against the trait and never against the sequent language.
 //!
 //! Reading a subterm at a position returns `Maybe<Cmd,
 //! command_subterm::Absent>`, naming an off-term position apart from one that
@@ -87,7 +91,7 @@
 //! position is the root, cannot do. It lives in
 //! `gandr-theory-cell-complexes-tools`, a test-only crate that every engine
 //! suite reaches through `[dev-dependencies]`, rather than in this crate's
-//! integration target: one implementation of a 21-method trait is shared, not
+//! integration target: one implementation of a 30-method trait is shared, not
 //! copied. The law suite lives there too, so this crate keeps no dev-dependency
 //! on a crate built over it, and the dependency graph stays acyclic in every
 //! edge kind.
@@ -109,6 +113,7 @@ use crate::boundary::PatternSize;
 use crate::boundary::PositionStep;
 use crate::boundary::SubstitutionDecision;
 use crate::cell::CellStore;
+use crate::subst::binding;
 
 /// The flow role a metavariable hole contributes across a composed seam: the
 /// alphabet-neutral dinaturality vocabulary the directed composition gate
@@ -382,6 +387,12 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     type Pos: Clone + Eq + core::hash::Hash + core::fmt::Debug;
     /// The ordered substitution map, deterministic in its iteration.
     type Subst: Clone + Default + Eq + core::hash::Hash + core::fmt::Debug;
+    /// A subterm read in place: the image that a substitution holds for a
+    /// metavariable, or the subterm of a matched term that a metavariable
+    /// stands for. Equality and hashing are structural, as for
+    /// [`CellAlphabet::Cmd`]: an image read from a term equals the image that
+    /// a substitution holds for the same subterm, and hashes the same.
+    type Image<'term>: Copy + Eq + core::hash::Hash + core::fmt::Debug;
     /// How a cell's orientation was fixed.
     type Orientation: Copy + Eq + core::hash::Hash + core::fmt::Debug;
     /// Where a cell came from.
@@ -553,6 +564,90 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
         subst: &Self::Subst,
         vars: &[Self::Var],
     ) -> Self::Subst;
+
+    /// The image that `subst` holds for `var`, read in place.
+    ///
+    /// # Specification
+    /// - ensures: the image that `subst` binds `var` to, borrowed from `subst`.
+    /// - provides: [`binding::Absent::Unbound`] when `subst` leaves `var`
+    ///   unbound.
+    /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: one lookup by key, and no copy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sequent substitution with a producer and a consumer
+    ///   binding is read at both metavariables and at an unbound one. A lost
+    ///   category or an image of another metavariable changes the read.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    fn image<'subst>(
+        subst: &'subst Self::Subst,
+        var: &Self::Var,
+    ) -> Maybe<Self::Image<'subst>, binding::Absent>;
+
+    /// One-sided matching that copies no subterm: whether `pattern`
+    /// instantiates to `target`, with each metavariable of `pattern` and the
+    /// subterm of `target` that it stands for, read in place.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when [`CellAlphabet::match_cmd`] from an
+    ///   empty substitution is positive. Then `visit` receives each
+    ///   metavariable of `pattern` once, with the image that the match binds it
+    ///   to.
+    /// - fails: a negative decision, and `visit` is not called.
+    /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: linear in `pattern` and `target`, and no image is copied.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sequent pattern with a producer and a consumer
+    ///   metavariable is matched against a ground target, and a clash is
+    ///   matched too. The visited images equal the images of the copying match,
+    ///   and a refused match visits nothing.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    fn match_images<'pattern, 'target, F>(
+        pattern: &'pattern Self::Cmd,
+        target: &'target Self::Cmd,
+        visit: F,
+    ) -> SubstitutionDecision
+    where
+        Self::Var: 'pattern,
+        F: FnMut(&'pattern Self::Var, Self::Image<'target>);
+
+    /// `cmd` with a copy of an image in place of each metavariable that
+    /// `image_of` gives an image for: a substitution read in place.
+    ///
+    /// # Specification
+    /// - ensures: each metavariable that `image_of` maps is replaced by a copy
+    ///   of its image, and no image is visited again; every other metavariable
+    ///   stays. Where no image mentions a metavariable that `image_of` maps,
+    ///   the result is [`CellAlphabet::apply_subst`] of the substitution that
+    ///   binds those images.
+    /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: one walk of `cmd` and one copy of each image that it puts in
+    ///   place.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the images of a sequent match are put back in place
+    ///   of the pattern's metavariables, all of them and one alone. A skipped
+    ///   image or a lost category changes the term.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    fn apply_images<'image, F>(
+        cmd: &Self::Cmd,
+        image_of: F,
+    ) -> Self::Cmd
+    where
+        F: Fn(&Self::Var) -> Maybe<Self::Image<'image>, binding::Absent>;
 
     /// The term's metavariables, left to right with repeats, so linearity is
     /// judged by counting occurrences.
@@ -1093,6 +1188,55 @@ mod tests
         let one = cut(ProdPat::ctor("One", []), ConsPat::top());
         assert!(!bool::from(A::match_cmd(&zero, &one, &mut Subst::new())));
         assert!(!bool::from(A::unify_cmd(&zero, &one, &mut Subst::new())));
+
+        // The match that copies nothing reads the images of the copying match,
+        // each at its own category, and they put back in place give the target.
+        let mut visited = Vec::new();
+        assert!(bool::from(A::match_images(
+            &pattern,
+            &target,
+            |var, image| {
+                visited.push((var.clone(), image));
+            }
+        )));
+        assert_eq!(
+            vars.iter()
+                .map(|var| (var.clone(), A::image(&subst, var)))
+                .collect::<Vec<_>>(),
+            visited
+                .iter()
+                .map(|&(ref var, image)| (var.clone(), Maybe::Present(image)))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            Maybe::Absent(binding::Absent::Unbound),
+            A::image(&subst, &MetaVar::consumer("x"))
+        );
+        assert_eq!(
+            Maybe::Absent(binding::Absent::Unbound),
+            A::image(&subst, &MetaVar::producer("absent"))
+        );
+        assert_eq!(
+            target,
+            A::apply_images(&pattern, |var| A::image(&subst, var))
+        );
+        assert_eq!(
+            cut(
+                ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])]),
+                ConsPat::meta("alpha")
+            ),
+            A::apply_images(&pattern, |var| if *var == vars[0] {
+                A::image(&subst, var)
+            }
+            else {
+                Maybe::Absent(binding::Absent::Unbound)
+            })
+        );
+        let mut refused: Vec<MetaVar> = Vec::new();
+        assert!(!bool::from(A::match_images(&zero, &one, |var, _| {
+            refused.push(var.clone());
+        })));
+        assert!(refused.is_empty(), "a refused match visits nothing");
 
         assert_eq!(
             Maybe::Absent(anti_unification::Absent::EmptyFamily),

@@ -75,6 +75,7 @@ use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
+use gandr_theory_cell_complexes::binding;
 use gandr_theory_cell_complexes::command_subterm;
 use quenchant_shape::shape::Maybe;
 
@@ -84,6 +85,7 @@ use crate::toy::ToyMeta;
 use crate::toy::ToyOrient;
 use crate::toy::ToyPos;
 use crate::toy::ToyProv;
+use crate::toy::ToyRef;
 use crate::toy::ToySubst;
 use crate::toy::ToyVar;
 use crate::toy::anti_unify_toys;
@@ -480,6 +482,7 @@ where
 {
     type Cmd = Toy;
     type Hole = ToyVar;
+    type Image<'term> = ToyRef<'term>;
     type Meta = ToyMeta;
     type Orientation = LyingOrient<L>;
     type Pos = ToyPos;
@@ -571,6 +574,51 @@ where
     ) -> Self::Subst
     {
         ToyAlphabet::restrict_subst(subst, vars)
+    }
+
+    /// The toy alphabet's image read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn image<'subst>(
+        subst: &'subst Self::Subst,
+        var: &Self::Var,
+    ) -> Maybe<Self::Image<'subst>, binding::Absent>
+    {
+        ToyAlphabet::image(subst, var)
+    }
+
+    /// The toy alphabet's matching that copies no subterm.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn match_images<'pattern, 'target, F>(
+        pattern: &'pattern Self::Cmd,
+        target: &'target Self::Cmd,
+        visit: F,
+    ) -> SubstitutionDecision
+    where
+        Self::Var: 'pattern,
+        F: FnMut(&'pattern Self::Var, Self::Image<'target>),
+    {
+        ToyAlphabet::match_images(pattern, target, visit)
+    }
+
+    /// The toy alphabet's substitution read in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn apply_images<'image, F>(
+        cmd: &Self::Cmd,
+        image_of: F,
+    ) -> Self::Cmd
+    where
+        F: Fn(&Self::Var) -> Maybe<Self::Image<'image>, binding::Absent>,
+    {
+        ToyAlphabet::apply_images(cmd, image_of)
     }
 
     /// The toy alphabet's metavariables.
