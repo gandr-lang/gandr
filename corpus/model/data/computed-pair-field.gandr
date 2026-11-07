@@ -44,8 +44,7 @@ def nestedTwin(k : Count) -> twinType(Z) =
   MkTwin Z (MkTwin Z *{})
 
 /// The same pair, written as a signature and a definition.
-def signedTwin : twinType(Z);
-def signedTwin = MkTwin Z (MkTwin Z *{});
+def signedTwin : twinType(Z) = MkTwin Z (MkTwin Z *{});
 
 /// The inner pair at its written type.
 def ascribedTwin(k : Count) -> twinType(Z) =
@@ -56,9 +55,9 @@ def oneTwin(k : Count) -> oneType(Z) =
   MkTwin Z *{}
 
 /// A value of each type.
-data Both(a : Type, b : Type) : Type where
+data Layer(a : Type, b : Type) : Type where
   /// The two values.
-  | MkBoth : (x : a, y : b) --> Both a b
+  | MkLayer : (x : a, y : b) --> Layer a b
 
 /// A spine of steps.
 data Spine : Type where
@@ -68,15 +67,13 @@ data Spine : Type where
   | More : (rest : Spine) --> Spine
 
 /// One string for each step of a spine.
-def rec spineType(spine : Spine) -> -F Type =
+def rec spineType(spine : Spine) -> Type =
   match spine where
-    | More(rest) => return (Both String (spineType[<] rest))
+    | More(rest) => return (Layer String (spineType[<] rest))
     | Done => return Unit
 
 /// A value two steps deep.
-def spineTwo : spineType(More (More Done));
-def spineTwo = MkBoth "x" (MkBoth "y" *{});
+def spineTwo : spineType(More (More Done)) = MkLayer "x" (MkLayer "y" *{});
 
 /// A value three steps deep.
-def spineThree : spineType(More (More (More Done)));
-def spineThree = MkBoth "x" (MkBoth "y" (MkBoth "z" *{}));
+def spineThree : spineType(More (More (More Done))) = MkLayer "x" (MkLayer "y" (MkLayer "z" *{}));
