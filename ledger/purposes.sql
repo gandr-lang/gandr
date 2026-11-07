@@ -2813,8 +2813,6 @@ INSERT INTO purpose VALUES('surface-lowering','module::functor::Stratum','enum',
 INSERT INTO purpose VALUES('surface-lowering','module::layered::Listed','struct','Holds a module''s declarations as a reader sees them, the closure''s then the module''s own, so they are read in order or found by key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::layered::ListedIter','struct','Walks a listed module''s declarations in order from either end, so a reader iterates them without joining the two parts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model::FamilyIndex','struct','Names the index of a model''s family, so the family''s index is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering','module::model::ModelIndex','struct','Names the index of a model, so the model''s index is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering','module::model::ParameterList','struct','Holds a model''s parameter list, so the parameters'' sorts are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model_type::Absent','enum','Names why a model''s type is absent, so the type''s absence is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::plicity::TelescopePosition','struct','Names a telescope''s position, so the position''s sort is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::sealing::ComponentPlace','struct','Names a component''s place, so the place''s sort is read.',NULL,'fits','sound',NULL);
