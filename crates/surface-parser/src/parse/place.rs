@@ -62,6 +62,18 @@
 //! that makes the rest of the run declarations with no repair is the parse.
 //! The keyword is minted at the head of that form as an empty prefix grout and
 //! owed alone. The search above then runs over that parse.
+//!
+//! A declaration whose `(` or `[` is left out holds one closer more than it
+//! opens. In `def f(j : Stack -F Unit) (-F Unit)) -> Unit`, the first `)`
+//! ends the parameter list, and the melder reads the rest of the declaration
+//! wrongly. No closer and no separator mends such a declaration. Each
+//! declaration that holds a repair is read from its first top-level form
+//! through the forms after it that open no declaration. Its first closer that
+//! no opener before it balances takes its opener at the start of each token
+//! before it, nearest first. The first copy that molds with no repair as
+//! declarations alone gives the parse, with the opener minted there as an
+//! empty prefix grout and owed alone. That parse is kept only where it owes
+//! fewer obligations than the melder's reading and than the search above.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -98,7 +110,11 @@ use crate::TokenIndex;
 use crate::TokenRun;
 use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
+use crate::label::Bracket;
+use crate::label::Lexeme;
+use crate::label::SourceBytes;
 use crate::label::Token;
+use crate::label::bracket;
 use crate::label::cut_in;
 use crate::label::label;
 use crate::meld::BOUNDARY_SORT;
@@ -162,6 +178,27 @@ primitive_copy_wrapper!(
     /// Whether every top-level form a copy reads is a declaration.
     struct Declared(bool);
 );
+primitive_copy_wrapper!(
+    /// The obligations an opener's parse must owe fewer than to win.
+    struct Owed(usize);
+);
+primitive_copy_wrapper!(
+    /// How many parentheses, or how many brackets, stand open.
+    struct Depth(usize);
+);
+
+/// The parentheses and the brackets that stand open after a run of tokens.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Open
+{
+    /// The open parentheses.
+    parens: Depth,
+    /// The open brackets.
+    brackets: Depth,
+}
 
 /// A repair the search places: a form the melder closed, the tiles it may
 /// take next, and where its last written tile ends.
@@ -328,7 +365,11 @@ impl Target
 ///   leaves as a top-level tile before its top-level form ([`keyword`]). A
 ///   target the first search tried is not copied again without that keyword,
 ///   and a later bracket's form without one is copied alone. This search keeps
-///   a copy only where its parse owes fewer obligations than `parsed`.
+///   a copy only where its parse owes fewer obligations than `parsed`. Last, an
+///   opener left out of a declaration that holds a closer too many is placed
+///   over the parse [`headed`] gives ([`opened`]). Its parse is kept only where
+///   it owes fewer obligations than the melder's reading and than the parse of
+///   the searches before it.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -346,13 +387,15 @@ impl Target
 ///   the layout's separator before the next declaration ends, after its result
 ///   type; a type's `)` left out of a declaration that the melder breaks apart,
 ///   before its `=`, and the inner `)` of a result type that the outer bracket
-///   takes at no place; and a definition's last `;` left out at the end of the
-///   source is never minted inside its body.
+///   takes at no place; a definition's last `;` left out at the end of the
+///   source is never minted inside its body; and a `(` left out before a
+///   juxtaposed operand is minted where its declaration parses.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
 /// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 pub(super) fn placed<'source>(
     pbg: &Pbg,
@@ -360,10 +403,16 @@ pub(super) fn placed<'source>(
 ) -> ParseResult<'source>
 {
     let parsed = headed(pbg, &parsed).unwrap_or(parsed);
-    earlier(pbg, &parsed, Pass::First)
+    let searched = earlier(pbg, &parsed, Pass::First)
         .or_else(|| super::gap::gapped(pbg, &parsed))
-        .or_else(|| earlier(pbg, &parsed, Pass::Last))
-        .unwrap_or(parsed)
+        .or_else(|| earlier(pbg, &parsed, Pass::Last));
+    // An opener left out wins only where it owes fewer obligations than the
+    // melder's reading and than the search that places a closer or a
+    // separator.
+    let bound = Owed::from(searched.as_ref().map_or(parsed.obligations.len(), |found| {
+        found.obligations.len().min(parsed.obligations.len())
+    }));
+    opened(pbg, &parsed, bound).or(searched).unwrap_or(parsed)
 }
 
 /// `parsed` with a placeable repair placed, if a place parses, over the targets
@@ -660,6 +709,252 @@ fn heads(
         .into_iter()
         .map(|(_mold, keyword)| keyword)
         .collect()
+}
+
+/// `parsed` with a `(` or a `[` the source left out minted where its
+/// declaration parses.
+///
+/// A declaration that lost an opener holds one closer more than it opens, and
+/// the melder reads the forms around that closer wrongly. In
+/// `def f(j : Stack -F Unit) (-F Unit)) -> Unit`, the first `)` ends the
+/// parameter list, and the rest of the declaration falls apart. No closer and
+/// no separator mends a form that holds a closer too many. Each declaration
+/// that holds a repair is read from its first top-level form through the forms
+/// after it that open no declaration. The first closer in it that no opener
+/// before it in the source balances takes its opener at the start of each
+/// token before it, nearest first, at most [`PLACES`] times. A broken parse
+/// can start a declaration inside an open bracket, so the count runs from the
+/// source's start. The first [`BRACKETS`] declarations that
+/// hold a repair are read in source order. The search keeps a copy only where
+/// its parse owes fewer obligations than `bound`: an opener at the nearest
+/// place that parses need not be its author's, and the melder's reading names
+/// the closer with no opener. A copy that parses owes its opener, so a `bound`
+/// below two leaves nothing to search.
+///
+/// # Specification
+/// - requires: `parsed` is a parse under `pbg`.
+/// - ensures: the first such copy that molds with no repair as declarations
+///   alone, its written opener one tile, is the parse when it owes fewer
+///   obligations than `bound`: the source's tree read from the whole copy, the
+///   opener an empty prefix grout of its tile's sort at its place, with one
+///   [`Oblig::MissingTile`] of no bytes there beside the copy's other
+///   obligations, shifted back over the opener; `None` where no declaration
+///   holds such a closer, no copy tried parses or the parse owes no fewer.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `(` left out before a juxtaposed operand, of a
+///   parameter's type or of a definition's body, is minted where its
+///   declaration parses, and a declaration whose brackets balance is not read
+///   here.
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+fn opened<'source>(
+    pbg: &Pbg,
+    parsed: &ParseResult<'source>,
+    bound: Owed,
+) -> Option<ParseResult<'source>>
+{
+    // A copy that parses owes its opener, so a bound below two leaves nothing
+    // to win.
+    if usize::from(bound) < 2 {
+        return None;
+    }
+    let tree = &parsed.tree;
+    // Each top-level form, with whether it opens a declaration, in source
+    // order. A broken declaration can leave a form inside another's span.
+    let mut forms: Vec<(ByteSpan, bool)> = tree
+        .children(tree.root())
+        .filter_map(|position| {
+            let node = tree.node(position)?;
+            match node.label() {
+                NodeLabel::Space | NodeLabel::Doc => None,
+                NodeLabel::Wald
+                | NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. } => Some((
+                    node.span(),
+                    first_tile(tree, position)
+                        .is_some_and(|(mold, _)| bool::from(declaration_head(pbg, mold))),
+                )),
+            }
+        })
+        .collect();
+    forms.sort_unstable_by_key(|&(span, _)| (span.start(), span.end()));
+    let mut runs: Vec<(ByteOffset, ByteOffset)> = Vec::new();
+    for (span, opens) in forms {
+        match runs.last_mut() {
+            Some(run) if !opens => run.1 = run.1.max(span.end()),
+            Some(_) | None => runs.push((span.start(), span.end())),
+        }
+    }
+    runs.into_iter()
+        .filter(|&(start, end)| {
+            parsed
+                .obligations
+                .iter()
+                .any(|obligation| start <= obligation.span.start() && obligation.span.end() <= end)
+        })
+        .take(BRACKETS)
+        .find_map(|(start, end)| {
+            reopened(pbg, tree.source(), ByteSpan::new(start, end).ok()?)
+                .filter(|placed| placed.obligations.len() < usize::from(bound))
+        })
+}
+
+/// The parse of `source` with the opener of the first closer in `run` that no
+/// opener before it in `source` balances minted where `run` parses.
+///
+/// # Specification
+/// - requires: `run` is a declaration's span of `source` as [`opened`] reads
+///   it.
+/// - ensures: as [`opened`] for `run`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`opened`].
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+fn reopened<'source>(
+    pbg: &Pbg,
+    source: SourceText<'source>,
+    run: ByteSpan,
+) -> Option<ParseResult<'source>>
+{
+    let text = <&str>::from(source);
+    let form = text.get(usize::from(run.start()) .. usize::from(run.end()))?;
+    let tokens = label(SourceFragment::from(form));
+    // A closer that no opener of its declaration balances is one too many only
+    // where the source before the declaration leaves none of its class open.
+    // That source is read only when the declaration holds such a closer.
+    let Err(local) = balance(SourceFragment::from(form), &tokens, Open::default())
+    else {
+        return None;
+    };
+    let before = SourceFragment::from(text.get(.. usize::from(run.start()))?);
+    let open = balance(before, &label(before), Open::default()).ok()?;
+    let (closer, class) = if open == Open::default() {
+        local
+    }
+    else {
+        balance(SourceFragment::from(form), &tokens, open).err()?
+    };
+    let opener = SourceText::from(match class {
+        ClosingClass::Paren => "(",
+        ClosingClass::Bracket => "[",
+        ClosingClass::Brace => return None,
+    });
+    let width = <&str>::from(opener).len();
+    let mut shared = Shared::new(pbg, SourceText::from(form));
+    let (place, sort) = tokens
+        .get(.. usize::from(closer))
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .filter(|token| token.lexeme != Lexeme::Space)
+        .filter_map(|token| usize::try_from(token.start).ok())
+        .take(PLACES)
+        .find_map(|at| {
+            let place = ByteOffset::from(usize::from(run.start()).checked_add(at)?);
+            let copy = written(source, run, place, opener, SourceText::from(""))?;
+            let copied = shared.copy(SourceText::from(copy.as_str()))?;
+            let end = ByteOffset::from(at.checked_add(width)?);
+            let mold = copied
+                .positions()
+                .filter_map(|position| copied.node(position))
+                .find_map(|node| match node.label() {
+                    NodeLabel::Tile(mold)
+                        if node.span().start() == ByteOffset::from(at)
+                            && node.span().end() == end =>
+                    {
+                        Some(mold)
+                    },
+                    NodeLabel::Wald
+                    | NodeLabel::Meld(_)
+                    | NodeLabel::Tile(_)
+                    | NodeLabel::Grout { .. }
+                    | NodeLabel::GhostClose { .. }
+                    | NodeLabel::Space
+                    | NodeLabel::Doc => None,
+                })?;
+            bool::from(declared(pbg, &copied))
+                .then(|| {
+                    pbg.mold(mold)
+                        .ok()
+                        .map(|def| (place, def.sort.grout_sort()))
+                })
+                .flatten()
+        })?;
+    let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
+    let copy = written(source, whole, place, opener, SourceText::from(""))?;
+    let splice = Splice::new(place, opener, NodeLabel::Grout {
+        sort,
+        shape: GroutShape::Prefix,
+    })?;
+    spliced(
+        molded(pbg, SourceText::from(copy.as_str())),
+        source,
+        &[splice],
+        [ObligationInstance::new(
+            Oblig::MissingTile,
+            ByteSpan::new(place, place).ok()?,
+        )],
+    )
+}
+
+/// The parentheses and brackets that `tokens` of `text` leave open, counted
+/// from `open`, or the index and class of the first token that closes one of
+/// none.
+///
+/// [`bracket`] tells whether a token opens or closes, so a compound opener
+/// such as `@[` or `type(` counts, and a bracket inside a string does not.
+///
+/// # Specification
+/// - requires: `tokens` are the labels of `text`.
+/// - ensures: `Ok` holds the open parentheses and brackets after the last
+///   token; `Err` holds the first closer that finds none of its class open. A
+///   token's spelling ends in its class. A brace and a layout block are the
+///   layout's to place, so they count as no bracket.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the count.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`opened`].
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+fn balance(
+    text: SourceFragment<'_>,
+    tokens: &[Token],
+    open: Open,
+) -> Result<Open, (TokenIndex, ClosingClass)>
+{
+    let text: &str = text.as_ref();
+    let bytes = SourceBytes::from(text.as_bytes());
+    let mut open = open;
+    for (at, &token) in tokens.iter().enumerate() {
+        let spelled = usize::try_from(token.start)
+            .ok()
+            .zip(usize::try_from(token.end).ok())
+            .and_then(|(start, end)| text.as_bytes().get(start .. end))
+            .unwrap_or_default();
+        let (depth, class) = match spelled.last().copied() {
+            Some(b'(' | b')') => (&mut open.parens, ClosingClass::Paren),
+            Some(b'[' | b']') => (&mut open.brackets, ClosingClass::Bracket),
+            Some(_) | None => continue,
+        };
+        match bracket(token, bytes) {
+            Bracket::Open => *depth = Depth::from(usize::from(*depth).saturating_add(1)),
+            Bracket::Close => match usize::from(*depth).checked_sub(1) {
+                Some(shallower) => *depth = Depth::from(shallower),
+                None => return Err((TokenIndex::from(at), class)),
+            },
+            Bracket::Neither => {},
+        }
+    }
+    Ok(open)
 }
 
 /// A top-level form's own molding, which every copy of it the search tries
@@ -1878,6 +2173,71 @@ mod tests
              reading: {:?}",
             parsed.obligations()
         );
+    }
+
+    /// #6028: a `(` left out before a juxtaposed operand leaves its
+    /// declaration a `)` too many, and the melder reads the forms around that
+    /// `)` wrongly. The `(` is minted at the nearest token start before the
+    /// `)` where the declaration parses, and it is owed alone.
+    #[test]
+    fn an_opener_left_out_is_minted_where_its_declaration_parses_6028()
+    {
+        let pbg = built_in().unwrap();
+        let parameter = include_str!(
+            "place/unformatted/an-opener-left-out-is-minted-where-its-declaration-parses-6028-parameter.gandr"
+        );
+        let body = include_str!(
+            "place/unformatted/an-opener-left-out-is-minted-where-its-declaration-parses-6028-body.gandr"
+        );
+        for (source, at, why) in [
+            (
+                parameter,
+                parameter.find("-F").unwrap_or(0_usize),
+                "the `(` of a parameter type's first juxtaposed operand is minted before that \
+                 operand, where its author wrote it",
+            ),
+            (
+                body,
+                body.find("Done 0 :")
+                    .map_or(0_usize, |done| done.saturating_add(7_usize)),
+                "the `(` of a body goes to the nearest place before the `)` too many where the \
+                 definition parses",
+            ),
+        ] {
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "{why}: the tree reconstructs the source"
+            );
+            assert!(
+                matches!(
+                    parsed.obligations(),
+                    [repair] if repair.class == Oblig::MissingTile
+                        && usize::from(repair.span.start()) == at
+                        && usize::from(repair.span.end()) == at
+                ),
+                "{why}: one repair stands, at the opener: {:?}",
+                parsed.obligations()
+            );
+            let minted: Vec<ByteOffset> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Prefix,
+                        ..
+                    }) && node.span().start() == node.span().end()
+                })
+                .map(|node| node.span().start())
+                .collect();
+            assert_eq!(
+                minted,
+                [ByteOffset::from(at)],
+                "{why}: the opener is minted, empty, at its place"
+            );
+        }
     }
 
     /// #5199: a misspelled keyword before a definition is a stray word, and

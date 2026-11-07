@@ -1,0 +1,5 @@
+def raising : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right (Left Get)) (fun (a) {
+  (Op (Left (Raise a)) (fun (_r) {
+    Done 0 : Prog (Either ExnOp (Either StateOp Void)) Integer)
+  }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
+});
