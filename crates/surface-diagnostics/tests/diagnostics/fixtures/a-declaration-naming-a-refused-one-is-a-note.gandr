@@ -7,9 +7,9 @@ def b() -> Integer {
 }
 
 def c() -> Integer {
-  return 1
+  1
 }
 
 def d() -> Integer {
-  return c ()
+  c ()
 }

@@ -1,9 +1,9 @@
 data Vinf : Type[+, 1] where {
-  | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
+  | Sup : (a : Type, f : a -> Vinf) --> Vinf
 }
 
-def members(v : Vinf) -> -F Type {
+def members(v : Vinf) -> Type {
   match v {
-    | Sup(a, f) => return a
+    | Sup(a, f) => a
   }
 }

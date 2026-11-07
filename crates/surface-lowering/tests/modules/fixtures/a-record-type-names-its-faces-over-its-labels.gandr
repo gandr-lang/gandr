@@ -3,5 +3,4 @@ type Config = *{host : String, port : Integer, tls : Bool} where {
   face addr = { host, port };
   face none = {};
 }
-def local : Config;
-def local = *{.host = "h", .port = 1, .tls = true};
+def local : Config = *{.host = "h", .port = 1, .tls = true};

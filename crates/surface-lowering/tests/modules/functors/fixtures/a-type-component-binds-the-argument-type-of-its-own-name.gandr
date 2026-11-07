@@ -1,7 +1,7 @@
-module Two :> *{ type U, type T, seed : T, next : +U[ω] (T -> -F T) } where {
+module Two :> *{ type U, type T, seed : T, next : T -> T } where {
   type U = String;
   type T = Integer;
   def seed = 0;
-  def next = thunk { fun (n) { return n } };
+  def next = thunk { fun (n) { n } };
 }
 module A = MkCounter(Two);

@@ -1,7 +1,7 @@
 pub data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-pub def rec plus(n : Nat, m : Nat) -> -F Nat =
+pub def rec plus(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)

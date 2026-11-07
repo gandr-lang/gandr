@@ -1,5 +1,5 @@
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-def wound(p : Path[.A = Circle](Base, Base)) -> -F Circle =
-  return Base
+def wound(p : Path[.A = Circle](Base, Base)) -> Circle =
+  Base

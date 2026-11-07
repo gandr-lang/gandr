@@ -8,16 +8,16 @@ theory ResetCounter where { include Counter; oper reset : (c : C) --> C; }
 module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
+  def incr(c : Integer) -> Integer { c + 1 }
+  def read(c : Integer) -> Integer { c }
 }
 module Flips : Model(ResetCounter) where {
   type C = Bool;
   def zero = false;
-  def incr(c : Bool) -> -F Bool { match c { | true => false | false => true } }
-  def read(c : Bool) -> -F Integer { match c { | true => 1 | false => 0 } }
-  def reset(c : Bool) -> -F Bool { false }
+  def incr(c : Bool) -> Bool { match c { | true => false | false => true } }
+  def read(c : Bool) -> Integer { match c { | true => 1 | false => 0 } }
+  def reset(c : Bool) -> Bool { false }
 }
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }
-def counted() -> -F Integer { stepped 4 }
-def flipped() -> -F Integer { stepped (false : Bool) }
+def stepped[s : Model Counter](c : s.C) -> Integer { s.read (s.incr c) }
+def counted() -> Integer { stepped 4 }
+def flipped() -> Integer { stepped (false : Bool) }

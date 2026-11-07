@@ -1,7 +1,5 @@
-def bad : Integer;
-def bad = "text";
-def uses : Integer;
-def uses = bad;
+def bad : Integer = "text";
+def uses : Integer = bad;
 def later : Integer;
 def lost = missing;
 def answer = 42;

@@ -1,4 +1,4 @@
-def swap(p : *{Integer, Integer}) -> -F *{Integer, Integer} {
-  match p { | *{m, w} => return *{w, m} }
+def swap(p : Integer * Integer) -> Integer * Integer {
+  match p { | *{m, w} => *{w, m} }
 }
-def whole(p : *{Integer, Integer}) -> -F *{Integer, Integer} { match p { | q => return q } }
+def whole(p : Integer * Integer) -> Integer * Integer { match p { | q => q } }

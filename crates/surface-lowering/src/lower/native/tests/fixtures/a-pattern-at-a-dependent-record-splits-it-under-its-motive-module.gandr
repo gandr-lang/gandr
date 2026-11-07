@@ -1,12 +1,12 @@
-def eta(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = *{
+def eta(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path[.A = *{
   n : Integer,
   v : Path[.A = Integer](n, n)
-}](p, p) { match p { | *{m, w} => return Path.here (*{m, w}) } }
-def rebuilt(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F *{
+}](p, p) { match p { | *{m, w} => Path.here (*{m, w}) } }
+def rebuilt(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> *{
   n : Integer,
   v : Path[.A = Integer](n, n)
-} { match p { | *{.v = w, .n = m} => return *{m, w} } }
-def last(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F Path[.A = Integer](
+} { match p { | *{.v = w, .n = m} => *{m, w} } }
+def last(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Path[.A = Integer](
   t.a,
   t.a
-) { match t { | *{.c = z} => return z } }
+) { match t { | *{.c = z} => z } }

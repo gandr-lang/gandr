@@ -2,5 +2,5 @@ module Others where {
   type P = Integer;
   type A = List(Integer);
 }
-def plain(j : Others.P) -> -F Integer { return j }
+def plain(j : Others.P) -> Integer { j }
 def boxed(j : Others.A) -> -F Integer { return 0 }

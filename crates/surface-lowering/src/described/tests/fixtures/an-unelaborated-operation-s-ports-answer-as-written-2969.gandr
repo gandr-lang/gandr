@@ -8,7 +8,7 @@ theory Spec where {
     n : C,
     k : pi+ (x : V). C,
     l : pi+ (x : V). C,
-    p : Below(m, n),
-    q : pi+ (x : V). Below(k(x), l(x))
-  ) --> Below(ext(m, k), ext(n, l));
+    p : Below m n,
+    q : pi+ (x : V). Below k(x) l(x)
+  ) --> Below ext(m, k) ext(n, l);
 }

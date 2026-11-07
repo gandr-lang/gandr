@@ -1,11 +1,7 @@
 data Empty : Type where {}
-def aliased(f : Empty -> Integer, v : Empty) -> -F Integer { f v }
-def arrowed(f : +U (Empty -> -F Integer), v : Empty) -> -F Integer { f v }
-@[ checks ]
-def thunked(v : Empty) -> -F Integer { aliased (thunk { fun (x) { match x {} } }) v }
-@[ checks ]
-def bare(v : Empty) -> -F Integer { aliased (fun (x) { match x {} }) v }
-@[ checks ]
-def stated(v : Empty) -> -F Integer { aliased (thunk { fun (x) { match x -> -F Integer {} } }) v }
-@[ checks ]
-def underArrow(v : Empty) -> -F Integer { arrowed (thunk { fun (x) { match x {} } }) v }
+def aliased(f : Empty -> Integer, v : Empty) -> Integer { f v }
+def arrowed(f : Empty -> Integer, v : Empty) -> Integer { f v }
+def thunked(v : Empty) -> Integer { aliased (thunk { fun (x) { match x {} } }) v }
+def bare(v : Empty) -> Integer { aliased (fun (x) { match x {} }) v }
+def stated(v : Empty) -> Integer { aliased (thunk { fun (x) { match x -> -F Integer {} } }) v }
+def underArrow(v : Empty) -> Integer { arrowed (thunk { fun (x) { match x {} } }) v }

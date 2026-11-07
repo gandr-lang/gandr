@@ -3,8 +3,8 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 data List(a : Type) : Type where
-  | Nil : List(a)
-  | Cons : (head : a, tail : List(a)) --> List(a)
+  | Nil : List a
+  | Cons : (head : a, tail : List a) --> List a
 
 def rec length(a : Type) : List(a) -> Nat where =
   | Nil => Zero

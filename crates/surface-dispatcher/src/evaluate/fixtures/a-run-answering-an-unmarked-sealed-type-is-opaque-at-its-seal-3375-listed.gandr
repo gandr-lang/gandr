@@ -12,8 +12,7 @@ pub module Seat :> *{ mobile type Report, progress : Report } where {
   def progress = "progress";
 }
 def returned() -> Secret.T { Secret.seal ("x") }
-def listed() -> List(Secret.T) {
-  let s = Secret.seal ("z");
-  pure #[s]
+def listed() -> List Secret.T {
+  pure #[Secret.seal ("z")]
 }
 def reported() -> Seat.Report { pure Seat.progress }

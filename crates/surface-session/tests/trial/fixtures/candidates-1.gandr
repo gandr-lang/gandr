@@ -1,3 +1,2 @@
 def a = 1;
-def f : Integer;
-def f = "one";
+def f : Integer = "one";

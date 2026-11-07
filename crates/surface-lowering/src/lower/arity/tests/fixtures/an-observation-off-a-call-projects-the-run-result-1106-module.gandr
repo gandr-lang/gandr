@@ -1,8 +1,8 @@
 codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }
 def trio(n : Integer) -> Trio { &{.a => n, .b => n, .c => n} }
 def pair(n : Integer) -> &{a : -F Integer, b : -F Integer} { &{.a => n, .b => n} }
-def named() -> -F Integer { (trio 1).b }
-def counted() -> -F Integer { (trio 1).1 }
-def recorded() -> -F Integer { (pair 1).b }
-def above() -> -F Bool { (trio 1).c >= 1 }
-def grouped() -> -F Integer { (trio 1).b }
+def named() -> Integer { (trio 1).b }
+def counted() -> Integer { (trio 1).1 }
+def recorded() -> Integer { (pair 1).b }
+def above() -> Bool { (trio 1).c >= 1 }
+def grouped() -> Integer { (trio 1).b }

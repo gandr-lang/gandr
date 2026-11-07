@@ -13,5 +13,4 @@ module Pair : Model(Doubly) with sort C = Integer where {
   include Seven;
   def other = 8;
 }
-def read : () -> Integer;
-def read = thunk { return Pair.point };
+def read() -> Integer { Pair.point }

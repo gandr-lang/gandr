@@ -1,5 +1,4 @@
 import hello;
-def one : Integer;
-def one = 1;
+def one : Integer = 1;
 def two : Integer;
 def two = hello.welcome;

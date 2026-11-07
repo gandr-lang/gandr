@@ -1,7 +1,4 @@
 pub data Point : Type where { | One : Point }
-pub def one : Point;
-def one = One;
-pub def two : Point;
-def two = One;
-def hidden : Point;
-def hidden = One;
+pub def one : Point = One;
+pub def two : Point = One;
+def hidden : Point = One;

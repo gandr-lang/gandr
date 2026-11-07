@@ -3,34 +3,30 @@ data Expr : Type where
   | Share : (e : Expr) --> (left : Expr, right : Expr)
   | Add : (a : Expr, b : Expr) --> Expr
 
-def left : Expr;
-def left = (Share (Lit 1)).left;
+def left : Expr = (Share (Lit 1)).left;
 
-def grouped : Expr;
-def grouped = (Share (Lit 1)).left;
+def grouped : Expr = (Share (Lit 1)).left;
 
-def both : Expr;
-def both = Add (Share (Lit 1)).left (Share (Lit 1)).right;
+def both : Expr = Add (Share (Lit 1)).left (Share (Lit 1)).right;
 
-def apart : Path[.A = Expr]((Share (Lit 1)).left, (Share (Lit 1)).right);
-def apart = Path.here (Share (Lit 1)).left;
+def apart : Path[.A = Expr]((Share (Lit 1)).left, (Share (Lit 1)).right) = Path.here
+  (Share (Lit 1)).left;
 
-def whole : *{left : Expr, right : Expr};
-def whole = Share (Lit 1);
+def whole : *{left : Expr, right : Expr} = Share (Lit 1);
 
-def unpacked() -> -F Expr { match Share (Lit 1) { | *{.left = l, .right = r} => return Add l r } }
+def unpacked() -> Expr { match Share (Lit 1) { | *{.left = l, .right = r} => Add l r } }
 
 def middle : Expr;
 def middle = (Share (Lit 1)).middle;
 
 def matched(e : Expr) -> -F Integer { match e { | Share(x) => return 0 | _ => return 1 } }
 
-def measured(e : Expr) -> -F Integer =
+def measured(e : Expr) -> Integer =
   match e {
-    | Lit(n) => return n
-    | Add(a, b) => return 2
-    | Share(x).left => return 3
-    | Share(x).right => return 4
+    | Lit(n) => n
+    | Add(a, b) => 2
+    | Share(x).left => 3
+    | Share(x).right => 4
   }
 
 def partial(e : Expr) -> -F Integer =
@@ -46,17 +42,14 @@ data Tree : Type where {
 }
 
 data Pair(a : Type) : Type where
-  | Leaf : (x : a) --> Pair(a)
-  | Dup : (p : Pair(a)) --> (one : Pair(a), two : Pair(a))
+  | Leaf : (x : a) --> Pair a
+  | Dup : (p : Pair a) --> (one : Pair a, two : Pair a)
 
-def first : Pair(Integer);
-def first = (Dup (Leaf 1)).one;
+def first : Pair Integer = (Dup (Leaf 1)).one;
 
-def doubled : *{one : Pair(Integer), two : Pair(Integer)};
-def doubled = Dup (Leaf 1);
+def doubled : *{one : Pair Integer, two : Pair Integer} = Dup (Leaf 1);
 
-def mismatched : *{one : Pair(Integer), two : Pair(String)};
-def mismatched = Dup (Leaf 1);
+def mismatched : *{one : Pair Integer, two : Pair String} = Dup (Leaf 1);
 
 data Buffer : Type where
   | Whole : (n : Integer) --> Buffer

@@ -1,8 +1,7 @@
-def typeSelf : Type ≃ Type;
-def typeSelf = *{
-  thunk { fun (x) { return x } },
+def typeSelf : Type ≃ Type = *{
+  fun (x) { x },
   *{
-    *{thunk { fun (x) { return x } }, thunk { fun (x) { Path.here (x) } }},
-    *{thunk { fun (y) { return y } }, thunk { fun (y) { Path.here (y) } }}
+    *{fun (x) { x }, fun (x) { Path.here (x) }},
+    *{fun (y) { y }, fun (y) { Path.here (y) }}
   }
 };

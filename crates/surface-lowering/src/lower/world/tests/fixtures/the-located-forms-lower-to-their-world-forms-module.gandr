@@ -1,4 +1,4 @@
 world seat;
-def opened(h : Integer at seat) -> -F Integer { let x at seat = h; pure x }
+def opened(h : Integer at seat) -> Integer { let x at seat = h; pure x }
 def held() -> -F (Integer at seat) { (hold 1) }
-def moved() -> -F Integer { migrate [seat] { pure 1 } }
+def moved() -> Integer { migrate [seat] { pure 1 } }

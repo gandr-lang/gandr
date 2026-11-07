@@ -4,7 +4,7 @@ data Nat : Type where
   /// One more.
   | Succ : (n : Nat) --> Nat
 /// Addition.
-def rec plus(n : Nat, m : Nat) -> -F Nat =
+def rec plus(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)

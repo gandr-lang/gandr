@@ -7,14 +7,14 @@ theory Counter where {
 module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
+  def incr(c : Integer) -> Integer { c + 1 }
+  def read(c : Integer) -> Integer { c }
 }
 module Flips : Model(Counter) where {
   type C = Bool;
   def zero = false;
-  def incr(c : Bool) -> -F Bool { match c { | true => false | false => true } }
-  def read(c : Bool) -> -F Integer { match c { | true => 1 | false => 0 } }
+  def incr(c : Bool) -> Bool { match c { | true => false | false => true } }
+  def read(c : Bool) -> Integer { match c { | true => 1 | false => 0 } }
 }
-def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
-def counted() -> -F Integer { fromZero () }
+def fromZero[s : Model Counter with sort C = Integer]() -> Integer { s.read (s.incr s.zero) }
+def counted() -> Integer { fromZero () }

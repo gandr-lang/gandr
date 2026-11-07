@@ -4,6 +4,6 @@ module Ask where {
 }
 def played : Dialogue(Ask.Asking);
 def played = dialogue (left (sent "yes")) (right (received "yes")) (right closed) (left closed);
-def web() -> -F Web {
+def web() -> Web {
   become decompose played
 }

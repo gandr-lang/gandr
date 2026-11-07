@@ -6,9 +6,9 @@ data Fin : N -> Type where {
   | FZ : (n : N) --> Fin(S(n))
 }
 data At : N -> Type where {
-  | AtZ : At(Z)
+  | AtZ : At Z
 }
 data V(a : Type) : N -> Type where {
-  | VN : V(a, Z)
-  | VC : (n : N, x : a, t : V(a, n)) --> V(a, S(n))
+  | VN : V a Z
+  | VC : (n : N, x : a, t : V a n) --> V(a, S n)
 }

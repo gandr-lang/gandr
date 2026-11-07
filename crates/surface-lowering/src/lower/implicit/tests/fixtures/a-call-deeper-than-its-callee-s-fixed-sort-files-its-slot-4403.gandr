@@ -7,11 +7,11 @@ theory Counter where {
 module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
+  def incr(c : Integer) -> Integer { c + 1 }
+  def read(c : Integer) -> Integer { c }
 }
-def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
-def deeper() -> -F Integer {
+def fromZero[s : Model Counter with sort C = Integer]() -> Integer { s.read (s.incr s.zero) }
+def deeper() -> Integer {
   let a = 1;
   let b = a;
   let c = b;

@@ -1,11 +1,10 @@
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-def rec plus(n : Nat, m : Nat) -> -F Nat =
+def rec plus(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)
-def f : +U (-F Nat);
-def f = thunk { plus (Succ Zero) Zero };
+def f() -> Nat { plus (Succ Zero) Zero }
 data List(a : Type) : Type where
-  | Nil : List(a)
+  | Nil : List a

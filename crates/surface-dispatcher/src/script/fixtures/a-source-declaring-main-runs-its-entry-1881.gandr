@@ -1,2 +1,2 @@
-def main() -> -F Integer { return 3 }
+def main() -> Integer { 3 }
 def later = 1;

@@ -6,9 +6,9 @@ def port : Expr = (Expr.Share (Expr.Lit 1)).right;
 
 def ports : *{left : Expr, right : Expr} = Expr.Share (Expr.Lit 1);
 
-def rec size(e : Expr) -> -F Integer =
+def rec size(e : Expr) -> Integer =
   match e where
-    | Expr.Lit(n) => return 1
+    | Expr.Lit(n) => 1
     | Expr.Share(x).left => size[<] x
     | Expr.Share(x).right => size[<] x
 

@@ -1,8 +1,5 @@
-def wrong : String;
-def wrong = 42;
-def bad : Integer;
-def bad = "text";
-def leans : String;
-def leans = bad;
+def wrong : String = 42;
+def bad : Integer = "text";
+def leans : String = bad;
 def lost = missing;
 def answer = 42;

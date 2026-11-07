@@ -1,4 +1,4 @@
-def first(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> -F Integer { become m.a }
-def middle(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> -F Integer { become m.b }
-def last(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> -F Integer { become m.c }
-def only(m : +U &{a : -F Integer}) -> -F Integer { become m.a }
+def first(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> Integer { become m.a }
+def middle(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> Integer { become m.b }
+def last(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> Integer { become m.c }
+def only(m : +U &{a : -F Integer}) -> Integer { become m.a }

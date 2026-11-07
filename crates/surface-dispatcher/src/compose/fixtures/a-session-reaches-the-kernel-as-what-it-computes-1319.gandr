@@ -1,8 +1,8 @@
-def finished() -> -F Unit {
+def finished() -> Unit {
   let desk = fork (seat : end) { close seat };
   close desk
 }
-def delivered() -> -F Unit {
+def delivered() -> Unit {
   let desk = fork (seat : !Integer. end) { send seat 1; close seat };
   let n = recv desk;
   close desk

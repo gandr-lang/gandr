@@ -1,4 +1,4 @@
-def exchange(n : Integer) -> -F Unit {
+def exchange(n : Integer) -> Unit {
   let peer = fork (c : &{next : !String. end, retire : end}) {
     offer c {
       | next => { send c "notes"; close c }

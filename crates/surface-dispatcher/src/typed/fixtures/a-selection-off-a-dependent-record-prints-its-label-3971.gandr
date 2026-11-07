@@ -5,6 +5,6 @@ def held(
     r.z
   ),
   k : (r : *{x : A, y : A, g : Path[.A = A](x, y)}) -> Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)
-) -> -F Integer {
-  return 0
+) -> Integer {
+  0
 }

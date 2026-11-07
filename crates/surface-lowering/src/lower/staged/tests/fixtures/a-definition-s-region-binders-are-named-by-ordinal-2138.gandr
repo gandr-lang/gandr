@@ -1,9 +1,9 @@
 def crossed[s : Region, i : Size, r : Region](
   k : (() -> Integer) at r,
   j : (() -> Integer) at s
-) -> -F Integer {
+) -> Integer {
   force k
 }
-def plain(x : Integer) -> -F Integer {
-  return x
+def plain(x : Integer) -> Integer {
+  x
 }

@@ -8,7 +8,7 @@ theory Based where {
   oper base : Integer;
   oper double : Integer;
 }
-def derived : Model(Toggle);
+def derived : Model Toggle;
 def written : *{t : Type, start : t, step : t -> t, read : t -> Bool};
-def based : Model(Based);
+def based : Model Based;
 def plain : *{base : Integer, double : Integer};

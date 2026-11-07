@@ -1,8 +1,6 @@
-def pick : [a : Type, b : Type] (x : a, y : b) -> a;
-def pick = thunk { fun (a) { fun (b) { fun (x) { fun (y) { return x } } } } };
-def single : [a : Type] a -> a;
-def single = thunk { fun (a) { fun (x) { return x } } };
-def omitted : () -> Integer;
-def omitted = thunk { become pick 5 *{} };
-def once : () -> Integer;
-def once = thunk { become single 5 };
+def pick : [a : Type, b : Type] (x : a, y : b) -> a = fun (a) {
+  fun (b) { fun (x) { fun (y) { x } } }
+};
+def single : [a : Type] a -> a = fun (a) { fun (x) { x } };
+def omitted : () -> Integer = thunk { become pick 5 *{} };
+def once : () -> Integer = thunk { become single 5 };

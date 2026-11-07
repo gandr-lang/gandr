@@ -1,11 +1,11 @@
 def pair : List(Integer);
 def pair = cons 1 (cons 2 nil);
-def second() -> -F Integer {
+def second() -> Integer {
   var xs = pair;
   access xs.#[1] as v { resume v (v + 1) };
   access shared xs.#[1] as w { pure w }
 }
-def indexed(i : Integer) -> -F Integer {
+def indexed(i : Integer) -> Integer {
   var xs = pair;
   access shared xs.#[i] as w { pure w }
 }

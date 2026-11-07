@@ -1,4 +1,4 @@
 data Flag : Type where { | Off : Flag | On : Flag }
-codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }
-def ones : +U Stream(Integer);
+codata Stream(a : Type) : Type[-] where { head : a; tail : Stream a; }
+def ones : +U (Stream Integer);
 def later = 7;

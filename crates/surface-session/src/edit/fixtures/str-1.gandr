@@ -1,4 +1,4 @@
 data Color : Type where { | Red : Color | Green : Color }
 def a = 1;
-def b = thunk { return a };
+def b = thunk { a };
 def c = 2;

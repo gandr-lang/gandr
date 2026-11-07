@@ -1,5 +1,4 @@
 data Box : Type where {
   | Wrap : (n : Integer) --> Box
 }
-def wrapped : Path[.A = Box](Wrap 4, Wrap 5);
-def wrapped = 1;
+def wrapped : Path[.A = Box](Wrap 4, Wrap 5) = 1;

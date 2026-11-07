@@ -7,4 +7,4 @@ def k(
   h : b -> a,
   r : (y : b) -> Path[.A = b](t (h y), y),
   y : b
-) -> -F Path[.A = (y : b) -> Path[.A = b](t (h y), y)](r, r) { return Path.here r }
+) -> Path[.A = (y : b) -> Path[.A = b](t (h y), y)](r, r) { Path.here r }

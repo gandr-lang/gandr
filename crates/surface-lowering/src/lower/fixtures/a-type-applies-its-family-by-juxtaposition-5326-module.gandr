@@ -3,15 +3,15 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 data Vec(a : Type) : Nat -> Type where
-  | VNil : Vec(a, Zero)
-  | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
+  | VNil : Vec a Zero
+  | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec(a, Succ n)
 
-def called(v : Vec(Integer, Succ(Zero))) -> Vec(Integer, Succ(Zero)) { v }
+def called(v : Vec Integer (Succ Zero)) -> Vec Integer (Succ Zero) { v }
 
 def juxtaposed(v : Vec Integer (Succ Zero)) -> Vec Integer (Succ Zero) { v }
 
 data Maybe(a : Type) : Type where
-  | Nothing : Maybe(a)
-  | Just : (x : a) --> Maybe(a)
+  | Nothing : Maybe a
+  | Just : (x : a) --> Maybe a
 
 def opt : Type -> Type[-] = fun (A) { -F Maybe A };

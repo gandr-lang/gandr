@@ -1,4 +1,4 @@
 theory Counted where {
   sort T(n : Integer) : Type;
-  oper same : (x : T(n)) --> T(n);
+  oper same : (x : T n) --> T n;
 }

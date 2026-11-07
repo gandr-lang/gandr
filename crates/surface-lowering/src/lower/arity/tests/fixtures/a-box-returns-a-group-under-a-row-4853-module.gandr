@@ -1,4 +1,4 @@
-def divmod : (m : Integer, n : Integer) -> (q : Integer, r : Integer);
+def divmod : (Integer, Integer) -> (q : Integer, r : Integer);
 def half(n : Integer) -> Integer { let *{q, r} = divmod n n; q }
 def apply(f : (Integer, Integer) -> (Integer, Integer), x : Integer) -> Integer {
   let *{a, b} = f x x;

@@ -1,2 +1,2 @@
-def sums : Path[.A = Type](+{Unit, Unit}, +{Unit, Unit});
+def sums : Path[.A = Type](Unit + Unit, Unit + Unit);
 def sessions : Path[.A = Type](?Integer. end, ?Integer. end);

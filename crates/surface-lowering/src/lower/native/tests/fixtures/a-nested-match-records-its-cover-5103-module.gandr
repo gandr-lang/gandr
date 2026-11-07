@@ -1,12 +1,12 @@
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }
-data List(a : Type) : Type where { | Nil : List(a) | Cons : (h : a, t : List(a)) --> List(a) }
-def f(l : List(Maybe(Nat))) -> -F Integer {
+data Maybe(a : Type) : Type where { | None : Maybe a | Some : (x : a) --> Maybe a }
+data List(a : Type) : Type where { | Nil : List a | Cons : (h : a, t : List a) --> List a }
+def f(l : List (Maybe Nat)) -> Integer {
   match l {
-    | Nil => return 0
-    | Cons(None, t) => return 1
-    | Cons(Some(Zero), Nil) => return 2
-    | Cons(Some(Succ(n)), t) => return 3
-    | Cons(Some(Zero), Cons(m, t)) => return 4
+    | Nil => 0
+    | Cons(None, t) => 1
+    | Cons(Some(Zero), Nil) => 2
+    | Cons(Some(Succ(n)), t) => 3
+    | Cons(Some(Zero), Cons(m, t)) => 4
   }
 }

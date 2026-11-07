@@ -2,6 +2,6 @@ data Nat : Type where {
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 }
-def f(x : Nat) -> -F Nat { return x }
-def h(a : Type, y : a) -> -F a { return y }
-def k(a : Type, y : a) -> -F a { let z = h a y; return z }
+def f(x : Nat) -> Nat { x }
+def h(a : Type, y : a) -> a { y }
+def k(a : Type, y : a) -> a { let z = h a y; z }

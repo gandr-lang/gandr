@@ -1,16 +1,12 @@
-def kept(n : Integer) -> -F Integer { return n }
-def kept_elided(n : Integer) -> -F Integer { n }
-def kept_printed : +U (Integer -> -F Integer);
-def kept_printed = thunk { fun (a) { a } };
-def called(n : Integer) -> -F Integer { become kept n }
-def called_elided(n : Integer) -> -F Integer { kept n }
-def called_printed : +U (Integer -> -F Integer);
-def called_printed = thunk { fun (a) { kept a } };
-def sequenced(n : Integer) -> -F Integer { let m = kept n; become kept m }
-def sequenced_elided(n : Integer) -> -F Integer { let m = kept n; kept m }
-def sequenced_printed : +U (Integer -> -F Integer);
-def sequenced_printed = thunk { fun (a) { let b = kept a; kept b } };
-def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept n } }
-def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept n } }
-def suspended_printed : +U (Integer -> -F (+U (-F Integer)));
-def suspended_printed = thunk { fun (a) { thunk { kept a } } };
+def kept(n : Integer) -> Integer { n }
+def kept_elided(n : Integer) -> Integer { n }
+def kept_printed(a : Integer) -> Integer { a }
+def called(n : Integer) -> Integer { become kept n }
+def called_elided(n : Integer) -> Integer { kept n }
+def called_printed(a : Integer) -> Integer { kept a }
+def sequenced(n : Integer) -> Integer { become kept (kept n) }
+def sequenced_elided(n : Integer) -> Integer { kept (kept n) }
+def sequenced_printed(a : Integer) -> Integer { kept (kept a) }
+def suspended(n : Integer) -> () -> Integer { thunk { become kept n } }
+def suspended_elided(n : Integer) -> () -> Integer { thunk { kept n } }
+def suspended_printed(a : Integer) -> (() -> Integer) { thunk { kept a } }

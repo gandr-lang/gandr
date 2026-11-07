@@ -4,4 +4,4 @@ theory Pairing where {
   oper left : A;
   oper right : B;
 }
-def keep(m : Model(Pairing) with sort A = Integer, b : m.B) -> -F m.B { return b }
+def keep(m : Model Pairing with sort A = Integer, b : m.B) -> m.B { b }

@@ -1,5 +1,5 @@
-def absent(r : *{n : Integer, s : String}) -> -F Integer {
+def absent(r : *{n : Integer, s : String}) -> Integer {
   match r {
-    | *{.z = m} => return m
+    | *{.z = m} => m
   }
 }

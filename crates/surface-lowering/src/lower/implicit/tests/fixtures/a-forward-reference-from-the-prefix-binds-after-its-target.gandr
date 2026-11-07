@@ -1,2 +1,2 @@
-def chosen[x : t](t : Type) -> -F t { return x }
-def twin(t : Type, x : t) -> -F t { return x }
+def chosen[x : t](t : Type) -> t { x }
+def twin(t : Type, x : t) -> t { x }

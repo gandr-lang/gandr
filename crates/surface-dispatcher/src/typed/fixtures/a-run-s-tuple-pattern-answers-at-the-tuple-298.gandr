@@ -2,11 +2,11 @@ data Nat : Type where {
   | Zero : Nat
 }
 
-def pair(n : Nat) -> -F (Nat * Nat) {
-  return *{n, n}
+def pair(n : Nat) -> Nat * Nat {
+  *{n, n}
 }
 
-def first(n : Nat) -> -F Nat {
+def first(n : Nat) -> Nat {
   let *{a, b} = pair n;
-  return a
+  a
 }

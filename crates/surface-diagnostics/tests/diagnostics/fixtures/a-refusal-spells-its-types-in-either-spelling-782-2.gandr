@@ -1,2 +1,1 @@
-def r : Integer ≅ String;
-def r = 1;
+def r : Integer ≅ String = 1;

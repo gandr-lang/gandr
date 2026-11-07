@@ -1,6 +1,3 @@
-def err : +{ok : Integer, err : String};
-def err = +{.err = "no"};
-def swapped : +U &{name : -F String, size : -F Integer};
-def swapped = &{.size => 1, .name => "unit"};
-def positional : +U &{-F String, -F Integer};
-def positional = &{.0 => "unit", .1 => 1};
+def err : +{ok : Integer, err : String} = +{.err = "no"};
+def swapped : +U &{name : -F String, size : -F Integer} = &{.size => 1, .name => "unit"};
+def positional : +U (-F String & -F Integer) = &{.0 => "unit", .1 => 1};

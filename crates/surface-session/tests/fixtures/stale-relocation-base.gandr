@@ -1,6 +1,6 @@
-def alpha(x : Integer) -> -F Integer =
-  return 1
-def target(y : Integer) -> -F Integer =
-  return y
-def omega(z : Integer) -> -F Integer =
-  return z
+def alpha(x : Integer) -> Integer =
+  1
+def target(y : Integer) -> Integer =
+  y
+def omega(z : Integer) -> Integer =
+  z

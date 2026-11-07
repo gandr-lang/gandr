@@ -1,2 +1,2 @@
-def absurd(x : Void) -> -F Integer { match x {} }
+def absurd(x : Void) -> Integer { match x {} }
 def stated(x : Void) -> -F Integer { match x -> -F Integer {} }

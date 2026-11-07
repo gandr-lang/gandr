@@ -1,19 +1,18 @@
 data Circle : Type where { | Base : Circle | loop : Base <-> Base }
 data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
-def invLooper(x : Circle) -> -F Circle {
+def invLooper(x : Circle) -> Circle {
   match x {
     | Base => Base
     | loop => Path.back loop
   }
 }
 module Late where {
-  def kept(x : Circle) -> -F Circle {
+  def kept(x : Circle) -> Circle {
     match x {
       | later => later
     }
   }
-  def later : Circle;
-  def later = Base;
+  def later : Circle = Base;
 }
 def twice(x : Circle) -> -F Circle {
   match x {

@@ -1,10 +1,10 @@
-def low(r : *{low : Integer, high : Bool}) -> -F Integer {
+def low(r : *{low : Integer, high : Bool}) -> Integer {
   match r {
-    | *{.high = h, .low = l} => return l
+    | *{.high = h, .low = l} => l
   }
 }
-def first(r : *{low : Integer, high : Bool}) -> -F Integer {
+def first(r : *{low : Integer, high : Bool}) -> Integer {
   match r {
-    | *{p, q} => return p
+    | *{p, q} => p
   }
 }

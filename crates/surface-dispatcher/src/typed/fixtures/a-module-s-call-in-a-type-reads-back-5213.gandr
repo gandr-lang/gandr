@@ -2,6 +2,5 @@ module Standard where {
   def unit() -> Type { return Unit }
   def after(a : Type) -> Integer -> Type = return fun (x) { a };
 }
-def point : Standard.unit();
-def point = *{};
+def point : Standard.unit() = *{};
 def two(n : Integer) -> Standard.after(Integer)(n) { 2 }

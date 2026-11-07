@@ -3,8 +3,8 @@ data N : Type where {
   | S : (n : N) --> N
 }
 data Skip : N -> Type where {
-  | Halt : Skip(Z)
-  oper skip : (k : Skip(Z)) --> Skip(Z);
-  oper climb : (c : Skip(Z)) --> Skip(S(Z));
+  | Halt : Skip Z
+  oper skip : (k : Skip Z) --> Skip Z;
+  oper climb : (c : Skip Z) --> Skip(S(Z));
   rule : skip k ==> k;
 }

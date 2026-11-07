@@ -2,11 +2,11 @@ data Nat : Type where {
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 }
-def bound() -> -F Integer {
+def bound() -> Integer {
   let m = match 3 -> -F Integer { | 0 => pure 0 | _ => pure 5 };
   pure (m + m)
 }
-def counted(n : Nat) -> -F Nat {
+def counted(n : Nat) -> Nat {
   let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p };
   pure m
 }

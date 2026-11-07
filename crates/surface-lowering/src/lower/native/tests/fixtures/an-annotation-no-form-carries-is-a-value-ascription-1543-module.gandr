@@ -1,2 +1,1 @@
-def wrong : String;
-def wrong = (3 : Integer);
+def wrong : String = (3 : Integer);

@@ -1,3 +1,2 @@
-def chosen[x : t](t : Type) -> -F t { x }
-def apply : (Type -> Type) -> Type -> Type;
-def apply = fun (F) { fun (X) { F X } };
+def chosen[x : t](t : Type) -> t { x }
+def apply : (Type -> Type) -> Type -> Type = fun (F) { fun (X) { F X } };

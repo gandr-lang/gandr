@@ -1,18 +1,18 @@
-def one() -> -F [Partial] Integer {
+def one() -> [Partial] Integer {
   var n = 3;
   while n > 0 { access n as v { resume v (v - 1) } };
   pure n
 }
-def two() -> -F [Partial] Integer {
+def two() -> [Partial] Integer {
   var a = 10;
   var b = 1;
   while b < 4 { access b as v { resume v (v + 1) }; access a as w { resume w (w - 1) } };
   pure a * 100 + b
 }
-def after() -> -F [Partial] Integer {
+def after() -> [Partial] Integer {
   var a = 4;
   var b = 3;
   while b > 0 { access b as v { resume v (v - 1) } };
   pure a + 3
 }
-def none() -> -F [Partial] Integer { var a = 4; while 1 > 2 { return 1 }; pure 5 }
+def none() -> [Partial] Integer { var a = 4; while 1 > 2 { return 1 }; pure 5 }

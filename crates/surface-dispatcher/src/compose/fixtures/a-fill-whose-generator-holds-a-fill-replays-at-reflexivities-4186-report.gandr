@@ -10,10 +10,10 @@ def join(
   Path.step p q
 }
 /// The composite of two cells, one cell at a time.
-def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) -> ((g : Path[.A = A](
+def composedCells(A : Type, x : A, y : A, z : A) -> Path[.A = A](x, y) -> (Path[.A = A](
   y,
   z
-)) -> Path[.A = A](x, z)) {
+) -> Path[.A = A](x, z)) {
   thunk { fun (f) { thunk { fun (g) { join A x y z f g } } } }
 }
 /// The composite's reflexivity by `fill`, at its sides.

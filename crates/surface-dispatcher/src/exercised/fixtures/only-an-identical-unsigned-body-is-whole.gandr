@@ -1,6 +1,5 @@
-def whole = thunk { return 1 };
-def other = thunk { return 2 };
-def signed : +U (-F Integer);
-def signed = thunk { return 3 };
+def whole = thunk { 1 };
+def other = thunk { 2 };
+def signed() -> Integer { 3 }
 def owed : Integer;
 def refused = missing;

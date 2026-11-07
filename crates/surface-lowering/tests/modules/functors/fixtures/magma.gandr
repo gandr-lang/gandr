@@ -4,5 +4,5 @@ theory Mag where {
 }
 module Times : Model(Mag) where {
   type M = Integer;
-  def mul(a : Integer, b : Integer) -> -F Integer { return a * b }
+  def mul(a : Integer, b : Integer) -> Integer { a * b }
 }

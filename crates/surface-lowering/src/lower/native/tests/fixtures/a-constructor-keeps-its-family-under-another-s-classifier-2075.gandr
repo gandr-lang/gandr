@@ -1,8 +1,7 @@
 data Celsius : Type where { | Cel : (x : Integer) --> Celsius }
 data Fahrenheit : Type where { | Fah : (x : Integer) --> Fahrenheit }
-data Box(a : Type) : Type where { | B : (x : a) --> Box(a) }
-data Crate(a : Type) : Type where { | C : (x : a) --> Crate(a) }
+data Box(a : Type) : Type where { | B : (x : a) --> Box a }
+data Crate(a : Type) : Type where { | C : (x : a) --> Crate a }
 def foreign = (Cel 20 : Fahrenheit);
-def signed : Crate(Integer);
-def signed = B 3;
+def signed : Crate Integer = B 3;
 def own = (Cel 20 : Celsius);

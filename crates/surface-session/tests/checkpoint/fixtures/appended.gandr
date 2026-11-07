@@ -1,5 +1,4 @@
 import "file:///lib/parse.gandr" as parse;
 def a = 1;
-def b : Integer;
-def b = a;
+def b : Integer = a;
 def c = b;

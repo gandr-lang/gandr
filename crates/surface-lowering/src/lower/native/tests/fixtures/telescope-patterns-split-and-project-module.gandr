@@ -1,5 +1,5 @@
-def middle(t : *{Integer, String, Unit}) -> -F String { match t { | *{x, y, z} => return y } }
-def reordered(t : *{Integer, String}) -> -F Integer { match t { | *{.1 = b, .0 = a} => return a } }
-def tupled(t : *{Integer, String}) -> -F String { match t { | *{a, b} => return b } }
-def punned(r : *{n : Integer, s : String}) -> -F String { match r { | *{.n, .s} => return s } }
-def renamed(r : *{n : Integer, s : String}) -> -F Integer { match r { | *{.n = m} => return m } }
+def middle(t : Integer * String * Unit) -> String { match t { | *{x, y, z} => y } }
+def reordered(t : Integer * String) -> Integer { match t { | *{.1 = b, .0 = a} => a } }
+def tupled(t : Integer * String) -> String { match t { | *{a, b} => b } }
+def punned(r : *{n : Integer, s : String}) -> String { match r { | *{.n, .s} => s } }
+def renamed(r : *{n : Integer, s : String}) -> Integer { match r { | *{.n = m} => m } }

@@ -1,6 +1,6 @@
 def againAt(
   b : Type,
   w : *{x : b, y : b, p : Path[.A = b](x, y)}
-) -> -F Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](w, w) {
+) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](w, w) {
   Path.here w
 }

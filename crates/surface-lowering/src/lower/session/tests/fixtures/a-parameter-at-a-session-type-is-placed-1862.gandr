@@ -1,5 +1,5 @@
-def finish(seat : end) -> -F Unit { close seat }
-def answer(n : Integer, seat : ?Integer >> end) -> -F Integer {
+def finish(seat : end) -> Unit { close seat }
+def answer(n : Integer, seat : ?Integer >> end) -> Integer {
   let m = recv seat;
   close seat;
   pure m

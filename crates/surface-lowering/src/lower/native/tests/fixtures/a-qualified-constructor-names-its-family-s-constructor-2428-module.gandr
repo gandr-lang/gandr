@@ -1,7 +1,5 @@
 data Term : Type where { | Var : (n : Integer) --> Term | App : (t : Term, u : Term) --> Term }
 theory Pointed where { sort P : Type; oper point : () --> (p : P); }
-def theirs : Theory;
-def theirs = Theory.App "f" Theory.End;
-def ours : Term;
-def ours = Term.App (Var 0) (Var 1);
+def theirs : Theory = Theory.App "f" Theory.End;
+def ours : Term = Term.App (Var 0) (Var 1);
 def applies(link : Theory) -> Integer { match link { | Theory.App(head, rest) => 1 | _ => 0 } }
