@@ -27,6 +27,7 @@ use super::NamedKind;
 use super::Role;
 use super::body_of;
 use super::declared_type_of;
+use super::gap;
 use super::lower;
 use super::name;
 use super::row;
@@ -2165,6 +2166,38 @@ fn a_derived_rule_reads_the_model_it_quantifies_over()
             .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
         "every lemma, the statement and its use check: {judgements:?}"
     );
+}
+
+#[test]
+fn an_empty_derived_rule_side_is_missing_operand_5950()
+{
+    for (written, empty) in [
+        (
+            "rule Grp.invMul : inv (mul x y) <=>;",
+            "rule Grp.invMul : inv (mul x y) <=>".len(),
+        ),
+        (
+            "rule Grp.invMul : <=> mul (inv y) (inv x);",
+            "rule Grp.invMul : ".len(),
+        ),
+    ] {
+        let source = format!("{GROUP}{written}\n");
+        let start = source.find(written).expect("the rule is appended");
+        let at = start.checked_add(empty).expect("the gap follows the rule");
+        assert_eq!(
+            rows(&lower(source.as_str())).last(),
+            Some(&row(
+                "rule",
+                Role::Held,
+                Amounts::Refused(LoweringRefusal::MalformedForm {
+                    span: gap(at),
+                    form: FormName::DERIVED_RULE_DECLARATION,
+                    fault: FormFault::MissingOperand,
+                })
+            )),
+            "the empty side is refused at its gap"
+        );
+    }
 }
 
 /// A statement the group's completion rewrites to two normal forms is no rule
