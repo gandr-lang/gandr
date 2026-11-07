@@ -1045,7 +1045,8 @@ fn read(
         .answering(&answers)
         .manifesting(&rows)
         .naming_implicits(&implicits)
-        .flattening(&slots);
+        .flattening(&slots)
+        .operating(module.operators());
     // A body leaves each written reduct's or forgetting map's call to the
     // checker, which applies the map where the call stands; a type, read by
     // its value, keeps it.

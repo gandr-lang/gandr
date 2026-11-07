@@ -4,6 +4,7 @@
 /// `windWords` maps loop words to counts.
 ///
 /// Induction proves both round trips.
+/// It is the HoTT book's circle theorem at the presented stratum.
 /// The equivalence record stores the maps and their proofs.
 ///
 /// - see: corpus/model/identity/loop-winding.gandr

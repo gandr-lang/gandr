@@ -18,6 +18,7 @@ use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Images;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Invertibility;
+use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::PartIndex;
 use gandr_theory_discrete_morse::Place;
@@ -940,15 +941,10 @@ const CORNERS: [Corner; 7] = [
     Corner::Square,
 ];
 
-/// The square with one stated pair. It pairs an edge with `D` only where the
-/// edge is a whole side of `D`, with no context.
-#[repr(transparent)]
+/// The square `D : γ ⇒ β α`. It pairs an edge with `D` only where the edge is
+/// a whole side of `D`, with no context.
 #[derive(Debug)]
-struct Whiskered
-{
-    /// The redundant edge, paired with the square.
-    pair: Corner,
-}
+struct Whiskered;
 
 impl Complex for Whiskered
 {
@@ -1012,57 +1008,37 @@ impl Complex for Whiskered
     }
 }
 
-impl Scheme for Whiskered
-{
-    /// The stated edge is redundant with the square as its partner.
-    ///
-    /// # Specification
-    /// trivial.
-    fn class(
-        &mut self,
-        cell: &Corner,
-    ) -> Result<Class<Corner>, Corner>
-    {
-        Ok(if *cell == self.pair {
-            Class::Redundant(Corner::Square)
-        }
-        else if *cell == Corner::Square {
-            Class::Collapsible(self.pair)
-        }
-        else {
-            Class::Critical
-        })
-    }
-}
-
 #[test]
 fn a_pair_under_a_context_is_refused_at_the_incidence_one()
 {
     let mut faces = Vec::new();
-    Whiskered {
-        pair: Corner::Alpha,
-    }
-    .faces(&Corner::Square, &mut faces)
-    .expect("the square reads");
+    Whiskered
+        .faces(&Corner::Square, &mut faces)
+        .expect("the square reads");
     assert!(faces.contains(&(Corner::Alpha, Incidence::from(1_i64))));
     assert!(faces.contains(&(Corner::Gamma, Incidence::from(-1_i64))));
-    // `α` occurs once at the incidence one, but under the whisker `β`.
-    let mut whiskered = Whiskered {
-        pair: Corner::Alpha,
-    };
-    let done =
-        collapse(&mut whiskered, &CORNERS, Budget::from(CORNERS.len())).expect("the square reads");
+    // `α` occurs once at the incidence one, but under the whisker `β`. The
+    // stated pair reads the square's own condition, which refuses it.
+    let under = Matching::stated([(Corner::Alpha, Corner::Square)]);
+    let done = collapse(
+        &mut under.on(&mut Whiskered),
+        &CORNERS,
+        Budget::from(CORNERS.len()),
+    )
+    .expect("the square reads");
     let refused = Faults {
         uninvertible: Count::from(1),
         ..Faults::default()
     };
     assert_eq!(done.faults(), refused);
     // `γ` is the whole source of the square, so it pairs.
-    let mut whole = Whiskered {
-        pair: Corner::Gamma,
-    };
-    let done =
-        collapse(&mut whole, &CORNERS, Budget::from(CORNERS.len())).expect("the square reads");
+    let whole = Matching::stated([(Corner::Gamma, Corner::Square)]);
+    let done = collapse(
+        &mut whole.on(&mut Whiskered),
+        &CORNERS,
+        Budget::from(CORNERS.len()),
+    )
+    .expect("the square reads");
     assert_eq!(done.faults(), Faults::default());
 }
 

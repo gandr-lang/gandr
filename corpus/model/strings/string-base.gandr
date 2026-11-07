@@ -3,6 +3,7 @@
 //! Every string source reads byte storage through these declarations. A copy
 //! does not expose another string's write. Short strings use inline bytes.
 //! Long strings share a buffer until a write.
+//! Both follow the small-string representations of C++ and Rust.
 //!
 //! `Repr` selects byte storage. The source provides byte functions and inline
 //! capacity.

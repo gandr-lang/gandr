@@ -1869,14 +1869,13 @@ impl<'source> Respelling<'_, 'source>
                     out.token(Spelling("at"));
                     out.gap(Spelling(" "));
                     out.token(Spelling("Model"));
-                    out.token(OPEN_PAREN);
+                    out.gap(Spelling(" "));
                     for (at, segment) in forget.theory.iter().enumerate() {
                         if at > 0 {
                             out.token(DOT);
                         }
                         out.fragment(SourceFragment::from(segment.as_str()));
                     }
-                    out.token(CLOSE_PAREN);
                     if wrapped {
                         out.token(CLOSE_PAREN);
                     }

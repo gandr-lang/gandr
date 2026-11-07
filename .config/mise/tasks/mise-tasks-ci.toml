@@ -2647,6 +2647,32 @@ else
 fi
 '''
 
+# A seat edits an issue body it holds (#6210): `issue:edit <n> <body>` writes
+# the body file over issue n's body and keeps each claim or release marker the
+# old body carried and the file lacks (`.config/claims/claimed.jq`'s `edit`).
+# A seat that writes a body from its own draft with `gh issue edit` drops the
+# lane's marker, and `claim:take` then refuses the issue until the lane's next
+# gate writes it back. One read and one write.
+["issue:edit"]
+description = "Write a body over an issue's body, keeping the claim and release markers it carried"
+usage = '''
+arg "<issue>" help="the issue's number"
+arg "<body>" help="the body file"
+'''
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+number=${usage_issue:?}
+root=$(git rev-parse --show-toplevel)
+repo=${GH_REPO:-'{owner}/{repo}'}
+old=$(gh api "repos/$repo/issues/$number" --jq '.body // ""')
+jq -n -c -L "$root/.config/claims" --rawfile body "${usage_body:?}" --arg old "$old" '{step: "edit", old: $old, body: $body}' \
+  | jq -c -L "$root/.config/claims" -f "$root/.config/claims/claimed.jq" \
+  | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
+echo "issue:edit: wrote the body of #$number with its claim markers"
+'''
+
 # A lane claims the unit it works (#5146): `claim:take <n>` adds
 # `status:claimed` to issue n and writes the lane's claim marker after any
 # other lane's, or alone when its read shows no label (`.config/claims/

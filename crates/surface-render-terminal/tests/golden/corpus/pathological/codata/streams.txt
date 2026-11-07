@@ -19,8 +19,8 @@ error[CodataKindNotUniverse]: a codata declaration's kind must be a computation 
 error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
    ╭▸ corpus/pathological/codata/streams.gandr:30:10
    │
-30 │   tail : Swap(b, a);
-   │          ━━━━━━━━━━ the codata type named off an observation's result
+30 │   tail : Swap b a;
+   │          ━━━━━━━━ the codata type named off an observation's result
    │
    ├ note: `Swap` is refused with CodataOccurrence, as its expectation states
    ╰ help: write the codata type only as an observation's result, with its parameters in order
@@ -28,7 +28,7 @@ error[CodataOccurrence]: a codata type may name itself only as an observation's 
 error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
    ╭▸ corpus/pathological/codata/streams.gandr:36:10
    │
-36 │   tail : Twisted(Twisted(a));
+36 │   tail : Twisted (Twisted a);
    │          ━━━━━━━━━━━━━━━━━━━ the codata type named off an observation's result
    │
    ├ note: `Twisted` is refused with CodataOccurrence, as its expectation states

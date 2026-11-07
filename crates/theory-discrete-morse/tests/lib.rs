@@ -21,6 +21,8 @@ mod faces;
 #[cfg(test)]
 mod greedy;
 #[cfg(test)]
+mod matching;
+#[cfg(test)]
 mod poset;
 #[cfg(test)]
 mod reduct;

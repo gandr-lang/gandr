@@ -60,10 +60,10 @@ module Down : Model(Counter) where {
 }
 
 /// The `upModel` value packs the `Up` model.
-pub def upModel : Model(Counter) = pack Up at Model(Counter);
+pub def upModel : Model Counter = pack Up at Model Counter;
 
 /// The `downModel` value packs the `Down` model.
-pub def downModel : Model(Counter) = pack Down at Model(Counter);
+pub def downModel : Model Counter = pack Down at Model Counter;
 
 /// The `negateCount` function keeps zero and exchanges one with two.
 def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =

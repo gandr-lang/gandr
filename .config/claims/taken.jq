@@ -18,11 +18,17 @@
 #
 # Output: under `branch`, `{lane, number}`, or null for a branch that works no
 # unit. Under `gate`, `{verdict}`: `none` for no unit, `held` when the lane
-# holds the claim, `closed` for a closed issue, and `unread` or `refused` with
-# the `line` the gate prints. Under `take`, `{verdict}`: `write` with the
+# holds the claim, `closed` for a closed issue, `mark` with the `body` to
+# write and the `line` the gate prints, and `unread` or `refused` with the
+# `line` the gate prints. Under `take`, `{verdict}`: `write` with the
 # `body` to write, `held` when the lane holds the claim already, or `refused`
 # with the `line` `claim:take` prints. Under `release`, it is `release` when
 # the lane holds the claim, or `refused` with the line `claim:release` prints.
+#
+# An issue under `status:claimed` with no claim marker lost its marker to an
+# edit of its body (#6210). The label stands, so a lane holds it. The gate of
+# the lane whose branch works it writes that lane's marker back (`mark`), and
+# `claim:take` refuses it, so a second lane never takes it in the gap.
 
 include "markers";
 
@@ -53,6 +59,11 @@ elif .step == "gate" then
     elif .issue.state == "closed" then {verdict: "closed"}
     else holder(.issue) as $holder
       | if $holder == $unit.lane then {verdict: "held"}
+        elif $holder == null and (.issue.labels | index("status:claimed")) then
+          # No live marker stands, so the gate appends the lane's own after the
+          # text and changes nothing else, a marker quoted in a fence included.
+          {verdict: "mark", body: ((.issue.body // "" | sub("\\s+$"; "")) + "\n\n" + claim_marker($unit.lane) + "\n"),
+           line: "check: #\($unit.number) carries status:claimed and no claim marker, as an edit of its body dropped it; the gate writes the marker of \($unit.lane) back (#6210)"}
         elif $holder == null then
           {verdict: "refused", line: "check: \(.branch) works #\($unit.number), and #\($unit.number) holds no claim of \($unit.lane), so claim:next can give it to another lane; run \u0060mise run claim:take \($unit.number)\u0060 and gate again"}
         else
@@ -67,6 +78,8 @@ elif .step == "take" then
       | if $holder == $lane then {verdict: "held"}
         elif $holder != null then
           {verdict: "refused", line: "claim:take: \($holder) holds the claim of #\(.issue.number); the coordinator decides which lane works it"}
+        elif (.issue.labels | index("status:claimed")) then
+          {verdict: "refused", line: "claim:take: #\(.issue.number) carries status:claimed and no claim marker: an edit of its body dropped the marker of the lane that works it, and that lane's next gate writes it back; the coordinator decides which lane works it (#6210)"}
         # A body without the label keeps no lapsed lane's marker (#5531).
         else {verdict: "write", body: (.issue as $issue | $issue.body | claiming($lane; $issue.labels))}
         end

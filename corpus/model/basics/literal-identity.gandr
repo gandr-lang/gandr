@@ -12,6 +12,8 @@
 ///
 /// - see: #6142 — `texts_same`, `decoded_flag`
 /// - see: #6158 — `decoded_flag`, a comparison in a stated type
+/// - see: #6228
+/// - see: #6194 — `literals_ordered`, an ordering in a stated type
 
 /// Two codes.
 data Code : Type where
@@ -59,9 +61,6 @@ def texts_wrong : Path[.A = Bool]("a" == "a", false) = Path.here false;
 def held(s : String) -> Path[.A = Bool](s == "a", false) =
   Path.here false
 
-/// Two integers ordered in a body, which resolves the model of the ordering.
-def below(a : Integer, b : Integer) -> Bool { a < b }
-
-/// An ordering of literals stays opaque, also through a body.
+/// An ordering of literals stays opaque.
 @[ refuses("EndpointMismatch") ]
-def literals_ordered : Path[.A = Bool](below 1 2, true) = Path.here true;
+def literals_ordered : Path[.A = Bool](1 < 2, true) = Path.here true;

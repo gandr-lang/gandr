@@ -1,5 +1,41 @@
 [
   {
+    "name": "#6210: the gate writes the branch lane's marker back on an issue under status:claimed whose body edit dropped it",
+    "input": {
+      "step": "gate",
+      "branch": "sorts-3403-chain",
+      "lanes": ["core", "triage", "triage-2", "toolchain"],
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["kind:gap", "status:claimed"],
+        "body": "Text.\n\n## Blocked\n\nA section a seat adds.\n"
+      }
+    },
+    "output": {
+      "verdict": "mark",
+      "body": "Text.\n\n## Blocked\n\nA section a seat adds.\n\n<!-- claim: lane=sorts -->\n",
+      "line": "check: #3403 carries status:claimed and no claim marker, as an edit of its body dropped it; the gate writes the marker of sorts back (#6210)"
+    }
+  },
+  {
+    "name": "#6210: claim:take refuses an issue under status:claimed with no claim marker, and writes no marker",
+    "input": {
+      "step": "take",
+      "lane": "surface",
+      "issue": {
+        "number": 6201,
+        "state": "open",
+        "labels": ["kind:defect", "status:claimed"],
+        "body": "Text.\n\n## Blocked\n\nA section a seat adds.\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "claim:take: #6201 carries status:claimed and no claim marker: an edit of its body dropped the marker of the lane that works it, and that lane's next gate writes it back; the coordinator decides which lane works it (#6210)"
+    }
+  },
+  {
     "name": "#5146: the gate refuses a branch `sorts-3403-chain` whose issue holds no claim, and names claim:take",
     "input": {
       "step": "gate",
@@ -64,7 +100,7 @@
     }
   },
   {
-    "name": "a claim marker quoted in a fenced block is text, never the lane's claim",
+    "name": "a claim marker quoted in a fenced block is text, never the lane's claim, so the gate appends the real one and keeps the quote (#6210)",
     "input": {
       "step": "gate",
       "branch": "sorts-3402",
@@ -77,8 +113,9 @@
       }
     },
     "output": {
-      "verdict": "refused",
-      "line": "check: sorts-3402 works #3402, and #3402 holds no claim of sorts, so claim:next can give it to another lane; run `mise run claim:take 3402` and gate again"
+      "verdict": "mark",
+      "body": "Text.\n\n```\n<!-- claim: lane=sorts -->\n```\n\n<!-- claim: lane=sorts -->\n",
+      "line": "check: #3402 carries status:claimed and no claim marker, as an edit of its body dropped it; the gate writes the marker of sorts back (#6210)"
     }
   },
   {

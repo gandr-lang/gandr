@@ -839,9 +839,10 @@ pub enum Former<'source, Node>
         arity: Arity,
         /// Where its name stands to its fields.
         placement: Placement,
-        /// The family applied to its arguments, when it takes any: the type a
-        /// parameterised constructor is written against, `(C : T)`, which
-        /// source that reads back needs.
+        /// The family applied to its arguments, when it takes any, or the
+        /// type a definition computes that a constructor of such a family
+        /// stands at: the type a parameterised constructor is written against,
+        /// `(C : T)`, which source that reads back needs.
         classifier: Option<Node>,
     },
     /// Directed identity `Flow[.A = A](x, y)`: the carrier and the two
@@ -2139,6 +2140,39 @@ pub trait Source
     {
         let _ = head;
         &[]
+    }
+
+    /// The infix operator of the comparison that calls `head`, when `head`
+    /// is a constant that a comparison calls: `==` for the prelude's `eq`,
+    /// whose model the operands' type resolves.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the operator the source records for `head`'s constant, or
+    ///   none; the default records none, so every such call is written by its
+    ///   name.
+    /// - provides: the comparison `a == b` that a printed call of the prelude's
+    ///   `eq` writes, which reads back as the call.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of the prelude's `eq` and of its `lt`, each
+    ///   with its model supplied by one path, by components of two modules and
+    ///   left out, writes the comparison; a call of a constant with no operator
+    ///   keeps its name.
+    /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    #[inline]
+    fn operator(
+        &self,
+        head: Self::Node,
+    ) -> Option<gandr_core_term::primitive::Operator>
+    {
+        let _ = head;
+        None
     }
 }
 

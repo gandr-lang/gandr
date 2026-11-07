@@ -4,6 +4,8 @@
 //! The pathological twins refuse carrier escapes and sealed model packages.
 //!
 //! The checker assigns a fresh abstract sort when it opens a module.
+//! A consumer opens either package with `module m = p ;`, and the consumer does
+//! not know which package it reads.
 //!
 //! - see: #1108 — `hidden`
 //!

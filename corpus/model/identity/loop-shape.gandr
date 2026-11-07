@@ -2,6 +2,8 @@
 ///
 /// The presented-integer model proves its cancellation laws by conversion.
 /// The native-integer model declares its arithmetic laws as obligations.
+/// Conversion leaves arithmetic to the runtime, so the model owes each law, and
+/// a fold into the model rests on the laws.
 ///
 /// The winding fold maps loop words into both models.
 /// Each model supplies the circle operations at its selected carrier.

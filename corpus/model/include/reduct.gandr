@@ -12,10 +12,10 @@
 import "./monoid.gandr";
 
 /// `endoMonoid` packs `Endo` at `Monoid`.
-pub def endoMonoid : Model(Monoid) = pack Endo at Model(Monoid);
+pub def endoMonoid : Model Monoid = pack Endo at Model Monoid;
 
 /// `endoSemigroup` packs `Endo` at its included `Semigroup`.
-def endoSemigroup : Model(Semigroup) = pack Endo at Model(Semigroup);
+def endoSemigroup : Model Semigroup = pack Endo at Model Semigroup;
 
 /// `restricted` compares the named reduct with the packed semigroup model.
 def restricted : Path(

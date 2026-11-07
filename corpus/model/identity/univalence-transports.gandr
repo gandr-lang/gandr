@@ -6,6 +6,10 @@
 //! The checker proves these transport consequences by conversion.
 //! The two inverse laws remain owed.
 //!
+//! Limits: two paths between types that transport alike are not one path. A
+//! record's inverses do not follow from its map without function extensionality
+//! from a homotopy.
+//!
 //! - owes: #520 — `univalence`'s two laws
 
 // Univalence over the user universe: `fwdAlong`, `bwdAlong`, `idtoequiv`.

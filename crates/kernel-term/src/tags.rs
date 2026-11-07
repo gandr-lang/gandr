@@ -959,6 +959,29 @@ pub const KIND_DEF_COVERED: WireTag = WireTag(0x10);
 /// unknown declaration kind rather than misreading it, which is why the format
 /// version holds.
 pub const KIND_LITERAL_IDENTITY: WireTag = WireTag(0x11);
+/// Declaration tag: a datatype holding a built-in role, whose segment closes
+/// with the role's tag.
+///
+/// After the [`KIND_DATA`] fields comes one role tag: [`ROLE_IR_SIGNATURE`] or
+/// [`ROLE_IR_PAIR`]. The kernel validates the datatype against the role's
+/// canonical form at admission. A holder is indexed by nothing and presents no
+/// rules. A datatype holding no role writes one of the other datatype kinds,
+/// so every other artifact keeps its bytes, and a reader predating this kind
+/// refuses it as an unknown declaration kind rather than misreading it, which
+/// is why the format version holds.
+pub const KIND_DATA_ROLED: WireTag = WireTag(0x12);
+/// Declaration tag: a typed definition holding a built-in role, whose segment
+/// closes with the role's tag.
+///
+/// After the [`KIND_DEF`] fields come the pair, law, rule and cover blocks of
+/// [`KIND_DEF_COVERED`], each count possibly zero, then one role tag:
+/// [`ROLE_IR_ARGS`] or [`ROLE_IR_DECODE`]. The kernel validates the definition
+/// against the role's canonical body at admission. A definition holding no
+/// role writes one of the other definition kinds, so every other artifact
+/// keeps its bytes, and a reader predating this kind refuses it as an unknown
+/// declaration kind rather than misreading it, which is why the format
+/// version holds.
+pub const KIND_DEF_ROLED: WireTag = WireTag(0x13);
 /// Identity polarity tag: the test holds where its literals are the same.
 pub const IDENTITY_SAME: WireTag = WireTag(0);
 /// Identity polarity tag: the test holds where its literals differ.
@@ -987,6 +1010,14 @@ pub const COVER_LIST: WireTag = WireTag(6);
 pub const COVER_GUARD: WireTag = WireTag(7);
 /// Cover cases tag: a branch no row admits.
 pub const COVER_ABSURD: WireTag = WireTag(8);
+/// Role tag: the type of inductive-recursive signatures.
+pub const ROLE_IR_SIGNATURE: WireTag = WireTag(0);
+/// Role tag: the fields that a signature asks for, `E`.
+pub const ROLE_IR_ARGS: WireTag = WireTag(1);
+/// Role tag: the decode of those fields, `F`.
+pub const ROLE_IR_DECODE: WireTag = WireTag(2);
+/// Role tag: the dependent pairs that `E` asks for.
+pub const ROLE_IR_PAIR: WireTag = WireTag(3);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

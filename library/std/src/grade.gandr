@@ -184,10 +184,10 @@ pub module Count : Model(Grade) where
   def le(a : Nat, b : Nat) -> Bool { leNat a b }
 
 /// Usage, as an algebra a reader takes.
-pub def usage : Model(Grade) = pack Usage at Model(Grade);
+pub def usage : Model Grade = pack Usage at Model Grade;
 
 /// Counting, as an algebra a reader takes.
-pub def count : Model(Grade) = pack Count at Model(Grade);
+pub def count : Model Grade = pack Count at Model Grade;
 
 /// A map from one algebra's grades to another's, named, so a reader asks for
 /// it by the two algebras it joins.

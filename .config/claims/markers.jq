@@ -59,3 +59,19 @@ def unclaiming($lane):
 def release:
   [(. // "") | unfenced | capture(alone("<!-- released: lane=(?<lane>[^ \\n]+) at=(?<at>[^ \\n]+) -->"))
     | {lane, at: (.at | fromdateiso8601)}][0];
+
+# The claim and release markers a body carries alone on their lines, in
+# order, each without its blank text.
+def markers: [(. // "") | unfenced | scan(alone("<!-- (?:claim|released): [^>\\n]*-->")) | gsub("^\\s+|\\s+$"; "")];
+
+# The body written over a body that carried `$old`'s markers (#6210). A seat
+# that rewrites a body from its own draft drops the markers the draft never
+# held, and a dropped claim marker frees the issue for a second lane. So the
+# written body keeps each marker of `$old` that it lacks, in their order,
+# after its text.
+def keeping($old):
+  . as $new
+  | (($old | markers) - ($new | markers)) as $lost
+  | if $lost == [] then $new
+    else ($new // "" | sub("\\s+$"; "")) + "\n\n" + ($lost | join("\n\n")) + "\n"
+    end;

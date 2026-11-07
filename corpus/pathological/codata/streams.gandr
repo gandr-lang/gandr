@@ -27,13 +27,13 @@ codata Point : Type where
 @[ refuses("CodataOccurrence") ]
 codata Swap(a : Type, b : Type) : Type[-] where
   head : a;
-  tail : Swap(b, a);
+  tail : Swap b a;
 
 /// Twisted is refused because its recursive occurrence nests its own argument.
 @[ refuses("CodataOccurrence") ]
 codata Twisted(a : Type) : Type[-] where
   head : a;
-  tail : Twisted(Twisted(a));
+  tail : Twisted (Twisted a);
 
 /// Spot defines three observation positions.
 codata Spot : Type[-] where

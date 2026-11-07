@@ -126,6 +126,7 @@ use gandr_surface_syntax::MoldId;
 use crate::meld::Frontier;
 use crate::meld::MeldState;
 use crate::meld::MoldAdmissibility;
+use crate::meld::continues_past_operand;
 use crate::mold::LabelIds;
 
 /// The most frontiers a [`SettleChain`] names; a longer chain leaves every
@@ -165,6 +166,10 @@ pub struct Admission<'pbg>
     sets: [MoldSet<'pbg>; 8],
     /// The mids and ends, which the open frontier admits by adjacency.
     continuations: MoldSet<'pbg>,
+    /// The sort of the operand at the head, if one stands there: a mid or an
+    /// end continues the open frontier past it only where
+    /// [`continues_past_operand`] says so.
+    after_operand: Option<Sort>,
     /// Whether an item-sort `(` is refused: an operand head at an
     /// expression slot.
     refuses_item_paren: bool,
@@ -186,14 +191,15 @@ impl<'pbg> Admission<'pbg>
     ///   that extend it and the absorbing starts of its sort and of items, and
     ///   from the fills of its sort when the grammar applies that sort by
     ///   juxtaposition; with no open form, also from the first mids; refuses an
-    ///   item `(` after an operand head at an expression slot, and a moded type
-    ///   after a type operand head.
+    ///   item `(` after an operand head at an expression slot, a moded type
+    ///   after a type operand head, and after an operand head a mid or an end
+    ///   that [`continues_past_operand`] refuses.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Admission`].
     /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
-    #[spec(ensures: |ret| ret.open == frontier.open && ret.refuses_item_paren == (bool::from(frontier.head_operand) && frontier.expected == Sort::Expression))]
+    #[spec(ensures: |ret| ret.open == frontier.open && ret.refuses_item_paren == (bool::from(frontier.head_operand) && frontier.expected == Sort::Expression) && ret.after_operand == frontier.head_sort.filter(|_| bool::from(frontier.head_operand)))]
     pub(crate) fn new(
         pbg: &'pbg Pbg,
         frontier: &Frontier,
@@ -228,6 +234,7 @@ impl<'pbg> Admission<'pbg>
                 applied.map_or_else(MoldSet::default, |sort| pbg.tile_set(TileSet::Fills(sort))),
             ],
             continuations: pbg.tile_set(TileSet::Continuations),
+            after_operand: frontier.head_sort.filter(|_| head_operand),
             refuses_item_paren: head_operand && frontier.expected == Sort::Expression,
             refuses_moded: applied == Some(Sort::Type),
             cached: None,
@@ -240,7 +247,8 @@ impl<'pbg> Admission<'pbg>
     /// - requires: the context was built from the state's frontier.
     /// - ensures: true for an id past the table; false for a refused item `(`;
     ///   otherwise true exactly when the mold is in a selected set or is a mid
-    ///   or end the open frontier continues.
+    ///   or end the open frontier continues, past an operand head save where
+    ///   [`continues_past_operand`] refuses it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -268,6 +276,9 @@ impl<'pbg> Admission<'pbg>
             || self.open.is_some_and(|open| {
                 bool::from(self.continuations.word(at).contains(mold))
                     && bool::from(self.pbg.molds_adjacent(open, mold))
+                    && self.after_operand.is_none_or(|head| {
+                        bool::from(continues_past_operand(self.pbg, open, mold, head))
+                    })
             });
         if admitted {
             let refused = self.pbg.mold(mold).is_ok_and(|def| {

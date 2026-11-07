@@ -13,4 +13,4 @@ pub module Site : Model(Site) where
   def sockets = "127.0.0.1:7433";
   def secret = "far";
 
-pub def site : Model(Site) = pack Site at Model(Site);
+pub def site : Model Site = pack Site at Model Site;

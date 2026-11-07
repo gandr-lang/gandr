@@ -1028,29 +1028,29 @@ mod tests
         for (written, applied) in [
             (
                 "observe upManifest",
-                "observe(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter))",
+                "observe(forget[sort C = +{Unit, Bool}](upManifest) at Model Counter)",
             ),
             (
                 "(upManifest : Model Counter)",
-                "(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter) : Model Counter)",
+                "(forget[sort C = +{Unit, Bool}](upManifest) at Model Counter : Model Counter)",
             ),
             (
                 "observe negatedManifest",
-                "observe(forget[sort C = +{Unit, Bool}](negatedManifest) at Model(Counter))",
+                "observe(forget[sort C = +{Unit, Bool}](negatedManifest) at Model Counter)",
             ),
             (
                 "observeShown upReadings",
-                "observeShown(forget[sort R = Integer](upReadings) at Model(ReadCounter))",
+                "observeShown(forget[sort R = Integer](upReadings) at Model ReadCounter)",
             ),
             (
                 "observeShown upBoth",
                 "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at \
-                 Model(ReadCounter))",
+                 Model ReadCounter)",
             ),
             (
                 "observeShown negatedBoth",
                 "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](negatedBoth) at \
-                 Model(ReadCounter))",
+                 Model ReadCounter)",
             ),
         ] {
             assert!(

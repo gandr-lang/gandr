@@ -65,7 +65,7 @@ module Parity : Model(Group) where {
 }
 
 /// The `parityGroup` value is the group model.
-def parityGroup : Model(Group) = pack Parity at Model(Group);
+def parityGroup : Model Group = pack Parity at Model Group;
 
 /// The derived rule gives a path from one to one.
 def invMulParity() -> Path(One, One) =

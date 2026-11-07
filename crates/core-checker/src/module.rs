@@ -548,6 +548,9 @@ pub struct ModuleReport
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The built-in role each holder holds, by position: what the holder
+    /// crosses to the kernel carrying.
+    builtins: BTreeMap<ConstantIndex, gandr_kernel_term::Builtin>,
     /// The matches of each declaration's body with their derivations, by
     /// position.
     covers: BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
@@ -874,6 +877,18 @@ impl ModuleReport
     ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>
     {
         &self.operation_rules
+    }
+
+    /// The built-in role each holder holds, by position: what the holder
+    /// crosses to the kernel carrying, for the kernel to validate.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn builtins(&self) -> &BTreeMap<ConstantIndex, gandr_kernel_term::Builtin>
+    {
+        &self.builtins
     }
 
     /// The matches of each declaration's body with their derivations, by
@@ -2969,6 +2984,11 @@ impl ModuleRun
             laws: context.laws().clone(),
             operation_rules: context.operation_rules().clone(),
             covers: context.covers().clone(),
+            builtins: context
+                .builtins()
+                .iter()
+                .map(|(&role, &holder)| (holder, role))
+                .collect(),
             stage_signatures: context.stage_signatures().clone(),
             natives: context.natives().clone(),
             definitions: context.definitions().definitions().collect(),
@@ -3167,6 +3187,12 @@ pub fn absorb(
             .covers()
             .iter()
             .map(|(&at, covers)| (at, covers.clone())),
+    );
+    report.builtins.extend(
+        context
+            .builtins()
+            .iter()
+            .map(|(&role, &holder)| (holder, role)),
     );
     report.stage_signatures.extend(
         context

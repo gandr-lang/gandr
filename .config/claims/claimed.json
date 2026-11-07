@@ -1,5 +1,45 @@
 [
   {
+    "name": "#6210: an edit that rewrites a marked body from a draft keeps the claim marker the draft lacks",
+    "input": {
+      "step": "edit",
+      "old": "Text.\n\n<!-- claim: lane=diagnostic-help -->\n",
+      "body": "Text.\n\n## Blocked\n\nA section a seat adds.\n"
+    },
+    "output": {
+      "body": "Text.\n\n## Blocked\n\nA section a seat adds.\n\n<!-- claim: lane=diagnostic-help -->\n"
+    }
+  },
+  {
+    "name": "#6210: an edit keeps two lanes' claim markers in their order",
+    "input": {
+      "step": "edit",
+      "old": "Text.\n\n<!-- claim: lane=surface -->\n\n<!-- claim: lane=triage -->\n",
+      "body": "New text.\n"
+    },
+    "output": {
+      "body": "New text.\n\n<!-- claim: lane=surface -->\n\n<!-- claim: lane=triage -->\n"
+    }
+  },
+  {
+    "name": "#6210: an edit whose body keeps its marker writes the body as it is",
+    "input": {
+      "step": "edit",
+      "old": "Text.\n\n<!-- claim: lane=cells -->\n",
+      "body": "New text.\n\n<!-- claim: lane=cells -->\n"
+    },
+    "output": { "body": "New text.\n\n<!-- claim: lane=cells -->\n" }
+  },
+  {
+    "name": "#6210: an edit keeps no marker the old body only quotes",
+    "input": {
+      "step": "edit",
+      "old": "Quotes `<!-- claim: lane=x -->` in prose.\n",
+      "body": "New text.\n"
+    },
+    "output": { "body": "New text.\n" }
+  },
+  {
     "name": "a claim on an unmarked body writes the lane's marker after its text",
     "input": { "lane": "triage", "step": "write", "labels": [], "body": "Text.\n" },
     "output": { "body": "Text.\n\n<!-- claim: lane=triage -->\n" }

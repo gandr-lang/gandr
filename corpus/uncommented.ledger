@@ -1074,7 +1074,7 @@ model/worlds/two-processes.site.gandr:Site.key:d70486116589de72 uncommented
 model/worlds/two-processes.site.gandr:Site.secret:55309a5ecd7e222a uncommented
 model/worlds/two-processes.site.gandr:Site.sockets:b5ebf6a8575487bf uncommented
 model/worlds/two-processes.site.gandr:Site:da7289a8e46b4eea uncommented
-model/worlds/two-processes.site.gandr:site:c2fa006cb900e434 uncommented
+model/worlds/two-processes.site.gandr:site:4f084e269294937f uncommented
 model/worlds/two-processes.site.gandr:std:096d31265eb2ece8 uncommented
 pathological/attributes/effectful-payload.gandr:<file> uncommented
 pathological/attributes/effectful-payload.gandr:f:6c7a03ac8be78ae4 uncommented
@@ -1128,9 +1128,9 @@ pathological/codata/streams.gandr:Spot.y:2a48d2b6f107a61a uncommented
 pathological/codata/streams.gandr:Stream.head:5752613dd3b6d4c9 uncommented
 pathological/codata/streams.gandr:Stream.tail:879d6c57bdd305f4 uncommented
 pathological/codata/streams.gandr:Swap.head:ae20627858b90c0f uncommented
-pathological/codata/streams.gandr:Swap.tail:ed084cafde464e8f uncommented
+pathological/codata/streams.gandr:Swap.tail:d8cb12fb20e9834e uncommented
 pathological/codata/streams.gandr:Twisted.head:ae20627858b90c0f uncommented
-pathological/codata/streams.gandr:Twisted.tail:84aa1b7df86b8afd uncommented
+pathological/codata/streams.gandr:Twisted.tail:ddb5cfa3984fb460 uncommented
 pathological/control/capability-amplify.gandr:save:c393793ff53ff243 uncommented
 pathological/control/capability-amplify.gandr:widen:770effb61f8ee421 uncommented
 pathological/control/capability-drop.gandr:<file> uncommented
@@ -1171,7 +1171,7 @@ pathological/data/generic-eq-refused.gandr:Peano.Next:862177db51444ec5 uncomment
 pathological/data/generic-eq-refused.gandr:Peano.Nought:03f6cf69848a4362 uncommented
 pathological/data/generic-eq-refused.gandr:Point.Point:ca18de0a9ac4a649 uncommented
 pathological/data/generic-eq-refused.gandr:Shape.Shape:2ed7b260f044bad3 uncommented
-pathological/data/head-uniformity-declined.gandr:Bad.Mk:a97580943f0d31e8 uncommented
+
 pathological/data/literal-column-uncovered.gandr:<file> uncommented
 pathological/data/literal-column-uncovered.gandr:Outer.None:33d44d1b754019c5 uncommented
 pathological/data/literal-column-uncovered.gandr:Outer.Some:eddb80920ea021e9 uncommented

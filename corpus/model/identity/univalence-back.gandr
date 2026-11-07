@@ -5,6 +5,7 @@
 //!
 //! The checker expands the backward `ua` transport.
 //! The runtime evaluates each named reverse path.
+//! It reads the case table of § 4.5 of the cited work at the universe.
 //!
 //! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
 //!

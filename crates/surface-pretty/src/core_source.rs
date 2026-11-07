@@ -3,6 +3,7 @@
 //! through its [`Restoration`].
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -197,6 +198,10 @@ pub struct Constructors<'text>
     /// Each family's loops, in the order a data case's branches take them
     /// after the constructors'.
     loops: BTreeMap<FamilyKey<'text>, Vec<Name<'text>>>,
+    /// The families that take arguments, parameters or indices: a
+    /// constructor of one at a type a definition computes is written against
+    /// that type.
+    applied: BTreeSet<FamilyKey<'text>>,
 }
 
 impl<'text> Constructors<'text>
@@ -312,6 +317,31 @@ impl<'text> Constructors<'text>
             .or_insert_with(|| loops.into_iter().collect());
     }
 
+    /// The family `family` takes arguments, parameters or indices: a
+    /// constructor of it at a type a definition computes is written against
+    /// that type, which its lowering needs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family takes arguments.
+    /// - provides: the families whose constructors a computed type classifies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor at a computed type carries it where its
+    ///   family takes arguments, and carries nothing where it takes none.
+    /// - witness: `core_source::tests::a_constructor_at_a_computed_type_carries_it_where_its_family_takes_arguments_6230`
+    #[spec(ensures: self.applied.contains(&family))]
+    #[inline]
+    pub fn applied(
+        &mut self,
+        family: FamilyKey<'text>,
+    )
+    {
+        let _first = self.applied.insert(family);
+    }
+
     /// The constructor of `family` at `tag` as a value is written under, and
     /// its field count: a word's empty word at its point.
     ///
@@ -400,6 +430,7 @@ const UNNAMED: &Constructors<'static> = &Constructors {
     consed: BTreeMap::new(),
     cases: BTreeMap::new(),
     loops: BTreeMap::new(),
+    applied: BTreeSet::new(),
 };
 
 /// The forgetting map the checker applies at a value a source records: the
@@ -752,6 +783,9 @@ pub struct CoreSource<'arena>
     /// The model implicits of each function whose telescope writes one, in
     /// telescope order, ascending by the function's constant.
     slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
+    /// The infix operator of the comparison that calls each constant a
+    /// comparison calls, ascending by the constant.
+    operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
     /// The name the source writes for each homed type head it does not write
     /// bare, by the head's bare spelling.
     homes: &'arena [(Name<'arena>, Name<'arena>)],
@@ -791,6 +825,7 @@ impl<'arena> CoreSource<'arena>
             implied: &[],
             telescopes: &[],
             slots: &[],
+            operators: &[],
             homes: &[],
         }
     }
@@ -1114,6 +1149,22 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { slots, ..self }
+    }
+
+    /// This source, writing a call of each constant `operators` records,
+    /// ascending by the constant, as the comparison its operator writes:
+    /// `(eq, ==)` writes the prelude's `eq` on `a` and `b` as `a == b`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operating(
+        self,
+        operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
+    ) -> Self
+    {
+        Self { operators, ..self }
     }
 
     /// This source, writing each homed type head `homes` holds by the name
@@ -1449,7 +1500,11 @@ impl<'arena> CoreSource<'arena>
                 .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
                 .map(|(held, _)| held)
                 && placement == self.family(family).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity))
-                && classifier.is_some() == matches!(self.arena.value_type(datatype), Some(ValueType::Data { arguments, .. }) if !arguments.is_empty()),
+                && classifier.is_some() == match self.arena.value_type(datatype) {
+                    Some(&ValueType::Data { ref arguments, .. }) => !arguments.is_empty(),
+                    Some(&ValueType::Element { .. }) => self.family(family).is_some_and(|family| self.constructors.applied.contains(&family)),
+                    Some(_) | None => false,
+                },
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
         | (Some(&Value::Dialogue(ref moves)), Former::Dialogue { payloads, .. }) =>
@@ -1526,8 +1581,19 @@ impl<'arena> CoreSource<'arena>
                         self.constructors
                             .placement(family, Arity::from(fields.len()))
                     }),
+                    // A family's application classifies its constructor. So
+                    // does a type a definition computes where the family
+                    // takes arguments: the lowering reads such a constructor
+                    // only against a type (#6230).
                     classifier: match self.arena.value_type(datatype) {
                         Some(&ValueType::Data { ref arguments, .. }) if !arguments.is_empty() => {
+                            Some(CoreNode::ValueType(datatype))
+                        },
+                        Some(&ValueType::Element { .. })
+                            if family.is_some_and(|family| {
+                                self.constructors.applied.contains(&family)
+                            }) =>
+                        {
                             Some(CoreNode::ValueType(datatype))
                         },
                         Some(_) | None => None,
@@ -3566,6 +3632,29 @@ impl Source for CoreSource<'_>
             Some(_) | None => &[],
         }
     }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn operator(
+        &self,
+        head: CoreNode,
+    ) -> Option<gandr_core_term::primitive::Operator>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return None;
+        };
+        let Some(&Value::Constant(constant)) = self.arena.value(id)
+        else {
+            return None;
+        };
+        self.operators
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.operators.get(at))
+            .map(|&(_, operator)| operator)
+    }
 }
 
 /// The name `names` holds for `id`, ascending by id.
@@ -4157,6 +4246,46 @@ mod tests
                 Some((Some(String::from("Origin")), None))
             ),
             "a constructor reads by its family at a computed type and at its family alike"
+        );
+    }
+
+    /// #6230: a constructor kept at a type a definition computes carries that
+    /// type where its family takes arguments, since the lowering refuses a bare
+    /// call of it at an unannotated position. Where its family takes none, it
+    /// carries nothing, as #3669 reads it.
+    #[test]
+    fn a_constructor_at_a_computed_type_carries_it_where_its_family_takes_arguments_6230()
+    {
+        let mut arena = CoreArena::new();
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let computed = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let of_applied =
+            arena.value_constructor(ConstantIndex::from(0_usize), computed, tag, Vec::new());
+        let of_plain =
+            arena.value_constructor(ConstantIndex::from(1_usize), computed, tag, Vec::new());
+        let mut constructors = Constructors::default();
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(0_usize)), [(
+            Name::from("Entry"),
+            Arity::from(0_usize),
+        )]);
+        constructors.applied(FamilyKey::Declared(ConstantIndex::from(0_usize)));
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(1_usize)), [(
+            Name::from("Origin"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&arena, &[]).naming(&constructors);
+        let classifier = |value| {
+            let Former::Constructor { classifier, .. } = source.read(CoreNode::Value(value))
+            else {
+                return None;
+            };
+            Some(classifier)
+        };
+        assert_eq!(
+            (classifier(of_applied), classifier(of_plain)),
+            (Some(Some(CoreNode::ValueType(computed))), Some(None)),
+            "a computed type classifies a constructor whose family takes arguments, and no other"
         );
     }
 }

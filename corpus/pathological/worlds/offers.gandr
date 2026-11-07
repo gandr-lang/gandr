@@ -54,7 +54,7 @@ pub module Site : Model(Site) where
   def secret = "far";
 
 /// The site's model, which a placement holds.
-pub def site : Model(Site) = pack Site at Model(Site);
+pub def site : Model Site = pack Site at Model Site;
 
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) where

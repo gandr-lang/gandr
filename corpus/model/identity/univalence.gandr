@@ -1,10 +1,14 @@
 /// This source states univalence for the user universe.
+/// It follows the HoTT book's § 2.10 and
+/// cubical Agda's `Cubical/Foundations/Univalence.agda`.
 ///
 /// A bi-invertible map makes a path between its two types.
 /// Transport along that path applies the map.
 ///
 /// The checker admits `ua` from the record laws.
 /// The kernel replays the two owed inverse laws.
+/// `ua` admits any two codes, also two variables, or a path type and a
+/// presented type, which no finite round-trip coverage reaches.
 ///
 /// - see: #650 — `oneBack`, `idtoequiv`
 /// - see: #695 — `idtoequiv`
@@ -74,6 +78,7 @@ def retrAlong(a : Type, b : Type, p : Path[.A = Type](a, b), y : b) -> Path[.A =
   r y
 
 /// The `idtoequiv` record packages transport as a bi-invertible map.
+/// It is the book's `idtoeqv` and cubical's `pathToEquiv`.
 pub def idtoequiv(a : Type, b : Type, p : Path[.A = Type](a, b)) -> a ≃ b =
   *{
     fun (x) { fwdAlong a b p x },

@@ -2,6 +2,8 @@
 ///
 /// A manifest sort fixes a carrier while a model remains usable as its theory.
 /// Two models can share a manifest carrier.
+/// A manifest model carried along an equivalence of carriers reads alike once
+/// the checker forgets it.
 ///
 /// The checker inserts each forgetting map when a caller requests
 /// a general model.

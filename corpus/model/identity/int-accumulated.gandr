@@ -12,6 +12,8 @@
 import "./circle-base.gandr";
 
 /// The `count` function adds `b` to the accumulator by recursion.
+/// At `S(P(x))` it computes `count(P(S(acc)), x)`, which the second rule of
+/// `Int` reads as `count(acc, x)`, so it respects the rules.
 def rec count(acc : Int, b : Int) -> Int =
   match b where
     | Z => acc

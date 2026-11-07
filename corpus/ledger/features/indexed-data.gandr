@@ -1,8 +1,8 @@
 /// `indexed-data`: Indexed data families.
-/// Implemented: data families over value indices, written as the kind `Nat -> Type` or as a named telescope whose later index types read the earlier ones, whose case checks each arm at its constructor's fields with one equation per index. A constructor written at an index takes the index's type. The solution of an equation with a variable side refines its arm. The case omits an arm whose constructor is apart at one of its indices. An equation between two applications of one constructor splits into one equation for each field.
-/// Not implemented: the split at a dependent field, and a generator at an index.
+/// Implemented: data families over value indices, written as the kind `Nat -> Type` or as a named telescope whose later index types read the earlier ones, whose case checks each arm at its constructor's fields with one equation per index. A generator's result applies the family to its parameters, then to its indices, by head uniformity. A constructor written at an index takes the index's type. The solution of an equation with a variable side refines its arm. The case omits an arm whose constructor is apart at one of its indices. An equation between two applications of one constructor splits into one equation for each field.
+/// Not implemented: the split at a dependent field.
 ///
-/// - owes: #1314 — the split at a dependent field, and a generator at an index
+/// - owes: #1314 — the split at a dependent field
 //! Vectors: lists indexed by their length, a family whose constructors each
 //! state the index their value stands at [Dybjer-1994-inductive_families]. The
 //! kind `Nat -> Type` reads the length's type before the universe; `VNil`

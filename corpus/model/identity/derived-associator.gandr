@@ -78,7 +78,7 @@ module Signs : Model(Monoid) where {
 }
 
 /// The `signs` value is the monoid model.
-def signs : Model(Monoid) = pack Signs at Model(Monoid);
+def signs : Model Monoid = pack Signs at Model Monoid;
 
 /// The derived associator gives a path from minus to minus.
 def assoc4Signs() -> Path(Minus, Minus) =

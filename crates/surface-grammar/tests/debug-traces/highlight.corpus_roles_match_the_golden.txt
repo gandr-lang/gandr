@@ -1,0 +1,82 @@
+test: highlight::corpus_roles_match_the_golden
+package: gandr-surface-grammar
+command: mise run debug:test gandr-surface-grammar highlight::corpus_roles_match_the_golden --break role_of
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-grammar/aae7e5ecafd6d33a/out/tests-aae7e5ecafd6d33a"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-grammar/aae7e5ecafd6d33a/out/tests-aae7e5ecafd6d33a' (x86_64).
+(lldb) settings set -- target.run-args  "highlight::corpus_roles_match_the_golden" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex role_of
+Breakpoint 1: 7 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-aae7e5ecafd6d33a`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000000669758
+(lldb) run
+
+running 1 test
+test highlight::corpus_roles_match_the_golden ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1262023 launched: 'target/debug-trace/debug/build/gandr-surface-grammar/aae7e5ecafd6d33a/out/tests-aae7e5ecafd6d33a' (x86_64)
+Process 1262023 stopped
+* thread #2, name = 'highlight::corp', stop reason = breakpoint 1.6
+       frame #0: 0x00005555557f40a7 tests-aae7e5ecafd6d33a`<gandr_surface_grammar::highlight::RoleTable>::role_of(self={grammar:{0:5605074268229947616}, roles:size=3059}, mold={0:0}) at highlight.rs:437:5
+   434 	    ///   tables and integer widths are not exhausted.
+   435 	    /// - witness: `tests::highlight::every_mold_has_a_role`
+   436 	    /// - witness: `highlight::tests::role_of_pins_context_free_classes`
+-> 437 	    #[spec(ensures: |ret| ret == usize::try_from(u32::from(mold)).ok().and_then(|index| self.roles.get(index)).copied().ok_or(PbgError::UnknownMold { id: mold }))]
+    	    ^
+   438 	    #[inline]
+   439 	    pub fn role_of(
+   440 	        &self,
+(lldb) bt 24
+* thread #2, name = 'highlight::corp', stop reason = breakpoint 1.6
+   * frame #0: 0x00005555557f40a7 tests-aae7e5ecafd6d33a`<gandr_surface_grammar::highlight::RoleTable>::role_of(self={grammar:{0:5605074268229947616}, roles:size=3059}, mold={0:0}) at highlight.rs:437:5
+     frame #1: 0x00005555557f1dc3 tests-aae7e5ecafd6d33a`<gandr_surface_grammar::highlight::RoleTable>::highlight::{closure#0} at highlight.rs:542:53
+     frame #2: 0x00005555557f41d3 tests-aae7e5ecafd6d33a`anodized::__::eval_once::<core::result::Result<alloc::vec::Vec<gandr_surface_render_remote::present::HlSpan>, gandr_surface_grammar::highlight::HighlightError>, <gandr_surface_grammar::highlight::RoleTable>::highlight::{closure#0}>(closure={_ref__tree:{source:{0:"def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[\n  +,\n  0\n] = fun (T) {\n  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }\n};\n\ndef raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {\n  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }\n};\n\ndef unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = *{\n  fun (a) { *{a, a} },\n  fun (m) { fun (k) { let p = force m; become (force k) 1 } }\n};\n\ndef unit_and_bind_elided : raw_rel_monad_elided(\n  fun (X) { type(-F (X * X)) },\n  Integer,\n  Integer\n) = unit_and_bind;\n\ndef unit_and_bind_spelled : (Integer -> Integer * Integer) * ((\n  () -> Integer * Integer,\n  Integer -> Integer * Integer\n) -> Integer * Integer) = unit_and_bind_elided;\n"}, grammar:{0:5605074268229947616}, nodes:size=591, starts:size=6, roots:size=1, index:{forms:size=5, digests:size=5, ranges:size=5, ranks:size=591, digest:Some({0:"\xa2H\U0000001a\xa2\U0000007f\xc4\xfa\r.J\a3l\"\xddn\U00000016&\x8d\xba\U00000005۟>7v\xaa\x8c޲\U0000000e\x9a"})}}, _ref__self:{grammar:{0:5605074268229947616}, roles:size=3059}}) at __.rs:32:5 [inlined]
+     frame #3: 0x00005555557f41c9 tests-aae7e5ecafd6d33a`<gandr_surface_grammar::highlight::RoleTable>::highlight(self={grammar:{0:5605074268229947616}, roles:size=3059}, tree={source:{0:"def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[\n  +,\n  0\n] = fun (T) {\n  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }\n};\n\ndef raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {\n  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }\n};\n\ndef unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = *{\n  fun (a) { *{a, a} },\n  fun (m) { fun (k) { let p = force m; become (force k) 1 } }\n};\n\ndef unit_and_bind_elided : raw_rel_monad_elided(\n  fun (X) { type(-F (X * X)) },\n  Integer,\n  Integer\n) = unit_and_bind;\n\ndef unit_and_bind_spelled : (Integer -> Integer * Integer) * ((\n  () -> Integer * Integer,\n  Integer -> Integer * Integer\n) -> Integer * Integer) = unit_and_bind_elided;\n"}, grammar:{0:5605074268229947616}, nodes:size=591, starts:size=6, roots:size=1, index:{forms:size=5, digests:size=5, ranges:size=5, ranks:size=591, digest:Some({0:"\xa2H\U0000001a\xa2\U0000007f\xc4\xfa\r.J\a3l\"\xddn\U00000016&\x8d\xba\U00000005۟>7v\xaa\x8c޲\U0000000e\x9a"})}}) at highlight.rs:495:5
+     frame #4: 0x00005555557cb8d0 tests-aae7e5ecafd6d33a`tests::highlight::corpus_roles_match_the_golden at highlight.rs:413:27
+     frame #5: 0x00005555557be967 tests-aae7e5ecafd6d33a`tests::highlight::corpus_roles_match_the_golden::{closure#0}((null)={}) at highlight.rs:384:39
+     frame #6: 0x000055555585a8e6 tests-aae7e5ecafd6d33a`<tests::highlight::corpus_roles_match_the_golden::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x000055555586d99b tests-aae7e5ecafd6d33a`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x000055555586d999 tests-aae7e5ecafd6d33a`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #9: 0x000055555587aee5 tests-aae7e5ecafd6d33a`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #10: 0x000055555587aee0 tests-aae7e5ecafd6d33a`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x000055555587aee0 tests-aae7e5ecafd6d33a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #12: 0x000055555587aecb tests-aae7e5ecafd6d33a`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #13: 0x000055555587aecb tests-aae7e5ecafd6d33a`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x000055555587aecb tests-aae7e5ecafd6d33a`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #15: 0x000055555587aeb6 tests-aae7e5ecafd6d33a`test::run_test::{closure#0} at lib.rs:677:43
+     frame #16: 0x00005555558758a4 tests-aae7e5ecafd6d33a`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #17: 0x0000555555875829 tests-aae7e5ecafd6d33a`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x000055555587e042 tests-aae7e5ecafd6d33a`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x000055555587e033 tests-aae7e5ecafd6d33a`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x000055555587e033 tests-aae7e5ecafd6d33a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #21: 0x000055555587e023 tests-aae7e5ecafd6d33a`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #22: 0x000055555587e023 tests-aae7e5ecafd6d33a`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x000055555587e023 tests-aae7e5ecafd6d33a`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::highlight::RoleTable *) self = 0x00007ffff7bfd840 {grammar:{0:5605074268229947616}, roles:size=3059}
+(gandr_surface_syntax::mold::MoldId) mold = {0:0}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x00005555557f1dc3 tests-aae7e5ecafd6d33a`<gandr_surface_grammar::highlight::RoleTable>::highlight::{closure#0} at highlight.rs:542:53
+   539 	                continue;
+   540 	            };
+   541 	            let role = match node.label() {
+-> 542 	                NodeLabel::Tile(mold) => match self.role_of(mold) {
+    	                                                    ^
+   543 	                    Ok(role) => role,
+   544 	                    Err(_unknown) => return Err(HighlightError::UnknownMold { id: mold }),
+   545 	                },
+(lldb) frame variable --depth 3
+(gandr_surface_syntax::tree::SyntaxTree) tree = {source:{0:"def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[\n  +,\n  0\n] = fun (T) {\n  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }\n};\n\ndef raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {\n  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }\n};\n\ndef unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = *{\n  fun (a) { *{a, a} },\n  fun (m) { fun (k) { let p = force m; become (force k) 1 } }\n};\n\ndef unit_and_bind_elided : raw_rel_monad_elided(\n  fun (X) { type(-F (X * X)) },\n  Integer,\n  Integer\n) = unit_and_bind;\n\ndef unit_and_bind_spelled : (Integer -> Integer * Integer) * ((\n  () -> Integer * Integer,\n  Integer -> Integer * Integer\n) -> Integer * Integer) = unit_and_bind_elided;\n"}, grammar:{0:5605074268229947616}, nodes:size=591, starts:size=6, roots:size=1, index:{forms:size=5, digests:size=5, ranges:size=5, ranks:size=591, digest:Some({0:"\xa2H\U0000001a\xa2\U0000007f\xc4\xfa\r.J\a3l\"\xddn\U00000016&\x8d\xba\U00000005۟>7v\xaa\x8c޲\U0000000e\x9a"})}}
+(gandr_surface_grammar::highlight::RoleTable) self = {grammar:{0:5605074268229947616}, roles:size=3059}
+(alloc::vec::Vec<gandr_surface_render_remote::present::HlSpan, alloc::alloc::Global>) spans = size=0
+(gandr_surface_syntax::tree::Positions) iter = {blocks:{starts:size=6, count:{0:591}}, yielded:196, block:{0:1}}
+(gandr_surface_syntax::tree::NodeIndex) position = {0:4294967296}
+(gandr_surface_syntax::tree::Node *) node = 0x00007ffff01be998 {label:Tile({0:0}), span:{start:{0:0}, end:{0:3}}, first_child:{0:4294967303}, child_count:{0:0}}
+(gandr_surface_syntax::mold::MoldId) mold = {0:0}

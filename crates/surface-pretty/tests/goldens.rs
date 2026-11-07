@@ -2274,7 +2274,7 @@ fn a_written_reduct_s_call_is_left_to_the_checker_in_the_sugared_form_2043()
 
 /// #2130: a model the checker carries across to its theory's models by a
 /// forgetting map is written as the map in the explicit form, each sort it
-/// puts back beside its carrier, `forget[sort C = A](m) at Model(T)`, and
+/// puts back beside its carrier, `forget[sort C = A](m) at Model T`, and
 /// bare in the sugared form, where the checker applies the map.
 #[test]
 fn a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130()
@@ -2294,7 +2294,7 @@ fn a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130()
         (
             &source,
             Form::Explicit,
-            "forget[sort C = Unit](upManifest) at Model(Counter)",
+            "forget[sort C = Unit](upManifest) at Model Counter",
         ),
         (&source, Form::Sugared, "upManifest"),
         (&unforgotten, Form::Explicit, "upManifest"),
@@ -2307,7 +2307,7 @@ fn a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130()
 }
 
 /// #2246: a written call of a forgetting map, its carrier quoted, is written
-/// as the map in the explicit form, `forget[sort C = A](m) at Model(T)`, as a
+/// as the map in the explicit form, `forget[sort C = A](m) at Model T`, as a
 /// crossing by it is; at a carrier that is no quote, or where the source
 /// records no map, it is written as the call it is.
 #[test]
@@ -2343,7 +2343,7 @@ fn a_written_forgetting_map_s_call_is_written_as_the_map_2246()
         (
             &source,
             quoted,
-            "forget[sort C = Unit](upManifest) at Model(Counter)",
+            "forget[sort C = Unit](upManifest) at Model Counter",
         ),
         (&source, unquoted, "Counter upManifest upManifest"),
         (&unmapped, quoted, "Counter Unit upManifest"),
@@ -3175,6 +3175,104 @@ fn a_call_supplies_a_model_implicit_by_its_path_2364()
     assert_eq!(
         spelled(&source, body(mixed)),
         approximate(Written("fun (a) { stepped 3 Up.zero Tens.incr 7 }"))
+    );
+}
+
+/// A call of a constant that a comparison calls is written as the
+/// comparison, its model left to the operands' type as the source leaves
+/// it: a model supplied by one path, by members of two modules or left out.
+/// A call short of an operand, and a call of a constant with no spelling,
+/// keep the call (#6229, #6194).
+#[test]
+fn a_comparison_through_a_model_is_written_as_its_operator_6229()
+{
+    let names = [
+        Name::from("eq"),
+        Name::from("lt"),
+        Name::from("same"),
+        Name::from("EqCode.eq"),
+        Name::from("EqCode.sym"),
+        Name::from("OrdCode.lt"),
+    ];
+    let mut core = CoreArena::new();
+    let omitted =
+        core.value_hole(HoleId::nominated(NominationIndex::from(0_u32)).expect("a nominated name"));
+    let [three, seven] =
+        [Written("3"), Written("7")].map(|written| integer(&mut core, Sign::NonNegative, written));
+    let [code_eq, code_sym, code_lt] =
+        [3_usize, 4, 5].map(|constant| core.value_constant(ConstantIndex::from(constant)));
+    let call = |core: &mut CoreArena, head: usize, arguments: &[ValueId]| {
+        let head = core.value_constant(ConstantIndex::from(head));
+        let mut applied = core.computation_force(head);
+        for &argument in arguments {
+            applied = core.computation_application(applied, argument);
+        }
+        core.computation_lambda(applied)
+    };
+    // The carrier is the type the module defines, which no path names: `3`
+    // stands in for it.
+    let supplied = call(&mut core, 0, &[three, code_eq, code_sym, three, seven]);
+    let left_out = call(&mut core, 0, &[omitted, omitted, omitted, three, seven]);
+    let ordered = call(&mut core, 1, &[three, code_eq, code_lt, three, seven]);
+    let short = call(&mut core, 0, &[three, code_eq, code_sym, three]);
+    let unspelled = call(&mut core, 2, &[three, code_eq, code_sym, three, seven]);
+    let slot = |name: &'static str, theory: &'static str, last: &'static str| ModelSlot {
+        at: 0,
+        name: Name::from(name),
+        theory: Name::from(theory),
+        components: vec![
+            (Name::from("Carrier"), true),
+            (Name::from("eq"), false),
+            (Name::from(last), false),
+        ],
+        fixed: Vec::new(),
+    };
+    let slots = [
+        (ConstantIndex::from(0_usize), vec![slot(
+            "e",
+            "PartialEq",
+            "sym",
+        )]),
+        (ConstantIndex::from(1_usize), vec![slot("o", "Ord", "lt")]),
+        (ConstantIndex::from(2_usize), vec![slot(
+            "e",
+            "PartialEq",
+            "sym",
+        )]),
+    ];
+    let operators = [
+        (
+            ConstantIndex::from(0_usize),
+            gandr_core_term::primitive::Operator::Infix("=="),
+        ),
+        (
+            ConstantIndex::from(1_usize),
+            gandr_core_term::primitive::Operator::Infix("<"),
+        ),
+    ];
+    let source = CoreSource::new(&core, &names)
+        .flattening(&slots)
+        .operating(&operators);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(supplied)),
+        faithful(Written("fun (a) { 3 == 7 }"))
+    );
+    assert_eq!(
+        spelled(&source, body(left_out)),
+        faithful(Written("fun (a) { 3 == 7 }"))
+    );
+    assert_eq!(
+        spelled(&source, body(ordered)),
+        faithful(Written("fun (a) { 3 < 7 }"))
+    );
+    assert_eq!(
+        spelled(&source, body(short)),
+        faithful(Written("fun (a) { eq[.e = EqCode] 3 }"))
+    );
+    assert_eq!(
+        spelled(&source, body(unspelled)),
+        faithful(Written("fun (a) { same[.e = EqCode] 3 7 }"))
     );
 }
 

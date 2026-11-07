@@ -41,6 +41,8 @@ def base_case() -> Path[.A = Words](spinWords (windWords Nil), Nil) =
   Path.here Nil
 
 /// The `parity` recursion cases on free naturals.
+/// The checker refuses a case on the presented `Int` before conversion, because
+/// its rules admit none, so this twin uses free naturals.
 def rec parity(n : Nat) -> Nat =
   match n where
     | Zero => Zero

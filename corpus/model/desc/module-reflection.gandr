@@ -112,6 +112,7 @@ def stdToolchain() -> String { toolchain Package }
 def packageLines() -> String { render Package }
 
 /// The package model whose entries are `e`.
+/// - see: #6201
 @[ inert ]
 def packageOf(e : modelType(packagePresentation)) -> Model Gandr.Package =
   match e where

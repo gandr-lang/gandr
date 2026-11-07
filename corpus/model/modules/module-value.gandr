@@ -32,7 +32,7 @@ module Up : Model(Ticker) where
   def step(n : Integer) -> Integer { n + 1 }
 
 /// `packed` writes `Up` with `pack`.
-def packed : Model(Ticker) = pack Up at Model(Ticker);
+def packed : Model Ticker = pack Up at Model Ticker;
 
 /// `named` writes `Up` as a module name.
 def named : Model Ticker = Up;

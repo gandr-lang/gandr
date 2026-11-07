@@ -1,7 +1,10 @@
 /// This source states how derived path operations find an operand path type.
+/// The operations are the HoTT book's inverse and composite (Lemmas 2.1.1 and
+/// 2.1.2) and `ap` (Lemma 2.2.1).
 ///
 /// A parameter uses its binder type.
 /// A call uses the result type of its declaration.
+/// In a body and in a type alike, none of these operations needs a stated type.
 ///
 /// A recursive call uses its own function result.
 /// `Path.ap` uses the written result of its parameter function.

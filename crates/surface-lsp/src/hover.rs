@@ -2287,12 +2287,12 @@ mod tests
             (
                 "observe upManifest",
                 "observe ".len(),
-                "forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter)",
+                "forget[sort C = +{Unit, Bool}](upManifest) at Model Counter",
             ),
             (
                 "observeShown upBoth",
                 "observeShown ".len(),
-                "forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at Model(ReadCounter)",
+                "forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at Model ReadCounter",
             ),
         ] {
             let shown = at(needle, past);

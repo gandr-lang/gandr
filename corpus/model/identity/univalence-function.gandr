@@ -5,6 +5,7 @@
 //!
 //! The checker expands the function family at the `ua` path.
 //! The runtime evaluates the transported function.
+//! It reads the case table of § 4.5 of the cited work at a function type.
 //!
 //! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
 //!
