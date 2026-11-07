@@ -1617,12 +1617,12 @@ impl fmt::Display for NoteText<'_>
     /// - requires: the declaration produced a refusal.
     /// - ensures: names the declaration; says it is expected to check, to check
     ///   owing its stated count, to be refused with its stated refusal, to run
-    ///   to its stated outcome, or to be refused and run, or that its
-    ///   expectation states nothing and why; says the refusal is what leaves it
-    ///   unsettled, or for a refusal and a run what it was refused with and ran
-    ///   to, or, for a settled declaration whose refusal is the one it states,
-    ///   that it is refused as stated; then the surviving obligations exactly
-    ///   when the ledger is nonempty.
+    ///   to its stated outcome, to distribute as its stated distribution, or to
+    ///   be refused and run, or that its expectation states nothing and why;
+    ///   says the refusal is what leaves it unsettled, or for a refusal and a
+    ///   run what it was refused with and ran to, or, for a settled declaration
+    ///   whose refusal is the one it states, that it is refused as stated; then
+    ///   the surviving obligations exactly when the ledger is nonempty.
     /// - provides: the note after a refused declaration's snippet.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1684,6 +1684,11 @@ impl fmt::Display for NoteText<'_>
                 "`{name}` is expected to mention exactly {spelled}, and this refusal leaves it \
                  unsettled"
             )?,
+            Stated::Verdict(Outcome::Distributes(ref spelled)) => write!(
+                f,
+                "`{name}` is expected to distribute as {spelled}, and this refusal leaves it \
+                 unsettled"
+            )?,
             Stated::Verdict(Outcome::RunsTracing(ref spelled, _)) => write!(
                 f,
                 "`{name}` is expected to run to {spelled}, its channels playing as stated, and \
@@ -1702,7 +1707,8 @@ impl fmt::Display for NoteText<'_>
                     | Outcome::Normalizes(_)
                     | Outcome::Decomposes(_)
                     | Outcome::RunsTracing(..)
-                    | Outcome::Reads(_) => {
+                    | Outcome::Reads(_)
+                    | Outcome::Distributes(_) => {
                         write!(
                             f,
                             "`{name}` is expected to be refused with {expected} and run to {spelled}, \

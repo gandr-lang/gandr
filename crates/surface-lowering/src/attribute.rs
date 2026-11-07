@@ -4,8 +4,8 @@
 //!
 //! Its public types: `AttributeRegistry`, `AttributeSchema`,
 //! `RegisteredAttribute`, `PayloadForm`, `PayloadVerdict`,
-//! `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and
-//! `AttributedCount`.
+//! `payload_form`, `payload_verdict`, `texts`, `AttributeEntry`,
+//! `AttributeTable` and `AttributedCount`.
 //!
 //! # The side table is keyed by content identity
 //!
@@ -56,7 +56,8 @@
 //!
 //! The registry is closed: `checks` and `explicit_exits` take no payload,
 //! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
-//! integer, `refuses`, `runs`, `normalizes` and `doc` a text, `respects` and
+//! integer, `refuses`, `runs`, `normalizes` and `doc` a text, `distributes`
+//! a text or a tuple of texts, read in written order, `respects` and
 //! `entry` one declared name or a tuple of them, `identity` a tuple of two or
 //! three declared names, `form` one bare word, `explicit` or `sugared`, and
 //! `deprecated` none or a record of the texts `since` and `note`, either
@@ -145,6 +146,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
+use gandr_kernel_term::StringLiteral;
 use gandr_surface_grammar::EditDistance;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::edit_distance;
@@ -210,6 +212,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a `distributes` payload holds no texts.
+    pub mod texts {
+        /// The payload is a value of another form.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Neither a text nor a non-empty tuple of texts.
+            Untexted,
+        }
+    }
+}
+
 /// The declarations a `respects` or `entry` payload names, in the order it
 /// names them.
 ///
@@ -262,6 +276,59 @@ pub fn names(
             Maybe::Present(named)
         },
         _ => unnamed,
+    }
+}
+
+/// The texts a `distributes` payload holds, in the order it writes them.
+///
+/// One text literal lowers to itself and a tuple to its components, so a
+/// payload holds texts exactly when it is one text literal or a non-empty
+/// tuple of them.
+///
+/// # Specification
+/// - requires: `payload` is the lowered value of a payload the
+///   [`AttributeSchema::Texts`] schema admitted.
+/// - ensures: the one text `payload` is, or the texts of its components in
+///   written order when it is a non-empty tuple of text literals;
+///   [`texts::Absent::Untexted`] for any other value, the unit included.
+/// - fails: never — such a payload is an absence, not an error.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one pass over the tuple's finite components, not recursion.
+/// - measure: the components left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one text, a tuple of texts, a tuple holding an integer,
+///   and the unit separate the answers.
+/// - witness: `attribute::tests::a_distributes_payload_holds_its_texts_in_written_order`
+#[spec(ensures: |ref ret| match (ret, arena.value(payload)) {
+    | (&Maybe::Present(ref texts), Some(&Value::Literal(Literal::Text(_)))) => texts.len() == 1,
+    | (&Maybe::Present(ref texts), Some(&Value::Tuple(ref items))) => !items.is_empty() && texts.len() == items.len(),
+    | (&Maybe::Present(_), _) => false,
+    | (&Maybe::Absent(_), _) => true,
+})]
+#[inline]
+pub fn texts(
+    arena: &CoreArena,
+    payload: ValueId,
+) -> Maybe<Vec<&StringLiteral>, texts::Absent>
+{
+    let untexted = Maybe::Absent(texts::Absent::Untexted);
+    match arena.value(payload) {
+        Some(&Value::Literal(Literal::Text(ref text))) => Maybe::Present(Vec::from([text])),
+        Some(&Value::Tuple(ref items)) if !items.is_empty() => {
+            let mut texts = Vec::with_capacity(items.len());
+            for &item in items {
+                let Some(&Value::Literal(Literal::Text(ref text))) = arena.value(item)
+                else {
+                    return untexted;
+                };
+                texts.push(text);
+            }
+            Maybe::Present(texts)
+        },
+        _ => untexted,
     }
 }
 
@@ -484,6 +551,10 @@ impl RegisteredAttribute
     /// mentions exactly the items its payload names, `()` when it mentions
     /// none: the footprint read off its content table's roots.
     pub const READS: Self = Self("reads");
+    /// `distributes`: the declaration it decorates checks, owing nothing, and
+    /// the runs of its draws, one for each sequence of answers, give the
+    /// outcomes its payload states with their exact weights.
+    pub const DISTRIBUTES: Self = Self("distributes");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -525,6 +596,8 @@ pub enum AttributeSchema
     Integer,
     /// One text literal.
     Text,
+    /// One text literal, or a tuple of text literals.
+    Texts,
     /// A bare marker, or the one text literal spelling the option named.
     MarkerOr(&'static str),
     /// One declared name, or a tuple of declared names.
@@ -559,6 +632,7 @@ impl fmt::Display for AttributeSchema
             Self::Marker => f.write_str("no payload"),
             Self::Integer => f.write_str("an integer payload"),
             Self::Text => f.write_str("a text payload"),
+            Self::Texts => f.write_str("a text or a tuple of texts"),
             Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
             Self::Names => f.write_str("a declared name or a tuple of declared names"),
             Self::Interface => f.write_str(
@@ -686,7 +760,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 18_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 19_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -695,6 +769,7 @@ const REGISTRY: [(&str, AttributeSchema); 18_usize] = [
     ("decomposes", AttributeSchema::Spelled),
     (RegisteredAttribute::TRACES.0, AttributeSchema::Spelled),
     (RegisteredAttribute::READS.0, AttributeSchema::Spelled),
+    (RegisteredAttribute::DISTRIBUTES.0, AttributeSchema::Texts),
     (RegisteredAttribute::DOC.0, AttributeSchema::Text),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
@@ -911,6 +986,10 @@ impl AttributeRegistry
                 PayloadForm::Absent
             ) | (AttributeSchema::Integer, PayloadForm::Integer)
                 | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
+                | (
+                    AttributeSchema::Texts,
+                    PayloadForm::Text | PayloadForm::OtherText | PayloadForm::OtherValue
+                )
                 | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
                 | (
                     AttributeSchema::Names | AttributeSchema::Spelled,
@@ -928,6 +1007,7 @@ impl AttributeRegistry
                 schema,
                 AttributeSchema::Integer
                     | AttributeSchema::Text
+                    | AttributeSchema::Texts
                     | AttributeSchema::Names
                     | AttributeSchema::Interface
                     | AttributeSchema::Word(_)
@@ -954,6 +1034,10 @@ pub const fn payload_verdict(
         )
         | (AttributeSchema::Integer, PayloadForm::Integer)
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
+        | (
+            AttributeSchema::Texts,
+            PayloadForm::Text | PayloadForm::OtherText | PayloadForm::OtherValue,
+        )
         | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
         | (
             AttributeSchema::Names | AttributeSchema::Spelled,
@@ -968,6 +1052,7 @@ pub const fn payload_verdict(
         (
             AttributeSchema::Integer
             | AttributeSchema::Text
+            | AttributeSchema::Texts
             | AttributeSchema::Names
             | AttributeSchema::Interface
             | AttributeSchema::Word(_)
@@ -997,6 +1082,10 @@ pub const fn payload_verdict(
             | PayloadForm::Word
             | PayloadForm::OtherWord
             | PayloadForm::OtherValue,
+        )
+        | (
+            AttributeSchema::Texts,
+            PayloadForm::Integer | PayloadForm::Word | PayloadForm::OtherWord,
         )
         | (
             AttributeSchema::MarkerOr(_),
@@ -1033,6 +1122,7 @@ pub const fn payload_verdict(
             AttributeSchema::Marker
             | AttributeSchema::Integer
             | AttributeSchema::Text
+            | AttributeSchema::Texts
             | AttributeSchema::MarkerOr(_)
             | AttributeSchema::Names
             | AttributeSchema::Interface
@@ -1780,6 +1870,7 @@ mod tests
     use super::payload_verdict;
     use super::registry;
     use super::suggestion;
+    use super::texts;
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::resolve::SurfaceName;
@@ -1855,6 +1946,7 @@ mod tests
             ("decomposes", AttributeSchema::Spelled),
             ("traces", AttributeSchema::Spelled),
             ("reads", AttributeSchema::Spelled),
+            ("distributes", AttributeSchema::Texts),
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
@@ -1929,6 +2021,7 @@ mod tests
             ("decompose", "decomposes"),
             ("trace", "traces"),
             ("read", "reads"),
+            ("distribute", "distributes"),
             ("boundary", "boundary"),
             ("builtins", "builtin"),
         ];
@@ -1983,6 +2076,7 @@ mod tests
             (AttributeSchema::Marker, [A, I, I, I, I, I, I, I]),
             (AttributeSchema::Integer, [M, A, I, I, I, I, I, I]),
             (AttributeSchema::Text, [M, I, A, A, I, I, I, I]),
+            (AttributeSchema::Texts, [M, I, A, A, I, I, A, I]),
             (AttributeSchema::MarkerOr("effects"), [
                 A, I, A, I, I, I, I, I,
             ]),
@@ -2045,6 +2139,43 @@ mod tests
             "the laws filed under a key are read back from it"
         );
         assert!(table.laws(unfiled).is_empty(), "and from no other");
+    }
+
+    #[test]
+    fn a_distributes_payload_holds_its_texts_in_written_order()
+    {
+        let mut arena = CoreArena::new();
+        let mut text = |written: &str| {
+            arena.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
+                String::from(written),
+            )))
+        };
+        let (half, quarter) = (text("1/2 1"), text("1/4 0"));
+        let pair = arena.value_tuple(&[half, quarter]);
+        let unit = arena.value_unit();
+        let named = arena.value_constant(ConstantIndex::from(3_usize));
+        let mixed = arena.value_tuple(&[half, named]);
+        let (half_text, quarter_text) = (
+            gandr_kernel_term::StringLiteral::new(String::from("1/2 1")),
+            gandr_kernel_term::StringLiteral::new(String::from("1/4 0")),
+        );
+        assert_eq!(
+            texts(&arena, half),
+            Maybe::Present(vec![&half_text]),
+            "one text holds itself"
+        );
+        assert_eq!(
+            texts(&arena, pair),
+            Maybe::Present(vec![&half_text, &quarter_text]),
+            "a tuple holds its texts in the order written"
+        );
+        for other in [mixed, unit, named] {
+            assert_eq!(
+                texts(&arena, other),
+                Maybe::Absent(super::texts::Absent::Untexted),
+                "a payload holding anything but texts holds none"
+            );
+        }
     }
 
     #[test]
@@ -2254,6 +2385,7 @@ mod tests
             AttributeSchema::Marker,
             AttributeSchema::Integer,
             AttributeSchema::Text,
+            AttributeSchema::Texts,
             AttributeSchema::MarkerOr("all"),
             AttributeSchema::Names,
             AttributeSchema::Interface,

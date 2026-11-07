@@ -302,6 +302,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+mod distribution;
 mod expectation;
 #[cfg(test)]
 mod fixture;
@@ -313,6 +314,9 @@ mod root;
 mod run;
 mod settle;
 
+pub use crate::distribution::Bits;
+pub use crate::distribution::PastQuota;
+pub use crate::distribution::distributed;
 pub use crate::expectation::ExpectationFault;
 pub use crate::expectation::ExpectationSchema;
 pub use crate::expectation::Expectations;

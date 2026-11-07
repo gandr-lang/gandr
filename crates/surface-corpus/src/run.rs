@@ -9,13 +9,19 @@
 //! one the toolchain prints a run's outcome in, so a stated outcome reads as
 //! what `gandr run` prints. A traced run adds each channel the run forked,
 //! by the name its fork gives it, with the web its play decomposes to,
-//! spelled as a `decomposes` payload is.
+//! spelled as a `decomposes` payload is. A distributed run runs the
+//! declaration once for each sequence of answers to its draws, and reports
+//! each path's outcome, spelled as [`Runner::run`] spells it, with the bits
+//! its draws take.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
 use gandr_kernel_term::ConstantIndex;
+
+use crate::distribution::Bits;
+use crate::distribution::PastQuota;
 
 /// One channel of a run: its name and the web its play decomposes to.
 ///
@@ -267,6 +273,38 @@ pub trait Runner
         &mut self,
         constant: ConstantIndex,
     ) -> RunSpelling;
+
+    /// Run the declaration at `constant` once for each sequence of answers
+    /// to its draws, depth first from the start of the run, and hand `path`
+    /// the outcome of each with the bits its draws take.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::run`], and the declaration states a distribution.
+    /// - ensures: `path` is called once for each sequence of answers, each draw
+    ///   of `n` bits answered by each integer of `[0, 2^n)` in turn, with the
+    ///   outcome spelled as [`Self::run`] spells it and the sum of the widths
+    ///   of that path's draws.
+    /// - provides: the produced side of a `distributes` comparison.
+    /// - fails: [`PastQuota`] at the first path whose draws pass `quota`; no
+    ///   path past it is reported.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Errors
+    /// [`PastQuota`] when a path draws more than `quota` bits.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four paths reaching three outcomes, and a path past
+    ///   the quota; settlement sums the paths and compares the canonical
+    ///   spellings.
+    /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
+    /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        quota: Bits,
+        path: &mut dyn FnMut(RunSpelling, Bits),
+    ) -> Result<(), PastQuota>;
 }
 
 impl<Run> Runner for Run
@@ -342,6 +380,23 @@ where
     ) -> RunSpelling
     {
         self(constant)
+    }
+
+    /// Calls the closure once: a closure spells a run with no draw, one path
+    /// of no bits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        _quota: Bits,
+        path: &mut dyn FnMut(RunSpelling, Bits),
+    ) -> Result<(), PastQuota>
+    {
+        path(self(constant), Bits::default());
+        Ok(())
     }
 }
 

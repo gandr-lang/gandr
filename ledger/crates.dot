@@ -192,6 +192,8 @@ digraph crates {
   "surface-corpus" -> "surface-grammar";
   "surface-corpus" -> "surface-lowering";
   "surface-corpus" -> "surface-syntax";
+  "surface-corpus" -> "theory-cellular-sheaves";
+  "surface-corpus" -> "theory-probability";
   "surface-diagnostics" -> "core-checker";
   "surface-diagnostics" -> "core-term";
   "surface-diagnostics" -> "kernel-term";
@@ -391,7 +393,8 @@ digraph crates {
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-session" -> "workflow-lane-budget" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "core-checker" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
-  "core-term" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
+  "core-term" -> "surface-corpus" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
+  "surface-corpus" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
   "surface-dispatcher" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
   "theory-exact-reals" -> "theory-ordered-algebras" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
   "theory-ordered-algebras" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];

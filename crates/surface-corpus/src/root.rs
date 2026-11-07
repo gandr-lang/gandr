@@ -14,7 +14,7 @@
 //! says about itself. `CorpusRoot::Strict` is the gating root: every
 //! declaration is held to _checks, owing 0_, or to the stricter _runs to_ or
 //! _normalizes_ line it states. `CorpusRoot::Fixture` is the root where the
-//! checker's refusals and obligations are asserted, and all five schemas are
+//! checker's refusals and obligations are asserted, and every schema is
 //! admitted
 //! there. Inside a root, a declaration carrying an expectation attribute is a
 //! fixture (`Membership::Fixture`) and gets its own line in the report; one
@@ -40,6 +40,20 @@
 //! | `corpus/model/`, `corpus/pathological/`, `corpus/surface/` | the language's own surface programs whose declarations the lowering reads, each verdict stated | `refuses`, `checks` or `runs` on each declaration |
 //! | `corpus/pending/` | the language's own surface programs the fragment does not yet cover | none: membership by location (§ The pending set) |
 //! | `corpus/sketch/<sketch>/` | sketch sources: a planned form in its settled spelling, which the grammar need not read yet | none: read as text only (§ The sketch set) |
+//!
+//! The control subjects take a case that is hard in other languages and write
+//! it as gandr does: the accepting programs under `fixture/model/<subject>/`,
+//! and each misuse refused by name under `fixture/pathological/<subject>/`.
+//!
+//! | Case | Subject | Compared with |
+//! | ---- | ------- | ------------- |
+//! | Async drop | `drop` | Rust's async-drop experiment and its `AsyncDrop` proposal; Swift's synchronous `deinit` (SE-0371); C++ destructors, which cannot await |
+//! | Cancellation safety | `cancellation` | Rust's futures dropped at an `.await`; Kotlin's `NonCancellable` section |
+//! | Completion-based I/O | `completion` | `io_uring`'s submission and completion queues; Rust's owned-buffer completion APIs |
+//! | Lifetime parameters | `regions` | Rust's lifetime parameters, `fn f<'a>(x: &'a T) -> &'a T`, and the free theorem of a function generic in `'a`: it cannot keep what it borrows |
+//! | Move semantics | `moves` | C++'s moved-from objects and move constructors; Rust's `Copy` and move split, and `mem::forget` |
+//! | Self-reference | `self-reference` | Rust's `Pin` for a future that borrows from itself (RFC 2349); C++ objects kept immobile by convention |
+//! | Structured concurrency | `tasks` | Trio's nurseries; Rust's scoped threads (`std::thread::scope`) |
 //!
 //! The language's own surface programs — the model programs, the pathological
 //! cases and the surface families — are kept in their own subdirectories with
@@ -245,7 +259,7 @@ impl CorpusRoot
         ensures: |ret| {
     matches!(
         (self, schema, ret), (Self::Fixture, _, Ok(())) | (Self::Strict,
-        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes | ExpectationSchema::Decomposes | ExpectationSchema::Traces | ExpectationSchema::Reads, Ok(())) | (Self::Strict,
+        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes | ExpectationSchema::Decomposes | ExpectationSchema::Traces | ExpectationSchema::Reads | ExpectationSchema::Distributes, Ok(())) | (Self::Strict,
         ExpectationSchema::Owes, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
         schema : ExpectationSchema::Owes, .. })) | (Self::Strict,
         ExpectationSchema::Refuses, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
@@ -270,7 +284,8 @@ impl CorpusRoot
                 | ExpectationSchema::Normalizes
                 | ExpectationSchema::Decomposes
                 | ExpectationSchema::Traces
-                | ExpectationSchema::Reads,
+                | ExpectationSchema::Reads
+                | ExpectationSchema::Distributes,
             )
             | (
                 Self::Strict,
@@ -279,7 +294,8 @@ impl CorpusRoot
                 | ExpectationSchema::Normalizes
                 | ExpectationSchema::Decomposes
                 | ExpectationSchema::Traces
-                | ExpectationSchema::Reads,
+                | ExpectationSchema::Reads
+                | ExpectationSchema::Distributes,
             ) => Ok(()),
             (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
                 Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span })
@@ -415,6 +431,7 @@ mod tests
             (CorpusRoot::Strict, ExpectationSchema::Decomposes, Ok(())),
             (CorpusRoot::Strict, ExpectationSchema::Traces, Ok(())),
             (CorpusRoot::Strict, ExpectationSchema::Reads, Ok(())),
+            (CorpusRoot::Strict, ExpectationSchema::Distributes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Checks, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Owes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Refuses, Ok(())),
@@ -423,6 +440,7 @@ mod tests
             (CorpusRoot::Fixture, ExpectationSchema::Decomposes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Traces, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Reads, Ok(())),
+            (CorpusRoot::Fixture, ExpectationSchema::Distributes, Ok(())),
         ];
 
         for (root, schema, admitted) in table {

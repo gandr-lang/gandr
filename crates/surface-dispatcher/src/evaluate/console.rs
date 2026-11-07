@@ -28,6 +28,9 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 
+use super::rand::Draws;
+use super::rand::answered;
+
 /// The operation of [`CONSOLE`] that writes a line.
 const PRINT: &str = "print";
 
@@ -227,6 +230,17 @@ impl Captured
     {
         &self.errors
     }
+
+    /// Drop every line written, keeping the input and the room the lines
+    /// took: what lets one console serve the runs of a distribution.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn clear(&mut self)
+    {
+        self.lines.clear();
+        self.errors.clear();
+    }
 }
 
 impl Console for Captured
@@ -339,12 +353,14 @@ where
 /// The host of a run that only meets the standard streams: each of their
 /// operations is served on its console, and every other one is declined. A
 /// host over a console that crosses threads crosses them too, so a
-/// concurrent run's reader may hold it.
-#[repr(transparent)]
+/// concurrent run's reader may hold it. Given the draws of the exact model,
+/// it also answers each `Rand.draw` from them.
 pub(super) struct PrintingHost<'console, Printer: ?Sized = dyn Console>
 {
     /// Where the run's printed lines go.
     console: &'console mut Printer,
+    /// The answers of the exact model, when the run takes them.
+    draws: Option<&'console mut Draws>,
 }
 
 impl<'console, Printer> PrintingHost<'console, Printer>
@@ -357,7 +373,25 @@ where
     /// trivial.
     pub(super) const fn new(console: &'console mut Printer) -> Self
     {
-        Self { console }
+        Self {
+            console,
+            draws: None,
+        }
+    }
+
+    /// The host writing to `console` and answering each draw from `draws`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn drawing(
+        console: &'console mut Printer,
+        draws: &'console mut Draws,
+    ) -> Self
+    {
+        Self {
+            console,
+            draws: Some(draws),
+        }
     }
 }
 
@@ -367,7 +401,8 @@ where
 {
     type Abort = Infallible;
 
-    /// Serve a standard-stream operation on the console; decline every other
+    /// Serve a standard-stream operation on the console, and a draw from the
+    /// exact model's answers when the host holds them; decline every other
     /// operation.
     ///
     /// # Specification
@@ -378,6 +413,14 @@ where
         values: &mut HostValues<'_>,
     ) -> HostReply<Self::Abort>
     {
-        served(&mut *self.console, request, values).unwrap_or(HostReply::Decline)
+        if let Some(reply) = served(&mut *self.console, request, values) {
+            return reply;
+        }
+        match self.draws {
+            Some(ref mut draws) => {
+                answered(&mut *self.console, draws, request, values).unwrap_or(HostReply::Decline)
+            },
+            None => HostReply::Decline,
+        }
     }
 }

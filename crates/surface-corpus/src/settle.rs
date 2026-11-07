@@ -710,7 +710,7 @@ impl<'source> DeclarationReport<'source>
             matches!(ret, Outcome::RefusesRunning(name, ref actual) if name == refusal.name() && actual == spelled)
         }
         (&Stated::Verdict(Outcome::RefusesRunning(..)), &Maybe::Absent(_))
-        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Reads(_)) | Stated::Malformed(_)), _) => {
+        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Reads(_) | Outcome::Distributes(_)) | Stated::Malformed(_)), _) => {
             ret == Outcome::Refuses(refusal.name())
         }
     },
@@ -728,6 +728,9 @@ impl<'source> DeclarationReport<'source>
                 }
                 Stated::Verdict(Outcome::RunsTracing(..)) => {
                     matches!(ret, Outcome::RunsTracing(ref actual, ref channels) if actual == spelled && channels_settle(channels, &self.traced) == Settlement::Settled)
+                }
+                Stated::Verdict(Outcome::Distributes(_)) => {
+                    matches!(ret, Outcome::Distributes(ref actual) if actual == spelled)
                 }
                 Stated::Verdict(_) | Stated::Malformed(_) => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
             },
@@ -758,6 +761,9 @@ impl<'source> DeclarationReport<'source>
                     },
                     Stated::Verdict(Outcome::RunsTracing(..)) => {
                         Outcome::RunsTracing(spelled.clone(), self.traced.clone())
+                    },
+                    Stated::Verdict(Outcome::Distributes(_)) => {
+                        Outcome::Distributes(spelled.clone())
                     },
                     Stated::Verdict(
                         Outcome::Checks(_)
@@ -812,7 +818,7 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Absent(_)) && count == self.owed
             }
-            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
+            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected) | Outcome::Distributes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(
                         self.ran, Maybe::Present(ref actual) if actual == expected
@@ -857,7 +863,11 @@ impl<'source> DeclarationReport<'source>
                     && matches!(self.ran, Maybe::Absent(_))
                     && count == self.owed
             },
-            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
+            Stated::Verdict(
+                Outcome::Runs(ref expected)
+                | Outcome::Normalizes(ref expected)
+                | Outcome::Distributes(ref expected),
+            ) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             },
@@ -934,7 +944,8 @@ impl<'source> DeclarationReport<'source>
                 | Outcome::Decomposes(_)
                 | Outcome::RefusesRunning(..)
                 | Outcome::RunsTracing(..)
-                | Outcome::Reads(_),
+                | Outcome::Reads(_)
+                | Outcome::Distributes(_),
             )
             | Stated::Malformed(_) => 0_usize,
         };
@@ -1224,7 +1235,7 @@ impl Error for SettleFault
                         && match declaration.ran {
                             Maybe::Present(_) => {
                                 (matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Distributes(_))
                                 )
                                     && matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
@@ -1244,7 +1255,7 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unaccepted) => {
                                 (matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Distributes(_))
                                 )
                                     && !matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
@@ -1266,7 +1277,7 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unstated) => {
                                 !matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..) | Outcome::RunsTracing(..) | Outcome::Reads(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..) | Outcome::RunsTracing(..) | Outcome::Reads(_) | Outcome::Distributes(_))
                                 )
                             }
                         }
@@ -1542,6 +1553,10 @@ where
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.run(lowered.constant())),
             (
+                &Stated::Verdict(Outcome::Distributes(_)),
+                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+            ) => Maybe::Present(crate::distribution::distributed(runner, lowered.constant())),
+            (
                 &Stated::Verdict(Outcome::Decomposes(_)),
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.decompose(lowered.constant())),
@@ -1575,7 +1590,10 @@ where
             ) => Maybe::Present(runner.reads(lowered.constant())),
             (
                 &Stated::Verdict(
-                    Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..),
+                    Outcome::Runs(_)
+                    | Outcome::Decomposes(_)
+                    | Outcome::RunsTracing(..)
+                    | Outcome::Distributes(_),
                 ),
                 Produced::Judged(
                     Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_),
@@ -3215,6 +3233,26 @@ mod tests
         {
             self.0.push(("reads", usize::from(constant)));
             RunSpelling::from(String::from("*{Nat, side}"))
+        }
+
+        /// Records a distributed run and reports one path to `unit` of no
+        /// bits whatever the position.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_distributed(
+            &mut self,
+            constant: ConstantIndex,
+            _quota: crate::distribution::Bits,
+            path: &mut dyn FnMut(RunSpelling, crate::distribution::Bits),
+        ) -> Result<(), crate::distribution::PastQuota>
+        {
+            self.0.push(("distributes", usize::from(constant)));
+            path(
+                RunSpelling::from(String::from("unit")),
+                crate::distribution::Bits::default(),
+            );
+            Ok(())
         }
     }
 

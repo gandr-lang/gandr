@@ -1494,6 +1494,8 @@ dependencies = [
  "gandr-surface-lowering",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "gandr-theory-cellular-sheaves",
+ "gandr-theory-probability",
  "gandr-workflow-ledger",
  "quenchant-anodized",
  "quenchant-shape",

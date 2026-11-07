@@ -194,7 +194,9 @@ use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
 use gandr_runtime_emitter::evaluate_scheduled_on;
 use gandr_runtime_emitter::evaluate_with_host;
+use gandr_surface_corpus::Bits;
 use gandr_surface_corpus::Channel;
+use gandr_surface_corpus::PastQuota;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::TracedRun;
@@ -372,26 +374,41 @@ enum Hosting<'run>
     Printing(&'run mut dyn Console),
     /// As [`Self::Printing`], each channel's play appended to the trace.
     Traced(&'run mut dyn Console, &'run mut Trace),
+    /// As [`Self::Printing`], each `Rand.draw` answered from the exact
+    /// model's path.
+    Drawing(&'run mut dyn Console, &'run mut rand::Draws),
 }
 
 impl Hosting<'_>
 {
-    /// The inputs of a run over `store` as this hosting asks, and the
-    /// console a hosted run's host writes to: none for a bare run.
+    /// The inputs of a run over `store` as this hosting asks, the console a
+    /// hosted run's host writes to, none for a bare run, and the exact
+    /// model's path when the run takes its draws from one.
     ///
     /// # Specification
     /// trivial.
     fn inputs<'run>(
         &'run mut self,
         store: &'run mut Store,
-    ) -> (RunInputs<'run, 'run>, Option<&'run mut dyn Console>)
+    ) -> (
+        RunInputs<'run, 'run>,
+        Option<&'run mut dyn Console>,
+        Option<&'run mut rand::Draws>,
+    )
     {
         match *self {
-            Self::Bare => (RunInputs::new(store), None),
-            Self::Printing(ref mut console) => (RunInputs::new(store), Some(&mut **console)),
-            Self::Traced(ref mut console, ref mut trace) => {
-                (RunInputs::new(store).traced(trace), Some(&mut **console))
-            },
+            Self::Bare => (RunInputs::new(store), None, None),
+            Self::Printing(ref mut console) => (RunInputs::new(store), Some(&mut **console), None),
+            Self::Traced(ref mut console, ref mut trace) => (
+                RunInputs::new(store).traced(trace),
+                Some(&mut **console),
+                None,
+            ),
+            Self::Drawing(ref mut console, ref mut draws) => (
+                RunInputs::new(store),
+                Some(&mut **console),
+                Some(&mut **draws),
+            ),
         }
     }
 }
@@ -2138,7 +2155,7 @@ impl<'source> Program<'source>
     {
         let fuel = Fuel::from(RUN_BUDGET);
         let run = |root, store: &mut Store| {
-            let (inputs, console) = hosting.inputs(store);
+            let (inputs, console, draws) = hosting.inputs(store);
             let Some(console) = console
             else {
                 return match choice {
@@ -2154,7 +2171,10 @@ impl<'source> Program<'source>
                     },
                 };
             };
-            let mut host = console::PrintingHost::new(console);
+            let mut host = match draws {
+                Some(draws) => console::PrintingHost::drawing(console, draws),
+                None => console::PrintingHost::new(console),
+            };
             let hosted = match choice {
                 Choice::Policy => evaluate_with_host(
                     &self.arena,
@@ -3199,6 +3219,57 @@ impl Runner for Program<'_>
             .cloned()
             .unwrap_or_else(|| RunSpelling::from(String::from(NO_ITEM)))
     }
+
+    /// Runs the declaration at `constant` once for each sequence of answers
+    /// to its draws, depth first, and spells each outcome as [`Self::run`]
+    /// does. The two entry commands are focused once, and one console and one
+    /// path serve every run, so the program's arena does not grow with the
+    /// paths. A declaration that cannot run is one path of no bits, its
+    /// outcome the reason.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`PastQuota`] at the first run whose draws pass `quota`.
+    #[inline]
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        quota: Bits,
+        path: &mut dyn FnMut(RunSpelling, Bits),
+    ) -> Result<(), PastQuota>
+    {
+        let mut captured = Captured::default();
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => {
+                path(printed(&captured, &evaluation), Bits::default());
+                return Ok(());
+            },
+        };
+        let mut draws = rand::Draws::new(quota);
+        loop {
+            captured.clear();
+            let evaluation = self
+                .tiered(
+                    constant,
+                    returned,
+                    forced,
+                    Choice::Policy,
+                    Hosting::Drawing(&mut captured, &mut draws),
+                )
+                .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)));
+            if let Some(drawn) = draws.past() {
+                return Err(PastQuota { drawn });
+            }
+            path(printed(&captured, &evaluation), draws.bits());
+            match draws.advance() {
+                rand::Advanced::Next => {},
+                rand::Advanced::Done => return Ok(()),
+            }
+        }
+    }
 }
 
 /// A program whose `runs` take the concurrent schedule on a pool: what
@@ -3299,6 +3370,25 @@ impl Runner for ScheduledRuns<'_, '_, '_>
     ) -> RunSpelling
     {
         self.program.reads(constant)
+    }
+
+    /// As [`Program`]'s distributed run: the paths run in order on one
+    /// path state, so they stay sequential.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`PastQuota`] as [`Program`]'s.
+    #[inline]
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        quota: Bits,
+        path: &mut dyn FnMut(RunSpelling, Bits),
+    ) -> Result<(), PastQuota>
+    {
+        self.program.run_distributed(constant, quota, path)
     }
 }
 
