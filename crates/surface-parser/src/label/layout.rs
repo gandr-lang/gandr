@@ -775,7 +775,9 @@ pub(super) fn lay_out(
         }
         else if token.lexeme == Lexeme::Punct {
             match spelled {
-                b"->" => {
+                // The linear arrow, `⊸` or its ASCII spelling `-o`, heads a
+                // body as `->` does.
+                b"->" | b"-o" | b"\xE2\x8A\xB8" => {
                     if let Some(frame) = frames.last_mut()
                         && frame.head.opener == Opener::Def
                         && matches!(before_arrow, b")" | b"]")

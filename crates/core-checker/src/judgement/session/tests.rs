@@ -3201,6 +3201,52 @@ fn a_linear_function_reads_its_parameter_once_5853()
     );
 }
 
+/// A `let` of a linear function's parameter reads the parameter where its
+/// name stands, not at the `let`: a body that reads the name once checks, and
+/// one that reads it twice is refused at the second read (#5942).
+///
+/// The `let` binds a name that stands for the value, and the body reads a
+/// copy of the value at each place the name stands. When the read at the
+/// `let` drew the copy too, `let r = n; r` read `n` twice.
+#[test]
+fn a_let_of_a_linear_parameter_reads_it_where_its_name_stands_5942()
+{
+    let mut arena = CoreArena::new();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer_type);
+    let arrow = linear_arrow(&mut arena, Spelled("1"), returns_integer);
+    // λ̂x. (return x) to y. return y
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let bound = arena.computation_return(parameter);
+    let name = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let read = arena.computation_return(name);
+    let once = arena.computation_bind(bound, read);
+    let kept = arena.computation_linear_lambda(once);
+    assert_eq!(
+        check_at(&mut arena, kept, arrow),
+        Ok(()),
+        "the name read once reads the parameter once"
+    );
+    // λ̂x. (return x) to y. (return y) to z. return y: y read twice.
+    let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first_bound = arena.computation_return(first);
+    let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let second_read = arena.computation_return(second);
+    let inner = arena.computation_bind(first_bound, second_read);
+    let twice = arena.computation_bind(bound, inner);
+    let reread = arena.computation_linear_lambda(twice);
+    assert!(
+        matches!(
+            check_at(&mut arena, reread, arrow),
+            Err(CheckRefusal::Linearity {
+                defect: LinearityDefect::LinearSlotConsumed { lambda },
+                ..
+            }) if lambda == reread
+        ),
+        "the name read twice reads the parameter twice"
+    );
+}
+
 /// A linear arrow forms at the multiplicity one alone: zero and two are each
 /// refused by name at the arrow (#5853, #5867).
 #[test]
