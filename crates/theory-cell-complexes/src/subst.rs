@@ -96,6 +96,17 @@ impl core::error::Error for BindingRefusal
 {
 }
 
+/// A subterm read in place: the producer or consumer subtree that a
+/// metavariable stands for, borrowed from a term or from a substitution.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ImageRef<'term>
+{
+    /// The image of a producer metavariable.
+    Producer(ProdRef<'term>),
+    /// The image of a consumer metavariable.
+    Consumer(ConsRef<'term>),
+}
+
 /// A substitution: producer metavariables to producer patterns, consumer
 /// metavariables to consumer patterns.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -194,6 +205,42 @@ impl Subst
         self.conss
             .get(var)
             .map_or(Maybe::Absent(binding::Absent::Unbound), Maybe::Present)
+    }
+
+    /// The image bound to `var`, at `var`'s own category, read in place.
+    ///
+    /// # Specification
+    /// - provides: [`binding::Absent::Unbound`] when `var` has no binding at
+    ///   its category.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a producer and a consumer binding of one name and an
+    ///   unbound key are read. A lost category or a read of the other map
+    ///   changes the image.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(ImageRef::Producer(image)) => var.cat() == Cat::Producer && self.prods.get(var).is_some_and(|value| value.to_ref() == image),
+        Maybe::Present(ImageRef::Consumer(image)) => var.cat() == Cat::Consumer && self.conss.get(var).is_some_and(|value| value.to_ref() == image),
+        Maybe::Absent(_) => match var.cat() {
+            Cat::Producer => !self.prods.contains_key(var),
+            Cat::Consumer => !self.conss.contains_key(var),
+        },
+    })]
+    pub fn image(
+        &self,
+        var: &MetaVar,
+    ) -> Maybe<ImageRef<'_>, binding::Absent>
+    {
+        match var.cat() {
+            Cat::Producer => self
+                .get_prod(var)
+                .map(|image| ImageRef::Producer(image.to_ref())),
+            Cat::Consumer => self
+                .get_cons(var)
+                .map(|image| ImageRef::Consumer(image.to_ref())),
+        }
     }
 
     /// The bindings of `vars` alone.
@@ -730,8 +777,83 @@ pub fn match_cmd(
     subst: &mut Subst,
 ) -> SubstitutionDecision
 {
-    if pattern.polarity() != target.polarity() {
+    match_walk(pattern, target, subst).map_or_else(
+        |_| SubstitutionDecision::from(false),
+        |found| {
+            subst.commit(found);
+            SubstitutionDecision::from(true)
+        },
+    )
+}
+
+/// Matches a pattern against a target and copies no subterm: on success,
+/// `visit` receives each metavariable of `pattern` once, with the subtree of
+/// `target` that it stands for, borrowed.
+///
+/// # Specification
+/// - ensures: positive exactly when [`match_cmd`] from an empty substitution is
+///   positive. Then `visit` receives the bindings of that match, each as the
+///   borrowed subtree that the match copies in.
+/// - fails: negative as [`match_cmd`] refuses, and `visit` is not called.
+/// - panics: none.
+/// - intension: the walk of [`match_cmd`], with no commit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a producer and a consumer metavariable matched against a
+///   ground target, and a clash. The visited images equal the images of the
+///   copying match, and a refused match visits nothing.
+/// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+#[inline]
+#[spec(ensures: |output| bool::from(output) == bool::from(match_cmd(pattern, target, &mut Subst::new())))]
+pub fn match_images<'pattern, 'target, F>(
+    pattern: &'pattern CmdPat,
+    target: &'target CmdPat,
+    mut visit: F,
+) -> SubstitutionDecision
+where
+    F: FnMut(&'pattern MetaVar, ImageRef<'target>),
+{
+    let Ok(found) = match_walk(pattern, target, &Subst::new())
+    else {
         return SubstitutionDecision::from(false);
+    };
+    for (var, image) in found.prods {
+        visit(var, ImageRef::Producer(image));
+    }
+    for (var, image) in found.conss {
+        visit(var, ImageRef::Consumer(image));
+    }
+    SubstitutionDecision::from(true)
+}
+
+/// The walk of a match: the bindings that make `pattern` instantiate to
+/// `target` past those `subst` holds, as borrowed subtrees.
+///
+/// # Specification
+/// - ensures: the bindings of each metavariable of `pattern` that `subst`
+///   leaves unbound; a metavariable that `subst` binds meets an equal subterm,
+///   and a repeated metavariable meets equal subterms.
+/// - fails: [`Refusal::Clash`] on a polarity, symbol, arity or shape clash;
+///   [`Refusal::Conflict`] on a conflicting binding.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`match_cmd`], whose commit and refusals read the
+///   walk.
+/// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+#[spec(ensures: |output| output.as_ref().ok().is_none_or(|found| found.prods.keys().all(|var| !subst.prods.contains_key(*var))
+    && found.conss.keys().all(|var| !subst.conss.contains_key(*var))))]
+fn match_walk<'pattern, 'target>(
+    pattern: &'pattern CmdPat,
+    target: &'target CmdPat,
+    subst: &Subst,
+) -> Result<Found<'pattern, 'target>, Refusal>
+{
+    if pattern.polarity() != target.polarity() {
+        return Err(Refusal::Clash);
     }
     let mut found = Found::default();
     let mut goals: Vec<Goal<'_, '_>> = alloc::vec![
@@ -739,16 +861,57 @@ pub fn match_cmd(
         Goal::Cons(pattern.consumer().to_ref(), target.consumer().to_ref()),
     ];
     while let Some(goal) = goals.pop() {
-        let step = match goal {
-            Goal::Prod(pat, tgt) => match_prod_step(pat, tgt, subst, &mut found, &mut goals),
-            Goal::Cons(pat, tgt) => match_cons_step(pat, tgt, subst, &mut found, &mut goals),
-        };
-        if step.is_err() {
-            return SubstitutionDecision::from(false);
+        match goal {
+            Goal::Prod(pat, tgt) => match_prod_step(pat, tgt, subst, &mut found, &mut goals)?,
+            Goal::Cons(pat, tgt) => match_cons_step(pat, tgt, subst, &mut found, &mut goals)?,
         }
     }
-    subst.commit(found);
-    SubstitutionDecision::from(true)
+    Ok(found)
+}
+
+/// `cmd` with a copy of each image that `image_of` gives in place of its
+/// metavariable, in one pass.
+///
+/// # Specification
+/// - ensures: each metavariable that `image_of` answers with an image of its
+///   own category is replaced by a copy of that image, which is not visited
+///   again; every other metavariable stays.
+/// - panics: none.
+/// - intension: one copy of each table, the images appended in place, as
+///   [`Subst::apply_cmd`] makes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the images of a match put back in place of the pattern's
+///   metavariables, all of them and one alone. A skipped image or a lost
+///   category changes the term.
+/// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+#[inline]
+#[must_use]
+#[spec(ensures: |output| output.polarity() == cmd.polarity())]
+pub fn apply_images<'image, F>(
+    cmd: &CmdPat,
+    image_of: &F,
+) -> CmdPat
+where
+    F: Fn(&MetaVar) -> Maybe<ImageRef<'image>, binding::Absent>,
+{
+    let prods = |var: &MetaVar| match image_of(var) {
+        Maybe::Present(ImageRef::Producer(image)) => Maybe::Present(image),
+        Maybe::Present(ImageRef::Consumer(_)) | Maybe::Absent(_) => {
+            Maybe::Absent(binding::Absent::Unbound)
+        },
+    };
+    let conss = |var: &MetaVar| match image_of(var) {
+        Maybe::Present(ImageRef::Consumer(image)) => Maybe::Present(image),
+        Maybe::Present(ImageRef::Producer(_)) | Maybe::Absent(_) => {
+            Maybe::Absent(binding::Absent::Unbound)
+        },
+    };
+    CmdPat::cut(
+        cmd.polarity(),
+        crate::pattern::instantiate_prod(cmd.producer().to_ref(), &prods),
+        crate::pattern::instantiate_cons(cmd.consumer().to_ref(), &prods, &conss),
+    )
 }
 
 /// One producer match goal: binds a metavariable or enqueues the argument

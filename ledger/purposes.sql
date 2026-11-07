@@ -3486,8 +3486,11 @@ INSERT INTO purpose VALUES('theory-cell-complexes','sequent::SequentAlphabet','s
 INSERT INTO purpose VALUES('theory-cell-complexes','sequent::StepGrowth','enum','The whole-step classification CellMeta::step_growth reports: the join of the per-hole CellContractumUse verdicts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','sequent::frame_defining_cell','function','The defining cell of a return-side constructor frame `K⁻`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','subst::BindingRefusal','enum','A refused binding.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes','subst::ImageRef','enum','A subterm of either category, borrowed in place from a pattern or a substitution.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','subst::Subst','struct','A substitution: producer metavariables to producer patterns, consumer metavariables to consumer patterns.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes','subst::apply_images','function','Puts the image that a lookup gives for each metavariable in place in a command pattern, in one pass with one copy of each image.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','subst::match_cmd','function','Matches a pattern against a target, extending `subst` so that `subst.apply_cmd(pattern)` equals `target`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes','subst::match_images','function','Matches a pattern against a target and gives each metavariable the subterm of the target that it stands for, borrowed, with no copy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes','subst::unify_cmd','function','Unifies two command patterns into their most general unifier, extending `subst`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','adversarial::AlphabetLie','trait','Names the answers a `Lying` alphabet may give dishonestly, so an adversary overrides exactly the one it lies about.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','adversarial::CollidingAddresses','struct','Holds the adversary that hashes every orientation tag to nothing, so two cells differing only in orientation collide.',NULL,'fits','sound',NULL);
@@ -3504,6 +3507,7 @@ INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToyMeta','struct'
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToyOrient','enum','Names a toy cell''s orientation, so the orientation''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToyPos','struct','Names a toy term''s position, so the position''s path is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToyProv','enum','Names a toy cell''s provenance, so the provenance''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToyRef','struct','Holds a toy subterm borrowed from a term, so a match and a substitution read it in place.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToySubst','struct','Holds a toy substitution, so the substitution''s bindings are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::ToyVar','struct','Holds a toy metavariable name, so the name''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-cell-complexes-tools','toy::toy_cell','function','Builds a toy cell, so the cell''s fields are read.',NULL,'fits','sound',NULL);
@@ -3726,6 +3730,7 @@ INSERT INTO purpose VALUES('theory-computads','term::TermMeta','struct','A cell'
 INSERT INTO purpose VALUES('theory-computads','term::TermOrient','enum','How a cell''s orientation was fixed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','term::TermPos','struct','A position: a path of child indices from the root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','term::TermProv','enum','Where a cell came from.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-computads','term::TermRef','struct','A subterm of a term, borrowed in place: its nodes in prefix order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','term::TermSubst','struct','A substitution: an ordered map from metavariables to terms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','term::composite::CompositeCriterion','struct','Holds the composite criterion on terms with its working memory, so completion skips the join of a pair whose peak holds a redex below its seam.','oracle','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','term::conditioned_cell','function','A conditioned face as a cell of the term alphabet, its moved metavariables scoped.',NULL,'fits','sound',NULL);

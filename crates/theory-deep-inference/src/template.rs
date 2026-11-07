@@ -21,7 +21,10 @@
 //! refuses.
 //! [`GuardedTemplate::row`] reads the guard of the arm that a peak holds at
 //! each entry, and [`GuardedTemplate::instance`] rebuilds the certificate from
-//! that row alone.
+//! that row alone. The row matches the peak against the carrier's peak and
+//! copies no body: each body finds its arm by its content address. The
+//! instance copies the carrier's skeleton once, and it builds the peak and the
+//! join once each with every arm in place.
 //!
 //! # The guarded template
 //!
@@ -129,6 +132,7 @@ use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::Generalization;
 use gandr_theory_cell_complexes::PatternSize;
+use gandr_theory_cell_complexes::binding;
 use gandr_theory_coherent_resolutions::ReplayPathOutcome;
 use gandr_theory_coherent_resolutions::StuckStep;
 use gandr_theory_coherent_resolutions::Tracelet;
@@ -158,7 +162,7 @@ const REGION_DOMAIN: &[u8] = b"gandr.template.region.v1";
 
 /// The domain separator mixed in before an arm body's content, so an arm
 /// address cannot collide with a region address.
-const ARM_DOMAIN: &[u8] = b"gandr.template.arm.v1";
+const ARM_DOMAIN: &[u8] = b"gandr.template.arm.v2";
 
 quenchant_shape::reason_enum! {
     /// Why an inheritance cache holds no verdict for a triple.
@@ -182,8 +186,8 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TemplateAddress(ContentDigest);
 
-/// The content address of an arm's body: the substitution that puts it in
-/// place.
+/// The content address of an arm's body, as the alphabet reads the body in
+/// place: in the arm's substitution, or at the entry in a member's peak.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArmAddress(ContentDigest);
@@ -627,18 +631,35 @@ impl<A: CellAlphabet> TemplateEntry<A>
     ///   entry's metavariable unbound.
     /// - [`TemplateObstruction::ArmOutsideTemplate`]: the bound body is none of
     ///   the entry's arms.
-    fn arm(
-        &self,
+    fn arm<'read>(
+        &'read self,
         index: EntryIndex,
-        substitution: &A::Subst,
-    ) -> Result<&TemplateArm<A>, TemplateObstruction>
+        substitution: &'read A::Subst,
+    ) -> Result<&'read TemplateArm<A>, TemplateObstruction>
     {
-        let bound = A::restrict_subst(substitution, core::slice::from_ref(&self.var));
-        if bound == A::Subst::default() {
-            return Err(TemplateObstruction::UnboundEntry { entry: index });
+        match A::image(substitution, &self.var) {
+            Maybe::Present(body) => self.arm_of(index, body),
+            Maybe::Absent(_) => Err(TemplateObstruction::UnboundEntry { entry: index }),
         }
-        match self.arms.get(&arm_address::<A>(&bound)) {
-            Some(arm) if arm.binding == bound => Ok(arm),
+    }
+
+    /// The arm whose body is `body`, the entry at `index`: the arm at the
+    /// body's address, when its own body is `body`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// - [`TemplateObstruction::ArmOutsideTemplate`]: `body` is none of the
+    ///   entry's arms.
+    fn arm_of<'read>(
+        &'read self,
+        index: EntryIndex,
+        body: A::Image<'read>,
+    ) -> Result<&'read TemplateArm<A>, TemplateObstruction>
+    {
+        match self.arms.get(&arm_address::<A>(Maybe::Present(body))) {
+            Some(arm) if A::image(&arm.binding, &self.var) == Maybe::Present(body) => Ok(arm),
             Some(_) | None => Err(TemplateObstruction::ArmOutsideTemplate { entry: index }),
         }
     }
@@ -701,6 +722,9 @@ pub struct GuardedTemplate<A: CellAlphabet>
     carrier: Tracelet<A>,
     /// The entries, in the order the generalization met their points.
     entries: Vec<TemplateEntry<A>>,
+    /// The address of each entry in the carrier's peak: the metavariable that
+    /// stands there, with the entry's index, sorted by metavariable.
+    addresses: Vec<(A::Var, EntryIndex)>,
     /// The region's content address.
     region: TemplateAddress,
     /// The template's size `s`.
@@ -879,32 +903,35 @@ where
     TemplateAddress(hasher.digest())
 }
 
-/// The content address of an arm body.
+/// The content address of an arm body, as the alphabet reads it in place.
 ///
 /// # Specification
-/// - ensures: a digest over the binding behind the arm domain; equal bindings
-///   have equal addresses.
+/// - ensures: a digest over the body behind the arm domain; equal bodies have
+///   equal addresses, whether they are read from a substitution or from a term.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — substitution bodies from generated families, including
-///   repeated and distinct arms. The domain-framed binding digest and
-///   distinct-triple counts reject omitting the domain or body and treating
-///   repeated arms as fresh; hashes are not assumed collision-free.
+/// - hypothesis: L1 — the bodies of generated families, including repeated and
+///   distinct arms, and the bodies that members hold in their peaks. The
+///   domain-framed body digest, the distinct-triple counts and the rows of the
+///   members reject omitting the domain or the body, treating repeated arms as
+///   fresh and an address that a member's body misses; hashes are not assumed
+///   collision-free.
 /// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
+/// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
 #[spec(ensures: |output| {
     let mut observer = ContentHasher::new();
     core::hash::Hasher::write(&mut observer, ARM_DOMAIN);
-    core::hash::Hash::hash(binding, &mut observer);
+    core::hash::Hash::hash(&body, &mut observer);
     output == ArmAddress(observer.digest())
 })]
-fn arm_address<A>(binding: &A::Subst) -> ArmAddress
+fn arm_address<A>(body: Maybe<A::Image<'_>, binding::Absent>) -> ArmAddress
 where
     A: CellAlphabet,
 {
     let mut hasher = ContentHasher::new();
     core::hash::Hasher::write(&mut hasher, ARM_DOMAIN);
-    core::hash::Hash::hash(binding, &mut hasher);
+    core::hash::Hash::hash(&body, &mut hasher);
     ArmAddress(hasher.digest())
 }
 
@@ -1079,7 +1106,7 @@ where
                                 entry.arms.iter().all(|(body, arm)| {
                                     let key = InheritanceKey { region: template.region,
                                         entry: EntryIndex::from(index), body: *body };
-                                    *body == arm_address::<A>(&arm.binding)
+                                    *body == arm_address::<A>(A::image(&arm.binding, &entry.var))
                                         && cache.verdicts.get(&key) == Some(&InheritanceVerdict::Inherited)
                                 }))
                     },
@@ -1162,7 +1189,7 @@ where
         let mut arms: BTreeMap<ArmAddress, TemplateArm<A>> = BTreeMap::new();
         let mut column = Vec::with_capacity(point.arms.len());
         for arm in point.arms {
-            let address = arm_address::<A>(&arm.binding);
+            let address = arm_address::<A>(A::image(&arm.binding, &point.var));
             match arms.get(&address) {
                 Some(guarded) if guarded.binding == arm.binding => {},
                 Some(_) => return Err(TemplateRefusal::ArmAddressCollision { entry }),
@@ -1226,9 +1253,16 @@ where
         }
     }
 
+    let mut addresses: Vec<(A::Var, EntryIndex)> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| (entry.var.clone(), EntryIndex::from(index)))
+        .collect();
+    addresses.sort_unstable();
     Ok(GuardedTemplate {
         carrier,
         entries,
+        addresses,
         region,
         size: NodeCount::from(size),
         plain_size: NodeCount::from(plain),
@@ -1408,7 +1442,7 @@ impl<A: CellAlphabet> GuardedTemplate<A>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body clones the carrier and applies each entry's arm, as the check does; the check scans one entry's arms where the body keys them"
+            reason = "parity: the check clones the carrier and applies each entry's arm, where the body puts every arm in place in one copy of the carrier; the check scans one entry's arms where the body keys them"
         )
     )]
     #[spec(ensures: |output| {
@@ -1442,13 +1476,14 @@ impl<A: CellAlphabet> GuardedTemplate<A>
         substitution: &A::Subst,
     ) -> Result<Tracelet<A>, TemplateObstruction>
     {
-        let mut instance = self.carrier.clone();
-        for (index, entry) in self.entries.iter().enumerate() {
-            let arm = entry.arm(EntryIndex::from(index), substitution)?;
-            instance.overlap.peak = A::apply_subst(&arm.binding, &instance.overlap.peak);
-            instance.joins_at = A::apply_subst(&arm.binding, &instance.joins_at);
-        }
-        Ok(instance)
+        let arms = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| entry.arm(EntryIndex::from(index), substitution))
+            .collect::<Result<Vec<&TemplateArm<A>>, TemplateObstruction>>()?;
+        let (peak, join) = self.ends(&arms);
+        Ok(self.carrier.with_ends(peak, join))
     }
 
     /// The row of the certificate at `peak`: the guard of the arm that `peak`
@@ -1464,6 +1499,9 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   [`TemplateObstruction::ArmOutsideTemplate`] for the first entry whose
     ///   bound body is none of its arms.
     /// - panics: none.
+    /// - intension: one match of `peak` against the carrier's peak that copies
+    ///   no body, then one lookup of each entry's body by its address; no
+    ///   substitution is built.
     ///
     /// # Errors
     /// As the failure clause states.
@@ -1477,15 +1515,28 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// - witness: `tests::template::a_row_outside_its_template_is_refused_by_name`
     #[spec(ensures: |output| output == self.scanned_row(peak))]
     #[inline]
-    pub fn row(
-        &self,
-        peak: &A::Cmd,
+    pub fn row<'read>(
+        &'read self,
+        peak: &'read A::Cmd,
     ) -> Result<TemplateRow, TemplateObstruction>
     {
-        let substitution = self.peak_substitution(peak)?;
+        let mut bodies: Vec<Option<A::Image<'read>>> = alloc::vec![None; self.entries.len()];
+        let matched = A::match_images(&self.carrier.overlap.peak, peak, |var, body| {
+            if let Some(slot) = self
+                .entry_at(var)
+                .and_then(|index| bodies.get_mut(usize::from(index)))
+            {
+                *slot = Some(body);
+            }
+        });
+        if !bool::from(matched) {
+            return Err(TemplateObstruction::PeakNotAnInstance);
+        }
         let mut guards = Vec::with_capacity(self.entries.len());
-        for (index, entry) in self.entries.iter().enumerate() {
-            guards.push(entry.arm(EntryIndex::from(index), &substitution)?.guard);
+        for (index, (entry, body)) in self.entries.iter().zip(bodies).enumerate() {
+            let at = EntryIndex::from(index);
+            let body = body.ok_or(TemplateObstruction::UnboundEntry { entry: at })?;
+            guards.push(entry.arm_of(at, body)?.guard);
         }
         Ok(TemplateRow(guards))
     }
@@ -1503,6 +1554,8 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   holds no guard for; [`TemplateObstruction::ArmOutsideTemplate`] for
     ///   the first entry whose guard names none of its arms.
     /// - panics: none.
+    /// - intension: one copy of the carrier's skeleton, and its peak and join
+    ///   built once each with every arm in place.
     ///
     /// # Errors
     /// As the failure clause states.
@@ -1535,10 +1588,7 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ) -> Result<Tracelet<A>, TemplateObstruction>
     {
         let (peak, join) = self.boundary(row)?;
-        let mut instance = self.carrier.clone();
-        instance.overlap.peak = peak;
-        instance.joins_at = join;
-        Ok(instance)
+        Ok(self.carrier.with_ends(peak, join))
     }
 
     /// The peak and the join of the certificate that the template holds for
@@ -1565,33 +1615,73 @@ impl<A: CellAlphabet> GuardedTemplate<A>
                 entry: EntryIndex::from(self.entries.len()),
             });
         }
-        let mut boundary: Option<(A::Cmd, A::Cmd)> = None;
-        for (index, entry) in self.entries.iter().enumerate() {
-            let at = EntryIndex::from(index);
-            let Some(guard) = row.0.get(index)
-            else {
-                return Err(TemplateObstruction::UnboundEntry { entry: at });
-            };
-            let Some(arm) = entry.arms.values().find(|arm| arm.guard == *guard)
-            else {
-                return Err(TemplateObstruction::ArmOutsideTemplate { entry: at });
-            };
-            let (peak, join) = match boundary {
-                Some((ref peak, ref join)) => (peak, join),
-                None => (&self.carrier.overlap.peak, &self.carrier.joins_at),
-            };
-            let next = (
-                A::apply_subst(&arm.binding, peak),
-                A::apply_subst(&arm.binding, join),
-            );
-            boundary = Some(next);
-        }
-        Ok(boundary.unwrap_or_else(|| {
-            (
-                self.carrier.overlap.peak.clone(),
-                self.carrier.joins_at.clone(),
-            )
-        }))
+        let arms = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let at = EntryIndex::from(index);
+                let guard = row
+                    .0
+                    .get(index)
+                    .ok_or(TemplateObstruction::UnboundEntry { entry: at })?;
+                entry
+                    .arms
+                    .values()
+                    .find(|arm| arm.guard == *guard)
+                    .ok_or(TemplateObstruction::ArmOutsideTemplate { entry: at })
+            })
+            .collect::<Result<Vec<&TemplateArm<A>>, TemplateObstruction>>()?;
+        Ok(self.ends(&arms))
+    }
+
+    /// The carrier's peak and join with `arms` in place, one pass each.
+    ///
+    /// # Specification
+    /// - requires: one arm for each entry, in entry order.
+    /// - ensures: in the carrier's peak and join, each entry's metavariable
+    ///   replaced by its arm's body, and every other metavariable kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the row of each member of generated families gives
+    ///   the member's own peak and join back. A skipped entry, the body of
+    ///   another arm or an arm put in the peak alone changes them.
+    /// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
+    #[spec(requires: arms.len() == self.entries.len())]
+    fn ends(
+        &self,
+        arms: &[&TemplateArm<A>],
+    ) -> (A::Cmd, A::Cmd)
+    {
+        let image_of = |var: &A::Var| {
+            self.entry_at(var)
+                .and_then(|index| arms.get(usize::from(index)))
+                .map_or(Maybe::Absent(binding::Absent::Unbound), |arm| {
+                    A::image(&arm.binding, var)
+                })
+        };
+        (
+            A::apply_images(&self.carrier.overlap.peak, image_of),
+            A::apply_images(&self.carrier.joins_at, image_of),
+        )
+    }
+
+    /// The index of the entry whose metavariable is `var`, read through the
+    /// entries' addresses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn entry_at(
+        &self,
+        var: &A::Var,
+    ) -> Option<EntryIndex>
+    {
+        self.addresses
+            .binary_search_by(|&(ref address, _)| address.cmp(var))
+            .ok()
+            .and_then(|place| self.addresses.get(place))
+            .map(|&(_, index)| index)
     }
 
     /// The row of the certificate at `peak`, as a scan of each entry's arms

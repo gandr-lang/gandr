@@ -369,6 +369,38 @@ where
     }
 }
 
+/// The section of a composite of `first` and then `next` at a source cell:
+/// `inner`, the first section there, then the second section at `lowered`,
+/// the first collapse of the cell, carried back by the first inclusion.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// - each [`Refusal`] of the second section, the first inclusion of a witness
+///   and the first composition of two witnesses.
+fn carried_section<First, Next>(
+    first: &mut First,
+    next: &mut Next,
+    inner: Option<First::Witness>,
+    lowered: &First::Composite,
+) -> Answer<First, Option<First::Witness>>
+where
+    First: Reduction,
+    Next: Reduction<
+            Cell = First::Cell,
+            Composite = First::Composite,
+            Witness = First::Witness,
+            Fault = First::Fault,
+        >,
+{
+    let outer = match next.section(lowered)? {
+        Some(ref witness) => Some(first.include_witness(witness)?),
+        None => None,
+    };
+    chained(first, inner, outer)
+}
+
 impl<First, Next> Reduction for Then<First, Next>
 where
     First: Reduction,
@@ -458,11 +490,7 @@ where
     {
         let inner = self.first.section(composite)?;
         let middle = self.first.collapse(composite)?;
-        let outer = match self.next.section(&middle)? {
-            Some(ref witness) => Some(self.first.include_witness(witness)?),
-            None => None,
-        };
-        chained(&mut self.first, inner, outer)
+        carried_section(&mut self.first, &mut self.next, inner, &middle)
     }
 
     /// The first retraction at the second inclusion, carried by the second
@@ -616,11 +644,7 @@ where
                 None
             };
             let inner = self.first.section(&generator)?;
-            let outer = match self.next.section(&lowered)? {
-                Some(ref witness) => Some(self.first.include_witness(witness)?),
-                None => None,
-            };
-            let Some(witness) = chained(&mut self.first, inner, outer)?
+            let Some(witness) = carried_section(&mut self.first, &mut self.next, inner, &lowered)?
             else {
                 continue;
             };
