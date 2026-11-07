@@ -4,12 +4,14 @@
 // `sqrt 2 < sqrt 2` fails, but no finite enclosure shows it. Each enclosure of
 // the left side overlaps each enclosure of the right side, so each pole stays
 // live. Each budget ends `exhausted`, and the machine never replies `fails`.
-// `sqrt 2 · sqrt 2 < 2` fails too, but the certificate format has no rule for
-// a product of cuts yet.
+// `sqrt 2 · sqrt 2 < 2` fails too, and no finite enclosure shows it either.
+// The compound chain encloses each cut by its witnesses, so each attempt
+// refines the product at twice the precision of the one before.
 //
-// So both poles of the product suspend before their first step, and each
-// budget ends `suspended`. `gandr run boundary.gandr` prints the verdicts of
-// each comparison at 1, 16 and 256 quanta, one comparison a line.
+// The budgets of 1 and 16 quanta end `exhausted`. At 256 quanta the precision
+// reaches the checker's quota, so the run ends `suspended`. `gandr run
+// boundary.gandr` prints the verdicts of each comparison at 1, 16 and 256
+// quanta, one comparison a line.
 //
 // - see: `corpus/model/reals/comparison.gandr` — a comparison that holds
 // - see: `crates/surface-dispatcher/src/evaluate/reals/machine.rs` — the

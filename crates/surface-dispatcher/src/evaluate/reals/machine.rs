@@ -147,8 +147,9 @@ impl Machines
     /// [`Declined::Mismatch`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `sqrt 2 < 3/2` holds; `sqrt 2 · sqrt 2 < 2` suspends
-    ///   and `sqrt 2 < sqrt 2` spends each budget, neither read as false.
+    /// - hypothesis: L3 — `sqrt 2 < 3/2` holds; `sqrt 2 · sqrt 2 < 2` spends
+    ///   the smaller budgets and suspends at the checker's quota, and `sqrt 2 <
+    ///   sqrt 2` spends each budget, neither read as false.
     /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
     pub(super) fn decide(
         &mut self,

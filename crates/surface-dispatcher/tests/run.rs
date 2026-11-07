@@ -692,9 +692,10 @@ fn a_script_s_profile_bounds_its_run_5704()
 }
 
 /// #5703: the three comparison exemplars run as scripts. `sqrt 2 < 3/2`
-/// holds; `sqrt 2 < sqrt 2` spends each budget and `sqrt 2 · sqrt 2 < 2`
-/// suspends, and neither prints `fails`; a machine restored from its
-/// checkpoint after one quantum holds with the work of an uninterrupted one.
+/// holds; `sqrt 2 < sqrt 2` spends each budget, `sqrt 2 · sqrt 2 < 2` spends
+/// the two smaller ones and suspends at the checker's quota, and neither
+/// prints `fails`; a machine restored from its checkpoint after one quantum
+/// holds with the work of an uninterrupted one.
 /// The host declines six operations and names each cause on standard error
 /// first: a root that is no open proposition, a budget past the quota, a
 /// handle that names no machine, the checkpoint of a decided machine, text
@@ -709,7 +710,7 @@ fn a_script_decides_comparisons_through_reals_5703()
             "boundary.gandr",
             &[
                 "exhausted exhausted exhausted",
-                "suspended suspended suspended",
+                "exhausted exhausted suspended",
             ][..],
         ),
         ("resume.gandr", &["exhausted", "holds", "the same work"][..]),

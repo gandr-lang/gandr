@@ -74,9 +74,9 @@ fn gandr_run_encloses_the_square_root_of_two_5700()
 
 /// #5703: `gandr run` of the three comparison exemplars prints each verdict
 /// by name and exits 0. `sqrt 2 < 3/2` holds. The two boundary comparisons
-/// end `exhausted` and `suspended` at each budget, never `fails`. A machine
-/// restored from its checkpoint after one quantum holds with the work of an
-/// uninterrupted one.
+/// end `exhausted`, or `suspended` at the checker's quota, never `fails`. A
+/// machine restored from its checkpoint after one quantum holds with the work
+/// of an uninterrupted one.
 #[test]
 fn gandr_run_decides_comparisons_5703()
 {
@@ -86,7 +86,7 @@ fn gandr_run_decides_comparisons_5703()
         ("comparison.gandr", "holds\n"),
         (
             "boundary.gandr",
-            "exhausted exhausted exhausted\nsuspended suspended suspended\n",
+            "exhausted exhausted exhausted\nexhausted exhausted suspended\n",
         ),
         ("resume.gandr", "exhausted\nholds\nthe same work\n"),
     ] {
