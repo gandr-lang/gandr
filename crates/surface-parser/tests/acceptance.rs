@@ -1545,6 +1545,56 @@ fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// A `def` that lost the `)` of its parameters keeps its reading when a
+/// declaration follows it: one minted `)` before its `->`, and the declaration
+/// after it whole.
+///
+/// The frontier of the `def` stays in its parameters, a bracket of its own
+/// rule. When the close at the separator ends the `def` there, it mints the
+/// end of the `def` and one more missing tile, and the `def` falls apart into
+/// loose tiles (#5911). The separator stays in the declaration, and the repair
+/// at its end mints the `)` where the rest parses.
+#[test]
+fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Box<dyn Error>>
+{
+    let source = include_str!(
+        "acceptance/unformatted/a-def-without-its-closer-keeps-its-reading-5911.gandr"
+    );
+    let result = parse(built(), SourceText::from(source))?;
+    let tree = result.tree();
+    assert!(
+        matches!(result.obligations(), [repair] if repair.class == Oblig::MissingTile),
+        "the damaged `def` owes only its `)`: {:?}",
+        result.obligations()
+    );
+    let closer = source
+        .find("x : Bool")
+        .map(|at| at.saturating_add("x : Bool".len()))
+        .ok_or("the parameter is written")?;
+    let minted: Vec<usize> = tree
+        .positions()
+        .filter_map(|position| tree.node(position))
+        .filter(|node| matches!(node.label(), NodeLabel::GhostClose { .. }))
+        .map(|node| usize::from(node.span().start()))
+        .collect();
+    assert_eq!(
+        vec![closer],
+        minted,
+        "the `)` is minted after the parameter's type, before the `->`"
+    );
+    let declarations: Vec<String> = children(tree, tree.root())
+        .into_iter()
+        .filter(|&id| matches!(label_of(tree, id), Some(NodeLabel::Meld(_))))
+        .map(|id| text(tree, id))
+        .collect();
+    let written: Vec<&str> = source.split("\n\n").map(str::trim_end).collect();
+    assert_eq!(
+        written, declarations,
+        "each declaration stays one form, the damaged one and the one after it"
+    );
+    Ok(())
+}
+
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
