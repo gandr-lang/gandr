@@ -34,10 +34,12 @@
 //! 3-cell. Guiraud, Hoffbeck and Malbos collapse the resolution of a
 //! convergent presentation onto its rules, critical pairs and critical
 //! triples. Brown's scheme on the bar complex is that collapse, up to the
-//! critical pairs. Malbos and Ren keep only the essential branchings. The
-//! collapse tests compare these with the certified pairs. Doré states a
-//! matching as a partial function, acyclic when each cell reaches a critical
-//! cell. The collapse tests check Brown's matching in that form.
+//! critical pairs. Malbos and Ren count each critical branching once, and keep
+//! only the essential ones. Completion joins each root branching once. The
+//! collapse tests compare the essential branchings with the certified pairs.
+//! Doré states a matching as a partial function, acyclic when each cell
+//! reaches a critical cell. The collapse tests check Brown's matching in that
+//! form.
 //!
 //! # Executable specifications
 //!
@@ -93,8 +95,9 @@
 //!   and the critical triples, and the collapsing scheme that reaches it.
 //! - Philippe Malbos and Isaac Ren. "Completion in Operads via Essential
 //!   Syzygies." In _Proceedings of ISSAC 2021_, ACM, 2021.
-//!   `doi:10.1145/3452143.3465552` — the essential branchings, which the
-//!   collapse tests compare with the certified pairs.
+//!   `doi:10.1145/3452143.3465552` — each critical branching counted once,
+//!   which `scheduled_confluence_batches` follows, and the essential
+//!   branchings, which the collapse tests compare with the certified pairs.
 //! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
 //!   University of Oxford, 2023, § 3.4 — a matching as a partial function,
 //!   acyclic when each cell reaches a critical cell.

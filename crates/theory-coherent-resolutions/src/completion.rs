@@ -748,9 +748,9 @@ where
 ///   cells and certificates number at most the step budget, and the store grows
 ///   only within the greater of its initial size and cell ceiling.
 /// - panics: none.
-/// - intension: at most `budget.max_steps` critical pairs are processed, and
-///   each pair's reducts are normalized once, the certificate built from those
-///   normalizations.
+/// - intension: at most `budget.max_steps` critical pairs are processed. Each
+///   pair's reducts are normalized once, and once more after the pair derives a
+///   cell. The certificate comes from the last normalizations.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — zero and partial budgets preserve pending work, store
@@ -838,10 +838,21 @@ where
             }
             let id = store.insert(new_cell);
             derived.push(id);
+            // The branching that derives the cell joins through it. That join
+            // is the certificate of the branching. Squier completion adds a
+            // 3-cell for each critical branching, this branching included.
+            let left = normalize(&store, &left_reduct, budget.norm_budget);
+            let right = normalize(&store, &right_reduct, budget.norm_budget);
+            if !bool::from(left.exhausted)
+                && !bool::from(right.exhausted)
+                && left.normal == right.normal
+                && let Maybe::Present(certificate) = joined(overlap, left, right)
+            {
+                certificates.push(certificate);
+            }
             // economy: rescheduling enumerates the whole store after each
-            // derived cell and keeps the batches that touch it; restricting the
-            // sweep to the new cell's pairs through `overlaps_between` is the
-            // known improvement once a store is large enough to measure it.
+            // derived cell, and keeps the batches that touch it. A sweep over
+            // the new cell's own pairs removes this ceiling (#5910).
             worklist.extend(
                 scheduled_confluence_batches(&store)
                     .into_iter()
@@ -863,31 +874,42 @@ where
 /// The confluence overlaps of `store` scheduled into independent batches: the
 /// completion worklist.
 ///
+/// A root branching of two cells is one branching in either order, so the
+/// worklist holds it once, with the earlier cell on the left, as
+/// [`PairJoining::resume_with`] reads it.
+///
 /// # Specification
-/// - ensures: the confluence entries of [`enumerate_overlaps`], in its order,
-///   partitioned by [`OverlapSupport::batches`] under the store's support.
+/// - ensures: the confluence entries of [`enumerate_overlaps`] whose left cell
+///   comes before their right cell, in its order, partitioned by
+///   [`OverlapSupport::batches`] under the store's support.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — three independent clusters schedule into two batches of
+/// - hypothesis: L3 — three independent clusters schedule into one batch of
 ///   three, and a starved run declines with exactly this schedule pending.
 ///   Empty schedules stay empty; a composition cannot enter a confluence batch.
-///   Wrong filtering or lost members changes the pending work.
+///   The units of `Nat` schedule two root branchings, and a mirrored entry
+///   changes that count. Wrong filtering or lost members changes the pending
+///   work.
 /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
 /// - witness: `tests::completion::a_starved_budget_declines_with_pending`
 /// - witness: `completion::tests::empty_schedules_orientation_and_pending_boundaries_are_exact`
+/// - witness: `tests::collapse::the_matching_keeps_the_two_pairs_completion_certifies_on_nat_units`
 #[inline]
 #[must_use]
-#[spec(ensures: |output| output.iter().all(|batch| !batch.is_empty() && batch.iter().all(|overlap| overlap.kind == OverlapKind::Confluence))
-    && output.iter().map(Vec::len).sum::<usize>() == enumerate_overlaps(store).iter().filter(|overlap| overlap.kind == OverlapKind::Confluence).count())]
+#[spec(ensures: |output| output.iter().all(|batch| !batch.is_empty() && batch.iter().all(|overlap| overlap.kind == OverlapKind::Confluence && overlap.left < overlap.right))
+    && output.iter().map(Vec::len).sum::<usize>() == enumerate_overlaps(store).iter().filter(|overlap| overlap.kind == OverlapKind::Confluence && overlap.left < overlap.right).count())]
 pub fn scheduled_confluence_batches<A>(store: &CellStore<A>) -> Vec<Vec<Overlap<A>>>
 where
     A: CellAlphabet,
 {
-    let overlaps: Vec<Overlap<A>> = enumerate_overlaps(store)
-        .into_iter()
-        .filter(|overlap| overlap.kind == OverlapKind::Confluence)
-        .collect();
+    let cells: Vec<(CellId, &Cell<A>)> = store.iter().collect();
+    let mut overlaps: Vec<Overlap<A>> = Vec::new();
+    for (index, &earlier) in cells.iter().enumerate() {
+        for &later in cells.iter().skip(index.saturating_add(1)) {
+            overlaps.extend(root_overlaps_between(earlier, later));
+        }
+    }
     OverlapSupport::from_store(store).batches(&overlaps)
 }
 
@@ -1590,7 +1612,7 @@ mod tests
             ),
         );
         assert!(bool::from(completed.is_completed()));
-        assert_eq!(2, completed.certificates().len());
+        assert_eq!(1, completed.certificates().len());
         assert_eq!(completed, completed.clone().resume(zero));
         let automatic = complete(store.clone(), zero);
         assert!(matches!(automatic, CompletionOutcome::Declined {
@@ -1670,7 +1692,7 @@ mod tests
         assert_eq!(
             1,
             outcome.certificates().len(),
-            "the mirror pair joins through the derived cell, once: {outcome:?}"
+            "the pair that derives the cell joins through it, once: {outcome:?}"
         );
     }
 
@@ -1704,12 +1726,11 @@ mod tests
             .collect();
         assert_eq!(
             alloc::vec![
-                (CellId::from(1_usize), CellId::from(0_usize)),
+                (CellId::from(0_usize), CellId::from(1_usize)),
                 (CellId::from(2_usize), CellId::from(3_usize)),
-                (CellId::from(3_usize), CellId::from(2_usize)),
             ],
             pairs,
-            "the derived cell meets `succ(Zero)` at the root, both ways, and joins"
+            "the pair that derives `succ(y) ⇒ y` joins through it, and the derived cell meets `succ(Zero)` at the root once and joins"
         );
     }
 
