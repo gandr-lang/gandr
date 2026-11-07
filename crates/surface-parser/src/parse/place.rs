@@ -722,24 +722,28 @@ fn heads(
 /// that holds a repair is read from its first top-level form through the forms
 /// after it that open no declaration. The first closer in it that no opener
 /// before it in the source balances takes its opener at the start of each
-/// token before it, nearest first, at most [`PLACES`] times. A broken parse
-/// can start a declaration inside an open bracket, so the count runs from the
-/// source's start. The first [`BRACKETS`] declarations that
-/// hold a repair are read in source order. The search keeps a copy only where
-/// its parse owes fewer obligations than `bound`: an opener at the nearest
-/// place that parses need not be its author's, and the melder's reading names
-/// the closer with no opener. A copy that parses owes its opener, so a `bound`
+/// token before it, nearest first, at most [`PLACES`] times. A place counts
+/// only where an author leaves an opener out ([`left_out`]): its group holds
+/// two tokens or more and doubles no pair. A closer written twice, as the
+/// second `]` of `Type[-]]`, stands for no opener left out (#2051). A
+/// broken parse can start a declaration inside an open bracket, so the count
+/// runs from the source's start. The first [`BRACKETS`] declarations that hold
+/// a repair are read in source order. The search keeps a copy only where its
+/// parse owes fewer obligations than `bound`: an opener at the nearest place
+/// that parses need not be its author's, and the melder's reading names the
+/// closer with no opener. A copy that parses owes its opener, so a `bound`
 /// below two leaves nothing to search.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
 /// - ensures: the first such copy that molds with no repair as declarations
-///   alone, its written opener one tile, is the parse when it owes fewer
-///   obligations than `bound`: the source's tree read from the whole copy, the
-///   opener an empty prefix grout of its tile's sort at its place, with one
-///   [`Oblig::MissingTile`] of no bytes there beside the copy's other
-///   obligations, shifted back over the opener; `None` where no declaration
-///   holds such a closer, no copy tried parses or the parse owes no fewer.
+///   alone, its written opener one tile left out at its place, is the parse
+///   when it owes fewer obligations than `bound`: the source's tree read from
+///   the whole copy, the opener an empty prefix grout of its tile's sort at its
+///   place, with one [`Oblig::MissingTile`] of no bytes there beside the copy's
+///   other obligations, shifted back over the opener; `None` where no
+///   declaration holds such a closer, no copy tried parses or the parse owes no
+///   fewer.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -747,9 +751,11 @@ fn heads(
 /// # Adequacy
 /// - hypothesis: L3 — a `(` left out before a juxtaposed operand, of a
 ///   parameter's type or of a definition's body, is minted where its
-///   declaration parses, and a declaration whose brackets balance is not read
+///   declaration parses; a universe's `]` and a parameter list's `)` written
+///   twice mint no opener; and a declaration whose brackets balance is not read
 ///   here.
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+/// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
 fn opened<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
@@ -818,6 +824,7 @@ fn opened<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`].
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+/// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
 fn reopened<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
@@ -842,6 +849,7 @@ fn reopened<'source>(
     else {
         balance(SourceFragment::from(form), &tokens, open).err()?
     };
+    let text_of_form = SourceFragment::from(form);
     let opener = SourceText::from(match class {
         ClosingClass::Paren => "(",
         ClosingClass::Bracket => "[",
@@ -853,9 +861,18 @@ fn reopened<'source>(
         .get(.. usize::from(closer))
         .unwrap_or_default()
         .iter()
+        .enumerate()
         .rev()
-        .filter(|token| token.lexeme != Lexeme::Space)
-        .filter_map(|token| usize::try_from(token.start).ok())
+        .filter(|&(_, token)| token.lexeme != Lexeme::Space)
+        .filter(|&(index, _)| {
+            bool::from(left_out(
+                text_of_form,
+                &tokens,
+                TokenIndex::from(index),
+                class,
+            ))
+        })
+        .filter_map(|(_, token)| usize::try_from(token.start).ok())
         .take(PLACES)
         .find_map(|at| {
             let place = ByteOffset::from(usize::from(run.start()).checked_add(at)?);
@@ -931,21 +948,18 @@ fn balance(
     open: Open,
 ) -> Result<Open, (TokenIndex, ClosingClass)>
 {
-    let text: &str = text.as_ref();
-    let bytes = SourceBytes::from(text.as_bytes());
     let mut open = open;
     for (at, &token) in tokens.iter().enumerate() {
-        let spelled = usize::try_from(token.start)
-            .ok()
-            .zip(usize::try_from(token.end).ok())
-            .and_then(|(start, end)| text.as_bytes().get(start .. end))
-            .unwrap_or_default();
-        let (depth, class) = match spelled.last().copied() {
-            Some(b'(' | b')') => (&mut open.parens, ClosingClass::Paren),
-            Some(b'[' | b']') => (&mut open.brackets, ClosingClass::Bracket),
-            Some(_) | None => continue,
+        let Some((found, class)) = bracketing(text, token)
+        else {
+            continue;
         };
-        match bracket(token, bytes) {
+        let depth = match class {
+            ClosingClass::Paren => &mut open.parens,
+            ClosingClass::Bracket => &mut open.brackets,
+            ClosingClass::Brace => continue,
+        };
+        match found {
             Bracket::Open => *depth = Depth::from(usize::from(*depth).saturating_add(1)),
             Bracket::Close => match usize::from(*depth).checked_sub(1) {
                 Some(shallower) => *depth = Depth::from(shallower),
@@ -955,6 +969,129 @@ fn balance(
         }
     }
     Ok(open)
+}
+
+/// Whether `token` of `text` opens or closes a parenthesis or a bracket, and
+/// which.
+///
+/// # Specification
+/// - requires: `token` is a label of `text`.
+/// - ensures: as [`balance`] reads one token: `None` where the token's spelling
+///   ends in no parenthesis and no bracket, or [`bracket`] says it neither
+///   opens nor closes.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the reading.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`opened`].
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+/// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
+fn bracketing(
+    text: SourceFragment<'_>,
+    token: Token,
+) -> Option<(Bracket, ClosingClass)>
+{
+    let text: &str = text.as_ref();
+    let spelled = usize::try_from(token.start)
+        .ok()
+        .zip(usize::try_from(token.end).ok())
+        .and_then(|(start, end)| text.as_bytes().get(start .. end))
+        .unwrap_or_default();
+    let class = match spelled.last().copied() {
+        Some(b'(' | b')') => ClosingClass::Paren,
+        Some(b'[' | b']') => ClosingClass::Bracket,
+        Some(_) | None => return None,
+    };
+    match bracket(token, SourceBytes::from(text.as_bytes())) {
+        found @ (Bracket::Open | Bracket::Close) => Some((found, class)),
+        Bracket::Neither => None,
+    }
+}
+
+primitive_copy_wrapper!(
+    /// Whether an opener minted at a place is one an author leaves out.
+    struct LeftOut(bool);
+);
+
+/// Whether an opener of `class` minted before the token at `index` of
+/// `tokens` is one an author leaves out: its group holds two tokens or more,
+/// and it doubles no pair.
+///
+/// The minted opener closes at the first closer from `index` that finds none
+/// open ([`balance`]). An opener before an empty group or one token, as `(`
+/// before `)` in `Bit))`, reads a call of no argument or a needless group. An
+/// opener that stands directly inside a pair of its class, as `[` before `-`
+/// in `Type[-]]`, or that directly wraps one, as `(` before the `(` of
+/// `(b : Bit))`, doubles that pair. Each stands for a closer written twice
+/// (#2051). In `Stack -F Unit) (-F Unit))`, an opener before the first `-F`
+/// opens `-F Unit` and doubles no pair (#6028).
+///
+/// # Specification
+/// - requires: `tokens` are the labels of `text`.
+/// - ensures: true exactly when that closer exists, two tokens or more stand
+///   from `index` up to it, and neither the token before `index` opens `class`
+///   while the token after that closer closes it, nor the token at `index`
+///   opens `class` while its own closer is the token before that closer; blanks
+///   never count as a token.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the reading.
+///
+/// # Adequacy
+/// - hypothesis: L3 — no place of a universe's `]` or a parameter list's `)`
+///   written twice counts, and the place before a juxtaposed operand left
+///   without its `(` does.
+/// - witness: `parse::place::tests::a_closer_after_its_twin_mints_no_opener_2051`
+/// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
+fn left_out(
+    text: SourceFragment<'_>,
+    tokens: &[Token],
+    index: TokenIndex,
+    class: ClosingClass,
+) -> LeftOut
+{
+    let index = usize::from(index);
+    let is = |at: Option<usize>, found: Bracket| {
+        at.and_then(|at| tokens.get(at))
+            .and_then(|&token| bracketing(text, token))
+            == Some((found, class))
+    };
+    let before = |at: usize| {
+        tokens
+            .get(.. at)
+            .unwrap_or_default()
+            .iter()
+            .rposition(|token| token.lexeme != Lexeme::Space)
+    };
+    let after = |at: usize| {
+        let next = at.checked_add(1)?;
+        let offset = tokens
+            .get(next ..)?
+            .iter()
+            .position(|token| token.lexeme != Lexeme::Space)?;
+        next.checked_add(offset)
+    };
+    let closes = |from: usize| {
+        let rest = tokens.get(from ..)?;
+        let (at, _class) = balance(text, rest, Open::default()).err()?;
+        from.checked_add(usize::from(at))
+    };
+    let Some(close) = closes(index)
+    else {
+        return LeftOut::from(false);
+    };
+    let held = tokens
+        .get(index .. close)
+        .unwrap_or_default()
+        .iter()
+        .filter(|token| token.lexeme != Lexeme::Space)
+        .nth(1)
+        .is_some();
+    let inside = is(before(index), Bracket::Open) && is(after(close), Bracket::Close);
+    let around = is(Some(index), Bracket::Open)
+        && before(close).is_some_and(|last| index.checked_add(1).and_then(closes) == Some(last));
+    LeftOut::from(held && !inside && !around)
 }
 
 /// A top-level form's own molding, which every copy of it the search tries
@@ -2236,6 +2373,48 @@ mod tests
                 minted,
                 [ByteOffset::from(at)],
                 "{why}: the opener is minted, empty, at its place"
+            );
+        }
+    }
+
+    /// #2051: a closer right after its own twin is written twice, and stands
+    /// for no opener left out. A universe's `]` and a parameter list's `)`
+    /// written twice mint no opener, though an opener before the token or the
+    /// group they close parses.
+    #[test]
+    fn a_closer_after_its_twin_mints_no_opener_2051()
+    {
+        let pbg = built_in().unwrap();
+        for source in [
+            include_str!(
+                "place/unformatted/a-closer-after-its-twin-mints-no-opener-2051-bracket.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-closer-after-its-twin-mints-no-opener-2051-paren.gandr"
+            ),
+        ] {
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "the tree reconstructs the source"
+            );
+            let minted = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Prefix,
+                        ..
+                    }) && node.span().start() == node.span().end()
+                })
+                .count();
+            assert_eq!(
+                minted,
+                0,
+                "no opener is minted for a closer after its twin in {source:?}: {:?}",
+                parsed.obligations()
             );
         }
     }
