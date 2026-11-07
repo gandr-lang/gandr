@@ -5,6 +5,7 @@
 //!
 //! The checker expands each component of the composite transport.
 //! The runtime evaluates the named round trip.
+//! It reads the case table of § 4.5 of the cited work at the universe.
 //!
 //! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
 //!

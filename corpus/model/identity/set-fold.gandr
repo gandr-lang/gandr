@@ -5,6 +5,8 @@
 //!
 //! The checker compares the endpoints of each rule arm.
 //! The kernel re-derives each resulting law.
+//! A fold into the circle's loops, which are no set's paths, stays held to its
+//! arms as written.
 //!
 //! - see: #427 — `plusCommAlong`
 //! - see: HoTT Book Definition 3.1.1
