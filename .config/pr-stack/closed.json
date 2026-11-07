@@ -28,5 +28,20 @@
     "closed": false,
     "setup": "none",
     "output": "status 2; #2 stands on closed, which is not main, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto main; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: ; link: "
+  },
+  {
+    "name": "#6159: the cut past a member closed unmerged holds the upper on the runner when the closed one's commits are the inputs of the upper's own file, naming the row",
+    "closed": true,
+    "setup": "none",
+    "artifacts": [
+      {
+        "name": "the case artifact",
+        "paths": ["u.txt"],
+        "inputs": ["c.txt"],
+        "check": "false",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "status 2; the replay of upper makes due: the case artifact; a runner builds none of their checks, so the branch is held for a seat's `mise run pr:land`, which runs them; bottom holds bottom's own; upper holds upper's own, bottom's own, closed's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main; link: 2"
   }
 ]
