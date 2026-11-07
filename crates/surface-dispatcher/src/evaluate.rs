@@ -5651,6 +5651,7 @@ mod tests
     }
 
     /// What a sweep did to the corpus's `runs` items.
+    #[derive(serde::Deserialize, serde::Serialize)]
     struct Walked
     {
         /// Each item that ran apart from its written form, with both runs.
@@ -5659,12 +5660,63 @@ mod tests
         rewritten: alloc::vec::Vec<alloc::string::String>,
     }
 
-    /// Run every `runs` item of the corpus on the portable executor as written
-    /// and with its program swept by `sweep`.
+    /// What each sweep did to the corpus's `runs` items, read from one walk
+    /// (#5256).
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct Sweeps
+    {
+        /// Every closure converted to an abstract closure.
+        converted: Walked,
+        /// Every closure redex entered.
+        entered: Walked,
+    }
+
+    /// Record in `walked` the run of `declaration` in `item` swept as `run`.
     ///
     /// # Specification
     /// trivial.
-    fn runs_swept(sweep: Sweep) -> Walked
+    fn record(
+        walked: &mut Walked,
+        item: &dyn core::fmt::Display,
+        name: &dyn core::fmt::Display,
+        run: &Swept<'_>,
+    )
+    {
+        let spelled = |run: &Result<Evaluation<'_>, Declined>| match *run {
+            Ok(ref evaluation) => alloc::format!("{evaluation}"),
+            Err(declined) => alloc::format!("{declined}"),
+        };
+        if run.change == Change::Rewritten {
+            walked.rewritten.push(alloc::format!("{item} {name}"));
+        }
+        if run.written != run.ran {
+            writeln!(
+                walked.differing,
+                "{item} {name}\n    written: {}\n    swept:   {}",
+                spelled(&run.written),
+                spelled(&run.ran),
+            )
+            .expect("a string writes");
+        }
+    }
+
+    /// Run every `runs` item of the corpus on the portable executor as written
+    /// and with its program swept by each sweep, in one walk the tests of a
+    /// nextest run share. Each sweep puts the written definitions back, so
+    /// the second starts from the program as written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn runs_swept() -> Sweeps
+    {
+        crate::digest::shared(std::path::Path::new("runs-swept"), walk_swept)
+    }
+
+    /// The walk [`runs_swept`] shares.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walk_swept() -> Sweeps
     {
         let corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let walk = crate::Walk::new(
@@ -5682,8 +5734,14 @@ mod tests
             .map(|root| corpus.join(root))
             .collect(),
         );
-        let mut differing = alloc::string::String::new();
-        let mut rewritten = alloc::vec::Vec::new();
+        let mut converted = Walked {
+            differing: alloc::string::String::new(),
+            rewritten: alloc::vec::Vec::new(),
+        };
+        let mut entered = Walked {
+            differing: alloc::string::String::new(),
+            rewritten: alloc::vec::Vec::new(),
+        };
         let ControlFlow::Continue(_report) = walk.visit(
             &crate::Pool::new(crate::Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
@@ -5701,10 +5759,6 @@ mod tests
                     return ControlFlow::Continue(());
                 };
                 let item = path.strip_prefix(&corpus).unwrap_or(path).display();
-                let spelled = |run: &Result<Evaluation<'_>, Declined>| match *run {
-                    Ok(ref evaluation) => alloc::format!("{evaluation}"),
-                    Err(declined) => alloc::format!("{declined}"),
-                };
                 for declaration in report.declarations() {
                     if !matches!(*declaration.stated(), Stated::Verdict(Outcome::Runs(_))) {
                         continue;
@@ -5714,32 +5768,16 @@ mod tests
                     else {
                         continue;
                     };
-                    let Swept {
-                        written,
-                        ran,
-                        change,
-                    } = run_swept(&mut program, constant, prepared, sweep);
-                    if change == Change::Rewritten {
-                        rewritten.push(alloc::format!("{item} {}", declaration.name()));
-                    }
-                    if written != ran {
-                        writeln!(
-                            differing,
-                            "{item} {}\n    written: {}\n    swept:   {}",
-                            declaration.name(),
-                            spelled(&written),
-                            spelled(&ran),
-                        )
-                        .expect("a string writes");
-                    }
+                    let name = declaration.name();
+                    let run = run_swept(&mut program, constant, prepared, convert_all);
+                    record(&mut converted, &item, &name, &run);
+                    let run = run_swept(&mut program, constant, prepared, enter_all);
+                    record(&mut entered, &item, &name, &run);
                 }
                 ControlFlow::Continue(())
             },
         );
-        Walked {
-            differing,
-            rewritten,
-        }
+        Sweeps { converted, entered }
     }
 
     /// Every `runs` item of the corpus runs on the portable executor, every
@@ -5753,7 +5791,7 @@ mod tests
         let Walked {
             differing,
             rewritten,
-        } = runs_swept(convert_all);
+        } = runs_swept().converted;
         assert!(
             differing.is_empty(),
             "converted programs ran apart from their written forms:\n{differing}"
@@ -5777,7 +5815,7 @@ mod tests
         let Walked {
             differing,
             rewritten,
-        } = runs_swept(enter_all);
+        } = runs_swept().entered;
         assert!(
             differing.is_empty(),
             "entered programs ran apart from their written forms:\n{differing}"

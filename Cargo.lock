@@ -1573,6 +1573,7 @@ dependencies = [
  "quenchant-shape",
  "rayon",
  "self_cell",
+ "serde",
  "serde_json",
  "sysctl",
  "toml",

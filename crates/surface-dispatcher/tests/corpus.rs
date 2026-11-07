@@ -56,6 +56,8 @@ use gandr_theory_probability::Distribution;
 use gandr_theory_probability::Independence;
 use quenchant_shape::shape::Maybe;
 
+use crate::digest;
+
 /// The corpus's strict root, under the corpus crate.
 ///
 /// # Specification
@@ -143,34 +145,115 @@ fn run(paths: Vec<PathBuf>) -> RunReport
     report
 }
 
+/// What a corpus test reads of a walk's report, kept in a digest so the
+/// tests of one nextest run share the walk (#5256).
+#[derive(serde::Deserialize, serde::Serialize)]
+struct Counted
+{
+    /// The report as the runner prints it.
+    shown: String,
+    /// Whether `check` settles under the gated goals.
+    checked: bool,
+    /// Whether `test` settles.
+    tested: bool,
+    /// The declarations settled.
+    settled: usize,
+    /// The declarations unsettled.
+    unsettled: usize,
+    /// The ledger's entries.
+    ledger: usize,
+    /// Whether the tally is sealed.
+    sealed: bool,
+    /// The sources read.
+    read: usize,
+    /// The sources read under the strict root.
+    strict: usize,
+    /// The sources read as pending.
+    pending: usize,
+    /// The fixtures settled.
+    fixtures: usize,
+    /// The lowerings performed.
+    lowerings: usize,
+    /// Each row's count, in [`Row::ALL`] order.
+    rows: [usize; 12],
+}
+
+impl Counted
+{
+    /// What the corpus tests read of `report`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(report: &RunReport) -> Self
+    {
+        let tally = report.tally();
+        Self {
+            shown: report.to_string(),
+            checked: report.verdict(Verb::Check(Goals::Gated)) == RunVerdict::Settled,
+            tested: report.verdict(Verb::Test) == RunVerdict::Settled,
+            settled: usize::from(tally.declarations().settled()),
+            unsettled: usize::from(tally.declarations().unsettled()),
+            ledger: usize::from(tally.ledger()),
+            sealed: tally.seal() == Seal::Sealed,
+            read: usize::from(report.sources().read()),
+            strict: usize::from(report.sources().strict()),
+            pending: usize::from(report.sources().pending()),
+            fixtures: usize::from(tally.fixtures().settled()),
+            lowerings: usize::from(report.lowerings()),
+            rows: Row::ALL.map(|row| usize::from(report.exercised().count(row))),
+        }
+    }
+
+    /// The count of `row`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn count(
+        &self,
+        row: Row,
+    ) -> gandr_surface_lowering::DeclarationCount
+    {
+        gandr_surface_lowering::DeclarationCount::from(
+            Row::ALL
+                .iter()
+                .position(|&candidate| candidate == row)
+                .and_then(|at| self.rows.get(at).copied())
+                .unwrap_or_default(),
+        )
+    }
+}
+
+/// The report of the walk over `paths`, as [`run`] gives it, shared under
+/// `name` by the tests of one nextest run.
+///
+/// # Specification
+/// trivial.
+fn counted(
+    name: &Path,
+    paths: Vec<PathBuf>,
+) -> Counted
+{
+    digest::shared(name, || Counted::of(&run(paths)))
+}
+
 #[test]
 fn the_strict_root_checks_owing_nothing()
 {
-    let report = run(vec![strict_root()]);
-    assert_eq!(
-        report.verdict(Verb::Check(Goals::Gated)),
-        RunVerdict::Settled,
-        "check settles the strict root:\n{report}"
-    );
-    let declarations = report.tally().declarations();
+    let report = counted(Path::new("strict"), vec![strict_root()]);
     assert!(
-        usize::from(declarations.settled()) > 0_usize,
+        report.checked,
+        "check settles the strict root:\n{}",
+        report.shown
+    );
+    assert!(
+        report.settled > 0_usize,
         "the strict root holds declarations"
     );
-    assert_eq!(usize::from(declarations.unsettled()), 0_usize, "{report}");
+    assert_eq!(report.unsettled, 0_usize, "{}", report.shown);
+    assert_eq!(report.ledger, 0_usize, "the ledger is empty");
+    assert!(report.sealed, "the strict root is sealed");
     assert_eq!(
-        usize::from(report.tally().ledger()),
-        0_usize,
-        "the ledger is empty"
-    );
-    assert_eq!(
-        report.tally().seal(),
-        Seal::Sealed,
-        "the strict root is sealed"
-    );
-    assert_eq!(
-        usize::from(report.sources().read()),
-        usize::from(report.sources().strict()),
+        report.read, report.strict,
         "every source sits under the strict root"
     );
     for row in [
@@ -181,7 +264,7 @@ fn the_strict_root_checks_owing_nothing()
         Row::SubsumptionBridge,
     ] {
         assert!(
-            usize::from(report.exercised().count(row)) > 0_usize,
+            usize::from(report.count(row)) > 0_usize,
             "the strict root exercises {row}"
         );
     }
@@ -190,18 +273,15 @@ fn the_strict_root_checks_owing_nothing()
 #[test]
 fn the_fixture_root_settles_every_fixture()
 {
-    let report = run(vec![fixture_root(), std_root()]);
-    assert_eq!(
-        report.verdict(Verb::Test),
-        RunVerdict::Settled,
-        "test settles the fixture root:\n{report}"
-    );
+    let report = counted(Path::new("fixture-std"), vec![fixture_root(), std_root()]);
     assert!(
-        usize::from(report.tally().fixtures().settled()) > 0_usize,
-        "the fixture root holds fixtures"
+        report.tested,
+        "test settles the fixture root:\n{}",
+        report.shown
     );
+    assert!(report.fixtures > 0_usize, "the fixture root holds fixtures");
     assert!(
-        usize::from(report.sources().pending()) > 0_usize,
+        report.pending > 0_usize,
         "the fixture root holds its pending set"
     );
     for row in [
@@ -214,7 +294,7 @@ fn the_fixture_root_settles_every_fixture()
         Row::AddressableObligation,
     ] {
         assert!(
-            usize::from(report.exercised().count(row)) > 0_usize,
+            usize::from(report.count(row)) > 0_usize,
             "the fixture root exercises {row}"
         );
     }
@@ -223,9 +303,16 @@ fn the_fixture_root_settles_every_fixture()
 #[test]
 fn the_two_roots_exercise_every_row()
 {
-    let mut exercised = run(vec![strict_root()]).exercised();
-    exercised.absorb(&run(vec![fixture_root(), std_root()]).exercised());
-    assert_eq!(exercised.missing(), Vec::new(), "every row is carried");
+    let strict = counted(Path::new("strict"), vec![strict_root()]);
+    let fixture = counted(Path::new("fixture-std"), vec![fixture_root(), std_root()]);
+    let missing = Row::ALL
+        .into_iter()
+        .filter(|&row| {
+            usize::from(strict.count(row)).saturating_add(usize::from(fixture.count(row)))
+                == 0_usize
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(missing, Vec::new(), "every row is carried");
 }
 
 /// The `std` root given beside the corpus's two roots adds one lowering per
@@ -234,7 +321,13 @@ fn the_two_roots_exercise_every_row()
 #[test]
 fn the_std_root_adds_one_lowering_per_module()
 {
-    let without = run(vec![strict_root(), fixture_root()]);
+    let corpus = corpus();
+    assert_eq!(
+        corpus.faults,
+        Vec::<String>::new(),
+        "the corpus walks with no fault"
+    );
+    let without = corpus.counted;
     let library = run(vec![std_root()]);
     let with = run(vec![strict_root(), fixture_root(), std_root()]);
     assert_eq!(
@@ -244,12 +337,16 @@ fn the_std_root_adds_one_lowering_per_module()
     );
     assert_eq!(
         usize::from(with.sources().read()),
-        usize::from(without.sources().read()).saturating_add(usize::from(library.sources().read())),
+        without
+            .read
+            .saturating_add(usize::from(library.sources().read())),
         "the library's modules are read beside the corpus's sources"
     );
     assert_eq!(
         usize::from(with.lowerings()),
-        usize::from(without.lowerings()).saturating_add(usize::from(library.lowerings())),
+        without
+            .lowerings
+            .saturating_add(usize::from(library.lowerings())),
         "each module adds its own lowering, and no importer joins another through it"
     );
 }
@@ -406,15 +503,15 @@ fn sources_under(roots: &[PathBuf]) -> BTreeSet<PathBuf>
     found
 }
 
-/// The `.gandr` files under one of `roots` that the one walk over them does
-/// not reach.
+/// The `.gandr` files under one of `roots` that a walk did not reach, given
+/// as `reached`: every path the walk's steps name.
 ///
 /// # Specification
 /// - requires: `roots` meet the stable, readable directory-graph premise of
 ///   `sources_under`.
-/// - ensures: the independently listed source entries not reached by the walk,
-///   in strictly increasing path order. A fault at a source still establishes
-///   that the walk reached that path.
+/// - ensures: the independently listed source entries not in `reached`, in
+///   strictly increasing path order. A fault at a source still establishes that
+///   the walk reached that path.
 /// - fails: directory-inventory errors are not mistaken for registration.
 /// - panics: when the independent directory inventory cannot be read.
 ///
@@ -430,20 +527,11 @@ fn sources_under(roots: &[PathBuf]) -> BTreeSet<PathBuf>
             [ref first, ref second] => first < second,
             _ => false,
         }))]
-fn orphans(roots: &[PathBuf]) -> Vec<PathBuf>
+fn unreached(
+    roots: &[PathBuf],
+    reached: &BTreeSet<PathBuf>,
+) -> Vec<PathBuf>
 {
-    let mut reached = BTreeSet::new();
-    let ControlFlow::Continue(_report) = Walk::new(roots.to_vec()).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            match step {
-                Step::Source { path, .. } | Step::Fault { path, .. } => {
-                    reached.insert(path.to_path_buf());
-                },
-            }
-            ControlFlow::Continue(())
-        },
-    );
     sources_under(roots)
         .into_iter()
         .filter(|source| !reached.contains(source))
@@ -458,8 +546,13 @@ fn every_corpus_source_is_registered()
         !sources_under(&roots).is_empty(),
         "the corpus holds sources"
     );
+    let reached = corpus()
+        .reached
+        .into_iter()
+        .map(PathBuf::from)
+        .collect::<BTreeSet<_>>();
     assert_eq!(
-        orphans(&roots),
+        unreached(&roots, &reached),
         Vec::<PathBuf>::new(),
         "every source sits where the walk reaches it"
     );
@@ -517,10 +610,7 @@ fn a_planted_orphan_is_not_registered()
                 ControlFlow::Continue(())
             },
         );
-    let found: Vec<PathBuf> = sources_under(core::slice::from_ref(&corpus))
-        .into_iter()
-        .filter(|source| !reached.contains(source))
-        .collect();
+    let found = unreached(core::slice::from_ref(&corpus), &reached);
     std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
     assert_eq!(
         found, planted,
@@ -528,129 +618,162 @@ fn a_planted_orphan_is_not_registered()
     );
 }
 
-/// Which half of the corpus a sweep reads: the sources under a
-/// `pathological` directory, or the model sources beside them.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Tree
+/// What the corpus tests read of the one walk over the strict and fixture
+/// roots, shared by the tests of one nextest run (#5256).
+#[derive(serde::Deserialize, serde::Serialize)]
+struct Corpus
 {
-    /// Every source under neither root's `pathological` directory.
-    Model,
-    /// Every source under a root's `pathological` directory.
-    Pathological,
+    /// The walk's report.
+    counted: Counted,
+    /// Each fault, as `<path>: <fault>`.
+    faults: Vec<String>,
+    /// Every path a step names, a source's or a fault's.
+    reached: Vec<String>,
+    /// The model sources: those under neither root's `pathological`
+    /// directory.
+    model: Swept,
+    /// The sources under a root's `pathological` directory.
+    pathological: Swept,
 }
 
-/// Visit each source of `tree` that the walk over both roots composes
-/// settled.
+/// What the tests read of one half of the corpus: each source under a root
+/// other than the pending one whose composition settles.
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct Swept
+{
+    /// Each such source's path.
+    composed: Vec<String>,
+    /// Each accepted declaration that did not focus for a reason other than
+    /// a code, element identity or a hole, described.
+    refusals: Vec<String>,
+    /// Each declaration that states a run outcome, and whether it settled.
+    /// Each row begins with the source's location in this workspace, then
+    /// names the declaration, the stated outcome and the observed one.
+    runs: Vec<(String, bool)>,
+}
+
+/// The one walk over the strict and fixture roots that the corpus tests
+/// read, shared by the tests of one nextest run.
 ///
 /// # Specification
-/// - requires: the committed corpus remains quiescent during the sweep.
-/// - ensures: visits each source in the selected tree whose composition yields
-///   a declaration report, including reports with unsettled declarations;
-///   pending sources, whole-source refusals and faulted steps are not visited.
-/// - fails: preserves the walk's exclusion of faulted sources from callbacks.
-/// - panics: propagates a callback panic.
-/// - executable: none — the only result is calls into an opaque `FnMut`;
-///   neither its observations nor a visit journal are returned, and invoking it
-///   again from a predicate would change the caller's effects.
+/// - requires: the committed corpus remains quiescent during the walk.
+/// - ensures: every path a step names is reached; each source under a root
+///   other than the pending one whose composition settles is recorded in its
+///   half, with its focusing refusals other than a code, element identity or a
+///   hole, and each run outcome a declaration states with its settlement.
+///   Pending sources, whole-source refusals and faults record no half; a fault
+///   is recorded with its path.
+/// - fails: never converts a fault or an unsettled run into a settled one.
+/// - panics: when the digest cannot be written or read.
+/// - executable: none — a later test reads the walk from a file that another
+///   process wrote, which no predicate over the value reads.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — both selected trees expose run-outcome and focusing
-///   checks, with non-vacuity guards; this does not exhaust filesystem faults
-///   or observe arbitrary callback side effects independently.
+/// - hypothesis: L3 — both real halves compose sources, state run outcomes that
+///   settle and focus but for codes, element identity and holes; the
+///   registration test reads the reached set beside an independent listing.
 /// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
 /// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`
 /// - witness: `tests::corpus::focusing_is_total_on_the_model_corpus`
 /// - witness: `tests::corpus::focusing_is_total_on_the_pathological_corpus`
-fn each_settled(
-    tree: Tree,
-    mut visit: impl FnMut(&Path, &Composed<'_>),
-)
+/// - witness: `tests::corpus::every_corpus_source_is_registered`
+fn corpus() -> Corpus
 {
-    let ControlFlow::Continue(_report) = Walk::new(vec![strict_root(), fixture_root()]).visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            let Step::Source {
-                path,
-                root,
-                ref composed,
-                ..
-            } = step
-            else {
-                return ControlFlow::Continue(());
-            };
-            let pathological = path
-                .components()
-                .any(|component| component.as_os_str() == "pathological");
-            let sweeps = match tree {
-                Tree::Model => !pathological,
-                Tree::Pathological => pathological,
-            };
-            if sweeps
-                && root != SourceRoot::Pending
-                && matches!(*composed, Composed::Settled { .. })
-            {
-                visit(path, composed);
-            }
-            ControlFlow::Continue(())
-        },
-    );
-}
-
-/// Each declaration of `tree` that states a run outcome, described, and
-/// whether it settled.
-///
-/// # Specification
-/// - requires: the committed corpus remains quiescent during the sweep.
-/// - ensures: each row retains a run expectation's observed settlement,
-///   including failure, and begins its diagnostic with the source location in
-///   this workspace before naming the declaration and expected outcome.
-/// - fails: does not filter out unsettled run expectations.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — real model and pathological run expectations retain their
-///   locations and settle; location/name substitution and a wrong run result
-///   are observable, but arbitrary diagnostic prose is not pinned.
-/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
-/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`
-#[spec(ensures: |ref ret| ret.iter().all(|row|
-        row.0.starts_with(env!("CARGO_MANIFEST_DIR"))))]
-fn stated_runs(tree: Tree) -> Vec<(String, Settlement)>
-{
-    let mut runs = Vec::new();
-    each_settled(tree, |path, composed| {
-        let Composed::Settled { ref report, .. } = *composed
-        else {
-            return;
-        };
-        for declaration in report.declarations() {
-            if let Stated::Verdict(
-                Outcome::Runs(ref spelled) | Outcome::RunsTracing(ref spelled, _),
-            ) = *declaration.stated()
-            {
-                runs.push((
-                    format!(
-                        "{}: `{}` states runs to {spelled}, {}",
-                        path.display(),
-                        declaration.name(),
-                        declaration.outcome(),
-                    ),
-                    declaration.settlement(),
-                ));
-            }
+    digest::shared(Path::new("strict-fixture"), || {
+        let mut faults = Vec::new();
+        let mut reached = Vec::new();
+        let mut model = Swept::default();
+        let mut pathological = Swept::default();
+        let ControlFlow::Continue(report) = Walk::new(vec![strict_root(), fixture_root()]).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let (path, root, composed) = match step {
+                    Step::Fault { path, fault } => {
+                        reached.push(path.display().to_string());
+                        faults.push(format!("{}: {fault}", path.display()));
+                        return ControlFlow::Continue(());
+                    },
+                    Step::Source {
+                        path,
+                        root,
+                        ref composed,
+                        ..
+                    } => (path, root, composed),
+                };
+                reached.push(path.display().to_string());
+                let Composed::Settled {
+                    ref program,
+                    ref report,
+                    ..
+                } = *composed
+                else {
+                    return ControlFlow::Continue(());
+                };
+                if root == SourceRoot::Pending {
+                    return ControlFlow::Continue(());
+                }
+                let swept = if path
+                    .components()
+                    .any(|component| component.as_os_str() == "pathological")
+                {
+                    &mut pathological
+                }
+                else {
+                    &mut model
+                };
+                swept.composed.push(path.display().to_string());
+                swept.refusals.extend(
+                    program
+                        .focus_refusals()
+                        .filter(|&(_, refusal)| {
+                            !matches!(
+                                refusal,
+                                FocusRefusal::Code(_)
+                                    | FocusRefusal::ElementPath(_)
+                                    | FocusRefusal::ElementTransport(..)
+                                    | FocusRefusal::IncompleteValue(_)
+                                    | FocusRefusal::IncompleteComputation(_)
+                            )
+                        })
+                        .map(|(name, refusal)| format!("{}: `{name}`: {refusal}", path.display())),
+                );
+                for declaration in report.declarations() {
+                    if let Stated::Verdict(
+                        Outcome::Runs(ref spelled) | Outcome::RunsTracing(ref spelled, _),
+                    ) = *declaration.stated()
+                    {
+                        swept.runs.push((
+                            format!(
+                                "{}: `{}` states runs to {spelled}, {}",
+                                path.display(),
+                                declaration.name(),
+                                declaration.outcome(),
+                            ),
+                            declaration.settlement() == Settlement::Settled,
+                        ));
+                    }
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        Corpus {
+            counted: Counted::of(&report),
+            faults,
+            reached,
+            model,
+            pathological,
         }
-    });
-    runs
+    })
 }
 
 /// The model corpus runs to the outcome each source states.
 #[test]
 fn l_machine_matches_the_outcome_snapshots_on_the_model_corpus()
 {
-    let runs = stated_runs(Tree::Model);
+    let runs = corpus().model.runs;
     assert!(!runs.is_empty(), "the model corpus states run outcomes");
-    for (run, settlement) in runs {
-        assert_eq!(settlement, Settlement::Settled, "{run}");
+    for (run, settled) in runs {
+        assert!(settled, "{run}");
     }
 }
 
@@ -658,67 +781,14 @@ fn l_machine_matches_the_outcome_snapshots_on_the_model_corpus()
 #[test]
 fn l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus()
 {
-    let runs = stated_runs(Tree::Pathological);
+    let runs = corpus().pathological.runs;
     assert!(
         !runs.is_empty(),
         "the pathological corpus states run outcomes"
     );
-    for (run, settlement) in runs {
-        assert_eq!(settlement, Settlement::Settled, "{run}");
+    for (run, settled) in runs {
+        assert!(settled, "{run}");
     }
-}
-
-/// Every accepted declaration of `tree` that did not focus for a reason
-/// other than being a code, element identity, unfinished or a session
-/// action, and the sources that composed.
-///
-/// # Specification
-/// - requires: the committed corpus remains quiescent during the sweep.
-/// - ensures: records every composed source in the selected tree and its
-///   focusing refusals other than a code, element identity, a hole or a session
-///   action. Pending, wholly refused and faulted sources contribute no composed
-///   path; those refusals are not failures here: none has a command-IL image.
-/// - fails: retains unexpected focusing refusals for the calling gate.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — both real trees compose sources and have no focusing
-///   refusal but a code, element identity, a hole or a session action; the
-///   selected path domain is observed independently of the diagnostic wording.
-///   Unexpected future refusal kinds are not generated by these fixtures.
-/// - witness: `tests::corpus::focusing_is_total_on_the_model_corpus`
-/// - witness: `tests::corpus::focusing_is_total_on_the_pathological_corpus`
-#[spec(ensures: |ref ret| ret.1.iter().all(|path|
-        path.extension().is_some_and(|extension| extension == "gandr")
-            && path.components().any(|component| component.as_os_str() == "pathological")
-                == matches!(tree, Tree::Pathological)))]
-fn unfocused(tree: Tree) -> (Vec<String>, Vec<PathBuf>)
-{
-    let mut refusals = Vec::new();
-    let mut composed_sources = Vec::new();
-    each_settled(tree, |path, composed| {
-        let Composed::Settled { ref program, .. } = *composed
-        else {
-            return;
-        };
-        composed_sources.push(path.to_path_buf());
-        refusals.extend(
-            program
-                .focus_refusals()
-                .filter(|&(_, refusal)| {
-                    !matches!(
-                        refusal,
-                        FocusRefusal::Code(_)
-                            | FocusRefusal::ElementPath(_)
-                            | FocusRefusal::ElementTransport(..)
-                            | FocusRefusal::IncompleteValue(_)
-                            | FocusRefusal::IncompleteComputation(_)
-                    )
-                })
-                .map(|(name, refusal)| format!("{}: `{name}`: {refusal}", path.display())),
-        );
-    });
-    (refusals, composed_sources)
 }
 
 /// Every accepted declaration of the model corpus focuses, but for a code,
@@ -726,7 +796,9 @@ fn unfocused(tree: Tree) -> (Vec<String>, Vec<PathBuf>)
 #[test]
 fn focusing_is_total_on_the_model_corpus()
 {
-    let (refusals, composed) = unfocused(Tree::Model);
+    let Swept {
+        composed, refusals, ..
+    } = corpus().model;
     assert!(!composed.is_empty(), "the model corpus composes");
     assert_eq!(
         refusals,
@@ -740,7 +812,9 @@ fn focusing_is_total_on_the_model_corpus()
 #[test]
 fn focusing_is_total_on_the_pathological_corpus()
 {
-    let (refusals, composed) = unfocused(Tree::Pathological);
+    let Swept {
+        composed, refusals, ..
+    } = corpus().pathological;
     assert!(!composed.is_empty(), "the pathological corpus composes");
     assert_eq!(
         refusals,

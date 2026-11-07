@@ -16,6 +16,8 @@ mod corpus;
 #[cfg(test)]
 mod differential;
 #[cfg(test)]
+mod digest;
+#[cfg(test)]
 mod distances;
 #[cfg(test)]
 mod entries;
