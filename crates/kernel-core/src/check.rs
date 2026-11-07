@@ -708,10 +708,12 @@ fn defined_value(
 /// - ensures: what [`read_decode`] reads the code to when `ty` is a decode of a
 ///   returned code it reads to a type; `ty` otherwise.
 /// - provides: the check's one reading of a decode it must see the head of, for
-///   a rule that reads the head of the type a value checks at or is scrutinized
-///   at: the identity at `El(⟨R a b⟩)` is the identity at the type `R a b`
-///   returns, and a binder a case refined to a call returning a data type or a
-///   sum is cased on at that data type or sum, the empty sum among them.
+///   a rule that reads the head of the type a value checks at, is scrutinized
+///   at or is forced at: the identity at `El(⟨R a b⟩)` is the identity at the
+///   type `R a b` returns, a binder a case refined to a call returning a data
+///   type or a sum is cased on at that data type or sum, the empty sum among
+///   them, and a value whose type decodes a call returning a thunk type is
+///   forced at that thunk type.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -721,10 +723,13 @@ fn defined_value(
 ///   decoding to `⌜Void⌝` checks, one on `⌜Unit⌝` is refused with the sum
 ///   shape, and a synthesized case on one decoding to `⌜Unit + Unit⌝` is
 ///   admitted; a reflexivity at the diagonal of a relation returning an
-///   identity's code checks at the identity the code quotes.
+///   identity's code checks at the identity the code quotes; a force of a
+///   binder decoding a call returning a thunk type's quote is admitted, and one
+///   returning `⌜Unit⌝` is refused with the thunk shape.
 /// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
 /// - witness: `check::tests::a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830`
 /// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+/// - witness: `check::tests::a_force_reads_a_decode_of_a_call_to_its_thunk_type_6057`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| (ret == ty && arena.watermark() == before)
@@ -6675,7 +6680,12 @@ where
                     produced = Produced::ValueType(codomain);
                 },
                 Frame::SynthForce => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes: a value whose type a case refined, or a call
+                    // instantiated, to a call returning a thunk type is forced
+                    // at that thunk type.
                     let value_type = produced.value_type()?;
+                    let value_type = read_returned_decode(arena, judgement, value_type);
                     match arena.value_type(value_type) {
                         Some(&ValueType::Thunk(codomain)) => {
                             produced = Produced::CompType(codomain);
@@ -10061,6 +10071,43 @@ mod tests
             Ok(()),
             admit_decoded_case(|mint, _data| two_way(mint), bound_case),
             "a synthesized case reads its scrutinee's decode as the check does"
+        );
+    }
+
+    /// A force of a binder whose type decodes a call returning a thunk type's
+    /// quote is a force at that thunk type: the check reads the code to the
+    /// quote it returns before it reads the forced value's shape (#6057). A
+    /// call returning `⌜Unit⌝` is no thunk type, and the force is refused with
+    /// the thunk shape, so the reading is the one that separates the two.
+    #[test]
+    fn a_force_reads_a_decode_of_a_call_to_its_thunk_type_6057()
+    {
+        let thunk_type = |mint: &mut TermArena| {
+            let unit = mint.value_type_unit();
+            let returns_unit = mint.comp_type_returner(unit);
+            let arrow = mint.comp_type_arrow(unit, returns_unit);
+            mint.value_type_thunk(arrow)
+        };
+        let applied = |mint: &mut TermArena, scrutinee, _motive, _arm| {
+            let forced = mint.computation_force(scrutinee);
+            let argument = mint.value_unit();
+            mint.computation_application(forced, argument)
+        };
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|mint, _data| thunk_type(mint), applied),
+            "the binder is forced at the thunk type its code returns"
+        );
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit(), applied);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Thunk,
+                    ..
+                })
+            ),
+            "a binder decoding to the unit type is not forced: {refused:?}"
         );
     }
 
