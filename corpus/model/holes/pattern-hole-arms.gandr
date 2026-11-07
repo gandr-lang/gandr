@@ -1,22 +1,25 @@
-// A match whose every arm is written covers its scrutinee, and a hole in an
-// arm's body leaves it covering: the term is owed, the arm is decided. The
-// twin in `pathological/holes/` leaves an arm to a pattern hole.
-
-/// Three colours, one arm each.
+//! This source shows a covered match with a hole body.
+//!
+//! A written arm covers its pattern. Its hole leaves its result owed.
+//!
+//! The checker decides the arm before it owes the result.
+//!
+//! - see: `corpus/pathological/holes/pattern-hole-arms.gandr` — a pattern hole leaves the arm undecided.
+//!
+/// This data type has three colours.
 data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
 
-/// Every colour has its arm.
+/// This function writes one arm for each colour.
 def classify(c : Color) -> Integer =
   match c where
     | Red => 0
     | Green => 1
     | Blue => 2
 
-/// `Green`'s arm is written and its body is a hole: the arm that runs is
-/// decided, only its result is not.
+/// This function writes Green's arm with a hole body.
 def sketch(c : Color) -> Integer =
   match c where
     | Red => 0
