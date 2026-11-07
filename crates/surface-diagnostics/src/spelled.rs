@@ -1356,6 +1356,51 @@ impl Families
                 .cloned();
             looped.entry(cells.sort()).or_default().extend(letters);
         }
+        let reader = module.unit().last();
+        let mut imported = BTreeMap::new();
+        for declaration in module.declarations() {
+            let Container::TopLevel(source) = declaration.container()
+            else {
+                continue;
+            };
+            let DeclarationOutcome::Data(index) = declaration.outcome()
+            else {
+                continue;
+            };
+            for name in module.constructors(index) {
+                let opened = module.imports().iter().any(|import| {
+                    import.source() == reader
+                        && matches!(
+                            import.resolution(),
+                            ImportResolution::Path(ImportTarget::Source(target)) if target == source
+                        )
+                        && match *import.signature() {
+                            Maybe::Present(ref signature) => {
+                                matches!(&signature.via, Maybe::Absent(_))
+                                    && match signature.stated {
+                                        Maybe::Present(ref stated) => {
+                                            stated.iter().any(|held| held.as_ref() == name.as_str())
+                                        },
+                                        Maybe::Absent(_) => true,
+                                    }
+                            },
+                            Maybe::Absent(_) => true,
+                        }
+                        && match *import.opening() {
+                            Opening::Every => true,
+                            Opening::Listed(ref listed) => listed
+                                .iter()
+                                .any(|&(held, _)| held.as_ref() == name.as_str()),
+                            Opening::Nothing => false,
+                        }
+                });
+                if opened {
+                    let count = imported.entry(name.as_str()).or_insert(0_u8);
+                    *count = count.saturating_add(1);
+                }
+            }
+        }
+
         let mut qualifier = alloc::string::String::new();
         let families = module
             .declarations()
@@ -1377,9 +1422,9 @@ impl Families
                     .iter()
                     .zip(signature.constructors())
                     .map(|(name, fields)| {
-                        let spelled = if module
-                            .constructor_spelling(family, SurfaceName::from(name.as_str()))
-                            == ConstructorSpelling::Qualified
+                        let spelled = if imported.get(name.as_str()).is_some_and(|count| *count > 1)
+                            || module.constructor_spelling(family, SurfaceName::from(name.as_str()))
+                                == ConstructorSpelling::Qualified
                         {
                             if qualifier.is_empty() {
                                 let path = module.path_of(declaration);
