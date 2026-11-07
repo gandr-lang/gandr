@@ -41,7 +41,7 @@ pr_fields='number state headRefName baseRefName isDraft createdAt isInMergeQueue
   timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on RemovedFromMergeQueueEvent { reason } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes {
     __typename
-    ... on CheckRun { name status conclusion startedAt detailsUrl }
+    ... on CheckRun { name status conclusion startedAt detailsUrl checkSuite { workflowRun { databaseId } } }
     ... on StatusContext { context state startedAt: createdAt targetUrl } } } } } } }'
 
 # Every open pull request, as a JSON array of `pr_fields`: one paginated

@@ -42,7 +42,7 @@ read_prs() {
             author { __typename }
             commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
               __typename
-              ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { workflow { name } } } }
+              ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { databaseId workflow { name } } } }
               ... on StatusContext { context state startedAt: createdAt } } } } } } }
             timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } }
             bases: timelineItems(last: 1, itemTypes: [AUTOMATIC_BASE_CHANGE_FAILED_EVENT, AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT, BASE_REF_CHANGED_EVENT]) { nodes { __typename ... on AutomaticBaseChangeFailedEvent { oldBase } } }

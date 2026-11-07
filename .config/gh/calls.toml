@@ -253,6 +253,7 @@ site = [
   { file = ".github/workflows/landing.yml", scope = "landing/install gh-stack", api = "rest", identity = "actions", calls = 1, points = 2, measured = "rest", hour = 1, trigger = "landing.yml: a cache miss only, once for each pin and runner; a hit reads no API" },
   { file = ".github/workflows/integration.yml", scope = "relay/dispatch this workflow on the default branch", api = "rest", identity = "actions", calls = 1, points = 4, measured = "rest", hour = 6, trigger = "integration.yml: each push to landing or integration, a landing batch or a fix; one dispatch, tried again after a server error, four requests at most" },
   { file = ".github/workflows/nightly.yml", scope = "freshness/compare main against the last successful run", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 1, schedule = "nightly.yml", trigger = "nightly.yml: once a day" },
+  { file = ".github/workflows/pr-title.yml", scope = "title/lint the title", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 10, trigger = "pr-title.yml: each title event of a pull request, about 8 openings an hour as pr:open's row and a few edits; the title as it stands, so a re-run lints it again (#5777)" },
 ]
 
 # The hour's ceiling of each identity on each API: a fifth of the reader's
