@@ -262,9 +262,9 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3()
 
 /// #2429: the comparisons a corpus source states at a path type read back at
 /// every type its table prints, laid out after its import closure as the
-/// census reads it: a model implicit the body's judgement resolved is
-/// written by the path its components read under, and each declaration's
-/// type is the one the checker entered, filled.
+/// census reads it: a comparison whose model the body's judgement resolved is
+/// written by its operator, and the read-back judges it to the same model.
+/// Each declaration's type is the one the checker entered, filled.
 #[test]
 fn the_resolved_comparisons_read_back_2429()
 {
@@ -292,10 +292,8 @@ fn the_resolved_comparisons_read_back_2429()
         spelling: Spelling::Unicode,
     });
     assert!(
-        reads
-            .iter()
-            .any(|read| read.spelled.contains("eq[.e = EqInteger] x y")),
-        "a resolved model is written by its path"
+        reads.iter().any(|read| read.spelled.contains("x == y")),
+        "a resolved comparison is written by its operator"
     );
     let unread: Vec<(&str, &RoundTrip)> = reads
         .iter()
@@ -306,6 +304,50 @@ fn the_resolved_comparisons_read_back_2429()
         unread,
         Vec::<(&str, &RoundTrip)>::new(),
         "every printed type reads back to its certificate"
+    );
+}
+
+/// #6229: a comparison through a model in a stated type that the checker
+/// decodes is written by its operator, and reads back to its certificate. The
+/// read-back judges the probe, so the model the operands resolve is the model
+/// the table holds.
+#[test]
+fn a_comparison_in_a_decoded_type_reads_back_6229()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/modules/model-stated-type.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+        form: Form::Sugared,
+        spelling: Spelling::Unicode,
+    });
+    let compared: Vec<(&str, &RoundTrip)> = reads
+        .iter()
+        .filter(|read| read.spelled.contains("decoded(ofFlag("))
+        .map(|read| (read.spelled.as_str(), &read.trip))
+        .collect();
+    assert!(
+        !compared.is_empty()
+            && compared.iter().all(|&(spelled, trip)| {
+                spelled.contains("Yes == No") && *trip == RoundTrip::Equal
+            }),
+        "a decoded comparison is written by its operator and reads back: {compared:?}"
     );
 }
 

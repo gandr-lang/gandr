@@ -1174,18 +1174,7 @@ impl<'source> Lowerer<'_, 'source>
         if self.collected.unit.source_at(site.at.span.start()) == prelude {
             return Ok(arity::Planned(false));
         }
-        let Some(&slot) = self
-            .collected
-            .by_name
-            .get(&(crate::module::Container::TopLevel(prelude), name))
-        else {
-            return Ok(arity::Planned(false));
-        };
-        let Some(constant) = self
-            .collected
-            .slots
-            .get(usize::from(slot))
-            .map(|declared| declared.constant)
+        let Some((slot, constant)) = self.collected.prelude_declaration(name)
         else {
             return Ok(arity::Planned(false));
         };

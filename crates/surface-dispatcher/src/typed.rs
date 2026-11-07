@@ -109,6 +109,8 @@ use std::path::Path;
 use anodized::spec;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::CodeDefinitions;
+use gandr_core_checker::Declaration;
+use gandr_core_checker::DeclarationContent;
 use gandr_core_checker::Formations;
 use gandr_core_checker::Formed;
 use gandr_core_checker::HostGrant;
@@ -1031,6 +1033,10 @@ pub struct TypeTable
     /// declaration: one entry per parameter in the order the core applies
     /// them, an implicit's name and none for an explicit one.
     telescopes: BTreeMap<ConstantIndex, Vec<Option<String>>>,
+    /// The prelude's declarations that a comparison calls, each with the
+    /// infix operator that calls it, ascending by the constant: a printed
+    /// call of one is written as the comparison.
+    operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)>,
     /// Each shift and exit the source's own text leaves out, by the offset
     /// the explicit form writes it at, ascending.
     shifts: Vec<(ByteOffset, Shift)>,
@@ -1074,6 +1080,39 @@ fn term_subject(
             Some(_) | None => return (Subject::Term, last),
         }
     }
+}
+
+/// `declaration` as a read-back judges it: a value declaration that states
+/// its type and writes a body enters by its type alone, its body a hole, so
+/// the read-back judges no body of the source. Its stages, its built-in role
+/// and its entry stay, because its type reads them. Any other declaration
+/// stays whole.
+///
+/// # Specification
+/// trivial.
+fn signed(declaration: Declaration) -> Declaration
+{
+    let DeclarationContent::Value {
+        signature: Maybe::Present(signature),
+        body: Maybe::Present(_),
+    } = *declaration.content()
+    else {
+        return declaration;
+    };
+    let mut signed = Declaration::new(
+        declaration.constant(),
+        Maybe::Present(signature),
+        Maybe::Absent(gandr_core_checker::body::Absent::Hole),
+        declaration.origin(),
+    )
+    .staged(declaration.stages().to_vec());
+    if let Maybe::Present(role) = declaration.builtin() {
+        signed = signed.built_in(role);
+    }
+    if let Maybe::Present(entry) = declaration.entry() {
+        signed = signed.entered(entry.clone());
+    }
+    signed
 }
 
 /// [`RoundTrip::Open`] for a static arrow whose domain classifies no codes,
@@ -3246,6 +3285,7 @@ impl TypeTable
                 (!held.is_empty()).then_some((constant, held))
             })
             .collect();
+        let operators = module.operators().to_vec();
         // A variable's type is its slot's read past the binders between
         // them, copied to fresh nodes: each copy is named as its source.
         let mut naming = Naming::of(&module, source);
@@ -3286,6 +3326,7 @@ impl TypeTable
             crossings,
             slots,
             telescopes,
+            operators,
             shifts,
         }
     }
@@ -4521,6 +4562,7 @@ impl TypeTable
             .writing(&forms)
             .naming_implicits(&implicits)
             .flattening(&flattened)
+            .operating(&self.operators)
             .within(&binders)
             .typing(&types)
             .scoped(&regions);
@@ -4906,22 +4948,25 @@ impl TypeTable
     ///   imports its home the same way when the source neither is nor imports
     ///   that home; where the unit lays no source of the home, the import binds
     ///   a stand-in of one newline before the source ([`Unit::standing_in`]).
-    ///   The read back is [`RoundTrip::Equal`] when the type read is the
-    ///   table's node, `U C` for a computation type, compared by
-    ///   [`equal_type_reading`] under the source's data signatures — the same
-    ///   syntax with path evidence erased, a type of words as the path at its
-    ///   point, a session type by its protocol's behaviour from its state;
-    ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
-    ///   the refusal when the lowering refused a closed signature or the whole
-    ///   source. Each type read is printed again under the same binders, with
-    ///   the names, labels, relations and model types the reread recorded for
-    ///   it, standing also at every copy the put-back binders made of it, a
-    ///   model type's carriers at their copies.
+    ///   The probes are judged after the source's declarations, each of which
+    ///   enters by its stated type alone, so the read-back judges no body of
+    ///   the source. The read back is [`RoundTrip::Equal`] when the type read,
+    ///   as written or as the checker enters it, is the table's node, `U C` for
+    ///   a computation type, compared by [`equal_type_reading`] under the
+    ///   source's data signatures — the same syntax with path evidence erased,
+    ///   a type of words as the path at its point, a session type by its
+    ///   protocol's behaviour from its state; [`RoundTrip::Different`]
+    ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
+    ///   lowering refused a closed signature or the whole source. Each type
+    ///   read is printed again under the same binders, with the names, labels,
+    ///   relations and model types the reread recorded for it, standing also at
+    ///   every copy the put-back binders made of it, a model type's carriers at
+    ///   their copies.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
-    /// - intension: one lowering per call, whatever the number of types; equal
-    ///   declarations are appended once.
+    /// - intension: one lowering and one judgement of the probes per call,
+    ///   whatever the number of types; equal declarations are appended once.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a data type, a thunked function type in its sugared
@@ -4932,9 +4977,10 @@ impl TypeTable
     ///   definition that names the declaration reads back equal, and one that
     ///   names the definition's own binder spells its claim; a type of a source
     ///   that imports a sibling reads back beside it; a row naming a host
-    ///   interface reads back through its home's source or a stand-in; and the
-    ///   corpus census reads back every printed type of every source, failing
-    ///   on a class the findings do not pin.
+    ///   interface reads back through its home's source or a stand-in; a
+    ///   comparison whose model its operands resolve reads back equal as the
+    ///   checker enters it; and the corpus census reads back every printed type
+    ///   of every source, failing on a class the findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
     /// - witness: `typed::tests::a_record_parameter_reprints_with_its_labels_1655`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
@@ -4942,6 +4988,7 @@ impl TypeTable
     /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
     /// - witness: `typed::tests::a_list_type_reads_back_through_its_home_4835`
     /// - witness: `typed::tests::a_printed_row_reads_back_through_its_interface_s_home_5209`
+    /// - witness: `tests::census::a_comparison_in_a_decoded_type_reads_back_6229`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -5270,9 +5317,17 @@ impl TypeTable
             })
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
+        // Each probe's type as the checker enters it, where its judgement
+        // filled what the written type leaves to it: the type compared with
+        // the table's. The written one is what a reprint spells.
+        let mut elaborated: BTreeMap<String, ValueTypeId> = BTreeMap::new();
         // The forms the lowering records as written, at their images, so a
         // reprint binds and spells what was written.
         let mut read_back: WrittenForms<String, WrittenModel> = WrittenForms::new();
+        // The probes' constants and the declarations a reading judges, each
+        // buffer kept across the readings.
+        let mut probes: Vec<ConstantIndex> = Vec::new();
+        let mut declarations: Vec<Declaration> = Vec::new();
         for &ProbeReading {
             text: ref augmented,
             ref names,
@@ -5297,8 +5352,48 @@ impl TypeTable
             {
                 Ok(Lowered::Module {
                     module,
-                    arena: read,
+                    arena: mut read,
                 }) => {
+                    // Each probe's type as the checker enters it, filled: a
+                    // model a comparison leaves to its operands is resolved as
+                    // the source's own is. Only a probe with a model slot needs
+                    // the judgement, so a module with none is not judged.
+                    probes.clear();
+                    probes.extend(
+                        module
+                            .declarations()
+                            .iter()
+                            .filter(|declaration| {
+                                declaration.name().as_ref().starts_with("read_back_")
+                            })
+                            .map(gandr_surface_lowering::LoweredDeclaration::constant),
+                    );
+                    probes.sort_unstable();
+                    let probe = |constant: ConstantIndex| probes.binary_search(&constant).is_ok();
+                    let slotted = module.declarations().iter().any(|declaration| {
+                        probe(declaration.constant()) && !module.models(declaration).is_empty()
+                    });
+                    let filled: BTreeMap<ConstantIndex, ValueTypeId> = if slotted {
+                        declarations.clear();
+                        declarations.extend(adapt(&module, &read).into_iter().map(|declaration| {
+                            if probe(declaration.constant()) {
+                                declaration
+                            }
+                            else {
+                                signed(declaration)
+                            }
+                        }));
+                        let mut context = checking_context(
+                            &mut read,
+                            Opening::UNBOUNDED,
+                            &module,
+                            &pattern_holes(&module),
+                        );
+                        type_module(&mut context, &declarations).filled().clone()
+                    }
+                    else {
+                        BTreeMap::new()
+                    };
                     let mut importer = TypeImporter::new(&read, &mut arena);
                     for declaration in module.declarations() {
                         let name = declaration.name();
@@ -5317,6 +5412,11 @@ impl TypeTable
                             | DeclarationOutcome::Abstract(_)
                             | DeclarationOutcome::World) => Err(format!("{other:?}")),
                         };
+                        if let Some(&entered) = filled.get(&declaration.constant())
+                            && let Ok(image) = importer.value_type(entered)
+                        {
+                            let _first = elaborated.insert(String::from(name.as_ref()), image);
+                        }
                         let _first = lowered.insert(String::from(name.as_ref()), outcome);
                     }
                     let typed = |id: ValueTypeId| match module.origins().value_type(id) {
@@ -5431,6 +5531,16 @@ impl TypeTable
             *read = last_parameter(&mut arena, declared, count, &mut carried)
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
         }
+        elaborated.retain(|name, read| {
+            let Some(&count) = parameterised.get(name)
+            else {
+                return true;
+            };
+            last_parameter(&mut arena, *read, count, &mut carried).is_some_and(|last| {
+                *read = last;
+                true
+            })
+        });
         // A type the lowering recorded as written as a relation or a model
         // type, a pair, a sum or a lazy product it recorded labels for, a
         // record it recorded a type member's name for, or a dependent arrow it
@@ -5453,12 +5563,12 @@ impl TypeTable
                     },
                     held,
                 )| {
-                    let read = match settled {
+                    let named = match settled {
                         Some(_) => None,
-                        None => appended
-                            .get(&(scope, probe(node, &spelled, under.as_ref())))
-                            .and_then(|name| lowered.get(name)),
+                        None => appended.get(&(scope, probe(node, &spelled, under.as_ref()))),
                     };
+                    let read = named.and_then(|name| lowered.get(name));
+                    let entered = named.and_then(|name| elaborated.get(name)).copied();
                     // A type naming binders that the declaration of its binders
                     // does not read stays open: the declaration is the table's
                     // own rendering of the context, not the source's.
@@ -5467,9 +5577,17 @@ impl TypeTable
                         (None, &None) => RoundTrip::Unparsed,
                         (Some(&Err(ref refusal)), &None) => RoundTrip::Refused(refusal.clone()),
                         (Some(&Ok(read)), _) => {
-                            match equal_type_reading(&arena, &self.signatures, held, read) {
-                                CertificateEquality::Equal => RoundTrip::Equal,
-                                CertificateEquality::Different => RoundTrip::Different,
+                            // The type as written, or as the checker enters
+                            // it where the written one leaves a model to it.
+                            let equal = |read: ValueTypeId| {
+                                equal_type_reading(&arena, &self.signatures, held, read)
+                                    == CertificateEquality::Equal
+                            };
+                            if equal(read) || entered.is_some_and(equal) {
+                                RoundTrip::Equal
+                            }
+                            else {
+                                RoundTrip::Different
                             }
                         },
                     });
