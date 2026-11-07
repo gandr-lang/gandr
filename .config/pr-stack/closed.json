@@ -1,27 +1,27 @@
 [
   {
-    "name": "#5695: a bottom on the branch of a member closed unmerged is cut past it: the chain replays onto the closed one's base without its commits",
+    "name": "#5695: a bottom on the branch of a member closed unmerged is cut past it: the chain replays onto the closed one's base without its commits; the bottom's base changes before the first push (#6176)",
     "closed": true,
     "setup": "none",
-    "output": "status 0; #2 cut past #1, closed unmerged: #2 ← #3 replayed onto main without its commits; bottom holds bottom's own; upper holds upper's own, bottom's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main; link: 2 3"
+    "output": "status 0; #2 cut past #1, closed unmerged: #2 ← #3 replayed onto main without its commits; bottom holds bottom's own; upper holds upper's own, bottom's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main | replay bottom | replay upper; link: 2 3"
   },
   {
     "name": "#5695: the branch of the closed member deleted, the chain is cut past its last head all the same",
     "closed": true,
     "setup": "gone",
-    "output": "status 0; #2 cut past #1, closed unmerged: #2 ← #3 replayed onto main without its commits; bottom holds bottom's own; upper holds upper's own, bottom's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main; link: 2 3"
+    "output": "status 0; #2 cut past #1, closed unmerged: #2 ← #3 replayed onto main without its commits; bottom holds bottom's own; upper holds upper's own, bottom's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main | replay bottom | replay upper; link: 2 3"
   },
   {
-    "name": "#5695: a closed member whose head moved after the chain stacked refuses the cut, with nothing moved",
+    "name": "#5695: a closed member whose head moved after the chain stacked refuses the cut, and the bottom stands on the closed one's base as a draft until its seat rebases it (#6176)",
     "closed": true,
     "setup": "moved",
-    "output": "status 2; the cut past #1 is refused: bottom does not hold the head of #1, which moved after the chain stacked on it; rebase bottom onto main without the commits of #1; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: ; link: "
+    "output": "status 2; the cut past #1 is refused: bottom does not hold the head of #1, which moved after the chain stacked on it; #2 stands on main as a draft: rebase bottom onto main without the commits of #1, then `mise run pr:release 2`; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main | pr ready 2 -R case/case --undo; link: "
   },
   {
-    "name": "#5695: a bottom's commit that needs the closed member's change stops the cut at its conflict, with nothing moved",
+    "name": "#5695: a bottom's commit that needs the closed member's change stops the cut at its conflict, and the bottom stands on the closed one's base as a draft (#6176)",
     "closed": true,
     "setup": "conflict",
-    "output": "status 2; the cut of #2 past #1 onto main conflicts (c.txt): rebase it by hand; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: ; link: "
+    "output": "status 2; the cut of #2 past #1 onto main conflicts (c.txt): rebase it by hand; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main | pr ready 2 -R case/case --undo; link: "
   },
   {
     "name": "a base that stands unmerged and heads no closed pull request is refused by name, as before #5695",
@@ -42,6 +42,6 @@
         "record": "write u.txt again"
       }
     ],
-    "output": "status 2; the replay of upper makes due: the case artifact; a runner builds none of their checks, so the branch is held for a seat's `mise run pr:land`, which runs them; bottom holds bottom's own; upper holds upper's own, bottom's own, closed's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main; link: 2"
+    "output": "status 2; the replay of upper makes due: the case artifact; a runner builds none of their checks, so the branch is held for a seat's `mise run pr:land`, which runs them; bottom holds bottom's own; upper holds upper's own, bottom's own, closed's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main | replay bottom; link: 2"
   }
 ]

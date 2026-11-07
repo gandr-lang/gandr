@@ -11,7 +11,9 @@
 # `moved` adds a commit to `closed` after the chain stacked,
 # `gone` deletes the branch `closed`, and `conflict` gives the bottom's commit
 # the closed one's file. `gh`, `stack_link` and `queued_of` are recorded, not
-# run, and `signed_replay` moves a branch by a plain push of the replay. The
+# run, and `signed_replay` moves a branch by a plain push of the replay. It
+# writes `replay <branch>` among the `gh` calls, so a case reads the base
+# change before the first push (#6176). The
 # result is one line compared with the case's `output`: the status, the
 # first line on stderr, the subjects main..<branch> holds for the bottom and
 # the upper, the `gh` calls and each chain linked. A case's `artifacts`, when
@@ -76,7 +78,7 @@ for (( i = 0; i < count; i++ )); do
   stack_of() { if grep -q '^stack unstack' "$case_dir/gh"; then echo null; else echo 9; fi; }
   queued_of() { echo '[]'; }
   stack_link() { jq -r 'map(.number) | join(" ")' <<< "$1" >> "$case_dir/link"; }
-  signed_replay() { git push --quiet --force origin "$3:refs/heads/$1" && echo "$3"; }
+  signed_replay() { printf 'replay %s\n' "$1" >> "$case_dir/gh"; git push --quiet --force origin "$3:refs/heads/$1" && echo "$3"; }
   closed_pr() {
     if [[ $1 == closed && $read_closed == true ]]; then
       jq -cn --arg oid "$(git ls-remote origin refs/pull/1/head | awk '{ print $1 }')" '{number: 1, head: "closed", base: "main", oid: $oid}'
