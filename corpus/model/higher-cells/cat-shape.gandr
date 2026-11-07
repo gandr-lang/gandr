@@ -2,6 +2,7 @@
 //
 // `CatShape` has objects, a dependent hom type, identities and composition.
 // Its unit and associativity laws are rewrite rules.
+// It follows the HoTT book's Definition 9.1.1.
 //
 // `SetoidCat` models the shape with types and functions. It checks every law
 // by conversion. One law can prove another law of the same type.

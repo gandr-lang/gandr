@@ -4,6 +4,7 @@
 // families. They model a hom-set indexed by its objects.
 //
 // `cat-shape.gandr` uses each probe in isolation.
+// Each probe is a reflexivity of the HoTT book's § 1.12.
 //
 // - cites: [HoTT-Book]
 //

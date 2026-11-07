@@ -2,6 +2,8 @@
 ///
 /// `Loop` and `Unloop` are inverse letters.
 /// Two cancellation rules compute each word to a normal form.
+/// One stratum down, these words are the paths `Path[.A = Circle](Base, Base)`
+/// of `circle.gandr`, the HoTT book's circle of § 8.1.
 ///
 /// A fold must respect both rules before the checker admits it.
 /// The winding and spinning sources map between words and integers.
@@ -55,6 +57,8 @@ def two_is_one() -> Path[.A = Integer](2, 1) =
   Path.ap tell_words both_cancel
 
 /// The `mirror` function exchanges loop and inverse-loop letters.
+/// At `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
+/// rule reads as `mirror(x)`, so it respects both rules.
 def rec mirror(c : Words) -> Words =
   match c where
     | Nil => Nil

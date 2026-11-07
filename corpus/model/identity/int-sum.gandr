@@ -1,4 +1,5 @@
 /// This source states integer addition and its path laws.
+/// It follows cubical Agda's `Cubical/Data/Int`.
 ///
 /// The sum recurses on its second summand.
 /// Zero is a unit, and successor and predecessor move through the sum.
@@ -19,6 +20,7 @@ pub def rec plus(a : Int, b : Int) -> Int =
     | P(x) => P (plus[<] a x)
 
 /// The `plusS` proof moves a left successor through the sum.
+/// It is cubical's `sucℤ+`, by induction on the right summand.
 pub def rec plusS(a : Int, b : Int) -> Path(plus (S a) b, S (plus a b)) =
   match b where
     | Z => Path.here (S a)
@@ -26,6 +28,7 @@ pub def rec plusS(a : Int, b : Int) -> Path(plus (S a) b, S (plus a b)) =
     | P(x) => Path.ap down (plusS[<] a x)
 
 /// The `plusP` proof moves a left predecessor through the sum.
+/// It is cubical's `predℤ+`, by the same induction as `plusS`.
 pub def rec plusP(a : Int, b : Int) -> Path(plus (P a) b, P (plus a b)) =
   match b where
     | Z => Path.here (P a)
@@ -40,6 +43,8 @@ pub def rec plusZ(b : Int) -> Path(plus Z b, b) =
     | P(x) => Path.ap down (plusZ[<] x)
 
 /// The `plusComm` proof relates the two operand orders.
+/// It is cubical's `+Comm`, and `Int` is a set, so the endpoints of its arms
+/// alone respect the rules of `Int`.
 pub def rec plusComm(a : Int, b : Int) -> Path(plus a b, plus b a) =
   match b where
     | Z => Path.back (plusZ a)

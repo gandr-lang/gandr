@@ -2,6 +2,12 @@
 ///
 /// The presented fold respects word rules by conversion.
 /// The native fold uses the native model obligations.
+/// At `Loop(Unloop(x))` the native fold gives `turn(unturn(native_wind(x)))`,
+/// and conversion does not reduce that term for a variable.
+/// So `respects` names the law `turnUnturn` for the first rule and `unturnTurn`
+/// for the second.
+/// The loop arms call the model's operations, so each side of a rule is the
+/// endpoint of a law.
 ///
 /// The folds map closed loop words.
 /// The checker reads each fold through its selected model.
