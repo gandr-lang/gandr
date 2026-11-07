@@ -1,33 +1,19 @@
-//! The null niche as a realizability predicate. A type's realisers are a
-//! predicate on a word and a heap, `V⟦T⟧ : (Nat, Heap) => Type`; the heap is
-//! data, the separating conjunction a sigma over a disjoint split and points-to
-//! a singleton, so the normaliser computes every assertion and the kernel
-//! replays every declaration here
-//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count], § 4.2.
-//! `Option<&T>` is one word, null or a reference; its realisers are equivalent
-//! at every heap to those of the two-word tagged layout, and the marshallers
-//! between the two meet their triples. A C function specified by hand,
-//! `deref_or`, is met by the niche; its `_Nonnull` neighbour is refused, in
-//! `../../pathological/specification/niche-realizability.gandr`.
+//! `niche-realizability` models a null niche as a realizability predicate.
 //!
-//! Words are `Nat`, null `Zero`, so a case on a word reduces; a triple is
-//! `P(h) => wp(c, Q, h)`, and a pure marshaller's precondition is its
-//! postcondition at its answer. Departing from § 4.2: both layouts are words
-//! by value rather than objects behind a reference count, so there is no
-//! `size` and no count; there is no later modality; and a triple is stated at
-//! the heap it owns, with no frame rule over it. Where a realiser runs to
-//! `emp(h)` the proofs case on the heap.
+//! A realiser is a predicate on a word and heap. `star` splits disjoint heaps. `pointsTo` describes a singleton. The normaliser computes assertions. The kernel replays each declaration.
+//!
+//! `Option<&T>` uses one word for null or a reference. Its realisers equal the tagged layout at every heap. Marshallers meet their triples. `deref_or` meets the niche. The pathological source refuses `_Nonnull`.
 //!
 //! - see: #2832
 //! - see: #327 — `derefOrWp`
+//! - see: `../../pathological/specification/niche-realizability.gandr` — the refused `_Nonnull` neighbor
 //! - cites: [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]
-//!
 //! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
-// `Nat`.
+// The import gives Nat.
 import "../data/data-base.gandr";
 
-// `Maybe`.
+// The import gives Maybe.
 import "../data/data-maybe.gandr";
 
 /// A heap: finitely many cells, each a location and the word it holds.
@@ -45,7 +31,7 @@ def rec pick(a : Nat, b : Nat, yes : Maybe Nat, no : Maybe Nat) -> Maybe Nat =
       | Zero => no
       | Succ(q) => pick[<] p q yes no
 
-/// The word a heap holds at a location, the first cell naming it.
+/// The first heap cell at a location gives the word.
 def rec lookup(h : Heap, x : Nat) -> Maybe Nat =
   match h where
     | Emp => None
@@ -57,7 +43,7 @@ pub def emp(h : Heap) -> Type =
     | Emp => return Unit
     | Cell(_l, _v, _rest) => return Void
 
-/// The singleton heap holding `v` at `l`.
+/// A singleton heap has `v` at `l`.
 pub def pointsTo(l : Nat, v : Nat, h : Heap) -> Type =
   match h where
     | Emp => return Void
@@ -67,9 +53,8 @@ pub def pointsTo(l : Nat, v : Nat, h : Heap) -> Type =
       only : emp(rest)
     })
 
-/// One location read through a disjoint union: nothing on the left, and the
-/// union holds what the right part does; or a word on the left, the right
-/// part holding nothing there.
+/// A disjoint union holds a word in at most one part.
+/// A left word requires an empty right part.
 def union(o : Maybe Nat, o1 : Maybe Nat, o2 : Maybe Nat) -> Type =
   match o1 where
     | None => return Path o o2
@@ -113,8 +98,8 @@ pub def vOpt(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> Type =
 pub data Tagged : Type where
   | Tag : (t : Nat, p : Nat) --> Tagged
 
-/// The tagged layout: tag zero with a null payload, owning nothing, or tag
-/// one with a reference.
+/// A tagged layout uses a null payload or a reference.
+/// The null payload owns nothing.
 pub def vTag(vt : (Nat, Heap) -> Type, r : Tagged, h : Heap) -> Type =
   match r where
     | Tag(t, p) => match t where
@@ -150,7 +135,7 @@ def fromOptMeets(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> (vOpt(vt, w, h)
       | Cell(_l, _v, _rest) => return fun (e) { e }
     | Succ(_n) => return fun (r) { r }
 
-/// The tag-zero half of `toOptMeets`: a null payload owning nothing.
+/// The tag-zero case maps a null payload with no heap to the niche.
 def toOptNone(vt : (Nat, Heap) -> Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zero, p), h)) -> vOpt(
   vt,
   toOpt(Tag(Zero, p)),
@@ -193,8 +178,7 @@ def toOptMeets(vt : (Nat, Heap) -> Type, r : Tagged, h : Heap) -> vTag(vt, r, h)
   match r where
     | Tag(t, p) => toOptAt vt t p h
 
-/// A niche realiser marshalled: the pair `fromOpt` answers, with the
-/// evidence `fromOptMeets` carries to it.
+/// `marshalled` returns `fromOpt(w)` with evidence from `fromOptMeets`.
 def marshalled(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) -> *{
   r : Tagged,
   ok : vTag(vt, r, h)
@@ -399,8 +383,7 @@ pub def nicheTagged(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : vOpt(
     }
   }
 
-/// The two layouts' realisers are equivalent at every heap, the
-/// quasi-inverse made bi-invertible as `isoToEquiv` makes it.
+/// `nicheTaggedEquiv` makes the two layouts' realisers equivalent at every heap.
 pub def nicheTaggedEquiv(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : vOpt(vt, w, h)} ≃ *{
   r : Tagged,
   ok : vTag(vt, r, h)
@@ -413,20 +396,16 @@ pub def nicheTaggedEquiv(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : 
     }
   }
 
-/// An unboxed integer: any word, owning nothing.
+/// An unboxed integer uses any word and owns nothing.
 pub def vInt(_v : Nat, h : Heap) -> Type =
   emp h
 
-/// The reference handed back: after the call, the niche at the word passed.
+/// `keptOpt` gives the passed word the niche after the call.
 pub def keptOpt(p : Nat, _r : Nat, h : Heap) -> Type =
   vOpt vInt p h
 
-/// `int deref_or(const int *_Nullable p, int d)`, specified by hand as the
-/// precondition it needs for a postcondition `q` on the word passed, the
-/// answer and the heap after: at null it answers `d` and touches nothing;
-/// otherwise `p` points to an int and it answers that int. That the C body
-/// meets this is assumed, not checked: `extern` declarations are not lowered
-/// , so nothing here names the body.
+/// `deref_or` returns `d` at null and an integer at a reference.
+/// Its hand-written precondition names the passed word, answer and final heap.
 pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
   match w where
     | Zero => q w d h
@@ -436,8 +415,8 @@ pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> T
       post : q(w, v, h)
     })
 
-/// The reference half of `derefOrMeets`: the cell the reference owns is the
-/// cell `deref_or` reads, and the reference is handed back.
+/// `derefOrSome` reads the cell that the reference owns.
+/// It returns the reference.
 pub def derefOrSome(
   n : Nat,
   d : Nat,
@@ -451,8 +430,7 @@ pub def derefOrSome(
   match r where
     | *{v, cell} => *{v, *{cell, r}}
 
-/// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
-/// {V_opt(w)}`, the reference handed back.
+/// `derefOrMeets` sends `vOpt` through `deref_or` and returns it at the passed word.
 pub def derefOrMeets(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) -> derefOrWp(w, d, keptOpt, h) =
   match w where
     | Zero => match h where
