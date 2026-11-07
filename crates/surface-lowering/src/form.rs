@@ -5329,9 +5329,22 @@ impl<'pieces> Cursor<'pieces>
         tree: &SyntaxTree<'_>,
     ) -> Result<Universe, Misspelt>
     {
-        if let Maybe::Absent(_) = self.tile(TileName::UNIVERSE) {
-            return Err(Misspelt::Misplaced(self.here()));
+        match self.peek() {
+            Maybe::Present(Piece::Tile {
+                label: TileName::UNIVERSE,
+                ..
+            }) => {},
+            Maybe::Present(Piece::Tile {
+                label: TileName::CONSTRUCTOR,
+                at,
+            }) if tree.fragment(at.node).is_some_and(|spelled| {
+                AsRef::<str>::as_ref(&spelled) == TileName::UNIVERSE.as_ref()
+            }) => {},
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+                return Err(Misspelt::Misplaced(self.here()));
+            },
         }
+        let _keyword = self.read();
         if let Maybe::Absent(_) = self.tile(TileName::BRACKET_OPEN) {
             return Ok(Universe::FUSS_FREE);
         }

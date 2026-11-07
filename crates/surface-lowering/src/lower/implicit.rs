@@ -344,7 +344,7 @@ impl<'source> Lowerer<'_, 'source>
         match atom {
             ResidentAtom::Numeral(_) => self.number(site),
             ResidentAtom::Constructor(_) | ResidentAtom::Wildcard | ResidentAtom::Compound => {
-                self.constructor(site)
+                self.constructor(site, None)
             },
         }
     }
