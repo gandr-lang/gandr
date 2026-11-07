@@ -1,4 +1,6 @@
 // This source drives an endpoint through a recursive protocol with a loop.
+// Such a loop need not exit.
+// Its passes are the steps of a demonic iteration over the protocol.
 //
 // Each loop turn completes one protocol pass.
 // One fixpoint supplies the passes.
@@ -14,6 +16,7 @@
 //
 // - see: #4502
 // - see: #4705
+// - see: #4727
 
 /// `follow` receives reports until retirement.
 /// Retirement closes the endpoint and ends the loop.
@@ -42,6 +45,23 @@ def tally(operator : mu open. &{
     }
   };
   pure seen
+
+/// `asking` selects a report and hears its answer on each pass.
+/// The loop issues every command and never exits.
+def asking(seat : mu open. +{more : ?Integer. open, done : end}) -> Unit =
+  loop {
+    select seat more;
+    let heard = recv seat;
+    continue
+  }
+
+/// `serving` hears reports over a protocol with no exit.
+def serving(desk : mu open. &{report : ?Integer. open}) -> Unit =
+  loop {
+    offer desk {
+      | report => { let next = recv desk; continue }
+    }
+  }
 
 /// `followed` sends two reports and a retirement to a forked desk.
 @[ runs("*{}") ]
