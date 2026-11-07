@@ -549,12 +549,14 @@ chain_gap() {
 # With `git`, the rebase signs each commit it writes (`--gpg-sign`, #3745),
 # and the caller pushes the new tips. With `github`, the rebase writes its
 # commits as `landing`, and `signed_replay` moves each branch to commits that
-# GitHub signs (#5214), because a runner holds no signing key. Sets
-# `chain_moved` to one `<branch> <old> <new>` for each member replayed. At a
-# conflict or a refused replay it stops and fails. Then `chain_stop` is the
-# index of the member that stopped, and `chain_files` the files that
-# conflict, empty when no file conflicts. A rebase that stops on no conflict
-# prints git's error. The members replayed before the stop stay replayed.
+# GitHub signs (#5214), because a runner holds no signing key. A member whose
+# rebase leaves its tip as it was is not replayed. Sets `chain_moved` to one
+# `<branch> <old> <new>` for each member replayed, `<new>` equal to `<old>`
+# for a tip that did not move. At a conflict or a refused replay it stops
+# and fails. Then `chain_stop` is the index of the member that stopped, and
+# `chain_files` the files that conflict, empty when no file conflicts. A
+# rebase that stops on no conflict prints git's error. The members replayed
+# before the stop stay replayed.
 chain_moved=()
 chain_stop=
 chain_files=
@@ -580,7 +582,7 @@ chain_replay() {
     fi
     tip=$(git -C "$dir" rev-parse HEAD)
     new=$tip
-    if [[ $signer == github ]]; then
+    if [[ $signer == github && $tip != "$old" ]]; then
       new=$(signed_replay "$head" "$onto" "$tip" "$old") || { chain_stop=$i; return 1; }
       git fetch --quiet origin "$head"
     fi
@@ -955,25 +957,29 @@ signed_replay() {
 }
 
 # Rebase branch `$1`, at head `$2`, onto its base `$3` in a scratch worktree,
-# and move the branch there as signed commits (`signed_replay`). The rebase
-# drops a commit whose change the base already carries (#4463), where
-# GitHub's rebase replays it empty. Prints the new head, or nothing when the
-# head already stands on the base. Fails, naming why on stderr, at a
-# conflict or a refused replay.
+# and move the branch there as signed commits: `chain_replay` with the
+# `github` signer, the branch alone (#5749). The replay starts from
+# `origin/$3`, so the rebase is `git rebase origin/$3`: it drops a commit
+# whose change the base already carries (#4463), where GitHub's rebase
+# replays it empty. A branch that moved past `$2` since the caller read it
+# is refused, as the replay would move a head that no reading decided on.
+# Prints the new head, or nothing when the head already stands on the base.
+# Fails, naming why on stderr, at a conflict or a refused replay.
 signed_restack() {
-  local branch=$1 oid=$2 base=$3 dir tip status=0
+  local branch=$1 oid=$2 base=$3 dir head old new status=0
   git fetch --quiet origin "$base" "$branch" || { echo "the fetch of $branch and $base failed" >&2; return 1; }
+  if [[ $(git rev-parse "origin/$branch") != "$oid" ]]; then
+    echo "$branch moved past ${oid::12} since it was read; nothing is replayed" >&2
+    return 1
+  fi
   dir=$(mktemp -d)
   git worktree add --quiet --detach "$dir" "$oid" || { rm -rf "$dir"; echo "the scratch worktree for $branch failed" >&2; return 1; }
-  if ! git -C "$dir" -c user.name=landing -c user.email=landing@users.noreply.github.com rebase --quiet "origin/$base" > /dev/null 2>&1; then
-    echo "the rebase of $branch onto $base conflicts: $(git -C "$dir" diff --name-only --diff-filter=U | tr '\n' ' ')" >&2
-    git -C "$dir" rebase --abort 2> /dev/null || :
-    status=1
+  if chain_replay "$dir" "origin/$base" "origin/$base" github "$branch"; then
+    read -r head old new <<< "${chain_moved[0]}"
+    [[ $new == "$old" ]] || echo "$new"
   else
-    tip=$(git -C "$dir" rev-parse HEAD)
-    if [[ $tip != "$oid" ]]; then
-      signed_replay "$branch" "origin/$base" "$tip" "$oid" || status=1
-    fi
+    [[ -z $chain_files ]] || echo "the rebase of $branch onto $base conflicts: $chain_files" >&2
+    status=1
   fi
   git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
   git worktree prune
