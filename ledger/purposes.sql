@@ -1702,6 +1702,7 @@ INSERT INTO purpose VALUES('runtime-emitter','seam::HostValues','struct','Gives 
 INSERT INTO purpose VALUES('runtime-emitter','seam::Migrated','enum','Names a host''s decision about one migration: run it in this process, take the answer crossed back from where it ran, or refuse it for a reason.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','seam::MigrationRequest','struct','Names a migration a run is about to make: the world it names, its command, and the captures its body binds, values of the caller''s store.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','seam::Spawning','enum','Names where a cut''s writer runs: apart, its spawn offered to the host that starts it, or in place, forced where its reader awaits its answer.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','seam::TaskOrder','enum','Names the order in which a run''s scheduler takes its ready tasks: the oldest first, or the newest first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','trace::Carried','enum','Names what a traced send carried and its receipt took: a value of the caller''s store, or a delegated channel end.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','trace::ChannelNumber','struct','Numbers a traced run''s channels in the order their forks ran, so a delegated end names its channel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','trace::Play','struct','Holds one channel''s play, its fork and its moves in the order made, so its causal web is read as a dialogue''s is.',NULL,'fits','sound',NULL);
@@ -2008,7 +2009,9 @@ INSERT INTO purpose VALUES('storage-values','units::TokenBody','struct','Holds a
 INSERT INTO purpose VALUES('storage-values','units::TokenBytes','struct','Holds an inline canonical byte payload.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-values','units::ValueManifestVersion','struct','Names the layout version of a value manifest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','distribution::Bits','struct','The bits the draws of one path of runs take, and the quota a distributed run holds each path to.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-corpus','distribution::PastQuota','struct','Why a distributed run gives no distribution: a path draws past the quota, with the bits it draws.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','distribution::PastQuota','struct','A path that draws past the quota, with the bits it draws: one reason a distributed run gives no distribution.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','distribution::Performer','enum','Names what performs a draw: the run itself, a task it forks by its channel''s name, or a world it migrates a body to.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','distribution::Undistributed','enum','Why a distributed run gives no distribution: a path past the quota, or a draw the exact model declines, with its performer and the cause.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','distribution::distributed','function','The spelling of the distribution a declaration''s runs give, each path weighed `2^-bits` and summed by outcome, in canonical form: what a `distributes` expectation compares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::ExpectationFault','enum','Why an expectation names no verdict.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::ExpectationSchema','enum','One of the nine expectation schemas.',NULL,'fits','sound',NULL);

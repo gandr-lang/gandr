@@ -159,11 +159,13 @@ use gandr_core_incremental::Reference;
 use gandr_core_incremental::footprints;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
+use gandr_core_sequent::CommandNode;
 use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::NodeAddress;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Provenance;
 use gandr_core_sequent::ReadbackRefusal;
@@ -172,6 +174,7 @@ use gandr_core_sequent::Stuck;
 use gandr_core_sequent::Writers;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::focus_definition;
+use gandr_core_sequent::reach;
 use gandr_core_sequent::read_back_terminal;
 use gandr_core_sequent::spawn_independent_definitions;
 use gandr_core_term::Computation;
@@ -180,6 +183,9 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::World;
+use gandr_core_term::world::WorldForm;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Choice;
 use gandr_runtime_emitter::Declined;
@@ -188,6 +194,7 @@ use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::Play;
 use gandr_runtime_emitter::RunInputs;
+use gandr_runtime_emitter::TaskOrder;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::Trace;
 use gandr_runtime_emitter::evaluate_on;
@@ -197,9 +204,11 @@ use gandr_runtime_emitter::evaluate_with_host;
 use gandr_surface_corpus::Bits;
 use gandr_surface_corpus::Channel;
 use gandr_surface_corpus::PastQuota;
+use gandr_surface_corpus::Performer;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::TracedRun;
+use gandr_surface_corpus::Undistributed;
 use gandr_surface_corpus::reads_spelled;
 use gandr_surface_corpus::stating_reads;
 use gandr_surface_diagnostics::Families;
@@ -375,15 +384,16 @@ enum Hosting<'run>
     /// As [`Self::Printing`], each channel's play appended to the trace.
     Traced(&'run mut dyn Console, &'run mut Trace),
     /// As [`Self::Printing`], each `Rand.draw` answered from the exact
-    /// model's path.
-    Drawing(&'run mut dyn Console, &'run mut rand::Draws),
+    /// model's path, and the ready tasks switched in the order given.
+    Drawing(&'run mut dyn Console, &'run mut rand::Draws, TaskOrder),
 }
 
 impl Hosting<'_>
 {
     /// The inputs of a run over `store` as this hosting asks, the console a
     /// hosted run's host writes to, none for a bare run, and the exact
-    /// model's path when the run takes its draws from one.
+    /// model's path with the task order when the run takes its draws from
+    /// one.
     ///
     /// # Specification
     /// trivial.
@@ -393,7 +403,7 @@ impl Hosting<'_>
     ) -> (
         RunInputs<'run, 'run>,
         Option<&'run mut dyn Console>,
-        Option<&'run mut rand::Draws>,
+        Option<(&'run mut rand::Draws, TaskOrder)>,
     )
     {
         match *self {
@@ -404,10 +414,10 @@ impl Hosting<'_>
                 Some(&mut **console),
                 None,
             ),
-            Self::Drawing(ref mut console, ref mut draws) => (
+            Self::Drawing(ref mut console, ref mut draws, order) => (
                 RunInputs::new(store),
                 Some(&mut **console),
-                Some(&mut **draws),
+                Some((&mut **draws, order)),
             ),
         }
     }
@@ -2096,6 +2106,133 @@ impl<'source> Program<'source>
         }
     }
 
+    /// Run the declaration at `constant` once for each sequence of answers
+    /// to its draws, depth first, its ready tasks switched in `order`, and
+    /// hand each outcome to `path` as [`Runner::run_distributed`] does.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Undistributed::PastQuota`] at the first run whose draws pass
+    /// `quota`, and [`Undistributed::Unanswered`] at the first run with a
+    /// declined draw, naming what performs it.
+    fn distributed_in(
+        &mut self,
+        constant: ConstantIndex,
+        (quota, order): (Bits, TaskOrder),
+        path: &mut dyn FnMut(RunSpelling, Bits),
+    ) -> Result<(), Undistributed>
+    {
+        let mut captured = Captured::default();
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => {
+                path(printed(&captured, &evaluation), Bits::default());
+                return Ok(());
+            },
+        };
+        let mut draws = rand::Draws::new(quota);
+        loop {
+            captured.clear();
+            let evaluation = self
+                .tiered(
+                    constant,
+                    returned,
+                    forced,
+                    Choice::Policy,
+                    Hosting::Drawing(&mut captured, &mut draws, order),
+                )
+                .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)));
+            if let Some(drawn) = draws.past() {
+                return Err(Undistributed::PastQuota(PastQuota { drawn }));
+            }
+            if let Some(declined) = draws.declined() {
+                return Err(Undistributed::Unanswered {
+                    performer: self.performer(&evaluation),
+                    cause: declined.to_string(),
+                });
+            }
+            path(printed(&captured, &evaluation), draws.bits());
+            match draws.advance() {
+                rand::Advanced::Next => {},
+                rand::Advanced::Done => return Ok(()),
+            }
+        }
+    }
+
+    /// What performs the draw that a run ending as `evaluation` was declined
+    /// at: the world of a migration that answered nothing, the task whose
+    /// fork's child holds the stuck operation, the innermost when forks
+    /// nest, or else the run itself.
+    ///
+    /// # Specification
+    /// trivial.
+    fn performer(
+        &self,
+        evaluation: &Evaluation<'_>,
+    ) -> Performer
+    {
+        match *evaluation {
+            Evaluation::Unfinished(Unfinished::Declined(Declined::Migration(at, _))) => {
+                match self.arena.command(at) {
+                    Some(&CommandNode::World {
+                        form:
+                            WorldForm::Migrate {
+                                world: World::Declared(world),
+                                ..
+                            },
+                        ..
+                    }) => self
+                        .printed
+                        .get(usize::from(world))
+                        .map_or(Performer::Run, |name| Performer::World(name.clone())),
+                    Some(_) | None => Performer::Run,
+                }
+            },
+            Evaluation::Stuck(Stuck::PerformNoHandler(at)) => {
+                let mut innermost: Option<(usize, &ChannelName)> = None;
+                let mut seen = BTreeSet::new();
+                let mut order = Vec::new();
+                for (&fork, name) in &self.channels {
+                    let Some(&CommandNode::Session {
+                        action: SessionAction::Fork { child, .. },
+                        ..
+                    }) = self.arena.command(fork)
+                    else {
+                        continue;
+                    };
+                    seen.clear();
+                    order.clear();
+                    if reach(
+                        &self.arena,
+                        &[NodeAddress::Command(child)],
+                        &mut seen,
+                        &mut order,
+                    )
+                    .is_err()
+                        || !seen.contains(&NodeAddress::Command(at))
+                    {
+                        continue;
+                    }
+                    if innermost.is_none_or(|(held, _)| order.len() < held) {
+                        innermost = Some((order.len(), name));
+                    }
+                }
+                innermost.map_or(Performer::Run, |(_, name)| {
+                    Performer::Task(String::from(name.as_ref()))
+                })
+            },
+            Evaluation::Value(_)
+            | Evaluation::Sealed(_)
+            | Evaluation::Blamed(_)
+            | Evaluation::Holed { .. }
+            | Evaluation::Stuck(_)
+            | Evaluation::Unfinished(_)
+            | Evaluation::Unrunnable(_) => Performer::Run,
+        }
+    }
+
     /// Run the commands on a tier the choice names, forcing a suspended
     /// answer, and spell the terminal; or blame the opaque constant a run
     /// observed or answers outside any suspension.
@@ -2172,7 +2309,7 @@ impl<'source> Program<'source>
                 };
             };
             let mut host = match draws {
-                Some(draws) => console::PrintingHost::drawing(console, draws),
+                Some((draws, order)) => console::PrintingHost::drawing(console, draws, order),
                 None => console::PrintingHost::new(console),
             };
             let hosted = match choice {
@@ -3225,50 +3362,23 @@ impl Runner for Program<'_>
     /// does. The two entry commands are focused once, and one console and one
     /// path serve every run, so the program's arena does not grow with the
     /// paths. A declaration that cannot run is one path of no bits, its
-    /// outcome the reason.
+    /// outcome the reason. Ready tasks take their turns oldest first.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`PastQuota`] at the first run whose draws pass `quota`.
+    /// [`Undistributed`] at the first run whose draws pass `quota`, or whose
+    /// draw the exact model declines.
     #[inline]
     fn run_distributed(
         &mut self,
         constant: ConstantIndex,
         quota: Bits,
         path: &mut dyn FnMut(RunSpelling, Bits),
-    ) -> Result<(), PastQuota>
+    ) -> Result<(), Undistributed>
     {
-        let mut captured = Captured::default();
-        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
-            Ok(entries) => entries,
-            Err(evaluation) => {
-                path(printed(&captured, &evaluation), Bits::default());
-                return Ok(());
-            },
-        };
-        let mut draws = rand::Draws::new(quota);
-        loop {
-            captured.clear();
-            let evaluation = self
-                .tiered(
-                    constant,
-                    returned,
-                    forced,
-                    Choice::Policy,
-                    Hosting::Drawing(&mut captured, &mut draws),
-                )
-                .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)));
-            if let Some(drawn) = draws.past() {
-                return Err(PastQuota { drawn });
-            }
-            path(printed(&captured, &evaluation), draws.bits());
-            match draws.advance() {
-                rand::Advanced::Next => {},
-                rand::Advanced::Done => return Ok(()),
-            }
-        }
+        self.distributed_in(constant, (quota, TaskOrder::Oldest), path)
     }
 }
 
@@ -3379,14 +3489,14 @@ impl Runner for ScheduledRuns<'_, '_, '_>
     /// trivial.
     ///
     /// # Errors
-    /// [`PastQuota`] as [`Program`]'s.
+    /// [`Undistributed`] as [`Program`]'s.
     #[inline]
     fn run_distributed(
         &mut self,
         constant: ConstantIndex,
         quota: Bits,
         path: &mut dyn FnMut(RunSpelling, Bits),
-    ) -> Result<(), PastQuota>
+    ) -> Result<(), Undistributed>
     {
         self.program.run_distributed(constant, quota, path)
     }
@@ -3759,7 +3869,9 @@ mod tests
     use gandr_runtime_emitter::Fuel;
     use gandr_runtime_emitter::PATCHER;
     use gandr_runtime_emitter::Status;
+    use gandr_runtime_emitter::TaskOrder;
     use gandr_runtime_emitter::Tier;
+    use gandr_surface_corpus::Bits;
     use gandr_surface_corpus::Channel;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::Outcome;
@@ -3988,6 +4100,50 @@ mod tests
                 ),
             ],
             "each channel by its fork's protocol binder, in the order forked"
+        );
+    }
+
+    /// #5712: the exact model weighs the same paths, whichever ready task
+    /// takes the next turn. The coin exchange draws at the desk, forks the
+    /// seat, and the seat draws. Under each order every one of the four
+    /// paths answers alike: true exactly when the two bits agree.
+    #[test]
+    fn a_session_distributes_alike_under_each_task_order_5712()
+    {
+        let listed = crate::tests::Listed::hosted(include_str!(
+            "../../../corpus/model/probability/coin-exchange.gandr"
+        ));
+        let mut exchange = listed_program(&listed);
+        let exchanged = exchange
+            .declarations
+            .iter()
+            .find(|&(_, declared)| declared.name == SurfaceName::from("exchanged"))
+            .map(|(&constant, _)| constant)
+            .expect("the program declares `exchanged`");
+        let mut paths = |order| {
+            let mut ran = Vec::new();
+            exchange
+                .distributed_in(exchanged, (Bits::QUOTA, order), &mut |spelled, bits| {
+                    ran.push((spelled, bits));
+                })
+                .expect("the draws stay inside the quota");
+            ran
+        };
+        let oldest = paths(TaskOrder::Oldest);
+        let agreed = "*{+{.0 = *{}}, +{.0 = *{}}}";
+        let differed = "*{+{.1 = *{}}, +{.1 = *{}}}";
+        assert_eq!(
+            oldest
+                .iter()
+                .map(|&(ref spelled, _)| spelled.as_ref())
+                .collect::<Vec<_>>(),
+            [agreed, differed, differed, agreed],
+            "each path's answer, the desk's bit first"
+        );
+        assert_eq!(
+            paths(TaskOrder::Newest),
+            oldest,
+            "the newest task first draws and answers alike"
         );
     }
 

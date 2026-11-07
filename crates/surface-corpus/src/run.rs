@@ -21,7 +21,7 @@ use core::fmt;
 use gandr_kernel_term::ConstantIndex;
 
 use crate::distribution::Bits;
-use crate::distribution::PastQuota;
+use crate::distribution::Undistributed;
 
 /// One channel of a run: its name and the web its play decomposes to.
 ///
@@ -285,26 +285,29 @@ pub trait Runner
     ///   outcome spelled as [`Self::run`] spells it and the sum of the widths
     ///   of that path's draws.
     /// - provides: the produced side of a `distributes` comparison.
-    /// - fails: [`PastQuota`] at the first path whose draws pass `quota`; no
-    ///   path past it is reported.
+    /// - fails: [`Undistributed::PastQuota`] at the first path whose draws pass
+    ///   `quota`, and [`Undistributed::Unanswered`] at the first path with a
+    ///   draw the exact model declines; no path past it is reported.
     /// - panics: none.
     /// - executable: none — as [`Self::run`].
     ///
     /// # Errors
-    /// [`PastQuota`] when a path draws more than `quota` bits.
+    /// [`Undistributed`] when a path draws more than `quota` bits, or when
+    /// the exact model declines a draw, naming what performs it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — four paths reaching three outcomes, and a path past
-    ///   the quota; settlement sums the paths and compares the canonical
-    ///   spellings.
+    /// - hypothesis: L3 — four paths reaching three outcomes, a path past the
+    ///   quota, and a declined draw of a task and of a world; settlement sums
+    ///   the paths and compares the canonical spellings.
     /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
     /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
+    /// - witness: `tests::corpus::a_declined_draw_names_its_task_or_world_5712`
     fn run_distributed(
         &mut self,
         constant: ConstantIndex,
         quota: Bits,
         path: &mut dyn FnMut(RunSpelling, Bits),
-    ) -> Result<(), PastQuota>;
+    ) -> Result<(), Undistributed>;
 }
 
 impl<Run> Runner for Run
@@ -393,7 +396,7 @@ where
         constant: ConstantIndex,
         _quota: Bits,
         path: &mut dyn FnMut(RunSpelling, Bits),
-    ) -> Result<(), PastQuota>
+    ) -> Result<(), Undistributed>
     {
         path(self(constant), Bits::default());
         Ok(())

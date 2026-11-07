@@ -1,8 +1,10 @@
 //! The session rules on the judgement's machine: the fork that binds two
 //! endpoints, the actions that advance them, the offer whose arms agree on
 //! the linear zone, and the fence that keeps an endpoint out of every former
-//! that may run its use other than once. The decisions are stated in
-//! [`crate::session`].
+//! that may run its use other than once. A forked task owes the held
+//! interfaces of the row around its fork, and the host answers each
+//! operation the task performs outside its own handlers. The decisions are
+//! stated in [`crate::session`].
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -3785,8 +3787,9 @@ impl Machine<'_, '_>
 
     /// Continue a fork whose protocol annotation formed: split the zone, bind
     /// the child's end at the annotation and check the child against the
-    /// returner of the unit at the fork's own row, the unknown type's row
-    /// empty.
+    /// returner of the unit at its task's row. That row is the host's part of
+    /// the row outside every handler and scope around the fork, empty when
+    /// the fork synthesises outside every one.
     ///
     /// # Specification
     /// - requires: the annotation formed.
@@ -3911,22 +3914,32 @@ impl Machine<'_, '_>
             }),
             depth,
         });
-        let row = match direction {
-            Direction::Check(expected) => {
-                let expected = self.context.whnf_comp_type(expected)?;
-                match comp_type_view(self.context.arena(), expected)? {
-                    CompTypeView::Returner { effects, .. }
-                    | CompTypeView::Returns { effects, .. } => effects.clone(),
-                    CompTypeView::Unknown
-                    | CompTypeView::With(..)
-                    | CompTypeView::Arrow { .. }
-                    | CompTypeView::Pi { .. }
-                    | CompTypeView::LinearArrow { .. }
-                    | CompTypeView::Element { .. }
-                    | CompTypeView::Codata { .. } => EffectRow::EMPTY,
+        // The child runs as a task on the joined frame. No handler or scope
+        // around the fork stands on that stack, so the host answers each
+        // operation that no handler inside the child answers (#6058).
+        let around = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|waiting| delimiter(waiting.frame) != Delimiter::Apart)
+            .filter_map(|waiting| {
+                if let Frame::ScopeSubject { answer, .. } | Frame::HandlerSubject { answer, .. } =
+                    waiting.frame
+                {
+                    Some(answer)
                 }
-            },
-            Direction::Synthesise => EffectRow::EMPTY,
+                else {
+                    None
+                }
+            })
+            .last()
+            .or(match direction {
+                Direction::Check(expected) => Some(expected),
+                Direction::Synthesise => None,
+            });
+        let row = match around {
+            Some(around) => hosted(&self.row_of(around)?)?,
+            None => EffectRow::EMPTY,
         };
         let unit = self.context.atom(Atom::Unit).id();
         let returner = self
@@ -3945,6 +3958,69 @@ impl Machine<'_, '_>
             term: child,
             direction: Direction::Check(returner),
         }))
+    }
+
+    /// The row `ty` carries: its returner's, or the empty row for any other
+    /// shape. The weak head's computation and its view can refuse.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As the weak head's computation and its view.
+    fn row_of(
+        &mut self,
+        ty: CompTypeId,
+    ) -> Result<EffectRow, CheckRefusal>
+    {
+        let head = self.context.whnf_comp_type(ty)?;
+        Ok(match comp_type_view(self.context.arena(), head)? {
+            CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. } => {
+                effects.clone()
+            },
+            CompTypeView::Unknown
+            | CompTypeView::With(..)
+            | CompTypeView::Arrow { .. }
+            | CompTypeView::Pi { .. }
+            | CompTypeView::LinearArrow { .. }
+            | CompTypeView::Element { .. }
+            | CompTypeView::Codata { .. } => EffectRow::EMPTY,
+        })
+    }
+
+    /// Who answers an operation that the goal under way performs by name.
+    /// The host answers when the nearest delimiter around the goal is a
+    /// fork's child or a migration's body. A task's stack holds no frame of
+    /// its parent, and a body run at its world holds no frame of its caller.
+    /// Otherwise any handler that stands nearest at run time answers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Answerer::Host`] exactly when a `ForkChild` or a
+    ///   `MigrateBody` frame waits below the top with no handler, scope or
+    ///   suspension frame above it; [`Answerer::Anyone`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a seat that draws while it holds its end checks; the
+    ///   same draw in the parent, and one under a handler inside the seat, are
+    ///   each refused. A body that draws at its world before a later migration
+    ///   checks, its draw crossing the later migration's capability.
+    /// - witness: `judgement::session::tests::a_seat_draws_while_it_holds_its_end_6058`
+    /// - witness: `judgement::session::tests::a_draw_under_a_handler_inside_the_task_captures_its_end_6058`
+    /// - witness: `worlds::tests::a_body_s_draw_crosses_a_later_migration_s_capability_5712`
+    #[spec(ensures: |ret| matches!(ret, Answerer::Host | Answerer::Anyone))]
+    pub(super) fn task_answerer(&self) -> Answerer<'static>
+    {
+        let nearest = self
+            .frames
+            .iter()
+            .rev()
+            .find(|waiting| delimiter(waiting.frame) != Delimiter::Through);
+        match nearest.map(|waiting| waiting.frame) {
+            Some(Frame::ForkChild { .. } | Frame::MigrateBody { .. }) => Answerer::Host,
+            _ => Answerer::Anyone,
+        }
     }
 
     /// Close the innermost endpoint the run bound, refusing it unless spent,
@@ -4209,6 +4285,82 @@ fn captured(
     }
 }
 
+/// What a frame does to a walk for the handlers around a goal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Delimiter
+{
+    /// The frame waits on a body that runs apart from the frames below it: a
+    /// fork's child, a migration's body, a lambda's body or a thunk's body.
+    /// The walk stops at it.
+    Apart,
+    /// The frame is the subject of a scope or a handler, which answers
+    /// operations around the goal.
+    Answerer,
+    /// The frame neither stops the walk nor answers.
+    Through,
+}
+
+/// How `frame` delimits a walk for the handlers around a goal.
+///
+/// # Specification
+/// trivial.
+const fn delimiter(frame: Frame) -> Delimiter
+{
+    if matches!(
+        frame,
+        Frame::ForkChild { .. }
+            | Frame::MigrateBody { .. }
+            | Frame::LambdaBody
+            | Frame::LinearLambdaBody { .. }
+            | Frame::ThunkBody
+            | Frame::LetThunk { .. }
+    ) {
+        Delimiter::Apart
+    }
+    else if matches!(
+        frame,
+        Frame::ScopeSubject { .. } | Frame::HandlerSubject { .. }
+    ) {
+        Delimiter::Answerer
+    }
+    else {
+        Delimiter::Through
+    }
+}
+
+/// The part of `row` a host answers: each interface that `row` holds for the
+/// run, by name. Only a host interface or an `extern` block's interface is
+/// performed by name, and the host of the run answers each. A forked task
+/// performs only these, besides the operations a handler inside it answers.
+/// An instance at a region and an open tail stay out, because only a handler
+/// answers them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a closed row of the entries of `row` placed at [`Region::Held`].
+/// - fails: [`CheckRefusal::MachineInvariant`] when two kept interfaces share
+///   an operation, which no two interfaces of one row do.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a task's draw that its function owes checks under a scope
+///   of the parent that answers draws; without that row the draw is refused,
+///   since only the parent's scope would answer it.
+/// - witness: `judgement::session::tests::a_task_owes_its_draw_past_its_parent_s_handler_6058`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |kept| kept.tail().is_none() && kept.instances().len() <= row.instances().len()))]
+fn hosted(row: &EffectRow) -> Result<EffectRow, CheckRefusal>
+{
+    EffectRow::from_signatures(
+        row.instances()
+            .filter(|&(label, _)| label.region() == Region::Held)
+            .map(|(_, signature)| signature.clone()),
+    )
+    .map_err(|_conflict| CheckRefusal::MachineInvariant)
+}
+
 /// What a value handed on whole — by a send, an operation's payload or a
 /// resumption — was.
 ///
@@ -4250,7 +4402,8 @@ enum Owing
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Answerer<'operation>
 {
-    /// The host, through a capability it holds for the run: it answers once.
+    /// The host, through a capability it holds for the run or as the only
+    /// answerer of a forked task's operation: it answers once.
     Host,
     /// The clause of the capability scope whose region stands at `depth`,
     /// answering `operation`.

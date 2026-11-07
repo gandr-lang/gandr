@@ -6384,8 +6384,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let effects = gandr_core_term::effect::EffectRow::singleton(signature.clone());
                 // An operation performed by name goes to whichever handler
                 // stands nearest when it runs, so any of them may receive the
-                // rest of the run as a continuation.
-                self.region_captured(term, session::Answerer::Anyone, payload)?;
+                // rest of the run as a continuation. In a forked task with no
+                // handler inside it, only the host receives it, once.
+                let answerer = self.task_answerer();
+                self.region_captured(term, answerer, payload)?;
                 self.footprint_performed(term);
                 let result = self
                     .context

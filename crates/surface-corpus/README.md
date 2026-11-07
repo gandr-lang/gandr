@@ -27,7 +27,7 @@ The expectation language over a lowered module and its verdicts — the nine cla
 - `CorpusRoot` and `CorpusRoot::admit`: the two roots and the strict root's refusal of `owes` and `refuses`.
 - `ExpectationSchema` and `expectation_schema::Absent`: the nine schemas, matched by the registry's names.
 - `Runner`, `RunSpelling` and `ran::Absent`: the run or web a `runs` or `decomposes` outcome is compared against, asked of the caller, accepted or refused, the line a `normalizes` outcome is compared against, and the items a `reads` names; `TracedRun` and `Channel`: a run and the web each channel it forked played; `stating_reads` and `reads_spelled`: who states a `reads`, and its spelling.
-- `distributed`, `Bits` and `PastQuota`: the distribution a declaration's runs give in canonical form, the bits a path draws and the quota of 16, and why a path past the quota gives no distribution.
+- `distributed`, `Bits`, `Undistributed`, `PastQuota` and `Performer`: the canonical distribution of a declaration's runs, the bits a path draws, and why the runs give none, named by `distribution`'s lead.
 - `normalized_call`, `normalized_call::Absent` and `NORMAL_FORM_ARROW`: the call a `normalizes` line reads, why a line reads none, and what separates a call from its normal form.
 - `Stated`, `Outcome`, `ExpectationFault`, `Membership` and `Expectations`: what a declaration states, and why an expectation states nothing; `expected`: one lowered declaration's expectations, read without settling.
 - `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary and producer refusal views; `RefusalName::closed`: every name no form qualifies.

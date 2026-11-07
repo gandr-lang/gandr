@@ -1,7 +1,7 @@
-//! A migration run: in one process, its body at its world on a thread and
-//! over a store of its own, what it takes and answers crossing by content; a
-//! host deciding where it runs; and one shipped here run as the migration it
-//! names.
+//! A migration run: in one process, its body at its world over a store of
+//! its own, its operations offered to the caller's host, what it takes and
+//! answers crossing by content; a host deciding where it runs; and one
+//! shipped here run as the migration it names.
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -398,6 +398,84 @@ fn a_host_decides_where_a_migration_runs()
                 (outcome, _) => panic!("{decision:?} on {tier:?}: {outcome:?}"),
             }
         }
+    }
+}
+
+/// A host that answers every operation with five, recording each operation
+/// offered, and keeps each migration's default.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct Answering
+{
+    /// The operations offered, by name, in the order offered.
+    offered: Vec<String>,
+}
+
+impl HostHandler for Answering
+{
+    type Abort = ();
+
+    /// Record the operation, then resume it with five.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handle(
+        &mut self,
+        request: HostRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> HostReply<()>
+    {
+        self.offered.push(String::from(request.operation.as_ref()));
+        let five = Magnitude::from_decimal_text("5".into()).expect("decimal digits");
+        HostReply::Resume(
+            values
+                .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+                    Sign::NonNegative,
+                    five,
+                ))))
+                .expect("the reply fits"),
+        )
+    }
+}
+
+/// A draw inside `migrate [host] { … }` reaches the caller's host, as a draw
+/// of the caller does, on each tier: the host is offered the draw once, and
+/// the migration answers the host's five (#5712).
+#[test]
+fn a_migrated_body_s_operation_reaches_the_caller_s_host_5712()
+{
+    let mut core = CoreArena::new();
+    let host = gandr_core_term::effect::host::HostSignatures::new(&mut core)
+        .expect("the host signatures are consistent");
+    let width = integer(&mut core, Digits("2"));
+    let body = core.computation_perform(host.rand, "draw".into(), width);
+    let program = core.computation_world(WorldForm::Migrate {
+        world: World::Host,
+        body,
+    });
+    let five = integer(&mut core, Digits("5"));
+    let (arena, root) = focused(&core, program);
+    for &tier in tiers() {
+        let mut answering = Answering::default();
+        let mut store = Store::new();
+        let outcome = evaluate_on_with_host(
+            tier,
+            (&arena, &Definitions::new(), root),
+            (budget(), RunInputs::new(&mut store)),
+            &mut answering,
+        );
+        let Ok(HostOutcome::Completed(Outcome::Halted(answer))) = outcome
+        else {
+            panic!("the run halts on {tier:?}: {outcome:?}");
+        };
+        let read =
+            read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&core, read, five),
+            "on {tier:?}"
+        );
+        assert_eq!(answering.offered, ["draw"], "on {tier:?}");
     }
 }
 

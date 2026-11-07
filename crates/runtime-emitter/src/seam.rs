@@ -226,6 +226,27 @@ pub trait HostHandler
     {
         Spawning::InPlace
     }
+
+    /// Decide the order in which the run's ready tasks run, before the run
+    /// starts.
+    ///
+    /// # Specification
+    /// - ensures: [`TaskOrder::Oldest`] runs the task readied first, and
+    ///   [`TaskOrder::Newest`] the task readied last, each time the running
+    ///   task waits or ends. A host that names no order keeps this default, the
+    ///   deterministic schedule.
+    /// - executable: none — the trait states the host's obligation; each body
+    ///   is an implementor's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run of linear sessions answers alike under each
+    ///   order, while the order of the tasks' sends changes.
+    /// - witness: `tests::sessions::linear_tasks_answer_alike_under_each_order_5712`
+    #[inline]
+    fn task_order(&mut self) -> TaskOrder
+    {
+        TaskOrder::Oldest
+    }
 }
 
 /// Where a cut's writer runs: apart from its reader, or in place, forced
@@ -240,6 +261,20 @@ pub enum Spawning
     Apart,
     /// The writer stays in its reader's run.
     InPlace,
+}
+
+/// Which ready task runs next when the running task waits or ends.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TaskOrder
+{
+    /// The task readied first runs first: the queue is first in, first out.
+    #[default]
+    Oldest,
+    /// The task readied last runs first: the queue is last in, first out.
+    Newest,
 }
 
 /// The host's value capability over the caller's store: inspect, allocate,
@@ -429,6 +464,12 @@ pub trait Offer
     /// # Specification
     /// trivial.
     fn spawning(&mut self) -> Spawning;
+
+    /// Decide the order of the ready tasks.
+    ///
+    /// # Specification
+    /// trivial.
+    fn task_order(&mut self) -> TaskOrder;
 }
 
 /// A host and the abort result it stopped the run with, if it did.
@@ -487,5 +528,14 @@ where
     fn spawning(&mut self) -> Spawning
     {
         self.host.spawning()
+    }
+
+    /// Ask the host.
+    ///
+    /// # Specification
+    /// trivial.
+    fn task_order(&mut self) -> TaskOrder
+    {
+        self.host.task_order()
     }
 }

@@ -27,6 +27,7 @@ use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
+use gandr_runtime_emitter::TaskOrder;
 
 use super::rand::Draws;
 use super::rand::answered;
@@ -354,13 +355,16 @@ where
 /// operations is served on its console, and every other one is declined. A
 /// host over a console that crosses threads crosses them too, so a
 /// concurrent run's reader may hold it. Given the draws of the exact model,
-/// it also answers each `Rand.draw` from them.
+/// it also answers each `Rand.draw` from them, and switches between ready
+/// tasks in the order it is given.
 pub(super) struct PrintingHost<'console, Printer: ?Sized = dyn Console>
 {
     /// Where the run's printed lines go.
     console: &'console mut Printer,
     /// The answers of the exact model, when the run takes them.
     draws: Option<&'console mut Draws>,
+    /// The order in which the run's ready tasks take their turns.
+    order: TaskOrder,
 }
 
 impl<'console, Printer> PrintingHost<'console, Printer>
@@ -376,21 +380,25 @@ where
         Self {
             console,
             draws: None,
+            order: TaskOrder::Oldest,
         }
     }
 
-    /// The host writing to `console` and answering each draw from `draws`.
+    /// The host writing to `console`, answering each draw from `draws`, and
+    /// switching between ready tasks in `order`.
     ///
     /// # Specification
     /// trivial.
     pub(super) const fn drawing(
         console: &'console mut Printer,
         draws: &'console mut Draws,
+        order: TaskOrder,
     ) -> Self
     {
         Self {
             console,
             draws: Some(draws),
+            order,
         }
     }
 }
@@ -422,5 +430,14 @@ where
             },
             None => HostReply::Decline,
         }
+    }
+
+    /// The order the host was given.
+    ///
+    /// # Specification
+    /// trivial.
+    fn task_order(&mut self) -> TaskOrder
+    {
+        self.order
     }
 }

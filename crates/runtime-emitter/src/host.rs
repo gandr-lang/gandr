@@ -140,6 +140,7 @@ use crate::seam::MigrationRequest;
 use crate::seam::Offer;
 use crate::seam::Offered;
 use crate::seam::Spawning;
+use crate::seam::TaskOrder;
 use crate::trace::Trace;
 use crate::transfer::Moved;
 use crate::transfer::Owners;
@@ -446,7 +447,10 @@ impl<'run, 'host> Calls<'run, 'host>
             definitions,
             inputs,
         } = parts;
-        let (store, offer, recording) = inputs.into_held();
+        let (store, mut offer, recording) = inputs.into_held();
+        let order = offer
+            .as_deref_mut()
+            .map_or(TaskOrder::Oldest, Offer::task_order);
         let played_before = match recording {
             Recording::Off => 0,
             Recording::Into(ref trace) => trace.plays.len(),
@@ -476,6 +480,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 lowered
                     .joined
                     .map_or(Word::ZERO, |label| codes.label(label)),
+                order,
             ),
             recording,
             played_before,
@@ -1281,6 +1286,7 @@ impl<'run, 'host> Calls<'run, 'host>
                     (self.arena, self.definitions, lowered),
                     runtime.fuel(),
                     (self.store, &fields),
+                    self.offer.as_deref_mut(),
                 )
                 .ok_or(Refusal::Operands)?
             },
