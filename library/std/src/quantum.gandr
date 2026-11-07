@@ -85,14 +85,24 @@ pub def omega : Amplitude = Amp 0 1 0 1 (Halved Whole);
 pub def plus(x : Amplitude, y : Amplitude) -> Amplitude =
   match x where
     | Amp(a, b, c, d, j) => match y where
-      | Amp(e, f, g, h, k) => amplitude (lift a k + lift e j) (lift b k + lift f j) (lift c k + lift g j) (lift d k + lift h j) (plusScale j k)
+      | Amp(e, f, g, h, k) => amplitude
+        (lift a k + lift e j)
+        (lift b k + lift f j)
+        (lift c k + lift g j)
+        (lift d k + lift h j)
+        (plusScale j k)
 
 /// The exact product: sixteen products of coefficients at the sum of the
 /// two scales, then one reduction.
 pub def times(x : Amplitude, y : Amplitude) -> Amplitude =
   match x where
     | Amp(a, b, c, d, j) => match y where
-      | Amp(e, f, g, h, k) => amplitude (a * e + 2 * b * f - c * g - 2 * d * h) (a * f + b * e - c * h - d * g) (a * g + 2 * b * h + c * e + 2 * d * f) (a * h + b * g + c * f + d * e) (plusScale j k)
+      | Amp(e, f, g, h, k) => amplitude
+        (a * e + 2 * b * f - c * g - 2 * d * h)
+        (a * f + b * e - c * h - d * g)
+        (a * g + 2 * b * h + c * e + 2 * d * f)
+        (a * h + b * g + c * f + d * e)
+        (plusScale j k)
 
 /// The negation.
 pub def negate(x : Amplitude) -> Amplitude =
