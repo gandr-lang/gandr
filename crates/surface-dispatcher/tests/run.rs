@@ -637,12 +637,11 @@ fn a_script_encloses_the_square_root_of_two_5700()
 #[test]
 fn a_script_s_profile_bounds_its_run_5704()
 {
-    let source = format!(
-        "import std.io;\nimport std.reals;\n\ndef main() -> [std.reals.Eff, std.io.Console.Eff] Integer =\n  let held = std.reals.admit \"{ROOT_TWO}\"\n  let *{{lower, upper}} = std.reals.enclose held 300\n  std.io.Console.print lower\n  0\n"
-    );
     let scratch = Scratch::write(
         Path::new("reals-profile-5704"),
-        SourceText::from(source.as_str()),
+        SourceText::from(include_str!(
+            "run/fixtures/a-script-s-profile-bounds-its-run-5704.gandr"
+        )),
     );
     // Run the source under `profile`: whether it exits 0, whether it is
     // stuck, and what it printed.
