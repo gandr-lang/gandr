@@ -1442,6 +1442,49 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
     Ok(())
 }
 
+/// A `def` that lost its `=`, whose body nests applications, recovers as it
+/// does at the end of the input, whatever declaration follows it.
+///
+/// The separator before the next declaration reads, as it stands, as an
+/// operator of the sort of an expression. Its reduction against the body,
+/// which reads as a type, costs an inconsistent meld. A window from inside
+/// the body meets that cost, and it turns the reading of the body from types
+/// to expressions. The source then recovers with 12 obligations where the
+/// declaration alone recovers with 1 (#5747). Each row keeps the damaged
+/// declaration, with strings, names or numbers as its arguments, and varies
+/// the declaration that follows it: a bare `def`, a `def` with a
+/// documentation line and an attribute, and a `data` declaration.
+#[test]
+fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Box<dyn Error>>
+{
+    for damaged in [
+        "def f() -> A\n  admit (D (P \"x\" p (P \"n\" q N)) r) s\n",
+        "def f() -> A\n  admit (D (P x p (P n q N)) r) s\n",
+        "def f() -> A\n  admit (D (P 8 p (P 9 q N)) r) s\n",
+    ] {
+        let alone = parse(built(), SourceText::from(damaged))?;
+        assert_eq!(
+            1,
+            alone.obligations().len(),
+            "the damaged declaration alone owes only its `=`"
+        );
+        for follower in [
+            "def g() -> A = b;\n",
+            "/// `g`.\n@[ runs(\"Admitted\") ]\ndef g() -> A = b;\n",
+            "data G where { }\n",
+        ] {
+            let source = format!("{damaged}\n{follower}");
+            let result = parse(built(), SourceText::from(source.as_str()))?;
+            assert_eq!(
+                alone.obligations(),
+                result.obligations(),
+                "the damaged declaration before {follower:?} owes what it owes alone"
+            );
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {

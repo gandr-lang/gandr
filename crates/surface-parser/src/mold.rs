@@ -1234,6 +1234,101 @@ fn prefixes_declaration(
     }))
 }
 
+primitive_copy_wrapper!(
+    /// Whether a token is the separator that ends a top-level declaration
+    /// before the head of the next one.
+    struct DeclarationEnd(bool);
+);
+
+/// Return whether the token at `index` of `tokens` is a separator that the
+/// head of a next top-level declaration follows.
+///
+/// A separator is a `;` or a layout block's separator. A closer, a `}` or a
+/// layout block's close, is no separator: it completes the form of a block,
+/// as of a `theory`, a `data` or a `def` with a block body. The next
+/// significant token after the separator starts its line, and it heads a
+/// declaration ([`heads_declaration`]) or stands before one as an item form
+/// of one tile ([`prefixes_declaration`]). A top-level declaration starts at
+/// the left margin. A member of a `theory`, `data` or `module` block stands
+/// further right, so the separator between two members is no declaration
+/// end.
+///
+/// The test reads tokens alone, so each reading of a token sees the same
+/// ends. It can be wrong: a declaration keyword at the left margin inside an
+/// open bracket ends a declaration too.
+///
+/// # Specification
+/// - requires: `tokens` came from the labeler over `source`.
+/// - ensures: true exactly when the token at `index` is a layout separator or a
+///   punctuation token spelled `;`, and the next significant token after it
+///   starts its line and heads or prefixes a declaration.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `def` without its `=`, whose body nests applications,
+///   recovers as it does at the end of the input only when the layout separator
+///   that the next declaration's head follows closes it. With a `;` between two
+///   members, or with a block's close, in the set, a member of a `theory` or
+///   `data` block without its `:` or `|` recovers with more obligations than
+///   the record holds.
+/// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+#[inline]
+fn ends_declaration(
+    pbg: &Pbg,
+    tokens: &[Token],
+    index: TokenIndex,
+    source: &SourceFragment<'_>,
+) -> DeclarationEnd
+{
+    let at = usize::from(index);
+    let Some(&token) = tokens.get(at)
+    else {
+        return DeclarationEnd::from(false);
+    };
+    let separates = match token.lexeme {
+        Lexeme::LayoutSemi => true,
+        Lexeme::Punct => AsRef::<str>::as_ref(&token.text(source)) == ";",
+        Lexeme::LowerWord
+        | Lexeme::UpperWord
+        | Lexeme::Number
+        | Lexeme::TypedNumber
+        | Lexeme::Character
+        | Lexeme::Quote
+        | Lexeme::StringFragment
+        | Lexeme::ShellStringFragment
+        | Lexeme::EscapeSequence
+        | Lexeme::ShellWord
+        | Lexeme::EnvAssign
+        | Lexeme::SingleQuotedContent
+        | Lexeme::VariableName
+        | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
+        | Lexeme::LayoutOpen
+        | Lexeme::LayoutClose
+        | Lexeme::SubshellOpen
+        | Lexeme::SubshellClose
+        | Lexeme::Space
+        | Lexeme::Unknown => false,
+    };
+    if !separates {
+        return DeclarationEnd::from(false);
+    }
+    let next = tokens
+        .iter()
+        .skip(at.saturating_add(1))
+        .find(|next| !matches!(next.lexeme, Lexeme::Space));
+    DeclarationEnd::from(next.is_some_and(|&next| {
+        let starts_line = usize::try_from(next.start)
+            .ok()
+            .and_then(|start| AsRef::<str>::as_ref(source).get(.. start))
+            .is_some_and(|before| before.is_empty() || before.ends_with('\n'));
+        starts_line
+            && (bool::from(heads_declaration(pbg, next, source))
+                || bool::from(prefixes_declaration(pbg, next, source)))
+    }))
+}
+
 /// The reserved uppercase words (the tree-sitter grammar's `KW` / primitive
 /// type names).
 ///
@@ -2343,8 +2438,20 @@ impl<'pbg> Molder<'pbg>
                 };
                 self.settle_statement(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
-                let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
-                Self::push_choice(state, best, text);
+                let taken = bool::from(ends_declaration(
+                    self.pbg,
+                    tokens,
+                    TokenIndex::from(index),
+                    &source,
+                )) && bool::from(state.close_at_separator(
+                    &self.candidates,
+                    labels.as_slice(),
+                    TileText::from(text),
+                ));
+                if !taken {
+                    let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
+                    Self::push_choice(state, best, text);
+                }
                 if halt == Halt::AtRepair && !state.obligations().is_empty() {
                     return Molding::Halted;
                 }
@@ -4186,6 +4293,10 @@ impl<'pbg> Molder<'pbg>
     /// positions; the window only exists to expose whether a tied opener's own
     /// form completes.
     ///
+    /// A separator that ends a top-level declaration unfinished
+    /// ([`ends_declaration`]) closes that declaration in the window as it does
+    /// in the stream ([`MeldState::close_at_separator`]).
+    ///
     /// # Specification
     /// - requires: `start` is within the token stream or its end sentinel;
     ///   `mark` was taken from `state` before the tied opener was pushed.
@@ -4238,13 +4349,25 @@ impl<'pbg> Molder<'pbg>
                 state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
                 self.gather(state, token.lexeme, text, &labels);
                 state.settle_declaration_boundary(&self.candidates);
-                let ahead = Ahead::Stream {
+                let taken = bool::from(ends_declaration(
+                    self.pbg,
                     tokens,
-                    index: TokenIndex::from(index),
+                    TokenIndex::from(index),
                     source,
-                };
-                let choice = self.choose(state, text, ahead);
-                Self::push_choice(state, choice, text);
+                )) && bool::from(state.close_at_separator(
+                    &self.candidates,
+                    labels.as_slice(),
+                    TileText::from(text),
+                ));
+                if !taken {
+                    let ahead = Ahead::Stream {
+                        tokens,
+                        index: TokenIndex::from(index),
+                        source,
+                    };
+                    let choice = self.choose(state, text, ahead);
+                    Self::push_choice(state, choice, text);
+                }
                 molded = molded.saturating_add(1);
                 self.census.window_token();
             }
