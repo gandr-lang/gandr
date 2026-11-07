@@ -1,5 +1,6 @@
-//! The laws of an ordered semiring, and the checker that decides them on the
-//! elements an instance's carrier gives.
+//! The laws of an ordered semiring and of a commutative ring under the
+//! discrete order, and the checkers that decide them on the elements an
+//! instance's carrier gives.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -7,6 +8,7 @@ use core::fmt;
 use anodized::spec;
 
 use crate::signature::Carrier;
+use crate::signature::CommutativeRing;
 use crate::signature::Comparison;
 use crate::signature::InstanceName;
 use crate::signature::OrderedSemiring;
@@ -115,6 +117,63 @@ impl Law
             | Self::AdditionMonotone
             | Self::MultiplicationMonotoneLeft
             | Self::MultiplicationMonotoneRight => Arity::Three,
+        }
+    }
+}
+
+/// One law of a commutative ring under the discrete order: a law of an
+/// ordered semiring, or one of the two laws a ring adds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RingLaw
+{
+    /// A law of an ordered semiring.
+    Semiring(Law),
+    /// `a · b = b · a`.
+    MultiplicationCommutative,
+    /// `a + (−a) = 0`.
+    AdditionInverse,
+}
+
+impl RingLaw
+{
+    /// Every law, in the order a check decides them: the sixteen laws of an
+    /// ordered semiring, then the two a ring adds.
+    pub const ALL: [Self; 18] = [
+        Self::Semiring(Law::AdditionAssociative),
+        Self::Semiring(Law::AdditionCommutative),
+        Self::Semiring(Law::AdditionUnit),
+        Self::Semiring(Law::MultiplicationAssociative),
+        Self::Semiring(Law::MultiplicationUnitLeft),
+        Self::Semiring(Law::MultiplicationUnitRight),
+        Self::Semiring(Law::DistributionLeft),
+        Self::Semiring(Law::DistributionRight),
+        Self::Semiring(Law::AnnihilationLeft),
+        Self::Semiring(Law::AnnihilationRight),
+        Self::Semiring(Law::OrderReflexive),
+        Self::Semiring(Law::OrderAntisymmetric),
+        Self::Semiring(Law::OrderTransitive),
+        Self::Semiring(Law::AdditionMonotone),
+        Self::Semiring(Law::MultiplicationMonotoneLeft),
+        Self::Semiring(Law::MultiplicationMonotoneRight),
+        Self::MultiplicationCommutative,
+        Self::AdditionInverse,
+    ];
+
+    /// How many elements the law quantifies over.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn arity(self) -> Arity
+    {
+        match self {
+            Self::Semiring(law) => law.arity(),
+            Self::MultiplicationCommutative => Arity::Two,
+            Self::AdditionInverse => Arity::One,
         }
     }
 }
@@ -231,17 +290,17 @@ impl Decided
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Counterexample<E>
+pub struct Counterexample<E, L = Law>
 {
     /// The instance the law was checked on.
     instance: InstanceName,
     /// The law.
-    law: Law,
+    law: L,
     /// The elements, one per variable of the law, in its order.
     elements: Vec<E>,
 }
 
-impl<E> Counterexample<E>
+impl<E, L: Copy> Counterexample<E, L>
 {
     /// The instance the law was checked on.
     ///
@@ -260,7 +319,7 @@ impl<E> Counterexample<E>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn law(&self) -> Law
+    pub const fn law(&self) -> L
     {
         self.law
     }
@@ -282,16 +341,16 @@ impl<E> Counterexample<E>
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum LawFailure<E>
+pub enum LawFailure<E, L = Law>
 {
     /// The law fails at the counterexample's elements.
-    Broken(Counterexample<E>),
+    Broken(Counterexample<E, L>),
     /// An operation the law reads leaves the represented elements at the
     /// counterexample's elements, so the law is not decided there.
-    Undecided(Counterexample<E>),
+    Undecided(Counterexample<E, L>),
 }
 
-impl<E> fmt::Display for LawFailure<E>
+impl<E, L: fmt::Display> fmt::Display for LawFailure<E, L>
 {
     /// Names the instance, the law and how many elements break it. The
     /// counterexample holds the elements.
@@ -323,7 +382,7 @@ impl<E> fmt::Display for LawFailure<E>
     }
 }
 
-impl<E: fmt::Debug> core::error::Error for LawFailure<E>
+impl<E: fmt::Debug, L: fmt::Debug + fmt::Display> core::error::Error for LawFailure<E, L>
 {
 }
 
@@ -357,6 +416,26 @@ impl fmt::Display for Law
             Self::MultiplicationMonotoneLeft => "the monotonicity of multiplication on the left",
             Self::MultiplicationMonotoneRight => "the monotonicity of multiplication on the right",
         })
+    }
+}
+
+impl fmt::Display for RingLaw
+{
+    /// Names the law.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Semiring(law) => write!(f, "{law}"),
+            Self::MultiplicationCommutative => f.write_str("the commutativity of multiplication"),
+            Self::AdditionInverse => f.write_str("the inverse of addition"),
+        }
     }
 }
 
@@ -414,11 +493,7 @@ pub fn check<A>(algebra: &A) -> Result<Decided, LawFailure<A::Element>>
 where
     A: OrderedSemiring,
 {
-    let carrier = algebra.carrier();
-    let reach = match carrier {
-        Carrier::Whole(_) => Reach::Whole,
-        Carrier::Generated(_) => Reach::Generated,
-    };
+    let reach = reach_of(&algebra.carrier());
     let mut tuples = 0_usize;
     for law in Law::ALL {
         tuples = tuples.saturating_add(check_law(algebra, law)?.0);
@@ -428,6 +503,64 @@ where
         tuples: TupleCount(tuples),
         reach,
     })
+}
+
+/// Decides every law of a commutative ring under the discrete order.
+///
+/// The laws are the sixteen laws of an ordered semiring, the commutativity of
+/// the product and the inverse of the sum, each on every tuple of the elements
+/// `algebra`'s carrier gives.
+///
+/// # Specification
+/// - ensures: on success, all eighteen laws hold on every tuple the carrier
+///   gives; on failure, the first law in [`RingLaw::ALL`] that fails or that
+///   leaves the represented elements, at the first tuple in lexicographic
+///   order.
+/// - panics: none.
+/// - intension: a law of arity `k` reads `nᵏ` tuples of `n` elements. No
+///   allocation but the counterexample's.
+///
+/// # Errors
+/// - [`LawFailure::Broken`]: a law fails at the counterexample's elements.
+/// - [`LawFailure::Undecided`]: an operation leaves the represented elements.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the amplitudes and the real amplitudes pass; a ring whose
+///   product does not commute and a ring whose negation is wrong each yield the
+///   law they break with its elements; an element at the edge of the integers
+///   leaves a law undecided.
+/// - witness: `tests::amplitudes::the_amplitudes_pass_every_ring_law`
+/// - witness: `tests::amplitudes::the_real_amplitudes_pass_every_ring_law`
+/// - witness: `tests::amplitudes::a_broken_ring_yields_its_counterexample`
+/// - witness: `tests::amplitudes::a_coefficient_past_128_bits_is_refused`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |decided| decided.laws.0 == RingLaw::ALL.len()))]
+#[inline]
+pub fn check_ring<A>(algebra: &A) -> Result<Decided, LawFailure<A::Element, RingLaw>>
+where
+    A: CommutativeRing,
+{
+    let reach = reach_of(&algebra.carrier());
+    let mut tuples = 0_usize;
+    for law in RingLaw::ALL {
+        tuples = tuples.saturating_add(check_ring_law(algebra, law)?.0);
+    }
+    Ok(Decided {
+        laws: LawCount(RingLaw::ALL.len()),
+        tuples: TupleCount(tuples),
+        reach,
+    })
+}
+
+/// Which elements a check of `carrier` reads.
+///
+/// # Specification
+/// trivial.
+const fn reach_of<E>(carrier: &Carrier<'_, E>) -> Reach
+{
+    match *carrier {
+        Carrier::Whole(_) => Reach::Whole,
+        Carrier::Generated(_) => Reach::Generated,
+    }
 }
 
 /// Decides one law on every tuple of the elements `algebra`'s carrier gives.
@@ -461,19 +594,102 @@ where
     A: OrderedSemiring,
 {
     let carrier = algebra.carrier();
-    let elements = carrier.elements();
+    walk(carrier.elements(), law.arity(), |tuple| {
+        at(
+            algebra.name(),
+            law,
+            tuple,
+            law.arity(),
+            evaluate(algebra, law, tuple),
+        )
+    })
+}
+
+/// Decides one law of a commutative ring on every tuple of the elements
+/// `algebra`'s carrier gives.
+///
+/// # Specification
+/// - ensures: on success, the law holds on every tuple, and the count is `nᵏ`
+///   for `n` elements and a law of arity `k`.
+/// - panics: none.
+/// - intension: the tuples in lexicographic order, the first failure returned
+///   at once.
+///
+/// # Errors
+/// - [`LawFailure::Broken`]: the law fails at the counterexample's elements.
+/// - [`LawFailure::Undecided`]: an operation leaves the represented elements.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a ring built to break one law yields that law and its
+///   elements; L3 — the two added laws read `n²` and `n` tuples.
+/// - witness: `tests::amplitudes::a_broken_ring_yields_its_counterexample`
+/// - witness: `tests::amplitudes::the_added_laws_read_n_to_their_arity_tuples`
+#[spec(ensures: |ref ret| ret.is_ok() || ret.as_ref().is_err_and(|failure| match *failure {
+    LawFailure::Broken(ref counterexample) | LawFailure::Undecided(ref counterexample) => counterexample.law == law,
+}))]
+#[inline]
+pub fn check_ring_law<A>(
+    algebra: &A,
+    law: RingLaw,
+) -> Result<TupleCount, LawFailure<A::Element, RingLaw>>
+where
+    A: CommutativeRing,
+{
+    let carrier = algebra.carrier();
+    walk(carrier.elements(), law.arity(), |tuple| {
+        at(
+            algebra.name(),
+            law,
+            tuple,
+            law.arity(),
+            evaluate_ring(algebra, law, tuple),
+        )
+    })
+}
+
+/// Reads every tuple of `elements` that a law of `arity` quantifies over, in
+/// lexicographic order, and stops at the first failure `decide` returns.
+///
+/// # Specification
+/// - ensures: on success, `nᵏ` tuples of `n` elements at arity `k`; on failure,
+///   the first failure in lexicographic order.
+/// - panics: none.
+/// - intension: a tuple of arity below three repeats its last element in the
+///   places it does not read.
+///
+/// # Errors
+/// - [`LawFailure`]: the first failure `decide` returns.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the tuple counts of a carrier of three elements separate
+///   the arities.
+/// - witness: `tests::laws::each_law_reads_n_to_its_arity_tuples`
+/// - witness: `tests::amplitudes::the_added_laws_read_n_to_their_arity_tuples`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |count| elements.len().checked_pow(match arity {
+    Arity::One => 1_u32,
+    Arity::Two => 2_u32,
+    Arity::Three => 3_u32,
+}).is_none_or(|expected| expected == count.0)))]
+fn walk<E, L, Decide>(
+    elements: &[E],
+    arity: Arity,
+    mut decide: Decide,
+) -> Result<TupleCount, LawFailure<E, L>>
+where
+    Decide: FnMut([&E; 3]) -> Result<(), LawFailure<E, L>>,
+{
     let mut tuples = 0_usize;
-    match law.arity() {
+    match arity {
         Arity::One => {
             for first in elements {
-                at(algebra, law, [first, first, first])?;
+                decide([first, first, first])?;
                 tuples = tuples.saturating_add(1);
             }
         },
         Arity::Two => {
             for first in elements {
                 for second in elements {
-                    at(algebra, law, [first, second, second])?;
+                    decide([first, second, second])?;
                     tuples = tuples.saturating_add(1);
                 }
             }
@@ -482,7 +698,7 @@ where
             for first in elements {
                 for second in elements {
                     for third in elements {
-                        at(algebra, law, [first, second, third])?;
+                        decide([first, second, third])?;
                         tuples = tuples.saturating_add(1);
                     }
                 }
@@ -492,11 +708,11 @@ where
     Ok(TupleCount(tuples))
 }
 
-/// Decides one law at one tuple, and names the instance, the law and the
-/// elements when it is not shown there.
+/// The verdict on one law at one tuple, which names the instance, the law and
+/// the elements when the law is not shown there.
 ///
 /// # Specification
-/// - ensures: success exactly when the law holds at the tuple.
+/// - ensures: success exactly when `truth` holds.
 /// - panics: none.
 ///
 /// # Errors
@@ -507,32 +723,36 @@ where
 /// - hypothesis: L2 — a broken instance yields the law's own variables, one
 ///   element each, in the law's order.
 /// - witness: `tests::laws::a_broken_instance_yields_its_counterexample`
+/// - witness: `tests::amplitudes::a_broken_ring_yields_its_counterexample`
 #[spec(ensures: |ref ret| ret.is_ok() || ret.as_ref().is_err_and(|failure| match *failure {
     LawFailure::Broken(ref counterexample) | LawFailure::Undecided(ref counterexample) => counterexample.law == law,
 }))]
-fn at<A>(
-    algebra: &A,
-    law: Law,
-    tuple: [&A::Element; 3],
-) -> Result<(), LawFailure<A::Element>>
+fn at<E, L>(
+    instance: InstanceName,
+    law: L,
+    tuple: [&E; 3],
+    arity: Arity,
+    truth: Result<Truth, Outside>,
+) -> Result<(), LawFailure<E, L>>
 where
-    A: OrderedSemiring,
+    E: Clone,
+    L: Copy + PartialEq,
 {
-    let arity = match law.arity() {
+    let read = match arity {
         Arity::One => 1_usize,
         Arity::Two => 2,
         Arity::Three => 3,
     };
     let counterexample = || Counterexample {
-        instance: algebra.name(),
+        instance,
         law,
         elements: tuple
             .iter()
-            .take(arity)
+            .take(read)
             .map(|element| (*element).clone())
             .collect(),
     };
-    match evaluate(algebra, law, tuple) {
+    match truth {
         Ok(Truth::Holds) => Ok(()),
         Ok(Truth::Fails) => Err(LawFailure::Broken(counterexample())),
         Err(Outside) => Err(LawFailure::Undecided(counterexample())),
@@ -598,4 +818,43 @@ where
         },
     };
     Ok(Truth::from(holds))
+}
+
+/// Evaluates one law of a commutative ring at one tuple.
+///
+/// # Specification
+/// - ensures: a law of an ordered semiring reads as [`evaluate`] reads it; the
+///   commutativity of the product compares both orders, and the inverse of the
+///   sum adds an element to its negation and compares the sum with zero.
+/// - panics: none.
+///
+/// # Errors
+/// - [`Outside`]: an operation the law reads leaves the represented elements.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a product that does not commute and a negation off by one
+///   each break their law alone.
+/// - witness: `tests::amplitudes::a_broken_ring_yields_its_counterexample`
+#[spec(ensures: |ref ret| match law {
+    RingLaw::Semiring(semiring) => *ret == evaluate(algebra, semiring, tuple),
+    RingLaw::MultiplicationCommutative | RingLaw::AdditionInverse => true,
+})]
+fn evaluate_ring<A>(
+    algebra: &A,
+    law: RingLaw,
+    tuple: [&A::Element; 3],
+) -> Result<Truth, Outside>
+where
+    A: CommutativeRing,
+{
+    let [a, b, _] = tuple;
+    match law {
+        RingLaw::Semiring(law) => evaluate(algebra, law, tuple),
+        RingLaw::MultiplicationCommutative => Ok(Truth::from(
+            algebra.multiply(a, b)? == algebra.multiply(b, a)?,
+        )),
+        RingLaw::AdditionInverse => Ok(Truth::from(
+            algebra.add(a, &algebra.negate(a)?)? == algebra.zero(),
+        )),
+    }
 }
