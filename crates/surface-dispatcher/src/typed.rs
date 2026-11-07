@@ -6522,12 +6522,13 @@ mod tests
         TypeTable::of(&grammar, source).expect("the source parses")
     }
 
-    /// #5892: the iterated pair's deep levels share each level twice, so their
-    /// unshared trees grow as two to the depth. The walk stops each such type
-    /// at its visit budget, and the table answers `?` for it. Each type that
-    /// the table spells whole stays a size that a reader reads. With a budget
-    /// of 65,536 visits, two of these types spelled 143,313 and 71,649 bytes,
-    /// and one declaration answered no type.
+    /// #5892: the iterated pair's levels share each level twice, so their
+    /// unshared trees grow as two to the depth. Each declaration answers a
+    /// type: a level prints by the name of the member that defines it
+    /// (#5826), a type the walk stops spells `?` for its budget, and each type
+    /// that the table spells whole stays a size that a reader reads. With a
+    /// budget of 65,536 visits and no names, two of these types spelled
+    /// 143,313 and 71,649 bytes, and one declaration answered no type.
     #[test]
     fn a_shared_type_past_the_walk_s_budget_prints_as_unknown_5892()
     {
@@ -6535,7 +6536,7 @@ mod tests
 
         let source = include_str!("../../../corpus/pathological/records/iterated-pair.gandr");
         let table = table(SourceText::from(source));
-        let (mut whole, mut unknown) = (Vec::new(), 0_usize);
+        let mut whole = Vec::new();
         for (_key, declared) in table.declarations(PageWidth::from(80_u32), Form::Explicit.into()) {
             let Maybe::Present(Declared::Typed(ty)) = declared
             else {
@@ -6554,12 +6555,11 @@ mod tests
                     "a type the walk stops spells `?` for its budget: {:?}",
                     ty.unspelled()
                 );
-                unknown = unknown.saturating_add(1);
             }
         }
         assert!(
-            unknown > 0 && whole.iter().all(|&bytes| bytes < 0x0001_0000),
-            "the deep levels answer `?`, and each whole type is under 64 KiB: {unknown} unknown, {whole:?}"
+            whole.iter().all(|&bytes| bytes < 0x0001_0000),
+            "each whole type is under 64 KiB: {whole:?}"
         );
     }
 
@@ -8474,6 +8474,54 @@ mod tests
             open.len() >= 2 && open.iter().all(|trip| *trip == RoundTrip::Equal),
             "a term typed under its parameters and a bind reads back equal under them: {open:?}"
         );
+    }
+
+    /// A type a top-level member names prints by the member's name, however
+    /// often the levels below it share it, and reads back; a member whose
+    /// definition is itself a type name keeps that name. A type the checker
+    /// builds that no name holds prints whole while its formers stay within
+    /// the bound its distinct nodes set, and past the bound prints `?` by the
+    /// budget. No read-back of the source outruns the lowering's allowance
+    /// (#5826).
+    #[test]
+    fn a_shared_level_prints_by_its_name_5826()
+    {
+        let source = SourceText::from(include_str!(
+            "typed/fixtures/a-shared-level-prints-by-its-name-5826.gandr"
+        ));
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        for (spelled, what) in [
+            ("T1", "a level prints by its name"),
+            ("() -> T9", "a function's result prints by its level's name"),
+            (
+                "Unit",
+                "a level whose definition is a type name keeps that name",
+            ),
+        ] {
+            let trips: Vec<&RoundTrip> = read
+                .iter()
+                .filter(|read| {
+                    read.spelled == spelled && matches!(read.site, ReadSite::Declared(_))
+                })
+                .map(|read| &read.trip)
+                .collect();
+            assert!(
+                !trips.is_empty() && trips.iter().all(|trip| **trip == RoundTrip::Equal),
+                "{what}: the declaration of type `{spelled}` reads back: {trips:?}"
+            );
+        }
+        assert!(
+            read.iter()
+                .any(|read| read.spelled == "?" && read.trip == RoundTrip::Unknown),
+            "a let level past the bound prints `?` by the budget"
+        );
+        let unread: Vec<(&str, &RoundTrip)> = read
+            .iter()
+            .filter(|read| !matches!(read.trip, RoundTrip::Equal | RoundTrip::Unknown))
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert_eq!(unread, [], "every other printed type reads back equal");
     }
 
     /// A later entry's type that applies an earlier entry of the bound record

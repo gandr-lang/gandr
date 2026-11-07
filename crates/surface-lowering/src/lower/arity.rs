@@ -3221,9 +3221,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `target` is the operand of a selection at `site`.
     /// - ensures: the written type's node and its entries in written order, as
     ///   [`Self::stated_form`] reads a telescope, when `target` is a name whose
-    ///   binder or declaration was written with such a type; nothing for any
-    ///   other operand, for a name written with no type, or with a type of
-    ///   another former.
+    ///   binder or declaration was written with such a type, or with a type
+    ///   member whose definition is one; nothing for any other operand, for a
+    ///   name written with no type, or with a type of another former.
     /// - fails: the name's own resolution refusals; the written type's own
     ///   malformation; [`LoweringRefusal::BudgetExceeded`].
     /// - panics: none.
@@ -3232,10 +3232,12 @@ impl<'source> Lowerer<'_, 'source>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a dependent record selected by label, and a record, a
-    ///   product chain and a value with no written type selected by place.
+    /// - hypothesis: L3 — a dependent record selected by label, a record, a
+    ///   product chain and a value with no written type selected by place, and
+    ///   a record a type member defines selected by label.
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
+    /// - witness: `lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present((node, _)) if self.tree.node(node).is_none())))]
     fn written_entries(
         &mut self,
@@ -3246,12 +3248,21 @@ impl<'source> Lowerer<'_, 'source>
         LoweringRefusal<'source>,
     >
     {
-        let Maybe::Present(declared) = self.name_type(site.reading.frame(), target)?
+        let frame = site.reading.frame();
+        let Maybe::Present(declared) = self.name_type(frame, target)?
         else {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         };
+        // A name written at a type member states the record the member's
+        // definition writes (#5826).
+        let stated = match self.tree.node(declared) {
+            Some(tree) => self
+                .member_definition(frame, Placed::of(declared, tree))?
+                .map_or(declared, |(defined, _)| defined),
+            None => declared,
+        };
 
-        self.stated_form(site, declared, Former::TelescopeType, Thunked(false))
+        self.stated_form(site, stated, Former::TelescopeType, Thunked(false))
     }
 
     /// Classify a selection `p.l` as a projection when `p` is a name whose

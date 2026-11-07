@@ -343,7 +343,8 @@ quenchant_shape::reason_enum! {
         /// The reason the scan stopped.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The source took more node visits than one presentation makes.
+            /// The source took more node visits than one presentation makes, or
+            /// a shared type reached more formers than its distinct nodes allow.
             OverBudget,
         }
     }
@@ -360,6 +361,36 @@ const CONTINUATION: u32 = 2;
 /// spells each as `?`, and does not spend the time and the bytes of a tree
 /// that nobody reads.
 const VISIT_BUDGET: u32 = 0x0000_0400;
+
+/// The formers one spelling reaches before its sharing is read.
+///
+/// A spelling that reaches no more than this many formers is spelled whatever
+/// it shares, so a small type costs no second scan.
+const SHARED_FLOOR: u32 = 0x0100;
+
+/// The formers a spelling may reach past [`SHARED_FLOOR`] for each distinct
+/// node it holds.
+///
+/// The checker shares the nodes of a type it builds: level `n` of the iterated
+/// pair holds `n + 2` distinct nodes and reaches `2^(n + 1)` formers. A
+/// spelling past this bound is refused by the budget, so each spelling stays
+/// linear in the distinct nodes of its type (#5826).
+const SHARED_FACTOR: u32 = 4;
+
+/// The formers a scan reached that the walk spells, once for each path.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Reached(u32);
+
+/// Whether a spelling's formers stay within the bound its distinct nodes set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sharing
+{
+    /// The spelling reaches no more formers than the bound.
+    Within,
+    /// The spelling reaches more formers than the bound.
+    Past,
+}
 
 /// An owned spelling computed for one leaf.
 #[repr(transparent)]
@@ -5555,7 +5586,8 @@ pub enum Walked
         /// Whether the document writes a wildcard.
         wildcards: Wildcards,
     },
-    /// The source took more visits than one presentation makes.
+    /// The source took more visits than one presentation makes, or a shared
+    /// type reached more formers than its distinct nodes allow.
     OverBudget,
 }
 
@@ -5699,15 +5731,17 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
     }))
 }
 
-/// Each former read from `root` in a position admitting `admits`, its thunks
-/// read as `bodies` says, handed to `visit` in the walk's order.
+/// Each node read from `root` in a position admitting `admits`, its thunks
+/// read as `bodies` says, handed to `visit` with its former in the walk's
+/// order.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
-/// - ensures: `visit` reads each former the walk spells from `root`, once per
-///   path reaching it, at most the visit budget of them; absent when the scan
-///   takes more than that budget.
-/// - provides: the one traversal [`mentioned`] and [`regioned`] read.
+/// - ensures: `visit` reads each node the walk spells from `root` beside its
+///   former, once per path reaching it, at most the visit budget of them;
+///   absent when the scan takes more than that budget.
+/// - provides: the one traversal [`mentioned`], [`sharing`] and [`regioned`]
+///   read.
 /// - fails: never; an over-long scan is an absence.
 /// - panics: none.
 /// - executable: none — the answer is what `visit` reads; a clause restating it
@@ -5728,7 +5762,7 @@ fn scanned<'source, S, Visit>(
 ) -> Maybe<(), scan::Absent>
 where
     S: Source + ?Sized,
-    Visit: FnMut(Former<'source, S::Node>),
+    Visit: FnMut(S::Node, Former<'source, S::Node>),
 {
     let mut pending = Vec::from([(root, admits, ValueDepth::ROOT)]);
     let mut visits = 0_u32;
@@ -5742,7 +5776,7 @@ where
         if reach(admits, depth, kind) != Reach::Spell {
             continue;
         }
-        visit(former);
+        visit(node, former);
         let below = below(depth, kind);
         for slot in children(source, node, &former, admits, bodies)
             .into_iter()
@@ -5756,6 +5790,60 @@ where
     Maybe::Present(())
 }
 
+/// Whether the spelling of `root`, which reaches `reached` formers, stays
+/// within the bound its distinct nodes set.
+///
+/// # Specification
+/// - requires: `reached` is what [`mentioned`] counts for `root`, `admits` and
+///   `bodies`.
+/// - ensures: [`Sharing::Within`] when `reached` is at most [`SHARED_FLOOR`],
+///   or at most [`SHARED_FLOOR`] more than [`SHARED_FACTOR`] times the distinct
+///   nodes the scan reads; [`Sharing::Past`] otherwise, and when the scan
+///   passes the visit budget.
+/// - provides: the bound that keeps a spelling linear in the distinct nodes of
+///   its type.
+/// - fails: never.
+/// - panics: none.
+/// - intension: no second scan below the floor; past it, one scan, one sort and
+///   one allocation of `reached` nodes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the iterated pair's let spine spells its low levels and
+///   refuses its deep ones by the budget, and its named levels spell whole.
+/// - witness: `typed::tests::a_shared_level_prints_by_its_name_5826`
+#[spec(ensures: |ret| reached.0 > SHARED_FLOOR || ret == Sharing::Within)]
+fn sharing<S>(
+    source: &S,
+    root: S::Node,
+    (admits, bodies): (Admits, Bodies),
+    reached: Reached,
+) -> Sharing
+where
+    S: Source + ?Sized,
+{
+    if reached.0 <= SHARED_FLOOR {
+        return Sharing::Within;
+    }
+    let mut nodes = Vec::with_capacity(usize::try_from(reached.0).unwrap_or_default());
+    if scanned(source, root, admits, bodies, |node, _| nodes.push(node))
+        == Maybe::Absent(scan::Absent::OverBudget)
+    {
+        return Sharing::Past;
+    }
+    nodes.sort_unstable();
+    nodes.dedup();
+    let bound = u32::try_from(nodes.len())
+        .unwrap_or(u32::MAX)
+        .saturating_mul(SHARED_FACTOR)
+        .saturating_add(SHARED_FLOOR);
+    if reached.0 > bound {
+        Sharing::Past
+    }
+    else {
+        Sharing::Within
+    }
+}
+
 /// Every constant or abstract-type name encountered under `root`, including
 /// malformed names that the spelling pass will replace with `?`.
 ///
@@ -5763,7 +5851,8 @@ where
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the names encountered from `root` in a position admitting
 ///   `admits`, its thunks read as `bodies` says, at most one distinct name per
-///   allowed visit; absent when that scan takes more than the visit budget.
+///   allowed visit, beside the formers the scan reached; absent when that scan
+///   takes more than the visit budget.
 /// - provides: the names binders must avoid, and the bound on the walk.
 /// - fails: never; an over-long scan is an absence.
 /// - panics: none.
@@ -5778,7 +5867,7 @@ where
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 /// - witness: `walk::tests::the_name_scan_visits_exactly_its_budget`
 #[spec(ensures: |ref ret| match *ret {
-    Maybe::Present(ref names) => u32::try_from(names.len()).is_ok_and(|count| count <= VISIT_BUDGET),
+    Maybe::Present((ref names, reached)) => u32::try_from(names.len()).is_ok_and(|count| count <= VISIT_BUDGET) && reached.0 <= VISIT_BUDGET,
     Maybe::Absent(scan::Absent::OverBudget) => true,
 })]
 fn mentioned<S>(
@@ -5786,12 +5875,14 @@ fn mentioned<S>(
     root: S::Node,
     admits: Admits,
     bodies: Bodies,
-) -> Maybe<BTreeSet<Name<'_>>, scan::Absent>
+) -> Maybe<(BTreeSet<Name<'_>>, Reached), scan::Absent>
 where
     S: Source + ?Sized,
 {
     let mut names = BTreeSet::new();
-    let scan = scanned(source, root, admits, bodies, |former| {
+    let mut reached = Reached(0_u32);
+    let scan = scanned(source, root, admits, bodies, |_, former| {
+        reached = Reached(reached.0.saturating_add(1_u32));
         if let Former::Abstract(name)
         | Former::Member(name)
         | Former::Constant(name)
@@ -5810,7 +5901,7 @@ where
         }
     });
     match scan {
-        Maybe::Present(()) => Maybe::Present(names),
+        Maybe::Present(()) => Maybe::Present((names, reached)),
         Maybe::Absent(absent) => Maybe::Absent(absent),
     }
 }
@@ -5882,7 +5973,7 @@ where
 {
     let mut greatest: Option<RegionBinder> = None;
     for &(root, admits) in roots {
-        let visited = scanned(source, root, admits, Bodies::Spelled, |former| {
+        let visited = scanned(source, root, admits, Bodies::Spelled, |_, former| {
             if let Former::Kept {
                 region: Region::Bound(binder),
                 ..
@@ -5954,7 +6045,7 @@ where
     let mut names = BTreeSet::new();
     for &(root, admits) in roots {
         match mentioned(source, root, admits, Bodies::Spelled) {
-            Maybe::Present(found) => names.extend(found),
+            Maybe::Present((found, _)) => names.extend(found),
             Maybe::Absent(scan::Absent::OverBudget) => return None,
         }
     }
@@ -14036,12 +14127,13 @@ impl Walk<'_, '_>
 /// - requires: `builder` is the builder the document is rendered from.
 /// - ensures: the root's document and whether every node was spelled in full;
 ///   [`Walked::OverBudget`] when the scan or a pass exhausts its
-///   scheduled-visit budget. A scan refusal builds nothing; a walk refusal may
-///   leave partial documents in the builder when the source changes after the
-///   scan. A computation's document is one group, so its statements break
-///   together. A binder the spelling leaves out moves no name inside its scope:
-///   the document names each binder as it names it where no binder is left out
-///   ([`Openings`]).
+///   scheduled-visit budget, or the spelling reaches more formers than its
+///   distinct nodes allow ([`sharing`]). A scan refusal builds nothing; a walk
+///   refusal may leave partial documents in the builder when the source changes
+///   after the scan. A computation's document is one group, so its statements
+///   break together. A binder the spelling leaves out moves no name inside its
+///   scope: the document names each binder as it names it where no binder is
+///   left out ([`Openings`]).
 /// - provides: the document [`crate::present_type`], [`crate::present_value`],
 ///   [`crate::present_definition`] and [`crate::present_computation`] lay out.
 /// - fails: the builder's refusal, or bookkeeping the walk's scheduling
@@ -14089,10 +14181,13 @@ pub fn walk<S>(
 where
     S: Source + ?Sized,
 {
-    let Maybe::Present(mut mentioned) = mentioned(source, root, admits, bodies)
+    let Maybe::Present((mut mentioned, reached)) = mentioned(source, root, admits, bodies)
     else {
         return Ok(Walked::OverBudget);
     };
+    if sharing(source, root, (admits, bodies), reached) == Sharing::Past {
+        return Ok(Walked::OverBudget);
+    }
     mentioned.extend(source.context().iter().flatten().copied());
     mentioned.extend(source.regions().iter().flatten().copied());
     mentioned.extend(source.region_binders().iter().flatten().copied());
@@ -14459,7 +14554,7 @@ mod tests
     use super::VISIT_BUDGET;
 
     /// The root handle of a deliberately changing source.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     struct ChangingNode;
 
     /// A leaf during the scan and an alternating type cycle during the walk.

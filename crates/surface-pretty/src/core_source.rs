@@ -1754,8 +1754,10 @@ impl<'arena> CoreSource<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each value-type former read as its [`Former`];
-    ///   [`Former::Unreadable`] for an id the arena does not hold.
+    /// - ensures: each value-type former read as its [`Former`], a type a type
+    ///   member names read as [`Former::Member`] by that name once no model or
+    ///   relation reads it; [`Former::Unreadable`] for an id the arena does not
+    ///   hold.
     /// - provides: the value-type half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1822,7 +1824,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
             self.forms.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | (_, Former::Model { .. }) => self.forms.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
-        | (Some(&ValueType::Record(_)), Former::Member(name)) => written(&self.forms.members, id) == Some(name),
+        | (_, Former::Member(name)) => written(&self.forms.members, id) == Some(name),
         | _ => false,
     })]
     fn value_type(
@@ -1835,6 +1837,11 @@ impl<'arena> CoreSource<'arena>
         }
         if let Some(related) = self.related(id) {
             return related;
+        }
+        // A type a member names is written by the name: the spelling holds the
+        // name once, however often the type is shared (#5826).
+        if let Some(member) = written(&self.forms.members, id) {
+            return Former::Member(member);
         }
         let Some(value_type) = self.arena.value_type(self.unstaged(id))
         else {
@@ -1896,9 +1903,6 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
-            ValueType::Record(_) if let Some(member) = written(&self.forms.members, id) => {
-                Former::Member(member)
-            },
             ValueType::Record(ref fields) if fields.is_empty() => {
                 Former::Product(Arity::from(0_usize))
             },

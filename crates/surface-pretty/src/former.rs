@@ -526,8 +526,8 @@ pub enum Former<'source, Node>
     Element(Node),
     /// A sealed abstract type, by its name.
     Abstract(Name<'source>),
-    /// The record type a type member defines, by the member's name, where the
-    /// source writes the name in its place: the base `Config` of
+    /// The value type a type member names, by the member's name: the type a
+    /// top-level member's own definition mints, and the base `Config` of
     /// `Config[.port = 443]`.
     Member(Name<'source>),
     /// The static Pi `A -> B` classifying a type operator, whose codomain
@@ -1449,7 +1449,9 @@ pub enum Unspelled
     Universe,
     /// A session type at a state its protocol does not hold.
     Protocol,
-    /// A source taking more visits than one presentation makes: a cycle.
+    /// A source taking more visits than one presentation makes — a cycle —
+    /// or a shared type whose spelling reaches more formers than its distinct
+    /// nodes allow.
     OverBudget,
 }
 
@@ -1461,8 +1463,9 @@ pub enum Unspelled
 pub trait Source
 {
     /// The handle a node is named by. Two handles are equal exactly when they
-    /// name one node, so the printer can tell a node it met before.
-    type Node: Copy + Eq;
+    /// name one node, so the printer can tell a node it met before; their
+    /// order lets it count the distinct nodes a spelling reaches.
+    type Node: Copy + Eq + Ord;
 
     /// The node `node` names, as the printer reads it.
     ///
