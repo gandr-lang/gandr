@@ -8,15 +8,25 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt;
 
 use anodized::spec;
 
 use crate::error::SheafError;
 use crate::index::Dimension;
 use crate::index::Incidence;
+use crate::index::Integer;
 use crate::index::Slot;
 
 /// A rational number in lowest terms with a positive denominator.
+///
+/// # Specification
+/// - ensures: the numerator and the denominator have no common factor, and the
+///   denominator is positive, so two equal numbers have equal fields.
+/// - provides: the sum, the product and the quotient, each exact.
+/// - panics: none.
+/// - executable: none — a type-level block: the invariant is
+///   [`Rational::new`]'s, which every operation ends in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Rational
 {
@@ -29,12 +39,12 @@ pub struct Rational
 impl Rational
 {
     /// The rational one.
-    pub(crate) const ONE: Self = Self {
+    pub const ONE: Self = Self {
         numerator: 1,
         denominator: 1,
     };
     /// The rational zero.
-    pub(crate) const ZERO: Self = Self {
+    pub const ZERO: Self = Self {
         numerator: 0,
         denominator: 1,
     };
@@ -53,6 +63,59 @@ impl Rational
             },
             denominator: 1,
         }
+    }
+
+    /// The rational `numerator / denominator`, in lowest terms.
+    ///
+    /// # Specification
+    /// - requires: the denominator is not zero.
+    /// - ensures: the exact quotient, with a positive denominator and no common
+    ///   factor.
+    /// - fails: a zero denominator, or a sign past the integers, is refused.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`SheafError::Overflow`]: the denominator is zero, or a part is the
+    ///   least 128-bit integer, whose sign the integers cannot move.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — two spellings of one number give one value, so a
+    ///   factor left in or a sign left below breaks equality.
+    /// - witness: `tests::rational::each_spelling_of_a_number_gives_its_lowest_terms`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |value| value.denominator > 0))]
+    #[inline]
+    pub fn new(
+        numerator: Integer,
+        denominator: Integer,
+    ) -> Result<Self, SheafError>
+    {
+        Self {
+            numerator: i128::from(numerator),
+            denominator: i128::from(denominator),
+        }
+        .normalised()
+    }
+
+    /// The numerator, which carries the sign.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn numerator(self) -> Integer
+    {
+        Integer::from(self.numerator)
+    }
+
+    /// The denominator, which is positive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn denominator(self) -> Integer
+    {
+        Integer::from(self.denominator)
     }
 
     /// The same number in lowest terms with a positive denominator.
@@ -83,21 +146,17 @@ impl Rational
         if denominator == 0 {
             return Err(SheafError::Overflow);
         }
-        let mut larger = numerator.checked_abs().ok_or(SheafError::Overflow)?;
-        let mut smaller = denominator.checked_abs().ok_or(SheafError::Overflow)?;
-        while smaller != 0 {
-            let rest = larger.checked_rem(smaller).ok_or(SheafError::Overflow)?;
-            larger = smaller;
-            smaller = rest;
-        }
-        let divisor = larger;
+        let common = i128::from(divisor(
+            Integer::from(numerator),
+            Integer::from(denominator),
+        )?);
         let sign: i128 = if denominator < 0 { -1 } else { 1 };
         let numerator = numerator
-            .checked_div(divisor)
+            .checked_div(common)
             .and_then(|value| value.checked_mul(sign))
             .ok_or(SheafError::Overflow)?;
         let denominator = denominator
-            .checked_div(divisor)
+            .checked_div(common)
             .and_then(|value| value.checked_mul(sign))
             .ok_or(SheafError::Overflow)?;
         Ok(Self {
@@ -106,36 +165,54 @@ impl Rational
         })
     }
 
-    /// The sum of two rationals.
+    /// The sum of two rationals, over the least common multiple of the two
+    /// denominators.
     ///
     /// # Specification
     /// - ensures: the exact sum, in lowest terms.
-    /// - fails: a sum past the integers is refused.
+    /// - fails: a sum whose numerator or denominator over the least common
+    ///   denominator passes the integers is refused.
     /// - panics: none.
     ///
     /// # Errors
-    /// - [`SheafError::Overflow`]: a product or the sum passes the integers.
+    /// - [`SheafError::Overflow`]: a scaled numerator, their sum or the least
+    ///   common denominator passes the integers.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the products of the pull-backs and the coboundaries
     ///   of both towers sum signed ones, so a wrong sum breaks a commuting
-    ///   square.
+    ///   square; two weights over `2^64` sum to one, which the product of the
+    ///   denominators passes.
     /// - witness: `tests::towers::each_bonding_map_induces_an_isomorphism_on_cohomology`
+    /// - witness: `tests::rational::a_result_in_range_is_given_whatever_its_operands`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |value| value.denominator > 0))]
-    pub(crate) fn plus(
+    #[inline]
+    pub fn plus(
         self,
         other: Self,
     ) -> Result<Self, SheafError>
     {
-        let left = self.numerator.checked_mul(other.denominator);
-        let right = other.numerator.checked_mul(self.denominator);
+        let common = i128::from(divisor(
+            Integer::from(self.denominator),
+            Integer::from(other.denominator),
+        )?);
+        let left_scale = other
+            .denominator
+            .checked_div(common)
+            .ok_or(SheafError::Overflow)?;
+        let right_scale = self
+            .denominator
+            .checked_div(common)
+            .ok_or(SheafError::Overflow)?;
+        let left = self.numerator.checked_mul(left_scale);
+        let right = other.numerator.checked_mul(right_scale);
         let numerator = left
             .zip(right)
             .and_then(|(left, right)| left.checked_add(right))
             .ok_or(SheafError::Overflow)?;
         let denominator = self
             .denominator
-            .checked_mul(other.denominator)
+            .checked_mul(left_scale)
             .ok_or(SheafError::Overflow)?;
         Self {
             numerator,
@@ -144,11 +221,12 @@ impl Rational
         .normalised()
     }
 
-    /// The product of two rationals.
+    /// The product of two rationals, each numerator first reduced against
+    /// the other's denominator.
     ///
     /// # Specification
     /// - ensures: the exact product, in lowest terms.
-    /// - fails: a product past the integers is refused.
+    /// - fails: a product whose lowest terms pass the integers is refused.
     /// - panics: none.
     ///
     /// # Errors
@@ -156,21 +234,31 @@ impl Rational
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the elimination scales and subtracts rows through it
-    ///   on every level of both towers.
+    ///   on every level of both towers; a product in range whose plain
+    ///   numerator passes the integers is given.
     /// - witness: `tests::towers::every_level_of_both_towers_has_the_cohomology_of_its_space`
+    /// - witness: `tests::rational::a_result_in_range_is_given_whatever_its_operands`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |value| value.denominator > 0))]
-    pub(crate) fn times(
+    #[inline]
+    pub fn times(
         self,
         other: Self,
     ) -> Result<Self, SheafError>
     {
-        let numerator = self
-            .numerator
-            .checked_mul(other.numerator)
+        let first = i128::from(divisor(
+            Integer::from(self.numerator),
+            Integer::from(other.denominator),
+        )?);
+        let second = i128::from(divisor(
+            Integer::from(other.numerator),
+            Integer::from(self.denominator),
+        )?);
+        let reduced = |value: i128, by: i128| value.checked_div(by).ok_or(SheafError::Overflow);
+        let numerator = reduced(self.numerator, first)?
+            .checked_mul(reduced(other.numerator, second)?)
             .ok_or(SheafError::Overflow)?;
-        let denominator = self
-            .denominator
-            .checked_mul(other.denominator)
+        let denominator = reduced(self.denominator, second)?
+            .checked_mul(reduced(other.denominator, first)?)
             .ok_or(SheafError::Overflow)?;
         Self {
             numerator,
@@ -179,12 +267,14 @@ impl Rational
         .normalised()
     }
 
-    /// The quotient of two rationals.
+    /// The quotient of two rationals: the product by the reciprocal of
+    /// `other`, so the same reduction keeps a quotient in range.
     ///
     /// # Specification
     /// - requires: `other` is not zero.
     /// - ensures: the exact quotient, in lowest terms.
-    /// - fails: a zero divisor or a quotient past the integers is refused.
+    /// - fails: a zero divisor or a quotient whose lowest terms pass the
+    ///   integers is refused.
     /// - panics: none.
     ///
     /// # Errors
@@ -195,25 +285,20 @@ impl Rational
     /// - hypothesis: L2 — the elimination scales each pivot row to one through
     ///   it on every level of both towers.
     /// - witness: `tests::towers::every_level_of_both_towers_has_the_cohomology_of_its_space`
+    /// - witness: `tests::rational::the_arithmetic_is_exact_and_refuses_past_the_integers`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |value| value.denominator > 0))]
-    fn over(
+    #[inline]
+    pub fn over(
         self,
         other: Self,
     ) -> Result<Self, SheafError>
     {
-        let numerator = self
-            .numerator
-            .checked_mul(other.denominator)
-            .ok_or(SheafError::Overflow)?;
-        let denominator = self
-            .denominator
-            .checked_mul(other.numerator)
-            .ok_or(SheafError::Overflow)?;
-        Self {
-            numerator,
-            denominator,
+        let reciprocal = Self {
+            numerator: other.denominator,
+            denominator: other.numerator,
         }
-        .normalised()
+        .normalised()?;
+        self.times(reciprocal)
     }
 
     /// The difference of two rationals.
@@ -241,6 +326,61 @@ impl Rational
             numerator: negated,
             denominator: other.denominator,
         })
+    }
+}
+
+/// The greatest common divisor of the magnitudes of `left` and `right`, by
+/// Euclid's algorithm: positive whenever either is not zero.
+///
+/// # Specification
+/// - ensures: the greatest integer that divides both, zero only when both are
+///   zero.
+/// - fails: a magnitude past the integers, that of the least 128-bit integer,
+///   is refused.
+/// - panics: none.
+///
+/// # Errors
+/// - [`SheafError::Overflow`]: `left` or `right` is the least 128-bit integer.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every rational is reduced through it, so a divisor too
+///   small leaves a factor in and two spellings of one number differ.
+/// - witness: `tests::rational::each_spelling_of_a_number_gives_its_lowest_terms`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |common| i128::from(*common) >= 0))]
+fn divisor(
+    left: Integer,
+    right: Integer,
+) -> Result<Integer, SheafError>
+{
+    let mut larger = i128::from(left).checked_abs().ok_or(SheafError::Overflow)?;
+    let mut smaller = i128::from(right)
+        .checked_abs()
+        .ok_or(SheafError::Overflow)?;
+    while smaller != 0 {
+        let rest = larger.checked_rem(smaller).ok_or(SheafError::Overflow)?;
+        larger = smaller;
+        smaller = rest;
+    }
+    Ok(Integer::from(larger))
+}
+
+impl fmt::Display for Rational
+{
+    /// Renders the number as `numerator/denominator`, or as the numerator
+    /// alone when the denominator is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        if self.denominator == 1 {
+            return write!(f, "{}", self.numerator);
+        }
+        write!(f, "{}/{}", self.numerator, self.denominator)
     }
 }
 

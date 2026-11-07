@@ -60,6 +60,7 @@ members = [
   "crates/theory-order-maintenance",
   "crates/theory-ordered-algebras",
   "crates/theory-path-orders",
+  "crates/theory-probability",
   "crates/theory-shapes",
   "crates/theory-sites",
   "crates/theory-spec-combinators",
@@ -99,6 +100,7 @@ publish = false
 # - core-checker (dev)
 # - surface-session (dev)
 # - theory-exact-reals (dev)
+# - theory-probability (dev)
 [workspace.dependencies.allocation-counter]
 version = "0.8.1"
 default-features = false
@@ -184,6 +186,7 @@ default-features = false
 # - theory-order-maintenance
 # - theory-ordered-algebras
 # - theory-path-orders
+# - theory-probability
 # - theory-shapes
 # - theory-sites
 # - theory-spec-combinators
@@ -824,6 +827,7 @@ path = "crates/theory-cell-complexes-tools"
 # features:
 # - none: alloc-only stalks, entry maps and exact rational matrices.
 # consumers:
+# - theory-probability
 # - theory-shapes (dev)
 [workspace.dependencies.gandr-theory-cellular-sheaves]
 path = "crates/theory-cellular-sheaves"
@@ -1360,6 +1364,7 @@ features = ["span-locations"]
 # - theory-graphs (dev)
 # - theory-levitation (dev)
 # - theory-order-maintenance (dev)
+# - theory-probability (dev)
 # - theory-virtual-doctrines (dev)
 [workspace.dependencies.proptest]
 version = "1.11.0"

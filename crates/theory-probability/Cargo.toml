@@ -1,0 +1,42 @@
+[package]
+name = "gandr-theory-probability"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Finite distributions with exact rational weights for gandr: the finite Giry monad, the product and its marginals, conditioning on an event, and the decision of independence"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["distribution", "gandr", "no-std", "probability"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+autobenches = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench that times `bind` and `product`
+# at supports of 2^8 and 2^16 points, with percentiles and allocations.
+[[bench]]
+harness = false
+name = "distribution"
+path = "benches/distribution.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. A weight is the exact rational of the sheaf
+# crate, so the weights of a distribution and the entries of a coboundary are
+# one type.
+[dependencies]
+anodized.workspace = true
+gandr-theory-cellular-sheaves.workspace = true
+
+[dev-dependencies]
+allocation-counter.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

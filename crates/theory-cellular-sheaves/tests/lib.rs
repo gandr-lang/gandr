@@ -5,6 +5,8 @@
 #[cfg(test)]
 mod cochains;
 #[cfg(test)]
+mod rational;
+#[cfg(test)]
 mod reduce;
 #[cfg(test)]
 mod sheaf;

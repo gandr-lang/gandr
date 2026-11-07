@@ -26,6 +26,7 @@ digraph crates {
     "theory-order-maintenance";
     "theory-ordered-algebras";
     "theory-path-orders";
+    "theory-probability";
     "theory-shapes";
     "theory-sites";
     "theory-spec-combinators";
@@ -362,6 +363,7 @@ digraph crates {
   "theory-graphs" -> "theory-spec-combinators";
   "theory-levitation" -> "theory-path-orders";
   "theory-ordered-algebras" -> "theory-exact-reals";
+  "theory-probability" -> "theory-cellular-sheaves";
   "theory-shapes" -> "theory-nominal-automata";
   "theory-shapes" -> "theory-stone-duality";
   "theory-sites" -> "theory-circuit-algebras";
@@ -391,8 +393,10 @@ digraph crates {
   "core-term" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
   "surface-dispatcher" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
   "theory-exact-reals" -> "theory-ordered-algebras" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
+  "theory-ordered-algebras" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "measure"];
   "theory-coherent-resolutions" -> "theory-nominal-automata" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "nominal"];
-  "theory-nominal-automata" -> "theory-shapes" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "nominal"];
+  "theory-nominal-automata" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "nominal"];
+  "theory-probability" -> "theory-shapes" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "nominal"];
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];

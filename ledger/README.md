@@ -62,7 +62,7 @@ gandr reads every object it checks as a presented space: a finite set of cells, 
 | present | writes the cells and their faces | `theory-computads`, `theory-circuit-algebras`, `theory-sites`, `theory-shapes` |
 | glue | checks each piece alone, checks agreement where pieces overlap, and assembles the pieces once | `kernel-core`, `core-incremental`, `storage-store`, `theory-cellular-sheaves` |
 | collapse | keeps the critical cells and the pairing of the cells that cancel | `theory-discrete-morse`, `theory-coherent-resolutions`, `core-nbe` |
-| measure | gives each cell a value in an algebra and propagates the value | `theory-ordered-algebras`, `theory-dynamic-graphs`, `core-term` |
+| measure | gives each cell a value in an algebra and propagates the value | `theory-ordered-algebras`, `theory-probability`, `theory-dynamic-graphs`, `core-term` |
 | replay | checks the evidence that the other four operations emit | `kernel-core` |
 
 Gluing and collapse claim identity: two names denote one object. Only replay claims validity.
@@ -72,7 +72,7 @@ Two crate families present a space. The cell family presents a space by its cell
 | Family | Presents a space by | Crates |
 | ------ | ------------------- | ------ |
 | cell | its cells and their faces | `theory-graded-posets`, `theory-cellular-sheaves`, `theory-discrete-morse` |
-| algebra | its algebra of observations | `theory-stone-duality`, `theory-ordered-algebras`, `theory-exact-reals` |
+| algebra | its algebra of observations | `theory-stone-duality`, `theory-ordered-algebras`, `theory-exact-reals`, `theory-probability` |
 
 Each crate above has one place in the frame.
 
@@ -92,6 +92,7 @@ Each crate above has one place in the frame.
 | `theory-exact-reals` | the algebra family's exact reals |
 | `theory-graded-posets` | the cell family's present: a finite poset with its cells as data, and its lattice of subcomplexes |
 | `theory-ordered-algebras` | the algebra family's measure: ordered semirings and their law checks |
+| `theory-probability` | the algebra family's measure: finite distributions with exact weights, and independence as the separation of supports |
 | `theory-shapes` | present: finite shapes and their face formulas |
 | `theory-sites` | present: the site of shapes |
 | `theory-stone-duality` | the algebra family's present: a finite space by its lattice of observations |
