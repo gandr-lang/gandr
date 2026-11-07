@@ -168,21 +168,23 @@ pub fn joinable_store() -> CellStore
 ///
 /// Each cluster's ground and schematic rule overlap on their own operation
 /// and on nothing else, since no right-hand side head (`p`, `q`) is a
-/// left-hand side head, so the six critical pairs schedule into two batches of
-/// three. The leading cluster's pair joins outright, both rules reducing to
-/// `p`; the other two diverge by size and orient into a derived cell each.
+/// left-hand side head. Each cluster's pair counts once, so the three critical
+/// pairs schedule into one batch of three. The leading cluster's pair joins
+/// outright, both rules reducing to `p`. The other two diverge by size and
+/// orient into a derived cell each.
 ///
 /// # Specification
 /// - ensures: six cells form three independent two-rule clusters; their
-///   confluence schedule has exactly two batches of three.
+///   confluence schedule has exactly one batch of three.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — exact initial batches and interruption inside the leading
-///   batch witness all three clusters. Cross-cluster overlaps, a missing pair
-///   or a changed leading join alters scheduling or resumed completion.
+/// - hypothesis: L3 — the exact initial batch and an interruption inside it
+///   witness all three clusters. Cross-cluster overlaps, a missing pair, a
+///   mirrored pair or a changed leading join alters scheduling or resumed
+///   completion.
 /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
-#[spec(ensures: |output| usize::from(output.len()) == 6 && gandr_theory_coherent_resolutions::scheduled_confluence_batches(&output).iter().map(Vec::len).eq([3, 3]))]
+#[spec(ensures: |output| usize::from(output.len()) == 6 && gandr_theory_coherent_resolutions::scheduled_confluence_batches(&output).iter().map(Vec::len).eq([3]))]
 pub fn independent_rule_clusters() -> CellStore
 {
     let reduced = || ConsPat::op("p", [], ConsPat::meta("alpha"));

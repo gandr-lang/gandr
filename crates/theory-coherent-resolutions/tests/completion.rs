@@ -462,9 +462,9 @@ fn decline_resume_matches_uninterrupted_completion()
 {
     let scheduled = scheduled_confluence_batches(&independent_rule_clusters());
     assert_eq!(
-        2_usize,
+        1_usize,
         scheduled.len(),
-        "the fixture schedules its six critical pairs into two independent batches"
+        "the fixture schedules its three critical pairs, one for each cluster, into one batch"
     );
     assert!(
         scheduled
