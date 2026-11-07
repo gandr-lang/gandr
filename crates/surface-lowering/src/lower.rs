@@ -3584,6 +3584,11 @@ struct Lowerer<'run, 'source>
     /// type ([`Self::member_reading`]): a name or an application reaching
     /// the member stands where a computation type is read.
     computation_members: BTreeSet<NodeIndex>,
+    /// Each top-level type member that takes no parameters, by the node of
+    /// its definition, with the name tile the member declares. The value
+    /// type that definition mints is recorded under the name, so the printer
+    /// writes the name where the type is shared (#5826).
+    defining: BTreeMap<NodeIndex, NodeIndex>,
     /// Each exported value component's full path, with the member's slot.
     exported: BTreeMap<NamePath, SlotIndex>,
     /// Each exported type component's full path, with what it reads.
@@ -5007,6 +5012,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         self.begin_source(source, pieces)?;
+        self.define_members(source);
         self.refuse_imports();
         self.declare();
         self.mark_generic();
@@ -5079,6 +5085,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.thunked.is_empty()
         && self.inherited.is_empty()
         && self.stand_ins.is_empty()
+        && self.defining.is_empty()
         && self.kinds.is_empty()
         && self.fixed_sorts.is_empty()
         && self.answers.is_empty()
@@ -5132,6 +5139,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.thunked.clear();
         self.inherited.clear();
         self.stand_ins.clear();
+        self.defining.clear();
         self.kinds.clear();
         self.fixed_sorts.clear();
         self.answers.clear();
@@ -5176,6 +5184,56 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.static_spans.clear();
         self.static_calls.clear();
         self.unresolved.clear();
+    }
+
+    /// Keep each top-level type member of `source` that takes no parameters,
+    /// by the node of its definition, with the name tile it declares. A
+    /// definition that is itself a type name, `type Temp = Fahrenheit`, keeps
+    /// that name's spelling, so the map leaves it out.
+    ///
+    /// # Specification
+    /// - requires: `source`'s declarations are collected.
+    /// - ensures: [`Self::defining`] holds exactly the definition of each
+    ///   member [`Collected::top_types`] files under `source` with a manifest
+    ///   meaning, other than a bare type head or a type path, beside the name
+    ///   tile of its slot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the iterated pair's levels are each kept, and their
+    ///   types print by the level's name; a member whose definition names a
+    ///   data type keeps that type's name.
+    /// - witness: `typed::tests::a_shared_level_prints_by_its_name_5826`
+    #[spec(ensures: self.defining.len() <= self.collected.top_types.len())]
+    fn define_members(
+        &mut self,
+        source: SourceIndex,
+    )
+    {
+        self.defining = self
+            .collected
+            .top_types
+            .iter()
+            .filter(|&&(filed, _)| filed == source)
+            .filter_map(|&(_, member)| match member.meaning {
+                TypeMeaning::Manifest(defined)
+                    if !matches!(
+                        self.form_at(defined),
+                        Ok(Some((_, Former::TypeHead | Former::TypePath)))
+                    ) =>
+                {
+                    self.collected
+                        .slots
+                        .get(usize::from(member.held))
+                        .map(|slot| (defined.node, slot.named.node))
+                },
+                TypeMeaning::Manifest(_) => None,
+                TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } | TypeMeaning::Family(_) => {
+                    None
+                },
+            })
+            .collect();
     }
 
     /// The module every source lowered amounts to: its attributes,
@@ -5772,6 +5830,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             manifests: Vec::new(),
             expansions: BTreeMap::new(),
             computation_members: BTreeSet::new(),
+            defining: BTreeMap::new(),
             exported: BTreeMap::new(),
             exported_types: BTreeMap::new(),
             witnessed: BTreeMap::new(),
@@ -19399,8 +19458,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   term's context before the quote wraps it, while a value a type reads
     ///   stays in the type's telescope; a member's name standing for a value
     ///   type is recorded as its stand-in, and one standing for a computation
-    ///   type labelled with it; a node with no plan, or whose plan was carried
-    ///   out, is left as it is.
+    ///   type labelled with it; the value type a top-level member's own
+    ///   definition mints is recorded under the member's name; a node with no
+    ///   plan, or whose plan was carried out, is left as it is.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -19473,6 +19533,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let minted = self.mint_plan(plan, sink, origin);
         if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
             sink.origins.record_stand_in(id, origin);
+        }
+        // A definition that names another member stands in for that member's
+        // type, which keeps its own name.
+        if !stands_in
+            && let Maybe::Present(Lowered::ValueType(id)) = minted
+            && let Some(&named) = self.defining.get(&position)
+            && let Maybe::Present(name) = self.origin_at(named)
+        {
+            sink.origins.record_member(id, name);
         }
         // A member's computation type is closed, so it reads under no binder.
         if stands_in && let Maybe::Present(Lowered::CompType(ty)) = minted {

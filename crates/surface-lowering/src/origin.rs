@@ -782,9 +782,11 @@ pub struct OriginTable
     /// Each model type written `Model(T)`, or `Model(T) with sort C = A …`,
     /// with the record it lowers to, in the order lowered.
     models: Vec<(ValueTypeId, WrittenModel)>,
-    /// Each record type a patched type's base writes by the name of a type
-    /// member, with where the name is written, in the order lowered. The
-    /// core holds the member's record, and the printer writes the name.
+    /// Each value type a type member names, with where the name is written,
+    /// in the order lowered: the type a top-level member's own definition
+    /// mints, at the member's name, and the record a patched type's base
+    /// writes by a member's name, at that name. The core holds the type, and
+    /// the printer writes the name.
     members: Vec<(ValueTypeId, Origin)>,
     /// Each capability scope over a theory, `handle c : T with sort C = A …
     /// { … }`, with the theory and the sorts its manifest fixes as written,
@@ -2559,8 +2561,8 @@ impl OriginTable
         &self.models
     }
 
-    /// Record that the source writes the record type `ty` by the name of the
-    /// type member written at `name`.
+    /// Record that the type member written at `name` names the value type
+    /// `ty`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2570,7 +2572,8 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a base written by a type member's name answers at the
-    ///   record it lowers to, and a record written in place answers at none.
+    ///   record it lowers to, and a record written in place answers at none; a
+    ///   top-level member's definition answers at the type it mints.
     /// - witness: `lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
     #[spec(
         captures: before = self.members.len(),
@@ -2586,8 +2589,8 @@ impl OriginTable
         self.members.push((ty, name));
     }
 
-    /// Each record type written by the name of a type member, with where the
-    /// name is written, in the order lowered.
+    /// Each value type a type member names, with where the name is written,
+    /// in the order lowered.
     ///
     /// # Specification
     /// trivial.
