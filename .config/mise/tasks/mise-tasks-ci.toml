@@ -1805,14 +1805,16 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # and its live worktree went. Worktrunk misses a branch the queue landed
 # through a rebase that resolved a conflict. The patches changed. Such a
 # branch has landed when each commit `git cherry` lists has its subject on
-# origin/main. It has also landed when one merged pull request of the branch
-# holds each subject main lacks. The sweep reads those pull requests for all
-# its branches in one query, and the common git directory keeps each answer
-# (`merged_pulls`, #5839). The worktree goes by `wt remove -D` (#4227).
-# A fast-forward of main can carry an equal patch of each commit under a new
-# hash (#5030). `git cherry` then lists no `+` line. The branch has landed
-# when `git rev-list origin/main..<head>` counts above zero. That worktree
-# goes by `wt remove -D` too.
+# the trunk, `origin/<trunk>` of `.config/pr-stack/trunk.bash` (#6183): a
+# branch merged into `landing` lands there before the integration cycle
+# carries it to main. It has also landed when one merged pull request of
+# the branch holds each subject the trunk lacks. The sweep reads those pull
+# requests for all its branches in one query, and the common git directory
+# keeps each answer (`merged_pulls`, #5839). The worktree goes by `wt remove
+# -D` (#4227). A fast-forward can carry an equal patch of each commit under
+# a new hash (#5030). `git cherry` then lists no `+` line. The branch has
+# landed when `git rev-list origin/<trunk>..<head>` counts above zero. That
+# worktree goes by `wt remove -D` too.
 # A worktree whose head is no longer the judged
 # one is kept, and the head is read once more just before `wt remove`. A
 # landed branch's worktree goes by `wt remove --foreground`, which deletes the
@@ -1827,7 +1829,11 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # detached one under a temporary directory once unchanged for 4 hours. A
 # kept worktree no build touched within the 4-hour claim window loses its
 # `incremental` directories, the caches its next build writes again, and the
-# sweep prints its `target/` size before and after (#4221). Then
+# sweep prints its `target/` size before and after (#4221). A clean worktree
+# with no commit, no index change and no build for 24 hours, and no landing,
+# is released: `git worktree remove` takes the tree and its build directory,
+# and its branch stays, or for a detached head with commits off the trunk the
+# branch `attic/<directory>` (#6183). A dirty one stays for its seat. Then
 # `git worktree prune`, and Worktrunk's trash (`.git/wt/trash`), whose
 # background deletes die with the shell that started them, is emptied.
 #
@@ -1847,10 +1853,13 @@ floor_gb=150
 command -v wt > /dev/null || { echo "wt:sweep needs Worktrunk's wt on PATH" >&2; exit 2; }
 here=$(realpath "$(git rev-parse --show-toplevel)")
 common=$(git rev-parse --path-format=absolute --git-common-dir)
-trunk_ref=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || trunk_ref=origin/main
-git fetch --quiet origin "${trunk_ref#origin/}" || echo "wt:sweep: fetching $trunk_ref failed; sweeping against the last fetch" >&2
+source .config/pr-stack/trunk.bash
+trunk_ref=origin/$trunk
+git fetch --quiet origin "$trunk" main || echo "wt:sweep: fetching $trunk and main failed; sweeping against the last fetch" >&2
+# Worktrunk reads integration into main, so a branch cut from either line and
+# not yet committed to sits on one of their first-parent lines.
 declare -A first_parent=()
-while IFS= read -r commit; do first_parent[$commit]=1; done < <(git rev-list --first-parent "$trunk_ref")
+while IFS= read -r commit; do first_parent[$commit]=1; done < <(git rev-list --first-parent "$trunk_ref" origin/main)
 # A branch Worktrunk reads unmerged is judged landed by the subjects the
 # trunk gains after its fork (#4227, #5118): the queue's merge carries the
 # pull request's title, and its second parent the branch's commits as the
@@ -1895,8 +1904,23 @@ facts=()
 kept=()
 pruned=()
 asked=()
+epoch=$(date +%s)
+# The directories live processes work in: a seat's shell stays in its lane's
+# tree while it builds in another, so a tree one of them works in is never
+# stale (#6183). Without `/proc` no tree reads stale.
+cwds=()
+proc_read=false
+if [[ -d /proc/self ]]; then
+  proc_read=true
+  for link in /proc/[0-9]*/cwd; do cwds+=("$(readlink "$link" 2> /dev/null || true)"); done
+fi
+in_use() {
+  local dir
+  for dir in "${cwds[@]}"; do [[ $dir == "$1" || $dir == "$1"/* ]] && return 0; done
+  return 1
+}
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null idle=false ahead=null gitdir key mark
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null idle=false ahead=null stale=false dirty=null gitdir key mark
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
@@ -1904,12 +1928,12 @@ tree() {
   if [[ -n "$branch" && -n "${integrated[$key]:-}" && -z "${first_parent[${judged[$key]:-none}]:-}" ]]; then merged=true; fi
   if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
   # A branch Worktrunk reads unmerged. The `+` lines of `git cherry` are
-  # read by subject. `ahead` counts commits not on origin/main (#5030).
-  # Merged pull requests are asked about when main lacks one subject.
+  # read by subject. `ahead` counts commits not on the trunk (#5030).
+  # Merged pull requests are asked about when the trunk lacks one subject.
   if [[ -n "$branch" && $merged == false && $primary == false && $branch != wip/* ]]; then
     commits=$(own_commits "$trunk_ref" "$head")
     ahead=$(git rev-list --count "$trunk_ref..$head")
-    if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null \
+    if jq -e 'any(.[]; .on_trunk | not)' <<< "$commits" > /dev/null \
       && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
       asked+=("$branch" "$head")
     fi
@@ -1938,11 +1962,23 @@ tree() {
     && -z $(find "$path/target" -mindepth 3 -maxdepth 4 -path '*/incremental/*' -mmin -240 -print -quit 2> /dev/null) ]]; then
     idle=true
   fi
+  # Stale: no commit at the head, no change to the index or `HEAD` in its git
+  # directory, and no build under `target/` for 24 hours (#6183). A fresh
+  # `wt switch` writes both files, so a tree made and not yet built is not
+  # stale. Read only for a tree the sweep may release.
+  if [[ $primary == false && $key != "$here" && $watched == null && $scratch == null && -n "$gitdir" ]] && $proc_read && ! in_use "$key" \
+    && (($(git -C "$path" log -1 --format=%ct HEAD 2> /dev/null || echo "$epoch") < epoch - 86400)) \
+    && [[ -z $(find "$gitdir" -maxdepth 1 \( -name index -o -name HEAD \) -mmin -1440 -print -quit 2> /dev/null) ]] \
+    && [[ ! -d "$path/target" || -z $(find "$path/target" -maxdepth 4 -mmin -1440 -print -quit 2> /dev/null) ]]; then
+    stale=true
+    if [[ -n $(git -C "$path" status --porcelain 2> /dev/null) ]]; then dirty=true; else dirty=false; fi
+    if [[ -z "$branch" ]]; then ahead=$(git rev-list --count "$trunk_ref..$head"); fi
+  fi
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    --argjson commits "$commits" --argjson ahead "$ahead" --argjson idle "$idle" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, ahead: $ahead, pulls: null, idle: $idle}')")
+    --argjson commits "$commits" --argjson ahead "$ahead" --argjson idle "$idle" --argjson stale "$stale" --argjson dirty "$dirty" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, ahead: $ahead, pulls: null, idle: $idle, stale: $stale, dirty: $dirty}')")
 }
 # Delete an idle worktree's `incremental` caches, its `target/` measured
 # before and after. A clone shares its blocks with the primary worktree's
@@ -1986,11 +2022,12 @@ fi
 removed=0
 dry_run=${usage_dry_run:-false}
 # A detached worktree's branch reads `-`: a tab field cannot be empty.
-while IFS=$'\t' read -r action path branch reason clear; do
+while IFS=$'\t' read -r action path branch reason clear attic; do
   if [[ "$branch" == - ]]; then branch=; fi
+  if [[ "$attic" == - ]]; then attic=; fi
   label="$path${branch:+ ($branch)}"
   if [[ "$dry_run" == true ]]; then
-    printf '%s %s: %s\n' "$action" "$label" "$reason"
+    printf '%s %s: %s%s\n' "$action" "$label" "$reason" "${attic:+; its head stays as $attic}"
     if [[ "$clear" == true ]]; then printf 'clear %s: idle for 4 hours, its incremental caches\n' "$label"; fi
     continue
   fi
@@ -2008,6 +2045,17 @@ while IFS=$'\t' read -r action path branch reason clear; do
         kept+=("kept $label: $reason, but wt remove refused: ${out##*$'\n'}")
       fi
       ;;
+    release)
+      # `git worktree remove` refuses a tree with changes; the branch stays.
+      if [[ -n "$attic" ]] && ! git branch "$attic" "$(git -C "$path" rev-parse HEAD)" 2> /dev/null; then
+        kept+=("kept $label: $reason, but the branch $attic could not keep its head")
+      elif out=$(git worktree remove "$path" 2>&1); then
+        echo "released $label: $reason${attic:+; its head stays as $attic}"
+        removed=$((removed + 1))
+      else
+        kept+=("kept $label: $reason, but git worktree remove refused: ${out##*$'\n'}")
+      fi
+      ;;
     force)
       if git worktree remove --force "$path" 2> /dev/null || { [[ ! -e "$path/.git" ]] && rm -rf "$path"; }; then
         echo "removed $label: $reason"
@@ -2022,7 +2070,7 @@ while IFS=$'\t' read -r action path branch reason clear; do
       if [[ "$clear" == true ]]; then clear_incremental "$path" "$label"; fi
       ;;
   esac
-done < <(printf '%s\n' "${facts[@]}" | jq -s -f .config/pr-stack/sweep.jq | jq -r '.[] | [.action, .path, (.branch // "-"), .reason, (.clear // false)] | @tsv')
+done < <(printf '%s\n' "${facts[@]}" | jq -s -f .config/pr-stack/sweep.jq | jq -r '.[] | [.action, .path, (.branch // "-"), .reason, (.clear // false), (.attic // "-")] | @tsv')
 if (( ${#kept[@]} > 0 )); then printf '%s\n' "${kept[@]}"; fi
 [[ "$dry_run" != true ]] || exit 0
 git worktree prune

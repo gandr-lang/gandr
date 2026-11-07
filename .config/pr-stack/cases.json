@@ -1745,17 +1745,17 @@
         "commits": [
           {
             "subject": "fix(core): a family's argument written as a call converts with its value",
-            "on_main": true
+            "on_trunk": true
           },
           {
             "subject": "perf(kernel): keep content outcomes across an environment's admissions",
-            "on_main": true
+            "on_trunk": true
           }
         ],
         "pulls": null
       }
     ],
-    "output": "[{\"path\":\"/w/rebased\",\"branch\":\"rebased\",\"action\":\"delete\",\"reason\":\"landed: its commits stand on origin/main\"}]"
+    "output": "[{\"path\":\"/w/rebased\",\"branch\":\"rebased\",\"action\":\"delete\",\"reason\":\"landed: its commits stand on the trunk\"}]"
   },
   {
     "name": "#4227: a branch whose merged pull request holds each subject main lacks is removed, and one with a commit past it is kept",
@@ -1771,8 +1771,8 @@
         "scratch": null,
         "watched": null,
         "commits": [
-          { "subject": "test(core): observe the staged fold", "on_main": false },
-          { "subject": "perf(core): stage the fold", "on_main": true }
+          { "subject": "test(core): observe the staged fold", "on_trunk": false },
+          { "subject": "perf(core): stage the fold", "on_trunk": true }
         ],
         "pulls": [
           {
@@ -1791,8 +1791,8 @@
         "scratch": null,
         "watched": null,
         "commits": [
-          { "subject": "perf(core): stage the fold", "on_main": true },
-          { "subject": "fix(core): a commit after the merge", "on_main": false }
+          { "subject": "perf(core): stage the fold", "on_trunk": true },
+          { "subject": "fix(core): a commit after the merge", "on_trunk": false }
         ],
         "pulls": [{ "number": 4100, "subjects": ["perf(core): stage the fold"] }]
       }
@@ -1824,7 +1824,7 @@
         "moved": true,
         "scratch": null,
         "watched": null,
-        "commits": [{ "subject": "perf(core): stage the fold", "on_main": true }],
+        "commits": [{ "subject": "perf(core): stage the fold", "on_trunk": true }],
         "pulls": null
       }
     ],
@@ -1861,7 +1861,7 @@
         "pulls": null
       }
     ],
-    "output": "[{\"path\":\"/w/equal\",\"branch\":\"equal\",\"action\":\"delete\",\"reason\":\"landed: each commit's patch stands on origin/main\"},{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
+    "output": "[{\"path\":\"/w/equal\",\"branch\":\"equal\",\"action\":\"delete\",\"reason\":\"landed: each commit's patch stands on the trunk\"},{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
   },
   {
     "name": "a landed wip/ branch keeps its worktree",
@@ -2058,6 +2058,165 @@
       }
     ],
     "output": "[{\"path\":\"/w/idle\",\"branch\":\"idle\",\"action\":\"keep\",\"reason\":\"not landed\",\"clear\":true},{\"path\":\"/w/busy\",\"branch\":\"busy\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/clone\",\"branch\":\"main\",\"action\":\"keep\",\"reason\":\"the primary worktree\"},{\"path\":\"/w/own\",\"branch\":\"own\",\"action\":\"keep\",\"reason\":\"the caller's own worktree\"},{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/landed\",\"branch\":\"landed\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "#6183: a stale clean tree that has not landed is released and keeps its branch; a dirty, a recent and a watched one stay, and a landed one is removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/stale",
+        "branch": "stale",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "feat(core): an unlanded step", "on_trunk": false }],
+        "ahead": 1,
+        "pulls": null,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/dirty",
+        "branch": "dirty",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "feat(core): an unlanded step", "on_trunk": false }],
+        "ahead": 1,
+        "pulls": null,
+        "stale": true,
+        "dirty": true
+      },
+      {
+        "path": "/w/recent",
+        "branch": "recent",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "feat(core): an unlanded step", "on_trunk": false }],
+        "ahead": 1,
+        "pulls": null,
+        "stale": false,
+        "dirty": null
+      },
+      {
+        "path": "/w/watched",
+        "branch": "watched",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": 4242,
+        "stale": false,
+        "dirty": null
+      },
+      {
+        "path": "/w/landed",
+        "branch": "landed",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "stale": true,
+        "dirty": false
+      }
+    ],
+    "output": "[{\"path\":\"/w/stale\",\"branch\":\"stale\",\"action\":\"release\",\"reason\":\"not landed, idle for 24 hours; its branch stays\"},{\"path\":\"/w/dirty\",\"branch\":\"dirty\",\"action\":\"keep\",\"reason\":\"not landed, idle for 24 hours, but dirty: its seat decides\"},{\"path\":\"/w/recent\",\"branch\":\"recent\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/landed\",\"branch\":\"landed\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "#6183: a stale detached head with commits off the trunk keeps its head as attic/<directory> and is released, one with none is released alone, and a dirty or recent one stays",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/bisect-old",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "ahead": 2,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/probe",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "ahead": 0,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/half",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "ahead": 1,
+        "stale": true,
+        "dirty": true
+      },
+      {
+        "path": "/w/bisect",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "stale": false,
+        "dirty": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/bisect-old\",\"branch\":null,\"action\":\"release\",\"reason\":\"detached, idle for 24 hours\",\"attic\":\"attic/bisect-old\"},{\"path\":\"/w/probe\",\"branch\":null,\"action\":\"release\",\"reason\":\"detached, idle for 24 hours\"},{\"path\":\"/w/half\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, idle for 24 hours, but dirty: its seat decides\"},{\"path\":\"/w/bisect\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, not a scratch\"}]"
+  },
+  {
+    "name": "#6183: a stale wip/ branch's tree is released and its branch stays; a recent one stays",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/try",
+        "branch": "wip/try",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/fresh",
+        "branch": "wip/fresh",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "stale": false,
+        "dirty": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/try\",\"branch\":\"wip/try\",\"action\":\"release\",\"reason\":\"a wip/ branch, idle for 24 hours; its branch stays\"},{\"path\":\"/w/fresh\",\"branch\":\"wip/fresh\",\"action\":\"keep\",\"reason\":\"a wip/ branch\"}]"
   },
   {
     "name": "#2531: a push to a queued pull request's branch is refused, naming it",
