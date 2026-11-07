@@ -1,0 +1,3 @@
+/// `ShadowCaptured`: a thunk reads a linear function's parameter, and a thunk may run that read other than once.
+@[ refuses("ShadowCaptured") ]
+def suspended(x : Integer) ⊸ +U (-F Integer) = thunk { pure x } ;
