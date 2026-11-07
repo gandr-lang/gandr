@@ -27,7 +27,7 @@ def ofFlag(b : Bool) -> Code =
     | false => No
 
 /// The type that a code decodes to.
-def decoded(c : Code) -> -F Type =
+def decoded(c : Code) -> Type =
   match c where
     | Yes => return String
     | No => return Unit

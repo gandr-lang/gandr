@@ -113,7 +113,7 @@ def packageLines() -> String { render Package }
 
 /// The package model whose entries are `e`.
 @[ inert ]
-def packageOf(e : modelType(packagePresentation)) -> Model(Gandr.Package) =
+def packageOf(e : modelType(packagePresentation)) -> Model Gandr.Package =
   match e where
     | Entry(version, e1) => match e1 where
       | Entry(gandr, e2) => match e2 where
@@ -141,7 +141,7 @@ def packageOf(e : modelType(packagePresentation)) -> Model(Gandr.Package) =
 
 /// A package model comes back from its entries.
 @[ inert ]
-def packageBack(m : Model(Gandr.Package)) -> Path[.A = Model(Gandr.Package)](
+def packageBack(m : Model Gandr.Package) -> Path[.A = Model Gandr.Package](
   packageOf (packageEntries m),
   m
 ) =
@@ -191,8 +191,7 @@ def packageEntriesBack(e : modelType(packagePresentation)) -> Path[.A = modelTyp
 /// A package model and its entries are equivalent. The maps are inert, so a
 /// run of a program converts nothing.
 @[ inert ]
-@[ checks ]
-def packageEquivalence : Model(Gandr.Package) ≃ modelType(packagePresentation) = *{
+def packageEquivalence : Model Gandr.Package ≃ modelType(packagePresentation) = *{
   packageEntries,
   *{*{packageOf, packageBack}, *{packageOf, packageEntriesBack}}
 };
@@ -206,16 +205,16 @@ theory Flagged where {
 }
 
 /// The entries of a model of `Flagged`.
-def flaggedEntries(m : Model(Flagged)) -> modelType(Flagged) { Entry m.label (Entry m.shown Ended) }
+def flaggedEntries(m : Model Flagged) -> modelType(Flagged) { Entry m.label (Entry m.shown Ended) }
 
 /// The model of `Flagged` whose entries are `e`.
-def flaggedOf(e : modelType(Flagged)) -> Model(Flagged) =
+def flaggedOf(e : modelType(Flagged)) -> Model Flagged =
   match e where
     | Entry(label, r) => match r where
       | Entry(shown, t) => *{label = label, shown = shown}
 
 /// A model comes back from its entries.
-def flaggedBack(m : Model(Flagged)) -> Path[.A = Model(Flagged)](flaggedOf (flaggedEntries m), m) {
+def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged](flaggedOf (flaggedEntries m), m) {
   Path.here m
 }
 
@@ -230,8 +229,7 @@ def flaggedEntriesBack(e : modelType(Flagged)) -> Path[.A = modelType(Flagged)](
         | Ended => Path.here (Entry label (Entry shown Ended) : modelType(Flagged))
 
 /// A model of `Flagged` and its entries are equivalent.
-@[ checks ]
-def flaggedEquivalence : Model(Flagged) ≃ modelType(Flagged) = *{
+def flaggedEquivalence : Model Flagged ≃ modelType(Flagged) = *{
   flaggedEntries,
   *{*{flaggedOf, flaggedBack}, *{flaggedOf, flaggedEntriesBack}}
 };

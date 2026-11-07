@@ -28,7 +28,8 @@
 // and its entries together into one line for each constant. For
 // `Gandr.Package`, the inert `packageEntries` reads a model's entries, and
 // the inert `render` writes a model's lines. The equivalence of a package's
-// model and its entries is checked in `corpus/model/desc/module-reflection.gandr`
+// model and its entries is
+// checked in `corpus/model/desc/module-reflection.gandr`
 // and not here: every package source imports this module, and the proof of
 // the equivalence would cost each check of a package.
 //
@@ -159,7 +160,7 @@ pub def entrySort(sort : String) -> EntrySort =
   if sort == "String" { Text } else if sort == "Bool" { Truth } else { Opaque }
 
 /// The type of an entry whose code is `s`.
-pub def entryType(s : EntrySort) -> -F Type =
+pub def entryType(s : EntrySort) -> Type =
   match s where
     | Text => return String
     | Truth => return Bool
@@ -184,15 +185,17 @@ pub data NoEntries : Type where
 
 /// The type of the entries of a member chain: one entry for each constant.
 /// A member that is no constant adds no entry.
-def rec chainType(chain : Theory) -> -F Type =
+def rec chainType(chain : Theory) -> Type =
   match chain where
-    | Theory.Const(name, inputs, outputs, rest) => return (Entries (entryType (portSort outputs)) (chainType[<] rest))
+    | Theory.Const(name, inputs, outputs, rest) => return (Entries
+      (entryType (portSort outputs))
+      (chainType[<] rest))
     | Theory.Oper(name, inputs, outputs, rest) => chainType[<] rest
     | _ => return NoEntries
 
 /// The type of the entries of a model of the presentation `presented`: one
 /// entry for each constant, in the order of the presentation.
-pub def modelType(presented : Theory) -> -F Type =
+pub def modelType(presented : Theory) -> Type =
   match presented where
     | Theory.Presents(sorts, opers, rules) => chainType opers
     | _ => return NoEntries
@@ -227,11 +230,27 @@ pub def packagePresentation : Theory = Gandr.Package;
 
 /// The entries of the package model `m`, in the order of the presentation.
 @[ inert ]
-pub def packageEntries(m : Model(Gandr.Package)) -> modelType(packagePresentation) =
-  Entry m.version (Entry m.gandr (Entry m.features (Entry m.systems (Entry m.spelling (Entry m.name (Entry m.authors (Entry m.licence (Entry m.documentation (Entry m.endpoint (Entry m.sources Ended))))))))))
+pub def packageEntries(m : Model Gandr.Package) -> modelType(packagePresentation) =
+  Entry
+    m.version
+    (Entry
+      m.gandr
+      (Entry
+        m.features
+        (Entry
+          m.systems
+          (Entry
+            m.spelling
+            (Entry
+              m.name
+              (Entry
+                m.authors
+                (Entry
+                  m.licence
+                  (Entry m.documentation (Entry m.endpoint (Entry m.sources Ended))))))))))
 
 /// The lines of the package model `m`, one for each constant, in the order
 /// of the presentation: one table, with no escape.
 @[ inert ]
-pub def render(m : Model(Gandr.Package)) -> String =
+pub def render(m : Model Gandr.Package) -> String =
   encode packagePresentation (packageEntries m)
