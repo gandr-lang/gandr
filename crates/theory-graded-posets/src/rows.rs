@@ -654,6 +654,67 @@ impl<'poset> CellRow<'poset>
             .map_or(0, |place| place.bit);
         ElementSet::from(first & u64::from(set) & !left_out)
     }
+
+    /// Adds each cell that the row's words set to `union`, whatever cell the
+    /// row leaves out, a word at a time.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn join_into(
+        self,
+        union: &mut Union,
+    )
+    {
+        for (slot, &word) in union.words.iter_mut().zip(self.words) {
+            *slot |= word;
+        }
+    }
+}
+
+/// A union of closures, held as one row of words, one bit for each cell.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct Union
+{
+    /// The union's words.
+    words: Vec<u64>,
+}
+
+impl Union
+{
+    /// The empty union over `count` cells.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn new(count: ElementCount) -> Self
+    {
+        Self {
+            words: vec![0; usize::from(count).div_ceil(WORD)],
+        }
+    }
+
+    /// Empties the union.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn clear(&mut self)
+    {
+        self.words.fill(0);
+    }
+
+    /// The number of cells the union holds.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn count(&self) -> ElementCount
+    {
+        ElementCount::from(
+            self.words
+                .iter()
+                .map(|word| usize::try_from(word.count_ones()).unwrap_or_default())
+                .sum::<usize>(),
+        )
+    }
 }
 
 /// The set bits of one word of a row, as cells, in increasing order.
