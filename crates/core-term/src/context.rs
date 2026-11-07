@@ -896,6 +896,62 @@ impl Context
         Ok(slot.declared)
     }
 
+    /// Give a consumed linear slot its single use back: a read that a later
+    /// copy of the same value stands in for.
+    ///
+    /// A `let` binds a name that stands for the value it returns, and the body
+    /// reads a copy of the value at each place the name stands. The read of the
+    /// value at the `let` then spends nothing, as the copies spend it.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unbound, available or moved index is admissible
+    ///   input.
+    /// - ensures: on success the slot is left [`LinearUse::Available`]; every
+    ///   other slot and both depths unchanged.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder; [`ContextError::LinearSlotUnconsumed`] at the zone's depth
+    ///   when its use is not spent. A refusal changes nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot consumed and refunded reads once more, and a
+    ///   slot refunded twice or never read is refused by variant.
+    /// - witness: `context::tests::a_refunded_slot_reads_once_more`
+    #[spec(
+        captures: [use_state = self.linear_use(index), depth = self.depth(Zone::Linear), structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match use_state {
+                | Ok(LinearUse::Consumed) => ret == Ok(()) && self.linear_use(index) == Ok(LinearUse::Available),
+                | Ok(LinearUse::Available | LinearUse::Moved) => ret == Err(ContextError::LinearSlotUnconsumed { depth })
+                    && self.linear_use(index) == use_state,
+                | Err(error) => ret == Err(error),
+            },
+    )]
+    #[inline]
+    pub fn refund(
+        &mut self,
+        index: DeBruijnIndex,
+    ) -> Result<(), ContextError>
+    {
+        let depth = self.depth(Zone::Linear);
+        let unbound = ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index,
+            depth,
+        };
+        let slot = slot_offset(depth, index)
+            .and_then(|offset| self.linear.get_mut(offset.0))
+            .ok_or(unbound)?;
+        if slot.use_state != LinearUse::Consumed {
+            return Err(ContextError::LinearSlotUnconsumed { depth });
+        }
+        slot.use_state = LinearUse::Available;
+        Ok(())
+    }
+
     /// Whether a linear slot still carries its single use.
     ///
     /// # Specification

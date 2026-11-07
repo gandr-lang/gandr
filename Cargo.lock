@@ -1556,12 +1556,14 @@ dependencies = [
  "gandr-surface-pretty",
  "gandr-surface-syntax",
  "gandr-theory-cell-complexes",
+ "gandr-theory-cellular-sheaves",
  "gandr-theory-circuit-algebras",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-exact-reals",
  "gandr-theory-graphs",
  "gandr-theory-levitation",
  "gandr-theory-ordered-algebras",
+ "gandr-theory-probability",
  "gandr-theory-sites",
  "gandr-workflow-sweep",
  "getrandom 0.4.3",
@@ -1637,6 +1639,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-computads",
  "gandr-theory-discrete-morse",
+ "gandr-theory-e-graphs",
  "gandr-theory-graded-posets",
  "gandr-theory-levitation",
  "gandr-theory-shapes",
@@ -1959,6 +1962,15 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-theory-e-graphs"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-coherent-resolutions",
+ "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]

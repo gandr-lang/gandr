@@ -16,6 +16,7 @@ def kinds:
   [ {mark: "<!-- landing:pr-dequeued:", kind: "dequeued"},
     {mark: "<!-- landing:pr-red:", kind: "red"},
     {mark: "<!-- landing:pr-dirty:", kind: "dirty"},
+    {mark: "<!-- landing:pr-unrun:", kind: "unrun"},
     {mark: "<!-- pr-ejected ", kind: "ejected"} ];
 
 def first_line:

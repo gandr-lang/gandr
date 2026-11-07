@@ -40,7 +40,7 @@ read_prs() {
             labels(first: 50) { nodes { name } }
             stack { number }
             author { __typename }
-            commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+            commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts(first: 100) { nodes {
               __typename
               ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { databaseId workflow { name } } } }
               ... on StatusContext { context state startedAt: createdAt } } } } } } }
@@ -71,9 +71,15 @@ read_prs() {
         # as pending, never red. It waits while its CI run has not started
         # again (`unstarted.jq`, #5171).
         gated=$(jq '.headRefOid as $head | any(.comments.nodes[].body; contains("<!-- landing:pr-depth:\($head) -->"))' <<< "$pr")
+        # A head with no context of the `CI` workflow has no `CI` run
+        # (#6164): GitHub starts none for a push while the pull request
+        # conflicts, nor for a base edit. A head pushed in the last 5 minutes
+        # may only wait for its run to register, so it is not read as unrun.
+        ran=$(jq --arg workflow "$ci_workflow" 'any(.[]; .checkSuite.workflowRun.workflow.name? == $workflow)' <<< "$rollup")
         jq -c --argjson reading "$(jq -c --argjson required "$required" --argjson gated "$gated" -f "$pr_stack_dir/required.jq" <<< "$rollup")" \
           --argjson unstarted "$(jq -c --argjson required "$required" --arg workflow "$ci_workflow" -f "$pr_stack_dir/unstarted.jq" <<< "$rollup")" \
           --argjson upstream "$upstream" \
+          --argjson ran "$ran" \
           '{number, oid: .headRefOid, head: .headRefName, base: .baseRefName,
             queued: (.isInMergeQueue or .autoMergeRequest != null),
             held: any(.labels.nodes[]; .name == "landing"),
@@ -85,7 +91,8 @@ read_prs() {
             removal: (.timelineItems.nodes[0].reason // "" | ascii_downcase),
             stranded: ((.bases.nodes[0] // {}) as $event | $event.__typename == "AutomaticBaseChangeFailedEvent" and $event.oldBase == .baseRefName),
             upstream: $upstream,
-            marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"]}
+            marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"],
+            unrun: (($ran | not) and (now - (.commits.nodes[0].commit.committedDate // "1970-01-01T00:00:00Z" | fromdate)) > 300)}
           | .oid as $oid | . + {waiting: ($unstarted and (.marks | index("pr-depth:\($oid)")) != null)}' <<< "$pr"
       done | jq -cs . | jq -c --arg trunk "$trunk" -f "$pr_stack_dir/depths.jq"
 }
@@ -201,6 +208,31 @@ act_on() {
     dirty)
       tell "$number" "pr-dirty #$number" pr-dirty "$oid" \
         "This pull request conflicts with its base: rebase it, then \`pr:land $number\`."
+      ;;
+    rerun)
+      # GitHub started no `CI` run on this head (#6164), and `reopened`
+      # starts one. The token that may queue is not the workflow's own,
+      # whose events start no run. A pull request left closed is cut by the
+      # stack watcher, so a failed reopen is tried once more.
+      if gh pr close "$number" -R "$repo" > /dev/null 2> "$err"; then
+        if gh pr reopen "$number" -R "$repo" > /dev/null 2> "$err" || gh pr reopen "$number" -R "$repo" > /dev/null 2> "$err"; then
+          echo "#$number: its head has no CI run; closed and reopened, so CI runs"
+          tell "$number" "pr-rerun #$number" pr-rerun "$oid" \
+            "GitHub started no CI run on this head: a push while the pull request conflicts with its base starts none, and a base edit starts none. The landing watcher closed and reopened it, which starts CI. It lands once its checks are green."
+        else
+          echo "::warning::#$number: the reopen failed: $(< "$err")"
+          tell "$number" "pr-unrun #$number" pr-unrun "$oid" \
+            "GitHub started no CI run on this head. The landing watcher closed this pull request to start CI and could not reopen it: $(< "$err"). Reopen it, then \`pr:land $number\`."
+        fi
+      else
+        echo "::warning::#$number: the close failed: $(< "$err")"
+        tell "$number" "pr-unrun #$number" pr-unrun "$oid" \
+          "GitHub started no CI run on this head, and the landing watcher could not close and reopen it: $(< "$err"). Close and reopen it, or push the branch again, then \`pr:land $number\`."
+      fi
+      ;;
+    unrun)
+      tell "$number" "pr-unrun #$number" pr-unrun "$oid" \
+        "GitHub started no CI run on this head: a push while the pull request conflicts with its base starts none, and a base edit starts none. Close and reopen it, or push the branch again, then \`pr:land $number\`."
       ;;
   esac
 }

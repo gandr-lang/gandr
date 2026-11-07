@@ -6,7 +6,7 @@
 //!
 //! # A hole is a term, and its type is unknown
 //!
-//! [`Value::Hole`] and [`Computation::Hole`](crate::Computation::Hole) stand
+//! [`Value::Hole`] and [`Computation::Hole`] stand
 //! for a term the author has not written. Each carries a [`HoleId`], the name a
 //! fill finds it by. A hole synthesises the unknown type —
 //! [`ValueType::Unknown`] or [`CompType::Unknown`] — and checks against any
@@ -16,7 +16,7 @@
 //!
 //! # A mark is an error kept in place
 //!
-//! [`Value::Mark`] and [`Computation::Mark`](crate::Computation::Mark) wrap a
+//! [`Value::Mark`] and [`Computation::Mark`] wrap a
 //! subterm the elaborator could not type and name the entry of the
 //! elaboration's mark table that says why. A marked term types as a hole does
 //! and its body is not judged, so a marked elaboration is well formed however
@@ -31,7 +31,10 @@
 //! and [`comp_type_knowledge`] read both spellings — the unknown former and the
 //! decode of a hole or a mark — as one. The decode keeps the hole's name, so a
 //! fill reaches the type too; the unknown former is what a hole synthesises,
-//! which has no name to keep.
+//! which has no name to keep. A hole applied to arguments, `El (?h a)`, or
+//! called, `El ?h(a)`, is unknown in the same way: a field type that applies a
+//! family's parameter reads so when an elaborator leaves the parameter to the
+//! solver (#6113).
 //!
 //! # Matching a type against a former
 //!
@@ -92,6 +95,7 @@ use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
+use crate::syntax::Computation;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
 
@@ -701,7 +705,38 @@ impl MatchedFunction
     }
 }
 
-/// Whether `code` is a hole or a mark: a code whose decode is unknown.
+/// The head of `code` under its applications: the operator `f` of the static
+/// application `f a b`, or the thunk `f` that the returned call `f(a, b)`
+/// forces; `code` itself when it applies nothing.
+///
+/// # Specification
+/// trivial.
+fn head_of(
+    arena: &CoreArena,
+    code: ValueId,
+) -> ValueId
+{
+    let mut head = code;
+    loop {
+        match arena.value(head) {
+            Some(&Value::StaticApplication(operator, _)) => head = operator,
+            Some(&Value::Returned(call)) => {
+                let mut callee = call;
+                while let Some(&Computation::Application(function, _)) = arena.computation(callee) {
+                    callee = function;
+                }
+                match arena.computation(callee) {
+                    Some(&Computation::Force(thunk)) => head = thunk,
+                    Some(_) | None => return head,
+                }
+            },
+            Some(_) | None => return head,
+        }
+    }
+}
+
+/// Whether `code` is a hole or a mark, or one applied to arguments or called:
+/// a code whose decode is unknown until the hole is filled.
 ///
 /// # Specification
 /// trivial.
@@ -710,7 +745,7 @@ fn unknown_code(
     code: ValueId,
 ) -> Knowledge
 {
-    match arena.value(code) {
+    match arena.value(head_of(arena, code)) {
         Some(&(Value::Hole(_) | Value::Mark { .. })) => Knowledge::Unknown,
         Some(_) | None => Knowledge::Known,
     }
@@ -721,7 +756,8 @@ fn unknown_code(
 /// # Specification
 /// - requires: nothing; a dangling id is admitted.
 /// - ensures: [`Knowledge::Unknown`] exactly when `subject` is
-///   [`ValueType::Unknown`] or a decode whose code is a hole or a mark.
+///   [`ValueType::Unknown`] or a decode whose code is a hole or a mark, bare,
+///   applied to arguments or called.
 /// - provides: the one reading of "unknown" every consumer of a value type
 ///   shares, so a named type hole and the anonymous unknown agree.
 /// - fails: never; a dangling id reads as known, so a caller that needs it
@@ -730,11 +766,12 @@ fn unknown_code(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the unknown former, the decode of a hole, the decode of a
-///   mark, the decode of a variable and an atom separate the two answers.
+///   mark, the decode of a hole applied or called, the decode of a variable,
+///   applied, called or bare, and an atom separate the two answers.
 /// - witness: `hole::tests::the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not`
 #[spec(ensures: |ret| (ret == Knowledge::Unknown) == match arena.value_type(subject) {
     | Some(&ValueType::Unknown) => true,
-    | Some(&ValueType::Element { code, .. }) => matches!(arena.value(code), Some(&(Value::Hole(_) | Value::Mark { .. }))),
+    | Some(&ValueType::Element { code, .. }) => matches!(arena.value(head_of(arena, code)), Some(&(Value::Hole(_) | Value::Mark { .. }))),
     | Some(_) | None => false,
 })]
 #[inline]
@@ -756,7 +793,8 @@ pub fn value_type_knowledge(
 /// # Specification
 /// - requires: nothing; a dangling id is admitted.
 /// - ensures: [`Knowledge::Unknown`] exactly when `subject` is
-///   [`CompType::Unknown`] or a decode whose code is a hole or a mark.
+///   [`CompType::Unknown`] or a decode whose code is a hole or a mark, bare,
+///   applied to arguments or called.
 /// - provides: the computation half of [`value_type_knowledge`].
 /// - fails: never; a dangling id reads as known.
 /// - panics: none.
@@ -767,7 +805,7 @@ pub fn value_type_knowledge(
 /// - witness: `hole::tests::the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not`
 #[spec(ensures: |ret| (ret == Knowledge::Unknown) == match arena.comp_type(subject) {
     | Some(&CompType::Unknown) => true,
-    | Some(&CompType::Element { code, .. }) => matches!(arena.value(code), Some(&(Value::Hole(_) | Value::Mark { .. }))),
+    | Some(&CompType::Element { code, .. }) => matches!(arena.value(head_of(arena, code)), Some(&(Value::Hole(_) | Value::Mark { .. }))),
     | Some(_) | None => false,
 })]
 #[inline]

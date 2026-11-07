@@ -14,7 +14,10 @@
 # run, and `signed_replay` moves a branch by a plain push of the replay. The
 # result is one line compared with the case's `output`: the status, the
 # first line on stderr, the subjects main..<branch> holds for the bottom and
-# the upper, the `gh` calls and each chain linked.
+# the upper, the `gh` calls and each chain linked. A case's `artifacts`, when
+# given, is the table of generated artifacts the replay reads before a branch
+# moves (#6159, `REPLAY_ARTIFACTS`); on this runner's replay a due row holds
+# the branch.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
@@ -81,6 +84,11 @@ for (( i = 0; i < count; i++ )); do
       echo null
     fi
   }
+  unset REPLAY_ARTIFACTS
+  if [[ $(jq -r ".[$i].artifacts // empty" "$cases") ]]; then
+    jq -c ".[$i].artifacts" "$cases" > "$case_dir/artifacts.json"
+    export REPLAY_ARTIFACTS=$case_dir/artifacts.json
+  fi
   status=0
   retarget_bottom "$bottom" "$chain" 2> "$case_dir/out" || status=$?
   git fetch --quiet origin

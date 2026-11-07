@@ -114,6 +114,24 @@ read_issue() {
   echo 'ledger check FAILED' >&2
   exit 1
 }
+declare -A closing=()
+read_closing() {
+  local base line
+  source "$(dirname "${BASH_SOURCE[0]}")/../pr-stack/trunk.bash"
+  if ! base=$(git merge-base "origin/$trunk" HEAD); then return 0; fi
+  while IFS= read -r line; do
+    if [[ $line =~ ^Closes[[:space:]]+\#([0-9]+)\.?$ ]]; then
+      closing[${BASH_REMATCH[1]}]=1
+    fi
+  done < <(git log --format=%B "$base..HEAD")
+}
+read_closing
+keeps_owing() {
+  local number=$1
+  [[ -z ${closing[$number]:-} ]] || return 1
+  [[ ${issue[$number]} == OPEN$'\t'* ]] && return 0
+  [[ ${issue[$number]} == CLOSED$'\t'* ]] && held_elsewhere "$number"
+}
 numbers=$({
   sqlite3 -separator '|' "$db" "
     SELECT coalesce(issue, '') FROM feature
@@ -137,7 +155,7 @@ while IFS='|' read -r id issues; do
   gap=
   for number in $(grep -oE '(^| )#[0-9]+' <<< "$issues" | tr -d ' #'); do
     read_issue "$number"
-    if [[ ${issue[$number]} == $'OPEN\ttrue' ]]; then gap=$number; fi
+    if [[ -z ${closing[$number]:-} && ${issue[$number]} == $'OPEN\ttrue' ]]; then gap=$number; fi
   done
   if [[ -z $gap ]]; then
     echo "$id: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap or kind:epic issue (issue: ${issues:-none}); name a witness, or file the gap stating what it needs" >&2
@@ -176,7 +194,7 @@ while IFS='|' read -r id exemplar; do
     owing=
     for number in $(grep -oE '#[0-9]+' <<< "$owed" | tr -d '#'); do
       read_issue "$number"
-      if [[ ${issue[$number]} == OPEN$'\t'* ]] || { [[ ${issue[$number]} == CLOSED$'\t'* ]] && held_elsewhere "$number"; }; then owing=$number; break; fi
+      if keeps_owing "$number"; then owing=$number; break; fi
     done
     [[ -n $owing ]] || missing+=('an open issue on a `/// - owes:` line that owes the rest')
   fi

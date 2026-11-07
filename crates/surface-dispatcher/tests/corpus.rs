@@ -50,6 +50,10 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::ENTRY;
 use gandr_surface_lowering::Role;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_cellular_sheaves::Integer;
+use gandr_theory_cellular_sheaves::Rational;
+use gandr_theory_probability::Distribution;
+use gandr_theory_probability::Independence;
 use quenchant_shape::shape::Maybe;
 
 /// The corpus's strict root, under the corpus crate.
@@ -1054,6 +1058,134 @@ fn a_declined_draw_names_its_task_or_world_5712()
             ),
         ],
         "each declined draw is refused with what performs it"
+    );
+}
+
+/// #5713: a width enters the randomness of std at a draw. `std.rand.lcg`
+/// sends each draw it cannot answer to the model outside it, so the exact
+/// model refuses a width outside 1 to 64 by name: a draw under the generator,
+/// the width of the generator, a key and a multiplier. A draw wider than the
+/// generator but within 64 bits gets the answers of the exact model.
+#[test]
+fn a_width_outside_one_to_sixty_four_is_refused_by_name_5713()
+{
+    let claims = distribution_claims(
+        Path::new("widths"),
+        SourceText::from(include_str!(
+            "corpus/fixtures/a-width-outside-one-to-sixty-four-is-refused-by-name-5713.gandr"
+        )),
+    );
+    let refused = |name: &str, width: u32| {
+        (
+            String::from(name),
+            Outcome::Distributes(RunSpelling::from(format!(
+                "Unanswered: the exact model answers no draw of the run: a width of {width} bits \
+                 lies outside 1 to 64"
+            ))),
+            Settlement::Unsettled,
+        )
+    };
+    assert_eq!(
+        claims,
+        vec![
+            refused("empty", 0),
+            refused("wide", 65),
+            refused("wideGenerator", 70),
+            refused("wideKey", 65),
+            refused("emptyMultiplier", 0),
+            (
+                String::from("passedOn"),
+                Outcome::Distributes(RunSpelling::from(String::from(
+                    r#""1/4 0", "1/4 1", "1/4 2", "1/4 3""#
+                ))),
+                Settlement::Settled
+            ),
+        ],
+        "each width outside 1 to 64 is refused with the width the draw names"
+    );
+}
+
+/// One component of a pair that a run spells, such as the message or the
+/// ciphertext of the one-time pad.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Component(i64);
+
+/// The distribution over pairs of integers that `outcome` spells: each quoted
+/// text a weight `p/q`, a space and a pair `*{a, b}`.
+///
+/// # Specification
+/// trivial.
+fn pairs(outcome: &Outcome) -> Distribution<(Component, Component)>
+{
+    let Outcome::Distributes(ref spelled) = *outcome
+    else {
+        panic!("the runs give a distribution: {outcome:?}");
+    };
+    let integer = |digits: &str| Integer::from(digits.parse::<i128>().expect("an integer"));
+    let points = spelled
+        .as_ref()
+        .trim_matches('"')
+        .split(r#"", ""#)
+        .map(|point| {
+            let (weight, pair) = point
+                .split_once(' ')
+                .expect("a point writes a weight and an outcome");
+            let (numerator, denominator) = weight.split_once('/').expect("a weight is a fraction");
+            let (first, second) = pair
+                .strip_prefix("*{")
+                .and_then(|inner| inner.strip_suffix('}'))
+                .and_then(|inner| inner.split_once(", "))
+                .expect("an outcome is a pair");
+            (
+                (
+                    Component(first.parse::<i64>().expect("an integer")),
+                    Component(second.parse::<i64>().expect("an integer")),
+                ),
+                Rational::new(integer(numerator), integer(denominator)).expect("a weight"),
+            )
+        });
+    Distribution::new(points).expect("the weights sum to one")
+}
+
+/// #5713: under a fresh key, the ciphertext of the one-time pad is
+/// independent of its message, which is perfect secrecy. A key used twice
+/// reveals the message. The exemplar's runs give each joint, and
+/// `independent` decides it: the pair `*{1, 0}` of the reused key weighs one
+/// half, and its marginals one quarter.
+#[test]
+fn the_pad_s_ciphertext_is_independent_of_its_message_5713()
+{
+    let claims = distribution_claims(
+        Path::new("pad"),
+        SourceText::from(include_str!(
+            "../../../corpus/model/probability/one-time-pad.gandr"
+        )),
+    );
+    let joint = |name: &str| {
+        let &(_, ref outcome, ref settlement) = claims
+            .iter()
+            .find(|&&(ref declared, ..)| declared == name)
+            .unwrap_or_else(|| panic!("the exemplar declares `{name}`"));
+        assert_eq!(*settlement, Settlement::Settled, "`{name}` settles");
+        pairs(outcome)
+    };
+    let fraction = |numerator: i128, denominator: i128| {
+        Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a weight")
+    };
+    assert_eq!(
+        joint("joint").independent(),
+        Ok(Independence::Independent),
+        "a fresh key hides the message"
+    );
+    assert_eq!(
+        joint("reused").independent(),
+        Ok(Independence::Dependent {
+            at: (Component(1), Component(0)),
+            joint: fraction(1, 2),
+            product: fraction(1, 4),
+        }),
+        "a key used twice reveals the message"
     );
 }
 

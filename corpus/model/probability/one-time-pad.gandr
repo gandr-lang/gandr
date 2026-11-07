@@ -1,0 +1,65 @@
+// The one-time pad of `std.crypto` hides its message: under a uniform key,
+// the ciphertext is uniform, whatever the message.
+//
+// Perfect secrecy is the independence of the ciphertext and the message. A
+// key is a fresh draw, so this is the reading of a fresh name as a random
+// draw. A key used twice leaks the difference of its two messages.
+//
+// At `w = 2`, each of the messages 1 and 2 gives a uniform ciphertext under a
+// key of 2 bits. `joint` draws the message as well, and states the joint
+// distribution of the message and the ciphertext. Each of its 8 pairs has the
+// weight `1/8`. `reused` pads two messages with one key, and the difference
+// of the two ciphertexts reveals the message. A crate test reads both joints,
+// and `independent` decides each one.
+//
+// - see: `library/std/src/crypto.gandr` — the pad and the key
+// - see: `crates/surface-dispatcher/tests/corpus.rs` — the decision of
+//   independence
+// - see: #5713
+
+// The host interface of randomness.
+import std.rand;
+// The one-time pad and its key.
+import std.crypto (key, pad, unpad);
+
+/// `pad` sends the message 3 under the key 1 to 0. `unpad` with the same key
+/// gives 3 again.
+@[ runs("3") ]
+def opened() -> Integer =
+  unpad 2 (pad 2 3 1) 1
+
+/// The message 1 under a uniform key: each ciphertext at `1/4`.
+@[ distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3")) ]
+def sealedOne() -> [std.rand.Eff] Integer =
+  let k = key 2
+  pad 2 1 k
+
+/// The message 2 under a uniform key: each ciphertext at `1/4`.
+@[ distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3")) ]
+def sealedTwo() -> [std.rand.Eff] Integer =
+  let k = key 2
+  pad 2 2 k
+
+/// A message of 1 or 2 and its ciphertext under a fresh key.
+@[ distributes((
+  "1/8 *{1, 0}",
+  "1/8 *{1, 1}",
+  "1/8 *{1, 2}",
+  "1/8 *{1, 3}",
+  "1/8 *{2, 0}",
+  "1/8 *{2, 1}",
+  "1/8 *{2, 2}",
+  "1/8 *{2, 3}"
+)) ]
+pub def joint() -> [std.rand.Eff] *{Integer, Integer} =
+  let message = 1 + std.rand.draw 1
+  let k = key 2
+  pure *{message, pad 2 message k}
+
+/// A message of 1 or 2 and the difference of two ciphertexts under one key:
+/// the message itself and the message 1.
+@[ distributes(("1/2 *{1, 0}", "1/2 *{2, 1}")) ]
+pub def reused() -> [std.rand.Eff] *{Integer, Integer} =
+  let message = 1 + std.rand.draw 1
+  let k = key 2
+  pure *{message, unpad 2 (pad 2 message k) (pad 2 1 k)}
