@@ -1582,6 +1582,61 @@ fn a_restriction_is_refused_by_the_label_it_gets_wrong_5613()
     }
 }
 
+/// A restriction whose fixed value is a name reads that name's definition: a
+/// name defined as 443 fixes `port` of the endpoint record, and a name
+/// defined as 80 is refused by `port`.
+#[test]
+fn a_value_coerced_in_at_a_named_fixed_value_replays_5683()
+{
+    let mut environment = Environment::new();
+    let [host, port, tls] = endpoint_labels();
+    let base = admit_endpoint(&mut environment, &mut Vec::new());
+    let mut named = |digits: Digits| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let body = integer_literal(arena, &digits);
+        let declaration = staging.def(LevelSignature::monomorphic(), integer, body);
+        environment
+            .add_decl(declaration)
+            .expect("an integer literal checks at Integer")
+            .position()
+    };
+    let standard = named(Digits("443"));
+    let plain = named(Digits("80"));
+    for (fixed, verdict, why) in [
+        (
+            standard,
+            Ok(()),
+            "the name's definition 443 converts with the field",
+        ),
+        (
+            plain,
+            Err(KernelError::FixedFieldDiffers {
+                label: port.clone(),
+            }),
+            "the name's definition 80 does not convert with the field 443",
+        ),
+    ] {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let value = arena.value_constant(base);
+        let fixed = arena.value_constant(fixed);
+        let body = arena.value_restrict(value, BTreeMap::from([(port.clone(), fixed)]));
+        let declared = arena.value_type_record(BTreeMap::from([
+            (host.clone(), integer),
+            (tls.clone(), integer),
+        ]));
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert_eq!(
+            environment.add_decl(declaration).map(|_admitted| ()),
+            verdict,
+            "{why}"
+        );
+    }
+}
+
 /// A restriction survives the kernel's canonical encoding: its bytes decode
 /// and re-encode alike, and the decoded body is the restriction of `base`
 /// with its fixed label.
