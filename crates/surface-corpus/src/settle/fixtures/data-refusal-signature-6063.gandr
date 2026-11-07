@@ -1,0 +1,3 @@
+@[ refuses("OutOfFragment.Indexed") ]
+data Bad(a : Type) : Type where
+  | Mk : Bad(Integer)
