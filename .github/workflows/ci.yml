@@ -2334,7 +2334,7 @@ jobs:
       - name: check the prose against its ledger
         run: mise run check:prose
       - name: save the prose tools
-        if: ${{ !cancelled() && env.ACT != 'true' && github.event_name == 'push' && steps.prose-tools-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.prose-tools-restore.outputs.cache-hit != 'true' }}
         uses: *cache-save
         with:
           path: *prose-tools
