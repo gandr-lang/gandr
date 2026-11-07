@@ -1273,6 +1273,7 @@ primitive_copy_wrapper!(
 ///   the record holds.
 /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
 /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+#[spec(ensures: |ret| !bool::from(ret) || tokens.get(usize::from(index)).is_some_and(|token| matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::Punct)))]
 #[inline]
 fn ends_declaration(
     pbg: &Pbg,
