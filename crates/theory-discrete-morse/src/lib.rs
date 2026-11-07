@@ -3,23 +3,22 @@
 //!
 //! A matching pairs some cells of a complex, each with a face of it one
 //! dimension down. The cells that no pair holds are the critical cells. The
-//! incidence of the face in each pair must be one or minus one. The gradient
-//! is the graph that runs down from each cell to its faces, and up along each
-//! pair. A matching is acyclic when its gradient has no cycle. Then the
-//! complex contracts onto a complex of its critical cells, so its homology is
-//! the homology of the critical cells.
+//! complex admits each pair: by default, the incidence of the face is one or
+//! minus one. The gradient runs down from each cell to its faces, and up along
+//! each pair. A matching is acyclic when its gradient has no cycle. Then the
+//! complex is equivalent to a complex of its critical cells.
 //!
-//! The crate reads the caller's complex through [`Complex`], so a complex is
-//! any set of cells that can give the faces of a cell. A [`Scheme`] gives the
-//! class of each cell itself, as Brown's collapsing scheme does on a bar
-//! complex. [`collapse()`] checks such a scheme on a set of cells and keeps
-//! their critical cells. [`greedy()`] builds an acyclic matching on a finite
-//! complex. [`reduct()`] builds the complex of the critical cells, with the
-//! boundary that the gradient paths give.
+//! The crate reads the caller's complex through [`Complex`], and a [`Scheme`]
+//! gives the class of each cell, as Brown's collapsing scheme does on a bar
+//! complex. [`collapse()`] checks a scheme on a set of cells and keeps their
+//! critical cells. [`greedy()`] builds an acyclic matching on a finite
+//! complex. [`equivalence()`] gives the equivalence on the complex's own
+//! [`Composites`], with a witness for each inverse law, and on its complex it
+//! is a [`Reduction`] that composes in sequence. [`reduct()`] gives its
+//! abelianisation: the critical cells with their boundary over the integers.
 //!
-//! Its results hold over the integers: the reduct keeps the homology of the
-//! complex. Doré proves more for a graph, which equals its Morse reduct up to
-//! homotopy type (thesis § 3.6). The crate does not build that equivalence.
+//! The equivalence holds at the general level, on the complex's own
+//! composites (Doré's thesis, § 3.5). The reduct is its shadow, the homology.
 //!
 //! # Items
 //!
@@ -27,9 +26,13 @@
 //! | ---- | ------------- |
 //! | [`Complex`], [`Incidence`], [`Standing`], [`Invertibility`] | the caller's complex, the incidence of a face, and whether a cell lies in the complex |
 //! | [`Scheme`], [`Class`] | a matching that gives the class of each cell, and the class: critical, or paired up or down |
+//! | [`Composites`], [`Definition`], [`Closure`], [`Images`] | a scheme whose cells compose in the free (n,1)-category, the definition of a redundant cell by its partner, whether a witness closes, and the images that a substitution reads |
 //! | [`collapse()`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
 //! | [`greedy()`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, and the matching read as a scheme |
 //! | [`reduct()`], [`Reduct`], [`Place`] | the reduct along an acyclic matching: the critical cells, the Morse boundary of each and the walk of its gradient |
+//! | [`equivalence()`], [`Equivalence`], [`EquivalenceOf`], [`Removal`], [`Bound`], [`Refusal`] | the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name |
+//! | [`Reduction`], [`Then`], [`Answer`] | a reduction: the collapse, the inclusion, both inverse witnesses and the replay, two reductions in sequence, and what a step gives |
+//! | [`Abelian`], [`Chain`] | the abelianisation of a scheme: its composites as integer chains |
 //! | [`MorseError`] | every refusal: the caller's own fault, a walk past its budget, or a sum past the integers |
 //!
 //! A [`GradedPoset`] is a [`Complex`]: the faces of a cell are the cells of
@@ -97,14 +100,19 @@ macro_rules! wrapper {
     };
 }
 
+mod abelian;
 mod collapse;
 mod complex;
+mod equivalence;
 mod error;
 mod gradient;
 mod greedy;
 mod poset;
 mod reduct;
+mod reduction;
 
+pub use abelian::Abelian;
+pub use abelian::Chain;
 pub use collapse::Budget;
 pub use collapse::Class;
 pub use collapse::Collapse;
@@ -116,6 +124,16 @@ pub use complex::Complex;
 pub use complex::Incidence;
 pub use complex::Invertibility;
 pub use complex::Standing;
+pub use equivalence::Bound;
+pub use equivalence::Closure;
+pub use equivalence::Composites;
+pub use equivalence::Definition;
+pub use equivalence::Equivalence;
+pub use equivalence::EquivalenceOf;
+pub use equivalence::Images;
+pub use equivalence::Refusal;
+pub use equivalence::Removal;
+pub use equivalence::equivalence;
 pub use error::MorseError;
 pub use gradient::Place;
 pub use greedy::Matched;
@@ -123,3 +141,6 @@ pub use greedy::Matching;
 pub use greedy::greedy;
 pub use reduct::Reduct;
 pub use reduct::reduct;
+pub use reduction::Answer;
+pub use reduction::Reduction;
+pub use reduction::Then;
