@@ -1,0 +1,27 @@
+test: lower::conditional::tests::two_else_if_rungs_lower_as_nested_false_branches_6072
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::conditional::tests::two_else_if_rungs_lower_as_nested_false_branches_6072
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lowering/f927106f19662712/out/gandr_surface_lowering-f927106f19662712"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lowering/f927106f19662712/out/gandr_surface_lowering-f927106f19662712' (x86_64).
+(lldb) settings set -- target.run-args  "lower::conditional::tests::two_else_if_rungs_lower_as_nested_false_branches_6072" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_lowering-f927106f19662712`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000002fabe88
+(lldb) run
+
+running 1 test
+test lower::conditional::tests::two_else_if_rungs_lower_as_nested_false_branches_6072 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1033 filtered out; finished in 1.64s
+
+Process 764673 launched: 'target/debug-trace/debug/build/gandr-surface-lowering/f927106f19662712/out/gandr_surface_lowering-f927106f19662712' (x86_64)
+Process 764673 exited with status = 0 (0x00000000)
+(lldb) bt 24
+error: Command requires a process which is currently stopped.
