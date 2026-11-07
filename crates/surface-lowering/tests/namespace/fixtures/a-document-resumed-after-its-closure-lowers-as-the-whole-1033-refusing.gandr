@@ -1,3 +1,2 @@
 import "./base.gandr" as B ;
 import "./base.gandr" as B ;
-def c = ? ;

@@ -198,6 +198,17 @@
 //! next one parses whole. The boundary is any declaration head, not the `def`
 //! keyword alone.
 //!
+//! A separator can also end a declaration that lacks a tile, as a `def`
+//! without its `=` does. The molder finds that end: a `;` or a layout
+//! separator, and the head of a next top-level declaration after it. There, no
+//! candidate can continue the open form, and the declaration can be the
+//! innermost open form. Then the separator closes the declaration as its last
+//! tile, and the close flags one missing tile at the open frontier
+//! ([`MeldState::close_at_separator`]). Read as it stands, the separator is an
+//! operator of the sort of an expression. Against a body that reads as a type,
+//! its reduction crosses sorts, and the lookahead then takes a misreading of
+//! the body (#5747).
+//!
 //! Known bound: a container whose own member carries the damage — `module M {
 //! def bad = ( 1 ; def good = 2; }` — force-closes the container too, so `good`
 //! becomes a sibling of `M` rather than its member. Telling a container apart
@@ -1097,6 +1108,10 @@ primitive_copy_wrapper!(
 primitive_copy_wrapper!(
     /// Whether a mold would continue the nearest open form.
     pub struct FormContinuation(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a separator closes the open declaration as its last tile.
+    pub struct SeparatorTaken(bool);
 );
 primitive_copy_wrapper!(
     /// Whether a mold is admissible at the current frontier.
@@ -2996,6 +3011,122 @@ impl<'pbg> MeldState<'pbg>
             .open_declaration_frontier()
             .map_or_else(|| StackIndex::from(0), StackIndex::from);
         self.collapse(StackFloor::from(floor));
+    }
+
+    /// Close the open declaration at a separator that ends it unfinished, with
+    /// the separator as the declaration's last tile.
+    ///
+    /// A declaration that lacks a tile before its end, as a `def` without its
+    /// `=`, cannot take the separator as its own end. Pushed as it stands, the
+    /// separator reads as an operator of the sort of an expression. Its
+    /// reduction against an operand of another sort, as the type that the body
+    /// of that `def` reads as, costs an [`Oblig::InconMeld`]. The close charges
+    /// instead what the end of the input charges: the ghost end and one missing
+    /// tile at the open declaration ([`mint_ghost_end`](Self::mint_ghost_end)).
+    /// A reader of the tree, as the lowering, then sees the repair. The
+    /// separator follows the ghost as the declaration's last tile, so it makes
+    /// no item of its own. The head of the next declaration closes an open
+    /// declaration in the same way, in
+    /// [`settle_declaration_boundary`](Self::settle_declaration_boundary).
+    ///
+    /// # Specification
+    /// - requires: `candidates` are the molds gathered for a separator that
+    ///   ends a top-level declaration, `labels` are its labels, and `text` is
+    ///   its text.
+    /// - ensures: when no candidate continues the nearest open form, the
+    ///   nearest open frontier is the nearest declaration-started one, and one
+    ///   of the labels' declared molds ends a form of the declaration's rule,
+    ///   mints the ghost end and flags one [`Oblig::MissingTile`] at the
+    ///   frontier, pushes `text` as that mold, closes the declaration with it
+    ///   and returns true; leaves the state untouched and returns false
+    ///   otherwise, as when a bracket inside the declaration is still open.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `def` without its `=`, whose body nests
+    ///   applications, recovers with the obligations it has at the end of the
+    ///   input only when the separator before the next declaration closes it. A
+    ///   well-formed declaration takes its `;` as its own end, and a close
+    ///   there would charge a corpus source an obligation. A separator inside
+    ///   an unclosed bracket of the declaration stays inside it.
+    /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    #[inline]
+    #[spec(captures: before = self.source.len(), ensures: |ret| (bool::from(ret) && self.source.get(before ..) == Some(<&str>::from(text))) || (!bool::from(ret) && self.source.len() == before))]
+    pub fn close_at_separator(
+        &mut self,
+        candidates: &[MoldId],
+        labels: &[LabelId],
+        text: TileText<'_>,
+    ) -> SeparatorTaken
+    {
+        if candidates
+            .iter()
+            .any(|&mold| bool::from(self.would_continue_form(mold)))
+        {
+            return SeparatorTaken::from(false);
+        }
+        let Some(frontier) = self.open_declaration_frontier()
+        else {
+            return SeparatorTaken::from(false);
+        };
+        if self.nearest_open_form() != Some(frontier) {
+            return SeparatorTaken::from(false);
+        }
+        let Some(frontier_cell) = self.stack.get(usize::from(frontier)).copied()
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let Role::FormTile {
+            mold: frontier_mold,
+            ..
+        } = frontier_cell.role
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let Ok(rule) = self.pbg.rule_of(frontier_mold).map(|rule| rule.name)
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let terminator = labels
+            .iter()
+            .flat_map(|&label| self.pbg.label_candidates(label))
+            .copied()
+            .find(|&mold| {
+                self.pbg.rule_of(mold).is_ok_and(|other| other.name == rule)
+                    && matches!(self.classify(mold), Kind::FormEnd)
+            });
+        let Some((terminator, sort)) =
+            terminator.and_then(|mold| self.pbg.mold(mold).ok().map(|def| (mold, def.sort)))
+        else {
+            return SeparatorTaken::from(false);
+        };
+        let Some(content_floor) = StackIndex::from(frontier).floor_after()
+        else {
+            return SeparatorTaken::from(false);
+        };
+        self.collapse(content_floor);
+        self.mint_ghost_end(frontier, frontier_cell);
+        let span = self.append_source(SourceFragment::from(text));
+        let emit = self.emit_token(NodeLabel::Tile(terminator), span);
+        self.push_cell(Cell {
+            emit,
+            start: u32::from(span.start),
+            end: u32::from(span.end),
+            sort,
+            role: Role::FormTile {
+                mold: terminator,
+                sort,
+                open: false,
+                start: false,
+                absorb_left: false,
+            },
+        });
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            self.close_form(StackIndex::from(top));
+        }
+        SeparatorTaken::from(true)
     }
 
     /// Return whether `mold` can open an item-position declaration at a fresh
@@ -5222,6 +5353,40 @@ impl<'pbg> MeldState<'pbg>
         else {
             return;
         };
+        self.mint_ghost_end(frontier, frontier_cell);
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            self.close_form(StackIndex::from(top));
+        }
+    }
+
+    /// Append the ghost end of the open form at `frontier`, whose cell is
+    /// `frontier_cell`, mark the form closed, and flag its missing tile.
+    ///
+    /// The ghost is a minted close of the frontier's closing class when the
+    /// grammar names one, and a postfix grout otherwise. The form stays on the
+    /// stack, so the caller closes it after any tile that it adds.
+    ///
+    /// # Specification
+    /// - requires: `frontier_cell` is the cell at `frontier`, and every cell
+    ///   above it is an operand.
+    /// - ensures: pushes one ghost cell over an empty span, marks the form at
+    ///   `frontier` closed, flags one [`Oblig::MissingTile`] over the frontier
+    ///   tile's span, and appends no source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lowering reads a repair only from a ghost in the
+    ///   form. A close at a separator without the ghost lowers an unfinished
+    ///   `import` as a whole one.
+    /// - witness: `meld::tests::minted_close_round_trips_and_refuses_unknown_class`
+    /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() == before.1.saturating_add(1))]
+    fn mint_ghost_end(
+        &mut self,
+        frontier: FrontierIndex,
+        frontier_cell: Cell,
+    )
+    {
         let sort = frontier_cell.sort;
         let frontier_mold = match frontier_cell.role {
             Role::FormTile { mold, .. } => mold,
@@ -5286,9 +5451,6 @@ impl<'pbg> MeldState<'pbg>
                 SourceOffset::from(frontier_cell.end),
             ),
         );
-        if let Some(top) = self.stack.len().checked_sub(1) {
-            self.close_form(StackIndex::from(top));
-        }
     }
 
     /// Return whether the cell at `index` is an operand.
