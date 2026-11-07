@@ -18,7 +18,7 @@ def wordCount : String -> Nat = words |> length
 def wordCountFused : String -> Nat = #fuse{ words length }
 
 /// Composition read backward, as `map (g ∘ f) xs` reads.
-def lengths(xs : List(String)) : List(Nat) = map (length ∘ words) xs
+def lengths(xs : List String) : List Nat = map (length ∘ words) xs
 
 /// A pipeline of three stages, the middle one a partial application.
 def normalise : String -> String = #fuse{ trim (replace " " "_") lowercase }

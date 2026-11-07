@@ -29,7 +29,7 @@ pub def parsePair(a : Token, b : Token) -> [Cost <= 2] *{Node, Node} =
 
 /// The measure gives a recursive sum its row grade. The checker cannot infer
 /// a recursion's grade, so it asks for the measure.
-pub def sum(xs : List(Integer)) -> [Cost <= xs.length] Integer #spec{
+pub def sum(xs : List Integer) -> [Cost <= xs.length] Integer #spec{
   measure { cost xs.length }
 } {
   match xs where

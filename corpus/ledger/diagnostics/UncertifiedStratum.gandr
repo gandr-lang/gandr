@@ -24,26 +24,26 @@ def negation : Path[.A = Type](Bool, Bool) ;
 def negation = equiv not not ;
 
 @[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
-def both : List(Bool) ;
+def both : List Bool ;
 
 def both = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil) ;
 
 @[ checks ]
-def keep(xs : List(Bool)) -> -F List(Bool) =
+def keep(xs : List Bool) -> -F List Bool =
   xs
 
 @[ checks ]
-def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) =
+def flip_flag(entry : Bool * List Bool) -> -F (Bool * List Bool) =
   match entry where
     | *{b, xs} => { let c = not b; *{c, xs} }
 
 @[ checks ]
-def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) ;
+def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool) ;
 
 def flagged = equiv flip_flag flip_flag ;
 
 @[ checks ]
-def emptied(xs : List(Bool)) -> -F List(Bool) =
+def emptied(xs : List Bool) -> -F List Bool =
   nil
 
 @[ refuses("UncertifiedStratum") ]

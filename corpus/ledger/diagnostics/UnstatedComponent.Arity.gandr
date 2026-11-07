@@ -8,4 +8,4 @@ theory T where
   rule half : add x ==> x;
 
 @[ refuses("UnstatedComponent.Arity") ]
-def model : Model(T) ;
+def model : Model T ;

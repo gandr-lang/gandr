@@ -5,4 +5,4 @@ theory Counter where
   oper zero : C;
 @[ checks ]
 def countersOn(x : Type) -> -F Type =
-  return type(Model(Counter) with sort C = x)
+  return type(Model Counter with sort C = x)

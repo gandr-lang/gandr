@@ -18,7 +18,7 @@ import "./layouts.gandr";
 
 /// A wire format's checksum, over a list in the packed layout whatever the
 /// list's default: two elements per step, as the frame holds them.
-def rec checksum(frame : Repr(Ints, packed)) -> i64 =
+def rec checksum(frame : Repr Ints packed) -> i64 =
   match frame with packed where
     | Empty => 0i64
     | One(x) => widen x
@@ -27,12 +27,12 @@ def rec checksum(frame : Repr(Ints, packed)) -> i64 =
 /// A list's checksum in the wire's layout. The list moves to the packed
 /// representation along the layout's equivalence.
 def framed(xs : Ints) -> i64 =
-  let frame : Repr(Ints, packed) = Layout.into packed xs
+  let frame : Repr Ints packed = Layout.into packed xs
   checksum frame
 
 /// A hot loop over the tagged layout, one load per element, chosen for this
 /// loop alone.
-def rec scan(xs : Repr(Ints, tagged), acc : i64) -> i64 =
+def rec scan(xs : Repr Ints tagged, acc : i64) -> i64 =
   match xs with tagged where
     | TagNil => acc
     | TagCons(x, rest) => scan[<] rest (acc + widen x)
@@ -43,6 +43,6 @@ def sumTagged(xs : Ints) -> i64 { scan (Layout.into tagged xs) 0i64 }
 
 /// One, two and three, in the packed layout after the tagged one, along the
 /// composite of the two equivalences.
-def relaid() -> Repr(Ints, packed) =
+def relaid() -> Repr Ints packed =
   let tagged123 = Layout.into tagged (Cons 1i32 (Cons 2i32 (Cons 3i32 Nil)))
   Layout.relay tagged packed tagged123

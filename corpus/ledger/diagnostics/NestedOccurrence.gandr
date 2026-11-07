@@ -6,8 +6,8 @@ data Two : Type where
 
 @[ checks ]
 data Test(a : Type) : Type where
-  | MkTest : (probe : a -> Two) --> Test(a)
+  | MkTest : (probe : a -> Two) --> Test a
 
 @[ refuses("NestedOccurrence") ]
 data Rose : Type where
-  | Node : (kids : Test(Rose)) --> Rose
+  | Node : (kids : Test Rose) --> Rose

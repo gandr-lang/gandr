@@ -24,11 +24,11 @@ pub type Derivation = *{
   name : String,
   system : String,
   builder : String,
-  args : List(String),
-  env : List(Pair),
-  inputDrvs : List(String * List(String)),
-  inputSrcs : List(String),
-  outputs : List(Pair),
+  args : List String,
+  env : List Pair,
+  inputDrvs : List (String * List String),
+  inputSrcs : List String,
+  outputs : List Pair,
   version : Integer
 };
 
@@ -52,7 +52,7 @@ pub def siteDerivation(pages : String, bash : String, coreutils : String) -> Der
   }
 
 /// The render: the module's derivation as Nix's JSON.
-pub def derivationJson(m : Module(Built)) -> [Elab] Json =
+pub def derivationJson(m : Module Built) -> [Elab] Json =
   Derivation.json.encode m.derivation
 
 /// The site, rendered into `docs-site.drv.json` for `nix derivation add`.

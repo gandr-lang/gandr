@@ -25,7 +25,7 @@ def assocAtHere(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path(
   Path.here (Path.here (Path.step f g))
 
 /// A dependent function's action on a reflexivity is the reflexivity at its value.
-def apdAtHere(A : Type, P : A -> Type, F : (a : A) -> P(a), x : A) -> Path[.A = Path[.A = P(x)](Path.walk (fun (a) { P a }) (Path.here x) (F x), F x)](
+def apdAtHere(A : Type, P : A -> Type, F : (a : A) -> P a, x : A) -> Path[.A = Path[.A = P x](Path.walk (fun (a) { P a }) (Path.here x) (F x), F x)](
   apd A P F x x (Path.here x),
   Path.here (F x)
 ) =

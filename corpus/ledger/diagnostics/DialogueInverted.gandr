@@ -8,6 +8,6 @@ module Ask where
   type Asking = !String. end;
 
 @[ refuses("DialogueInverted") ]
-def foretold : Dialogue(Ask.Asking) ;
+def foretold : Dialogue Ask.Asking ;
 
 def foretold = dialogue (right (received "yes")) (left (sent "yes")) (left closed) (right closed) ;

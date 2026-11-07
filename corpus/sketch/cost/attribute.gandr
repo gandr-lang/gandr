@@ -23,7 +23,7 @@ def hash(block : Bytes) -> [Cost] Digest =
 
 /// Finds `x` in a sorted array, at one step for each halving and one more.
 @[cost(log2 (length xs) + 1)]
-def find(xs : Array(Integer), x : Integer) -> [Cost] Maybe(Nat) =
+def find(xs : Array Integer, x : Integer) -> [Cost] Maybe Nat =
   binarySearch xs x
 
 /// Hashes two blocks. Each call charges what its attribute states, and the

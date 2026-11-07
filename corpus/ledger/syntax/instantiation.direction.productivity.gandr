@@ -2,7 +2,7 @@
 @[ checks ]
 codata Stream(a : Type) : Type[-] where
   head : a;
-  tail : Stream(a);
+  tail : Stream a;
 @[ checks ]
-def rec nats(n : Integer) -> Stream(Integer) =
+def rec nats(n : Integer) -> Stream Integer =
   &{ .head => n, .tail => nats[>] (n + 1) }

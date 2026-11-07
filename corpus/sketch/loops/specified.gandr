@@ -12,7 +12,7 @@
 
 /// The sum of a list's first `n` elements. The invariant holds on entry and
 /// after each pass, and `n - i` decreases every pass.
-def sumPrefix(xs : List(Integer), n : Nat) -> Integer =
+def sumPrefix(xs : List Integer, n : Nat) -> Integer =
   var i = 0
   var sum = 0
   while i < n #spec{

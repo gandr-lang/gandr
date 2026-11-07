@@ -4,4 +4,4 @@
 @[ refuses("CodataOccurrence") ]
 codata Swap(a : Type, b : Type) : Type[-] where
   head : a;
-  tail : Swap(b, a);
+  tail : Swap b a;

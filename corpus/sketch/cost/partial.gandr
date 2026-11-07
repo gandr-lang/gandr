@@ -26,7 +26,7 @@ type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
 
 /// A desk queues each report for a worker until the seat retires. Each pass
 /// costs at most two, amortised over the queue's back list.
-def follow(operator : Reports) -> [Cost] Batched(Integer) =
+def follow(operator : Reports) -> [Cost] Batched Integer =
   var queue = Lists Nil Nil
   loop over (operator : Reports) #spec{
     measure {
@@ -52,7 +52,7 @@ def follow(operator : Reports) -> [Cost] Batched(Integer) =
 /// Explores a graph breadth first from a frontier until `goal` holds. Each
 /// node it takes costs one step, and each run that finds the goal costs no
 /// more than the nodes it reaches.
-def rec explore(next : Node -> List(Node), goal : Node -> Bool, frontier : Batched(Node)) -> [Partial, Cost] Maybe(Node) #spec{
+def rec explore(next : Node -> List Node, goal : Node -> Bool, frontier : Batched Node) -> [Partial, Cost] Maybe Node #spec{
   measure {
     | potential length(frontier.back)
     | cost 1

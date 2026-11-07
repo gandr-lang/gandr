@@ -33,7 +33,7 @@ def exampleSpecified : *{
 def returnsPast(
   spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
-) -> post(Int(0)) -> wpFn(spec, exampleBody, False, post) =
+) -> post(Int 0) -> wpFn(spec, exampleBody, False, post) =
   exampleReturnsPast spec post
 
 /// From the free list of `order`, `pop` answers its head and leaves the rest free.
@@ -46,6 +46,6 @@ def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt
   popBody,
   popEnv(order),
   popPost(blocks, heads, order, ixs),
-  Own(Zero, Whole, buddy(blocks, heads))
+  Own Zero Whole buddy(blocks, heads)
 ) =
   popMeets blocks heads order ixs
