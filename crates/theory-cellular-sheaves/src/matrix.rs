@@ -8,7 +8,9 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::fmt;
+use core::num::NonZeroU128;
 
 use anodized::spec;
 
@@ -381,6 +383,130 @@ impl fmt::Display for Rational
             return write!(f, "{}", self.numerator);
         }
         write!(f, "{}/{}", self.numerator, self.denominator)
+    }
+}
+
+impl PartialOrd for Rational
+{
+    /// The order of the numbers, which is total.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<Ordering>
+    {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Rational
+{
+    /// The order of the numbers: the signs first, then the magnitudes, with
+    /// no product formed, so no comparison overflows.
+    ///
+    /// # Specification
+    /// - ensures: `Equal` exactly when the two numbers are equal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — pairs of each sign, an equal pair in two spellings,
+    ///   and a pair whose cross products pass the integers separate a sign read
+    ///   wrong and a product that overflows.
+    /// - witness: `tests::rational::the_order_of_rationals_is_the_order_of_the_numbers`
+    #[spec(ensures: |ret| (ret == Ordering::Equal) == (self == other))]
+    #[inline]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> Ordering
+    {
+        match (self.numerator.is_negative(), other.numerator.is_negative()) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (false, false) => magnitudes(self.magnitude(), other.magnitude()),
+            (true, true) => magnitudes(other.magnitude(), self.magnitude()),
+        }
+    }
+}
+
+impl Rational
+{
+    /// The absolute values of the numerator and of the denominator.
+    ///
+    /// # Specification
+    /// trivial.
+    fn magnitude(self) -> Magnitude
+    {
+        Magnitude {
+            numerator: self.numerator.unsigned_abs(),
+            // The denominator is positive by the invariant of `Rational`.
+            denominator: NonZeroU128::new(self.denominator.unsigned_abs())
+                .unwrap_or(NonZeroU128::MIN),
+        }
+    }
+}
+
+/// The absolute value of a rational: a numerator and a positive denominator.
+#[derive(Clone, Copy, Debug)]
+struct Magnitude
+{
+    /// The absolute value of the numerator.
+    numerator: u128,
+    /// The absolute value of the denominator, which is positive.
+    denominator: NonZeroU128,
+}
+
+/// The order of two magnitudes as numbers, by their continued fractions: the
+/// integer parts first, then the reciprocals of the two fractional parts with
+/// the sides swapped. Each step divides, so no product is formed.
+///
+/// # Specification
+/// - ensures: the order of the two quotients, which equals the order of the
+///   cross products wherever those fit the integers.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a pair whose cross products pass the integers, and pairs
+///   that differ in the integer part and in the fractional part only.
+/// - witness: `tests::rational::the_order_of_rationals_is_the_order_of_the_numbers`
+#[spec(ensures: |ret| left.numerator.checked_mul(right.denominator.get()).zip(right.numerator.checked_mul(left.denominator.get())).is_none_or(|(first, second)| ret == first.cmp(&second)))]
+fn magnitudes(
+    left: Magnitude,
+    right: Magnitude,
+) -> Ordering
+{
+    let (mut first, mut second) = (left, right);
+    loop {
+        let whole = first.numerator.div_euclid(first.denominator.get());
+        let other = second.numerator.div_euclid(second.denominator.get());
+        if whole != other {
+            return whole.cmp(&other);
+        }
+        let part = NonZeroU128::new(first.numerator.rem_euclid(first.denominator.get()));
+        let other_part = NonZeroU128::new(second.numerator.rem_euclid(second.denominator.get()));
+        match (part, other_part) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            // `part / first.denominator` against `other_part /
+            // second.denominator`: the reciprocals compare the other way, so
+            // the sides swap.
+            (Some(part), Some(other_part)) => {
+                (first, second) = (
+                    Magnitude {
+                        numerator: second.denominator.get(),
+                        denominator: other_part,
+                    },
+                    Magnitude {
+                        numerator: first.denominator.get(),
+                        denominator: part,
+                    },
+                );
+            },
+        }
     }
 }
 

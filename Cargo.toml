@@ -999,6 +999,7 @@ default-features = false
 # - core-checker
 # - core-term
 # - surface-dispatcher
+# - theory-probability
 [workspace.dependencies.gandr-theory-ordered-algebras]
 path = "crates/theory-ordered-algebras"
 default-features = false
