@@ -145,9 +145,12 @@ struct TokenCount(usize);
 ///
 /// A corpus change re-records the sources it touches:
 /// `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<source> mise run ci:recovery`
-/// rewrites that source's record alone, `<source>` being its path in the
-/// corpus, and `UPDATE_EXPECT=1 mise run ci:recovery` rewrites every record and
-/// deletes those whose source is gone. The rewrite is a reviewed diff, never a
+/// rewrites that source's record alone, `<source>` being its name in the
+/// corpus. The variable holds one or more names, one on each line (#5864):
+/// `ci:recovery-change` names the sources a pull request touches, so its
+/// sweep holds those records alone. `UPDATE_EXPECT=1 mise run ci:recovery`
+/// rewrites every record and deletes those whose source is gone. The rewrite
+/// is a reviewed diff, never a
 /// blind re-pin: a dropped row whose counts grew is a recovery regression, and
 /// a whole or cut-short row that moved is a tree change, each answered by the
 /// change that causes it.
@@ -277,7 +280,14 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
     };
     let records = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recovery");
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
-    let only = std::env::var("GANDR_RECOVERY_SOURCE").ok();
+    let only: Option<HashSet<String>> = std::env::var("GANDR_RECOVERY_SOURCE").ok().map(|names| {
+        names
+            .lines()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect()
+    });
     if portion == Portion::Changed && (update || only.is_some()) {
         return Ok(());
     }
@@ -318,7 +328,7 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
         let rel = source.name.as_ref();
         let record = records.join(rel).with_extension("recovery");
         let _sourced = sourced.insert(record.clone());
-        if only.as_deref().is_some_and(|only| only != rel) {
+        if only.as_ref().is_some_and(|only| !only.contains(rel)) {
             continue;
         }
         if portion == Portion::Changed && !visited.contains(&source.path) {
