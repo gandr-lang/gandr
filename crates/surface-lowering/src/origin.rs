@@ -652,6 +652,17 @@ pub enum Omitted
     /// A wildcard `_` written where a value is read, for the term the
     /// equations force.
     Wildcard,
+    /// An argument of the family of a constructor written in a field, which
+    /// the lowering leaves to the checker where the constructor around reads
+    /// as no family's application (#6113).
+    Classifier
+    {
+        /// The family the constructor belongs to.
+        family: String,
+        /// The parameter or the index the argument stands for: its name, or
+        /// its place among the family's arguments, counted from one.
+        parameter: String,
+    },
 }
 
 /// Every minted core node's origin, by family, and the declaration origins.

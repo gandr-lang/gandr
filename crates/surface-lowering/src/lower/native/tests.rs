@@ -6774,54 +6774,56 @@ fn a_clause_column_types_its_call_s_argument()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// #5373: a pair nested in the field of a pair, both returned against the
-/// call of a definition that computes the pair type, was dropped as
-/// `Unminted`, an engine fault. The inner pair's classifier is the outer
-/// pair's field type, which the lowering reads off the outer classifier's
-/// arguments, and the outer classifier is the decode of the call, no data
-/// type. The declaration is now refused by name at the inner pair, as a
-/// constructor that needs a type the source does not state. The inner pair
-/// ascribed its pair type lowers, and the checker accepts it.
+/// #6113: a pair nested in the field of a pair, both returned against the
+/// call of a definition that computes the pair type, takes its own family
+/// over a wildcard for each parameter: the outer classifier is the decode of
+/// the call, no data type, so its field states no type for the inner pair.
+/// Written as a signature and a definition, the declaration was owed as its
+/// signature alone, its body unminted and no refusal filed. The checker now
+/// solves both wildcards from the reduced call and accepts the declaration.
+/// With a wildcard the form writes, every hole of the form is a wildcard of
+/// its own name.
 #[test]
-fn a_pair_in_a_field_at_a_computed_pair_type_is_refused_by_name_5373()
+fn a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113()
 {
     let family = include_str!(
-        "tests/fixtures/a-pair-in-a-field-at-a-computed-pair-type-is-refused-by-name-5373-family.gandr"
+        "tests/fixtures/a-pair-in-a-field-at-a-computed-pair-type-takes-its-family-over-wildcards-6113-family.gandr"
     );
     let mut arena = CoreArena::new();
     let source =
-        alloc::format!("{family}def nested(k : Nat) -> twoType(Z) = MkP Z (MkP Z *{{}});\n");
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    let refusal = refusal_of(&module, SurfaceName::from("nested"));
-    let LoweringRefusal::OutOfFragment {
-        span,
-        sort: FragmentSort::Value,
-        boundary: FragmentBoundary::Unannotated,
-        ..
-    } = refusal
-    else {
-        panic!("`nested` is refused as unannotated: {refusal:?}");
-    };
-    assert_eq!(
-        source.get(usize::from(span.start()) .. usize::from(span.end())),
-        Some("MkP Z *{}"),
-        "the refusal stands at the inner pair"
-    );
-    let mut arena = CoreArena::new();
-    let source = alloc::format!(
-        include_str!(
-            "tests/unformatted/a-pair-in-a-field-at-a-computed-pair-type-is-refused-by-name-5373.gandr"
-        ),
-        family = family
-    );
+        alloc::format!("{family}def nested : twoType(Z); def nested = MkP Z (MkP Z *{{}});\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
-            outcome_of(&module, SurfaceName::from("ascribed")),
+            outcome_of(&module, SurfaceName::from("nested")),
             DeclarationOutcome::Completed { .. }
         ),
-        "`ascribed` lowers: {:?}",
-        outcome_of(&module, SurfaceName::from("ascribed"))
+        "`nested` lowers: {:?}",
+        outcome_of(&module, SurfaceName::from("nested"))
     );
     assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let start = arena.watermark();
+    let source =
+        alloc::format!("{family}def written(k : Nat) -> twoType(Z) = MkP _ (MkP Z *{{}});\n");
+    let _module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let holes: alloc::collections::BTreeSet<gandr_core_term::hole::HoleId> = arena
+        .values_since(start)
+        .filter_map(|id| match arena.value(id) {
+            Some(&gandr_core_term::Value::Hole(hole)) => Some(hole),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        holes.len(),
+        3,
+        "the written wildcard and the inner pair's two are three names: {holes:?}"
+    );
+    assert!(
+        holes
+            .iter()
+            .all(|hole| hole.origin() == gandr_core_term::hole::HoleOrigin::Wildcard),
+        "each is a wildcard: {holes:?}"
+    );
 }

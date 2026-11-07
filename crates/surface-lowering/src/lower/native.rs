@@ -1334,6 +1334,31 @@ pub(super) struct FieldOf
     pub index: usize,
 }
 
+/// Where the mint names the wildcards of the classifier it inserts for a
+/// constructor written in a field, when the constructor around reads as no
+/// family's application (#6113).
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `form` is the hole form of the form that writes the constructor,
+///   `family` the slot of the constructor's family, and `written` the family's
+///   position in the collection's data list.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::fielded_classifier`].
+/// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Fielded
+{
+    /// The hole form the wildcards' names hold.
+    pub form: gandr_core_term::hole::HoleForm,
+    /// The family's slot.
+    pub family: SlotIndex,
+    /// The family's position in the collection's data list.
+    pub written: usize,
+}
+
 /// A generator's result read as its constructor's classifier, as
 /// [`Classifier::Resulted`] reads it.
 ///
@@ -3825,12 +3850,17 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 // The constructor around may read as no family's application,
                 // and then the field states no type for this one: the mint
-                // leaves it unclassified, and the declaration takes this
-                // refusal (#5373).
-                if let Classifier::Field(_) = inherited {
-                    let _first = self
-                        .unclassified
-                        .insert(site.at.node, site.out(FragmentBoundary::Unannotated));
+                // classifies it by its own family over wildcards the checker
+                // solves, named in this form (#6113).
+                if let (Classifier::Field(_), Generators::Written(written)) =
+                    (inherited, constructor.form)
+                {
+                    let form = self.hole_group(self.scope.form()).0;
+                    let _first = self.fielded.insert(site.at.node, Fielded {
+                        form,
+                        family: constructor.family,
+                        written,
+                    });
                 }
                 inherited
             },
@@ -10633,6 +10663,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ValueTypeId, lowered::Absent>
     {
         let classified = origin.inserted(Insertion::Classifier);
+        // The constructor's own family: the classifier the mint inserts when
+        // a field on the way reads as no family's application applies it.
+        let own = family;
         // A field's classifier reads the classifier of the constructor around
         // it: follow those out to the first that is no field's, the
         // constructor that owns it.
@@ -10756,11 +10789,111 @@ impl<'source> Lowerer<'_, 'source>
             }
             ty = match self.field_type(field, ty, sink, origin) {
                 Maybe::Present(id) => id,
+                Maybe::Absent(lowered::Absent::Unclassified) => {
+                    return self.fielded_classifier(own, sink, origin);
+                },
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
         }
 
         Maybe::Present(ty)
+    }
+
+    /// The classifier of the constructor at `origin`, minted as its family
+    /// `family` over one wildcard for each parameter and each index: the
+    /// checker solves each wildcard from the type it checks the constructor
+    /// against (#6113).
+    ///
+    /// # Specification
+    /// - requires: the planning of the constructor's form is done, so the
+    ///   form's count of nominated wildcards is final.
+    /// - ensures: for a constructor in [`Lowerer::fielded`], the family over
+    ///   one wildcard hole for each parameter and then each index, each named
+    ///   in the constructor's form past every wildcard the planner nominated
+    ///   there and every wildcard the mint inserted before, each recorded at
+    ///   the classifier's inserted origin as the argument it stands for; the
+    ///   unclassified absence for any other constructor, or when the form has
+    ///   no name left for a wildcard.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair in a field of a pair whose type a definition's
+    ///   call computes takes its family over two wildcards, named apart from a
+    ///   wildcard the form writes.
+    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn fielded_classifier(
+        &self,
+        family: ConstantIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unclassified = Maybe::Absent(lowered::Absent::Unclassified);
+        let Some(&fielded) = self.fielded.get(&origin.node())
+        else {
+            return unclassified;
+        };
+        let Some(data) = self.collected.data.get(fielded.written)
+        else {
+            return unclassified;
+        };
+        let planned = self
+            .nominated_places
+            .get(&(fielded.form, gandr_core_term::hole::HoleOrigin::Wildcard))
+            .copied()
+            .unwrap_or(0);
+        let inserted = sink.wildcards.get(&fielded.form).copied().unwrap_or(0);
+        let arity = data.parameters.len().saturating_add(data.indices.len());
+        let Some((first, count)) = u32::try_from(arity).ok().and_then(|count| {
+            let first = planned.checked_add(inserted)?;
+            first.checked_add(count).map(|_| (first, count))
+        })
+        else {
+            return unclassified;
+        };
+        let names = data
+            .parameters
+            .iter()
+            .map(|parameter| Some(parameter.named))
+            .chain(data.indices.iter().map(|index| match index.named {
+                Maybe::Present(named) => Some(named),
+                Maybe::Absent(_) => None,
+            }));
+        let family_name = self
+            .collected
+            .slots
+            .get(usize::from(fielded.family))
+            .map_or_else(String::new, |slot| String::from(slot.name.as_ref()));
+        let classified = origin.inserted(Insertion::Classifier);
+        let mut arguments = Vec::with_capacity(arity);
+        for (place, written) in (first ..).zip(names) {
+            let Some(hole) = gandr_core_term::hole::HoleId::wildcard_in(
+                fielded.form,
+                gandr_core_term::hole::HolePlace::from(place),
+            )
+            else {
+                return unclassified;
+            };
+            let parameter = written.map_or_else(
+                || alloc::format!("{}", arguments.len().saturating_add(1)),
+                |name| String::from(self.text_at(name).as_ref()),
+            );
+            let id = sink.arena.value_hole(hole);
+            sink.origins.record_value(id, classified);
+            sink.origins.record_omitted(id, crate::Omitted::Classifier {
+                family: family_name.clone(),
+                parameter,
+            });
+            arguments.push(id);
+        }
+        let _counted = sink
+            .wildcards
+            .insert(fielded.form, inserted.saturating_add(count));
+        let id = sink.arena.value_type_data(family, arguments);
+        sink.origins.record_value_type(id, classified);
+        Maybe::Present(id)
     }
 
     /// The type `field` gives a constructor written in it, given `applied`,
@@ -10775,10 +10908,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   values the constructor is written with, every node the substitution
     ///   mints recorded at the classifier's inserted origin; the unclassified
     ///   absence when `applied` is no application of a family, which
-    ///   [`Self::refuse_unclassified`] refuses by name; nothing when the
-    ///   field's constructor plans no constructor, `applied` applies the family
-    ///   to fewer arguments than its parameters, or a type or a value it reads
-    ///   did not lower.
+    ///   [`Self::classifier_type`] answers by [`Self::fielded_classifier`];
+    ///   nothing when the field's constructor plans no constructor, `applied`
+    ///   applies the family to fewer arguments than its parameters, or a type
+    ///   or a value it reads did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -10788,7 +10921,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   naming the field before it; a pair in a field of a pair whose type a
     ///   definition's call computes, left unclassified.
     /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
-    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_is_refused_by_name_5373`
+    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn field_type(
         &self,
