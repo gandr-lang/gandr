@@ -1,5 +1,19 @@
 //! Face formulas over finite membership atoms, and the entailment queries in
 //! the conjunctive band, its column disjunctions and the monotone band.
+//!
+//! # References
+//!
+//! - `Doré-2023-computing_spaces_type_theory` — background: § 4.2 makes
+//!   monotone entailment coNP-hard in the dimension. So the monotone band
+//!   bounds its normal forms by `TERM_BUDGET`, and admission tries the
+//!   conjunctive band first. Maximilian Doré, "Computing Spaces in Type
+//!   Theory", doctoral thesis, University of Oxford, 2023.
+//! - `Cherubini-2024-foundation_synthetic_stone_duality` — dependency: § 1.2,
+//!   the Stone duality axiom, and Definition 1.1.7, in the finite case. A
+//!   subshape is a map from its carrier to `2`, and the monotone band refutes
+//!   by a vertex, a homomorphism to `2`. Felix Cherubini, Thierry Coquand,
+//!   Freek Geerligs and Hugo Moeneclaey, "A Foundation for Synthetic Stone
+//!   Duality", 2024, `arXiv:2412.03203`.
 
 use alloc::vec;
 use alloc::vec::Vec;
