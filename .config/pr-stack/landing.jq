@@ -4,8 +4,12 @@
 # leaves the queue or a draft is taken back (#2984), so a green pull request
 # is landed, or its seat told, whether or not anyone is watching it.
 #
-# A pull request in the merge queue or set to enter it, held by a `pr:land`
-# (`landing`), or opened by an app is left alone. Otherwise its state is, in
+# A pull request held by a `pr:land` (`landing`) or opened by an app is left
+# alone. A stranded one is retargeted to the trunk (`retarget`, with `told`,
+# #5776): GitHub could not change its base when the base's pull request
+# merged, so it stands on a branch that is gone. That holds in the merge
+# queue too, which never merges it there. Any other pull request in the merge
+# queue or set to enter it is left alone. Otherwise its state is, in
 # this order:
 #   dirty      it conflicts with its base;
 #   red        a required context failed on its head (`required.jq`);
@@ -48,8 +52,10 @@
 #          `{failed, pending}` of its head, `removed` whether the last of its
 #          queue entries and pushes is a removal from the queue, `removal`
 #          that removal's reason in lower case (`failed_checks`, `manual`,
-#          …) or "", `upstream` the subjects described below, `marks` the
-#          `<event>:<head>` marks its comments carry.
+#          …) or "", `stranded` whether the last change of its base is a
+#          failed automatic change from the base it still has, `upstream`
+#          the subjects described below, `marks` the `<event>:<head>` marks
+#          its comments carry.
 #
 #   A removal for `failed_checks` is the entry's own run failing: the
 #   enforcing lane runs only in the merge group, so the pull request's own
@@ -62,9 +68,9 @@
 #   `pr-dequeued` without the token, or past the cap, has them named.
 #
 # Output: the actions, by pull request number, each `{number, act}` with `act`
-# one of `land` (with `told`), `restack` (with `told`), `green`, `dirty`,
-# `red` (with `failed`, the contexts) or `dequeued` (with `upstream` when it
-# holds such commits).
+# one of `land` (with `told`), `restack` (with `told`), `retarget` (with
+# `told`), `green`, `dirty`, `red` (with `failed`, the contexts) or
+# `dequeued` (with `upstream` when it holds such commits).
 
 def key: if .stack == null then "#\(.number)" else "stack \(.stack)" end;
 def state:
@@ -79,7 +85,8 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
 
 .token as $token
 | [.prs[] | . + {state: state}] as $prs
-| [$prs[] | select((.queued or .held or .bot) | not)]
+| [$prs[] | select(.stranded and ((.held or .bot) | not)) | {number, act: "retarget", told: marked("pr-dequeued")}] as $stranded
+| [$prs[] | select((.queued or .held or .bot or .stranded) | not)]
 | map(. as $p
     | [$prs[] | select(key == ($p | key))] as $members
     | if .state == "dirty" then (if marked("pr-dirty") then empty else {number, act: "dirty"} end)
@@ -101,4 +108,5 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
 | (map(select(.act | IN("land", "green") | not))
    + (map(select(.act | IN("land", "green"))) | group_by([.key, .act]) | map(min_by(.number))))
 | map(del(.key) | if .act == "green" then select(.told | not) | del(.told) else . end)
+| . + $stranded
 | sort_by(.number)

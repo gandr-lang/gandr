@@ -45,6 +45,7 @@ read_prs() {
               ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { workflow { name } } } }
               ... on StatusContext { context state startedAt: createdAt } } } } } } }
             timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } }
+            bases: timelineItems(last: 1, itemTypes: [AUTOMATIC_BASE_CHANGE_FAILED_EVENT, AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT, BASE_REF_CHANGED_EVENT]) { nodes { __typename ... on AutomaticBaseChangeFailedEvent { oldBase } } }
             comments(last: 100) { nodes { body } }
           }
         }
@@ -82,6 +83,7 @@ read_prs() {
             reading: $reading,
             removed: (.timelineItems.nodes[0].__typename == "RemovedFromMergeQueueEvent"),
             removal: (.timelineItems.nodes[0].reason // "" | ascii_downcase),
+            stranded: ((.bases.nodes[0] // {}) as $event | $event.__typename == "AutomaticBaseChangeFailedEvent" and $event.oldBase == .baseRefName),
             upstream: $upstream,
             marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"]}
           | .oid as $oid | . + {waiting: ($unstarted and (.marks | index("pr-depth:\($oid)")) != null)}' <<< "$pr"
@@ -159,6 +161,24 @@ act_on() {
         echo "#$number: the restack failed: $(< "$err")"
         tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
           "The merge queue removed this pull request, and the landing watcher could not restack it onto its base: $(< "$err"). Rebase it, then \`pr:land $number\`."
+      fi
+      ;;
+    retarget)
+      # GitHub could not change the base when the base's pull request merged
+      # (#5776). So the pull request stays on a branch that is gone, in the
+      # queue or out of it, and no landing reaches the trunk from it.
+      # `retarget_bottom` takes it out of the queue, unstacks it and
+      # retargets it to the trunk. The next run restacks or lands it.
+      if retarget_bottom "$(jq -c --argjson n "$number" '.[] | select(.number == $n) | {number, base, stack, landing: .queued}' <<< "$prs")" \
+        "$(server_stack "$number")" 2> "$err"; then
+        cat "$err"
+      else
+        line=$(awk 'NF { line = $0 } END { print line }' "$err")
+        echo "::warning::#$number: the retarget failed: $line"
+        if [[ $told != true ]]; then
+          tell "$number" "pr-dequeued #$number: $line" pr-dequeued "$oid" \
+            "GitHub could not change the base of this pull request when its base merged, and the landing watcher could not retarget it to \`$trunk\`. Retarget it to \`$trunk\`, then \`pr:land $number\`."
+        fi
       fi
       ;;
     green)

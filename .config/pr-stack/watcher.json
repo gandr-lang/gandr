@@ -1,5 +1,26 @@
 [
   {
+    "name": "#5776: a stranded pull request in the queue goes to `retarget_bottom` as landing, with its stack, and its seat is told nothing",
+    "action": { "number": 5, "act": "retarget", "told": false },
+    "retarget": {
+      "status": 0,
+      "line": "#5 retargeted from main to landing: its base merged or is gone, and no landing reaches landing from it"
+    },
+    "output": "told: ; warnings: 0; retargeted: {\"number\":5,\"base\":\"main\",\"stack\":9,\"landing\":true}"
+  },
+  {
+    "name": "#5776: a retarget that fails is told `pr-dequeued` with its last line, and warned",
+    "action": { "number": 5, "act": "retarget", "told": false },
+    "retarget": { "status": 1, "line": "gh: HTTP 422: Validation Failed" },
+    "output": "told: pr-dequeued #5: gh: HTTP 422: Validation Failed: GitHub could not change the base of this pull request when its base merged, and the landing watcher could not retarget it to `landing`. Retarget it to `landing`, then `pr:land 5`.; warnings: 1; retargeted: {\"number\":5,\"base\":\"main\",\"stack\":9,\"landing\":true}"
+  },
+  {
+    "name": "#5776: a retarget that fails again at a told head is only warned",
+    "action": { "number": 5, "act": "retarget", "told": true },
+    "retarget": { "status": 1, "line": "gh: HTTP 422: Validation Failed" },
+    "output": "told: ; warnings: 1; retargeted: {\"number\":5,\"base\":\"main\",\"stack\":9,\"landing\":true}"
+  },
+  {
     "name": "#5695: a dequeued head on its base is told that it landed again only after the landing ran, with what it queued",
     "action": { "number": 5, "act": "restack", "told": false },
     "restack": "already",
