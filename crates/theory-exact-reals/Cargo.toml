@@ -68,7 +68,9 @@ path = "benches/elementary.rs"
 
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
 foldhash.workspace = true
+gandr-theory-discrete-morse.workspace = true
 hashbrown.workspace = true
 num-bigint.workspace = true
 
