@@ -1,0 +1,26 @@
+// The circuit `H T H` runs on `|0⟩` to its exact amplitudes. No amplitude is
+// rounded.
+//
+// A Clifford+T circuit takes amplitudes in the ring `ℤ[1/√2, i]`. A program
+// that rounds an amplitude to a float loses the equality of two states. Here
+// two equal amplitudes have one form, so a test compares states exactly.
+//
+// `H T H` takes `|0⟩` to `(1 + ω)/2 |0⟩ + (1 − ω)/2 |1⟩`, with `ω = e^{iπ/4}`.
+// The amplitudes are `(2 + √2 + √2 i)/4` and `(2 − √2 − √2 i)/4`. Their
+// squared moduli are `(2 + √2)/4` and `(2 − √2)/4`, and they sum to one.
+//
+// - see: `../../../library/std/src/quantum.gandr`
+
+// The exact amplitudes and the gates on one qubit.
+import std.quantum (Amplitude, Ket, eighth, ground, hadamard, norm, plus);
+
+/// `H T H` on `|0⟩`: the amplitudes `(2 + √2 + √2 i)/4` and
+/// `(2 − √2 − √2 i)/4`.
+@[ runs("Ket (Amp 2 1 0 1 (Halved (Halved Whole))) (Amp 2 (- 1) 0 (- 1) (Halved (Halved Whole)))") ]
+def circuit() -> Ket { hadamard (eighth (hadamard ground)) }
+
+/// The squared moduli of the two amplitudes sum to one.
+@[ runs("Amp 1 0 0 0 Whole") ]
+def total() -> Amplitude =
+  match circuit () where
+    | Ket(x, y) => plus (norm x) (norm y)

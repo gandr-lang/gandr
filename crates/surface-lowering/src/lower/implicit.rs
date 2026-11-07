@@ -105,7 +105,6 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
-use super::Listed;
 use super::Lowerer;
 use super::Parameter;
 use super::Plan;
@@ -507,20 +506,15 @@ impl<'source> Lowerer<'_, 'source>
                     .extend_typed(frame, entry.name, declared, written),
                 Maybe::Absent(_) => self.scope.extend(frame, entry.name, written),
             };
-            self.parameters.push(Parameter {
-                binder: entry.binder.node,
-                frame: bound,
-                declared,
-                component: None,
+            let parameter = if entry.plicity == Plicity::Explicit {
                 // An explicit entry is written in the tail's own list, which
                 // the merge binds in its own order.
-                listed: if entry.plicity == Plicity::Explicit {
-                    Listed::Own
-                }
-                else {
-                    Listed::Elsewhere
-                },
-            });
+                Parameter::own(entry.binder.node, bound, declared)
+            }
+            else {
+                Parameter::elsewhere(entry.binder.node, bound, declared)
+            };
+            self.parameters.push(parameter);
             frame = Frame::Inner(bound);
         }
         // A clause tail of no written list stands at its type's `:`.

@@ -2103,6 +2103,66 @@ struct Parameter
     /// Whether the tail's own parameter list writes the parameter.
     listed: Listed,
 }
+impl Parameter
+{
+    /// A parameter the tail's own list writes.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn own(
+        binder: NodeIndex,
+        frame: ScopeId,
+        declared: Maybe<NodeIndex, stated::Absent>,
+    ) -> Self
+    {
+        Self {
+            binder,
+            frame,
+            declared,
+            component: None,
+            listed: Listed::Own,
+        }
+    }
+
+    /// A parameter bound outside the tail's own list.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn elsewhere(
+        binder: NodeIndex,
+        frame: ScopeId,
+        declared: Maybe<NodeIndex, stated::Absent>,
+    ) -> Self
+    {
+        Self {
+            binder,
+            frame,
+            declared,
+            component: None,
+            listed: Listed::Elsewhere,
+        }
+    }
+
+    /// A component of a flattened model implicit.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn component(
+        binder: NodeIndex,
+        frame: ScopeId,
+        declared: NodeIndex,
+        component: model::ComponentPlace,
+    ) -> Self
+    {
+        Self {
+            binder,
+            frame,
+            declared: Maybe::Present(declared),
+            component: Some(component),
+            listed: Listed::Elsewhere,
+        }
+    }
+}
 
 /// Where a function's parameter is written.
 ///
@@ -11652,13 +11712,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     Maybe::Absent(_) => self.scope.extend(frame, name, written),
                 };
-                let parameter = Parameter {
-                    binder: binder.node,
-                    frame: bound,
-                    declared,
-                    component: None,
-                    listed: Listed::Own,
-                };
+                let parameter = Parameter::own(binder.node, bound, declared);
                 if endpoint == session::Stands::Session {
                     endpoints.push(parameter);
                 }

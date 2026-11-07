@@ -97,3 +97,32 @@ fn a_result_in_range_is_given_whatever_its_operands()
         Ok(rational!(7, 3))
     );
 }
+
+/// The order of rationals is the order of the numbers, for each pair of signs
+/// and for two spellings of one number. `(n + 1) / n` and `n / (n - 1)` near
+/// the greatest integer have cross products past the integers, and the first
+/// still lies below the second.
+#[test]
+fn the_order_of_rationals_is_the_order_of_the_numbers()
+{
+    use core::cmp::Ordering;
+
+    let greatest = i128::MAX;
+    let below = greatest - 1;
+    for (left, right, order) in [
+        (rational!(1, 3), rational!(1, 2), Ordering::Less),
+        (rational!(-1, 2), rational!(1, 3), Ordering::Less),
+        (rational!(-1, 3), rational!(-1, 2), Ordering::Greater),
+        (rational!(2, 4), rational!(1, 2), Ordering::Equal),
+        (rational!(7, 2), rational!(10, 3), Ordering::Greater),
+        (Rational::ZERO, rational!(-1, greatest), Ordering::Greater),
+        (
+            rational!(greatest, below),
+            rational!(below, below - 1),
+            Ordering::Less,
+        ),
+    ] {
+        assert_eq!(left.cmp(&right), order, "{left} against {right}");
+        assert_eq!(right.cmp(&left), order.reverse(), "{right} against {left}");
+    }
+}

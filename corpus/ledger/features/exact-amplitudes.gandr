@@ -1,0 +1,21 @@
+/// `exact-amplitudes`: Exact Clifford+T amplitudes in ℤ[1/√2, i].
+/// Implemented: an amplitude stands at its least scale, so equal amplitudes have equal forms. Its sums, products, negations, conjugates and squared moduli are exact, and the gates `H`, `S` and `T` act on the state of one qubit.
+/// Not implemented: no measurement gives the exact weights of the Born rule for a state.
+///
+/// - owes: #5742
+// A product of two amplitudes reduces to the least scale. Thus `ω · ω` is
+// `i` at the scale zero, and `(1/√2) · (1/√2)` is one half, exact at the
+// scale one. The model exemplar runs a whole circuit.
+//
+// - see: `../../model/quantum/amplitudes.gandr`
+
+// The exact amplitudes and their product.
+import std.quantum (Amplitude, omega, sqrtHalf, times);
+
+/// `ω · ω = i`, at the scale zero.
+@[ runs("Amp 0 0 1 0 Whole") ]
+def phase() -> Amplitude { times omega omega }
+
+/// `(1/√2) · (1/√2) = 1/2`, at the scale one.
+@[ runs("Amp 1 0 0 0 (Halved Whole)") ]
+def half() -> Amplitude { times sqrtHalf sqrtHalf }
