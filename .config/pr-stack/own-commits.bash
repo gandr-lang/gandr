@@ -89,7 +89,7 @@ for (( i = 0; i < count; i++ )); do
   if restack "$stack" > "$dir/out" 2>&1; then
     actual="moved: $(git log --format=%s origin/main..origin/upper | paste -sd ',' - | sed 's/,/, /g')"
   else
-    actual="refused: $(grep -o -E '(conflicts in|[^ ]+ does not contain) [^;]*|leaves the artifacts above stale' "$dir/out" | head -n 1 || true)"
+    actual="refused: $(grep -o -E '(conflicts in|[^ ]+ does not contain) [^;]*|leaves generated artifacts stale' "$dir/out" | head -n 1 || true)"
     [[ $(git rev-parse origin/upper) == "$upper_head" ]] || actual+=", moved"
   fi
   cd - > /dev/null

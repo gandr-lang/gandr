@@ -14,8 +14,9 @@
 # new base as `REPLAY_BASE`, and mise trusts the directory, as `pr:land` runs
 # the reading in a scratch worktree.
 #
-# `pr:open` runs it on the head it stacks, and `pr:land` on each member its
-# restack replays, before anything is pushed.
+# `pr:open` runs it on the head it stacks, and `chain_replay` on each member
+# that a restack, a cut or a signed restack replays, before anything moves.
+# On a runner the replay reads `--due` alone (#6159).
 #
 # Usage:
 #   stale.bash <old base> <new base> <head>
