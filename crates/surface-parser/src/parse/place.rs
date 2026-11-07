@@ -35,8 +35,13 @@
 //! bracket, else at each later tile end outside the brackets opened since and
 //! never inside a word, and its copy must read the tiles before it as the
 //! source does, keep every top-level form a declaration and nest the form no
-//! deeper. A `}` left out is not read here: a block's closer is placed by the
-//! layout, which the lowering reads.
+//! deeper. A form that the layout ends before a later top-level form takes its
+//! end from a separator of no bytes, as `def f(n : N) -> N n` without its `=`
+//! does, and a copy of that form alone has no such separator. When no copy
+//! molds with no repair, each copy is tried again with the separator written
+//! after it, and the tile is minted only where one copy alone parses. A `}`
+//! left out is not read here: a block's closer is placed by the layout, which
+//! the lowering reads.
 //!
 //! A top-level form whose declaration keyword is left out or misspelled,
 //! `def1 f(x : T) -> …`, reads as an expression. The root holds declarations
@@ -51,6 +56,7 @@
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::Cell;
 
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::StepSym;
@@ -262,15 +268,19 @@ impl Target
 ///   outside every bracket opened since, with no word character, `(` or `[`
 ///   next; either copy reads the tiles before it with the source's molds, each
 ///   of its top-level forms a declaration, the repair's form under no more
-///   forms than in the source. The tree is the source's with the tile minted,
-///   empty — past a run of the same tile written there — a minted close for a
-///   bracket at the last such place in the source, reaching back to the first
-///   such place, and an empty postfix grout otherwise at the first such place
-///   in that order, and the obligations are that repair and the copy's others,
-///   shifted back over the tile. A declaration's keyword left out at the head
-///   of a top-level form is placed first ([`headed`]), and the search above
-///   runs over that parse. Where the search places no tile, the gap before each
-///   line places the separators and closers it shows ([`super::gap::gapped`]).
+///   forms than in the source. When no copy of such a tile molds with no repair
+///   and a separator of no bytes ends its top-level form before a later one
+///   ([`lost_separator`]), each copy is tried again with that separator written
+///   after it, and the tile is placed only where one copy alone leaves no
+///   repair. The tree is the source's with the tile minted, empty — past a run
+///   of the same tile written there — a minted close for a bracket at the last
+///   such place in the source, reaching back to the first such place, and an
+///   empty postfix grout otherwise at the first such place in that order, and
+///   the obligations are that repair and the copy's others, shifted back over
+///   the tile. A declaration's keyword left out at the head of a top-level form
+///   is placed first ([`headed`]), and the search above runs over that parse.
+///   Where the search places no tile, the gap before each line places the
+///   separators and closers it shows ([`super::gap::gapped`]).
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -284,10 +294,13 @@ impl Target
 ///   this does not read, stays where the melder minted it; a member's `;` left
 ///   out is minted at the end of its line, an arm's `=>` after its pattern and
 ///   never inside it, a binder's `:` after its name and never after its type,
-///   an `else` after the first block; and a definition's last `;` left out at
-///   the end of the source is never minted inside its body.
+///   an `else` after the first block; a definition's `=` left out, whose form
+///   the layout's separator before the next declaration ends, after its result
+///   type; and a definition's last `;` left out at the end of the source is
+///   never minted inside its body.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
+/// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 pub(super) fn placed<'source>(
@@ -465,13 +478,13 @@ fn headed<'source>(
             written_keyword.push_str(<&str>::from(keyword));
             written_keyword.push(' ');
             let tile = SourceText::from(written_keyword.as_str());
-            let copied = written(source, run, place, tile)?;
+            let copied = written(source, run, place, tile, SourceText::from(""))?;
             let copied = SourceText::from(copied.as_str());
             let declaration = unrepaired(pbg, copied)?;
             if !bool::from(declared(pbg, &declaration)) {
                 return None;
             }
-            let copy = written(source, whole, place, tile)?;
+            let copy = written(source, whole, place, tile, SourceText::from(""))?;
             let splice = Splice::new(place, tile, NodeLabel::Grout {
                 sort: BOUNDARY_SORT.grout_sort(),
                 shape: GroutShape::Prefix,
@@ -639,7 +652,8 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
     /// copy shares it and committed from it when the copy molds whole.
     ///
     /// # Specification
-    /// - requires: `copy` is the form's text with a tile written in.
+    /// - requires: `copy` is the form's text with a tile written in, and with a
+    ///   separator written after it or none.
     /// - ensures: what [`unrepaired`] answers of `copy`.
     /// - fails: never.
     /// - panics: none.
@@ -717,7 +731,9 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
 
 /// The parse with `target`'s tile minted where the rest of its top-level form
 /// parses, if a place tried does: for a closer, the melder's close and the
-/// first [`PLACES`] tile ends; for another tile, the first [`COPIES`] copies.
+/// first [`PLACES`] tile ends; for another tile, the first [`COPIES`] copies,
+/// then, when none molds with no repair, those copies with the separator the
+/// form lost written after them ([`lost_separator`]).
 ///
 /// # Specification
 /// - requires: `target` is a [`Target`] of `tree`'s parse under `pbg`.
@@ -729,17 +745,17 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
 /// # Adequacy
 /// - hypothesis: L3 — as [`placed`].
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 fn settled<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     target: &Target,
 ) -> Option<ParseResult<'source>>
 {
-    let top = tree
+    let (form, top) = tree
         .children(tree.root())
-        .filter_map(|position| tree.node(position))
-        .map(Node::span)
-        .find(|span| span.start() < target.end && target.end <= span.end())?;
+        .filter_map(|position| tree.node(position).map(|node| (position, node.span())))
+        .find(|&(_, span)| span.start() < target.end && target.end <= span.end())?;
     let lead = usize::from(top.start());
     let shifted = |offset: ByteOffset| usize::from(offset).checked_sub(lead).map(ByteOffset::from);
     let (repair_start, repair_end) = (
@@ -873,7 +889,10 @@ fn settled<'source>(
                 .flat_map(|&place| target.closers.iter().map(move |&closer| (place, closer))),
         )
         .take(target.class.map_or(COPIES, |_| PLACES.saturating_add(1)));
-    let mut accepts = |&(place, closer): &(ByteOffset, SourceText<'static>)| {
+    // Whether a copy molded with no repair, whatever the checks after it say.
+    let clean = Cell::new(false);
+    let mut accepts = |&(place, closer): &(ByteOffset, SourceText<'static>),
+                       tail: SourceText<'static>| {
         let spelled = cut_in(source, place, closer);
         let pad = spelled.find(<&str>::from(closer)).unwrap_or(0_usize);
         let tile = shifted(place).and_then(|at| {
@@ -883,9 +902,10 @@ fn settled<'source>(
                 ByteOffset::from(at.checked_add(<&str>::from(closer).len())?),
             ))
         });
-        written(source, top, place, SourceText::from(spelled.as_str())).is_some_and(|copy| {
+        written(source, top, place, SourceText::from(spelled.as_str()), tail).is_some_and(|copy| {
             let copy = SourceText::from(copy.as_str());
             shared.copy(copy).is_some_and(|copied| {
+                clean.set(true);
                 tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
                     && (target.class.is_some()
                         || (bool::from(declared(pbg, &copied))
@@ -903,7 +923,7 @@ fn settled<'source>(
         let mut first: Option<ByteOffset> = None;
         let mut last: Option<(ByteOffset, SourceText<'static>)> = None;
         for candidate in tried {
-            if accepts(&candidate) {
+            if accepts(&candidate, SourceText::from("")) {
                 first = Some(first.map_or(candidate.0, |at| at.min(candidate.0)));
                 if last.is_none_or(|(at, _)| at < candidate.0) {
                     last = Some(candidate);
@@ -914,14 +934,33 @@ fn settled<'source>(
         (place, closer, first)
     }
     else {
-        let (place, closer) = tried.into_iter().find(|candidate| accepts(candidate))?;
+        let plain = tried
+            .clone()
+            .find(|candidate| accepts(candidate, SourceText::from("")));
+        let (place, closer) = match plain {
+            Some(found) => found,
+            // A copy that molds whole as written has its end: the separator is
+            // not what the form lacks.
+            None if clean.get() => return None,
+            // Written back, the separator the form lost must make one place
+            // alone parse, as the source holds the tile at one place.
+            None => {
+                let separator = lost_separator(pbg, tree, form)?;
+                let mut parsing = tried.filter(|candidate| accepts(candidate, separator));
+                let found = parsing.next()?;
+                if parsing.any(|other| other != found) {
+                    return None;
+                }
+                found
+            },
+        };
         (place, closer, None)
     };
     let place = past(source, place, closer);
     let spelled = cut_in(source, place, closer);
     let spelled = SourceText::from(spelled.as_str());
     let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
-    let copy = written(source, whole, place, spelled)?;
+    let copy = written(source, whole, place, spelled, SourceText::from(""))?;
     let leaf = target.class.map_or(
         NodeLabel::Grout {
             sort: target.sort,
@@ -943,6 +982,64 @@ fn settled<'source>(
         &[splice],
         [target.repair],
     )
+}
+
+/// The separator of no bytes that ends `form`, a top-level form of `tree`, as
+/// its label spells it: the separator the layout gives from the line of a
+/// later top-level form. A copy of `form` alone has no such line, so it lacks
+/// the separator, and the end that the form takes from it.
+///
+/// # Specification
+/// - requires: `form` is a child of `tree`'s root.
+/// - ensures: the label of a [`NodeLabel::Tile`] child of `form` with no bytes
+///   at `form`'s end, when that label closes no bracket and a child of the root
+///   that starts at or after that end is a form with bytes; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition's `=` left out, whose form the layout's
+///   separator before the next declaration ends, is minted after its result
+///   type. A block's `}` of no bytes at the form's end, or a separator with no
+///   later form, written after the copies, moves recovery rows.
+/// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
+/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+fn lost_separator(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Option<SourceText<'static>>
+{
+    let end = tree.node(form)?.span().end();
+    let later = tree
+        .children(tree.root())
+        .filter_map(|position| tree.node(position))
+        .any(|node| {
+            end <= node.span().start()
+                && node.span().start() < node.span().end()
+                && matches!(node.label(), NodeLabel::Meld(_) | NodeLabel::Tile(_))
+        });
+    if !later {
+        return None;
+    }
+    tree.children(form)
+        .filter_map(|child| tree.node(child))
+        .find_map(|node| match node.label() {
+            NodeLabel::Tile(mold) if node.span().start() == end && node.span().end() == end => pbg
+                .mold(mold)
+                .ok()
+                .map(|def| def.label)
+                .filter(|&label| ClosingClass::closing(DelimSpelling::from(label)).is_none())
+                .map(SourceText::from),
+            NodeLabel::Tile(_)
+            | NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => None,
+        })
 }
 
 /// The tiles of `tree` from `from` up to `upto`, each with its span measured
@@ -1217,13 +1314,14 @@ fn past(
     ByteOffset::from(at)
 }
 
-/// The bytes of `source` within `within`, with `tile` written at `place`.
+/// The bytes of `source` within `within`, with `tile` written at `place` and
+/// `tail` written after them.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `source`'s bytes from `within`'s start to `place`, `tile`, then
-///   its bytes from `place` to `within`'s end; `None` when `place` lies outside
-///   `within` or off a character boundary.
+/// - ensures: `source`'s bytes from `within`'s start to `place`, `tile`, its
+///   bytes from `place` to `within`'s end, then `tail`; `None` when `place`
+///   lies outside `within` or off a character boundary.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the concatenation.
@@ -1231,26 +1329,31 @@ fn past(
 /// # Adequacy
 /// - hypothesis: L3 — as [`placed`].
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 fn written(
     source: SourceText<'_>,
     within: ByteSpan,
     place: ByteOffset,
     tile: SourceText<'_>,
+    tail: SourceText<'_>,
 ) -> Option<String>
 {
     let text = <&str>::from(source);
     let tile = <&str>::from(tile);
+    let tail = <&str>::from(tail);
     let before = text.get(usize::from(within.start()) .. usize::from(place))?;
     let after = text.get(usize::from(place) .. usize::from(within.end()))?;
     let mut copy = String::with_capacity(
         before
             .len()
             .saturating_add(tile.len())
-            .saturating_add(after.len()),
+            .saturating_add(after.len())
+            .saturating_add(tail.len()),
     );
     copy.push_str(before);
     copy.push_str(tile);
     copy.push_str(after);
+    copy.push_str(tail);
     Some(copy)
 }
 
@@ -1462,6 +1565,56 @@ mod tests
         );
     }
 
+    /// #5938: a tile other than a bracket that a form lacks, where the layout's
+    /// separator before the next declaration ends that form, is minted where
+    /// one copy alone parses with that separator written after it, and at no
+    /// place where two copies parse so.
+    #[test]
+    fn a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938()
+    {
+        let pbg = built_in().unwrap();
+        let after = |source: &str, written: &str| {
+            source
+                .find(written)
+                .map_or(0_usize, |start| start.saturating_add(written.len()))
+        };
+        let separated = include_str!(
+            "place/unformatted/a-tile-a-form-the-layout-ends-lacks-is-minted-where-one-copy-parses-5938-separated.gandr"
+        );
+        let ambiguous = include_str!(
+            "place/unformatted/a-tile-a-form-the-layout-ends-lacks-is-minted-where-one-copy-parses-5938-ambiguous.gandr"
+        );
+        let parsed = parse(&pbg, SourceText::from(separated)).unwrap();
+        let tree = parsed.tree();
+        assert_eq!(
+            minted(tree),
+            [ByteOffset::from(after(separated, "-> Spool"))],
+            "a definition's `=` left out, whose form the layout's separator before the next \
+             declaration ends, is minted after its result type, not left after its `->`: {:?}",
+            parsed.obligations()
+        );
+        assert_eq!(
+            reconstruct(tree),
+            separated,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
+            "one repair stands: {:?}",
+            parsed.obligations()
+        );
+        let parsed = parse(&pbg, SourceText::from(ambiguous)).unwrap();
+        let held = minted(parsed.tree());
+        assert!(
+            [after(ambiguous, "-> Pair"), after(ambiguous, "-> Pair Nat")]
+                .iter()
+                .all(|&at| !held.contains(&ByteOffset::from(at))),
+            "a definition's `=` left out, where its copy parses at two places with the separator \
+             its form lost, is minted at neither: the source does not say which it holds: \
+             {held:?}"
+        );
+    }
+
     /// #2440, #5199: a definition whose `def` is misspelled, or left out at
     /// the start of the source, reads as one declaration owing its keyword
     /// alone, the keyword minted at its head; a call at the top level with a
@@ -1645,9 +1798,10 @@ mod tests
     /// A copy read from its form's shared molding answers as a fresh molding
     /// of it does, the same tree when it needs no repair: a closer, a member's
     /// `;`, an arm's `=>` and an `else` written at every token end of sources
-    /// whole and missing a tile, tried in source order and then backwards, so
-    /// the shared molding resumes, starts again, and starts over after a copy
-    /// it committed.
+    /// whole and missing a tile, each copy with a separator written after it
+    /// and with none, tried in source order and then backwards, so the shared
+    /// molding resumes, starts again, and starts over after a copy it
+    /// committed.
     #[test]
     fn a_resumed_copy_answers_as_a_fresh_one()
     {
@@ -1674,6 +1828,9 @@ mod tests
             include_str!(
                 "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-branch.gandr"
             ),
+            include_str!(
+                "place/unformatted/a-tile-a-form-the-layout-ends-lacks-is-minted-where-one-copy-parses-5938-separated.gandr"
+            ),
         ] {
             let text = SourceText::from(source);
             let mut shared = super::Shared::new(&pbg, text);
@@ -1682,11 +1839,15 @@ mod tests
                 .filter_map(|token| usize::try_from(token.end).ok())
                 .collect();
             for &end in ends.iter().chain(ends.iter().rev()) {
-                for tile in [")", ";", "=>", "else"] {
+                for (tile, tail) in [")", ";", "=>", "else"]
+                    .into_iter()
+                    .flat_map(|tile| ["", ";"].map(|tail| (tile, tail)))
+                {
                     let copy = [
                         source.get(.. end).unwrap(),
                         tile,
                         source.get(end ..).unwrap(),
+                        tail,
                     ]
                     .concat();
                     let copy = SourceText::from(copy.as_str());
