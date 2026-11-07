@@ -1,0 +1,4 @@
+def atTurns(n : Spool) -> Spool  n
+
+def splitPair(p : Spool) -> Spool =
+  p
