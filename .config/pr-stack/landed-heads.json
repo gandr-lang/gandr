@@ -1,0 +1,50 @@
+[
+  {
+    "name": "#6185: a head whose commits stand on the trunk by subject is deleted",
+    "branch": "landed",
+    "output": "delete: its commits stand on the trunk",
+    "after": "gone"
+  },
+  {
+    "name": "#6185: a head behind the trunk is deleted",
+    "branch": "behind",
+    "output": "delete: it holds no commit off the trunk",
+    "after": "gone"
+  },
+  {
+    "name": "#6185: a head with a commit that is not on the trunk stays",
+    "branch": "open",
+    "output": "keep: a commit is not on the trunk",
+    "after": "stays"
+  },
+  {
+    "name": "#6185: the head of an open pull request stays though its commits landed",
+    "branch": "stack-top",
+    "output": "keep: the head or base of an open pull request",
+    "after": "stays"
+  },
+  {
+    "name": "#6185: the base of an open pull request stays though its commits landed",
+    "branch": "stack-base",
+    "output": "keep: the head or base of an open pull request",
+    "after": "stays"
+  },
+  {
+    "name": "#6185: the landing branch stays",
+    "branch": "landing",
+    "output": "keep: a branch that outlives every unit",
+    "after": "stays"
+  },
+  {
+    "name": "#6185: a merge queue branch stays",
+    "branch": "gh-readonly-queue/landing/pr-1-0000000",
+    "output": "keep: a merge queue branch, which GitHub deletes",
+    "after": "stays"
+  },
+  {
+    "name": "#6185: a landed head that moves between the read and the push stays, and the others go in the same push",
+    "branch": "moved",
+    "output": "delete: its commits stand on the trunk",
+    "after": "stays"
+  }
+]

@@ -2098,11 +2098,13 @@ fi
 # worktree holding each, and the `wip/` branches no open issue names. The
 # trunk and the merge queue's own branches are never listed. It prints and
 # never deletes, and exits 0: the session close-out deletes from its output
-# (`wt remove`, `git push --delete`). The decisions are
-# `.config/pr-stack/branches.jq`'s, its cases held by `check:pr-stack`; the
-# remote is read live (`git ls-remote`), never from this clone's stale
-# remote-tracking refs. `--remote` prints the remote's two lists alone, the
-# part one host's run answers for every host.
+# (`wt remove`, `git push --delete`). The landing watcher deletes a landed
+# remote head no open pull request uses on its own (#6185,
+# `.config/pr-stack/landed-heads.jq`), so this list holds the rest. The
+# decisions are `.config/pr-stack/branches.jq`'s, its cases held by
+# `check:pr-stack`; the remote is read live (`git ls-remote`), never from
+# this clone's stale remote-tracking refs. `--remote` prints the remote's
+# two lists alone, the part one host's run answers for every host.
 ["branches:sweep"]
 description = "List the branches no open pull request or wip/ issue accounts for; delete none"
 tools.jq = "1.8.1"
