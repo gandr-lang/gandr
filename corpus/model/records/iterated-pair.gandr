@@ -3,16 +3,26 @@
 //
 // The unshared tree of the pair has 2^20 leaves, but the term has one node for
 // each level. A checker that walks each occurrence of a node walks the whole
-// tree, and it exceeds its step allowance.
+// tree. Without its memo, the core checker exceeds its step allowance from
+// depth 16 in the let spine and from `t18` in the definition spine. Thus the
+// depth is 20.
 //
-// The core checker keeps a goal memo for each run. It answers a goal that it
+// Each checker keeps a goal memo. The memo answers a goal that the checker
 // meets again in one step, so each spelling checks in steps linear in the
 // depth. The definition spine names each level by a declaration, and the let
-// spine binds each level to a name.
+// spine binds each level to a name. At depth 20, the kernel checks `pair20` in
+// 87 goals and recalls 59, against 8,388,629 goals without its memo.
+//
+// Limits: `gandr check --measure` refuses the artifact from depth 18, so the
+// kernel's counts come from depths 1 to 17. The kernel has no step allowance,
+// so its walk without the memo also completes.
 //
 // - see: #5719 — the goal memo of the core checker.
+// - see: #5797 — the decoder's cap on expanded work.
 // - see: `crates/core-checker/src/judgement/memo.rs` — the key and the binders
 //   that it reads.
+// - see: `crates/kernel-core/src/lib.rs` § the memo's collapse law — the
+//   kernel's memo on the pair that the kernel builds.
 
 /// Level 0: the pair's base.
 pub type T0 = Unit;
@@ -137,10 +147,13 @@ def t18 : T18 = *{l = t17, r = t17};
 /// The definition spine at level 19: both fields name level 18.
 def t19 : T19 = *{l = t18, r = t18};
 
-/// The definition spine at level 20: both fields name level 19.
+/// The definition spine at level 20: both fields name level 19. The kernel
+/// checks each level in 4 goals, and in `2^(d+1) + 4` goals without its memo.
 def t20 : T20 = *{l = t19, r = t19};
 
-/// The let spine: each level is a binder that the next level reads twice.
+/// The let spine binds each level to a name that the next level reads twice.
+/// At depth `d`, the kernel checks it in `4d + 7` goals, and in `2^(d+3)+d+1`
+/// goals without its memo.
 def pair20() -> T20 =
   let s0 = pure *{};
   let s1 = pure *{l = s0, r = s0};

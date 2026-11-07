@@ -60,7 +60,7 @@ struct Sources
 /// The sources whose kernel artifact passes the decoder's cap on expanded
 /// work, so that the session stores no checkpoint for them.
 /// - see: #5797 — the decoder refuses such an artifact as malformed.
-const PAST_THE_WORK_CAP: [&str; 1] = ["pathological/records/iterated-pair.gandr"];
+const PAST_THE_WORK_CAP: [&str; 1] = ["model/records/iterated-pair.gandr"];
 
 /// The corpus submission sweep: each visited source submitted to a fresh
 /// session molding at `three` threads, against the walk's step for it.

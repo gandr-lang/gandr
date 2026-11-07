@@ -1598,7 +1598,8 @@ mod sweeps
     /// memo settles each declaration as its composition with the memo settles
     /// it. A memo answer is then the answer a fresh judgement gives. A
     /// declaration that spends its allowance without the memo gives no answer,
-    /// and the memo may settle it: `records/iterated-pair.gandr` from `t18`.
+    /// and the memo may settle it: `model/records/iterated-pair.gandr` from
+    /// `t18`.
     #[test]
     fn the_goal_memo_settles_the_corpus_alike_5719()
     {

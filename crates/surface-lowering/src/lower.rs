@@ -928,19 +928,6 @@ impl From<usize> for LoweringBudget
     }
 }
 
-impl From<LoweringBudget> for usize
-{
-    /// The number of steps `budget` allows.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(budget: LoweringBudget) -> Self
-    {
-        budget.0
-    }
-}
-
 impl fmt::Display for LoweringBudget
 {
     /// Writes the number of steps.
