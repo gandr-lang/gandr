@@ -56,6 +56,7 @@ use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
+use gandr_theory_cell_complexes::binding;
 use gandr_theory_cell_complexes::command_subterm;
 use gandr_theory_cell_complexes::path_order;
 use quenchant_shape::shape::Maybe;
@@ -404,7 +405,50 @@ impl Toy
                 .collect(),
         )
     }
+
+    /// The term with a copy of each image that `image_of` gives in place of
+    /// its metavariable, once.
+    ///
+    /// # Specification
+    /// - ensures: each metavariable that `image_of` answers is replaced by a
+    ///   copy of its image, which is not visited again; every other node is
+    ///   kept. So the term keeps or grows its length, because an image holds
+    ///   one node or more.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a triangular map read through
+    ///   [`ToySubst::apply_once`] separates one pass from full application, and
+    ///   the images of a match put back in place rebuild the matched term.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    /// - witness: `tests::inhabitant::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[spec(ensures: |output| output.0.len() >= self.0.len())]
+    fn instantiate<'image, F>(
+        &self,
+        image_of: F,
+    ) -> Self
+    where
+        F: Fn(&ToyVar) -> Maybe<ToyRef<'image>, binding::Absent>,
+    {
+        let mut nodes = Vec::with_capacity(self.0.len());
+        for head in &self.0 {
+            if let ToyHead::Var(ref var) = *head
+                && let Maybe::Present(image) = image_of(var)
+            {
+                nodes.extend(image.0.iter().cloned());
+                continue;
+            }
+            nodes.push(head.clone());
+        }
+        Self(nodes)
+    }
 }
+
+/// A toy subterm read in place: the run of a prefix table that one subterm
+/// occupies.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ToyRef<'term>(&'term [ToyHead]);
 
 /// A toy position: a path of child indices from the root.
 #[repr(transparent)]
@@ -452,17 +496,86 @@ impl ToySubst
         term: &Toy,
     ) -> Toy
     {
-        let mut nodes = Vec::with_capacity(term.0.len());
-        for head in &term.0 {
-            if let ToyHead::Var(ref var) = *head
-                && let Some(image) = self.0.get(var)
-            {
-                nodes.extend(image.0.iter().cloned());
+        term.instantiate(|var| self.image(var))
+    }
+
+    /// The image bound to `var`, read in place.
+    ///
+    /// # Specification
+    /// - provides: [`binding::Absent::Unbound`] when `var` is unbound.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bound and an unbound name are read; an image of
+    ///   another name changes the read.
+    /// - witness: `tests::inhabitant::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[spec(ensures: |output| match output {
+        Maybe::Present(image) => self.0.get(var).is_some_and(|bound| bound.0.as_slice() == image.0),
+        Maybe::Absent(_) => !self.0.contains_key(var),
+    })]
+    fn image(
+        &self,
+        var: &ToyVar,
+    ) -> Maybe<ToyRef<'_>, binding::Absent>
+    {
+        self.0
+            .get(var)
+            .map_or(Maybe::Absent(binding::Absent::Unbound), |image| {
+                Maybe::Present(ToyRef(&image.0))
+            })
+    }
+
+    /// The lockstep walk of a match: the bindings that make `pattern`
+    /// instantiate to `target` past those this substitution holds, read in
+    /// place, keyed by metavariable.
+    ///
+    /// # Specification
+    /// - ensures: each metavariable of `pattern` that this substitution leaves
+    ///   unbound, once, with the subterm of `target` at its place; a bound or a
+    ///   repeated metavariable meets an equal subterm, and every other node
+    ///   equals the target's.
+    /// - fails: `None` on a head clash, a conflicting binding or a target
+    ///   longer than the pattern reaches.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ToyAlphabet`]'s `match_cmd`, whose commit and
+    ///   refusals read the walk.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[spec(ensures: |output| output.as_ref().is_none_or(|found| found.keys().all(|var| !self.0.contains_key(*var))))]
+    fn match_walk<'pattern, 'target>(
+        &self,
+        pattern: &'pattern Toy,
+        target: &'target Toy,
+    ) -> Option<BTreeMap<&'pattern ToyVar, ToyRef<'target>>>
+    {
+        let mut found: BTreeMap<&'pattern ToyVar, ToyRef<'target>> = BTreeMap::new();
+        let mut at = ToyCount(0);
+        for head in &pattern.0 {
+            let target_head = target.0.get(at.0)?;
+            if let ToyHead::Var(ref var) = *head {
+                let end = target.end_of(at);
+                let image = ToyRef(target.0.get(at.0 .. end.0)?);
+                let bound = match self.image(var) {
+                    Maybe::Present(bound) => Some(bound),
+                    Maybe::Absent(_) => found.get(var).copied(),
+                };
+                match bound {
+                    Some(bound) if bound != image => return None,
+                    Some(_) => {},
+                    None => {
+                        found.insert(var, image);
+                    },
+                }
+                at = end;
                 continue;
             }
-            nodes.push(head.clone());
+            if head != target_head {
+                return None;
+            }
+            at = at.next();
         }
-        Toy(nodes)
+        (at == ToyCount(target.0.len())).then_some(found)
     }
 
     /// The term with the substitution applied to its fixpoint.
@@ -783,6 +896,7 @@ impl CellAlphabet for ToyAlphabet
 {
     type Cmd = Toy;
     type Hole = ToyVar;
+    type Image<'term> = ToyRef<'term>;
     type Meta = ToyMeta;
     type Orientation = ToyOrient;
     type Pos = ToyPos;
@@ -809,7 +923,7 @@ impl CellAlphabet for ToyAlphabet
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body clones `subst` into its staging map and compares each bound image it meets"
+            reason = "parity: the body reads each bound image it meets, and the check reads `subst` once to instantiate the pattern"
         )
     )]
     #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_once(pattern) == *target } else { *subst == before })]
@@ -819,32 +933,13 @@ impl CellAlphabet for ToyAlphabet
         subst: &mut Self::Subst,
     ) -> SubstitutionDecision
     {
-        let mut found = subst.clone();
-        let mut at = ToyCount(0);
-        for head in &pattern.0 {
-            let Some(target_head) = target.0.get(at.0)
-            else {
-                return SubstitutionDecision::from(false);
-            };
-            if let ToyHead::Var(ref var) = *head {
-                let end = target.end_of(at);
-                let image = target.slice(at, end);
-                if found.0.get(var).is_some_and(|bound| *bound != image) {
-                    return SubstitutionDecision::from(false);
-                }
-                found.0.insert(var.clone(), image);
-                at = end;
-                continue;
-            }
-            if head != target_head {
-                return SubstitutionDecision::from(false);
-            }
-            at = at.next();
-        }
-        if at != ToyCount(target.0.len()) {
+        let Some(found) = subst.match_walk(pattern, target)
+        else {
             return SubstitutionDecision::from(false);
+        };
+        for (var, image) in found {
+            subst.0.insert(var.clone(), Toy(image.0.to_vec()));
         }
-        *subst = found;
         SubstitutionDecision::from(true)
     }
 
@@ -1012,6 +1107,80 @@ impl CellAlphabet for ToyAlphabet
                 .map(|(var, image)| (var.clone(), image.clone()))
                 .collect(),
         )
+    }
+
+    /// The image bound to `var`, read in place.
+    ///
+    /// # Specification
+    /// - ensures: as [`ToySubst::image`].
+    /// - provides: as [`ToySubst::image`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ToySubst::image`], through the trait.
+    /// - witness: `tests::inhabitant::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[inline]
+    #[spec(ensures: |output| output == subst.image(var))]
+    fn image<'subst>(
+        subst: &'subst Self::Subst,
+        var: &Self::Var,
+    ) -> Maybe<Self::Image<'subst>, binding::Absent>
+    {
+        subst.image(var)
+    }
+
+    /// Matching by the lockstep walk, and no copy.
+    ///
+    /// # Specification
+    /// - ensures: as the trait states: positive exactly when the copying match
+    ///   from an empty substitution is positive, and then each metavariable of
+    ///   `pattern` visited once, with the subterm of `target` at its place.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ToySubst::match_walk`], read from an empty
+    ///   substitution.
+    /// - witness: `tests::inhabitant::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[inline]
+    #[spec(ensures: |output| bool::from(output) == ToySubst::default().match_walk(pattern, target).is_some())]
+    fn match_images<'pattern, 'target, F>(
+        pattern: &'pattern Self::Cmd,
+        target: &'target Self::Cmd,
+        mut visit: F,
+    ) -> SubstitutionDecision
+    where
+        Self::Var: 'pattern,
+        F: FnMut(&'pattern Self::Var, Self::Image<'target>),
+    {
+        let Some(found) = ToySubst::default().match_walk(pattern, target)
+        else {
+            return SubstitutionDecision::from(false);
+        };
+        for (var, image) in found {
+            visit(var, image);
+        }
+        SubstitutionDecision::from(true)
+    }
+
+    /// The images that `image_of` gives, put in place once.
+    ///
+    /// # Specification
+    /// - ensures: as [`Toy::instantiate`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Toy::instantiate`], through the trait.
+    /// - witness: `tests::inhabitant::a_match_that_copies_nothing_reads_the_images_of_the_copying_match`
+    #[inline]
+    #[spec(ensures: |output| cmd.vars().next().is_some() || output == *cmd)]
+    fn apply_images<'image, F>(
+        cmd: &Self::Cmd,
+        image_of: F,
+    ) -> Self::Cmd
+    where
+        F: Fn(&Self::Var) -> Maybe<Self::Image<'image>, binding::Absent>,
+    {
+        cmd.instantiate(image_of)
     }
 
     /// The term's metavariables, left to right with repeats.

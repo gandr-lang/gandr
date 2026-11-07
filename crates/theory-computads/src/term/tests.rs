@@ -479,6 +479,63 @@ fn substitution_walks_are_transactional_and_bounded()
 }
 
 #[test]
+fn a_match_that_copies_nothing_reads_the_images_of_the_copying_match()
+{
+    // The law: the match that copies nothing decides as the copying match,
+    // visits each metavariable once with the image that the copying match
+    // binds, and its images put back in place give the target.
+    let law = |pattern: &Term, target: &Term| {
+        let mut subst = TermSubst::default();
+        let copied = bool::from(TermAlphabet::match_cmd(pattern, target, &mut subst));
+        let mut visited: Vec<(Name, Maybe<TermRef<'_>, binding::Absent>)> = Vec::new();
+        let read = bool::from(TermAlphabet::match_images(pattern, target, |var, image| {
+            visited.push((var.clone(), Maybe::Present(image)));
+        }));
+        assert_eq!(copied, read, "both matches decide alike");
+        let bound: Vec<(Name, Maybe<TermRef<'_>, binding::Absent>)> = subst
+            .0
+            .keys()
+            .map(|var| (var.clone(), TermAlphabet::image(&subst, var)))
+            .collect();
+        assert_eq!(
+            bound, visited,
+            "each visit reads the image that the match binds"
+        );
+        if copied {
+            assert_eq!(
+                *target,
+                TermAlphabet::apply_images(pattern, |var| TermAlphabet::image(&subst, var)),
+                "the images put back in place give the target"
+            );
+        }
+    };
+    let pair = |left: FreeTerm, right: FreeTerm| Term::from(&FreeTerm::op("add", [left, right]));
+    let one = || ctor("Succ", [ctor("Zero", [])]);
+    let twice = pair(FreeTerm::var("x"), FreeTerm::var("x"));
+    law(&twice, &pair(one(), one()));
+    law(&twice, &pair(one(), ctor("Zero", [])));
+    // A scoped metavariable reads its image raw, and the image put back in
+    // place is renumbered by its scope; a scope that refuses the image
+    // refuses both matches.
+    let nil = || FreeTerm::op("nil", []);
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let out = |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), nil()]);
+    let collect = conditioned_cell(
+        &RuleFace::new(
+            nu("a", FreeTerm::var("p")),
+            FreeTerm::var("p"),
+            Vec::new(),
+            SurfaceSpan::default(),
+        )
+        .with_fresh(alloc::vec![gandr_theory_levitation::Freshness::new(
+            "a", "p"
+        )]),
+    );
+    law(collect.lhs(), &Term::from(&nu("c", nu("d", out("d")))));
+    law(collect.lhs(), &Term::from(&nu("c", nu("d", out("c")))));
+}
+
+#[test]
 fn a_variable_unifies_with_itself_with_another_and_under_a_term()
 {
     let mut itself = TermSubst::default();

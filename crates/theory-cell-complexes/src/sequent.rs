@@ -69,7 +69,9 @@ use crate::pattern::position_read;
 use crate::pattern::splice_cmd;
 use crate::pattern::subterm_at;
 use crate::polarity::Polarity;
+use crate::subst::ImageRef;
 use crate::subst::Subst;
+use crate::subst::binding;
 use crate::subst::substitution_from;
 
 /// The sequent command-pattern alphabet: a stateless marker over the
@@ -798,6 +800,7 @@ impl CellAlphabet for SequentAlphabet
 {
     type Cmd = CmdPat;
     type Hole = HoleName;
+    type Image<'term> = ImageRef<'term>;
     type Meta = CellMeta;
     type Orientation = Orientation;
     type Pos = Pos;
@@ -951,6 +954,70 @@ impl CellAlphabet for SequentAlphabet
     ) -> Self::Subst
     {
         subst.restricted(vars)
+    }
+
+    /// The image at `var`'s own category, read in place.
+    ///
+    /// # Specification
+    /// - ensures: as [`Subst::image`].
+    /// - provides: as [`Subst::image`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Subst::image`], through the trait.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    #[inline]
+    #[spec(ensures: |output| output == subst.image(var))]
+    fn image<'subst>(
+        subst: &'subst Self::Subst,
+        var: &Self::Var,
+    ) -> Maybe<Self::Image<'subst>, binding::Absent>
+    {
+        subst.image(var)
+    }
+
+    /// One-sided matching that copies no subterm.
+    ///
+    /// # Specification
+    /// - ensures: as [`crate::subst::match_images`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::subst::match_images`], through the trait.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    #[inline]
+    #[spec(ensures: |output| bool::from(output) == bool::from(crate::subst::match_cmd(pattern, target, &mut crate::subst::Subst::new())))]
+    fn match_images<'pattern, 'target, F>(
+        pattern: &'pattern Self::Cmd,
+        target: &'target Self::Cmd,
+        visit: F,
+    ) -> SubstitutionDecision
+    where
+        Self::Var: 'pattern,
+        F: FnMut(&'pattern Self::Var, Self::Image<'target>),
+    {
+        crate::subst::match_images(pattern, target, visit)
+    }
+
+    /// A substitution read in place, applied in one pass.
+    ///
+    /// # Specification
+    /// - ensures: as [`crate::subst::apply_images`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::subst::apply_images`], through the trait.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    #[inline]
+    #[spec(ensures: |output| output.polarity() == cmd.polarity())]
+    fn apply_images<'image, F>(
+        cmd: &Self::Cmd,
+        image_of: F,
+    ) -> Self::Cmd
+    where
+        F: Fn(&Self::Var) -> Maybe<Self::Image<'image>, binding::Absent>,
+    {
+        crate::subst::apply_images(cmd, &image_of)
     }
 
     /// The command pattern's metavariables, left to right with repeats.
