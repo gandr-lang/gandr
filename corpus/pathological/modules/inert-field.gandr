@@ -1,14 +1,16 @@
 // The reads of an inert field that are refused, and the marks that stand
 // nowhere.
 //
-// Only the manifest step and another inert field read an inert field. A mark
-// on anything but an operation has no field to make inert.
+// Only the manifest step and another inert declaration read an inert field.
+// A mark on a sort has no field to make inert, and a module's member takes no
+// mark.
 //
 // A read by a path, by a name inside the model or off a model binder is
-// refused `InertRead` at the read. A misplaced mark is refused malformed at its
-// name.
+// refused `InertRead` at the read. A content read of an inert definition is
+// refused so too. A misplaced mark is refused malformed at its name.
 //
 // - see: #3029 — the mark and the refusal of a read
+// - see: #6141 — a top-level definition marked inert
 // - see: `model/modules/inert-field.gandr` — the reads admitted
 
 /// A labelled thing: its label inert, its tag content.
@@ -37,6 +39,23 @@ def shown = Box.label;
 /// The label of any labelled thing.
 @[ refuses("InertRead") ]
 def labelOf(l : Model Labelled) -> String { l.label }
+
+/// The label, read by an inert definition.
+@[ inert ]
+@[ runs("\"box\"") ]
+def boxLabel = Box.label;
+
+/// The inert definition, read by a content one.
+@[ refuses("InertRead") ]
+def boxShown = boxLabel;
+
+/// A module whose member carries the mark.
+module Marked where {
+  /// The member.
+  @[ refuses("MalformedForm") ]
+  @[ inert ]
+  def kept = "kept";
+}
 
 /// The mark on a sort, which is no field.
 @[ refuses("MalformedForm") ]

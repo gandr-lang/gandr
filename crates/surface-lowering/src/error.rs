@@ -1229,17 +1229,18 @@ pub enum LoweringRefusal<'source>
         reached: SurfaceName<'source>,
     },
 
-    /// A declaration reading a model's inert component, a field its theory's
-    /// operation marks `@[ inert ]`, when it is no inert component itself:
-    /// only the manifest step reads an inert field, so no other content
-    /// depends on it.
+    /// A declaration reading an inert declaration, when it is not inert
+    /// itself: a model's component for an operation its theory marks
+    /// `@[ inert ]`, or a definition marked `@[ inert ]`. Only the manifest
+    /// step and another inert declaration read one, so no content depends on
+    /// it.
     InertRead
     {
         /// The bytes the read covers.
         span: ByteSpan,
         /// The declaration the read is written in.
         member: SurfaceName<'source>,
-        /// The inert component it reads.
+        /// The inert declaration it reads.
         reached: SurfaceName<'source>,
     },
 
@@ -2224,8 +2225,8 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::InertRead { member, reached, .. } => write!(
                 f,
-                "`{member}` reads `{reached}`, a field its theory marks inert; only the \
-                 manifest step and another inert field read an inert field"
+                "`{member}` reads `{reached}`, which is inert; only the manifest step and \
+                 another inert declaration read an inert declaration"
             ),
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")

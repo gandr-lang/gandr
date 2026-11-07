@@ -7,11 +7,11 @@ error[UnresolvedTypeHead]: no type named `T` is written bare
    ├ note: `encodeAny` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: declare a type named `T`, or import the module that exports it
 
-error[InertRead]: `manifest` reads the inert field `version`; only another inert field reads one
+error[InertRead]: `manifest` reads the inert `version`; only another inert declaration reads one
    ╭▸ corpus/pathological/desc/module-reflection.gandr:25:59
    │
 25 │   concat (concat "name = " m.name) (concat "\nversion = " m.version)
-   │                                                           ━━━━━━━━━ an inert field read
+   │                                                           ━━━━━━━━━ an inert read
    │
    ├ note: `manifest` is refused with InertRead, as its expectation states
-   ╰ help: read an inert field only from a manifest step or inert field
+   ╰ help: read an inert declaration only from a manifest step or inert declaration
