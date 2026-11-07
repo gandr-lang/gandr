@@ -27,3 +27,5 @@ mod overlap;
 mod second_inhabitant;
 #[cfg(test)]
 mod spine;
+#[cfg(test)]
+mod triple;
