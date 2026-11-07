@@ -7285,10 +7285,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
         };
         // A returned value binds a name that stands for the value itself: the
-        // body is checked with the binder replaced, and crosses so.
+        // body is checked with the binder replaced, and crosses so. Each copy
+        // in the body reads what the value reads, so a linear parameter the
+        // value read draws its copy there and not at the `let`.
         let migrating = self.migrating();
         let body = match crate::solution::defined_body(self.context, (bound, body), migrating)? {
             Maybe::Present(refined) => {
+                if let Some(&Computation::Return(value)) = self.context.arena().computation(bound) {
+                    self.refunded(value)?;
+                }
                 self.context.record_refinement(body, &refined);
                 refined.term
             },

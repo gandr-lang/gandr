@@ -514,6 +514,50 @@ fn a_moved_slot_ends_only_by_its_write_back()
 }
 
 #[test]
+fn a_refunded_slot_reads_once_more()
+{
+    let (_arena, declared, _other) = two_types();
+    let mut context = Context::new();
+    context.open(Zone::Linear, declared);
+    let index = DeBruijnIndex::from(0_u32);
+    let before = context.clone();
+    assert_eq!(
+        Err(ContextError::LinearSlotUnconsumed {
+            depth: BinderDepth::from(1_usize),
+        }),
+        context.refund(index),
+        "an unread slot has no use to give back"
+    );
+    assert_eq!(before, context, "a refused refund changes nothing");
+    assert_eq!(Ok(declared), context.occurrence(Zone::Linear, index));
+    assert_eq!(
+        Ok(()),
+        context.refund(index),
+        "a read slot gives its use back"
+    );
+    assert_eq!(Ok(LinearUse::Available), context.linear_use(index));
+    assert_eq!(
+        Ok(declared),
+        context.occurrence(Zone::Linear, index),
+        "the refunded slot reads once more"
+    );
+    assert_eq!(
+        Err(ContextError::LinearSlotConsumed { index }),
+        context.occurrence(Zone::Linear, index),
+        "and only once"
+    );
+    assert_eq!(
+        Err(ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index: DeBruijnIndex::from(1_u32),
+            depth: BinderDepth::from(1_usize),
+        }),
+        context.refund(DeBruijnIndex::from(1_u32)),
+        "an index past the zone refunds nothing"
+    );
+}
+
+#[test]
 fn an_intuitionistic_scope_closes_without_a_use()
 {
     let (_arena, declared, _other) = two_types();

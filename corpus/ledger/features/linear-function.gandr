@@ -28,3 +28,21 @@ def itself(x : Integer) ⊸ Path(x, x) = Path.here x ;
 /// A function of linear type, applied once.
 @[ checks ]
 def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f(a) ;
+
+/// A `let` line binds the parameter's one copy, and the last line reads the name once.
+@[ checks ]
+def letBound(x : Integer) ⊸ Integer =
+  let r = x
+  r
+
+/// The same body under the ASCII spelling `-o`.
+@[ checks ]
+def letBoundAscii(x : Integer) -o Integer =
+  let r = x
+  r
+
+/// The name of a `let`, read twice, reads the parameter twice.
+@[ refuses("LinearSlotConsumed") ]
+def letReadTwice(x : Integer) ⊸ Integer =
+  let r = x
+  r + r
