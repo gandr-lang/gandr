@@ -25,7 +25,7 @@
     "output": "[{\"file\":\"crates/a/src/lib.rs\",\"begin\":10,\"end\":20,\"witnesses\":[\"tests::solve::first\",\"solve::tests::second\"]},{\"file\":\"crates/a/src/lib.rs\",\"begin\":22,\"end\":24,\"witnesses\":[]}]"
   },
   {
-    "name": "a mutant sits in the function ending on its function's last line, an inner function's mutant in the inner one, and a mutant in no function in the innermost spanning it",
+    "name": "#3210: a mutant sits in the function ending on its function's last line, an inner function's mutant in the inner one, and a mutant in no function in the innermost spanning it; each group names the integration targets its witnesses live in, and whether one is a unit test",
     "program": "groups.jq",
     "input": {
       "package": "gandr-a",
@@ -61,7 +61,7 @@
         }
       ]
     },
-    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace outer -> u8 with 0\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace outer -> u8 with 0)$\",\"filter\":\"package(=gandr-a) & ((binary(=tests) & test(=outer)))\"},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:20\",\"names\":[\"crates/a/src/lib.rs:25:9: replace == with != in inner\"],\"re\":\"^(crates/a/src/lib\\\\.rs:25:9: replace == with != in inner)$\",\"filter\":\"package(=gandr-a) & (test(=inner::tests::unit))\"},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:50\",\"names\":[\"crates/a/src/lib.rs:55:1: delete match arm\"],\"re\":\"^(crates/a/src/lib\\\\.rs:55:1: delete match arm)$\",\"filter\":null}]"
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace outer -> u8 with 0\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace outer -> u8 with 0)$\",\"filter\":\"package(=gandr-a) & ((binary(=tests) & test(=outer)))\",\"tests\":[\"tests\"],\"unit\":false},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:20\",\"names\":[\"crates/a/src/lib.rs:25:9: replace == with != in inner\"],\"re\":\"^(crates/a/src/lib\\\\.rs:25:9: replace == with != in inner)$\",\"filter\":\"package(=gandr-a) & (test(=inner::tests::unit))\",\"tests\":[],\"unit\":true},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:50\",\"names\":[\"crates/a/src/lib.rs:55:1: delete match arm\"],\"re\":\"^(crates/a/src/lib\\\\.rs:55:1: delete match arm)$\",\"filter\":null,\"tests\":[],\"unit\":false}]"
   },
   {
     "name": "a function's mutants form one group whose regex escapes each name, and a mutant in no documented function is unwitnessed",
@@ -98,7 +98,7 @@
         }
       ]
     },
-    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()\",\"crates/a/src/lib.rs:14:9: replace + with * in from\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default\\\\(\\\\)|crates/a/src/lib\\\\.rs:14:9: replace \\\\+ with \\\\* in from)$\",\"filter\":\"package(=gandr-a) & (test(=tests::w))\"},{\"file\":\"crates/a/src/other.rs\",\"item\":null,\"names\":[\"crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]\"],\"re\":\"^(crates/a/src/other\\\\.rs:3:5: replace f -> \\\\[u8; 2\\\\] with \\\\[0; 2\\\\])$\",\"filter\":null}]"
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()\",\"crates/a/src/lib.rs:14:9: replace + with * in from\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default\\\\(\\\\)|crates/a/src/lib\\\\.rs:14:9: replace \\\\+ with \\\\* in from)$\",\"filter\":\"package(=gandr-a) & (test(=tests::w))\",\"tests\":[],\"unit\":true},{\"file\":\"crates/a/src/other.rs\",\"item\":null,\"names\":[\"crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]\"],\"re\":\"^(crates/a/src/other\\\\.rs:3:5: replace f -> \\\\[u8; 2\\\\] with \\\\[0; 2\\\\])$\",\"filter\":null,\"tests\":[],\"unit\":false}]"
   },
   {
     "name": "#3596: a survivors issue opens with the sentence that says what it is and a lead, then the report less its marker line",
