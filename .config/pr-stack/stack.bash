@@ -380,6 +380,27 @@ rewritten_base() {
   return 1
 }
 
+# Refuse pull request head `$2`, checked out here, whose recorded stack base
+# its base branch `$1` no longer holds (#6055). `pr:open` stacks a branch on
+# the head of the pull request below and records that head. When a seat
+# amends that pull request, or the queue merges it under new hashes, the
+# branch keeps the old copy under its own commits. The merge base of the base
+# branch and the head then falls below the old copy, and every reading from it
+# takes the old copy's change as this one's. The refusal names the replay. A
+# base that only moved ahead still holds the record and reads as before. A
+# worktree not on `$2`, or one that keeps no record that `HEAD` carries, is
+# not judged. Prints the refusal and returns 1, or prints nothing.
+stale_parent() {
+  local base=$1 head=$2 stacked
+  [[ $(git rev-parse HEAD) == "$(git rev-parse --verify --quiet "origin/$head")" ]] || return 0
+  stacked=$(stack_base)
+  [[ -n $stacked ]] || return 0
+  git merge-base --is-ancestor "$stacked" "origin/$base" && return 0
+  printf '%s stands on %s, which origin/%s no longer holds: the pull request below was amended or merged under new hashes, and its old commits under this change would read as its own. Replay the own commits with `git rebase --onto origin/%s %s`, push, then run the task again\n' \
+    "$head" "${stacked:0:12}" "$base" "$base" "${stacked:0:12}"
+  return 1
+}
+
 # `evidence:base`, the measurement `measured_from` takes once the trunk is
 # fetched; `fetched-base.bash` reads it as the merge base it falls back to.
 evidence_base() { mise run --quiet evidence:base; }
