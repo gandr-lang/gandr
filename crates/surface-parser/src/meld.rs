@@ -776,7 +776,10 @@ impl Splices<'_>
     /// The source leaf the copy's leaf `label` over `span` reads as: a tile a
     /// splice writes is that splice's minted tile. A tile written in place of
     /// nothing stands empty at its place, and one written in place of a
-    /// misspelt word stands over the word. Any other leaf is itself, shifted.
+    /// misspelt word stands over the word. A written tile has bytes, so an
+    /// empty tile at a splice's place, as the application tile before a
+    /// written `(` of a juxtaposed operand, is itself. Any other leaf is
+    /// itself, shifted.
     ///
     /// # Specification
     /// trivial.
@@ -786,12 +789,13 @@ impl Splices<'_>
         span: SourceSpan,
     ) -> (NodeLabel, SourceSpan)
     {
+        let written = matches!(label, NodeLabel::Tile(_)) && span.start.0 < span.end.0;
         match self.holding(span) {
-            Some(splice) if matches!(label, NodeLabel::Tile(_)) && splice.over == 0 => (
+            Some(splice) if written && splice.over == 0 => (
                 splice.ghost,
                 SourceSpan::point(self.offset(SourceOffset(splice.at.0))),
             ),
-            Some(splice) if matches!(label, NodeLabel::Tile(_)) => (splice.ghost, self.span(span)),
+            Some(splice) if written => (splice.ghost, self.span(span)),
             Some(_) | None => (label, self.span(span)),
         }
     }
