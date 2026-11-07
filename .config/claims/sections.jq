@@ -75,8 +75,11 @@ def source_roles: ["primary", "secondary", "oracle", "not read"];
 # is the second cell, lowercased and unbolded. The text is the third cell. The
 # cells are read from the line itself, so a cell held in backquotes keeps them.
 # A cell ends at an unescaped `|`, so a `\|` stays inside its cell.
-def source_rows:
-  (section("Sources") // [])
+# `source_rows($name)` reads the table of the section `## $name` alike: an
+# epic's `## Motivating sources` (#5855) has the columns Source and What it
+# gives, so its second cell is its role and its text is empty.
+def source_rows($name):
+  (section($name) // [])
   | .[]
   | select(test("^\\s*\\|"))
   | . as $line
@@ -87,6 +90,21 @@ def source_rows:
      keys: [.[0] // "" | match("`([^`]+)`"; "g") | .captures[0].string],
      role: (.[1] // "" | gsub("\\*"; "") | ascii_downcase),
      text: (.[2] // "")};
+def source_rows: source_rows("Sources");
+
+# A source's key, as a body cites it (#3158): a `§` after a page's filename
+# names a section, and is no part of the key.
+def source_key: sub("\\s*§.*$"; "");
+
+# Whether the key `.` stands in `$text`, the lines of a `## Sources`: a
+# page's filename or a tree path as it is, and `#<issue>` only when no digit
+# follows it. A row whose role is `not read` cites its key too, so a seat may
+# decline (#3594).
+def cited($text):
+  source_key as $key
+  | if startswith("#") then $text | test("\($key)(?![0-9])")
+    else $text | contains($key)
+    end;
 
 # A `## Sources read` item replacing a source,
 # `- supersedes: `<old key>` — <confirmation>`, as {line, old, confirmation},

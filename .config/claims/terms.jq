@@ -8,18 +8,9 @@
 # The prose is the title and the body less `## Sources`, `## Readings` and
 # `## Concerns`: those sections answer the vocabulary, and the axes' and the
 # concerns' names are fixed. An owner is named when its key stands in
-# `## Sources`: a page's filename (a `§` after it names a section and is no
-# part of the key), a tree path, or `#<issue>` not followed by a digit. A row
-# whose role is `not read` names it too, so a seat may decline (#3594).
+# `## Sources`, as `cited` in `sections.jq` reads it.
 
 include "sections";
-
-def key: sub("\\s*§.*$"; "");
-def named($text):
-  key as $key
-  | if startswith("#") then $text | test("\($key)(?![0-9])")
-    else $text | contains($key)
-    end;
 
 . as $in
 | ($in.body // "" | lines
@@ -33,5 +24,5 @@ def named($text):
 | . as $row
 | ([$prose | match($row.match; "gi").string] | unique) as $met
 | select($met | length > 0)
-| select(any($row.owns[]; named($sources)) | not)
+| select(any($row.owns[]; cited($sources)) | not)
 | "terms: \($met | map("`\(.)`") | join(", ")) name\(if ($met | length) == 1 then "s" else "" end) \($row.name), owned by \($row.owns | map("`\(.)`") | join(", ")) (\($row.reason)): cite one in `## Sources`, or add the row `| `<owner>` | not read | <why> |`"
