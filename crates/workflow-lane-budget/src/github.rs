@@ -40,20 +40,26 @@ const NIGHTLY_RUNS: &str = "repos/{owner}/{repo}/actions/workflows/nightly.yml/r
 const RUN_QUERY: &str =
     r#".workflow_runs[] | select(.event == "merge_group" or .event == "pull_request") | .id"#;
 
-/// The query listing every run of a listing already narrowed to scheduled
-/// runs, newest first.
+/// The query listing every run of a listing already narrowed to one event,
+/// newest first.
 const SCHEDULED_QUERY: &str = ".workflow_runs[] | .id";
 
 /// Which workflow runs a report samples.
 ///
 /// # Specification
-/// - provides: the three windows a report reads.
+/// - provides: the five windows a report reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Window
 {
-    /// Merge-queue and pull-request runs of the CI workflow, which hold every
-    /// landing lane.
+    /// Merge-queue and pull-request runs of the CI workflow, which hold the
+    /// lanes a landing runs.
     Landing,
+    /// The CI workflow's dispatches on `integration`, the cycle, which alone
+    /// hold the test lanes, since a merge group on `landing` skips them.
+    Integration,
+    /// The CI workflow's pushes to `main`, which build every package. No gate
+    /// waits on such a run, so its table is information and holds no budget.
+    Main,
     /// The CI workflow's daily scheduled runs, which alone hold the daily
     /// lanes.
     Scheduled,
@@ -307,10 +313,13 @@ where
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: at most `count` run identifiers, newest first: for
 ///   [`Window::Landing`] the CI workflow's merge-queue and pull-request runs
-///   among its last hundred completed runs; for [`Window::Scheduled`] its last
-///   completed scheduled runs, which the listing itself narrows to, since a
-///   day's hundred landing runs would crowd them out; for [`Window::Nightly`]
-///   the nightly workflow's last completed scheduled runs, a dispatch left out.
+///   among its last hundred completed runs; for [`Window::Integration`] its
+///   last completed dispatches on `integration`, and for [`Window::Main`] its
+///   last completed pushes to `main`, each listing narrowed to its event and
+///   branch; for [`Window::Scheduled`] its last completed scheduled runs, which
+///   the listing itself narrows to, since a day's hundred landing runs would
+///   crowd them out; for [`Window::Nightly`] the nightly workflow's last
+///   completed scheduled runs, a dispatch left out.
 /// - provides: the window a report samples.
 /// - fails: [`BudgetError::Gh`] when `gh` fails or prints a line that is not a
 ///   run identifier.
@@ -324,11 +333,13 @@ where
 /// - hypothesis: L3 — a fake `gh` listing three landing runs read with a count
 ///   of two yields the first two; one printing garbage is refused; the
 ///   scheduled window asks for scheduled runs alone and reads its own list; the
-///   nightly window asks the nightly workflow for its scheduled runs.
+///   nightly window asks the nightly workflow for its scheduled runs; the
+///   integration and main windows each ask for their event and branch.
 /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
 /// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 /// - witness: `tests::cli::a_daily_lane_is_sampled_over_the_scheduled_runs`
 /// - witness: `tests::cli::a_nightly_lane_is_sampled_over_the_nightly_runs`
+/// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
 #[inline]
 pub fn recent_runs(
     count: RunCount,
@@ -341,7 +352,7 @@ pub fn recent_runs(
         "--method",
         "GET",
         match window {
-            Window::Landing | Window::Scheduled => RUNS,
+            Window::Landing | Window::Integration | Window::Main | Window::Scheduled => RUNS,
             Window::Nightly => NIGHTLY_RUNS,
         },
         "-f",
@@ -351,6 +362,22 @@ pub fn recent_runs(
     ]);
     match window {
         Window::Landing => command.args(["--jq", RUN_QUERY]),
+        Window::Integration => command.args([
+            "-f",
+            "event=workflow_dispatch",
+            "-f",
+            "branch=integration",
+            "--jq",
+            SCHEDULED_QUERY,
+        ]),
+        Window::Main => command.args([
+            "-f",
+            "event=push",
+            "-f",
+            "branch=main",
+            "--jq",
+            SCHEDULED_QUERY,
+        ]),
         Window::Scheduled | Window::Nightly => {
             command.args(["-f", "event=schedule", "--jq", SCHEDULED_QUERY])
         },
