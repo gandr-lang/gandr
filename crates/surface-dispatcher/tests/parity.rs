@@ -1917,6 +1917,33 @@ mod sweeps
         spells_each_declaration(&Sweep::asked().expect("the run's sweep resolves").changed());
     }
 
+    #[test]
+    fn an_ambiguous_constructor_prints_with_its_family_5779()
+    {
+        let source = corpus::sources()
+            .expect("the corpus reads")
+            .into_iter()
+            .find(|source| {
+                source.name.as_ref() == "fixture/pathological/data/constructor-two-imports.gandr"
+            })
+            .expect("the corpus holds the ambiguous constructor source");
+        let text = std::fs::read_to_string(&source.path).expect("the corpus source is readable");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let found = bodies(
+            &grammar,
+            Written {
+                path: &source.path,
+                text: SourceText::from(text.as_str()),
+            },
+            &source.name,
+        );
+        assert!(
+            found.misses.is_empty(),
+            "the ambiguous constructor reads back: {}",
+            found.misses.join("\n")
+        );
+    }
+
     /// The formatter spells each declaration of every source `sweep` visits
     /// as the printer does.
     ///
