@@ -4937,10 +4937,13 @@ where
     )]
     fn body_channel(
         &mut self,
+        constant: ConstantIndex,
         entry: GlobalIndex,
         height: DefinitionHeight,
     ) -> Result<ProcessId, ConversionFault>
     {
+        #[cfg(not(feature = "unfolding-probe"))]
+        let _ = constant;
         let index = usize::try_from(u32::from(entry))
             .map_err(|_overflow| ConversionFault::MachineInvariant)?;
         if let Some(&BodyChannel::Minted(channel)) = self.bodies.get(index) {
@@ -4952,6 +4955,8 @@ where
             .get(&entry)
             .copied()
             .ok_or(ConversionFault::Evaluation(EvalFault::DanglingTerm))?;
+        #[cfg(feature = "unfolding-probe")]
+        self.definitions.record(constant);
         let evaluation = Evaluation::body(self.definitions, body);
         let share = self.share_at(height);
         let channel = self.start(
@@ -5035,8 +5040,8 @@ where
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         let unfolding = held.unfolding();
         let bare = defined == neutral && held.spine().is_empty();
-        let height = match held.head() {
-            NeutralHead::Constant(constant) => self.definitions.height(constant),
+        let constant = match held.head() {
+            NeutralHead::Constant(constant) => constant,
             NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Primitive(_)
@@ -5046,6 +5051,7 @@ where
                 return Err(ConversionFault::MachineInvariant);
             },
         };
+        let height = self.definitions.height(constant);
         let share = self.share_at(height);
         let channel = match (unfolding, bare) {
             (Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)), _) => {
@@ -5062,9 +5068,9 @@ where
                     share,
                 )?
             },
-            (Unfolding::Unforced(entry), true) => self.body_channel(entry, height)?,
+            (Unfolding::Unforced(entry), true) => self.body_channel(constant, entry, height)?,
             (Unfolding::Unforced(entry), false) => {
-                let body = self.body_channel(entry, height)?;
+                let body = self.body_channel(constant, entry, height)?;
                 match self.settings.granularity().stance() {
                     GranularityStance::Spinal if defined == neutral => {
                         self.spinal_chain(neutral, body, share)?

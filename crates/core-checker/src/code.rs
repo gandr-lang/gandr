@@ -120,6 +120,8 @@ use gandr_core_nbe::ResharingMemo;
 use gandr_core_nbe::TermFace;
 use gandr_core_nbe::TraceNode;
 use gandr_core_nbe::Unfolding;
+#[cfg(feature = "unfolding-probe")]
+use gandr_core_nbe::UnfoldingProbe;
 use gandr_core_nbe::decide;
 use gandr_core_nbe::eval_value_within;
 use gandr_core_term::BinderDepth;
@@ -935,6 +937,44 @@ impl CodeDefinitions
     #[must_use]
     pub fn normaliser(&self) -> Definitions<'_>
     {
+        self.nbe_definitions()
+    }
+
+    /// Record body reads in `probe`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn observe_unfoldings(
+        &mut self,
+        probe: UnfoldingProbe,
+    )
+    {
+        self.lowered.observe_unfoldings(probe);
+    }
+
+    /// Set the declaration that owns later body reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn unfolding_subject(
+        &self,
+        subject: ConstantIndex,
+    )
+    {
+        self.lowered.unfolding_subject(subject);
+    }
+
+    /// Build the evaluator definitions for this table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn nbe_definitions(&self) -> Definitions<'_>
+    {
         Definitions::new(&self.lowered, &self.environment, self.environment.root())
     }
 
@@ -1428,8 +1468,7 @@ impl CodeDefinitions
                 MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => Err(undecided),
             };
         }
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let definitions = self.nbe_definitions();
         let mut domain = DomainArena::new();
         let mut environment = Environment::new();
         let reach = loose_reach(core, CoreNode::Term(TermNode::Value(step.redex)))?;
@@ -1519,8 +1558,7 @@ impl CodeDefinitions
     ) -> Result<MachineVerdict, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: left };
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let definitions = self.nbe_definitions();
         let mut domain = DomainArena::new();
         let (problem, _returning) =
             rigid_problem(core, &mut domain, definitions, left, right, &[])?;
@@ -1632,9 +1670,7 @@ impl CodeDefinitions
     ) -> Result<(MachineVerdict, Vec<ConversionDecision<TraceNode>>), CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: point };
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root())
-                .reading_endpoints(Endpoints::Hold);
+        let definitions = self.nbe_definitions().reading_endpoints(Endpoints::Hold);
         let mut domain = DomainArena::new();
         let (problem, levels) =
             rigid_problem(core, &mut domain, definitions, point, endpoint, returning)?;
@@ -1690,8 +1726,7 @@ impl CodeDefinitions
     ) -> Result<Maybe<Vec<ConversionDecision<()>>, converted::Absent>, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at };
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let definitions = self.nbe_definitions();
         let mut domain = DomainArena::new();
         let (one, other) = evaluated_pair(core, &mut domain, definitions, (left, right), open)
             .map_err(|_fault| undecided)?;
@@ -1754,8 +1789,7 @@ impl CodeDefinitions
         pair: (ComputationId, ComputationId),
     ) -> Maybe<(), converted::Absent>
     {
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root()).rigid();
+        let definitions = self.nbe_definitions().rigid();
         convert_computations(core, definitions, pair)
     }
 
@@ -1794,8 +1828,7 @@ impl CodeDefinitions
         pair: (ComputationId, ComputationId),
     ) -> Maybe<(), converted::Absent>
     {
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+        let definitions = self.nbe_definitions();
         convert_computations(core, definitions, pair)
     }
 
@@ -1962,8 +1995,7 @@ impl CodeDefinitions
         recursion: Recursion,
     ) -> Definitions<'_>
     {
-        Definitions::new(&self.lowered, &self.environment, self.environment.root())
-            .reading_recursion(recursion)
+        self.nbe_definitions().reading_recursion(recursion)
     }
 
     /// Read the closed claim `claim` back under `definitions`, round by round,
@@ -2092,9 +2124,9 @@ impl CodeDefinitions
     ) -> Result<Vec<ConversionDecision<TraceNode>>, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: claim };
-        let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root())
-                .reading_endpoints(gandr_core_nbe::Endpoints::Hold);
+        let definitions = self
+            .nbe_definitions()
+            .reading_endpoints(gandr_core_nbe::Endpoints::Hold);
         let fuel = Fuel::from(CODE_FUEL);
         let mut domain = DomainArena::new();
         let left = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, claim)

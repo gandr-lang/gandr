@@ -4367,6 +4367,8 @@ pub fn checking_context<'arena>(
     context.keep_reducts(module.reducts());
     context.keep_reducts(module.forgets());
     context.keep_readers(module.readers());
+    #[cfg(feature = "unfolding-probe")]
+    crate::unfolding::attach(&mut context, module);
     context
 }
 

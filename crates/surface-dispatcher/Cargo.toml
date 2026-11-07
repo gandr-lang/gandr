@@ -142,6 +142,10 @@ hotpath = [
 ]
 # Invocation boundary diagnostics through the caller-owned subscriber.
 tracing = ["dep:tracing"]
+unfolding-probe = [
+  "gandr-core-checker/unfolding-probe",
+  "gandr-core-nbe/unfolding-probe",
+]
 
 [lints]
 workspace = true
