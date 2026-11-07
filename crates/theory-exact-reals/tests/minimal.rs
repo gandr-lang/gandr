@@ -23,6 +23,7 @@ use gandr_theory_exact_reals::PlanGraph;
 use gandr_theory_exact_reals::Quantifier;
 use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::RealId;
+use gandr_theory_exact_reals::Recurrence;
 use gandr_theory_exact_reals::Root;
 use proptest::prelude::*;
 
@@ -112,6 +113,11 @@ where
                     Real::Cos(argument) => Real::Cos(real(&fresh, argument)),
                     Real::Sin(argument) => Real::Sin(real(&fresh, argument)),
                     Real::Arg(x, y) => Real::Arg(real(&fresh, x), real(&fresh, y)),
+                    Real::Recurrence(ref recurrence) => Real::Recurrence(Recurrence {
+                        argument: real(&fresh, recurrence.argument),
+                        numerator: recurrence.numerator.clone(),
+                        denominator: recurrence.denominator.clone(),
+                    }),
                 };
                 Fresh::Real(builder.real(form).unwrap())
             },

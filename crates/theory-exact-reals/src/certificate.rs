@@ -31,8 +31,9 @@
 //! |`Outside`|the same node, and an enclosure of the point whose end toward the cut's value lies outside that cut|the open node fails|
 //! |`Variable`|the variable at index zero and a closed interval|the variable lies in it, under that hypothesis|
 //! |`Sum`, `Difference`, `Product`|the node, and enclosures of its operands|the exact result on them|
+//! |`Quotient`, `Power`|as above, and a precision|the result, rounded outward at that precision|
 //! |`Pi`|the π node and a precision|the enclosure of π by its rule at that precision|
-//! |`Cosine`, `Sine`|the node, an enclosure of its argument, and a precision|the enclosure of the rule over that enclosure|
+//! |`Cosine`, `Sine`, `Recurrence`|the node, an enclosure of its argument, and a precision|the enclosure of the rule over that enclosure|
 //! |`Angle`|the node, enclosures of its two coordinates, and a precision|the enclosure of the rule over their box|
 //! |`Witness`|an existential over an interval, and its body holding under a hypothesis inside it|the existential holds|
 //! |`Cover`|a universal over a closed interval, and its body holding under hypotheses that tile it in order|the universal holds|
@@ -50,11 +51,13 @@
 //! certificate and the width of each dyadic in it, and the checker refuses a
 //! certificate past a bound. Replay is linear in the steps and in the
 //! premises of each cover. An arithmetic step costs at most one exact square
-//! or four exact products of dyadics within the width bound. A builtin's
-//! step sums the series of its rule at its precision `p`: at most `4p + 64`
-//! terms each, and each term costs one rounded product or division within
-//! the width bound. A certificate states its [`FormatVersion`], and the
-//! checker refuses another format.
+//! or four exact products of dyadics within the width bound. A quotient step
+//! costs eight rounded quotients, and a power step eight rounded products for
+//! each bit of its power. A builtin's step sums the series of its rule at its
+//! precision `p`: at most `4p + 64` terms each, and each term costs one
+//! rounded product or division within the width bound. A recurrence step sums
+//! its count of terms, at most 65,536. A certificate states its
+//! [`FormatVersion`], and the checker refuses another format.
 
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -66,6 +69,7 @@ use crate::dyadic::BitWidth;
 use crate::dyadic::Dyadic;
 use crate::dyadic::Precision;
 use crate::dyadic::Rounding;
+use crate::dyadic::Sign;
 use crate::elementary::angle;
 use crate::elementary::cosine;
 use crate::elementary::pi;
@@ -83,8 +87,11 @@ use crate::plan::Node;
 use crate::plan::NodeId;
 use crate::plan::Open;
 use crate::plan::Plan;
+use crate::plan::Power;
 use crate::plan::Quantifier;
 use crate::plan::Real;
+use crate::recurrence::Terms;
+use crate::recurrence::series_after;
 use crate::schema::Membership;
 use crate::schema::exact;
 use crate::schema::membership;
@@ -447,6 +454,45 @@ pub enum Step
         /// The absolute bits of the rule.
         precision: Precision,
     },
+    /// A recurrence lies in the enclosure of its rule over its argument's
+    /// enclosure at a precision: the partial sum of its count of terms,
+    /// widened by the tail bound after them.
+    Recurrence
+    {
+        /// The recurrence.
+        real: NodeId,
+        /// The step that encloses the argument.
+        argument: StepId,
+        /// The count of terms in the partial sum.
+        terms: Terms,
+        /// The absolute bits of the rule.
+        precision: Precision,
+    },
+    /// A quotient lies in the quotient of its operands' enclosures, rounded
+    /// outward at a precision, when the divisor's enclosure is apart from
+    /// zero.
+    Quotient
+    {
+        /// The quotient.
+        real: NodeId,
+        /// The step that encloses the dividend.
+        numerator: StepId,
+        /// The step that encloses the divisor.
+        denominator: StepId,
+        /// The significant bits of the rounding.
+        precision: Precision,
+    },
+    /// A power lies in the power of its base's enclosure, by repeated
+    /// squaring, each product rounded outward at a precision.
+    Power
+    {
+        /// The power.
+        real: NodeId,
+        /// The step that encloses the base.
+        base: StepId,
+        /// The significant bits of each rounding.
+        precision: Precision,
+    },
 }
 
 impl Step
@@ -594,6 +640,37 @@ impl Step
                 real: rename(real)?,
                 x,
                 y,
+                precision,
+            },
+            Self::Recurrence {
+                real,
+                argument,
+                terms,
+                precision,
+            } => Self::Recurrence {
+                real: rename(real)?,
+                argument,
+                terms,
+                precision,
+            },
+            Self::Quotient {
+                real,
+                numerator,
+                denominator,
+                precision,
+            } => Self::Quotient {
+                real: rename(real)?,
+                numerator,
+                denominator,
+                precision,
+            },
+            Self::Power {
+                real,
+                base,
+                precision,
+            } => Self::Power {
+                real: rename(real)?,
+                base,
                 precision,
             },
         });
@@ -759,6 +836,13 @@ pub enum CertificateCheck
     /// A negative answer names a quantifier with no evidence of the other
     /// modality.
     Modality,
+    /// A recurrence step sums more terms than the term quota.
+    TermQuota,
+    /// No tail bound holds after the terms of a recurrence step: the bound on
+    /// the term ratio past them does not lie below one.
+    Tail,
+    /// The enclosure of a divisor reaches zero.
+    ZeroDivisor,
 }
 
 impl fmt::Display for CertificateCheck
@@ -804,6 +888,9 @@ impl fmt::Display for CertificateCheck
             Self::OutsideDomain => "a hypothesis does not lie inside the quantifier's domain",
             Self::Gap => "the hypotheses of a cover do not tile the domain in order",
             Self::Modality => "a negative answer has no evidence of the other modality",
+            Self::TermQuota => "a recurrence step sums more terms than the term quota",
+            Self::Tail => "no tail bound holds after the terms of a recurrence step",
+            Self::ZeroDivisor => "the enclosure of a divisor reaches zero",
         });
     }
 }
@@ -1448,6 +1535,72 @@ fn derive(
                 hypothesis,
             })
         },
+        Step::Recurrence {
+            real,
+            argument,
+            terms,
+            precision,
+        } => {
+            let Node::Real(Real::Recurrence(ref recurrence)) = *node(real)?
+            else {
+                return Err(CertificateCheck::WrongNode);
+            };
+            within(precision)?;
+            let (interval, hypothesis) = enclosure(argument, recurrence.argument.node())?;
+            let ratio = (&recurrence.numerator, &recurrence.denominator);
+            Ok(Derived {
+                conclusion: Conclusion::Encloses {
+                    real,
+                    interval: series_after(interval, ratio, terms, precision)?,
+                },
+                hypothesis: hypothesis.cloned(),
+            })
+        },
+        Step::Quotient {
+            real,
+            numerator,
+            denominator,
+            precision,
+        } => {
+            let Node::Real(Real::Div {
+                numerator: dividend,
+                denominator: divisor,
+                ..
+            }) = *node(real)?
+            else {
+                return Err(CertificateCheck::WrongNode);
+            };
+            within(precision)?;
+            let (first, first_hypothesis) = enclosure(numerator, dividend.node())?;
+            let (second, second_hypothesis) = enclosure(denominator, divisor.node())?;
+            let hypothesis = joint(first_hypothesis, second_hypothesis)?;
+            Ok(Derived {
+                conclusion: Conclusion::Encloses {
+                    real,
+                    interval: quotient(first, second, precision)?,
+                },
+                hypothesis,
+            })
+        },
+        Step::Power {
+            real,
+            base,
+            precision,
+        } => {
+            let Node::Real(Real::Power(operand, power)) = *node(real)?
+            else {
+                return Err(CertificateCheck::WrongNode);
+            };
+            within(precision)?;
+            let (interval, hypothesis) = enclosure(base, operand.node())?;
+            Ok(Derived {
+                conclusion: Conclusion::Encloses {
+                    real,
+                    interval: raised(interval, power, precision)?,
+                },
+                hypothesis: hypothesis.cloned(),
+            })
+        },
     };
 }
 
@@ -1664,6 +1817,138 @@ pub(crate) fn combined(
     };
     return NumericInterval::new(lower, upper, Orientation::Proper)
         .map_err(|_reversed| CertificateCheck::PremiseConclusion);
+}
+
+/// The quotient of `first` by `second`, rounded outward at `precision`
+/// significant bits.
+///
+/// # Specification
+/// - ensures: the least and the greatest of the four quotients of the ends,
+///   rounded down and up at `precision` significant bits, both ends closed.
+/// - fails: refuses a divisor whose closed hull holds zero as
+///   [`CertificateCheck::ZeroDivisor`], an infinite end as
+///   [`CertificateCheck::PremiseConclusion`], and an exponent past its range as
+///   [`CertificateCheck::WidthQuota`].
+/// - panics: none.
+/// - executable: none — the clause restates the arithmetic.
+/// - intension: eight rounded quotients of dyadics.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the quotient of the plan of `log` against the digits of
+///   `log 2`. L3 — a divisor that reaches zero.
+/// - witness: `tests::recurrence::log_of_two_encloses_its_digits_and_its_certificate_replays`
+/// - witness: `tests::recurrence::a_divisor_that_reaches_zero_is_refused_by_name`
+pub(crate) fn quotient(
+    first: &NumericInterval,
+    second: &NumericInterval,
+    precision: Precision,
+) -> Result<NumericInterval, CertificateCheck>
+{
+    let ((first_low, _), (first_high, _)) = ends(first)?;
+    let ((second_low, _), (second_high, _)) = ends(second)?;
+    if second_low.sign() != Sign::Positive && second_high.sign() != Sign::Negative {
+        return Err(CertificateCheck::ZeroDivisor);
+    }
+    let corners = [
+        (first_low, second_low),
+        (first_low, second_high),
+        (first_high, second_low),
+        (first_high, second_high),
+    ];
+    return extremes(corners, |(dividend, divisor), rounding| {
+        return exact(dividend.div(divisor, precision, rounding));
+    });
+}
+
+/// The power of `base` by repeated squaring, each product rounded outward at
+/// `precision` significant bits.
+///
+/// # Specification
+/// - ensures: the zeroth power is the closed point one. Each squaring, and each
+///   product with the base for a set bit, takes the least and the greatest of
+///   the four products of the ends, rounded down and up at `precision`
+///   significant bits, both ends closed.
+/// - fails: refuses an infinite end as [`CertificateCheck::PremiseConclusion`],
+///   and an exponent past its range as [`CertificateCheck::WidthQuota`].
+/// - panics: none.
+/// - executable: none — the clause restates the arithmetic.
+/// - intension: eight rounded products for each squaring and each set bit.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the power of the plan of `exp` against `e` and against
+///   `exp (log 3) = 3`.
+/// - witness: `tests::recurrence::exp_of_one_encloses_e_and_its_certificate_replays`
+pub(crate) fn raised(
+    base: &NumericInterval,
+    power: Power,
+    precision: Precision,
+) -> Result<NumericInterval, CertificateCheck>
+{
+    let ((low, _), (high, _)) = ends(base)?;
+    let product = |first: (&Dyadic, &Dyadic), second: (&Dyadic, &Dyadic)| {
+        let corners = [
+            (first.0, second.0),
+            (first.0, second.1),
+            (first.1, second.0),
+            (first.1, second.1),
+        ];
+        return extremes(corners, |(left, right), rounding| {
+            return exact(left.mul(right, precision, rounding));
+        });
+    };
+    let power = u32::from(power);
+    let mut result = NumericInterval::point(Dyadic::ONE);
+    for bit in (0 .. u32::BITS.saturating_sub(power.leading_zeros())).rev() {
+        let ((lower, _), (upper, _)) = ends(&result)?;
+        result = product((lower, upper), (lower, upper))?;
+        if power
+            .checked_shr(bit)
+            .is_some_and(|shifted| shifted & 1 == 1)
+        {
+            let ((lower, _), (upper, _)) = ends(&result)?;
+            result = product((lower, upper), (low, high))?;
+        }
+    }
+    return Ok(result);
+}
+
+/// The closed interval from the least corner rounded down to the greatest
+/// corner rounded up.
+///
+/// # Specification
+/// trivial.
+fn extremes<'value, Operation>(
+    corners: [(&'value Dyadic, &'value Dyadic); 4],
+    operation: Operation,
+) -> Result<NumericInterval, CertificateCheck>
+where
+    Operation: Fn((&'value Dyadic, &'value Dyadic), Rounding) -> Result<Dyadic, CertificateCheck>,
+{
+    let mut lower: Option<Dyadic> = None;
+    let mut upper: Option<Dyadic> = None;
+    for corner in corners {
+        let down = operation(corner, Rounding::Floor)?;
+        let up = operation(corner, Rounding::Ceiling)?;
+        lower =
+            Some(lower.map_or_else(|| down.clone(), |known| core::cmp::min(known, down.clone())));
+        upper = Some(upper.map_or_else(|| up.clone(), |known| core::cmp::max(known, up.clone())));
+    }
+    let (Some(lower), Some(upper)) = (lower, upper)
+    else {
+        return Err(CertificateCheck::PremiseConclusion);
+    };
+    return NumericInterval::new(
+        Bound::closed(lower),
+        Bound::closed(upper),
+        Orientation::Proper,
+    )
+    .map_err(|_reversed| CertificateCheck::PremiseConclusion);
 }
 
 /// The quantifier at `node` and the hull of its interval domain.

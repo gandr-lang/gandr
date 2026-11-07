@@ -6,7 +6,10 @@
 # the next commit: `none`, `modify` (`a/x`), `add` (`a/w`), `remove` (`a/y`),
 # `dirty` (`a/x` changed in the working tree while recording, then restored)
 # or `unrecorded` (no record survives). The checkout's dates are then made
-# fresh, as a clone's are, and the record restamped. The case's `output`
+# fresh, as a clone's are, and the record restamped. A case with
+# `"workspace": "reused"` instead dates every path to SOURCES_STAMP, as an
+# earlier job's restamp leaves a self-hosted runner's work tree, whose next
+# checkout rewrites no file it already holds (#5960). The case's `output`
 # lists every path still dated now, sorted: what a build script watching it
 # would read as changed. A case with `"tools": "bsd"` runs the restamp and
 # the reading under `xargs`, `touch` and `find` that refuse the GNU-only
@@ -48,6 +51,7 @@ for (( i = 0; i < count; i++ )); do
   name=$(jq -r ".[$i].name" "$cases")
   change=$(jq -r ".[$i].change" "$cases")
   tools=$(jq -r ".[$i].tools // \"host\"" "$cases")
+  workspace=$(jq -r ".[$i].workspace // \"clone\"" "$cases")
   expected=$(jq -c ".[$i].output" "$cases")
   dir=$work/$i
   git init --quiet "$dir"
@@ -66,8 +70,13 @@ for (( i = 0; i < count; i++ )); do
     unrecorded) rm target/debug/$SOURCES_RECORD ;;
   esac
   git diff --cached --quiet || git commit --quiet --message next
-  # A clone's checkout: every path dated now.
-  find . -path ./.git -prune -o -path ./target -prune -o -mindepth 1 -exec touch -h {} +
+  # A clone's checkout dates every path now; a reused work tree keeps the
+  # date an earlier job's restamp gave each path.
+  if [[ $workspace == reused ]]; then
+    find . -path ./.git -prune -o -path ./target -prune -o -mindepth 1 -exec env TZ=UTC0 touch -h -t "$SOURCES_STAMP" {} +
+  else
+    find . -path ./.git -prune -o -path ./target -prune -o -mindepth 1 -exec touch -h {} +
+  fi
   records=()
   [[ -e target/debug/$SOURCES_RECORD ]] && records=(target/debug/"$SOURCES_RECORD")
   path=$PATH

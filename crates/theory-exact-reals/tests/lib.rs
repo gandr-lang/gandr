@@ -32,4 +32,6 @@ mod plan;
 #[cfg(test)]
 mod quantifier;
 #[cfg(test)]
+mod recurrence;
+#[cfg(test)]
 mod validate;

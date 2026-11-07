@@ -73,6 +73,7 @@ use crate::plan::PlanError;
 use crate::plan::Power;
 use crate::plan::Real;
 use crate::plan::RealId;
+use crate::recurrence::series;
 use crate::validate::ValidatedPlan;
 
 /// The positive approximant of an open proposition.
@@ -427,6 +428,13 @@ fn enclose(
         Real::Sin(argument) => return builtin(sine(real_at(slots, argument), precision)),
         Real::Arg(x, y) => {
             return builtin(angle(real_at(slots, x), real_at(slots, y), precision));
+        },
+        Real::Recurrence(ref recurrence) => {
+            let ratio = (&recurrence.numerator, &recurrence.denominator);
+            return builtin(
+                series(real_at(slots, recurrence.argument), ratio, precision)
+                    .map(|(interval, _terms)| interval),
+            );
         },
     };
     return enclosure.unwrap_or_else(|_failure| NumericInterval::whole());

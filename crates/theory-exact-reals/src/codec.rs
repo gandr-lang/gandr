@@ -36,6 +36,7 @@
 //! | a dyadic | the exponent as `i32`, the mantissa's length as `u64`, then the mantissa as the shortest two's complement, least significant byte first, and no bytes for zero |
 //! | an interval | the orientation byte, then the lower and the upper bound |
 //! | a bound | the endpoint byte, the dyadic of a finite endpoint, then the closure byte |
+//! | a polynomial | its coefficient count as `u32`, from one to five, then each coefficient as `i32`, the constant first |
 //!
 //! | Kind | Byte | Kind | Byte | Kind | Byte |
 //! | ---- | ---- | ---- | ---- | ---- | ---- |
@@ -51,6 +52,7 @@
 //! | cosine | `0x0a` | | | | |
 //! | sine | `0x0b` | | | | |
 //! | angle | `0x0c` | | | | |
+//! | recurrence | `0x0d` | | | | |
 //!
 //! A certificate's layout stands on [`Certificate::encode`], and a
 //! checkpoint's on [`crate::dovetail::Dovetail::checkpoint`].
@@ -85,6 +87,8 @@ use crate::interval::Endpoint;
 use crate::interval::IntervalError;
 use crate::interval::NumericInterval;
 use crate::interval::Orientation;
+use crate::plan::COEFFICIENTS;
+use crate::plan::Coefficient;
 use crate::plan::Cut;
 use crate::plan::DeBruijn;
 use crate::plan::Domain;
@@ -99,13 +103,16 @@ use crate::plan::OpenId;
 use crate::plan::Plan;
 use crate::plan::PlanBuilder;
 use crate::plan::PlanError;
+use crate::plan::Polynomial;
 use crate::plan::Power;
 use crate::plan::Quantifier;
 use crate::plan::Real;
 use crate::plan::RealId;
+use crate::plan::Recurrence;
 use crate::plan::Root;
 use crate::plan::Site;
 use crate::plan::Sort;
+use crate::recurrence::Terms;
 use crate::schema::Split;
 use crate::semidecision::Demand;
 
@@ -153,6 +160,10 @@ mod step_kind
     pub(super) const INSIDE: Kind = Kind(0x3d);
     /// An outside step.
     pub(super) const OUTSIDE: Kind = Kind(0x3e);
+    /// A quotient step.
+    pub(super) const QUOTIENT: Kind = Kind(0x3f);
+    /// A power step.
+    pub(super) const POWER: Kind = Kind(0x40);
     /// A π step.
     pub(super) const PI: Kind = Kind(0x50);
     /// A cosine step.
@@ -161,6 +172,8 @@ mod step_kind
     pub(super) const SINE: Kind = Kind(0x52);
     /// An angle step.
     pub(super) const ANGLE: Kind = Kind(0x53);
+    /// A recurrence step.
+    pub(super) const RECURRENCE: Kind = Kind(0x54);
 }
 
 /// A one-byte kind: of a node, or of an interval's orientation, endpoint or
@@ -205,6 +218,8 @@ impl Kind
     const POWER: Self = Self(0x07);
     /// π.
     const PI: Self = Self(0x09);
+    /// The sum of a series whose term ratio is a rational function.
+    const RECURRENCE: Self = Self(0x0d);
     /// A product domain.
     const PRODUCT: Self = Self(0x21);
     /// A difference.
@@ -347,6 +362,9 @@ pub enum DecodeError
     /// The bytes decode, but they differ from the canonical bytes of the plan
     /// or the certificate that they hold.
     NotCanonical,
+    /// A polynomial has no coefficients, more than five, or a last coefficient
+    /// of zero.
+    Polynomial,
 }
 
 impl From<PlanError> for DecodeError
@@ -362,6 +380,10 @@ impl From<PlanError> for DecodeError
             PlanError::UnknownNode => Self::ForwardReference,
             PlanError::WrongSort => Self::WrongSort,
             PlanError::TooManyNodes => Self::TooManyNodes,
+            PlanError::Polynomial => Self::Polynomial,
+            // No plan of `exp` is built while bytes decode, so the reader
+            // meets this failure nowhere.
+            PlanError::Squarings => Self::NotCanonical,
         };
     }
 }
@@ -410,6 +432,9 @@ impl fmt::Display for DecodeError
             Self::Interval(error) => write!(f, "an interval is malformed: {error}"),
             Self::NotCanonical => {
                 f.write_str("the bytes are not the canonical bytes of what they hold")
+            },
+            Self::Polynomial => {
+                f.write_str("a polynomial has no coefficients, more than five, or a zero last one")
             },
         };
     }
@@ -537,6 +562,26 @@ impl Entry
                 self.kind(SECOND);
                 self.evidence(evidence);
             },
+        }
+    }
+
+    /// Write a polynomial: its coefficient count as a word, then each
+    /// coefficient as four bytes, the constant first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn polynomial(
+        &mut self,
+        polynomial: &Polynomial,
+    )
+    {
+        let coefficients = polynomial.coefficients();
+        // A polynomial holds at most five coefficients, so its count fits.
+        self.word(Word(u32::try_from(coefficients.len()).unwrap_or(u32::MAX)));
+        for &coefficient in coefficients {
+            self.bytes
+                .extend_from_slice(&i32::from(coefficient).to_le_bytes());
         }
     }
 
@@ -717,6 +762,12 @@ impl Entry
                     self.child(argument.node());
                 },
                 Real::Arg(x, y) => pair(self, Kind::ARG, x.node(), y.node()),
+                Real::Recurrence(ref recurrence) => {
+                    self.kind(Kind::RECURRENCE);
+                    self.child(recurrence.argument.node());
+                    self.polynomial(&recurrence.numerator);
+                    self.polynomial(&recurrence.denominator);
+                },
             },
             Node::Open(ref open) => match *open {
                 Open::Top => self.kind(Kind::TOP),
@@ -846,6 +897,39 @@ impl<'bytes> Reader<'bytes>
             .ok_or(DecodeError::Truncated)?;
         self.rest = rest;
         return Ok(Word(u32::from_le_bytes(word)));
+    }
+
+    /// Read a polynomial: its coefficient count, then each coefficient.
+    ///
+    /// # Specification
+    /// - ensures: reads the count and the coefficients of the writer's layout,
+    ///   and returns their polynomial.
+    /// - fails: returns [`DecodeError::Truncated`] when the bytes end inside
+    ///   it, and [`DecodeError::Polynomial`] for no coefficients, more than
+    ///   five, or a last coefficient of zero.
+    /// - panics: none.
+    /// - executable: none — the clause restates the layout.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a zero leading coefficient and six coefficients in
+    ///   the bytes.
+    /// - witness: `tests::recurrence::a_malformed_ratio_is_refused_by_name`
+    fn polynomial(&mut self) -> Result<Polynomial, DecodeError>
+    {
+        let count = usize::try_from(self.word()?.0).map_err(|_wide| DecodeError::Polynomial)?;
+        // A count past the bound allocates nothing.
+        if count > COEFFICIENTS {
+            return Err(DecodeError::Polynomial);
+        }
+        let mut coefficients = Vec::with_capacity(count);
+        for _ in 0 .. count {
+            let word = self.word()?.0;
+            coefficients.push(Coefficient::from(i32::from_le_bytes(word.to_le_bytes())));
+        }
+        return Ok(Polynomial::try_from(coefficients)?);
     }
 
     /// Read a byte count, which must not exceed the bytes that remain.
@@ -1122,6 +1206,16 @@ impl<'bytes> Reader<'bytes>
                 else {
                     Node::Real(Real::Sin(argument))
                 }
+            },
+            Kind::RECURRENCE => {
+                let argument = RealId::at(self.child(builder, Sort::Real)?);
+                let numerator = self.polynomial()?;
+                let denominator = self.polynomial()?;
+                Node::Real(Real::Recurrence(Recurrence {
+                    argument,
+                    numerator,
+                    denominator,
+                }))
             },
             Kind::TOP => Node::Open(Open::Top),
             Kind::BOTTOM => Node::Open(Open::Bottom),
@@ -1632,6 +1726,37 @@ impl Entry
                 self.binary(step_kind::ANGLE, real, (x, y));
                 self.word(Word(u32::from(precision)));
             },
+            Step::Recurrence {
+                real,
+                argument,
+                terms,
+                precision,
+            } => {
+                self.kind(step_kind::RECURRENCE);
+                self.child(real);
+                self.premise(argument);
+                self.word(Word(u32::from(terms)));
+                self.word(Word(u32::from(precision)));
+            },
+            Step::Quotient {
+                real,
+                numerator,
+                denominator,
+                precision,
+            } => {
+                self.binary(step_kind::QUOTIENT, real, (numerator, denominator));
+                self.word(Word(u32::from(precision)));
+            },
+            Step::Power {
+                real,
+                base,
+                precision,
+            } => {
+                self.kind(step_kind::POWER);
+                self.child(real);
+                self.premise(base);
+                self.word(Word(u32::from(precision)));
+            },
         }
     }
 }
@@ -1771,6 +1896,26 @@ impl Reader<'_>
                     precision: precision(self)?,
                 })
             },
+            step_kind::RECURRENCE => Ok(Step::Recurrence {
+                real: node(self)?,
+                argument: premise(self)?,
+                terms: Terms::from(self.word()?.0),
+                precision: precision(self)?,
+            }),
+            step_kind::QUOTIENT => {
+                let (real, numerator, denominator) = operands(self)?;
+                Ok(Step::Quotient {
+                    real,
+                    numerator,
+                    denominator,
+                    precision: precision(self)?,
+                })
+            },
+            step_kind::POWER => Ok(Step::Power {
+                real: node(self)?,
+                base: premise(self)?,
+                precision: precision(self)?,
+            }),
             _ => Err(DecodeError::UnknownKind),
         };
     }
@@ -1803,10 +1948,13 @@ impl Certificate
     /// | refutation | `0x3c` | the existential, the list of premises |
     /// | inside | `0x3d` | the open node, the premise, the side |
     /// | outside | `0x3e` | the open node, the premise, the side |
+    /// | quotient | `0x3f` | the quotient, the dividend's premise, the divisor's premise, the precision |
+    /// | power | `0x40` | the power, the base's premise, the precision |
     /// | π | `0x50` | the π node, the precision |
     /// | cosine | `0x51` | the cosine, the premise, the precision |
     /// | sine | `0x52` | the sine, the premise, the precision |
     /// | angle | `0x53` | the angle, the first premise, the second premise, the precision |
+    /// | recurrence | `0x54` | the recurrence, the argument's premise, the count of terms, the precision |
     ///
     /// # Specification
     /// - ensures: the magic, the format, the step count, then each step's kind

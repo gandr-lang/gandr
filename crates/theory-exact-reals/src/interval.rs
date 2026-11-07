@@ -15,11 +15,15 @@
 //!
 //! An infinite endpoint is always open. Two equal endpoints are a point and
 //! must both be closed. [`NumericInterval::new`] refuses every other form by
-//! name. The arithmetic takes proper operands. A result endpoint that lost
-//! bits to rounding is open, and so is an endpoint that the operands do not
-//! attain. The product attains zero exactly when an operand contains zero.
-//! At an infinite endpoint, the product of zero and an infinity is zero,
-//! because every element of an interval is finite.
+//! name: `ClosedInfinity`, then `Reversed`, then `Empty`. The arithmetic
+//! takes proper operands and refuses a dual one as `DualOperand`. A sum adds
+//! the lower bounds and the upper bounds, and a difference crosses them. A
+//! product chooses two or four endpoint products by the signs of its
+//! operands. A result endpoint that lost bits to rounding is open, and so is
+//! an endpoint that the operands do not attain. The product attains zero
+//! exactly when an operand contains zero. At an infinite endpoint, the
+//! product of zero and an infinity is zero, because every element of an
+//! interval is finite.
 
 use core::cmp::Ordering;
 use core::fmt;

@@ -1,6 +1,6 @@
 //! The compound chain of the refinement machine: the enclosure of a real made
-//! of constants, registered cuts, sums, differences, products, π, cosines,
-//! sines and angles.
+//! of constants, registered cuts, sums, differences, products, quotients,
+//! powers, π, cosines, sines, angles and recurrences.
 //!
 //! A [`Compound`] settles an enclosure of such a real to a width, or a strict
 //! comparison of two such reals. It works in attempts. Each attempt encloses
@@ -10,6 +10,8 @@
 //! a registered cut by two witnesses at the precision. Each enclosure is one
 //! step, and so one unit of work. A node that reads no builtin and no cut
 //! keeps its enclosure from the first attempt.
+//!
+//! # Boundaries
 //!
 //! |Asked|After an attempt|Then|
 //! |---|---|---|
@@ -21,9 +23,11 @@
 //!
 //! The first attempt works at 64 bits. The checker's width quota bounds the
 //! precision of a builtin's step and of a cut's step, and so the attempts: an
-//! attempt past it stops at the quota. A bound variable, a forged cut, a
-//! quotient or a power has no rule here, so a real that reads one stops with
-//! [`SuspendReason::NoRule`].
+//! attempt past it stops at the quota. A quotient whose divisor's enclosure
+//! reaches zero, or a recurrence whose tail bound does not hold yet, ends the
+//! attempt, and the next attempt encloses its operands more tightly. A bound
+//! variable or a forged cut has no rule here, so a real that reads one stops
+//! with [`SuspendReason::NoRule`].
 
 use alloc::vec::Vec;
 use core::ops::Add as _;
@@ -34,11 +38,14 @@ use core::ops::Sub as _;
 use num_bigint::BigInt;
 
 use crate::bisection::Turn;
+use crate::certificate::CertificateCheck;
 use crate::certificate::CheckerQuotas;
 use crate::certificate::Operation;
 use crate::certificate::Step;
 use crate::certificate::StepId;
 use crate::certificate::combined;
+use crate::certificate::quotient;
+use crate::certificate::raised;
 use crate::certificate::separated_below;
 use crate::dyadic::Dyadic;
 use crate::dyadic::Exponent;
@@ -58,6 +65,7 @@ use crate::plan::Open;
 use crate::plan::Plan;
 use crate::plan::Real;
 use crate::plan::RealId;
+use crate::recurrence::series;
 use crate::schema::Membership;
 use crate::schema::membership;
 use crate::schema::radicand;
@@ -100,6 +108,12 @@ enum Form
     Wave(Wave, Place),
     /// An angle, of the point whose coordinates stand at the two places.
     Angle(Place, Place),
+    /// A quotient of the nodes at the two places.
+    Quotient(Place, Place),
+    /// A power of the node at the place.
+    Power(Place),
+    /// A recurrence over the node at the place.
+    Recurrence(Place),
 }
 
 /// Whether the enclosure of a node reads the precision of the attempt.
@@ -111,6 +125,17 @@ enum Reads
     /// The node reads no builtin and no cut, so one enclosure serves every
     /// attempt.
     Nothing,
+}
+
+/// What one member's turn wrote.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Written
+{
+    /// One step that encloses the member.
+    Step,
+    /// No step: the enclosures of this attempt are too wide for the member's
+    /// rule, so the next attempt starts.
+    Retry,
 }
 
 /// One node, at its place in the order.
@@ -189,8 +214,9 @@ impl Compound
     /// # Specification
     /// - ensures: the node is a real whose enclosure is asked for, or a strict
     ///   comparison whose holding or failing is asked for. Each real below it
-    ///   is a constant, a registered cut, a sum, a difference, a product, π, a
-    ///   cosine, a sine or an angle. The sweep does not go into a cut.
+    ///   is a constant, a registered cut, a sum, a difference, a product, a
+    ///   quotient, a power, π, a cosine, a sine, an angle or a recurrence. The
+    ///   sweep does not go into a cut.
     /// - fails: suspends with [`SuspendReason::NoRule`] for any other form.
     /// - panics: none.
     /// - executable: none — the clause speaks of the form of the plan.
@@ -293,9 +319,13 @@ impl Compound
                 self.cursor = Place(self.cursor.0.saturating_add(1));
                 continue;
             }
-            self.write(plan, member, steps, quotas)?;
-            self.cursor = Place(self.cursor.0.saturating_add(1));
-            return self.reached();
+            match self.write(plan, member, steps, quotas)? {
+                Written::Step => {
+                    self.cursor = Place(self.cursor.0.saturating_add(1));
+                    return self.reached();
+                },
+                Written::Retry => self.attempt(quotas)?,
+            }
         }
     }
 
@@ -337,7 +367,7 @@ impl Compound
         member: Member,
         steps: &mut Vec<Step>,
         quotas: &CheckerQuotas,
-    ) -> Result<(), SuspendReason>
+    ) -> Result<Written, SuspendReason>
     {
         if steps.len() >= usize::from(quotas.steps) {
             return Err(SuspendReason::Quota);
@@ -442,6 +472,58 @@ impl Compound
                 };
                 (step, interval)
             },
+            Form::Quotient(first, second) => {
+                builtin()?;
+                let (first, second) = (self.at(first)?, self.at(second)?);
+                let interval = match quotient(&first.interval, &second.interval, precision) {
+                    Ok(interval) => interval,
+                    Err(CertificateCheck::ZeroDivisor) => return Ok(Written::Retry),
+                    Err(refused) => return Err(suspension(refused)),
+                };
+                let step = Step::Quotient {
+                    real,
+                    numerator: first.step,
+                    denominator: second.step,
+                    precision,
+                };
+                (step, interval)
+            },
+            Form::Power(base) => {
+                builtin()?;
+                let Ok(&Node::Real(Real::Power(_, power))) = plan.node(real)
+                else {
+                    return Err(SuspendReason::NoRule);
+                };
+                let operand = self.at(base)?;
+                let interval = raised(&operand.interval, power, precision).map_err(suspension)?;
+                let step = Step::Power {
+                    real,
+                    base: operand.step,
+                    precision,
+                };
+                (step, interval)
+            },
+            Form::Recurrence(argument) => {
+                builtin()?;
+                let Ok(&Node::Real(Real::Recurrence(ref recurrence))) = plan.node(real)
+                else {
+                    return Err(SuspendReason::NoRule);
+                };
+                let operand = self.at(argument)?;
+                let ratio = (&recurrence.numerator, &recurrence.denominator);
+                let (interval, terms) = match series(&operand.interval, ratio, precision) {
+                    Ok(found) => found,
+                    Err(CertificateCheck::Tail) => return Ok(Written::Retry),
+                    Err(refused) => return Err(suspension(refused)),
+                };
+                let step = Step::Recurrence {
+                    real,
+                    argument: operand.step,
+                    terms,
+                    precision,
+                };
+                (step, interval)
+            },
         };
         steps.push(step);
         let slot = self
@@ -449,7 +531,7 @@ impl Compound
             .get_mut(self.cursor.0)
             .ok_or(SuspendReason::NoRule)?;
         *slot = Some(Enclosed { step: id, interval });
-        return Ok(());
+        return Ok(Written::Step);
     }
 
     /// The turn after a member's step: [`Turn::Concluded`] when a complete
@@ -680,9 +762,22 @@ fn order(
                 radicand(plan, id).map_err(|_forged| SuspendReason::NoRule)?;
                 (Form::Cut, Reads::Precision)
             },
-            Node::Real(Real::Bound(_) | Real::Div { .. } | Real::Power(..))
-            | Node::Open(_)
-            | Node::Domain(_) => return Err(SuspendReason::NoRule),
+            Node::Real(Real::Div {
+                numerator,
+                denominator,
+                ..
+            }) => (
+                Form::Quotient(place(numerator)?, place(denominator)?),
+                Reads::Precision,
+            ),
+            Node::Real(Real::Power(base, _)) => (Form::Power(place(base)?), Reads::Precision),
+            Node::Real(Real::Recurrence(ref recurrence)) => (
+                Form::Recurrence(place(recurrence.argument)?),
+                Reads::Precision,
+            ),
+            Node::Real(Real::Bound(_)) | Node::Open(_) | Node::Domain(_) => {
+                return Err(SuspendReason::NoRule);
+            },
         };
         let slot = places.get_mut(index).ok_or(SuspendReason::NoRule)?;
         *slot = Some(Place(order.len()));

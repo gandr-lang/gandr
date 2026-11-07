@@ -652,6 +652,52 @@ fn entry_unfoldings(
     .ruling(arena, judgement.entries)
 }
 
+/// `value` read through the definitions it names: a constant that a
+/// definition among the judgement's entries defines reads as that body.
+///
+/// # Specification
+/// - requires: nothing — an entry that is no definition stops the reading.
+/// - ensures: `value` itself when it is no constant.
+/// - provides: the first value along the chain of defined constants from
+///   `value` that is no defined constant, or the value the chain reaches after
+///   as many steps as the judgement holds entries. The chain's end remains
+///   prose-only: checking it would walk the entries again, which is the body.
+///   This is the fixed value a restriction's replay compares with the field,
+///   read as the checker reads a fixed value that is a name.
+///
+/// # Termination
+/// - reason: the `for` loop runs at most once for each entry.
+/// - measure: the entries left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixed value that names a definition of 443 fixes the
+///   field 443, and one that names a definition of 80 is refused by its label.
+/// - witness: `tests::native_formers::a_value_coerced_in_at_a_named_fixed_value_replays_5683`
+#[spec(ensures: |ret| ret == value || matches!(arena.value(value), Some(&Value::Constant(_))))]
+fn defined_value(
+    arena: &TermArena,
+    judgement: Judgement<'_>,
+    value: ValueId,
+) -> ValueId
+{
+    let mut read = value;
+    for _ in judgement.entries.iter() {
+        let Some(&Value::Constant(constant)) = arena.value(read)
+        else {
+            break;
+        };
+        let Some(&DeclarationContent::Def { body, .. }) = judgement
+            .entries
+            .get(usize::from(constant))
+            .map(AdmittedDeclaration::content)
+        else {
+            break;
+        };
+        read = body;
+    }
+    read
+}
+
 /// `ty`, or the type its code quotes when `ty` decodes a returned code that
 /// normalizes to a quote at the judgement's unfoldings: a decode of a call is
 /// read to the type the call returns.
@@ -6462,7 +6508,8 @@ where
                 // Each fixed field replays its conversion here: the kernel
                 // never trusts the checker's comparison. A field of a record
                 // literal is read off it, and any other record value's by
-                // its projection, with the admitted definitions unfolding.
+                // its projection, with the admitted definitions unfolding. A
+                // fixed value that names a definition is read as its body.
                 Frame::RestrictConverts { restriction, kept } => {
                     let Value::Restrict { value, ref fixed } = *read_value(arena, restriction)?
                     else {
@@ -6473,6 +6520,7 @@ where
                         .map(|(label, &held)| (label.clone(), held))
                         .collect();
                     for (label, held) in fixed {
+                        let held = defined_value(arena, judgement, held);
                         let written = match arena.value(value) {
                             Some(&Value::Record(ref fields)) => fields.get(&label).copied(),
                             Some(_) | None => None,

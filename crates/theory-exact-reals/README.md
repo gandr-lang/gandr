@@ -8,7 +8,6 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Intervals](#intervals)
 - [Plans and their bytes](#plans-and-their-bytes)
 - [Certificates](#certificates)
 - [Measurement](#measurement)
@@ -38,6 +37,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `vault:01a1b278-54ca-7062-94f4-4c94748c971e` — exemplar: Paige and Tarjan, 1987, `doi:10.1137/0216062` — partition refinement.
 - `vault:01a1b278-4fbc-7c31-a4f3-2a171b335796` — anchor: the fixed-point ledger.
 - `vault:01a1b32b-755c-7b73-85f1-3055991c2bee` — exemplar: Bertram, 2025, `arXiv:2501.04412` — the simplest number of an interval.
+- `vault:01a1b53e-d768-7e62-8825-088be647563b` — exemplar: Johansson, _TOMS_ 45:3, 2019, `doi:10.1145/3328732` — the tail bound of a hypergeometric series from its term ratio.
 
 ## Provided features
 
@@ -50,15 +50,16 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Bound`, `Endpoint`, `Closure`, `Orientation` and `Containment`: the parts of an interval and the answer of a membership query.
 - `IntervalError`: each malformed interval by name, a dual operand, a divisor that holds zero, and a failed endpoint operation.
 - `Plan`: the canonical DAG; `root`, `node_count`, `node` and `nodes`; `encode` to `PlanBytes` and `decode` from `EncodedPlan`.
-- `PlanBuilder`: `new`, `with_capacity`, `real`, `open`, `domain`, `sort_of`, `node_count`, and `finish` to the canonical plan of a `Root`.
-- `Real`, `Open` and `Domain`: the node kinds of the three sorts, with `Cut` and `Quantifier`; `Node`, `Sort`, `Edge` and `Edges`.
-- `NodeId`, `RealId`, `OpenId`, `DomainId`, `DeBruijn`, `Power`, `Evidence`, `EvidenceSlot` and `NodeCount`: the nominal parts of a plan.
+- `PlanBuilder`: `new`, `with_capacity`, `real`, `open`, `domain`, `sort_of`, `node_count`, and `finish` to the canonical plan of a `Root`; `exp` and `log`, the plans of the two functions over a recurrence.
+- `Real`, `Open` and `Domain`: the node kinds of the three sorts, with `Cut`, `Quantifier` and `Recurrence`; `Node`, `Sort`, `Edge` and `Edges`.
+- `NodeId`, `RealId`, `OpenId`, `DomainId`, `DeBruijn`, `Power`, `Evidence`, `EvidenceSlot`, `NodeCount`, `Coefficient`, `Polynomial` and `Squarings`: the nominal parts of a plan.
 - `PlanError` and `DecodeError`: each refused node, root and byte string by name.
 - `validate` and `admit`: the total validation pass from bytes or from a plan, with its `Quotas`, its `EvidenceTable` of `Judgement`s, and a `ValidatedPlan` or a `Refusal` that names its `Site` and its `Check`.
 - `Scope`, `Height` and `ByteLength`: whether an edge enters a binder, and the nominal parts of the quotas.
 - `approximate`: the dual approximation of a validated plan at one precision, an `Approximation` that answers `enclosure` and `approximants` by node, each pair of approximants a `BilateralApprox` of a `PositiveApprox` and a `NegativeApprox`.
 - `Certificate`, `Step`, `Side`, `StepId` and `FormatVersion`: a versioned certificate; `encode` to `CertificateBytes` and `decode` from `EncodedCertificate`.
 - `check`: the replay within `CheckerQuotas`, a `Checked` `Conclusion` or a `CertificateRefusal` that names its `StepSite` and its `CertificateCheck`.
+- `series`, `series_after` and `Terms`: the rule of a recurrence node, with the count of terms that the writer chooses and that the checker replays. The `recurrence` module states its tail bound.
 - `square_root`, `square_root_of_two`, `radicand` and `refine`: the registered cut schema, its recognition, and its refinement to a power of two with a certificate.
 - `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, and the scheduler that runs them in bounded quanta within a budget. `Dovetail::resume` reads its checkpoint back, and `Dovetail::with_split` takes a `Split` other than the midpoint. The `semidecision`, `dovetail` and `bisection` modules state each.
 - `Cache`, `CacheBound`, `Lookup`, `CacheRefusal` and `CacheTally`: the checked-result cache that `Dovetail::consult` reads and `Dovetail::record` fills. The `cache` module states its key.
@@ -103,12 +104,6 @@ cargo nextest run -p gandr-theory-exact-reals
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-exact-reals
 cargo bench -p gandr-theory-exact-reals
 ```
-
-## Intervals
-
-A proper interval has its lower endpoint at or below its upper endpoint. A dual interval, the improper interval of Kaucher arithmetic, has them in the other order, and the orientation is a tag that nothing reorders. An infinite endpoint is open. Two equal endpoints make a point, and a point has two closed bounds. `NumericInterval::new` refuses every other form by name: `ClosedInfinity`, then `Reversed`, then `Empty`.
-
-The arithmetic takes proper operands and refuses a dual one as `DualOperand`. A sum adds the lower bounds and the upper bounds, and a difference crosses them. A product chooses two or four endpoint products by the signs of its operands. The `interval` module states when a product closes an endpoint and how zero meets an infinity.
 
 ## Plans and their bytes
 

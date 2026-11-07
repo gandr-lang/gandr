@@ -6,6 +6,7 @@
 
 use gandr_theory_exact_reals::Bound;
 use gandr_theory_exact_reals::Closure;
+use gandr_theory_exact_reals::Coefficient;
 use gandr_theory_exact_reals::Cut;
 use gandr_theory_exact_reals::DeBruijn;
 use gandr_theory_exact_reals::DecodeError;
@@ -28,10 +29,12 @@ use gandr_theory_exact_reals::Orientation;
 use gandr_theory_exact_reals::Plan;
 use gandr_theory_exact_reals::PlanBuilder;
 use gandr_theory_exact_reals::PlanError;
+use gandr_theory_exact_reals::Polynomial;
 use gandr_theory_exact_reals::Power;
 use gandr_theory_exact_reals::Quantifier;
 use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::RealId;
+use gandr_theory_exact_reals::Recurrence;
 use gandr_theory_exact_reals::Root;
 use gandr_theory_exact_reals::Sort;
 use num_bigint::BigInt;
@@ -503,6 +506,8 @@ fn failures_render_distinct_phrases()
             PlanError::UnknownNode,
             PlanError::WrongSort,
             PlanError::TooManyNodes,
+            PlanError::Polynomial,
+            PlanError::Squarings,
         ]
         .map(|error| error.to_string()),
     );
@@ -520,6 +525,7 @@ fn failures_render_distinct_phrases()
         DecodeError::Dyadic(DyadicError::ExponentOutOfRange),
         DecodeError::Interval(IntervalError::Reversed),
         DecodeError::NotCanonical,
+        DecodeError::Polynomial,
     ]
     .map(|error| error.to_string());
     distinct_lines(&decoding);
@@ -546,6 +552,7 @@ pub enum Step
     Interval(i64, i64, bool, Option<u32>, Option<u32>),
     Product(usize, usize, u32),
     Subdomain(usize, usize, u32),
+    Recurrence(usize, Vec<i32>, Vec<i32>),
 }
 
 /// The strategy of one step.
@@ -604,9 +611,19 @@ pub fn step() -> impl Strategy<Value = Step>
             )),
         (index.clone(), index.clone(), any::<u32>())
             .prop_map(|(left, right, evidence)| Step::Product(left, right, evidence)),
-        (index.clone(), index, any::<u32>()).prop_map(|(parent, classifier, evidence)| {
+        (index.clone(), index.clone(), any::<u32>()).prop_map(|(parent, classifier, evidence)| {
             Step::Subdomain(parent, classifier, evidence)
         }),
+        (
+            index,
+            proptest::collection::vec(-4_i32 .. 4, 0 ..= 6),
+            proptest::collection::vec(-4_i32 .. 4, 0 ..= 6)
+        )
+            .prop_map(|(argument, numerator, denominator)| Step::Recurrence(
+                argument,
+                numerator,
+                denominator
+            )),
     ];
 }
 
@@ -692,6 +709,29 @@ pub fn build(steps: &[Step]) -> (PlanBuilder, Root)
                     denominator: real(right),
                     nonzero: Evidence::from(evidence),
                 };
+                reals.push(builder.real(node).unwrap());
+            },
+            Step::Recurrence(argument, ref numerator, ref denominator) => {
+                let polynomial = |coefficients: &[i32]| {
+                    Polynomial::try_from(
+                        coefficients
+                            .iter()
+                            .copied()
+                            .map(Coefficient::from)
+                            .collect::<Vec<_>>(),
+                    )
+                };
+                // A list that is no polynomial is refused at the builder.
+                let (Ok(numerator), Ok(denominator)) =
+                    (polynomial(numerator), polynomial(denominator))
+                else {
+                    continue;
+                };
+                let node = Real::Recurrence(Recurrence {
+                    argument: real(argument),
+                    numerator,
+                    denominator,
+                });
                 reals.push(builder.real(node).unwrap());
             },
             Step::Power(base, power) => {
