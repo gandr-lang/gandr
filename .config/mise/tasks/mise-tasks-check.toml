@@ -2143,7 +2143,9 @@ echo "integration check OK: $(jq length .config/integration/cases.json) cases re
 # with `push` runs the push tier (`.config/commits/push.bash`) instead, as
 # if the commits were pushed to that ref: a branch's trailer-less commit is
 # refused, and a notes ref, which shares no history with the trunk, passes
-# (#5651).
+# (#5651). A `held` case gives the trunk a copy of each commit under another
+# hash, as a rebase of `landing` gives them: the push tier passes them, and
+# a commit whose patch the trunk lacks is still refused (#5932).
 ["check:commits"]
 description = "The commit rules over a range refuse a trailer-less commit and, asked, an empty one; the push tier reads a branch and passes a notes ref"
 tools.jq = "1.8.1"
@@ -2181,6 +2183,12 @@ while IFS= read -r case; do
   push=$(jq -r '.push // empty' <<< "$case")
   if [[ -n $push ]]; then
     git -C "$repo" update-ref refs/remotes/origin/landing "$base"
+    if [[ $(jq -r '.held // false' <<< "$case") == true ]]; then
+      git -C "$repo" checkout --quiet -b held "$base"
+      git -C "$repo" cherry-pick -x "$base..main" > /dev/null
+      git -C "$repo" update-ref refs/remotes/origin/landing "$(git -C "$repo" rev-parse HEAD)"
+      git -C "$repo" checkout --quiet main
+    fi
     head=$(git -C "$repo" rev-parse HEAD)
     if [[ $push == refs/notes/* ]]; then
       git -C "$repo" notes --ref "$push" add -m 'moved' "$head"

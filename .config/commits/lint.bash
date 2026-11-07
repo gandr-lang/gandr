@@ -8,7 +8,10 @@
 #
 # Usage: lint.bash <base> <head> [--empty]. Run in the repository whose
 # commits are read; `COMMITLINT_CONFIG` names the configuration (the
-# checkout's own by default). Prints each refusal and exits 1 on any.
+# checkout's own by default). `COMMITS_HELD` names a ref whose commits are
+# skipped by patch: a commit of the range whose patch that ref holds under
+# another hash is not linted again (#5932). Prints each refusal and exits 1
+# on any.
 set -euo pipefail
 base=${1:?the base the range starts after}
 head=${2:?the head the range ends at}
@@ -16,6 +19,10 @@ empty=${3:-}
 config=${COMMITLINT_CONFIG:-$(git rev-parse --show-toplevel)/commitlint.config.mjs}
 commitlint=${COMMITLINT_BIN:-commitlint}
 failed=0
+range=("$base..$head")
+if [[ -n ${COMMITS_HELD:-} ]]; then
+  range=(--cherry-pick --right-only "$COMMITS_HELD...$head" "^$base")
+fi
 while read -r commit; do
   subject=$(git log -1 --format='%h %s' "$commit")
   if git rev-parse --verify --quiet "$commit^" > /dev/null; then
@@ -32,5 +39,5 @@ while read -r commit; do
     printf 'commit %s fails the commit rules:\n%s\n' "$subject" "$out" >&2
     failed=1
   fi
-done < <(git rev-list --reverse --no-merges "$base..$head")
+done < <(git rev-list --reverse --no-merges "${range[@]}")
 exit "$failed"
