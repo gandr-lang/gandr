@@ -82,6 +82,7 @@ default = []
 # kernel readmission timed and their allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
 hotpath = ["dep:hotpath", "hotpath/hotpath"]
+unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
 
 [lints]
 workspace = true
