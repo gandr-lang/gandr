@@ -15,7 +15,7 @@ fork_subjects() {
 }
 
 # The `+` commits that `git cherry` lists for the head `$2` against the trunk
-# `$1`, each `{subject, on_main}`, `on_main` read against `fork_subjects`.
+# `$1`, each `{subject, on_trunk}`, `on_trunk` read against `fork_subjects`.
 own_commits() {
   local -a listed=()
   mapfile -t listed < <(git cherry "$1" "$2" | awk '/^\+/ { print $2 }')
@@ -24,7 +24,7 @@ own_commits() {
     return 0
   fi
   git log --no-walk=unsorted --format=%s "${listed[@]}" \
-    | jq -R . | jq -sc --argjson main "$(fork_subjects "$1" "$2")" 'map({subject: ., on_main: ($main[.] // false)})'
+    | jq -R . | jq -sc --argjson trunk "$(fork_subjects "$1" "$2")" 'map({subject: ., on_trunk: ($trunk[.] // false)})'
 }
 
 # The merged pull requests of each branch that `wt:sweep` asks about (#5839),
