@@ -1045,16 +1045,18 @@ wait_required() {
   done
 }
 
-# Re-run the runs on pull request `$1`'s head that a twin on the same commit
-# cancelled (`twins.jq`); succeeds when it re-ran one.
+# Re-run the jobs that a twin on the same commit cancelled in the runs on pull
+# request `$1`'s head (`twins.jq`); succeeds when it re-ran one. `--failed`
+# re-runs a run's cancelled and failed jobs with their dependents, and keeps
+# each job that passed: the twin cancels a run part of the way (#2911).
 rerun_twins() {
   local sha ids id
   sha=$(pr_reading "$1" | jq -r .headRefOid)
   mapfile -t ids < <(gh run list -R "$repo" --commit "$sha" --event pull_request --limit 100 \
     --json databaseId,workflowName,startedAt,conclusion | jq -c -f "$pr_stack_dir/twins.jq" | jq -r '.[]')
   for id in "${ids[@]}"; do
-    echo "#$1: re-running run $id, cancelled by its twin on ${sha::12}" >&2
-    gh run rerun "$id" -R "$repo"
+    echo "#$1: re-running the cancelled jobs of run $id, cancelled by its twin on ${sha::12}" >&2
+    gh run rerun "$id" --failed -R "$repo"
   done
   (( ${#ids[@]} > 0 ))
 }
