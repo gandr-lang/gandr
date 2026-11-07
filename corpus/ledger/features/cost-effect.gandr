@@ -9,16 +9,19 @@
 /// `Count.le` decides a closed bound.
 /// The kernel replays this conversion.
 /// A bound below a run's count is refused `EndpointMismatch`.
-/// `corpus/pathological/effects/cost-bound-too-small.gandr` states this refusal.
+/// `corpus/pathological/effects/cost-bound-too-small.gandr` states this
+/// refusal.
 ///
-/// Not implemented: the library lacks a recursive definition that charges.
-/// The library also lacks a handler over every thunk that charges.
+/// Conversion decides the count of a structural recursion that charges.
+/// A bound over a run that may not end holds at each clock.
+///
+/// Not implemented: the library lacks a handler over every thunk that charges.
 /// The library also lacks a certificate cost delta.
 ///
-/// - owes: #3699
 /// - owes: #1106
 /// - owes: #3702
 /// - see: #3715
+/// - see: `../../model/effects/cost-clock.gandr` — the bound at each clock
 // Three steps charged one and two, counted under `Counting` and bounded at
 // three, and the same steps under a model that erases every charge, which
 // answer as the program does with no charge.

@@ -7,11 +7,13 @@
 ///
 /// Under `[Partial]` a `measure` block is partial cost correctness, so it is
 /// never refused. A productive loop's measure counts one pass, and its bound
-/// is a rate.
+/// is a rate. The obligation holds one pass at a time, and the bound holds at
+/// each clock. A run that does not end has no count, so no bound reads it at
+/// its fixed point.
 ///
 /// - see: #4569 — the cost sketch, its rulings in the issue body
 /// - see: #4565 — the loops sketch, `[Partial]` and the endpoint loop
-/// - see: #4729 — whether the potential's fracture survives the recursion effect
+/// - see: `../../model/effects/cost-clock.gandr` — the bound at each clock
 
 // The cost theory.
 import std.cost (Cost);
