@@ -6522,6 +6522,47 @@ mod tests
         TypeTable::of(&grammar, source).expect("the source parses")
     }
 
+    /// #5892: the iterated pair's deep levels share each level twice, so their
+    /// unshared trees grow as two to the depth. The walk stops each such type
+    /// at its visit budget, and the table answers `?` for it. Each type that
+    /// the table spells whole stays a size that a reader reads. With a budget
+    /// of 65,536 visits, two of these types spelled 143,313 and 71,649 bytes,
+    /// and one declaration answered no type.
+    #[test]
+    fn a_shared_type_past_the_walk_s_budget_prints_as_unknown_5892()
+    {
+        use gandr_surface_pretty::Unspelled;
+
+        let source = include_str!("../../../corpus/pathological/records/iterated-pair.gandr");
+        let table = table(SourceText::from(source));
+        let (mut whole, mut unknown) = (Vec::new(), 0_usize);
+        for (_key, declared) in table.declarations(PageWidth::from(80_u32), Form::Explicit.into()) {
+            let Maybe::Present(Declared::Typed(ty)) = declared
+            else {
+                panic!("each declaration of the iterated pair is typed: {declared:?}");
+            };
+            if ty.unspelled().is_empty() {
+                whole.push(ty.as_ref().len());
+            }
+            else {
+                assert!(
+                    ty.as_ref() == "?"
+                        && ty
+                            .unspelled()
+                            .iter()
+                            .all(|&reason| reason == Unspelled::OverBudget),
+                    "a type the walk stops spells `?` for its budget: {:?}",
+                    ty.unspelled()
+                );
+                unknown = unknown.saturating_add(1);
+            }
+        }
+        assert!(
+            unknown > 0 && whole.iter().all(|&bytes| bytes < 0x0001_0000),
+            "the deep levels answer `?`, and each whole type is under 64 KiB: {unknown} unknown, {whole:?}"
+        );
+    }
+
     /// #5064: an argument that a dependent alias reads under its own binder,
     /// and a `let` name read after its binding, each keep an entry at their own
     /// bytes. Each stands in the checked term as a copy, and the copy reads
