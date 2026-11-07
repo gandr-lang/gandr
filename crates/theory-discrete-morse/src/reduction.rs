@@ -10,12 +10,48 @@
 //! inclusion. So two successive collapses compose into one reduction that
 //! replays as one.
 //!
+//! Each removal of an equivalence, matched alone, is one Tietze move. Its
+//! collapse is the backward move, which removes a cell that its partner
+//! defines, and its inclusion is the forward move, which adds the cell back.
+//! An equivalence collapses each cell as its removals do one at a time, the
+//! last removal first.
+//!
+//! # Witnesses
+//!
+//! `tests::basis::each_removal_of_the_braid_reduction_is_one_tietze_move_6059`
+//! in `theory-coherent-resolutions` matches each removal of the B₃⁺ reduction
+//! alone, replays it, and composes the moves.
+//! `tests::squier::brown_collapse_of_intop_factors_through_its_tietze_moves_6059`
+//! in `surface-lowering` does the same for the removals of Brown's scheme on
+//! a bar complex.
+//!
+//! # Boundaries
+//!
+//! - **A presentation's own letter.** The bar complex holds normal forms alone.
+//!   So a letter that a rule defines drops by a move on the written
+//!   presentation, before the resolution, and no removal of Brown's scheme
+//!   holds it.
+//! - **Torsion.** A sequence of moves and their inclusions certifies a simple
+//!   equivalence, which is finer than an equivalence of the presented objects.
+//!   Whitehead torsion is the complete obstruction. It lives in chains over the
+//!   group ring of the fundamental group, so integer chains show none.
+//!
 //! # References
 //!
 //! - `Doré-2023-computing_spaces_type_theory` — exemplar: § 3.5 states the
 //!   collapse `φ` and the inclusion `ι` of a graph with both inverse proofs,
 //!   and § 3.6 lifts them to an equality of types, which composes. A
 //!   [`Reduction`] states those four parts and their replay.
+//! - `Ara-2025-polygraphs_rewriting_higher_categories` — newest: § 7.4.2, the
+//!   retraction that each elementary Tietze transformation carries, and §
+//!   7.4.6–7.4.8, the collapse of a collapsible generator, which keeps the
+//!   Tietze class.
+//! - `Waas-2025-stratified_homotopy_theory_generalized_simple_homotopy_theory_foundations_applications_intersections`
+//!   — newest: § 2.1, simple homotopy equivalence and Whitehead torsion, and
+//!   Example 2.3.2.2, the torsion of based chains over a ring.
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
+//!   presented-spaces-stone-universe. The edit calculus takes its moves from
+//!   the collapse, and each removal is one such move.
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
