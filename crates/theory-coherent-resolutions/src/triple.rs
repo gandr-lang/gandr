@@ -36,6 +36,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::overlap::Overlap;
 use crate::overlap::interior_overlaps_between;
+use crate::overlap::overlap_command;
 use crate::overlap::root_overlaps_between;
 use crate::rewrite::CellApp;
 
@@ -152,13 +153,10 @@ fn extend<A>(
         {
             continue;
         }
-        let Maybe::Present(sub) = A::subterm_cmd_at(&pair.peak, &at)
+        let Some(sub) = overlap_command::<A>(&pair.peak, &at)
         else {
             continue;
         };
-        if A::metavariables(&sub).len() == 1 && A::command_positions(&sub).len() == 1 {
-            continue;
-        }
         if A::root_agreement(&sub, &lhs) == RootAgreement::Clash {
             continue;
         }

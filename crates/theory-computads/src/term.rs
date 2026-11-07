@@ -1801,6 +1801,16 @@ impl CellAlphabet for TermAlphabet
         TermPos(path.into())
     }
 
+    /// The steps of `pos`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn position_steps(pos: &Self::Pos) -> &[PositionStep]
+    {
+        pos.steps()
+    }
+
     /// The path order of the two paths.
     ///
     /// # Specification
