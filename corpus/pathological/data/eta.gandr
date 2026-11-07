@@ -1,9 +1,12 @@
 // The twin of `model/data/eta.gandr`: η reads a neutral as the tuple of its
 // own projections at their own positions, so a tuple of them in another
 // order, a record with its fields crossed, or the projections of another
-// neutral stay apart from it.
+// neutral stay apart from it. η relates the unit to a neutral, but never two
+// neutrals of the unit type. η reads no grade, so it never takes the copy of
+// a linear parameter.
 //
 // - see: #715
+// - see: #6110
 
 /// The pair's components swapped.
 @[ refuses("EndpointMismatch") ]
@@ -25,3 +28,14 @@ def etaCrossed(e : *{l : Integer, r : Integer}) -> Path[.A = *{l : Integer, r : 
   e
 ) =
   Path.here e
+
+/// Two neutrals of the unit type: no former stands between them.
+@[ refuses("EndpointMismatch") ]
+def etaUnitApart(u : Unit, v : Unit) -> Path[.A = Unit](u, v) =
+  Path.here u
+
+/// Eta relates the endpoints, but the body never takes the copy of
+/// the linear parameter.
+@[ refuses("LinearSlotUnconsumed") ]
+def etaUnitDropped(u : Unit) ⊸ Path[.A = Unit](*{}, u) =
+  Path.here (*{} : Unit)

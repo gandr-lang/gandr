@@ -440,6 +440,7 @@ INSERT INTO purpose VALUES('core-nbe','free::Lowering','struct','How many binder
 INSERT INTO purpose VALUES('core-nbe','guard::ContentHash','struct','A content hash, comparable only within the run that minted it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','guard::Guard','enum','The word minted with a domain node, read by the pipeline''s step 2.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','guard::GuardAnswer','enum','What step 2 answers for a pair.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','guard::Holds','struct','What a rigid word holds that η reads: a unit, a neutral, or both.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','identity::Clause','enum','Which clause of the recursion a carrier''s head selects.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','identity::Coordinate','struct','One coordinate the recursion reached: a carrier and the two endpoints it relates there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','identity::Fibre','enum','What the paths of one path type are, by the recursion over its carrier.',NULL,'fits','sound',NULL);

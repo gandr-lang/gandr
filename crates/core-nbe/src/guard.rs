@@ -3,25 +3,27 @@
 //!
 //! # What the word holds
 //!
-//! A [`Guard`] is [`Guard::Rigid`] carrying a [`ContentHash`], or
-//! [`Guard::Flexible`]. A node is rigid when nothing inside it can change its
-//! answer under conversion: no closure, whose body a binder rule or an
-//! η-equation compares only after it is opened, and no neutral whose head has
-//! a body to unfold. For a rigid pair conversion **is** structural equality on
-//! the hashed content, so two rigid guards with different hashes settle the
-//! pair distinct without reading either node. Equal hashes settle nothing: a
-//! collision is possible, and the pair falls through to structural
+//! A [`Guard`] is [`Guard::Rigid`] carrying a [`ContentHash`] and the
+//! [`Holds`] it folds, or [`Guard::Flexible`]. A node is rigid when nothing
+//! inside it can change its answer under conversion: no closure, whose body a
+//! binder rule or an η-equation compares only after it is opened, and no
+//! neutral whose head has a body to unfold. For a rigid pair conversion **is**
+//! structural equality on the hashed content, up to the unit's η, which
+//! relates a unit to every neutral of its type. So two rigid guards with
+//! different hashes settle the pair distinct without reading either node,
+//! unless one holds a unit and the other a neutral. Equal hashes settle
+//! nothing: a collision is possible, and the pair falls through to structural
 //! comparison.
 //!
 //! # What it does not hold
 //!
-//! The word carries the hash and one rigidity bit. A hole bit is not carried,
-//! because the domain has no hole former; a loose-variable range and an
-//! approximate depth are not carried, because levels make α-equivalence
-//! identity and every node a binder could make loose is a closure, which is
-//! flexible and never hashed. Each omitted field reopens with the condition
-//! that would make it non-trivial: the hole surface, or a guard asked to decide
-//! under a binder.
+//! The word carries the hash, one rigidity bit and the two bits of [`Holds`].
+//! A hole bit is not carried, because the domain has no hole former; a
+//! loose-variable range and an approximate depth are not carried, because
+//! levels make α-equivalence identity and every node a binder could make loose
+//! is a closure, which is flexible and never hashed. Each omitted field
+//! reopens with the condition that would make it non-trivial: the hole
+//! surface, or a guard asked to decide under a binder.
 //!
 //! # The hash
 //!
@@ -36,16 +38,19 @@
 //! Every value, computation and neutral is minted with a `Guard`:
 //! `Guard::Rigid` carrying an FNV-1a `ContentHash` of the node's kind, payload
 //! and children's words, or `Guard::Flexible`. A node is flexible when a
-//! closure or a head with a body to unfold sits inside it; a dangling child at
-//! mint makes its parent flexible, the direction that decides nothing. For two
-//! rigid nodes conversion is structural equality on the hashed content, so
-//! differing hashes separate them; equal hashes decide nothing, because a hash
-//! may collide. Literal payloads and lift levels enter the hash through their
-//! `Hash` implementations, whose equality is the conversion equality for both;
-//! a term face never enters it, because two faces over one content are one
-//! value.
+//! closure or a head with a body to unfold sits inside it; a dangling child
+//! at mint makes its parent flexible, the direction that decides nothing. For
+//! two rigid nodes conversion is structural equality on the hashed content up
+//! to the unit's η, so differing hashes separate them unless one holds a unit
+//! and the other a neutral; equal hashes decide nothing, because a hash may
+//! collide. Literal payloads and lift levels enter the hash through their
+//! `Hash` implementations, whose equality is the conversion equality for
+//! both; a term face never enters it, because two faces over one content are
+//! one value.
 //!
-//! The word carries the hash and the rigidity bit and nothing else.
+//! The word carries the hash, the rigidity bit and the two bits of `Holds`,
+//! and nothing else. A unit bit alone would make every word that holds a unit
+//! flexible, and `true` against `false` would lose its constant-time answer.
 //! Alternatives: the hole and metavariable bits, a loose-variable range and an
 //! approximate depth that a Lean-style word packs. Each is uniformly trivial
 //! here — a neutral headed by a hole or a mark carries a closure and is
@@ -121,14 +126,58 @@ impl From<ContentHash> for u64
     }
 }
 
+/// What a rigid node holds that η relates across a pair. The unit meets a
+/// neutral of its type by η, so a word that holds a unit and a word that holds
+/// a neutral settle nothing between them.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Holds
+{
+    /// The node holds a tuple or a record of no components.
+    unit: bool,
+    /// The node holds a neutral head.
+    neutral: bool,
+}
+
+impl Holds
+{
+    /// Whether η can relate a node that holds `self` to one that holds
+    /// `other`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn meet(
+        self,
+        other: Self,
+    ) -> Meeting
+    {
+        if (self.unit && other.neutral) || (self.neutral && other.unit) {
+            Meeting::Meets
+        }
+        else {
+            Meeting::Misses
+        }
+    }
+}
+
+/// Whether η can relate two rigid words through the unit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Meeting
+{
+    /// One word holds a unit where the other holds a neutral.
+    Meets,
+    /// No unit meets a neutral.
+    Misses,
+}
+
 /// The word minted with a domain node, read by the pipeline's step 2.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Guard
 {
     /// Nothing inside the node can change its answer under conversion, so
     /// conversion on a pair of such nodes is structural equality on the
-    /// content this hash folds.
-    Rigid(ContentHash),
+    /// content this hash folds, up to the unit's η that the holds read.
+    Rigid(ContentHash, Holds),
     /// A closure or an unfoldable head sits inside the node, so its content
     /// says nothing step 2 may act on.
     Flexible,
@@ -138,7 +187,8 @@ pub enum Guard
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum GuardAnswer
 {
-    /// Both words are rigid and their hashes differ: the pair is distinct.
+    /// Both words are rigid, their hashes differ, and η relates nothing they
+    /// hold: the pair is distinct.
     Apart,
     /// The words settle nothing — either is flexible, or the hashes agree —
     /// and the pair falls through to structural comparison.
@@ -265,7 +315,9 @@ impl Guard
     /// - ensures: [`Guard::Flexible`] when any child is flexible; otherwise
     ///   [`Guard::Rigid`] carrying the fold of `tag`, `content` and each
     ///   child's hash in order, so equal kinds over equal content and equal
-    ///   children always fold to equal hashes.
+    ///   children always fold to equal hashes. Its holds are the children's,
+    ///   with a unit for a tuple or a record of no children and a neutral for a
+    ///   head.
     /// - provides: the one constructor every rigid word is minted through, so
     ///   the fold order is fixed in one place.
     /// - fails: never.
@@ -296,22 +348,38 @@ impl Guard
         let mut fold = Fold(FNV_OFFSET);
         tag.hash(&mut fold);
         content.hash(&mut fold);
+        let mut holds = Holds {
+            unit: false,
+            neutral: matches!(
+                tag,
+                GuardTag::Variable | GuardTag::Constant | GuardTag::Module | GuardTag::Primitive
+            ),
+        };
+        let mut empty = true;
         for child in children {
             let child = *core::borrow::Borrow::<Self>::borrow(&child);
             match child {
-                Self::Rigid(ContentHash(hash)) => fold.write_u64(hash),
+                Self::Rigid(ContentHash(hash), held) => {
+                    fold.write_u64(hash);
+                    holds.unit |= held.unit;
+                    holds.neutral |= held.neutral;
+                    empty = false;
+                },
                 Self::Flexible => return Self::Flexible,
             }
         }
-        Self::Rigid(ContentHash(fold.finish()))
+        // The unit is the tuple and the record of no components.
+        holds.unit |= empty && matches!(tag, GuardTag::Tuple | GuardTag::Record);
+        Self::Rigid(ContentHash(fold.finish()), holds)
     }
 
     /// Step 2 for a pair: whether the two words settle it distinct.
     ///
     /// # Specification
     /// - requires: both words were minted in one run.
-    /// - ensures: [`GuardAnswer::Apart`] exactly when both words are rigid and
-    ///   their hashes differ; [`GuardAnswer::Inconclusive`] otherwise.
+    /// - ensures: [`GuardAnswer::Apart`] exactly when both words are rigid,
+    ///   their hashes differ and their holds do not meet;
+    ///   [`GuardAnswer::Inconclusive`] otherwise.
     /// - provides: the constant-time distinct answer for a rigid pair, which
     ///   never answers convertible — equal hashes may collide.
     /// - fails: never.
@@ -321,20 +389,27 @@ impl Guard
     /// - hypothesis: L3 — all nine ordered pairs of two unequal rigid words and
     ///   a flexible word have exact verdicts. Asymmetric flexibility, treating
     ///   equal hashes as apart or accepting unequal rigid hashes changes an
-    ///   entry.
+    ///   entry. A unit against a neutral, at the root or inside a former,
+    ///   settles nothing, and a unit against a pair or another injection stays
+    ///   apart.
     /// - witness: `guard::tests::only_two_rigid_words_that_differ_are_apart`
+    /// - witness: `guard::tests::a_unit_and_a_neutral_are_never_apart_6110`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| (ret == GuardAnswer::Apart)
-        == matches!((self, other), (Self::Rigid(one), Self::Rigid(two)) if one != two))]
+        == matches!((self, other), (Self::Rigid(one, first), Self::Rigid(two, second)) if one != two && first.meet(second) == Meeting::Misses))]
     pub fn settles(
         self,
         other: Self,
     ) -> GuardAnswer
     {
         match (self, other) {
-            (Self::Rigid(one), Self::Rigid(two)) if one != two => GuardAnswer::Apart,
-            (Self::Rigid(_) | Self::Flexible, Self::Rigid(_) | Self::Flexible) => {
+            (Self::Rigid(one, first), Self::Rigid(two, second))
+                if one != two && first.meet(second) == Meeting::Misses =>
+            {
+                GuardAnswer::Apart
+            },
+            (Self::Rigid(..) | Self::Flexible, Self::Rigid(..) | Self::Flexible) => {
                 GuardAnswer::Inconclusive
             },
         }
