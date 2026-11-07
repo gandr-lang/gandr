@@ -15,6 +15,10 @@
 //! input by name. The work of one arithmetic operation is bounded by its
 //! operands' bit widths and the requested precision.
 //!
+//! Its results hold in the point-free form: a real is a Dedekind cut of open
+//! predicates (Taylor, Definition 6.7). No result reads a real as a point, and
+//! none decides the equality of two reals.
+//!
 //! # Items
 //!
 //! - [`Plan`] — a computation over the reals: a finite DAG of real, open and

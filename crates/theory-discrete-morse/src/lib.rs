@@ -17,6 +17,10 @@
 //! complex. [`reduct()`] builds the complex of the critical cells, with the
 //! boundary that the gradient paths give.
 //!
+//! Its results hold over the integers: the reduct keeps the homology of the
+//! complex. Doré proves more for a graph, which equals its Morse reduct up to
+//! homotopy type (thesis § 3.6). The crate does not build that equivalence.
+//!
 //! # Items
 //!
 //! | Item | What it holds |

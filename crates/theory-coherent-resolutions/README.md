@@ -2,6 +2,8 @@
 
 Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents, and Brown's collapsing scheme on that complex.
 
+Each certificate is a 3-cell of a coherent presentation, but the bar complex is a chain complex over the integers alone. #5884 owes the 4-cells of the critical triples, and #5962 the cells above them.
+
 <!-- toc -->
 - [Synopsis](#synopsis)
 - [References](#references)
@@ -32,7 +34,7 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 ## Provided features
 
 - `rewrite_at`, `apply_once`, `normalize`, `CellApp`, `Rewrite`, `Normalization`, `firing`, `redex_search`: one firing under the alphabet's discipline, and budgeted normalization that tells a normal form from a spent budget.
-- Wires (`Cell::wires`): a cell whose right-hand side writes a metavariable that its left-hand side does not bind fires renamed apart from the term. Each firing thus writes fresh wires, and a replay keeps them as metavariables of the join.
+- Wires (`Cell::wires`): each firing writes fresh names for the wires of a cell, as [`rewrite`](src/rewrite.rs) states.
 - `enumerate_overlaps`, `overlaps_between`, `Overlap`, `OverlapKind`, `OverlapRefusal`, `peak_legs`, `PeakLegs`: the multi-sum family with its seam data, complete up to the root diagonal.
 - `interior_overlaps_between`, `root_overlaps_between`: the confluence family below the root of a left-hand side, a cell paired with itself included, and the root entry alone, which the joinability check reads over a first-order presentation.
 - `OverlapSupport`: the memoized overlap relation on cells and certificates, and independent batches.
@@ -46,7 +48,6 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 - `LawvereTheory`, `TermTable`, `TermNode`, `TermHead`, `root_rewrite`: the Lawvere theory of a first-order block that the caller states, with its terms interned once and its normal forms innermost first within a `NormalizationBudget`.
 - `BarCell`, `Arrow`, `Degeneracy`, `BarBound`, `Truncation`, `truncated`, `LawvereError`: the bar complex of that theory as a `Complex` of `gandr-theory-discrete-morse`, which states the faces of a cell when a caller asks, and the largest subcomplex inside a bound.
 - `Scheme` for `LawvereTheory`, `LawvereTheory::overlapping`, `overlapped`, `TermTable::generator`: Brown's collapsing scheme on that bar complex as a `Scheme` of `gandr-theory-discrete-morse`, along the leftmost innermost redex, and the second rule of each essential overlap.
-- The engine trusts the splice law rather than checking it, and an alphabet that breaks it shows through the step.
 - The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `RulePlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
 
 ## Expected features

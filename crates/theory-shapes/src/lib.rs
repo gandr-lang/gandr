@@ -8,6 +8,10 @@
 //! their meets, with its maps up. Gluing on the meets decides the kernel of
 //! the first coboundary, which is the kernel of Hansen's sheaf Laplacian.
 //!
+//! Its results hold exactly for the finite shapes that it states: each
+//! entailment comes with a derivation or a countermodel. A shape has no
+//! dimension above zero, and the shape theory has no interval.
+//!
 //! # The shape theory
 //!
 //! The crate states a shape parameter `ft` in the sense of [`FaceTT`]: the

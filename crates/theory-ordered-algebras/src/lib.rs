@@ -12,6 +12,9 @@
 //! represents. The operation then refuses, and the checker reports the law as
 //! undecided at those elements, apart from a broken law.
 //!
+//! Its laws hold in the order-theoretic form, a posemiring (Wood, Definitions
+//! 4.1.1 and 4.1.2), and each instance computes exactly.
+//!
 //! # Items
 //!
 //! | Item | What it holds |
