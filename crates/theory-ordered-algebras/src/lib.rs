@@ -29,6 +29,19 @@
 //!   algebras of the frame, and the probe of their laws.
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — exemplar: grades as counts,
 //!   costs and distances, and the semirings that carry them.
+//! - `Wood-2024-framework_semiringannotated_type_systems` — dependency: § 4.1,
+//!   the posemiring laws of Definitions 4.1.1 and 4.1.2, which [`Law`] states,
+//!   and the linearity posemiring of Example 4.1.3, which [`Usage`] is. Its
+//!   order is the reverse of Wood's, so a sum of uses lies at or below a bound.
+//!   James Wood, "A Framework for Semiring-Annotated Type Systems", doctoral
+//!   thesis, University of Strathclyde, 2024.
+//! - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems`
+//!   — dependency: § 2, the semiring of Definition 5 with the monotone partial
+//!   order of footnote 3, which the laws state. No law states the complete
+//!   lattice of Definition 7, which an infinite reduction needs. Emma Ahrens,
+//!   Jan-Christoph Kassing, Jürgen Giesl and Joost-Pieter Katoen, "Weighted
+//!   Rewriting: Semiring Semantics for Abstract Reduction Systems", 2025,
+//!   `arXiv:2505.08496`.
 
 #![no_std]
 

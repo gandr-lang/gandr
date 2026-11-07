@@ -39,6 +39,17 @@
 //!   crate states for finite posets.
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: a space presented
 //!   by its points and again by its algebra of observations.
+//! - `Cherubini-2024-foundation_synthetic_stone_duality` — dependency: § 1.2,
+//!   the Stone duality axiom, and Definition 1.1.7, for distributive lattices
+//!   in place of Boolean algebras. A vertex is a homomorphism to `2`.
+//!   [`Polynomial::table`] evaluates a polynomial at each vertex, and
+//!   [`Polynomial::from_table`] reads it back. Felix Cherubini, Thierry
+//!   Coquand, Freek Geerligs and Hugo Moeneclaey, "A Foundation for Synthetic
+//!   Stone Duality", 2024, `arXiv:2412.03203`.
+//! - `Sterling-2026-domains_classifying_topoi` — dependency: § 1.5, the cube as
+//!   the spectrum of the free distributive lattice, which [`CubeMap`] and
+//!   [`Homomorphism`] read in both directions. Jonathan Sterling and Lingyuan
+//!   Ye, "Domains and Classifying Topoi", 2026, `arXiv:2505.13096`.
 
 #![no_std]
 

@@ -24,6 +24,8 @@ The finite case of Stone duality for gandr: free distributive lattices in normal
 
 - Clemens Berger and Mai Gehrke. "Stone duality for spectral sheaves and the patch monad". Journal of Pure and Applied Algebra, 2023, [doi:10.1016/j.jpaa.2022.107306](https://doi.org/10.1016/j.jpaa.2022.107306) — the duality whose finite case the crate states.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the presented-spaces frame, where a finite poset and the lattice of its down-sets are one space described twice.
+- `Cherubini-2024-foundation_synthetic_stone_duality` — dependency: Felix Cherubini, Thierry Coquand, Freek Geerligs and Hugo Moeneclaey. "A Foundation for Synthetic Stone Duality". 2024, [arXiv:2412.03203](https://arxiv.org/abs/2412.03203) — § 1.2's Stone duality axiom and Definition 1.1.7, for distributive lattices in place of Boolean algebras: a vertex is a homomorphism to `2`, `Polynomial::table` evaluates a polynomial at each vertex, and `Polynomial::from_table` reads it back.
+- `Sterling-2026-domains_classifying_topoi` — dependency: Jonathan Sterling and Lingyuan Ye. "Domains and Classifying Topoi". 2026, [arXiv:2505.13096](https://arxiv.org/abs/2505.13096) — § 1.5's cube as the spectrum of the free distributive lattice, which `CubeMap` and `Homomorphism` read in both directions.
 
 ## Provided features
 

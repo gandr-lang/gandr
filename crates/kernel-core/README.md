@@ -91,6 +91,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
 - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
+- `Grodin-2026-potential_functions_types` — background: Grodin and coauthors, 2026 — amortised cost.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
 - `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — § 5's `var`, `split` and `compose`, which the replay walks.
 - `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design (§ coverage-evidence-form) — the derivation that the kernel replays step by step.
