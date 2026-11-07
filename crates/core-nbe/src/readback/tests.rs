@@ -23,6 +23,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::Summand;
 
 use super::OpenBinders;
 use super::ReadbackFault;
@@ -1501,6 +1502,50 @@ fn a_primitive_head_reads_back_as_its_thunk_2378()
         [core.value(first), core.value(second)],
         "the arguments come back in source order"
     );
+}
+
+/// A literal identity test on two closed literals computes while it is
+/// evaluated: `int.eq` returns the left summand on equal literals and the right
+/// one on unequal literals.
+#[test]
+fn a_literal_identity_test_returns_its_answer()
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let mut core = CoreArena::new();
+    let int_eq = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "int.eq")
+        .expect("the prelude holds int.eq");
+    let [zero, one] = ["0", "1"].map(|digits| {
+        let magnitude = Magnitude::from_decimal_text(alloc::string::String::from(digits))
+            .expect("decimal digits");
+        core.value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            magnitude,
+        )))
+    });
+    let (chain, environment) = nothing_unfolds();
+    let scope = environment.root();
+    let definitions = Definitions::new(&chain, &environment, scope);
+    for (operands, answer) in [([zero, zero], 0_usize), ([zero, one], 1_usize)] {
+        let call = core.computation_primitive(int_eq, Arguments::Binary(operands));
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), call)
+            .expect("a literal identity test evaluates");
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+        else {
+            panic!("a literal identity test on two literals returns");
+        };
+        assert!(
+            matches!(
+                domain.value(value),
+                Some(&DomainValue::Injection { summand, .. }) if summand == Summand::from(answer)
+            ),
+            "the test returns summand {answer} for {operands:?}"
+        );
+    }
 }
 
 #[test]

@@ -5571,7 +5571,7 @@ fn step_apply(
 /// # Adequacy
 /// - hypothesis: L3 — equal and unequal literals at each identity row answer as
 ///   the kernel replays them, and a call over a variable stays standing.
-/// - witness: `tests::literal_identity::a_literal_identity_test_answers_alike_in_the_checker_and_the_kernel`
+/// - witness: `readback::tests::a_literal_identity_test_returns_its_answer`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |answer| answer.is_none_or(|id| matches!(domain.computation(id), Some(&DomainComp::Return { .. })))))]
 fn identity_answer(
     core: &CoreArena,
