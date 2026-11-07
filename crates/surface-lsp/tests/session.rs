@@ -1492,6 +1492,46 @@ fn signature_help_reads_a_sibling_s_head()
         "the first argument of the sibling's `pick`: {answer}"
     );
 }
+#[test]
+fn an_endpoint_loop_publishes_its_kernel_decline_6155()
+{
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("corpus/model/sessions/endpoint-loop.gandr")
+        .canonicalize()
+        .expect("the endpoint-loop source is canonical");
+    let source = Source {
+        uri: uri(&path),
+        text: std::fs::read_to_string(&path).expect("the endpoint-loop source is read"),
+    };
+    let mut messages = opening();
+    messages.push(open(&source));
+    messages.extend(closing());
+    let (served, written) = session(&messages);
+    assert_eq!(served, Served::Clean);
+    let publications: Vec<&Value> = written
+        .iter()
+        .filter(|message| {
+            message.pointer("/params/uri").and_then(Value::as_str) == Some(source.uri.as_str())
+        })
+        .collect();
+    let [before, after] = *publications.as_slice()
+    else {
+        panic!("the endpoint loop publishes before and after admission: {publications:?}");
+    };
+    assert!(published(before).is_empty());
+    let reported = published(after);
+    let expected = format!(
+        "{}: settled `follow` at 1136..1401: states checks owing 0; produced checks owing 0; no kernel image: EndpointLoop (unimplemented, #6099)",
+        path.display()
+    );
+    assert!(
+        reported.iter().any(|diagnostic| {
+            diagnostic.get("message").and_then(Value::as_str) == Some(expected.as_str())
+        }),
+        "the admission publishes the endpoint loop's kernel-image decline: {reported:?}"
+    );
+}
 
 #[test]
 fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
