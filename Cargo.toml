@@ -902,6 +902,7 @@ path = "crates/theory-deep-inference"
 # consumers:
 # - surface-lowering (dev)
 # - theory-coherent-resolutions
+# - theory-deep-inference
 [workspace.dependencies.gandr-theory-discrete-morse]
 path = "crates/theory-discrete-morse"
 default-features = false

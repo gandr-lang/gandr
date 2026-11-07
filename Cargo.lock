@@ -1934,6 +1934,7 @@ dependencies = [
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
+ "gandr-theory-discrete-morse",
  "hashbrown 0.17.1",
  "proptest",
  "quenchant-anodized",

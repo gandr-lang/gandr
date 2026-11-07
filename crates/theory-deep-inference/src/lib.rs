@@ -16,14 +16,21 @@
 //! on each other — an event's key digests its causal past, and the order is
 //! read back to schedule the normal form — so the crate encloses both. A
 //! family of certificates sharing one skeleton folds into one guarded
-//! template where that pays ([`anti_unify_tracelets`], [`GuardedTemplate`]).
+//! template where that pays ([`anti_unify_tracelets`], [`GuardedTemplate`]),
+//! and the template with one row for each member is a reduction of the
+//! family whose replay checks each member against its instance
+//! ([`TemplateReduction`]).
 //!
 //! Replay in `gandr-theory-coherent-resolutions` is the semantic oracle: every
 //! relation here is sound below it, and a negative answer means "not
 //! identified", never "distinct". Everything is generic over the substrate's
 //! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet). The crate is
-//! `no_std` and depends on `alloc`, the substrate, the engine and
-//! `quenchant-shape`.
+//! `no_std` and depends on `alloc`, the substrate, the engine, the reduction
+//! trait of `gandr-theory-discrete-morse` and `quenchant-shape`.
+//!
+//! Every walk keeps its stack on the heap. A dependence chain far longer than
+//! a small thread's stack is ordered, normalized, projected to a flow and a
+//! web, and dropped inside that thread.
 //!
 //! # Example
 //!
@@ -178,6 +185,7 @@ mod flow;
 mod footprint;
 mod modular;
 mod normal_form;
+mod reduction;
 mod shift;
 mod template;
 
@@ -277,6 +285,10 @@ pub use crate::normal_form::prim_address;
 pub use crate::normal_form::replay_fuel;
 pub use crate::normal_form::schedule_resolution;
 pub use crate::normal_form::tracelets_nf_equal;
+pub use crate::reduction::FoldFault;
+pub use crate::reduction::Folded;
+pub use crate::reduction::Identity;
+pub use crate::reduction::TemplateReduction;
 pub use crate::shift::ShiftEquivalence;
 pub use crate::shift::ShiftObstruction;
 pub use crate::shift::derive_shift_equivalence;
@@ -294,6 +306,7 @@ pub use crate::template::TemplateEntry;
 pub use crate::template::TemplateLeg;
 pub use crate::template::TemplateObstruction;
 pub use crate::template::TemplateRefusal;
+pub use crate::template::TemplateRow;
 pub use crate::template::anti_unify_tracelets;
 pub use crate::template::inheritance_lookup;
 pub use crate::template::price_family;

@@ -41,6 +41,8 @@ use gandr_theory_coherent_resolutions::complete;
 use gandr_theory_coherent_resolutions::derive_fused;
 use gandr_theory_coherent_resolutions::enumerate_overlaps;
 use gandr_theory_deep_inference::EntryIndex;
+use gandr_theory_deep_inference::FoldFault;
+use gandr_theory_deep_inference::GuardId;
 use gandr_theory_deep_inference::GuardedTemplate;
 use gandr_theory_deep_inference::InheritanceCache;
 use gandr_theory_deep_inference::InheritanceVerdict;
@@ -49,10 +51,15 @@ use gandr_theory_deep_inference::MemberIndex;
 use gandr_theory_deep_inference::NodeCount;
 use gandr_theory_deep_inference::TemplateLeg;
 use gandr_theory_deep_inference::TemplateObstruction;
+use gandr_theory_deep_inference::TemplateReduction;
 use gandr_theory_deep_inference::TemplateRefusal;
+use gandr_theory_deep_inference::TemplateRow;
 use gandr_theory_deep_inference::anti_unify_tracelets;
 use gandr_theory_deep_inference::flows_equal;
 use gandr_theory_deep_inference::tracelet_flow;
+use gandr_theory_discrete_morse::MorseError;
+use gandr_theory_discrete_morse::Reduction as _;
+use gandr_theory_discrete_morse::Refusal;
 use proptest::prelude::*;
 use quenchant_shape::shape::Maybe;
 
@@ -984,6 +991,46 @@ fn members_admit_as_their_plain_replay<A>(
     }
 }
 
+/// The reduction clause over one family: a family that folds is a reduction
+/// whose replay passes, and its target is the template's size.
+///
+/// # Specification
+/// - ensures: a family that folds replays as a reduction, and the size of its
+///   target is the template size `s` of the family's cost report.
+/// - panics: when the clause fails.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated families over both alphabets, the adversarial
+///   classes included. The replay rebuilds each member from its row, so a wrong
+///   row, a wrong arm or a skipped entry fails it.
+/// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
+#[spec(ensures: TemplateReduction::fold(family, store, &mut InheritanceCache::new()).map_or_else(|_| true, |mut reduction|
+    reduction.replay().is_ok() && reduction.size() == reduction.template().cost_report(family, store).template_size))]
+fn folds_replay_as_reductions<A>(
+    family: &[Tracelet<A>],
+    store: &CellStore<A>,
+) where
+    A: CellAlphabet,
+{
+    let Ok(mut reduction) = TemplateReduction::fold(family, store, &mut InheritanceCache::new())
+    else {
+        return;
+    };
+    assert_eq!(
+        Ok(()),
+        reduction.replay(),
+        "a folded family replays as a reduction"
+    );
+    assert_eq!(
+        reduction
+            .template()
+            .cost_report(family, store)
+            .template_size,
+        reduction.size(),
+        "the target is the template's size"
+    );
+}
+
 /// A generated family's shape: which source, which base, how many members,
 /// which regime, which adversary.
 ///
@@ -1054,6 +1101,20 @@ proptest! {
         let chosen = source.get(&sources);
         let generated = family(base.get(&chosen.bases), members, regime, adversary);
         members_admit_as_their_plain_replay(&generated, &chosen.store);
+    }
+
+    #[test]
+    fn every_folded_family_replays_as_a_reduction(
+        (source, base, members, regime, adversary) in shape(),
+    ) {
+        let sources = sequent_sources();
+        let chosen = source.get(&sources);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        folds_replay_as_reductions(&generated, &chosen.store);
+        let sources = toy_sources();
+        let chosen = source.get(&sources);
+        let generated = family(base.get(&chosen.bases), members, regime, adversary);
+        folds_replay_as_reductions(&generated, &chosen.store);
     }
 }
 
@@ -1367,6 +1428,117 @@ fn a_certificate_outside_the_template_is_refused_by_name()
         }),
         template.instantiate(&Subst::new()),
         "an entry left unbound"
+    );
+}
+
+#[test]
+fn a_member_unlike_its_instance_is_refused_by_name()
+{
+    let (store, lead) = lead_base();
+    let honest = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let template = anti_unify_tracelets(&honest, &store, &mut InheritanceCache::new())
+        .expect("two arms per entry pay");
+    let mut joined = honest.clone();
+    let first = joined
+        .first()
+        .map(|member| member.joins_at.clone())
+        .expect("a first member");
+    let last = joined.last_mut().expect("a last member");
+    assert_ne!(first, last.joins_at, "the first and last members differ");
+    last.joins_at = first;
+    assert_eq!(
+        Err(Refusal::Forged(MemberIndex::from(63_usize))),
+        TemplateReduction::over(template.clone(), &joined).replay(),
+        "a member whose join its arms do not give"
+    );
+    let Source { bases, .. } = fused(Name("fused Peano"), peano_store());
+    let mut shaped = honest;
+    let other = bases
+        .into_iter()
+        .find(|base| template.peak_substitution(&base.overlap.peak).is_err())
+        .expect("a base of another shape");
+    let last = shaped.last_mut().expect("a last member");
+    *last = other;
+    assert_eq!(
+        Err(Refusal::Morse(MorseError::Complex(FoldFault::Obstruction(
+            TemplateObstruction::PeakNotAnInstance
+        )))),
+        TemplateReduction::over(template, &shaped).replay(),
+        "a member of another shape"
+    );
+}
+
+#[test]
+fn a_family_that_does_not_pay_is_no_reduction()
+{
+    let (store, lead) = lead_base();
+    let distinct = family(&lead, Members(64), Regime::AllDistinct, Adversary::Honest);
+    let refusal = TemplateReduction::fold(&distinct, &store, &mut InheritanceCache::new()).err();
+    assert!(
+        matches!(refusal, Some(TemplateRefusal::DoesNotPay { .. })),
+        "a family whose every arm is its own does not pay: {refusal:?}"
+    );
+    assert_eq!(
+        anti_unify_tracelets(&distinct, &store, &mut InheritanceCache::new()).err(),
+        refusal,
+        "the collapse keeps the fold's refusal"
+    );
+}
+
+#[test]
+fn a_row_outside_its_template_is_refused_by_name()
+{
+    let (store, lead) = lead_base();
+    let honest = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let template = anti_unify_tracelets(&honest, &store, &mut InheritanceCache::new())
+        .expect("two arms per entry pay");
+    let member = honest.first().expect("a first member");
+    let row = template
+        .row(&member.overlap.peak)
+        .expect("a member has a row");
+    let entries = template.entries().len();
+    assert_eq!(entries, row.guards().len(), "one guard for each entry");
+    assert_eq!(
+        Ok(member),
+        template.instance(&row).as_ref(),
+        "a member's row gives the member back"
+    );
+    assert_eq!(
+        Err(TemplateObstruction::UnboundEntry {
+            entry: EntryIndex::from(0_usize)
+        }),
+        template.instance(&TemplateRow::default()),
+        "a row with no guard"
+    );
+    let mut long = row.guards().to_vec();
+    long.push(GuardId::from(0_usize));
+    assert_eq!(
+        Err(TemplateObstruction::GuardPastEntries {
+            entry: EntryIndex::from(entries)
+        }),
+        template.instance(&TemplateRow::from(long)),
+        "a row with a guard past the last entry"
+    );
+    let mut foreign = row.guards().to_vec();
+    if let Some(guard) = foreign.first_mut() {
+        *guard = GuardId::from(usize::MAX);
+    }
+    assert_eq!(
+        Err(TemplateObstruction::ArmOutsideTemplate {
+            entry: EntryIndex::from(0_usize)
+        }),
+        template.instance(&TemplateRow::from(foreign)),
+        "a guard of no arm"
+    );
+    let outside = family(&lead, Members(3), Regime::OneVarying, Adversary::Honest)
+        .pop()
+        .expect("a member whose first hole holds two");
+    assert_eq!(
+        Err(TemplateObstruction::ArmOutsideTemplate {
+            entry: EntryIndex::from(0_usize)
+        }),
+        template.row(&outside.overlap.peak),
+        "a body that no member held"
     );
 }
 

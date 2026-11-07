@@ -19,6 +19,9 @@
 //! replaying what was rebuilt ([`GuardedTemplate::admit`]): a cache entry that
 //! lies about a triple lets a template through, never a member that replay
 //! refuses.
+//! [`GuardedTemplate::row`] reads the guard of the arm that a peak holds at
+//! each entry, and [`GuardedTemplate::instance`] rebuilds the certificate from
+//! that row alone.
 //!
 //! # The guarded template
 //!
@@ -611,6 +614,68 @@ pub struct TemplateEntry<A: CellAlphabet>
     pub arms: BTreeMap<ArmAddress, TemplateArm<A>>,
 }
 
+impl<A: CellAlphabet> TemplateEntry<A>
+{
+    /// The arm that `substitution` binds this entry to, the entry at `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// - [`TemplateObstruction::UnboundEntry`]: `substitution` leaves the
+    ///   entry's metavariable unbound.
+    /// - [`TemplateObstruction::ArmOutsideTemplate`]: the bound body is none of
+    ///   the entry's arms.
+    fn arm(
+        &self,
+        index: EntryIndex,
+        substitution: &A::Subst,
+    ) -> Result<&TemplateArm<A>, TemplateObstruction>
+    {
+        let bound = A::restrict_subst(substitution, core::slice::from_ref(&self.var));
+        if bound == A::Subst::default() {
+            return Err(TemplateObstruction::UnboundEntry { entry: index });
+        }
+        match self.arms.get(&arm_address::<A>(&bound)) {
+            Some(arm) if arm.binding == bound => Ok(arm),
+            Some(_) | None => Err(TemplateObstruction::ArmOutsideTemplate { entry: index }),
+        }
+    }
+}
+
+/// One member's row of a template: the guard of the arm that the member holds
+/// at each entry, in entry order.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct TemplateRow(Vec<GuardId>);
+
+impl TemplateRow
+{
+    /// The guards, one for each entry, in entry order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn guards(&self) -> &[GuardId]
+    {
+        &self.0
+    }
+}
+
+impl From<Vec<GuardId>> for TemplateRow
+{
+    /// The row that holds `guards`, in entry order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(guards: Vec<GuardId>) -> Self
+    {
+        Self(guards)
+    }
+}
+
 /// What producing one template cost: the inheritance checks its run spent
 /// and the lookups the cache answered.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -737,6 +802,13 @@ pub enum TemplateObstruction
     ArmOutsideTemplate
     {
         /// The entry whose body is outside the template.
+        entry: EntryIndex,
+    },
+    /// A row holds a guard past the template's last entry.
+    GuardPastEntries
+    {
+        /// The first entry past the template's last, where the row still holds
+        /// a guard.
         entry: EntryIndex,
     },
 }
@@ -1275,7 +1347,8 @@ impl<A: CellAlphabet> GuardedTemplate<A>
             let mut observer = A::Subst::default();
             !bool::from(A::match_cmd(&self.carrier.overlap.peak, peak, &mut observer))
         },
-        Err(&(TemplateObstruction::UnboundEntry { .. } | TemplateObstruction::ArmOutsideTemplate { .. })) => false,
+        Err(&(TemplateObstruction::UnboundEntry { .. } | TemplateObstruction::ArmOutsideTemplate { .. }
+            | TemplateObstruction::GuardPastEntries { .. })) => false,
     })]
     #[inline]
     pub fn peak_substitution(
@@ -1362,24 +1435,262 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     {
         let mut instance = self.carrier.clone();
         for (index, entry) in self.entries.iter().enumerate() {
-            let bound = A::restrict_subst(substitution, core::slice::from_ref(&entry.var));
-            if bound == A::Subst::default() {
-                return Err(TemplateObstruction::UnboundEntry {
-                    entry: EntryIndex::from(index),
-                });
-            }
-            let arm = match entry.arms.get(&arm_address::<A>(&bound)) {
-                Some(arm) if arm.binding == bound => arm,
-                Some(_) | None => {
-                    return Err(TemplateObstruction::ArmOutsideTemplate {
-                        entry: EntryIndex::from(index),
-                    });
-                },
-            };
+            let arm = entry.arm(EntryIndex::from(index), substitution)?;
             instance.overlap.peak = A::apply_subst(&arm.binding, &instance.overlap.peak);
             instance.joins_at = A::apply_subst(&arm.binding, &instance.joins_at);
         }
         Ok(instance)
+    }
+
+    /// The row of the certificate at `peak`: the guard of the arm that `peak`
+    /// holds at each entry.
+    ///
+    /// # Specification
+    /// - ensures: one guard for each entry, in entry order: the guard of the
+    ///   arm whose binding is [`GuardedTemplate::peak_substitution`] of `peak`
+    ///   restricted to the entry's metavariable.
+    /// - fails: as [`GuardedTemplate::peak_substitution`];
+    ///   [`TemplateObstruction::UnboundEntry`] for the first entry that the
+    ///   substitution leaves unbound;
+    ///   [`TemplateObstruction::ArmOutsideTemplate`] for the first entry whose
+    ///   bound body is none of its arms.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the members of generated families, whose rows put
+    ///   their own arms back in place; L3 — a peak of another shape and a body
+    ///   outside the template are refused by name. The guard observer rejects
+    ///   the guard of another arm and a skipped entry.
+    /// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
+    /// - witness: `tests::template::a_row_outside_its_template_is_refused_by_name`
+    #[spec(ensures: |output| output == self.scanned_row(peak))]
+    #[inline]
+    pub fn row(
+        &self,
+        peak: &A::Cmd,
+    ) -> Result<TemplateRow, TemplateObstruction>
+    {
+        let substitution = self.peak_substitution(peak)?;
+        let mut guards = Vec::with_capacity(self.entries.len());
+        for (index, entry) in self.entries.iter().enumerate() {
+            guards.push(entry.arm(EntryIndex::from(index), &substitution)?.guard);
+        }
+        Ok(TemplateRow(guards))
+    }
+
+    /// The certificate that the template holds for `row`: the carrier with the
+    /// arm of each entry's guard put in place in its peak and its join.
+    ///
+    /// # Specification
+    /// - ensures: for every entry, the arm whose guard is the row's guard at
+    ///   that entry, applied to the carrier's peak and join; the carrier's
+    ///   paths and overlap otherwise unchanged.
+    /// - fails: [`TemplateObstruction::GuardPastEntries`] when the row holds
+    ///   more guards than the template holds entries;
+    ///   [`TemplateObstruction::UnboundEntry`] for the first entry that the row
+    ///   holds no guard for; [`TemplateObstruction::ArmOutsideTemplate`] for
+    ///   the first entry whose guard names none of its arms.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the row of each member of generated families gives
+    ///   the member back; L3 — a short row, a long row and the guard of another
+    ///   entry are refused by name. The boundary and skeleton observers reject
+    ///   applying an arm only to the peak, choosing another arm and skipping an
+    ///   entry.
+    /// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
+    /// - witness: `tests::template::a_row_outside_its_template_is_refused_by_name`
+    #[spec(ensures: |output| match (output.as_ref(), self.scanned_instance(row)) {
+        (Ok(instance), Ok(expected)) => instance.overlap.peak == expected.overlap.peak
+            && instance.joins_at == expected.joins_at
+            && instance.path_a == expected.path_a && instance.path_b == expected.path_b
+            && instance.overlap.left == expected.overlap.left
+            && instance.overlap.right == expected.overlap.right
+            && instance.overlap.kind == expected.overlap.kind
+            && instance.overlap.unifier == expected.overlap.unifier
+            && instance.overlap.seam == expected.overlap.seam
+            && instance.overlap.right_renamed() == expected.overlap.right_renamed(),
+        (Err(actual), Err(expected)) => *actual == expected,
+        (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
+    })]
+    #[inline]
+    pub fn instance(
+        &self,
+        row: &TemplateRow,
+    ) -> Result<Tracelet<A>, TemplateObstruction>
+    {
+        let (peak, join) = self.boundary(row)?;
+        let mut instance = self.carrier.clone();
+        instance.overlap.peak = peak;
+        instance.joins_at = join;
+        Ok(instance)
+    }
+
+    /// The peak and the join of the certificate that the template holds for
+    /// `row`: the arm of each entry's guard put in place in the carrier's
+    /// peak and join, with no copy of the rest of the carrier.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// - [`TemplateObstruction::GuardPastEntries`]: the row holds more guards
+    ///   than the template holds entries.
+    /// - [`TemplateObstruction::UnboundEntry`]: the row holds no guard for an
+    ///   entry.
+    /// - [`TemplateObstruction::ArmOutsideTemplate`]: a guard names none of its
+    ///   entry's arms.
+    pub(crate) fn boundary(
+        &self,
+        row: &TemplateRow,
+    ) -> Result<(A::Cmd, A::Cmd), TemplateObstruction>
+    {
+        if row.0.len() > self.entries.len() {
+            return Err(TemplateObstruction::GuardPastEntries {
+                entry: EntryIndex::from(self.entries.len()),
+            });
+        }
+        let mut boundary: Option<(A::Cmd, A::Cmd)> = None;
+        for (index, entry) in self.entries.iter().enumerate() {
+            let at = EntryIndex::from(index);
+            let Some(guard) = row.0.get(index)
+            else {
+                return Err(TemplateObstruction::UnboundEntry { entry: at });
+            };
+            let Some(arm) = entry.arms.values().find(|arm| arm.guard == *guard)
+            else {
+                return Err(TemplateObstruction::ArmOutsideTemplate { entry: at });
+            };
+            let (peak, join) = match boundary {
+                Some((ref peak, ref join)) => (peak, join),
+                None => (&self.carrier.overlap.peak, &self.carrier.joins_at),
+            };
+            let next = (
+                A::apply_subst(&arm.binding, peak),
+                A::apply_subst(&arm.binding, join),
+            );
+            boundary = Some(next);
+        }
+        Ok(boundary.unwrap_or_else(|| {
+            (
+                self.carrier.overlap.peak.clone(),
+                self.carrier.joins_at.clone(),
+            )
+        }))
+    }
+
+    /// The row of the certificate at `peak`, as a scan of each entry's arms
+    /// reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for each entry in order, the guard of the arm whose binding
+    ///   is [`GuardedTemplate::peak_substitution`] of `peak` restricted to the
+    ///   entry's metavariable.
+    /// - fails: as [`GuardedTemplate::row`] states.
+    /// - provides: the row that the postcondition of [`GuardedTemplate::row`]
+    ///   reads through this bound.
+    /// - panics: none.
+    /// - executable: none — this is the postcondition's predicate.
+    ///
+    /// # Clause cost
+    /// - bound: one match of the peak and one scan of each entry's arms: the
+    ///   work of [`GuardedTemplate::row`], whose postcondition is its one
+    ///   clause reader.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the rows of the members of generated families; L3 — a
+    ///   peak of another shape and a body outside the template. The
+    ///   postcondition of [`GuardedTemplate::row`] compares the two answers in
+    ///   each enforcing run.
+    /// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
+    /// - witness: `tests::template::a_row_outside_its_template_is_refused_by_name`
+    fn scanned_row(
+        &self,
+        peak: &A::Cmd,
+    ) -> Result<TemplateRow, TemplateObstruction>
+    {
+        let substitution = self.peak_substitution(peak)?;
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let at = EntryIndex::from(index);
+                let bound = A::restrict_subst(&substitution, core::slice::from_ref(&entry.var));
+                if bound == A::Subst::default() {
+                    return Err(TemplateObstruction::UnboundEntry { entry: at });
+                }
+                entry
+                    .arms
+                    .values()
+                    .find(|arm| arm.binding == bound)
+                    .map(|arm| arm.guard)
+                    .ok_or(TemplateObstruction::ArmOutsideTemplate { entry: at })
+            })
+            .collect::<Result<Vec<GuardId>, TemplateObstruction>>()
+            .map(TemplateRow)
+    }
+
+    /// The certificate that the template holds for `row`, as a fold over a
+    /// copy of the carrier reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the carrier with the arm of each entry's guard applied to its
+    ///   peak and its join, entry by entry; the paths and the overlap otherwise
+    ///   unchanged.
+    /// - fails: as [`GuardedTemplate::instance`] states.
+    /// - provides: the instance that the postcondition of
+    ///   [`GuardedTemplate::instance`] reads through this bound.
+    /// - panics: none.
+    /// - executable: none — this is the postcondition's predicate.
+    ///
+    /// # Clause cost
+    /// - bound: one copy of the carrier and one scan of each entry's arms: the
+    ///   work of [`GuardedTemplate::instance`], which copies the carrier too
+    ///   and is its one clause reader.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the row of each member of generated families gives
+    ///   the member back; L3 — a short row, a long row and the guard of another
+    ///   entry. The postcondition of [`GuardedTemplate::instance`] compares the
+    ///   two answers in each enforcing run.
+    /// - witness: `tests::template::every_folded_family_replays_as_a_reduction`
+    /// - witness: `tests::template::a_row_outside_its_template_is_refused_by_name`
+    fn scanned_instance(
+        &self,
+        row: &TemplateRow,
+    ) -> Result<Tracelet<A>, TemplateObstruction>
+    {
+        if row.0.len() > self.entries.len() {
+            return Err(TemplateObstruction::GuardPastEntries {
+                entry: EntryIndex::from(self.entries.len()),
+            });
+        }
+        self.entries.iter().enumerate().try_fold(
+            self.carrier.clone(),
+            |mut instance, (index, entry)| {
+                let at = EntryIndex::from(index);
+                let guard = row
+                    .0
+                    .get(index)
+                    .ok_or(TemplateObstruction::UnboundEntry { entry: at })?;
+                let arm = entry
+                    .arms
+                    .values()
+                    .find(|arm| arm.guard == *guard)
+                    .ok_or(TemplateObstruction::ArmOutsideTemplate { entry: at })?;
+                instance.overlap.peak = A::apply_subst(&arm.binding, &instance.overlap.peak);
+                instance.joins_at = A::apply_subst(&arm.binding, &instance.joins_at);
+                Ok(instance)
+            },
+        )
     }
 
     /// Admits the certificate at `peak` through the template: rebuilds it and
