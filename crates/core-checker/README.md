@@ -33,8 +33,8 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
 - `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
-- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` and `ModuleReport::natives`: `ua_n` at every certified stratum, and the native paths it and `pathProduct` cross as.
-- `CheckingContext::keep_strata_in`, `CheckingContext::level_two`, `ua::StratumStore`, `ua::StratumAt`, `ua::StratumLevel`, `ua::NoStratumStore` and `ua::recalled`: the strata a context holds for its life, recalled from a store the driver implements and replayed before use.
+- `Funext`, `Equivalence`, `Reflexivity` and `EndpointRelation`, each with its `ModuleReport` list: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates, decided by computation with the traces the kernel replays ([`funext`](src/funext.rs), [`code`](src/code.rs)); `ua::derive` and `ModuleReport::natives`: `ua_n` at every certified stratum, and the native paths it and `pathProduct` cross as.
+- `CheckingContext::keep_strata_in`, `CheckingContext::level_two` and the store of strata in [`ua`](src/ua.rs): the strata a context holds for its life, recalled from a store the driver implements and replayed before use.
 - `CheckRefusal::ComposeUncertified`, `ComposeNotAShape`, `ComposeDoesNotFill` and `compose::chain_budget`: a chain's unbiased composite, its chains under a budget.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget`, `CheckingContext::memoise_goals` and `signature_table::Absent`: context, admission tables, allowance, goal memo.
@@ -112,6 +112,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
 - `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban — a fill computes to its induction, and nothing adjoins a cell.
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signature type of § 2.2.
+- `vault:01a1b567-b34b-77a2-9ace-075796f0eb3e` — exemplar: Hancock and Hyvernat, _APAL_, 2006 — a loop that follows its protocol is a demonic iteration.
 - `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, Strathclyde, 2024 — graded access at `{0, 1, ω}`.
 
 ## License

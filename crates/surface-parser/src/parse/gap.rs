@@ -1069,14 +1069,14 @@ struct Form<'gap>
 }
 
 /// `parsed`, with each place a signal gives minted where the copy that writes
-/// it owes fewer obligations.
+/// it owes fewer obligations, if one does.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
-/// - ensures: `parsed` when it owes nothing, no place the search tries is kept,
-///   or the copy with every kept place written in owes no fewer obligations;
-///   otherwise the parse of that copy, with each kept line moved, read back
-///   over the source with each written tile minted at its place, its
+/// - ensures: `None` when `parsed` owes nothing, no place the search tries is
+///   kept, or the copy with every kept place written in owes no fewer
+///   obligations; otherwise the parse of that copy, with each kept line moved,
+///   read back over the source with each written tile minted at its place, its
 ///   obligations those of the copy, shifted back over the tiles, one
 ///   [`Oblig::MissingTile`] at each minted tile's place and at the start of
 ///   each moved line, and one [`Oblig::IncompleteTile`] over each misspelt
@@ -1115,11 +1115,11 @@ struct Form<'gap>
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 pub(super) fn gapped<'source>(
     pbg: &Pbg,
-    parsed: ParseResult<'source>,
-) -> ParseResult<'source>
+    parsed: &ParseResult<'source>,
+) -> Option<ParseResult<'source>>
 {
     if parsed.obligations.is_empty() {
-        return parsed;
+        return None;
     }
     let source = parsed.tree.source();
     let text = <&str>::from(source);
@@ -1230,13 +1230,11 @@ pub(super) fn gapped<'source>(
     }
     let mut kept: Vec<&Gap> = forms.into_values().flat_map(|form| form.kept).collect();
     if kept.is_empty() {
-        return parsed;
+        return None;
     }
     kept.sort_by_key(|gap| (gap.at, matches!(gap.act, Act::Writes { .. })));
-    match minted(pbg, source, &kept) {
-        Some(repaired) if repaired.obligations.len() < parsed.obligations.len() => repaired,
-        Some(_) | None => parsed,
-    }
+    minted(pbg, source, &kept)
+        .filter(|repaired| repaired.obligations.len() < parsed.obligations.len())
 }
 
 /// The top-level form `at` stands in: from the start of the last line at or
