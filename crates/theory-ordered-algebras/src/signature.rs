@@ -183,3 +183,37 @@ pub trait OrderedSemiring
         upper: &Self::Element,
     ) -> Comparison;
 }
+
+/// A commutative ring under the discrete order.
+///
+/// It is an ordered semiring whose every element has a negation. The checker
+/// decides the commutativity of the product and the inverse of the sum beside
+/// the sixteen laws.
+///
+/// # Specification
+/// - provides: the negation [`crate::check_ring`] decides the inverse law on.
+/// - panics: none of its own.
+/// - executable: none — the trait states obligations its implementations carry.
+pub trait CommutativeRing: OrderedSemiring
+{
+    /// The negation of an element: the element whose sum with it is zero.
+    ///
+    /// # Specification
+    /// - ensures: the exact negation, or a refusal when it lies past the
+    ///   represented elements.
+    /// - panics: none.
+    /// - executable: none — the negation is the implementation's.
+    ///
+    /// # Errors
+    /// - [`Outside`]: the exact negation lies past the represented elements.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the ring checker reads each implementation's negation
+    ///   on every element of its carrier.
+    /// - declaration-only: the obligation is each implementation's negation;
+    ///   the trait has no body to witness.
+    fn negate(
+        &self,
+        element: &Self::Element,
+    ) -> Result<Self::Element, Outside>;
+}

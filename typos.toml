@@ -43,3 +43,6 @@ nversion = "nversion"
 # Citation label word: the library key `Rossberg-2014-fing_modules` names
 # the paper "F-ing Modules".
 fing = "fing"
+# Quantum vocabulary: Dirac's bra-ket notation, `Ket` in `std.quantum`, the
+# state vector of a qubit.
+ket = "ket"
