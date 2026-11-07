@@ -25,6 +25,9 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — exemplar: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — the standard resolution of a convergent presentation, which the bar complex of a first-order block builds.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the Squier frame of the presented-spaces page, which reads completion as a Morse collapse of the bar complex.
 - Kenneth S. Brown, "The Geometry of Rewriting Systems: A Proof of the Anick–Groves–Squier Theorem", in _Algorithms and Classification in Combinatorial Group Theory_, MSRI Publications 23, 1992, pages 137–163 — the collapsing scheme of the bar complex along a rewriting strategy, which `LawvereTheory` gives as a `Scheme`.
+- `Ara-2025-polygraphs_rewriting_higher_categories` — background: chapter 13, the Lawvere theory of a rewriting system.
+- `Malbos-2021-completion_operads_essential_syzygies` — background: essential branchings.
+- `Doré-2023-computing_spaces_type_theory` — background: § 3.4, a matching as a function.
 
 ## Provided features
 

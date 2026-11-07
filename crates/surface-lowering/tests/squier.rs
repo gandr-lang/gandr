@@ -162,6 +162,7 @@ fn theory(
         table,
         NormalizationBudget::from(1_000_usize),
     )
+    .expect("each word of a rule holds its variable once")
 }
 
 /// The term that `word` spells in the variable `x₁`, the outermost letter

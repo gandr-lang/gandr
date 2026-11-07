@@ -24,7 +24,8 @@
 //!
 //! A cell of degree one has the boundary `(occ(u₁) − 1) []`. The first face
 //! counts occurrences. So the boundary of a boundary is zero only when each
-//! rule keeps the occurrences of its variables.
+//! rule keeps the occurrences of its variables, and the theory refuses a rule
+//! that changes them.
 //!
 //! The complex is infinite. The suite bounds the variables of each tuple and
 //! the total size of a cell's terms. It takes the largest subcomplex inside the
@@ -43,6 +44,7 @@ use gandr_theory_coherent_resolutions::Arrow;
 use gandr_theory_coherent_resolutions::BarBound;
 use gandr_theory_coherent_resolutions::BarCell;
 use gandr_theory_coherent_resolutions::BarDegree;
+use gandr_theory_coherent_resolutions::LawvereError;
 use gandr_theory_coherent_resolutions::LawvereTheory;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::Operation;
@@ -142,7 +144,8 @@ pub fn bound(
     }
 }
 
-/// The theory of `arities` and `rules` over `table`, under the probe's fuel.
+/// The theory of `arities` and `rules` over `table`, under the probe's fuel,
+/// or the theory's refusal of the rules.
 ///
 /// # Specification
 /// trivial.
@@ -150,7 +153,7 @@ pub fn theory(
     arities: Vec<Arity>,
     rules: Vec<(TermPlace, TermPlace)>,
     table: TermTable,
-) -> LawvereTheory
+) -> Result<LawvereTheory, LawvereError>
 {
     LawvereTheory::new(arities, rules, table, NormalizationBudget::from(FUEL))
 }
@@ -464,6 +467,17 @@ fn unclosed(
     out
 }
 
+/// Why a block's rules present no theory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unpresented
+{
+    /// A rule's term binds, or its right side holds a variable that its left
+    /// side lacks.
+    Unread,
+    /// The theory refuses the rules.
+    Refused(LawvereError),
+}
+
 /// One step of the walk that reads a free term into a table.
 #[derive(Clone, Copy, Debug)]
 enum Walk<'term>
@@ -475,12 +489,18 @@ enum Walk<'term>
 }
 
 /// The theory a block's rules present: each operation by the order of its
-/// name, its arity from its uses. None when a rule's term binds, or its right
-/// side holds a variable its left side lacks.
+/// name, its arity from its uses.
 ///
 /// # Specification
 /// trivial.
-pub fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(LawvereTheory, Vec<String>)>
+///
+/// # Errors
+/// - [`Unpresented::Unread`]: a rule's term binds, or its right side holds a
+///   variable that its left side lacks.
+/// - [`Unpresented::Refused`]: the theory refuses the rules.
+pub fn presented(
+    rules: &[(FreeTerm, FreeTerm)]
+) -> Result<(LawvereTheory, Vec<String>), Unpresented>
 {
     let mut arities: BTreeMap<String, Count> = BTreeMap::new();
     let mut pending: Vec<TermView<'_>> = Vec::new();
@@ -499,7 +519,7 @@ pub fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(LawvereTheory, Vec<S
             | TermView::Abs { .. }
             | TermView::Atom(_)
             | TermView::Lam { .. }
-            | TermView::Bound(_) => return None,
+            | TermView::Bound(_) => return Err(Unpresented::Unread),
         }
     }
     let names: Vec<String> = arities.keys().cloned().collect();
@@ -508,21 +528,22 @@ pub fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(LawvereTheory, Vec<S
     let mut variables: BTreeMap<String, Variable> = BTreeMap::new();
     for &(ref left, ref right) in rules {
         variables.clear();
-        let left = read(left, (&names, &mut table), (&mut variables, Side::Left))?;
-        let right = read(right, (&names, &mut table), (&mut variables, Side::Right))?;
+        let left = read(left, (&names, &mut table), (&mut variables, Side::Left))
+            .ok_or(Unpresented::Unread)?;
+        let right = read(right, (&names, &mut table), (&mut variables, Side::Right))
+            .ok_or(Unpresented::Unread)?;
         out.push((left, right));
     }
-    Some((
-        theory(
-            arities
-                .into_values()
-                .map(|count| Arity::from(count.0))
-                .collect(),
-            out,
-            table,
-        ),
-        names,
-    ))
+    let theory = theory(
+        arities
+            .into_values()
+            .map(|count| Arity::from(count.0))
+            .collect(),
+        out,
+        table,
+    )
+    .map_err(Unpresented::Refused)?;
+    Ok((theory, names))
 }
 
 /// The term `term` read into `table`, each operation by its place in `names`.
@@ -711,6 +732,7 @@ fn free(arities: &[Count]) -> LawvereTheory
         Vec::new(),
         TermTable::default(),
     )
+    .expect("a theory with no rule")
 }
 
 /// The circle: `Loop` and `Unloop`, each the other's inverse.
@@ -734,6 +756,7 @@ fn circle() -> LawvereTheory
         rules,
         table,
     )
+    .expect("the circle's rules keep their variable")
 }
 
 /// What the probe finds for one block: its name, its bar complex, its small
@@ -833,30 +856,11 @@ fn free_theories_and_the_circle_have_their_known_homology()
 }
 
 #[test]
-fn the_boundary_of_a_boundary_is_zero_when_each_rule_keeps_its_variables()
+fn the_boundary_of_each_boundary_of_the_circle_is_zero()
 {
-    // A rule that erases a variable changes the occurrences that the first
-    // face counts: `d(t, x) ⇒ t` of the parallel disjunction leaves cells whose
-    // boundary has a boundary.
-    let limit = bound(Count(2), Count(5));
-    assert!(unclosed(&mut circle(), limit).is_empty());
-    let (disjunction, truth) = (Operation::from(0_usize), Operation::from(1_usize));
-    let mut table = TermTable::default();
-    let x = table.var(Variable::from(0_usize));
-    let mut op = |operation: Operation, children: Vec<TermPlace>| {
-        table.op(operation, children).expect("a term of the theory")
-    };
-    let constant = op(truth, Vec::new());
-    let rules = vec![
-        (op(disjunction, vec![constant, x]), constant),
-        (op(disjunction, vec![x, constant]), constant),
-    ];
-    let mut erasing = theory(
-        vec![Arity::from(2_usize), Arity::from(0_usize)],
-        rules,
-        table,
-    );
-    assert!(!unclosed(&mut erasing, limit).is_empty());
+    // The rules of the circle keep their variables, so its truncation holds
+    // no cell whose boundary has a boundary.
+    assert!(unclosed(&mut circle(), bound(Count(2), Count(5))).is_empty());
 }
 
 #[test]

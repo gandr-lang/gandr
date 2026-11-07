@@ -26,6 +26,7 @@ use gandr_theory_coherent_resolutions::Arrow;
 use gandr_theory_coherent_resolutions::BarBound;
 use gandr_theory_coherent_resolutions::BarCell;
 use gandr_theory_coherent_resolutions::BarDegree;
+use gandr_theory_coherent_resolutions::LawvereError;
 use gandr_theory_coherent_resolutions::LawvereTheory;
 use gandr_theory_coherent_resolutions::Operation;
 use gandr_theory_coherent_resolutions::TermHead;
@@ -41,6 +42,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::lawvere::Count;
 use crate::lawvere::Side;
+use crate::lawvere::Unpresented;
 use crate::lawvere::bound;
 use crate::lawvere::presented;
 use crate::lawvere::read;
@@ -447,6 +449,9 @@ enum Undecided
     Binding,
     /// A rule's left side is a variable, or a variable occurs twice in it.
     Nonlinear,
+    /// A rule changes the occurrences of a variable, so the theory refuses
+    /// it.
+    Unbalanced,
     /// A generator is not a normal form: a rule defines its operation.
     Defined,
     /// A normal form takes more than the fuel, the cycle check visits more
@@ -475,7 +480,18 @@ fn collapse(
 ) -> Result<Collapse, Undecided>
 {
     let certificates = certified(cells).ok_or(Undecided::Uncertified)?;
-    let (mut theory, names) = presented(&block.rules).ok_or(Undecided::Binding)?;
+    let (mut theory, names) = presented(&block.rules).map_err(|unpresented| match unpresented {
+        Unpresented::Unread => Undecided::Binding,
+        Unpresented::Refused(LawvereError::Unbalanced(_)) => Undecided::Unbalanced,
+        Unpresented::Refused(
+            LawvereError::Exhausted(_)
+            | LawvereError::Unissued(_)
+            | LawvereError::Unfilled(_)
+            | LawvereError::NoTerm
+            | LawvereError::LeadingVariable
+            | LawvereError::Overflow,
+        ) => Undecided::Bound,
+    })?;
     for &(left, _) in theory.rules() {
         if let TermHead::Var(_) = theory
             .table()
@@ -809,8 +825,8 @@ fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but
     // at each position, so it cannot hold the eta cell as the commands reading
     // does. Without the cell, no essential cell answers the pair. With it, an
     // essential overlap answers no pair. The probe decides nothing on a reading
-    // that binds, that repeats a variable on a left side, or that defines an
-    // operation by a rule.
+    // that binds, that repeats a variable on a left side, that changes the
+    // occurrences of a variable, or that defines an operation by a rule.
     let grammar = built_in().expect("the built-in grammar builds");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
     let mut decided = 0_usize;
@@ -847,6 +863,7 @@ fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but
                         Undecided::Uncertified
                         | Undecided::Binding
                         | Undecided::Nonlinear
+                        | Undecided::Unbalanced
                         | Undecided::Defined,
                     ) => {},
                 }

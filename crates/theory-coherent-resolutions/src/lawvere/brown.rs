@@ -40,6 +40,16 @@
 //!   Anick–Groves–Squier Theorem." In _Algorithms and Classification in
 //!   Combinatorial Group Theory_, MSRI Publications 23, 1992, pages 137–163 —
 //!   the collapsing scheme of the bar complex along a rewriting strategy.
+//! - `Malbos-2021-completion_operads_essential_syzygies` — background: § 2
+//!   calls a critical branching essential when its two rewriting monomials are
+//!   consecutive. Theorem 3.3 decides confluence on the essential branchings
+//!   alone. This scheme keeps each critical branching essential, so its
+//!   collapse removes no branching that completion joins.
+//! - `Doré-2023-computing_spaces_type_theory` — background: § 3.4 states a
+//!   matching as a function whose fixed points are the critical cells. The
+//!   class of a cell is that function here. § 3.4 states acyclicity as a
+//!   gradient path from each cell to a critical cell. The Morse crate checks
+//!   only that the gradient from the given cells holds no cycle.
 
 use alloc::vec;
 use alloc::vec::Vec;
