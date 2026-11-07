@@ -4571,17 +4571,18 @@ mise run wt:sweep || echo "wt:sweep failed; landing regardless" >&2
 # read from its base's fork to its head; the landing is refused otherwise.
 IFS=$'\t' read -r ledger_base ledger_head < <(gh pr view "$number" -R "$repo" --json baseRefName,headRefName --jq '[.baseRefName, .headRefName] | @tsv')
 git fetch --quiet origin "$ledger_base" "$ledger_head"
-# A head that stands on an old copy of the pull request below would read that
-# copy's change as its own, so it is refused with the replay first (#6055,
-# `stale_parent`).
-if ! stale=$(stale_parent "$ledger_base" "$ledger_head"); then
-  printf 'PR #%s:\n  %s\n' "$number" "$stale" >&2
+# The change is read from the commit `change_base` names (#6055, #6062): the
+# merge base with the base branch, or the head of the pull request below that
+# the queue holds open on the trunk. A head that stands on an old copy of the
+# pull request below is refused with the replay first.
+if ! ledger_from=$(change_base "$ledger_base" "$ledger_head" "$number"); then
+  printf 'PR #%s:\n  %s\n' "$number" "$ledger_from" >&2
   exit 2
 fi
 ledger_body=$(mktemp)
 gh pr view "$number" -R "$repo" --json body --jq .body > "$ledger_body"
 status=0
-ledger=$(mise run --quiet ledger:patched "$ledger_body" "$(git merge-base "origin/$ledger_base" "origin/$ledger_head")" \
+ledger=$(mise run --quiet ledger:patched "$ledger_body" "$ledger_from" \
   --head "origin/$ledger_head" --pr "$number" 2> /dev/null) || status=$?
 # Nor does it land while a design page its issues build on is still owed in
 # its `## Vault` (#3161, `absorbing.jq`): the page's status may have moved
@@ -4601,7 +4602,7 @@ fi
 # Nor does it lower a reserved grammar rule its row's open issue does not
 # name (#2528, `ledger:reserved`).
 status=0
-reserved=$(mise run --quiet ledger:reserved "$(git merge-base "origin/$ledger_base" "origin/$ledger_head")" \
+reserved=$(mise run --quiet ledger:reserved "$ledger_from" \
   --head "origin/$ledger_head" 2> /dev/null) || status=$?
 if (( status != 0 )); then
   printf 'PR #%s:\n%s\n' "$number" "${reserved:-ledger:reserved failed to read the ledger}" | sed '2,$s/^/  /' >&2
