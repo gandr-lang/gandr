@@ -2343,6 +2343,19 @@
     "output": "STALL ejected #41 triage 12m: left the merge queue unmerged 2 times in 60m (failed_checks). Decide: hold it: `mise run pr:hold 41 \"<what it waits on>\"`; reassign it"
   },
   {
+    "name": "#5902: a pile-up pages the coordinator to hold its root, which cuts it to the top, or, once the stack watcher cuts it, to its seat's `pr:open` after the fix",
+    "program": "decide.jq",
+    "input": {
+      "kind": "pile-up",
+      "number": 5882,
+      "lane": "diagnostic-help",
+      "placed": true,
+      "age": 0,
+      "line": "STALL pile-up #5882 diagnostic-help 0m: 7 open pull requests stacked from it, the top #5900"
+    },
+    "output": "STALL pile-up #5882 diagnostic-help 0m: 7 open pull requests stacked from it, the top #5900. Decide: hold it: `mise run pr:hold 5882 \"<what it waits on>\"`, which cuts it to the top of its stack; once the stack watcher cuts it, its seat fixes it and runs `mise run pr:open`; reassign it"
+  },
+  {
     "name": "#4655: a base-blocked member pages the coordinator to order the rebase, hold it or reassign it",
     "program": "decide.jq",
     "input": {

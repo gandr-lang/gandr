@@ -8,7 +8,10 @@
 //! [`judge_module`], two short functions, and [`judge_module`] is [`judge`]
 //! then [`Judged::admit`]. The one call into the lowering sits in a private
 //! module that counts each source it lowers, and [`LoweringCount`] is the
-//! projection through which a run shows it lowered each source once.
+//! projection through which a run shows it lowered each source once. The
+//! composition sits in this crate, above the corpus library and the checker,
+//! because the settle comparison and the root guard fire on the pass that
+//! gates.
 //!
 //! # A component is composed once
 //!
@@ -426,7 +429,9 @@ pub enum Composed<'source>
         failures: Failures,
         /// Every builtin the source's declarations and binders shadowed, in
         /// the order shadowed: under the warn-and-allow policy the source's
-        /// binding wins and each is a warning, not a refusal.
+        /// binding wins and each is a warning, not a refusal. The composition
+        /// copies it out of the lowered module's `Recognition` before the
+        /// module's origin table moves.
         shadowed: Vec<ShadowedBuiltin>,
         /// Every exit the lowering inferred where a path through a body ends,
         /// in source order: each a finding of the `explicit-exits` lint where

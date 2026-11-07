@@ -14,9 +14,9 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Synopsis
 
-**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given, the `Verb` it runs under and the `Width` it is visited at. `Walk::visit` reads every source under the paths and carries each import-connected component once through the composition — parse, lower once, `adapt`, judge, the kernel's re-derivation, the `Program` that runs an accepted declaration, and the settle comparison — and hands each source its share of the verdict, in walk order. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports. `Invocation::Run` routes to `Outcome::Script`: a `Script` of one path and its arguments, composed as `check` would, which runs its entry or hosts its worlds as [`script`](src/script.rs) states. `Invocation::Stage` routes to `Outcome::Stage`, a `Staging` checked as [`stage`](src/stage.rs) states.
+**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation maps to `Outcome::Status`, `check` and `test` to the `Walk` of `Outcome::Run`, `run` to `Outcome::Script` and `stage` to `Outcome::Stage`. `Walk::visit` composes each import-connected component once and hands each source its share of the verdict in walk order ([`walk`](src/walk.rs), [`compose`](src/compose.rs)). A `RunReport` counts each step, and its `verdict` is the gate of the driver's exit code. [`script`](src/script.rs) and [`stage`](src/stage.rs) state the run and the stage verbs.
 
-**Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
+**Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process.
 
 **How.** `dispatch` is a total match over the closed `Invocation` enum.
 
@@ -31,7 +31,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `spellings` and `failures` on `Composed::Settled`: the `TypeSpellings` and the `Failures` that a face reads each checker refusal through ([`compose`](src/compose.rs)).
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings, lint findings and ledger lines.
 - `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables and where each reaches ([`report`](src/report.rs)). `inferred` and `runs` on `Composed::Settled` hold what `explicit-exits` and `explicit-runs` report ([`compose`](src/compose.rs)).
-- `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy, in the order shadowed, copied out of the lowered module's `Recognition` before its origin table moves; a face reports each as a warning.
+- `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy, in the order shadowed; a face reports each as a warning.
 - `adapt`: the lowering's module as checker declaration input.
 - `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at, from one typed run of the checker. `TypeTable::of_parsed`, `of_parsed_unit` and `of_parsed_after` type a parse the caller holds ([`typed`](src/typed.rs)).
 - `SourceRoot` and `classify`: the root a source sits under, by its path.
@@ -52,7 +52,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
 - **A file system.** `Walk::visit` lists directories and reads sources, `Formatting::step` reads them and writes a changed layout back, and `Census::step` reads them; every failure to do so is a fault step, never a panic.
-- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process.
+- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs).
 
 ## Examples
 
@@ -130,6 +130,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
 - `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — anchor: the first adapter of exact reals, a handle to a plan the host holds.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: § presented-spaces-crates puts the adapter of stage C here.
+- `Taylor-2010-lambda_calculus_real_analysis` — exemplar: Taylor, _JLA_ 2:5, 2010, `doi:10.4115/jla.2010.2.5` — the laws a cut owes.
+- `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar: Escardó, _ENTCS_ 87, 2004, `doi:10.1016/j.entcs.2004.09.017` — a comparison as an open.
+- `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — a row's bound as a semiring product.
+- `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — a fresh name for each internal wire.
 
 ## License
 

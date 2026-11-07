@@ -98,12 +98,14 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 
 - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
+- `Doré-2026-dependent_multiplicities_dependent_linear_type_theory` — background: Maximilian Doré. "Dependent Multiplicities in Dependent Linear Type Theory". 2026, [arXiv:2507.08759](https://arxiv.org/abs/2507.08759) — § 2.2's multiplicity as a term of the host theory, which can depend on other variables; the grades here are static elements of `{0, 1, ω}`.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — each two-point grade reads as its bound in the semiring `{0, 1, ω}`, which `gandr-theory-ordered-algebras` holds.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
 - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
+- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — a grade as a semiring bound on uses.
 
 ## License
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # `pr:hold` writes one comment through a stubbed GitHub. Each case records the
-# hold state, its reason and the complete Markdown body.
+# hold state, its reason and the complete Markdown body. A case with a null
+# body is a refusal: exit 2, and no write reaches GitHub (#5902). The stub
+# holds no open pull request, so the held one stands in no stack.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 cases=$here/hold.json
@@ -17,14 +19,16 @@ case "$1" in
     ;;
   api)
     [[ ${2:-} == graphql ]] || { echo "gh stub: unexpected $*" >&2; exit 1; }
-    printf 'false\tfalse\tfalse\n'
+    # The read of every open pull request finds none.
+    [[ $* == *'pullRequests('* ]] || printf '%s\tfalse\tfalse\tfalse\n' "$STUB_HOLD_STATE"
     ;;
   label)
     [[ ${2:-} == create ]] || { echo "gh stub: unexpected $*" >&2; exit 1; }
+    echo "$*" >> "$STUB_HOLD_WRITES"
     ;;
   pr)
     case ${2:-} in
-      edit|ready) ;;
+      edit|ready) echo "$*" >> "$STUB_HOLD_WRITES" ;;
       comment)
         shift 2
         while (( $# > 0 )); do
@@ -51,20 +55,33 @@ for (( index = 0; index < count; index++ )); do
   owner=$(jq -r ".[$index].owner" "$cases")
   number=$(jq -r ".[$index].number" "$cases")
   reason=$(jq -r ".[$index].reason" "$cases")
-  expected=$(jq -r ".[$index].body" "$cases")
+  state=$(jq -r ".[$index].state // \"OPEN\"" "$cases")
+  refused=$(jq ".[$index].body == null" "$cases")
+  expected=$(jq -r ".[$index].body // \"\"" "$cases")
   comment=$work/comment-$index
+  writes=$work/writes-$index
+  : > "$comment"
+  : > "$writes"
   args=()
   [[ $owner != true ]] || args+=(--owner)
   status=0
-  output=$(GH_REPO=case/case STUB_HOLD_COMMENT="$comment" PATH="$work/bin:$PATH" \
+  output=$(GH_REPO=case/case STUB_HOLD_COMMENT="$comment" STUB_HOLD_WRITES="$writes" STUB_HOLD_STATE="$state" PATH="$work/bin:$PATH" \
     MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
     mise run --quiet pr:hold "${args[@]}" "$number" "$reason" 2> "$work/err") || status=$?
   got=$(< "$comment")
-  if [[ $status != 0 || $got != "$expected" ]]; then
-    printf 'hold case FAILED: %s\n  expected (exit 0):\n%s\n  actual (exit %s):\n%s\n' "$name" "$expected" "$status" "$got" >&2
+  if [[ $refused == true ]]; then
+    want=2
+    [[ $status == 2 && -z $got && ! -s $writes ]] || bad=1
+  else
+    want=0
+    [[ $status == 0 && $got == "$expected" ]] || bad=1
+  fi
+  if [[ ${bad:-0} == 1 ]]; then
+    printf 'hold case FAILED: %s\n  expected (exit %s):\n%s\n  actual (exit %s):\n%s\n  writes:\n%s\n' "$name" "$want" "$expected" "$status" "$got" "$(< "$writes")" >&2
     cat "$work/err" >&2
     failed=1
   fi
+  bad=0
 done
 (( failed == 0 )) || exit 1
-echo "hold OK: $count cases write the recorded lead and table"
+echo "hold OK: $count cases write the recorded lead and table, or refuse with no write"

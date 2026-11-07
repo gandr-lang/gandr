@@ -196,6 +196,9 @@
 //!   Coroutines." _ACM Transactions on Programming Languages and Systems_
 //!   31(2) (2009). <https://doi.org/10.1145/1462166.1462167> — one-shot
 //!   continuations and coroutines are equally expressive.
+//! - `Wood-2024-framework_semiringannotated_type_systems` — newest: a graded
+//!   rule adds the uses of a hypothesis in a semiring and admits the sum at or
+//!   below its annotation. The access rules read that rule at `{0, 1, ω}`.
 
 use crate::session::Capture;
 

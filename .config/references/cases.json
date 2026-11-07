@@ -82,6 +82,17 @@
     ]
   },
   {
+    "name": "a key line `cargo fmt` wraps after its role takes what it decides from the next line; a word that ends the line and is no role is refused",
+    "files": {
+      "crates/demo-crate/src/lib.rs": "//! The crate.\n//!\n//! # References\n//!\n//! - `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar:\n//!   an open is a semidecidable property.\n//! - `Decides-2020-a_key_with_no_role` — decides:\n//!   the role misspelled.\npub mod memo;\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tEscardó-2004-synthetic_topology_data_types_classical_spaces\tdemo-crate\t\texemplar\tcrates/demo-crate/src/lib.rs:6",
+      "refused\ta References line gives its key a role and what it decides: - `Decides-2020-a_key_with_no_role` — <newest|dependency|anchor|exemplar>: <what it decides>\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs:7"
+    ]
+  },
+  {
     "name": "#3666: a vault page cited by its mint at a nested module and in its README is one cite and one mirror, and the entry's `hal:` identifier is no locator",
     "files": {
       "crates/demo-crate/src/replay/environment.rs": "//! The environment.\n//!\n//! # References\n//!\n//! - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: Accattoli's\n//!   habilitation, § 3.9, the value of variables.\n",

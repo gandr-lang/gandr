@@ -21,6 +21,22 @@
 //! bounded by the bit widths of its operands and by the precision. The gap
 //! between the two exponents of a sum never sets the work: an operand far
 //! below the rounding position acts only through its sign.
+//!
+//! # Boundaries
+//!
+//! A result keeps at most `p` significant bits. Let `2^(k - 1) <= |r| < 2^k`
+//! for the exact result `r`. The floor is `floor(r / 2^(k - p)) · 2^(k - p)`,
+//! and the ceiling is the next point of that grid at or above `r`. A result
+//! that already fits is exact.
+//!
+//! A sum aligns its operands on the lower exponent. When one operand lies far
+//! below the other, the sum replaces it by its sign at a place below the last
+//! bit of the result, and the rounded result is the same. The aligned width
+//! stays below the operand widths plus `p + 3` bits. The intension of
+//! `rounded_sum` states the place and the proof.
+//!
+//! A product forms the exact product of the two mantissas and rounds it once.
+//! Its work is one multiplication of the operand widths.
 
 use core::cmp::Ordering;
 use core::fmt;

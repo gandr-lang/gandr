@@ -3138,6 +3138,7 @@ INSERT INTO purpose VALUES('surface-parser','meld::OpenFormPresence','struct','H
 INSERT INTO purpose VALUES('surface-parser','meld::OperandContinuation','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::ParkedUnit','struct','A FormUnit set aside between revisions: its base, its melder''s checkpoint, and whether its fold touched its stand-in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SeamBreak','enum','Why a FormUnit could not join the state before it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::SeparatorTaken','struct','Whether a separator closes the open declaration as its last tile.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SlopeHeight','struct','A tile the source left out, written into a copy of the source so the copy molds without a repair, and read back as the close the melder mints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SpaceText','struct','Define a transparent newtype over borrowed source text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::TileText','struct','Define a transparent newtype over borrowed source text.',NULL,'fits','sound',NULL);
@@ -3611,7 +3612,7 @@ INSERT INTO purpose VALUES('theory-coherent-resolutions','completion::SuppliedOv
 INSERT INTO purpose VALUES('theory-coherent-resolutions','completion::complete','function','Runs confluence completion over a store, so the store''s critical pairs are joined or oriented.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','completion::complete_with_overlap_source','function','Runs completion seeded by a caller''s own matcher, so the caller''s overlaps are validated and joined.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','completion::join_critical_pairs','function','Checks whether a store''s critical pairs already join, so the first divergence is reported.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-coherent-resolutions','completion::scheduled_confluence_batches','function','Schedules the store''s confluence overlaps into independent batches, so the batches'' order is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-coherent-resolutions','completion::scheduled_confluence_batches','function','Schedules each root branching of the store once into independent batches, so completion joins each branching once.','collapse','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','lawvere::Arrow','struct','Holds a morphism of a Lawvere theory, a tuple of normal forms in a context, so a cell of the bar complex is read arrow by arrow.','collapse','fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','lawvere::BarBound','struct','Holds the bound of a truncation, so the largest subcomplex inside it is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-coherent-resolutions','lawvere::BarCell','struct','Holds a cell of the bar complex, a composable list of arrows, so a matching reads the cells of the complex.','collapse','fits','sound',NULL);

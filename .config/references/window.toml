@@ -199,3 +199,33 @@ exemplar = "no newer work states the cell poset of a cellular sheaf, each cell w
 site = "surface-diagnostics"
 work = "doi:10.4230/lipics.rta.2013.223"
 exemplar = "no newer work states homotopical completion with the parting critical pair as its obstruction; the newer monograph cites it for the procedure"
+
+[[site]]
+site = "surface-dispatcher::evaluate::reals"
+work = "Escardó-2004-synthetic_topology_data_types_classical_spaces"
+exemplar = "no newer work states a strict comparison of two reals as an open that a run semidecides, with no stop read as false"
+
+[[site]]
+site = "surface-dispatcher::evaluate::reals"
+work = "Taylor-2010-lambda_calculus_real_analysis"
+exemplar = "no newer work states the laws that a Dedekind cut owes, and the modality of the domain that a quantifier ranges over"
+
+[[site]]
+site = "theory-exact-reals"
+work = "Bauer-2009-dedekind_reals_abstract_stone_duality"
+exemplar = "no newer work states Moore's interval arithmetic as the extension of each operation on Dedekind cuts"
+
+[[site]]
+site = "theory-exact-reals"
+work = "Bauer-efficient_computation_dedekind_reals"
+exemplar = "no newer work states the lower and upper approximants of an open formula over Dedekind cuts, with Newton's method on a cut"
+
+[[site]]
+site = "theory-exact-reals"
+work = "Escardó-2004-synthetic_topology_data_types_classical_spaces"
+exemplar = "no newer work states the opens of a space as its semidecidable properties, with compactness as a universal that holds in finite time"
+
+[[site]]
+site = "theory-exact-reals"
+work = "Taylor-2010-lambda_calculus_real_analysis"
+exemplar = "no newer work states the calculus of Dedekind cuts whose opens have no negation, with its Frobenius law and its quantifiers over compact and overt intervals"
