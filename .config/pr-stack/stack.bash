@@ -380,23 +380,32 @@ rewritten_base() {
   return 1
 }
 
-# Refuse pull request head `$2`, checked out here, whose recorded stack base
-# its base branch `$1` no longer holds (#6055). `pr:open` stacks a branch on
-# the head of the pull request below and records that head. When a seat
-# amends that pull request, or the queue merges it under new hashes, the
-# branch keeps the old copy under its own commits. The merge base of the base
-# branch and the head then falls below the old copy, and every reading from it
-# takes the old copy's change as this one's. The refusal names the replay. A
-# base that only moved ahead still holds the record and reads as before. A
-# worktree not on `$2`, or one that keeps no record that `HEAD` carries, is
-# not judged. Prints the refusal and returns 1, or prints nothing.
-stale_parent() {
-  local base=$1 head=$2 stacked
-  [[ $(git rev-parse HEAD) == "$(git rev-parse --verify --quiet "origin/$head")" ]] || return 0
-  stacked=$(stack_base)
-  [[ -n $stacked ]] || return 0
-  git merge-base --is-ancestor "$stacked" "origin/$base" && return 0
-  printf '%s stands on %s, which origin/%s no longer holds: the pull request below was amended or merged under new hashes, and its old commits under this change would read as its own. Replay the own commits with `git rebase --onto origin/%s %s`, push, then run the task again\n' \
+# The commit `pr:land` reads pull request `$3`'s change from, its base branch
+# `$1` and its head `$2` fetched (#6055, #6062): the merge base of the two,
+# unless the worktree is on `$2` and records a stack base that `$1` does not
+# hold. `pr:open` stacks a branch on the head of the pull request below and
+# records that head. On `$trunk`, a pull request below that the queue holds
+# stays open under that head, and GitHub links no stack to it. The merge base
+# then falls below its commits, so the change is read from the record, and the
+# pull request owes only its own commits' rows. A record that no other open
+# pull request carries, or that a base other than `$trunk` does not hold, is
+# an old copy of the pull request below: a seat amended it, or the queue
+# merged it under new hashes. Every reading from the merge base would take that
+# copy's change as this one's, so the refusal names the replay. One REST call
+# reads the record's open pull requests, only when the base is `$trunk` and
+# does not hold the record. Prints the commit, or the refusal and returns 1.
+change_base() {
+  local base=$1 head=$2 number=$3 stacked=
+  if [[ $(git rev-parse HEAD) == "$(git rev-parse --verify --quiet "origin/$head")" ]]; then stacked=$(stack_base); fi
+  if [[ -z $stacked ]] || git merge-base --is-ancestor "$stacked" "origin/$base"; then
+    git merge-base "origin/$base" "origin/$head"
+    return
+  fi
+  if [[ $base == "$trunk" ]] && [[ -n $(gh api "repos/$repo/commits/$stacked/pulls" --jq "[.[] | select(.state == \"open\" and .number != $number) | .number] | first // empty" 2> /dev/null) ]]; then
+    printf '%s\n' "$stacked"
+    return
+  fi
+  printf '%s stands on %s, which origin/%s no longer holds and no other open pull request carries: the pull request below was amended or merged under new hashes, and its old commits under this change would read as its own. Replay the own commits with `git rebase --onto origin/%s %s`, push, then run the task again\n' \
     "$head" "${stacked:0:12}" "$base" "$base" "${stacked:0:12}"
   return 1
 }
