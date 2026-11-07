@@ -1944,6 +1944,53 @@ mod sweeps
         );
     }
 
+    /// The printer writes a constructor of `Theory` by its path where the
+    /// source holds no theory block, and a model passed whole by its module.
+    /// It holds a split of a parameter whose type it does not know as a
+    /// record as its notation (#6084).
+    #[test]
+    fn the_reflection_and_sheaf_printings_read_back_6084()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let sources = corpus::sources().expect("the corpus reads");
+        let found = |name: &str| {
+            let source = sources
+                .iter()
+                .find(|source| source.name.as_ref() == name)
+                .expect("the corpus holds the source");
+            let text =
+                std::fs::read_to_string(&source.path).expect("the corpus source is readable");
+            bodies(
+                &grammar,
+                Written {
+                    path: &source.path,
+                    text: SourceText::from(text.as_str()),
+                },
+                &source.name,
+            )
+        };
+        let reflection = found("fixture/model/desc/module-reflection.gandr");
+        assert!(
+            reflection.misses.is_empty(),
+            "`sortOf`, `memberLines`, `declared` and `stdToolchain` read back: {}",
+            reflection.misses.join("\n")
+        );
+        let sheaves = found("fixture/model/effects/oracle-sheaves.gandr");
+        assert!(
+            sheaves.misses.is_empty(),
+            "the oracle sheaves read back: {}",
+            sheaves.misses.join("\n")
+        );
+        assert!(
+            sheaves
+                .held
+                .get(&super::Held::Notation)
+                .is_some_and(|names| { names.iter().any(|held| held.ends_with("`subOf`")) }),
+            "the split of `e` is held as notation: {:?}",
+            sheaves.held
+        );
+    }
+
     /// The formatter spells each declaration of every source `sweep` visits
     /// as the printer does.
     ///

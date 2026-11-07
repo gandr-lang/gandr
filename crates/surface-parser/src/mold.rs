@@ -1245,7 +1245,7 @@ primitive_copy_wrapper!(
 ///
 /// A separator is a `;` or a layout block's separator. A closer, a `}` or a
 /// layout block's close, is no separator: it completes the form of a block,
-/// as of a `theory`, a `data` or a `def` with a block body. The next
+/// for example a `theory`, a `data` or a `def` with a block body. The next
 /// significant token after the separator starts its line, and it heads a
 /// declaration ([`heads_declaration`]) or stands before one as an item form
 /// of one tile ([`prefixes_declaration`]). A top-level declaration starts at

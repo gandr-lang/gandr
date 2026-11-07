@@ -2789,6 +2789,73 @@ fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
     }
 }
 
+/// A labelled selection off a binder of the context the root stands under
+/// spells `r.x` faithfully only when the source states the binder's type as
+/// a record type. With another type stated, or none, the surface does not
+/// read `r.x` back, so the spelling is the printer's notation (#6084).
+#[test]
+fn a_labelled_selection_off_a_binder_of_no_record_type_is_notation_6084()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let record = core.value_type_record(BTreeMap::from([(
+        FieldLabel::from(String::from("x")),
+        integer,
+    )]));
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let projection = core.computation_record_projection(bound, FieldLabel::from(String::from("x")));
+    let context = [Some(Name::from("r"))];
+    let source = CoreSource::new(&core, &[]).within(&context);
+    let recorded = [Some(CoreNode::ValueType(record))];
+    let unrecorded = [Some(CoreNode::ValueType(integer))];
+    for (source, expected) in [
+        (source.typing(&recorded), faithful(Written("r.x"))),
+        (source.typing(&unrecorded), approximate(Written("r.x"))),
+        (source, approximate(Written("r.x"))),
+    ] {
+        assert_eq!(
+            spelled(
+                &source,
+                Root::Computation(CoreNode::Computation(projection))
+            ),
+            expected
+        );
+    }
+}
+
+/// A record whose fields are the members of one module, each at its own
+/// label, spells as that module. A record that mixes members of two modules
+/// spells its fields (#6084).
+#[test]
+fn a_record_of_one_module_s_members_spells_as_the_module_6084()
+{
+    let names = [
+        Name::from("Up.zero"),
+        Name::from("Up.incr"),
+        Name::from("Tens.incr"),
+    ];
+    let mut core = CoreArena::new();
+    let [up_zero, up_incr, tens_incr] =
+        [0_usize, 1, 2].map(|constant| core.value_constant(ConstantIndex::from(constant)));
+    let record = |core: &mut CoreArena, incr| {
+        core.value_record(BTreeMap::from([
+            (FieldLabel::from(String::from("zero")), up_zero),
+            (FieldLabel::from(String::from("incr")), incr),
+        ]))
+    };
+    let module = record(&mut core, up_incr);
+    let mixed = record(&mut core, tens_incr);
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        spelled(&source, Root::Value(CoreNode::Value(module))),
+        faithful(Written("Up"))
+    );
+    assert_eq!(
+        spelled(&source, Root::Value(CoreNode::Value(mixed))),
+        faithful(Written("*{.incr = Tens.incr, .zero = Up.zero}"))
+    );
+}
+
 /// A dependent record's second field the source records no label for is
 /// labelled by the first generated name no binder around it holds, never by
 /// what a binder inside the record left at the position past the record's

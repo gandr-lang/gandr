@@ -2795,6 +2795,77 @@ where
     labels_of(source, record)
 }
 
+/// The path of the module whose members the record `node` of `count`
+/// fields holds, each at its own label.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the path `P` when `count` is at least one and the field at each
+///   label `l` reads as the constant `P.l`, every one under the same `P`;
+///   nothing otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause reads the source's labels and constants,
+///   which a predicate would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model passed whole reads back as its module, and the
+///   body parity holds every other record to its fields.
+/// - witness: `tests::goldens::a_record_of_one_module_s_members_spells_as_the_module_6084`
+fn module_of_fields<S>(
+    source: &S,
+    node: S::Node,
+    arity: crate::former::Arity,
+) -> Option<String>
+where
+    S: Source + ?Sized,
+{
+    let mut path: Option<String> = None;
+    for index in 0_usize .. usize::from(arity) {
+        let at = Component::from(index);
+        let label = source.label(node, at)?;
+        let Former::Constant(name) = source.read(source.component(node, at)?)
+        else {
+            return None;
+        };
+        let prefix = name
+            .as_ref()
+            .strip_suffix(label.as_ref())?
+            .strip_suffix('.')?;
+        match path {
+            None => path = Some(String::from(prefix)),
+            Some(ref held) if held == prefix => {},
+            Some(_) => return None,
+        }
+    }
+    path
+}
+
+/// The witness that a projection reads off a value whose type the source
+/// does not state as a record type, so the surface does not read `r.l` back.
+#[derive(Clone, Copy)]
+struct Unrecorded;
+
+/// Whether a projection off a value of type `ty` is the printer's notation
+/// ([`Notation::Labelled`]): `ty` reads as no record type — no product, no
+/// dependent pair, no labelled record type and no patched one.
+///
+/// # Specification
+/// trivial.
+fn unrecorded<S>(
+    source: &S,
+    ty: S::Node,
+) -> Option<Unrecorded>
+where
+    S: Source + ?Sized,
+{
+    let recorded = matches!(
+        source.read(ty),
+        Former::Product(_) | Former::Sigma { .. } | Former::RecordType(_) | Former::Patched(..)
+    );
+    (!recorded).then_some(Unrecorded)
+}
+
 /// The labels of the dependent record type `record`, in field order.
 ///
 /// # Specification
@@ -6769,6 +6840,9 @@ struct Walk<'walk, 'names>
     /// field order, by the binder's position: a positional selection off it
     /// is written by the label of the field it reads (#3971).
     records: BTreeMap<OpenBinders, Vec<BinderName>>,
+    /// The open binders whose opener states a type that is no record type: a
+    /// projection off one is the printer's notation ([`Notation::Labelled`]).
+    unrecorded: BTreeSet<OpenBinders>,
     /// The fields the join being closed spells, which its piece takes.
     fields: Option<Fields>,
     /// The parts of the formers spelled by parts whose children are being
@@ -7604,6 +7678,50 @@ impl Walk<'_, '_>
             }
         }
         path
+    }
+
+    /// Whether a projection off `target` is the printer's notation
+    /// ([`Notation::Labelled`]): the source states the binder's type as no
+    /// record type, or does not state it.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: [`Unrecorded`] exactly when `target`, past a return, reads as
+    ///   a variable whose open binder [`Self::unrecorded`] holds, or as a
+    ///   variable no open binder holds whose context binder
+    ///   [`Source::context_types`] states no type for, or a type that
+    ///   [`unrecorded`] answers; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause reads the source's stated types, which a
+    ///   predicate would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a projection off a parameter of a computed type is
+    ///   held as notation, and one off a parameter of a record type reads back.
+    /// - witness: `tests::goldens::a_labelled_selection_off_a_binder_of_no_record_type_is_notation_6084`
+    fn unrecorded_binder<S>(
+        &self,
+        source: &S,
+        target: S::Node,
+    ) -> Option<Unrecorded>
+    where
+        S: Source + ?Sized,
+    {
+        let Former::Variable { zone, index } = past_return(source, target)
+        else {
+            return None;
+        };
+        if let Some(position) = self.opened_at(zone, index) {
+            return self.unrecorded.contains(&position).then_some(Unrecorded);
+        }
+        let position = self.context_position(zone, index)?;
+        source
+            .context_types()
+            .get(position.0)
+            .copied()
+            .flatten()
+            .map_or(Some(Unrecorded), |stated| unrecorded(source, stated))
     }
 
     /// The position among the open binders of the one of `zone` that `index`
@@ -9442,6 +9560,21 @@ impl Walk<'_, '_>
                 return writes(
                     Production("boolean.expression"),
                     writes(Production("boolean.type"), self.atom(word)),
+                );
+            },
+            // A record of one module's members, each at its own label, is the
+            // module passed whole: the core holds a model argument as its
+            // fields, and the source writes the module, `toolchain Package`.
+            Former::Record(arity) if let Some(path) = module_of_fields(source, node, arity) => {
+                return writes(
+                    Production("identifier.expression"),
+                    writes(
+                        Production("constructor.expression"),
+                        writes(
+                            Production("projection_expression"),
+                            self.atom(Glyphs(&path)),
+                        ),
+                    ),
                 );
             },
             Former::Unit => {
@@ -11779,6 +11912,13 @@ impl Walk<'_, '_>
         if let Some(labels) = opener.and_then(|node| record_labels(source, node)) {
             let _fresh = self.records.insert(OpenBinders(position), labels);
         }
+        let _stale = self.unrecorded.remove(&OpenBinders(position));
+        if let Some(node) = opener
+            && let Former::Pi { domain, .. } = source.read(node)
+            && unrecorded(source, domain).is_some()
+        {
+            let _fresh = self.unrecorded.insert(OpenBinders(position));
+        }
         self.opened.push(zone);
     }
 
@@ -12732,7 +12872,13 @@ impl Walk<'_, '_>
                     ),
                 )
             },
-            Former::RecordProjection(_, label) => {
+            Former::RecordProjection(target, label) => {
+                // A projection off a parameter whose stated type is no record
+                // type is the printer's notation: the surface reads `r.l` only
+                // off a value whose type it states as a record.
+                if self.unrecorded_binder(source, target).is_some() {
+                    self.note(Unspelled::Notation(Notation::Labelled));
+                }
                 let label = self.spelled(Some(label), Unspelled::Missing);
                 let _ = parts.piece(Binding::Atom).text(".").text(label);
                 writes(Production("projection_expression"), Binding::Atom)
@@ -14290,6 +14436,7 @@ where
         protocols: Vec::new(),
         links: Vec::new(),
         records: BTreeMap::new(),
+        unrecorded: BTreeSet::new(),
         fields: None,
         forms: Vec::new(),
         form: style.form,
@@ -14776,6 +14923,7 @@ mod tests
             protocols: super::Vec::new(),
             links: super::Vec::new(),
             records: super::BTreeMap::new(),
+            unrecorded: super::BTreeSet::new(),
             fields: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
@@ -14874,6 +15022,7 @@ mod tests
             protocols: super::Vec::new(),
             links: super::Vec::new(),
             records: super::BTreeMap::new(),
+            unrecorded: super::BTreeSet::new(),
             fields: None,
             forms: super::Vec::new(),
             form: crate::Form::Sugared,

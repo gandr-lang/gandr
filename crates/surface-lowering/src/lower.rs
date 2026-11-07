@@ -582,6 +582,7 @@ use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_levitation::THEORY_CONSTRUCTORS;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeEntry;
@@ -5646,6 +5647,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .or_default()
                     .insert(String::from(name.as_ref()));
             }
+        }
+        // The code's constructors are bare only in a source that holds a
+        // theory block. A reader that names the code through an import
+        // writes each of them by the code's path, `Theory.Port`.
+        if let Maybe::Present(ref theory) = collected.theory
+            && !collected.theory_sources.contains(&collected.unit.last())
+            && let Some(entry) = collected.slots.get(usize::from(theory.slot))
+        {
+            shadowed
+                .entry(entry.constant)
+                .or_default()
+                .extend(THEORY_CONSTRUCTORS.iter().map(|&name| String::from(name)));
         }
 
         let reads = collected.reads();

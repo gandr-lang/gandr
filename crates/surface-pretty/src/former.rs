@@ -1356,6 +1356,11 @@ pub enum Notation
     /// type the checker does not synthesise there, or one read as a type,
     /// `m.0`, which the type grammar writes only as a path of names.
     Positional,
+    /// A labelled projection off a parameter whose stated type is no record
+    /// type, written `r.l`: the surface reads a projection only off a value
+    /// whose type it states as a record, and the source splits the value by
+    /// a record pattern.
+    Labelled,
     /// A transport along a type equality, written `Path.walk(e, v)`.
     Transport,
     /// A handler's resumption, written `resume(k, v)`.
