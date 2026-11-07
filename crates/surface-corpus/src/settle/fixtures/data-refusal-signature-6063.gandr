@@ -1,3 +1,3 @@
-@[ refuses("OutOfFragment.Indexed") ]
+@[ refuses("NonUniformResult") ]
 data Bad(a : Type) : Type where
   | Mk : Bad(Integer)
