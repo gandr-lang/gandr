@@ -53,8 +53,10 @@ fix() {
 # Runs the rebase in a clone of the origin with a scratch signing key, and
 # prints its exit status. The rebase's errors go to `$1/err`. A second
 # argument names the clone's upload-pack program: `false` refuses each fetch
-# and listing, and the push still goes through. The caller stays in its own
-# clone, and it fetches the origin again.
+# and listing, and the push still goes through. A third, `update-refs`, sets
+# `rebase.updateRefs` in the clone and puts its branch `kept` on the old tip
+# of `landing`, as a seat's clone holds branches into the range. The caller
+# stays in its own clone, and it fetches the origin again.
 run() {
   local status=0
   git clone --quiet "$1/origin.git" "$1/runner"
@@ -68,6 +70,10 @@ run() {
   git config gpg.ssh.allowedSignersFile "$1/allowed"
   if [[ -n ${2:-} ]]; then
     git config remote.origin.uploadpack "$2"
+  fi
+  if [[ ${3:-} == update-refs ]]; then
+    git config rebase.updateRefs true
+    git branch --quiet kept origin/landing
   fi
   "$rebase" > /dev/null 2> "$1/err" || status=$?
   echo "$status"
@@ -131,6 +137,29 @@ got=$(
 )
 [[ $got == "exit 3, stays" ]] || fail "#5441: a landing that conflicts with the fix stays as it was" "$got"
 
+# A commit that main holds under another hash is dropped, not replayed: a
+# fix on main after the copy changes the same line, and the replay would
+# conflict with it. Landing's later landing moves onto main. The clone sets
+# `rebase.updateRefs`, and its branch on the old tip stays there (#5932).
+got=$(
+  setup "$scratch/held"
+  land pr1 shared $'one\nlanded\nthree'
+  git checkout --quiet -b fixed "$(git rev-parse landing^)"
+  git cherry-pick -x "$(git rev-parse landing^2)" > /dev/null
+  commit shared $'one\nfixed\nthree' fix
+  git push --quiet origin fixed:main
+  git checkout --quiet landing
+  land pr2 two 'two'
+  old=$(git rev-parse landing)
+  status=$(run "$scratch/held" '' update-refs) && again
+  new=$(git rev-parse origin/landing)
+  echo "exit $status," \
+    "$(git merge-base --is-ancestor origin/main "$new" && echo "holds main," || echo "lacks main,")" \
+    "shared $(git show "$new:shared" | sed -n 2p), two $(git show "$new:two")," \
+    "kept $([[ $(git -C "$scratch/held/runner" rev-parse kept) == "$old" ]] && echo stays || echo moves)"
+)
+[[ $got == "exit 0, holds main, shared fixed, two two, kept stays" ]] || fail "#5932: a commit main holds under another hash is dropped, landing moves onto main, and no other branch moves" "$got"
+
 # A refused fetch stops the attempt before the rebase: landing stays, and the
 # error names the fetch. The clone's refs from before would rebase landing,
 # and the push would go through (#5627).
@@ -148,4 +177,4 @@ got=$(
 [[ $got == "exit 1, stays, names the fetch" ]] || fail "#5627: a refused fetch stops the rebase, and landing stays" "$got"
 
 (( failed == 0 )) || exit 1
-echo "landing rebase OK: 5 cases stay, fast-forward, move, stop on a conflict and stop on a refused fetch as recorded"
+echo "landing rebase OK: 6 cases stay, fast-forward, move, stop on a conflict, drop what main holds and stop on a refused fetch as recorded"

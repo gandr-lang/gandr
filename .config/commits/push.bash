@@ -9,7 +9,10 @@
 # notes ref or a tag shares no history with the trunk, so no rule reads it
 # (#5651). The script reads its siblings from its own directory, and takes a
 # `COMMITLINT_BIN` set before it, so `check:commits` runs it in a scratch
-# repository.
+# repository. A push to the trunk itself, which only a rebase of `landing`
+# by hand makes, skips each commit whose patch the trunk holds under another
+# hash: the trunk holds only commits that passed a pull request's format
+# gate or that the queue wrote (#5932).
 set -euo pipefail
 head=${PRE_COMMIT_TO_REF:-}
 [[ -n "$head" && ! "$head" =~ ^0+$ ]] || exit 0
@@ -18,4 +21,7 @@ here=$(dirname "${BASH_SOURCE[0]}")
 COMMITLINT_BIN=${COMMITLINT_BIN:-$(mise which commitlint)}
 export COMMITLINT_BIN
 source "$here/../pr-stack/trunk.bash"
+if [[ ${PRE_COMMIT_REMOTE_BRANCH:-} == "refs/heads/$trunk" ]]; then
+  export COMMITS_HELD="origin/$trunk"
+fi
 exec "$here/lint.bash" "$(git merge-base "origin/$trunk" "$head")" "$head"

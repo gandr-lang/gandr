@@ -9,8 +9,11 @@
 # - A `landing` that holds `main` needs nothing.
 # - A `landing` with no commit past `main` fast-forwards to `main`.
 # - Otherwise git rebases `landing`'s commits past `main` onto `main` in a
-#   scratch worktree, with their merges. Git drops a commit whose patch
-#   `main` holds. The key of the host signs each new commit.
+#   scratch worktree, with their merges. `main` is the rebase's upstream, so
+#   git drops each commit whose patch `main` holds under another hash
+#   (#5932): a commit that landed on `main` before a rewrite of `landing`.
+#   The rebase moves no other branch, whatever `rebase.updateRefs` says. The
+#   key of the host signs each new commit.
 # - A git note on each old commit under `refs/notes/rebased` holds its new
 #   hash, so a seat finds a landed commit from its old hash.
 # - One atomic push moves `landing` and the notes. The lease on the old tip
@@ -76,8 +79,8 @@ attempt() {
   else
     : > "$scratch/rewritten"
     git worktree add --quiet --detach "$scratch/tree" "$landing" || return 1
-    if ! git -C "$scratch/tree" -c core.hooksPath="$scratch/hooks" rebase --quiet --gpg-sign --rebase-merges \
-      --onto "$main" "$base" > /dev/null 2> "$scratch/rebase.err"; then
+    if ! git -C "$scratch/tree" -c core.hooksPath="$scratch/hooks" -c rebase.updateRefs=false \
+      rebase --quiet --gpg-sign --rebase-merges "$main" > /dev/null 2> "$scratch/rebase.err"; then
       local conflicted
       conflicted=$(git -C "$scratch/tree" diff --name-only --diff-filter=U | paste -sd ' ' -)
       git -C "$scratch/tree" rebase --abort || true
