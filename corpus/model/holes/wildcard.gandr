@@ -1,50 +1,43 @@
-// The wildcard: `_` written where a value is read stands for the term the
-// equations force. The elaborator answers it, not the author: the
-// solver binds it only where a comparison forces a most general solution,
-// the checker writes that solution in its place, and the kernel readmits the
-// declaration as if the term were written by hand. A wildcard in an
-// ascription's type is forced by the term it ascribes. A hole `?h` is the
-// author's to fill. What refuses is in
-// `../../pathological/holes/wildcard.gandr`.
-//
-// - see: #528
-// - see: #1979 — `endForced`, `endSigned`, `endMet`
-
-/// The identity at a type passed explicitly.
+//! This source shows wildcards in value and type positions.
+//!
+//! A wildcard stands for a term that equations force. A hole is for the author
+//! to fill.
+//!
+//! The elaborator binds a most general solution. The checker writes the solution.
+//! The kernel readmits the declaration.
+//!
+//! - see: `corpus/pathological/holes/wildcard.gandr` — wildcard refusals.
+//! - see: #528
+//! - see: #1979 — `endForced`, `endSigned`, `endMet`
+//!
+/// This function is the identity at an explicit type.
 pub def idAt(a : Type, y : a) -> a { y }
 
-/// `idAt` with its type left to the argument: `3` forces `_` to `Integer`.
+/// The argument `3` forces `_` to `Integer`.
 @[ runs("3") ]
 def forced() -> Integer { idAt _ 3 }
 
-/// The first of two values, each of its own type, both types passed
-/// explicitly.
+/// This function returns the first value at explicit types.
 def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 
-/// Both types left to the arguments, each forced by its own.
+/// Each argument forces its own wildcard type.
 @[ runs("5") ]
 def bothForced() -> Integer { firstAt _ _ 5 (*{}) }
 
-/// The identity at a type supplied by name.
+/// This function is the identity at a named implicit type.
 def same[a : Type](y : a) -> a { y }
 
-/// The implicit supplied by name as a wildcard: the slot asks the solver for
-/// what an omitted implicit would leave it.
+/// This wildcard supplies a named implicit slot.
 @[ runs("3") ]
 def slotForced() -> Integer { same[.a = _] 3 }
 
-/// A path's right end left in an ascription's type: checking `Path.here(3)`
-/// against it forces the end to `3`, and the path runs as its two maps, both
-/// the identity.
+/// This ascription forces the path's right end to `3`.
 @[ runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}") ]
 def endForced() -> Path(3, 3) { (Path.here 3 : Path(3, _)) }
 
-/// A definition its annotation signs, the path's right end left open: no
-/// other type meets the annotation's, so `Path.here(3)`'s point alone forces the
-/// end.
+/// This annotation forces the right end from the point.
 def endSigned = (Path.here 3 : Path(3, _));
 
-/// A path the caller passes, ascribed a type whose right end is left open:
-/// the value bridge meets that end against the path's own and forces it.
+/// This ascription forces a path's right end from its type.
 def endMet(q : Path(3, 3)) -> Path(3, 3) =
   (q : Path(3, _))

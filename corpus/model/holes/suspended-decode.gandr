@@ -1,36 +1,35 @@
-//! A judgement blocked on an owed hole waits; it is not refused. A value at the
-//! decode of a code the module owes cannot be checked until the code is filled
-//! — filling it with `Integer` settles the comparison, filling it with `String`
-//! refutes it — so the checker suspends the declaration, records the hole it
-//! waits on, and owes that hole until a fill resumes it
-//! [Slattery-2026-bidirectional_elaborators_carte], Exegesis 6.6: suspension,
-//! not failure. The same declarations over a filled code check.
+//! This source shows a judgement that waits on an owed code.
+//!
+//! A value at the decode of an owed code waits for a fill. A fill with `Integer`
+//! settles the comparison. A fill with `String` refutes it.
+//!
+//! The checker records the owed hole. A fill resumes the declaration. Suspension
+//! is not failure.
 //!
 //! - cites: [Slattery-2026-bidirectional_elaborators_carte]
 //!
 //! [Slattery-2026-bidirectional_elaborators_carte]: https://arxiv.org/abs/2607.09564 "Slattery and Sterling, Bidirectional Elaborators à la Carte"
 
-/// A code the module owes: a type to be named later.
+/// This declaration owes a code to name later.
 @[ owes(1) ]
 def code : Type;
 
-/// Three, at the decode of the owed code: the comparison of `Integer` with
-/// the decode waits on `code`, so the declaration owes it.
+/// This declaration owes the comparison of `Integer` with `code`.
 @[ owes(1) ]
 def three : code = 3;
 
-/// A reader of a waiting declaration waits with it, on the same hole.
+/// This declaration waits on the hole that `three` owes.
 @[ owes(1) ]
 def again : code = three;
 
-/// A declaration that reads no hole checks beside them.
+/// This declaration checks without a hole.
 def four : Integer = 4;
 
-/// The code filled: a type named now.
+/// This declaration fills a code with the integer type.
 def filled : Type = Integer;
 
-/// Three, resumed: at the decode of the filled code the comparison settles.
+/// This declaration resumes at the filled code.
 def threeFilled : filled = 3;
 
-/// The reader, resumed with it.
+/// This declaration reads the resumed code.
 def againFilled : filled = threeFilled;
