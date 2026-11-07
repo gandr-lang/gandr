@@ -860,7 +860,7 @@ pub struct Admitted
     positions: Maybe<ArtifactPositions, positioned::Absent>,
     /// Each declaration the bridge declines for a former the kernel has no
     /// image of, in admission order.
-    declined: Vec<Declined>,
+    pub declined: Vec<Declined>,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
     /// How many declarations the readmission offered the kernel again; the
