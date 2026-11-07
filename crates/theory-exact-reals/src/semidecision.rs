@@ -24,10 +24,10 @@
 //! such reals, the lower and upper cuts of a registered cut, and bounded
 //! quantifiers over intervals whose body compares polynomials in the bound
 //! variable. The search of a quantifier is `crate::bisection`. It also has a
-//! rule for a real made of constants, sums, differences, products, π,
-//! cosines, sines and angles, and for a strict comparison of two such reals:
-//! the compound chain of `crate::compound`. Any other form suspends with
-//! [`SuspendReason::NoRule`].
+//! rule for a real made of constants, registered cuts, sums, differences,
+//! products, π, cosines, sines and angles, and for a strict comparison of two
+//! such reals: the compound chain of `crate::compound`. Any other form
+//! suspends with [`SuspendReason::NoRule`].
 
 use alloc::vec::Vec;
 

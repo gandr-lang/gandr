@@ -1,13 +1,15 @@
 //! The compound chain of the refinement machine: the enclosure of a real made
-//! of constants, sums, differences, products, π, cosines, sines and angles.
+//! of constants, registered cuts, sums, differences, products, π, cosines,
+//! sines and angles.
 //!
 //! A [`Compound`] settles an enclosure of such a real to a width, or a strict
 //! comparison of two such reals. It works in attempts. Each attempt encloses
 //! each node below the obligation's node, operands first, at the precision of
 //! the attempt: a constant by its point, an operation by its exact result on
-//! the enclosures of its operands, and a builtin by its rule at the precision.
-//! Each enclosure is one step, and so one unit of work. A node that reads no
-//! builtin keeps its enclosure from the first attempt.
+//! the enclosures of its operands, a builtin by its rule at the precision, and
+//! a registered cut by two witnesses at the precision. Each enclosure is one
+//! step, and so one unit of work. A node that reads no builtin and no cut
+//! keeps its enclosure from the first attempt.
 //!
 //! |Asked|After an attempt|Then|
 //! |---|---|---|
@@ -18,11 +20,18 @@
 //! |any|none of these|the next attempt doubles the precision|
 //!
 //! The first attempt works at 64 bits. The checker's width quota bounds the
-//! precision of a builtin's step, and so the attempts: an attempt past it
-//! stops at the quota. A bound variable, a cut, a quotient or a power has no
-//! rule here, so a real that reads one stops with [`SuspendReason::NoRule`].
+//! precision of a builtin's step and of a cut's step, and so the attempts: an
+//! attempt past it stops at the quota. A bound variable, a forged cut, a
+//! quotient or a power has no rule here, so a real that reads one stops with
+//! [`SuspendReason::NoRule`].
 
 use alloc::vec::Vec;
+use core::ops::Add as _;
+use core::ops::Shl as _;
+use core::ops::Shr as _;
+use core::ops::Sub as _;
+
+use num_bigint::BigInt;
 
 use crate::bisection::Turn;
 use crate::certificate::CheckerQuotas;
@@ -39,13 +48,19 @@ use crate::elementary::cosine;
 use crate::elementary::pi;
 use crate::elementary::sine;
 use crate::elementary::width;
+use crate::interval::Bound;
+use crate::interval::Endpoint;
 use crate::interval::NumericInterval;
+use crate::interval::Orientation;
 use crate::plan::Node;
 use crate::plan::NodeId;
 use crate::plan::Open;
 use crate::plan::Plan;
 use crate::plan::Real;
 use crate::plan::RealId;
+use crate::schema::Membership;
+use crate::schema::membership;
+use crate::schema::radicand;
 use crate::semidecision::Demand;
 use crate::semidecision::SuspendReason;
 use crate::semidecision::gap;
@@ -75,6 +90,8 @@ enum Form
 {
     /// A constant.
     Constant,
+    /// A registered cut: the square root of a positive dyadic.
+    Cut,
     /// A sum, a difference or a product.
     Arithmetic(Operation, Place, Place),
     /// π.
@@ -89,9 +106,10 @@ enum Form
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Reads
 {
-    /// The node reads a builtin, so each attempt encloses it again.
+    /// The node reads a builtin or a cut, so each attempt encloses it again.
     Precision,
-    /// The node reads no builtin, so one enclosure serves every attempt.
+    /// The node reads no builtin and no cut, so one enclosure serves every
+    /// attempt.
     Nothing,
 }
 
@@ -171,8 +189,8 @@ impl Compound
     /// # Specification
     /// - ensures: the node is a real whose enclosure is asked for, or a strict
     ///   comparison whose holding or failing is asked for. Each real below it
-    ///   is a constant, a sum, a difference, a product, π, a cosine, a sine or
-    ///   an angle.
+    ///   is a constant, a registered cut, a sum, a difference, a product, π, a
+    ///   cosine, a sine or an angle. The sweep does not go into a cut.
     /// - fails: suspends with [`SuspendReason::NoRule`] for any other form.
     /// - panics: none.
     /// - executable: none — the clause speaks of the form of the plan.
@@ -346,6 +364,27 @@ impl Compound
                 (
                     Step::Constant { real },
                     NumericInterval::point(value.clone()),
+                )
+            },
+            Form::Cut => {
+                builtin()?;
+                let radicand = radicand(plan, real).map_err(suspension)?;
+                let (lower, upper) = witnesses(&radicand, precision)?;
+                // A point of the lower cut lies below a point of the upper cut,
+                // so the open interval between them is proper.
+                let interval = NumericInterval::new(
+                    Bound::open(Endpoint::Finite(lower.clone())),
+                    Bound::open(Endpoint::Finite(upper.clone())),
+                    Orientation::Proper,
+                )
+                .map_err(|_reversed| SuspendReason::NoRule)?;
+                (
+                    Step::Witnesses {
+                        cut: real,
+                        lower,
+                        upper,
+                    },
+                    interval,
                 )
             },
             Form::Arithmetic(operation, first, second) => {
@@ -540,8 +579,10 @@ impl Compound
 /// # Specification
 /// - ensures: the order holds each node that a root reaches, once, in the order
 ///   of its position in the plan. Each member names the places of its operands.
+///   A cut is a leaf: the order holds no node of its body unless another path
+///   reaches it.
 /// - fails: suspends with [`SuspendReason::NoRule`] for a node that has no rule
-///   here, and for a root that is not a real.
+///   here, for a cut that is not registered, and for a root that is not a real.
 /// - panics: none.
 /// - executable: none — the clause speaks of the plan's reach.
 /// - intension: one sweep down from the highest root and one sweep up, each
@@ -551,8 +592,8 @@ impl Compound
 /// - [`SuspendReason::NoRule`]: the machine has no rule for a node.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a comparison whose operands share a node, and a builtin
-///   over a cut.
+/// - hypothesis: L3 — a comparison whose operands share a node, a builtin over
+///   a cut, and a sum of cuts.
 /// - witness: `tests::elementary::the_machine_certifies_the_builtins`
 fn order(
     plan: &Plan,
@@ -573,13 +614,17 @@ fn order(
         *slot = true;
     }
     // A node stands after each node that it reads, so one sweep down from the
-    // highest root reaches each node below the roots.
+    // highest root reaches each node below the roots. Its witnesses enclose a
+    // cut, so the sweep does not go into the cut's body.
     for index in (0 .. size).rev() {
         if reached.get(index) != Some(&true) {
             continue;
         }
         let id = NodeId::try_from(index).map_err(|_wide| SuspendReason::NoRule)?;
         let node = plan.node(id).map_err(|_unknown| SuspendReason::NoRule)?;
+        if matches!(*node, Node::Real(Real::Cut(_))) {
+            continue;
+        }
         for edge in node.edges() {
             let slot = reached
                 .get_mut(usize::from(edge.node))
@@ -631,7 +676,11 @@ fn order(
                 (Form::Wave(Wave::Sine, place(argument)?), Reads::Precision)
             },
             Node::Real(Real::Arg(x, y)) => (Form::Angle(place(x)?, place(y)?), Reads::Precision),
-            Node::Real(Real::Bound(_) | Real::Cut(_) | Real::Div { .. } | Real::Power(..))
+            Node::Real(Real::Cut(_)) => {
+                radicand(plan, id).map_err(|_forged| SuspendReason::NoRule)?;
+                (Form::Cut, Reads::Precision)
+            },
+            Node::Real(Real::Bound(_) | Real::Div { .. } | Real::Power(..))
             | Node::Open(_)
             | Node::Domain(_) => return Err(SuspendReason::NoRule),
         };
@@ -644,4 +693,59 @@ fn order(
         });
     }
     return Ok((order, places));
+}
+
+/// Two witnesses of the square root of `radicand` at `precision`: a point of
+/// its lower cut and a point of its upper cut, `2^(1 - precision)` apart.
+///
+/// # Specification
+/// - requires: `radicand` is positive, as a registered cut's radicand is.
+/// - ensures: with `s` the integer square root of `radicand · 4^p` rounded
+///   down, the points are `(s - 1) · 2^-p` and `(s + 1) · 2^-p`. Since `s²` is
+///   at most the radicand's scaled value and `(s + 1)²` lies above it, the
+///   first point lies in the lower cut and the second in the upper cut.
+/// - fails: suspends with [`SuspendReason::Quota`] when a point or its exact
+///   square leaves the checker's range, and with [`SuspendReason::NoRule`] when
+///   a point is not a witness of its side.
+/// - panics: none.
+/// - executable: none — the clause restates the arithmetic.
+/// - intension: one integer square root of `2p` bits and the radicand's width,
+///   and two exact squares.
+///
+/// # Errors
+/// - [`SuspendReason`]: as above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the code of each set of height at most 3, enclosed and
+///   replayed. L3 — the cosine of the square root of two.
+/// - witness: `tests::ackermann::each_code_encloses_and_replays`
+/// - witness: `tests::elementary::the_machine_certifies_the_builtins`
+fn witnesses(
+    radicand: &Dyadic,
+    precision: Precision,
+) -> Result<(Dyadic, Dyadic), SuspendReason>
+{
+    let bits = i32::try_from(u32::from(precision)).map_err(|_wide| SuspendReason::Quota)?;
+    let scale = bits.checked_mul(2_i32).ok_or(SuspendReason::Quota)?;
+    let scaled = i32::from(radicand.exponent())
+        .checked_add(scale)
+        .ok_or(SuspendReason::Quota)?;
+    // The radicand times `4^p`, rounded down to an integer.
+    let mantissa = radicand.mantissa();
+    let floor = if scaled >= 0_i32 {
+        mantissa.shl(scaled.unsigned_abs())
+    }
+    else {
+        mantissa.shr(scaled.unsigned_abs())
+    };
+    let root = BigInt::from(floor.magnitude().sqrt());
+    let ulp = Exponent::from(bits.checked_neg().ok_or(SuspendReason::Quota)?);
+    let lower = Dyadic::new(root.clone().sub(1_u8), ulp).map_err(|_range| SuspendReason::Quota)?;
+    let upper = Dyadic::new(root.add(1_u8), ulp).map_err(|_range| SuspendReason::Quota)?;
+    if membership(&lower, radicand).map_err(suspension)? != Membership::Lower
+        || membership(&upper, radicand).map_err(suspension)? != Membership::Upper
+    {
+        return Err(SuspendReason::NoRule);
+    }
+    return Ok((lower, upper));
 }

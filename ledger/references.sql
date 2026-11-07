@@ -94,6 +94,8 @@ INSERT INTO reference VALUES('Sterling-2026-domains_classifying_topoi','theory-s
 INSERT INTO reference VALUES('Sterling-2026-domains_classifying_topoi','theory-stone-duality','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','24bac3438243f9d8aabb12c04fbfb26c5b8416ac');
 INSERT INTO reference VALUES('Sullivan-2023-closure_conversion_little_pieces','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-reflections_closures','core-sequent','closure','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions','theory-exact-reals','ackermann','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes','theory-exact-reals','ackermann','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','9d949b38848b499a5cfd920ea5c04c5cc8630d6e');
@@ -615,6 +617,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-shapes','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-stone-duality','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theory-exact-reals','ackermann','exemplar',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or
