@@ -19,15 +19,25 @@
 //! author wrote it, less the tile. Its tree, the written tile read back as
 //! minted, is the parse, and that one repair stands for every repair the
 //! misreading made. The forms tried are the first a `)` or a `]` closes, the
-//! deepest of the others and the first of the others. A `)` or a `]` is tried
-//! where the melder closed the form, then at each tile end from the form's last
-//! written tile on where it closes that form — every bracket of its family
-//! opened since closed, save a doubled opener's second, and none between a name
-//! and the bracket that opens its arguments; where two places parse, as
-//! `f(x, y + 1` closed after `y` or after `1`, the nearer is taken. A place
-//! that parts an operand from the argument the melder applies it to is tried
-//! after the next place, so the `)` of `S (P x <=> x;` comes after `P x`. The
-//! melder can close the form at the end of its last written tile, before an
+//! deepest of the others and the first of the others. A declaration the melder
+//! cannot close can leave its keyword and the tiles after it as top-level
+//! forms of their own: in `def quiet : Prog (Either StateOp Void Integer = Op;`
+//! the group reads `= Op` as an equality, and `def quiet :` stands apart. When
+//! no copy of a form alone parses and the gap before each line places no tile,
+//! the search runs again over the first four forms a `)` or a `]` closes and
+//! the same two others. Then each copy starts at such a keyword, so that it
+//! holds the whole declaration, and a later bracket's form without one is
+//! copied alone. The gap goes first: a field whose `(` its line leaves open
+//! owes the `)` on that line, though a copy from the keyword can parse with
+//! the `)` on a later line. A `)` or a `]` is tried where the melder closed
+//! the form, then at each tile end from
+//! the form's last written tile on where it closes that form — every bracket
+//! of its family opened since closed, save a doubled opener's second, and none
+//! between a name and the bracket that opens its arguments; where two places
+//! parse, as `f(x, y + 1` closed after `y` or after `1`, the nearer is taken. A
+//! place that parts an operand from the argument the melder applies it to is
+//! tried after the next place, so the `)` of `S (P x <=> x;` comes after `P x`.
+//! The melder can close the form at the end of its last written tile, before an
 //! operand that follows the tile. A closer there expels that operand, so that
 //! place is not tried. Any other tile the form may take — a member's `;`, an
 //! arm's `=>`, a binder's `:`, an `else` — is tried directly after the form's
@@ -108,6 +118,37 @@ const PLACES: usize = 64;
 /// The most copies the search molds for one repair of a tile other than a
 /// closer, in the order it tries them.
 const COPIES: usize = 16;
+
+/// The most brackets left open whose closer the last search places, in source
+/// order.
+const BRACKETS: usize = 4;
+
+/// Which search over a parse's targets runs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pass
+{
+    /// The first bracket left open, the deepest other target and the first
+    /// other, each copied from its top-level form alone.
+    First,
+    /// After the gap places no tile: the first [`BRACKETS`] brackets left open
+    /// and the same two others, each copied from its declaration's keyword.
+    Last,
+}
+
+/// How far back a copy of a target's top-level form reaches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// The copy holds the top-level form alone.
+    Form,
+    /// The copy starts at the keyword of the form's declaration, which the
+    /// melder leaves as a top-level tile before the form ([`keyword`]). A form
+    /// with no such keyword is not copied.
+    Declaration,
+    /// The copy starts at that keyword when there is one, and holds the form
+    /// alone otherwise.
+    Widest,
+}
 
 primitive_copy_wrapper!(
     /// How many forms enclose a span of a tree.
@@ -280,7 +321,14 @@ impl Target
 ///   the tile. A declaration's keyword left out at the head of a top-level form
 ///   is placed first ([`headed`]), and the search above runs over that parse.
 ///   Where the search places no tile, the gap before each line places the
-///   separators and closers it shows ([`super::gap::gapped`]).
+///   separators and closers it shows ([`super::gap::gapped`]). Where the gap
+///   places none either, the search runs again over the first [`BRACKETS`]
+///   targets whose tile is a `)` or a `]` and the same two others. Each copy
+///   then starts at the keyword of the target's declaration that the melder
+///   leaves as a top-level tile before its top-level form ([`keyword`]). A
+///   target the first search tried is not copied again without that keyword,
+///   and a later bracket's form without one is copied alone. This search keeps
+///   a copy only where its parse owes fewer obligations than `parsed`.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -296,9 +344,12 @@ impl Target
 ///   never inside it, a binder's `:` after its name and never after its type,
 ///   an `else` after the first block; a definition's `=` left out, whose form
 ///   the layout's separator before the next declaration ends, after its result
-///   type; and a definition's last `;` left out at the end of the source is
-///   never minted inside its body.
+///   type; a type's `)` left out of a declaration that the melder breaks apart,
+///   before its `=`, and the inner `)` of a result type that the outer bracket
+///   takes at no place; and a definition's last `;` left out at the end of the
+///   source is never minted inside its body.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
 /// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
@@ -309,10 +360,14 @@ pub(super) fn placed<'source>(
 ) -> ParseResult<'source>
 {
     let parsed = headed(pbg, &parsed).unwrap_or(parsed);
-    earlier(pbg, &parsed).unwrap_or_else(|| super::gap::gapped(pbg, parsed))
+    earlier(pbg, &parsed, Pass::First)
+        .or_else(|| super::gap::gapped(pbg, &parsed))
+        .or_else(|| earlier(pbg, &parsed, Pass::Last))
+        .unwrap_or(parsed)
 }
 
-/// `parsed` with a placeable repair placed, if a place parses.
+/// `parsed` with a placeable repair placed, if a place parses, over the targets
+/// and with the copies `pass` names.
 ///
 /// # Specification
 /// - requires: as [`placed`].
@@ -324,10 +379,12 @@ pub(super) fn placed<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — as [`placed`].
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
 fn earlier<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
+    pass: Pass,
 ) -> Option<ParseResult<'source>>
 {
     let tree = &parsed.tree;
@@ -342,7 +399,17 @@ fn earlier<'source>(
         .into_iter()
         .filter_map(|repair| Target::of(pbg, tree, repair))
         .collect();
-    let bracket = targets.iter().find(|target| target.class.is_some());
+    // The reach of a target the first search tried, then of one it did not.
+    let (count, tried, fresh) = match pass {
+        Pass::First => (1, Reach::Form, Reach::Form),
+        Pass::Last => (BRACKETS, Reach::Declaration, Reach::Widest),
+    };
+    let brackets = targets
+        .iter()
+        .filter(|target| target.class.is_some())
+        .take(count)
+        .enumerate()
+        .map(|(at, target)| (target, if at == 0 { tried } else { fresh }));
     let others: Vec<&Target> = targets
         .iter()
         .filter(|target| target.class.is_none())
@@ -353,11 +420,19 @@ fn earlier<'source>(
         .min_by_key(|&(_, target)| core::cmp::Reverse(target.depth))
         .map(|(at, _)| at);
     let first = deepest.filter(|&at| at != 0).and_then(|_| others.first());
-    bracket
-        .into_iter()
-        .chain(deepest.and_then(|at| others.get(at)).copied())
-        .chain(first.copied())
-        .find_map(|target| settled(pbg, tree, target))
+    brackets
+        .chain(
+            deepest
+                .and_then(|at| others.get(at))
+                .map(|&target| (target, tried)),
+        )
+        .chain(first.map(|&target| (target, tried)))
+        .find_map(|(target, reach)| {
+            settled(pbg, tree, target, reach).filter(|placed| match pass {
+                Pass::First => true,
+                Pass::Last => placed.obligations.len() < parsed.obligations.len(),
+            })
+        })
 }
 
 /// `parsed` with a declaration's keyword minted at the head of a run of
@@ -729,15 +804,57 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
     }
 }
 
+/// Where the declaration that holds the top-level form `form` starts, when the
+/// melder leaves the declaration's keyword as a top-level tile before `form`.
+///
+/// A declaration the melder cannot close can leave its keyword as a bare tile
+/// at the root, before the form. The walk back stops at the first top-level
+/// form whose first tile opens a declaration: a bare tile there is the
+/// keyword, and a meld there is the declaration before, which the copy leaves
+/// out.
+///
+/// # Specification
+/// - requires: `form` is a child of `tree`'s root, and `tree` molds under
+///   `pbg`.
+/// - ensures: the start of the last top-level form before `form` whose first
+///   tile opens a declaration, when that form is a bare tile; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`placed`].
+/// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
+fn keyword(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Option<ByteOffset>
+{
+    let before: Vec<NodeIndex> = tree
+        .children(tree.root())
+        .take_while(|&position| position != form)
+        .collect();
+    let (position, span) = before.iter().rev().find_map(|&position| {
+        let (mold, span) = first_tile(tree, position)?;
+        bool::from(declaration_head(pbg, mold)).then_some((position, span))
+    })?;
+    tree.node(position)
+        .is_some_and(|node| matches!(node.label(), NodeLabel::Tile(_)))
+        .then_some(span.start())
+}
+
 /// The parse with `target`'s tile minted where the rest of its top-level form
-/// parses, if a place tried does: for a closer, the melder's close and the
-/// first [`PLACES`] tile ends; for another tile, the first [`COPIES`] copies,
-/// then, when none molds with no repair, those copies with the separator the
-/// form lost written after them ([`lost_separator`]).
+/// parses, the copy reaching as far back as `reach` says, if a place tried
+/// does: for a closer, the melder's close and the first [`PLACES`] tile ends;
+/// for another tile, the first [`COPIES`] copies, then, when none molds with no
+/// repair, those copies with the separator the form lost written after them
+/// ([`lost_separator`]).
 ///
 /// # Specification
 /// - requires: `target` is a [`Target`] of `tree`'s parse under `pbg`.
-/// - ensures: as [`placed`] for that target; `None` where no copy tried parses.
+/// - ensures: as [`placed`] for that target; `None` where no copy tried parses,
+///   or `reach` is [`Reach::Declaration`] and [`keyword`] finds no keyword.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -745,17 +862,25 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
 /// # Adequacy
 /// - hypothesis: L3 — as [`placed`].
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 fn settled<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     target: &Target,
+    reach: Reach,
 ) -> Option<ParseResult<'source>>
 {
-    let (form, top) = tree
+    let (form, held) = tree
         .children(tree.root())
         .filter_map(|position| tree.node(position).map(|node| (position, node.span())))
         .find(|&(_, span)| span.start() < target.end && target.end <= span.end())?;
+    let top = match reach {
+        Reach::Form => held,
+        Reach::Declaration => ByteSpan::new(keyword(pbg, tree, form)?, held.end()).ok()?,
+        Reach::Widest => keyword(pbg, tree, form)
+            .map_or(Some(held), |start| ByteSpan::new(start, held.end()).ok())?,
+    };
     let lead = usize::from(top.start());
     let shifted = |offset: ByteOffset| usize::from(offset).checked_sub(lead).map(ByteOffset::from);
     let (repair_start, repair_end) = (
@@ -1468,6 +1593,65 @@ mod tests
                     "{why}: the close reaches back to the first place"
                 );
             }
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "{why}: the tree reconstructs the source"
+            );
+            assert!(
+                matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
+                "{why}: one repair stands: {:?}",
+                parsed.obligations()
+            );
+        }
+    }
+
+    /// #5837: a closer left out of a declaration that the melder breaks into
+    /// pieces is minted where the declaration parses from its keyword. Where
+    /// the first bracket left open takes it at no place, a later one does.
+    #[test]
+    fn a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837()
+    {
+        let pbg = built_in().unwrap();
+        let after = |source: &str, written: &str| {
+            source
+                .find(written)
+                .map_or(0_usize, |start| start.saturating_add(written.len()))
+        };
+        let typed = include_str!(
+            "place/unformatted/a-closer-left-out-of-a-broken-declaration-is-minted-where-it-parses-5837-typed.gandr"
+        );
+        let inner = include_str!(
+            "place/unformatted/a-closer-left-out-of-a-broken-declaration-is-minted-where-it-parses-5837-inner.gandr"
+        );
+        for (source, at, why) in [
+            (
+                typed,
+                after(typed, "Void Integer"),
+                "a `def`'s type that reads its `=` as an equality takes its `)` before the `=`, \
+                 though the melder leaves `def quiet :` apart from the type",
+            ),
+            (
+                inner,
+                after(inner, "-> Run (?(Seat.Dispatch"),
+                "the inner `(` of a result type takes the `)`, though the outer `(` is the first \
+                 bracket left open",
+            ),
+        ] {
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            let minted: Vec<_> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| matches!(node.label(), NodeLabel::GhostClose { .. }))
+                .map(|node| (node.span().start(), node.span().end()))
+                .collect();
+            assert_eq!(
+                minted,
+                [(ByteOffset::from(at), ByteOffset::from(at))],
+                "{why}: {:?}",
+                parsed.obligations()
+            );
             assert_eq!(
                 reconstruct(tree),
                 source,
