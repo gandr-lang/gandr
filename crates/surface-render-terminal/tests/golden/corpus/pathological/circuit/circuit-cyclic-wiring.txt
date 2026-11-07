@@ -1,4 +1,4 @@
-error[MalformedForm]: the wiring of the rule `spin` reaches the port `z` from itself
+error[MalformedForm]: this circuit rule `spin` has wiring that reaches port `z` from itself, so it derives no boundary
    ╭▸ corpus/pathological/circuit/circuit-cyclic-wiring.gandr:7:3
    │
  7 │ ┏   rule spin : (data x : Nat) ==> (z : Nat) {
@@ -8,4 +8,4 @@ error[MalformedForm]: the wiring of the rule `spin` reaches the port `z` from it
    │ ┗━━━┛ a circuit wiring that derives no boundary
    │
    ├ note: `Loop` is refused with MalformedForm, as its expectation states
-   ╰ help: wire the rule so that no port reaches itself
+   ╰ help: change the rule so that no port reaches itself

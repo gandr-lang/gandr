@@ -1,4 +1,4 @@
-error[MalformedForm]: the wiring of the rule `split` reads the port `z`, one output of a many-out node, on its own
+error[MalformedForm]: this circuit rule `split` has wiring that reads port `z`, one output of a many-out node, on its own
   ╭▸ corpus/pathological/circuit/circuit-many-out-node.gandr:6:3
   │
 6 │ ┏   rule split : (data x : Nat) ==> (z : Nat) {

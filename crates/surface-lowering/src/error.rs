@@ -1969,7 +1969,8 @@ fn ill_formed(
         ),
         WfKind::CyclicCircuitWiring => write!(
             f,
-            "the wiring of the rule {one} reaches the port {other} from itself"
+            "this circuit rule {one} has wiring that reaches port {other} from itself, so it \
+             derives no boundary"
         ),
         WfKind::UnknownRewritePort => write!(
             f,
@@ -1977,7 +1978,7 @@ fn ill_formed(
         ),
         WfKind::CircuitDerivationBudget => write!(
             f,
-            "the wiring of the rule {one} unfolds past the derivation's node budget"
+            "this circuit rule {one} has wiring that unfolds past the derivation's node budget"
         ),
         WfKind::DuplicateSortName => write!(f, "the sort {one} is declared more than once"),
         WfKind::UnknownResultSort => write!(
@@ -2011,13 +2012,13 @@ fn ill_formed(
         ),
         WfKind::SplitCircuitOutputs => write!(
             f,
-            "the wiring of the rule {one} reads the port {other}, one output of a many-out \
-             node, on its own"
+            "this circuit rule {one} has wiring that reads port {other}, one output of a \
+             many-out node, on its own"
         ),
         WfKind::SharedCircuitPort => write!(
             f,
-            "the wiring of the rule {one} binds the port {other} twice, and a term gives each \
-             port one producer"
+            "this circuit rule {one} has wiring that binds port {other} twice, but a term gives \
+             each port one producer"
         ),
         WfKind::DuplicateFaceName => {
             write!(f, "the boundary {one} names the face {other} twice")
