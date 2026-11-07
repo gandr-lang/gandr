@@ -1132,9 +1132,11 @@ tools.jq = "1.8.1"
 usage = '''
 flag "-p --package <crate>" help="the crate that owns an unwitnessed list"
 flag "--unwitnessed <file>" help="a static unwitnessed-mutants list"
+flag "--campaign <file>" help="a campaign's surviving-mutants list"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
+source .config/gh/budget.bash
 set -euo pipefail
 repo=${GH_REPO:?}
 file_unwitnessed() {
@@ -1170,9 +1172,47 @@ file_unwitnessed() {
     printf '%s: opened %s (%s unwitnessed mutant(s))\n' "$crate" "$url" "$count"
   fi
 }
+file_campaign() {
+  local survivors=$1 crate=$2 area scratch count title key issue url
+  local -a labels
+  [[ -n $crate ]] || { echo '--campaign needs --package' >&2; return 2; }
+  [[ -f $survivors ]] || { printf 'no campaign survivors at %s\n' "$survivors" >&2; return 2; }
+  area=${crate#gandr-}
+  area=${area%%-*}
+  case "$area" in
+    ci | core | distribution | editor | kernel | lsp | program-logic | runtime | storage | surface | theory | ux | workflow) ;;
+    *) printf 'no area for crate %s\n' "$crate" >&2; return 2 ;;
+  esac
+  scratch=$(mktemp -d)
+  trap 'rm -rf "$scratch"' EXIT
+  jq -R -s --arg crate "$crate" '{crate: $crate, mutants: [split("\n")[] | select(length > 0)]}' "$survivors" > "$scratch/input.json"
+  count=$(jq '.mutants | length' "$scratch/input.json")
+  if (( count == 0 )); then
+    printf '%s leaves no mutant alive in the campaign\n' "$crate"
+    return 0
+  fi
+  jq -r -f .config/mutants/campaign.jq "$scratch/input.json" > "$scratch/body.md"
+  title="test: $crate leaves $count mutant(s) alive (campaign)"
+  key="test: $crate leaves "
+  issue=$(gh issue list --repo "$repo" --state open --label collector --limit 100 --search "\"${key% }\" in:title" --json number,title \
+    | jq -r --arg title "$title" '[.[] | select(.title == $title)] | first | .number // empty')
+  labels=(--label kind:gap --label collector --label "area:$area" --label priority:medium --label effort:unknown)
+  if [[ -n $issue ]]; then
+    gh issue edit "$issue" --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]/#--label/--add-label}" > /dev/null
+    printf '%s: updated #%s (%s survivor(s))\n' "$crate" "$issue" "$count"
+  else
+    url=$(gh issue create --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]}")
+    printf '%s: opened %s (%s survivor(s))\n' "$crate" "$url" "$count"
+  fi
+}
 unwitnessed=${usage_unwitnessed:-}
 if [[ -n $unwitnessed ]]; then
   file_unwitnessed "$unwitnessed" "${usage_package:-}"
+  exit 0
+fi
+campaign=${usage_campaign:-}
+if [[ -n $campaign ]]; then
+  file_campaign "$campaign" "${usage_package:-}"
   exit 0
 fi
 before=${MUTANTS_PUSH_BEFORE:-}

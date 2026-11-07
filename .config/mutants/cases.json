@@ -120,5 +120,17 @@
       ]
     },
     "output": "This issue lists the mutants of `gandr-core-checker` that no witness names.\n\nNo build starts. Each row is a static coverage gap.\n\n| mutant |\n| --- |\n| `crates/core-checker/src/check.rs:8: replace check -> bool with false` |\n| `crates/core-checker/src/check.rs:9: replace left \\| right with left` |\n\n2 unwitnessed mutant(s)."
+  },
+  {
+    "name": "#3209: a campaign collector lists every surviving mutant",
+    "program": "campaign.jq",
+    "input": {
+      "crate": "gandr-core-checker",
+      "mutants": [
+        "crates/core-checker/src/check.rs:8: replace check -> bool with false",
+        "crates/core-checker/src/check.rs:9: replace left | right with left"
+      ]
+    },
+    "output": "This issue lists the mutants in `gandr-core-checker` that the campaign leaves alive.\n\nEach row needs a witness. A missing witness must name its function.\n\n| mutant |\n| --- |\n| `crates/core-checker/src/check.rs:8: replace check -> bool with false` |\n| `crates/core-checker/src/check.rs:9: replace left \\| right with left` |\n\n2 mutant(s) alive."
   }
 ]
