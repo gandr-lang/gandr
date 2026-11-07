@@ -23,4 +23,4 @@ def unrolled() -> Integer =
 /// `spin` over `1, 2, 3` answers what `unrolled` does. `Model(Wheel)` cannot
 /// state `spin`, a circuit rule.
 @[ refuses("UnstatedComponent.Circuit") ]
-def summing : Model(Wheel);
+def summing : Model Wheel;

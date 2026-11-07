@@ -98,7 +98,7 @@ rec {
     /// The naturals, at every level.
     | NatV : (n : Nat) --> ULevel n
     /// The universe a level down, a code one level up.
-    | TypeV : (n : Nat) --> ULevel(Succ(n))
+    | TypeV : (n : Nat) --> ULevel(Succ n)
     /// The dependent functions from a coded domain at a level.
     | PiV : (n : Nat, a : ULevel n, b : +U (elLevel(n, a) -> -F ULevel n)) --> ULevel n
   }

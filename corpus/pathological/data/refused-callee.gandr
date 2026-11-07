@@ -12,11 +12,11 @@ data List(a : Type) : Type where
 /// A parenthesised value standing as a statement, where a computation
 /// stands, is refused.
 @[ refuses("OutOfFragment.WrongSort") ]
-def refused(xs : List(Integer)) -> -F List(Integer) =
-  (Cons 1 xs : List(Integer))
+def refused(xs : List Integer) -> -F List Integer =
+  (Cons 1 xs : List Integer)
   xs
 
 /// A bare constructor passed to the refused declaration takes no type from
 /// its parameter.
 @[ refuses("OutOfFragment.Unannotated") ]
-def calls() -> -F List(Integer) { refused Nil }
+def calls() -> -F List Integer { refused Nil }

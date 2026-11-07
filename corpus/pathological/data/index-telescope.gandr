@@ -13,7 +13,7 @@ import "../../model/data/data-base.gandr";
 /// Positions below a bound.
 data Fin : Nat -> Type where
   /// The first position below the successor of `n`.
-  | FZ : (n : Nat) --> Fin(Succ(n))
+  | FZ : (n : Nat) --> Fin(Succ n)
 
 /// A constructor states the position before the bound, out of the telescope's
 /// order: the position stands where the bound `n : Nat` is stated.
@@ -26,7 +26,7 @@ data Swapped : (n : Nat, i : Fin n) --> Type where
 @[ refuses("TypeMismatch") ]
 data Past : (n : Nat, i : Fin n) --> Type where
   /// The position stands below `n`, not below its successor.
-  | Over : (n : Nat, i : Fin n) --> Past(Succ(n), i)
+  | Over : (n : Nat, i : Fin n) --> Past(Succ n, i)
 
 /// The type of an index reads an earlier index at the wrong type: `i` is a
 /// position, and `Fin` asks for a bound.
@@ -45,7 +45,7 @@ data Unended : (n : Nat) where
 @[ refuses("MalformedForm") ]
 data Graded : (n[1] : Nat) --> Type where
   /// A mark at zero.
-  | AtZero : Graded(Zero)
+  | AtZero : Graded Zero
 
 /// A value of `a` marked at the position `i` below `n`.
 data Pinned(a : Type) : (n : Nat, i : Fin n) --> Type where
@@ -55,6 +55,6 @@ data Pinned(a : Type) : (n : Nat, i : Fin n) --> Type where
 /// A `let` with no type binds a constructor of a family with a parameter.
 /// No field fixes the parameter `a`, so the lowering refuses the call.
 @[ refuses("UnfixedParameter") ]
-def pinBare(n : Nat, i : Fin(n), x : Integer) -> Pinned(Integer, n, i) =
+def pinBare(n : Nat, i : Fin n, x : Integer) -> Pinned Integer n i =
   let p = Pin n i x
   p

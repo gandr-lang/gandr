@@ -20,5 +20,5 @@ module Hidden :> Model(Counter) where
 
 /// The sealed counter packed at its models.
 @[ refuses("OutOfFragment.pack_model_expression") ]
-def hidden : Model(Counter);
-def hidden = pack Hidden at Model(Counter);
+def hidden : Model Counter;
+def hidden = pack Hidden at Model Counter;
