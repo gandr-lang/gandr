@@ -1,4 +1,4 @@
-error[MalformedForm]: the wiring of the rule `merge` binds the port `z` twice, and a term gives each port one producer
+error[MalformedForm]: this circuit rule `merge` has wiring that binds port `z` twice, but a term gives each port one producer
    ╭▸ corpus/pathological/circuit/spiders-unmarked.gandr:7:3
    │
  7 │ ┏   rule merge : (data x : Q, data y : Q) <=> (z : Q) {

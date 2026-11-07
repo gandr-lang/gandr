@@ -690,7 +690,7 @@ fn ill_formed(kind: WfKind) -> String
         WfKind::DerivedBoundaryMismatch => {
             "make the declared sphere fix the boundary that the wiring derives"
         },
-        WfKind::CyclicCircuitWiring => "wire the rule so that no port reaches itself",
+        WfKind::CyclicCircuitWiring => "change the rule so that no port reaches itself",
         WfKind::UnknownRewritePort => {
             "declare the rewrite in the rule's telescope, or apply a rewrite that it declares"
         },

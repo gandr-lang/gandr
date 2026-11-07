@@ -1,4 +1,4 @@
-error[MalformedForm]: the wiring of the rule `twice` binds the port `m` twice, and a term gives each port one producer
+error[MalformedForm]: this circuit rule `twice` has wiring that binds port `m` twice, but a term gives each port one producer
    ╭▸ corpus/pathological/circuit/circuit-shared-port.gandr:7:3
    │
  7 │ ┏   rule twice : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (o : Nat) {
