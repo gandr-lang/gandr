@@ -354,10 +354,12 @@ const CONTINUATION: u32 = 2;
 
 /// The maximum scheduled node visits in either presentation pass.
 ///
-/// A well-formed type or value of any size a reader would read fits many
-/// times over; the bound is reached by a malformed source — a cycle — whose
-/// presentation is then `?` rather than a walk that does not end.
-const VISIT_BUDGET: u32 = 0x0001_0000;
+/// A well-formed type or value of a size that a reader reads fits many times
+/// over. Two sources reach the bound: a malformed source with a cycle, and a
+/// shared type whose unshared tree is past what a reader reads. The walk
+/// spells each as `?`, and does not spend the time and the bytes of a tree
+/// that nobody reads.
+const VISIT_BUDGET: u32 = 0x0000_0400;
 
 /// An owned spelling computed for one leaf.
 #[repr(transparent)]
