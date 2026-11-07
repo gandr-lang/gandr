@@ -232,8 +232,8 @@ fn a_malformed_budget_exits_two()
     assert_eq!(output.status.code(), Some(2_i32));
     assert!(
         String::from_utf8_lossy(&output.stderr).contains(
-            "`mutate the night's crate (linux):deep=840` names the deep cone; a scheduled lane \
-             is held to one budget over its scheduled runs"
+            "`mutate the night's crate (linux):deep=840` names the deep cone; a lane outside the \
+             landing window is held to one budget over its own runs"
         ),
         "{}",
         String::from_utf8_lossy(&output.stderr)
@@ -343,6 +343,76 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
     assert!(log.contains("/runs/6/jobs"), "{log}");
     assert!(log.contains("/runs/5/jobs"), "{log}");
     assert!(!log.contains("/runs/4/jobs"), "{log}");
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn a_test_lane_is_sampled_over_the_integration_dispatches()
+{
+    let scratch = scratch!("integration");
+    let output = run!(
+        scratch,
+        [
+            "--runs",
+            "2",
+            "--budget",
+            "check Clippy wall=250",
+            "--integration",
+            "mutate the night's crate (linux)=185",
+            "--issue",
+            "CI lane budgets",
+        ],
+        "[]",
+        "",
+        "all"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The dispatches on `integration`, runs 19 and 18, hold the lane at 190
+    // and 180 seconds: within its budget. The pushes to `main`, runs 29 and
+    // 28, hold it at 290 and 280 seconds, past that budget, but their table
+    // is information, so the report stays within and opens no issue.
+    assert!(
+        stdout.contains(
+            "\nThe table holds the test lanes' medians over the last 2 dispatches of `ci.yml` on \
+             `integration`. A merge group on `landing` skips these lanes, so only the cycle \
+             holds them.\n\n<details><summary>1 lane — within: 0 over, 0 \
+             unmeasured</summary>\n\n| lane | class | median | budget | jobs | standing |\n| \
+             --- | --- | ---: | ---: | ---: | --- |\n| mutate the night's crate (linux) | \
+             integration | 3m 0s | 3m 5s | 2 | within |\n\nThe table reads runs 19, \
+             18.\n\n</details>\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "\nThe table holds the same lanes' medians over the last 2 pushes of `ci.yml` to \
+             `main`. No gate waits on such a run, so the table is information and holds no \
+             budget.\n\n<details><summary>1 lane — information, no budget</summary>\n\n| lane | \
+             class | median | budget | jobs | standing |\n| --- | --- | ---: | ---: | ---: | --- \
+             |\n| mutate the night's crate (linux) | main | 4m 40s | — | 2 | information |\n\nThe \
+             table reads runs 29, 28.\n\n</details>\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("\nEvery lane is within budget; no issue is open.\n"),
+        "{stdout}"
+    );
+    let log = log!(scratch);
+    assert!(
+        log.contains("event=workflow_dispatch -f branch=integration"),
+        "{log}"
+    );
+    assert!(log.contains("event=push -f branch=main"), "{log}");
+    for run in ["19", "18", "29", "28"] {
+        assert!(log.contains(&format!("/runs/{run}/jobs")), "{log}");
+        assert!(
+            !log.contains(&format!("actions/runs/{run} ")),
+            "a dispatch or a push is not cone-classified: {log}"
+        );
+    }
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
