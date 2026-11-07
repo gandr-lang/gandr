@@ -1639,6 +1639,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-computads",
  "gandr-theory-discrete-morse",
+ "gandr-theory-e-graphs",
  "gandr-theory-graded-posets",
  "gandr-theory-levitation",
  "gandr-theory-shapes",
@@ -1961,6 +1962,15 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-theory-e-graphs"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-coherent-resolutions",
+ "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]

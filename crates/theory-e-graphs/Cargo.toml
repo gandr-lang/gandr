@@ -1,0 +1,32 @@
+[package]
+name = "gandr-theory-e-graphs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "A proof-producing e-graph for gandr: congruence closure over the term table of a Lawvere theory, with a proof forest whose explanations a checker replays, egg's worklist rebuild, e-class analyses and the read, apply and rebuild phases"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["congruence-closure", "e-graph", "gandr", "no-std", "rewriting"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. The nodes are the terms of the Lawvere theory's
+# table in `theory-coherent-resolutions`.
+[dependencies]
+anodized.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
