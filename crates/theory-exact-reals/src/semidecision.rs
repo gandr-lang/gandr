@@ -1166,7 +1166,9 @@ impl Progress
 pub(crate) const fn suspension(check: CertificateCheck) -> SuspendReason
 {
     return match check {
-        CertificateCheck::StepQuota | CertificateCheck::WidthQuota => SuspendReason::Quota,
+        CertificateCheck::StepQuota
+        | CertificateCheck::WidthQuota
+        | CertificateCheck::TermQuota => SuspendReason::Quota,
         CertificateCheck::Format
         | CertificateCheck::Empty
         | CertificateCheck::ForwardPremise
@@ -1184,7 +1186,9 @@ pub(crate) const fn suspension(check: CertificateCheck) -> SuspendReason
         | CertificateCheck::Hypothetical
         | CertificateCheck::OutsideDomain
         | CertificateCheck::Gap
-        | CertificateCheck::Modality => SuspendReason::NoRule,
+        | CertificateCheck::Modality
+        | CertificateCheck::Tail
+        | CertificateCheck::ZeroDivisor => SuspendReason::NoRule,
     };
 }
 
@@ -1279,7 +1283,10 @@ fn rebuilt(
             | Step::Pi { .. }
             | Step::Cosine { .. }
             | Step::Sine { .. }
-            | Step::Angle { .. } => return Err(ResumeError::Steps),
+            | Step::Angle { .. }
+            | Step::Recurrence { .. }
+            | Step::Quotient { .. }
+            | Step::Power { .. } => return Err(ResumeError::Steps),
         }
     }
     let node = obligation.node;

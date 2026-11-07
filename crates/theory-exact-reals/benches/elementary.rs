@@ -1,6 +1,6 @@
-//! The measurement of the builtin elementary functions: the enclosure rule of
-//! each at 64, 256 and 1024 bits, and the replay of a certificate of two
-//! builtin steps.
+//! The measurement of the elementary functions: the enclosure rule of each
+//! builtin and the recurrence rule of `exp` and `log` at 64, 256 and 1024
+//! bits, and the replay of a certificate of two builtin steps.
 //!
 //! | Row | What it times |
 //! | --- | ------------- |
@@ -8,6 +8,8 @@
 //! | `cos` | [`cosine`] at the point `23/16` |
 //! | `sin` | [`sine`] at the point `23/16` |
 //! | `arg` | [`angle`] at the point `(3, 4)` |
+//! | `exp` | [`series`] of the ratio `1 / (n + 1)` at the point `23/16`, which is `exp (23/16)` |
+//! | `log` | [`series`] of the ratio `(2n + 1) / (2n + 3)` at the point `1/16`, the series of `log (5/3)` |
 //! | `check` | [`check`] of a `Pi` step and a `Cosine` step over it |
 //!
 //! Each row names the precision. `cargo bench` runs the full measurement and
@@ -26,6 +28,7 @@ use core::hint::black_box;
 
 use gandr_theory_exact_reals::Certificate;
 use gandr_theory_exact_reals::CheckerQuotas;
+use gandr_theory_exact_reals::Coefficient;
 use gandr_theory_exact_reals::Dyadic;
 use gandr_theory_exact_reals::EvidenceTable;
 use gandr_theory_exact_reals::Exponent;
@@ -33,6 +36,7 @@ use gandr_theory_exact_reals::FormatVersion;
 use gandr_theory_exact_reals::Node;
 use gandr_theory_exact_reals::NumericInterval;
 use gandr_theory_exact_reals::PlanBuilder;
+use gandr_theory_exact_reals::Polynomial;
 use gandr_theory_exact_reals::Precision;
 use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Real;
@@ -45,6 +49,7 @@ use gandr_theory_exact_reals::angle;
 use gandr_theory_exact_reals::check;
 use gandr_theory_exact_reals::cosine;
 use gandr_theory_exact_reals::pi;
+use gandr_theory_exact_reals::series;
 use gandr_theory_exact_reals::sine;
 use num_bigint::BigInt;
 
@@ -108,6 +113,21 @@ fn rows(
         NumericInterval::point(Dyadic::from(4_i64)),
     );
     let (plan, certificate) = cosine_of_pi(precision);
+    let polynomial = |coefficients: &[i32]| {
+        Polynomial::try_from(
+            coefficients
+                .iter()
+                .copied()
+                .map(Coefficient::from)
+                .collect::<Vec<_>>(),
+        )
+        .expect("a polynomial")
+    };
+    let (growth, decay) = (polynomial(&[1_i32]), polynomial(&[1_i32, 1_i32]));
+    let (odd_steps, odd_after) = (polynomial(&[1_i32, 2_i32]), polynomial(&[3_i32, 2_i32]));
+    let sixteenth = NumericInterval::point(
+        Dyadic::new(BigInt::from(1_u8), Exponent::from(-4_i32)).expect("a point"),
+    );
     let circle = measure(batch, samples, || {
         black_box(pi(black_box(precision))).expect("an enclosure");
     });
@@ -120,6 +140,17 @@ fn rows(
     let turned = measure(batch, samples, || {
         black_box(angle(black_box(&x), black_box(&y), precision)).expect("an enclosure");
     });
+    let grown = measure(batch, samples, || {
+        black_box(series(black_box(&point), (&growth, &decay), precision)).expect("an enclosure");
+    });
+    let logged = measure(batch, samples, || {
+        black_box(series(
+            black_box(&sixteenth),
+            (&odd_steps, &odd_after),
+            precision,
+        ))
+        .expect("an enclosure");
+    });
     let checked = measure(batch, samples, || {
         black_box(check(black_box(&plan), black_box(&certificate), &quotas)).expect("a replay");
     });
@@ -130,6 +161,8 @@ fn rows(
             ("cos", &wave),
             ("sin", &odd),
             ("arg", &turned),
+            ("exp", &grown),
+            ("log", &logged),
             ("check", &checked),
         ] {
             print_row(format_args!("{bits} | {operation}"), figures);

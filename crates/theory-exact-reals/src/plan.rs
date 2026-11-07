@@ -5,7 +5,8 @@
 //! no machine holds a real number. It is held as a plan instead. A plan is a
 //! finite DAG of nodes, and each node has one of three [`Sort`]s. A
 //! [`Real`] node denotes a real number: a bound variable, a dyadic constant,
-//! an arithmetic operation or a cut. An [`Open`] node denotes an open
+//! an arithmetic operation, a cut, a builtin or the sum of a [`Recurrence`].
+//! An [`Open`] node denotes an open
 //! proposition, a semidecision: the two constants, a strict comparison, the
 //! lower or the upper cut of a cut at a real, a finite meet or join, or a
 //! bounded quantifier. A [`Domain`] node denotes a bounded set that a
@@ -36,14 +37,17 @@
 //! that the plan is well scoped and that its evidence matches its domains,
 //! are the work of later units. This module holds the data model alone.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use num_bigint::BigInt;
 
 use crate::codec::Entry;
 use crate::dyadic::Dyadic;
+use crate::dyadic::Exponent;
 use crate::interval::NumericInterval;
 
 /// The position of a node in a plan or in a builder.
@@ -273,6 +277,132 @@ impl From<Power> for u32
     }
 }
 
+/// The most coefficients of a [`Polynomial`].
+pub(crate) const COEFFICIENTS: usize = 5;
+
+/// An integer coefficient of a [`Polynomial`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Coefficient(i32);
+
+impl From<i32> for Coefficient
+{
+    /// The coefficient `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: i32) -> Self
+    {
+        return Self(value);
+    }
+}
+
+impl From<Coefficient> for i32
+{
+    /// The coefficient as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(coefficient: Coefficient) -> Self
+    {
+        return coefficient.0;
+    }
+}
+
+/// A polynomial in the index of a series, with integer coefficients.
+///
+/// The constant coefficient is first. A polynomial holds one to five
+/// coefficients, and its leading coefficient is not zero, so its degree is
+/// at most four and each polynomial has one form.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Polynomial(Box<[Coefficient]>);
+
+impl Polynomial
+{
+    /// The coefficients, the constant first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn coefficients(&self) -> &[Coefficient]
+    {
+        return &self.0;
+    }
+}
+
+impl TryFrom<Vec<Coefficient>> for Polynomial
+{
+    type Error = PlanError;
+
+    /// The polynomial whose coefficients are `coefficients`, the constant
+    /// first.
+    ///
+    /// # Specification
+    /// - ensures: returns the polynomial of the coefficients.
+    /// - fails: refuses no coefficients, more than five, or a last coefficient
+    ///   of zero, as [`PlanError::Polynomial`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlanError::Polynomial`]: the coefficients are not the form of one
+    ///   polynomial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty list, six coefficients and a zero leading
+    ///   coefficient, at the builder and in the bytes.
+    /// - witness: `tests::recurrence::a_malformed_ratio_is_refused_by_name`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |polynomial| polynomial.0.last().is_some_and(|&leading| leading != Coefficient(0))))]
+    fn try_from(coefficients: Vec<Coefficient>) -> Result<Self, PlanError>
+    {
+        if coefficients.len() > COEFFICIENTS {
+            return Err(PlanError::Polynomial);
+        }
+        return match coefficients.last() {
+            Some(&leading) if leading != Coefficient(0) => {
+                Ok(Self(coefficients.into_boxed_slice()))
+            },
+            Some(_) | None => Err(PlanError::Polynomial),
+        };
+    }
+}
+
+/// The count `k` of squarings in the plan of `exp`: the series runs at
+/// `x · 2^-k`, and its sum is raised to the power `2^k`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Squarings(u32);
+
+impl From<u32> for Squarings
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u32) -> Self
+    {
+        return Self(count);
+    }
+}
+
+impl From<Squarings> for u32
+{
+    /// The count as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(squarings: Squarings) -> Self
+    {
+        return squarings.0;
+    }
+}
+
 /// A reference to a certificate that a later unit's certificate table holds:
 /// the laws of a cut, the proof that a divisor is not zero, or the evidence
 /// that a domain is overt or compact.
@@ -348,6 +478,23 @@ pub struct Quantifier
     pub dual: EvidenceSlot,
 }
 
+/// A real defined as the sum of a series whose term ratio is a rational
+/// function of the index.
+///
+/// The first term is one. The term after the term `t_n` is
+/// `t_n · a · p(n) / q(n)`, for the argument `a`, the numerator `p` and the
+/// denominator `q`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Recurrence
+{
+    /// The argument `a`.
+    pub argument: RealId,
+    /// The numerator `p` of the term ratio.
+    pub numerator: Polynomial,
+    /// The denominator `q` of the term ratio.
+    pub denominator: Polynomial,
+}
+
 /// A node of sort real.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Real
@@ -385,6 +532,10 @@ pub enum Real
     /// The angle of the point `(x, y)`, a builtin: from `−π` to `π`, and `0`
     /// at the origin. The first child is `x`, the second `y`.
     Arg(RealId, RealId),
+    /// The sum of a series whose term ratio is a rational function of the
+    /// index. Its one rule serves `exp`, `log` and each later function of
+    /// that form.
+    Recurrence(Recurrence),
 }
 
 /// A node of sort open: an open proposition, which a refinement can confirm
@@ -665,6 +816,9 @@ impl Node
             Self::Real(Real::Power(base, _) | Real::Cos(base) | Real::Sin(base)) => {
                 ([real(base), none, none], 1)
             },
+            Self::Real(Real::Recurrence(ref recurrence)) => {
+                ([real(recurrence.argument), none, none], 1)
+            },
             Self::Real(
                 Real::Add(left, right)
                 | Real::Sub(left, right)
@@ -738,6 +892,10 @@ impl Node
                 Real::Cos(argument) => Real::Cos(RealId(place(argument.0)?)),
                 Real::Sin(argument) => Real::Sin(RealId(place(argument.0)?)),
                 Real::Arg(x, y) => Real::Arg(RealId(place(x.0)?), RealId(place(y.0)?)),
+                Real::Recurrence(recurrence) => Real::Recurrence(Recurrence {
+                    argument: RealId(place(recurrence.argument.0)?),
+                    ..recurrence
+                }),
                 Real::Add(left, right) => {
                     Real::Add(RealId(place(left.0)?), RealId(place(right.0)?))
                 },
@@ -881,6 +1039,10 @@ pub enum PlanError
     WrongSort,
     /// The plan holds more nodes than a position counts.
     TooManyNodes,
+    /// A list of coefficients is empty, longer than five, or ends in zero.
+    Polynomial,
+    /// The plan of `exp` squares more often than a power counts.
+    Squarings,
 }
 
 impl fmt::Display for PlanError
@@ -909,6 +1071,8 @@ impl fmt::Display for PlanError
             Self::UnknownNode => "a node names a position that holds no node",
             Self::WrongSort => "a node names a node of another sort than its slot takes",
             Self::TooManyNodes => "the plan holds more nodes than a position counts",
+            Self::Polynomial => "a polynomial's coefficients are empty, past five, or end in zero",
+            Self::Squarings => "the plan of exp squares more often than a power counts",
         });
     }
 }
@@ -1033,6 +1197,105 @@ impl PlanBuilder
     ) -> Result<RealId, PlanError>
     {
         return self.push(Node::Real(node)).map(RealId);
+    }
+
+    /// Append the plan of `exp x`: the series of ratio `1 / (n + 1)` at
+    /// `x · 2^-k`, raised to the power `2^k`.
+    ///
+    /// # Specification
+    /// - ensures: appends the constant `2^-k`, the product, the recurrence and
+    ///   the power, and returns the power. With `k` zero it appends the
+    ///   recurrence at `x` alone.
+    /// - fails: refuses `k` past 31 as [`PlanError::Squarings`], and each
+    ///   failure of [`PlanBuilder::push`].
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the nodes appended.
+    ///
+    /// # Errors
+    /// - [`PlanError::Squarings`]: `2^k` does not fit a power.
+    /// - Each error of [`PlanBuilder::push`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — `exp 1` against `e`, and `exp (log 3)` against `3`,
+    ///   each with and without squarings.
+    /// - witness: `tests::recurrence::exp_of_one_encloses_e_and_its_certificate_replays`
+    /// - witness: `tests::recurrence::exp_of_log_three_holds_three`
+    #[inline]
+    pub fn exp(
+        &mut self,
+        x: RealId,
+        squarings: Squarings,
+    ) -> Result<RealId, PlanError>
+    {
+        let power = 1_u32.checked_shl(squarings.0).ok_or(PlanError::Squarings)?;
+        let argument = if power == 1 {
+            x
+        }
+        else {
+            let exponent = i32::try_from(squarings.0).map_err(|_wide| PlanError::Squarings)?;
+            let scale = Dyadic::new(
+                BigInt::from(1_u8),
+                Exponent::from(exponent.saturating_neg()),
+            )
+            .map_err(|_overflow| PlanError::Squarings)?;
+            let scale = self.real(Real::Constant(scale))?;
+            self.real(Real::Mul(x, scale))?
+        };
+        let series = self.real(Real::Recurrence(Recurrence {
+            argument,
+            numerator: Polynomial::try_from(alloc::vec![Coefficient(1)])?,
+            denominator: Polynomial::try_from(alloc::vec![Coefficient(1), Coefficient(1)])?,
+        }))?;
+        if power == 1 {
+            return Ok(series);
+        }
+        return self.real(Real::Power(series, Power(power)));
+    }
+
+    /// Append the plan of `log x`: `2z` times the series of ratio
+    /// `(2n + 1) / (2n + 3)` at `z²`, where `z = (x − 1) / (x + 1)`.
+    ///
+    /// # Specification
+    /// - ensures: appends the plan and returns its root. Its quotient carries
+    ///   `nonzero` as the evidence that `x + 1` is not zero. For each positive
+    ///   `x`, `z²` lies below one, so the series converges, and the root is
+    ///   `log x`.
+    /// - fails: as [`PlanBuilder::push`].
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the nodes appended.
+    ///
+    /// # Errors
+    /// Each error of [`PlanBuilder::push`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — `log 2` against its digits, and `exp (log 3)` against
+    ///   `3`.
+    /// - witness: `tests::recurrence::log_of_two_encloses_its_digits_and_its_certificate_replays`
+    /// - witness: `tests::recurrence::exp_of_log_three_holds_three`
+    #[inline]
+    pub fn log(
+        &mut self,
+        x: RealId,
+        nonzero: Evidence,
+    ) -> Result<RealId, PlanError>
+    {
+        let one = self.real(Real::Constant(Dyadic::ONE))?;
+        let two = self.real(Real::Constant(Dyadic::from(2_i64)))?;
+        let below = self.real(Real::Sub(x, one))?;
+        let above = self.real(Real::Add(x, one))?;
+        let z = self.real(Real::Div {
+            numerator: below,
+            denominator: above,
+            nonzero,
+        })?;
+        let square = self.real(Real::Mul(z, z))?;
+        let series = self.real(Real::Recurrence(Recurrence {
+            argument: square,
+            numerator: Polynomial::try_from(alloc::vec![Coefficient(1), Coefficient(2)])?,
+            denominator: Polynomial::try_from(alloc::vec![Coefficient(3), Coefficient(2)])?,
+        }))?;
+        let twice = self.real(Real::Mul(two, z))?;
+        return self.real(Real::Mul(twice, series));
     }
 
     /// Append a node of sort open.

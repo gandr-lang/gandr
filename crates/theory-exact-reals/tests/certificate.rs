@@ -503,7 +503,7 @@ fn malformed_certificate_bytes_are_refused_by_name()
         assert!(decode(&bytes[.. end]).is_err(), "the prefix of {end} bytes");
     }
     let mut kind = bytes.clone();
-    kind[14] = 0x3F;
+    kind[14] = 0x41;
     assert_eq!(decode(&kind), Err(DecodeError::UnknownKind));
     let mut side = bytes.clone();
     let last = side.len().checked_sub(1).unwrap();
@@ -537,6 +537,9 @@ fn failures_render_distinct_phrases()
         CertificateCheck::OutsideDomain,
         CertificateCheck::Gap,
         CertificateCheck::Modality,
+        CertificateCheck::TermQuota,
+        CertificateCheck::Tail,
+        CertificateCheck::ZeroDivisor,
     ];
     let lines: Vec<String> = checks.iter().map(ToString::to_string).collect();
     for (index, line) in lines.iter().enumerate() {
