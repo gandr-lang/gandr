@@ -24,6 +24,7 @@ One law checker for the ordered semirings of gandr, with the max-plus semiring a
 
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the frame's ordered algebras, and the probe that checks their laws with one checker.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — exemplar: the grades read as counts, costs and distances, and the semiring that carries each kind.
+- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — the dual-context calculus as the instance at `{0, 1, ω}`.
 
 ## Provided features
 

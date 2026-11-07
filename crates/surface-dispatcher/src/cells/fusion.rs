@@ -36,6 +36,12 @@
 //!   by its Lipschitz grade: the composition a row reports.
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: a step's
 //!   distance, and a hole's count as its Lipschitz constant (§ quant-fusion).
+//! - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems`
+//!   — newest: a reduction weighs the product of its steps' weights in a
+//!   semiring. A row's composed bound is that product in the Lawvere quantale.
+//! - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: a
+//!   match is a convex subdiagram, and a firing pastes a new interior in its
+//!   place. So each internal wire of a fused cell takes a fresh name.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

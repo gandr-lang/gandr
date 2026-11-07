@@ -47,6 +47,21 @@
 //!   design, its canonical dyadics with an inline path, its oriented intervals
 //!   as runtime approximants, its scoped plan DAG that keeps sharing as edges,
 //!   and its firewall from the kernel.
+//! - `Taylor-2010-lambda_calculus_real_analysis` — exemplar: Definition 6.7, a
+//!   real as a rounded, bounded, disjoint and located cut. The open nodes keep
+//!   the logic of § 5, which has no negation. The body of a quantifier does not
+//!   split yet by the Frobenius law of Lemma 5.12.
+//! - `Bauer-efficient_computation_dedekind_reals` — exemplar: § 3, the lower
+//!   and upper approximants of a formula that [`approximate`] gives. Newton's
+//!   interval method and the general elimination of a cut stay unbuilt.
+//! - `Bauer-2009-dedekind_reals_abstract_stone_duality` — exemplar: § 3,
+//!   Moore's arithmetic as one extension of each operation. No run observes the
+//!   equality of two reals, so a [`Cache`] keys on a plan's bytes.
+//! - `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar:
+//!   an open is a semidecidable property, so no stop of a [`Dovetail`] reads as
+//!   false. A universal over a compact domain holds in finite time.
+//! - `Bakke-2026-synthetic_sierpinski_cone` — newest: the cone glues a closed
+//!   point below a space, as an [`Outcome`] puts each stop below a certificate.
 
 #![no_std]
 

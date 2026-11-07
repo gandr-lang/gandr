@@ -8,7 +8,10 @@
 //! [`judge_module`], two short functions, and [`judge_module`] is [`judge`]
 //! then [`Judged::admit`]. The one call into the lowering sits in a private
 //! module that counts each source it lowers, and [`LoweringCount`] is the
-//! projection through which a run shows it lowered each source once.
+//! projection through which a run shows it lowered each source once. The
+//! composition sits in this crate, above the corpus library and the checker,
+//! because the settle comparison and the root guard fire on the pass that
+//! gates.
 //!
 //! # A component is composed once
 //!

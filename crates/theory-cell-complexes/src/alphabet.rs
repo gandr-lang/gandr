@@ -91,6 +91,13 @@
 //! copied. The law suite lives there too, so this crate keeps no dev-dependency
 //! on a crate built over it, and the dependency graph stays acyclic in every
 //! edge kind.
+//!
+//! # References
+//!
+//! - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: a
+//!   match is a convex subdiagram, and convexity has a check in each dimension.
+//!   [`ConvexityDischarge`] skips that check only under its warrant, and the
+//!   general check stays unbuilt.
 
 use alloc::vec::Vec;
 

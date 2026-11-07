@@ -135,6 +135,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems` — exemplar: § 8.2's Lemma 9, the stretch of one step bounded by how often the contractum writes a hole — the count `CellContractumUse::occurrences` reports.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a cell keeps each hole's occurrence count, recorded rather than refused.
+- `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — the convexity that `ConvexityDischarge` warrants; the general check stays unbuilt.
 
 ## License
 
