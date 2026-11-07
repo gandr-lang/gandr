@@ -2108,6 +2108,13 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 # it. The two listings find what a seat searches for; the map finds what it
 # did not know to search for. An epic or a `collector` is not read.
 #
+# The motivating sources (#5855): an epic may carry `## Motivating sources`,
+# the sources of the frame its units partition. A unit is refused while its
+# `## Sources` cites none of the section's keys for an epic the body names as
+# its own (`.config/claims/motivating.jq`). A key is cited as the term map
+# cites an owner, so a `not read` row cites it too. An epic or a `collector`
+# is not read.
+#
 # The dependencies (#2902): an issue is GitHub-`blocked by` each issue its
 # `## After` lists, and an epic by each open sub-issue too; the plan is
 # `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
@@ -2170,16 +2177,32 @@ mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' 
   | jq -r --argjson mine "$mine" 'select(. != $mine.number and (IN($mine.blocking[].number) | not))' | sort -nu)
 owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
 parent=$(jq -r '.parent // empty' <<< "$mine")
-# The second query: the named epics, the parent when the body owes
-# operations, and under `--fix` each issue whose REST id a write takes.
-wanted=("${named[@]}")
+# Every epic the body names as its own, for its `## Motivating sources`
+# (#5855). An epic or a `collector` owes none.
+refs=()
+if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
+  mapfile -t refs < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' <<< "$body" \
+    | jq -r --argjson mine "$mine" 'select(. != $mine.number)' | sort -nu)
+fi
+# The second query: the named epics, with their bodies when the unit owes
+# their motivating sources, the parent when the body owes operations, and
+# under `--fix` each issue whose REST id a write takes.
+wanted=("${named[@]}" "${refs[@]}")
 if [[ -n $owed && -n $parent ]]; then wanted+=("$parent"); fi
 if [[ ${usage_fix:-false} == true ]]; then
   mapfile -t -O "${#wanted[@]}" wanted < <(awk -F'\t' '$1 == "set" { print $2 }' <<< "$plan")
   if [[ -n $owed && -n $parent ]]; then mapfile -t -O "${#wanted[@]}" wanted <<< "$owed"; fi
 fi
+fields=-
+if (( ${#refs[@]} > 0 )); then fields=body; fi
 others='{}'
-if (( ${#wanted[@]} > 0 )); then others=$(deps_issues "$repo" - "${wanted[@]}"); fi
+if (( ${#wanted[@]} > 0 )); then others=$(deps_issues "$repo" "$fields" "${wanted[@]}"); fi
+if (( ${#refs[@]} > 0 )); then
+  motivating=$(jq -c --arg body "$body" --argjson refs "$(printf '%s\n' "${refs[@]}" | jq -s -c .)" \
+    '{body: $body, epics: [.[] | select((.number | IN($refs[])) and (.labels | index("kind:epic") != null)) | {number, body}]}' <<< "$others" \
+    | jq -r -L "$claims" -f "$claims/motivating.jq")
+  findings=$(printf '%s\n%s\n' "$findings" "$motivating" | awk 'NF')
+fi
 id_of() { jq -r --arg n "$1" '.[$n].id // empty' <<< "$others"; }
 while IFS=$'\t' read -r verb blocker why; do
   case "$verb" in
