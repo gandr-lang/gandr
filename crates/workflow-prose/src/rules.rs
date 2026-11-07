@@ -21,6 +21,8 @@ use crate::parse::Token;
 use crate::passage::Advice;
 use crate::passage::CommentShape;
 use crate::passage::Golden;
+use crate::passage::LIMITS;
+use crate::passage::Limits;
 use crate::passage::Line;
 use crate::passage::Opened;
 use crate::passage::Passage;
@@ -61,6 +63,9 @@ const ITEM_SENTENCES: usize = 2;
 
 /// The paragraphs a head holds: what, why, how, references.
 const HEAD_PARAGRAPHS: usize = 4;
+
+/// The paragraphs a head holds with its `Limits` paragraph.
+const LIMITED_PARAGRAPHS: usize = 5;
 
 /// The coarse tags of a token that is not a word.
 const UNWORDED: [&str; 3] = ["PUNCT", "SPACE", "SYM"];
@@ -284,7 +289,10 @@ impl fmt::Display for Fix
                 "split the paragraph into paragraphs of at most five sentences, one idea each, or \
                  cut the item comment to at most two sentences"
             },
-            Rule::Head => "open the source on four paragraphs: what, why, how and references",
+            Rule::Head => {
+                "open the source on four paragraphs: what, why, how and references, with a \
+                 `Limits:` paragraph after the how paragraph when the source has limits"
+            },
             Rule::What => "cut the first sentence to at most twenty words",
             Rule::Procedure => {
                 "state what is wrong in the headline, label the span, and end with an \
@@ -403,6 +411,40 @@ fn spoken(
         .skip(first.offset)
         .take(end.saturating_sub(first.offset))
         .collect()
+}
+
+/// How an item's sentence opens: on `Limits:`, as a third sentence that states
+/// a limit does, or otherwise.
+///
+/// # Specification
+/// - provides: whether a third item sentence may stand.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opening
+{
+    /// The sentence opens on `Limits:`.
+    Limit,
+    /// The sentence opens on anything else.
+    Other,
+}
+
+/// How `sentence` opens. The parse splits `Limits:` into the word and its
+/// colon.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item of three sentences whose third opens on `Limits:`
+///   holds, and one whose third opens otherwise is refused; a reading of
+///   another token changes a verdict.
+/// - witness: `rules::tests::a_head_and_an_item_hold_their_sentence_counts`
+fn opening(sentence: &Sentence) -> Opening
+{
+    let word = LIMITS.trim_end_matches(':');
+    match sentence.tokens.as_slice() {
+        &[ref first, ref second, ..] if first.text == word && second.text == ":" => Opening::Limit,
+        _ => Opening::Other,
+    }
 }
 
 /// A count of words. A code span counts as one word.
@@ -912,13 +954,15 @@ pub fn sentences(
 ///
 /// # Specification
 /// - requires: `parsed` is the parse of `passages`, in the same order.
-/// - ensures: one [`Rule::Head`] when a corpus head is not four paragraphs or a
-///   references line opens with none of `- see:`, `- owes:` and `- cites:`. One
-///   [`Rule::Head`] at the `- cites:` line whose label no footer line defines,
-///   or else at the footer line that gives no quoted title. One [`Rule::What`]
-///   when that head's first sentence holds more than twenty words. One
-///   [`Rule::Wall`] when an item comment holds more than two sentences. The
-///   word count is the one [`words`] states.
+/// - ensures: one [`Rule::Head`] when a corpus head is not four paragraphs, nor
+///   five whose fourth opens on `Limits:`, or a references line opens with none
+///   of `- see:`, `- owes:` and `- cites:`. One [`Rule::Head`] at a `Limits:`
+///   paragraph in another place. One [`Rule::Head`] at the `- cites:` line
+///   whose label no footer line defines, or else at the footer line that gives
+///   no quoted title. One [`Rule::What`] when that head's first sentence holds
+///   more than twenty words. One [`Rule::Wall`] when an item comment holds more
+///   than two sentences, unless it holds three and the third opens on
+///   `Limits:`. The word count is the one [`words`] states.
 /// - provides: the shape rules over the spaCy sentences.
 /// - fails: never.
 /// - panics: none.
@@ -928,7 +972,9 @@ pub fn sentences(
 /// - hypothesis: L3 — a head of three paragraphs, a first sentence of
 ///   twenty-one words, an item of three sentences, a citation with no footer
 ///   line and a footer line with no quoted title, each beside a twin that
-///   holds. An off-by-one limit or a dropped citation verdict changes a
+///   holds. A head of five with its `Limits` paragraph in place and out of
+///   place, and an item of three and of four sentences whose third opens on
+///   `Limits:`. An off-by-one limit or a dropped citation verdict changes a
 ///   verdict.
 /// - witness: `rules::tests::a_head_and_an_item_hold_their_sentence_counts`
 #[inline]
@@ -946,12 +992,26 @@ pub fn shaped(
     let mut findings = Vec::new();
     for shape in shapes {
         if let Opened::Run(head) = shape.opened {
-            if head.paragraphs != HEAD_PARAGRAPHS || head.references == References::Broken {
+            let counted = match head.limits {
+                Limits::None => head.paragraphs == HEAD_PARAGRAPHS,
+                Limits::After => head.paragraphs == LIMITED_PARAGRAPHS,
+                Limits::Misplaced(_) => true,
+            };
+            if !counted || head.references == References::Broken {
                 findings.push(Finding {
                     path: shape.path.clone(),
                     line: head.line,
                     rule: Rule::Head,
                     sentence: "the head is not four paragraphs".to_owned(),
+                });
+            }
+            if let Limits::Misplaced(line) = head.limits {
+                findings.push(Finding {
+                    path: shape.path.clone(),
+                    line,
+                    rule: Rule::Head,
+                    sentence: "a `Limits:` paragraph stands only after the how paragraph"
+                        .to_owned(),
                 });
             }
             let cited = match head.references {
@@ -988,19 +1048,27 @@ pub fn shaped(
         }
         for item in &shape.items {
             let mut count = 0_usize;
+            let mut third = None;
             let mut said = String::new();
             for line in &item.prose {
                 let Some(&(passage, sentences)) = by_line.get(&(shape.path.as_str(), *line))
                 else {
                     continue;
                 };
-                count = count.saturating_add(sentences.len());
+                for sentence in sentences {
+                    count = count.saturating_add(1);
+                    if count == ITEM_SENTENCES.saturating_add(1) {
+                        third = Some(sentence);
+                    }
+                }
                 if !said.is_empty() {
                     said.push(' ');
                 }
                 said.push_str(&passage.text);
             }
-            if count > ITEM_SENTENCES {
+            let limited = count == ITEM_SENTENCES.saturating_add(1)
+                && third.is_some_and(|sentence| opening(sentence) == Opening::Limit);
+            if count > ITEM_SENTENCES && !limited {
                 findings.push(Finding {
                     path: shape.path.clone(),
                     line: item.line,
@@ -1115,6 +1183,7 @@ mod tests
     use crate::passage::Golden;
     use crate::passage::Head;
     use crate::passage::Item;
+    use crate::passage::Limits;
     use crate::passage::Opened;
     use crate::passage::Placed;
     use crate::passage::References;
@@ -1805,6 +1874,7 @@ mod tests
                         paragraphs,
                         references,
                         what,
+                        limits: Limits::None,
                     }),
                     items,
                 }
@@ -1900,6 +1970,88 @@ mod tests
                 vec![held_parse]
             ),
             []
+        );
+        let limited = |paragraphs: usize, limits: Limits| CommentShape {
+            path: "corpus/a.gandr".to_owned(),
+            opened: Opened::Run(Head {
+                line: passage("/// term\n").line,
+                paragraphs,
+                references: References::Shaped,
+                what: WhatLine::None,
+                limits,
+            }),
+            items: Vec::new(),
+        };
+        assert_eq!(
+            rules_of(limited(5, Limits::After), Vec::new(), Vec::new()),
+            [],
+            "a head of five holds with its `Limits` paragraph after the how paragraph"
+        );
+        assert_eq!(
+            rules_of(limited(5, Limits::None), Vec::new(), Vec::new()),
+            [Rule::Head],
+            "a head of five with no `Limits` paragraph is refused"
+        );
+        let misplaced = passage("/// term\n").line;
+        assert_eq!(
+            shaped(
+                core::slice::from_ref(&limited(5, Limits::Misplaced(misplaced))),
+                &[],
+                &[]
+            )
+            .iter()
+            .map(|finding| (finding.rule, finding.line))
+            .collect::<Vec<_>>(),
+            [(Rule::Head, misplaced)],
+            "a misplaced `Limits` paragraph is refused once, at its line"
+        );
+        let opening = |words: &[&str]| Sentence {
+            tokens: words
+                .iter()
+                .enumerate()
+                .map(|(at, word)| Token {
+                    text: (*word).to_owned(),
+                    lemma: (*word).to_owned(),
+                    pos: "NOUN".to_owned(),
+                    tag: "NN".to_owned(),
+                    dep: if at == 0 { "ROOT" } else { "dobj" }.to_owned(),
+                    head: 0,
+                    offset: 0,
+                })
+                .collect(),
+        };
+        let item_of = |parse: Vec<Sentence>| {
+            let item = passage("/// One. Two. Limits: three. Four.\n");
+            let line = item.line;
+            rules_of(
+                shape(4, References::Shaped, WhatLine::None, vec![Item {
+                    line,
+                    prose: vec![line],
+                }]),
+                vec![item],
+                vec![parse],
+            )
+        };
+        let one = || Sentence { tokens: tokens(1) };
+        assert_eq!(
+            item_of(vec![one(), one(), opening(&["Limits", ":", "three"])]),
+            [],
+            "an item of three sentences holds when the third opens on `Limits:`"
+        );
+        assert_eq!(
+            item_of(vec![
+                one(),
+                one(),
+                opening(&["Limits", ":", "three"]),
+                one()
+            ]),
+            [Rule::Wall],
+            "an item of four sentences is refused, a `Limits:` third or not"
+        );
+        assert_eq!(
+            item_of(vec![one(), one(), opening(&["Limited", ":", "three"])]),
+            [Rule::Wall],
+            "an item of three sentences whose third opens otherwise is refused"
         );
     }
 
