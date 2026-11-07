@@ -1097,6 +1097,7 @@ impl<'source> Lowerer<'_, 'source>
             frame: bound,
             declared: Maybe::Absent(super::stated::Absent::Instance),
             component: None,
+            listed: super::Listed::Elsewhere,
         });
 
         Ok(Frame::Inner(bound))

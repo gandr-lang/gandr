@@ -23,7 +23,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 ## Provided features
 
 - `lower_module`, `LoweringBudget` and `Fuel`: the whole surface-to-core step under one allowance.
-- The static formers, the eager product with its pair, the infix sum, the `=>` alias and the dependent arrow `(x : A) -> C` it abbreviates.
+- The static formers, the eager product with its pair, the infix sum, the `=>` alias, the dependent arrow `(x : A) -> C` it abbreviates and the linear `⊸`.
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order.
 - `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, constructors and matches (`lower::native`).
 - `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: each match's syntax origins ([`origin`](src/origin.rs)).
