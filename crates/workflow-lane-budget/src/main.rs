@@ -1,15 +1,18 @@
 //! `lane-budget`: each budgeted CI lane's median job time over the latest
-//! merge-queue and pull-request runs, against its budget.
+//! runs that hold it, against its budget.
 //!
-//! `lane-budget --budget NAME=SECONDS... [--daily NAME=SECONDS...] [--nightly
-//! NAME=SECONDS...] [--summed NAME=BUDGET/CEILING...] [--runs N] [--issue
-//! TITLE]` samples the newest `N` runs through `gh`, classifies each by the
-//! cone its landing touched, and, with `--daily`, samples the CI workflow's
-//! newest `N` scheduled runs for the lanes only they hold; with `--nightly`,
-//! the nightly workflow's; with `--summed`, every active workflow's newest `N`
-//! completed runs, timed whole, and the cache's usage. It prints the Markdown
-//! report and with `--issue` opens, updates, reopens or closes the one issue of
-//! that title.
+//! `lane-budget --budget NAME=SECONDS... [--integration NAME=SECONDS...]
+//! [--daily NAME=SECONDS...] [--nightly NAME=SECONDS...] [--summed
+//! NAME=BUDGET/CEILING...] [--runs N] [--issue TITLE]` samples the newest `N`
+//! merge-queue and pull-request runs through `gh` and classifies each by the
+//! cone its landing touched. With `--integration`, it samples the CI
+//! workflow's newest `N` dispatches on `integration` for the test lanes only
+//! they hold, and its newest `N` pushes to `main` for the same lanes as
+//! information; with `--daily`, its newest `N` scheduled runs; with
+//! `--nightly`, the nightly workflow's; with `--summed`, every active
+//! workflow's newest `N` completed runs, timed whole, and the cache's usage.
+//! It prints the Markdown report and with `--issue` opens, updates, reopens or
+//! closes the one issue of that title.
 //!
 //! # Exit codes
 //!
@@ -53,6 +56,12 @@ struct Cli
     /// How many of the newest runs of each window to sample.
     #[arg(long, default_value = "10")]
     runs: RunCount,
+    /// A test lane only the dispatches on `integration` hold and the whole
+    /// seconds its median over those runs may take, as `NAME=SECONDS`; the
+    /// pushes to `main` table the same lane as information. Such a lane is not
+    /// cone-classified, so a deep budget is refused.
+    #[arg(long = "integration")]
+    integration: Vec<Unclassified>,
     /// A lane only the daily scheduled run holds and the whole seconds its
     /// median over the scheduled runs may take, as `NAME=SECONDS`; such a lane
     /// is not cone-classified, so a deep budget is refused.
@@ -75,7 +84,8 @@ struct Cli
     issue: Option<String>,
 }
 
-/// A `--daily` or `--nightly` budget: a `--budget` of the surface cone.
+/// A `--integration`, `--daily` or `--nightly` budget: a `--budget` of the
+/// surface cone.
 #[repr(transparent)]
 #[derive(Clone, Debug)]
 struct Unclassified(Budget);
@@ -89,10 +99,10 @@ impl FromStr for Unclassified
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the budget `text` names, of the surface cone.
-    /// - provides: the daily and nightly budget tables from the workflow's
-    ///   arguments.
+    /// - provides: the integration, daily and nightly budget tables from the
+    ///   workflow's arguments.
     /// - fails: [`BudgetError::Budget`] as [`Budget`]'s parse fails;
-    ///   [`BudgetError::Scheduled`] when `text` names the deep cone.
+    ///   [`BudgetError::Unclassified`] when `text` names the deep cone.
     /// - panics: none.
     /// - executable: none — the outcome is the parse itself.
     ///
@@ -101,14 +111,15 @@ impl FromStr for Unclassified
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a deep daily budget is refused; accepting a cone a
-    ///   scheduled window never classifies changes the exit code.
+    ///   window other than the landing one never classifies changes the exit
+    ///   code.
     /// - witness: `tests::cli::a_malformed_budget_exits_two`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
         let budget = text.parse::<Budget>()?;
         if budget.cone == Cone::Deep {
-            return Err(BudgetError::Scheduled {
+            return Err(BudgetError::Unclassified {
                 text: text.to_owned(),
             });
         }
@@ -158,11 +169,12 @@ fn main() -> ExitCode
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
-/// - ensures: standard output receives the report, its daily table sampled only
-///   with `--daily`, its nightly table only with `--nightly` and its workflow
-///   table only with `--summed`, then, with `--issue`, one line naming what
-///   filing did; then, when a `--summed` workflow's newest completed run passed
-///   its ceiling, the command refuses.
+/// - ensures: standard output receives the report, its integration table and
+///   the main table of the same lanes sampled only with `--integration`, its
+///   daily table only with `--daily`, its nightly table only with `--nightly`
+///   and its workflow table only with `--summed`, then, with `--issue`, one
+///   line naming what filing did; then, when a `--summed` workflow's newest
+///   completed run passed its ceiling, the command refuses.
 /// - provides: the whole command.
 /// - fails: every refusal of [`github::recent_runs`], [`cone::classify`],
 ///   [`github::samples`], [`github::read_all`], [`github::timed`],
@@ -183,6 +195,7 @@ fn main() -> ExitCode
 /// - witness: `tests::cli::a_daily_lane_is_sampled_over_the_scheduled_runs`
 /// - witness: `tests::cli::a_nightly_lane_is_sampled_over_the_nightly_runs`
 /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+/// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
 fn run(cli: Cli) -> Result<(), BudgetError>
 {
     let runs = github::recent_runs(cli.runs, Window::Landing)?;
@@ -197,23 +210,31 @@ fn run(cli: Cli) -> Result<(), BudgetError>
         samples.extend(sampled.into_iter().map(|sample| (cone, sample)));
     }
     let mut report = Report::new(&cli.budgets, runs, samples);
+    let unwrapped = |budgets: Vec<Unclassified>| -> Vec<Budget> {
+        budgets
+            .into_iter()
+            .map(|Unclassified(budget)| budget)
+            .collect()
+    };
+    let integration = unwrapped(cli.integration);
+    let daily = unwrapped(cli.daily);
+    let nightly = unwrapped(cli.nightly);
+    // A push to `main` reads the integration lanes, as information.
     for (window, budgets) in [
-        (Window::Scheduled, cli.daily),
-        (Window::Nightly, cli.nightly),
+        (Window::Integration, &integration),
+        (Window::Main, &integration),
+        (Window::Scheduled, &daily),
+        (Window::Nightly, &nightly),
     ] {
         if budgets.is_empty() {
             continue;
         }
-        let budgets: Vec<Budget> = budgets
-            .into_iter()
-            .map(|Unclassified(budget)| budget)
-            .collect();
         let runs = github::recent_runs(cli.runs, window)?;
         let samples = github::read_all(&runs, |&run_id| github::samples(run_id, Jobs::Successful))?
             .into_iter()
             .flatten()
             .collect();
-        report = report.with_scheduled(window, &budgets, runs, samples);
+        report = report.with_scheduled(window, budgets, runs, samples);
     }
     let mut past = Vec::new();
     if !cli.summed.is_empty() {

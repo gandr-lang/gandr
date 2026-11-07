@@ -350,11 +350,11 @@ fn rows(
         .collect()
 }
 
-/// The lanes a scheduled window alone holds: the runs sampled and one row
-/// per such lane.
+/// The lanes a window other than the landing one holds: the runs sampled and
+/// one row per such lane.
 ///
 /// # Specification
-/// - provides: one scheduled table of the report.
+/// - provides: one table of the report after the landing one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Scheduled
 {
@@ -418,17 +418,19 @@ impl Report
         }
     }
 
-    /// The report with the lanes only the scheduled `window` holds: each of
-    /// `budgets` summarised over `samples`, the jobs of that window's `runs`.
+    /// The report with the lanes the `window` holds: each of `budgets`
+    /// summarised over `samples`, the jobs of that window's `runs`.
     ///
     /// # Specification
-    /// - requires: `window` is a scheduled window, never [`Window::Landing`].
+    /// - requires: `window` is never [`Window::Landing`].
     /// - ensures: the landing rows and earlier tables unchanged; one more table
     ///   after them, of `window`, with one row per budget, in order, whose
     ///   median is the lower median of the samples of its lane, none
     ///   cone-classified, and whose count is theirs; samples of lanes without a
-    ///   budget here are ignored.
-    /// - provides: a scheduled table and its share of the standing.
+    ///   budget here are ignored. A table of [`Window::Main`] reads the budgets
+    ///   for their lanes alone.
+    /// - provides: a table and, unless of [`Window::Main`], its share of the
+    ///   standing.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the grouping is the clause.
@@ -490,14 +492,15 @@ impl Report
         self
     }
 
-    /// How the report stands: over when any lane or workflow is over,
+    /// How the report stands: over when any budgeted lane or workflow is over,
     /// otherwise within.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Standing::Over`] exactly when some row, landing or
-    ///   scheduled, is over, or the workflow table is; [`Standing::Within`]
-    ///   otherwise, unmeasured rows included.
+    /// - ensures: [`Standing::Over`] exactly when some row, landing or of a
+    ///   budgeted window, is over, or the workflow table is;
+    ///   [`Standing::Within`] otherwise, unmeasured rows included. A row of
+    ///   [`Window::Main`] is information and never counts.
     /// - provides: whether the issue is opened or closed.
     /// - fails: never.
     /// - panics: none.
@@ -505,11 +508,13 @@ impl Report
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Row::standing`], a daily or a nightly row over
-    ///   beside landing rows within, and a workflow over beside lanes within.
+    ///   beside landing rows within, a workflow over beside lanes within, and a
+    ///   main row past the integration budget beside integration rows within.
     /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
     /// - witness: `tests::cli::a_summed_budget_tables_every_workflow`
+    /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
     #[inline]
     #[must_use]
     pub fn standing(&self) -> Standing
@@ -522,7 +527,12 @@ impl Report
             || self
                 .rows
                 .iter()
-                .chain(self.scheduled.iter().flat_map(|table| &table.rows))
+                .chain(
+                    self.scheduled
+                        .iter()
+                        .filter(|table| table.window != Window::Main)
+                        .flat_map(|table| &table.rows),
+                )
                 .any(|row| row.standing() == Standing::Over)
         {
             Standing::Over
@@ -535,26 +545,32 @@ impl Report
 
 /// Writes `rows`, sampled over `window` from `runs`, as the report's Markdown
 /// table collapsed under a one-line summary: lane, class, median, budget,
-/// sample count and standing, the class `daily` for a row of the CI workflow's
-/// scheduled window and `nightly` for one of the nightly workflow's, then the
-/// runs.
+/// sample count and standing, the class `integration` for a row of the
+/// integration dispatches, `main` for one of the pushes to `main`, `daily` for
+/// one of the CI workflow's scheduled window and `nightly` for one of the
+/// nightly workflow's, then the runs. A table of [`Window::Main`] holds no
+/// budget: its budget is written `—` and its standing `information`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a `<details>` block whose summary counts the lanes, states the
-///   table's verdict — over when any row is over, within otherwise — and counts
-///   the rows over and unmeasured; inside it the header, one line per row, in
-///   order, with an unmeasured median written as `—`, and the runs line.
-/// - provides: either table of the report.
+/// - ensures: a `<details>` block whose summary counts the lanes and, for a
+///   budgeted window, states the table's verdict — over when any row is over,
+///   within otherwise — and counts the rows over and unmeasured, or, for
+///   [`Window::Main`], says the table is information; inside it the header, one
+///   line per row, in order, with an unmeasured median written as `—`, and the
+///   runs line.
+/// - provides: every table of the report.
 /// - fails: propagates the formatter's own write failure.
 /// - panics: none.
 /// - executable: none — the formatter exposes no readable output buffer.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Report::new`] and [`Report::with_scheduled`].
+/// - hypothesis: L3 — as [`Report::new`] and [`Report::with_scheduled`]; a main
+///   row written with its budget or a verdict changes the report.
 /// - witness: `report::tests::the_report_lists_every_budget_in_order`
 /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
 /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
+/// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
 fn table(
     f: &mut fmt::Formatter<'_>,
     rows: &[Row],
@@ -562,16 +578,27 @@ fn table(
     runs: &[RunId],
 ) -> fmt::Result
 {
-    let counted = |standing: Standing| rows.iter().filter(|row| row.standing() == standing).count();
-    let over = counted(Standing::Over);
-    let verdict = if over > 0 { "over" } else { "within" };
+    let informed = window == Window::Main;
     let lanes = if rows.len() == 1 { "lane" } else { "lanes" };
-    writeln!(
-        f,
-        "<details><summary>{} {lanes} — {verdict}: {over} over, {} unmeasured</summary>\n",
-        rows.len(),
-        counted(Standing::Unmeasured)
-    )?;
+    if informed {
+        writeln!(
+            f,
+            "<details><summary>{} {lanes} — information, no budget</summary>\n",
+            rows.len()
+        )?;
+    }
+    else {
+        let counted =
+            |standing: Standing| rows.iter().filter(|row| row.standing() == standing).count();
+        let over = counted(Standing::Over);
+        let verdict = if over > 0 { "over" } else { "within" };
+        writeln!(
+            f,
+            "<details><summary>{} {lanes} — {verdict}: {over} over, {} unmeasured</summary>\n",
+            rows.len(),
+            counted(Standing::Unmeasured)
+        )?;
+    }
     writeln!(f, "| lane | class | median | budget | jobs | standing |")?;
     writeln!(f, "| --- | --- | ---: | ---: | ---: | --- |")?;
     for row in rows {
@@ -581,17 +608,28 @@ fn table(
         };
         let class: &dyn fmt::Display = match window {
             Window::Landing => &row.cone,
+            Window::Integration => &"integration",
+            Window::Main => &"main",
             Window::Scheduled => &"daily",
             Window::Nightly => &"nightly",
         };
-        writeln!(
-            f,
-            "| {} | {class} | {median} | {} | {} | {} |",
-            row.lane,
-            row.limit,
-            row.samples,
-            row.standing()
-        )?;
+        if informed {
+            writeln!(
+                f,
+                "| {} | {class} | {median} | — | {} | information |",
+                row.lane, row.samples
+            )?;
+        }
+        else {
+            writeln!(
+                f,
+                "| {} | {class} | {median} | {} | {} | {} |",
+                row.lane,
+                row.limit,
+                row.samples,
+                row.standing()
+            )?;
+        }
     }
     writeln!(f, "\nThe table reads runs {}.\n\n</details>", listed(runs))
 }
@@ -618,14 +656,14 @@ impl fmt::Display for Report
 {
     /// Writes the report as Markdown: a sentence naming the window, then a
     /// table of lane, class, median, budget, sample count and standing with
-    /// the runs, collapsed under its summary; then the same for each scheduled
-    /// window given budgets.
+    /// the runs, collapsed under its summary; then the same for each other
+    /// window given lanes.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one table row per budget, in order, the class beside each
-    ///   row, and an unmeasured median written as `—`; a scheduled window's
-    ///   table only when budgets were given for it.
+    ///   row, and an unmeasured median written as `—`; another window's table
+    ///   only when lanes were given for it.
     /// - provides: the job summary and the issue body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
@@ -636,6 +674,7 @@ impl fmt::Display for Report
     /// - witness: `report::tests::the_report_lists_every_budget_in_order`
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
+    /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
     #[inline]
     fn fmt(
         &self,
@@ -652,16 +691,31 @@ impl fmt::Display for Report
         )?;
         table(f, &self.rows, Window::Landing, &self.runs)?;
         for scheduled in &self.scheduled {
-            let (lanes, workflow) = match scheduled.window {
-                Window::Landing | Window::Scheduled => ("daily", "ci.yml"),
-                Window::Nightly => ("nightly", "nightly.yml"),
-            };
-            writeln!(
-                f,
-                "\nThe table holds the {lanes} lanes' medians over the last {} scheduled runs of \
-                 `{workflow}`.\n",
-                scheduled.runs.len()
-            )?;
+            let count = scheduled.runs.len();
+            match scheduled.window {
+                Window::Integration => writeln!(
+                    f,
+                    "\nThe table holds the test lanes' medians over the last {count} dispatches \
+                     of `ci.yml` on `integration`. A merge group on `landing` skips these lanes, \
+                     so only the cycle holds them.\n"
+                )?,
+                Window::Main => writeln!(
+                    f,
+                    "\nThe table holds the same lanes' medians over the last {count} pushes of \
+                     `ci.yml` to `main`. No gate waits on such a run, so the table is \
+                     information and holds no budget.\n"
+                )?,
+                Window::Landing | Window::Scheduled => writeln!(
+                    f,
+                    "\nThe table holds the daily lanes' medians over the last {count} scheduled \
+                     runs of `ci.yml`.\n"
+                )?,
+                Window::Nightly => writeln!(
+                    f,
+                    "\nThe table holds the nightly lanes' medians over the last {count} scheduled \
+                     runs of `nightly.yml`.\n"
+                )?,
+            }
             table(f, &scheduled.rows, scheduled.window, &scheduled.runs)?;
         }
         match self.workflows {

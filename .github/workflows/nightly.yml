@@ -321,9 +321,9 @@ jobs:
   # from one read of them (`mise run issues:open`, #5681), 8 pages, in place
   # of 8 pages each, and each runs only when that read succeeds.
   #
-  # Each lane's median job time over the newest ten merge-queue and
-  # pull-request runs of ci.yml against its budget, as the job summary and on
-  # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,
+  # Each lane's median job time over the newest ten runs of ci.yml that hold
+  # it, against its budget, as the job summary and on one issue while any
+  # lane is over (`mise run ci:lane-budget`). Alerting,
   # never a gate: nothing waits on this job. The one refusal is the nightly's
   # sum: the job reports past 900 s, its budget, and fails when the newest
   # completed nightly passed 1200 s, its ceiling (#3013). A budget changes
@@ -335,11 +335,21 @@ jobs:
   # jobs eight at a time (#3290), and a read GitHub answers with a server
   # error is read again (#3492).
   #
-  # The enforcing lanes are held by the cone a landing touched: deep when it
-  # changed a file under crates/kernel-* or crates/core-*, Cargo.lock,
-  # rust-toolchain.toml or .cargo/, surface otherwise. A deep landing
-  # rebuilds the whole enforcing graph and takes longer than a surface one,
-  # so one budget is wrong on both sides; each class is held to its own.
+  # A merge group on `landing` skips the test lanes, so only the
+  # `integration` cycle holds them (#2547). The enforcing shards, their join,
+  # the plain lane and the two documentation lanes are `--integration`
+  # budgets, held over the cycle's dispatches. A cycle carries the changes of
+  # many landings, so each shard keeps its deep budget, and each other lane
+  # its one budget. A push to `main` builds every package, and no gate waits
+  # on it. So the report tables the same lanes over the pushes to `main` as
+  # information, with no budget.
+  #
+  # A lane of the landing window is held by the cone a landing touched: deep
+  # when it changed a file under crates/kernel-* or crates/core-*,
+  # Cargo.lock, rust-toolchain.toml or .cargo/, surface otherwise. A deep
+  # landing rebuilds the whole enforcing graph and takes longer than a
+  # surface one, so one budget is wrong on both sides; each class is held to
+  # its own.
   # The deep budget is the surface one plus the measured cost of the extra
   # units a deep landing rebuilds. The enforcing shards' budgets scale the
   # lane's by each shard's share of the arm64 probe's deep rebuild and suite
@@ -465,23 +475,17 @@ jobs:
         if: *not-cancelled
         run: >-
           mise run ci:lane-budget --issue "CI lane budgets"
-          --budget "test enforcing targets (linux, dispatcher)=170"
-          --budget "test enforcing targets (linux, dispatcher):deep=250"
-          --budget "test enforcing targets (linux, engine)=170"
-          --budget "test enforcing targets (linux, engine):deep=250"
-          --budget "test enforcing targets (linux, faces)=145"
-          --budget "test enforcing targets (linux, faces):deep=215"
-          --budget "test enforcing targets (linux, checker)=190"
-          --budget "test enforcing targets (linux, checker):deep=285"
-          --budget "test enforcing targets (linux, lowering)=190"
-          --budget "test enforcing targets (linux, lowering):deep=285"
-          --budget "test enforcing targets (linux, rest)=135"
-          --budget "test enforcing targets (linux, rest):deep=200"
-          --budget "join the enforcing shards (linux)=120"
-          --budget "test plain-only targets (linux)=160"
+          --integration "test enforcing targets (linux, dispatcher)=250"
+          --integration "test enforcing targets (linux, engine)=250"
+          --integration "test enforcing targets (linux, faces)=215"
+          --integration "test enforcing targets (linux, checker)=285"
+          --integration "test enforcing targets (linux, lowering)=285"
+          --integration "test enforcing targets (linux, rest)=200"
+          --integration "join the enforcing shards (linux)=120"
+          --integration "test plain-only targets (linux)=160"
           --budget "sweep the recovery records (linux)=260"
-          --budget "document the workspace (linux)=150"
-          --budget "test the documentation examples (linux)=200"
+          --integration "document the workspace (linux)=150"
+          --integration "test the documentation examples (linux)=200"
           --budget "check quenchant compiler policy=180"
           --budget "check Clippy wall=150"
           --budget "re-verify obligated specifications (linux)=180"
