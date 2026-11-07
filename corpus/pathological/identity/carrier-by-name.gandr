@@ -24,4 +24,4 @@ def strayFlow : Flow[.B = Integer](4, 4) = Flow.stay 4;
 
 /// Two lambdas synthesise no type, so nothing fixes the omitted carrier.
 @[ refuses("ImplicitUnsolved") ]
-def unfixedFlow : Flow(fun (y) { y }, fun (y) { y }) = Flow.stay (fun (y) { y });
+def unfixedFlow : Flow (fun (y) { y }) (fun (y) { y }) = Flow.stay (fun (y) { y });

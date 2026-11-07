@@ -302,6 +302,151 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// #6093: a packed or forgotten model's type ends its form, and a type operand
+/// after it applies that type, `pack M at Model T`, as a value call applies
+/// its function. The call form `Model(T)` keeps its reading.
+#[test]
+fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        (
+            "def site : Model(Site) = pack Site at Model Site;",
+            "pack_model_expression",
+            "Model Site",
+            1_usize,
+        ),
+        (
+            "def f() -> Integer { pack Site at Model Site }",
+            "pack_model_expression",
+            "Model Site",
+            1,
+        ),
+        (
+            "def x = (pack Site at Pair Site Site);",
+            "pack_model_expression",
+            "Pair Site Site",
+            2,
+        ),
+        (
+            "def x = forget[sort C = Integer](m) at Model Counter;",
+            "forget_model_expression",
+            "Model Counter",
+            1,
+        ),
+        (
+            "def site : Model(Site) = pack Site at Model(Site);",
+            "pack_model_expression",
+            "Model(Site)",
+            0,
+        ),
+    ];
+    let grammar = built();
+    for (source, rule, model, applied) in cases {
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let form = tree.positions().find(|&position| {
+            tree.node(position).is_some_and(|node| {
+                matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(mold)
+                    if grammar.rule_of(mold).is_ok_and(|found| found.name().0 == rule))
+            })
+        });
+        let read = form
+            .and_then(|position| {
+                tree.children(position)
+                    .filter(|&child| {
+                        tree.node(child).is_some_and(|node| {
+                            !matches!(node.label(), gandr_surface_syntax::NodeLabel::Space)
+                        })
+                    })
+                    .last()
+            })
+            .and_then(|child| tree.fragment(child))
+            .map(<&str>::from);
+        assert_eq!(read, Some(model), "`{source}`: the type its {rule} ends in");
+        let applications = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|found| found.name().0 == "type_application.juxtaposed"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(
+            applications, applied,
+            "`{source}`: the type applications it reads"
+        );
+    }
+    Ok(())
+}
+
+/// #6093: after an observation's type operand, a `(` opens the type's
+/// argument, `tail : Twisted (Twisted a)`, not the parameter list that only
+/// the `:` takes. The parameter list right after the `:` keeps its reading,
+/// and a data block's next member after a constructor's type continues the
+/// block.
+#[test]
+fn an_observation_s_type_applies_a_parenthesized_argument_6093() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        (
+            include_str!(
+                "grammar/fixtures/an-observation-s-type-applies-a-parenthesized-argument-6093-1.gandr"
+            ),
+            2_usize,
+        ),
+        (
+            include_str!(
+                "grammar/fixtures/an-observation-s-type-applies-a-parenthesized-argument-6093-2.gandr"
+            ),
+            2,
+        ),
+        (
+            include_str!(
+                "grammar/fixtures/an-observation-s-type-applies-a-parenthesized-argument-6093-3.gandr"
+            ),
+            0,
+        ),
+        (
+            include_str!(
+                "grammar/fixtures/an-observation-s-type-applies-a-parenthesized-argument-6093-4.gandr"
+            ),
+            0,
+        ),
+    ];
+    let grammar = built();
+    for (source, applied) in cases {
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let applications = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == "type_application.juxtaposed"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(
+            applications, applied,
+            "`{source}`: the type applications it reads"
+        );
+    }
+    Ok(())
+}
+
 /// #5665: a postfix form after a call in call form, a head with a group
 /// written straight after it, takes the whole call as its target. A group
 /// after a space is an argument of its own, and a projection binds tighter

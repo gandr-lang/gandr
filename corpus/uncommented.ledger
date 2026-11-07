@@ -1128,9 +1128,9 @@ pathological/codata/streams.gandr:Spot.y:2a48d2b6f107a61a uncommented
 pathological/codata/streams.gandr:Stream.head:5752613dd3b6d4c9 uncommented
 pathological/codata/streams.gandr:Stream.tail:879d6c57bdd305f4 uncommented
 pathological/codata/streams.gandr:Swap.head:ae20627858b90c0f uncommented
-pathological/codata/streams.gandr:Swap.tail:ed084cafde464e8f uncommented
+pathological/codata/streams.gandr:Swap.tail:d8cb12fb20e9834e uncommented
 pathological/codata/streams.gandr:Twisted.head:ae20627858b90c0f uncommented
-pathological/codata/streams.gandr:Twisted.tail:84aa1b7df86b8afd uncommented
+pathological/codata/streams.gandr:Twisted.tail:ddb5cfa3984fb460 uncommented
 pathological/control/capability-amplify.gandr:save:c393793ff53ff243 uncommented
 pathological/control/capability-amplify.gandr:widen:770effb61f8ee421 uncommented
 pathological/control/capability-drop.gandr:<file> uncommented

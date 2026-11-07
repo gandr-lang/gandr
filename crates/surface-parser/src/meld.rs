@@ -1167,6 +1167,79 @@ primitive_copy_wrapper!(
     struct SameFormAdjacency(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether a form tile's same-form successor continues it past the
+    /// operand at the slope head.
+    pub struct PastOperand(bool);
+);
+
+/// Whether `next` continues the form tile of `open` past an operand of sort
+/// `head` at the slope head. It does, save where `next` opens a group, `open`
+/// offers both `next` and a hole of sort `head` directly after it, the operand
+/// fills that hole, and a mold of `next`'s label opens an argument that the
+/// operand applies to by juxtaposition. An observation's `:` takes its
+/// parameter list's `(` or its type, so after `tail : Twisted` the `(` opens
+/// the type's argument. A successor reached across a hole, as a data block's
+/// next member after a constructor's type, continues the form. So does a
+/// successor after an operand that fills no hole of `open`, as a projection's
+/// field after a stray literal, a successor that opens no group, and one that
+/// opens no argument.
+///
+/// # Specification
+/// - ensures: false exactly when both molds are known, `next`'s label opens a
+///   group, `open`'s right steps cross `next`'s label and a hole of sort
+///   `head`, `next`'s left steps cross no sort, `head` has an application tile,
+///   and a mold of `next`'s label is an operand or a non-absorbing form start
+///   of sort `head`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — after `tail : Twisted` a `(` reads as the type's
+///   argument, not the parameter list the `:` opens, a data block's `oper`
+///   after a constructor's type continues the block, a projection's field after
+///   a stray literal ends the projection, a row's entry after a stray type
+///   keeps its repair, and an access's `as` after a stray index continues the
+///   access: reading `next`'s left steps alone refuses the `oper`, reading
+///   adjacency alone admits the `(`, reading no hole refuses the field, reading
+///   no group refuses the entry, and reading no argument refuses the `as`.
+/// - witness: `tests::grammar::an_observation_s_type_applies_a_parenthesized_argument_6093`
+/// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+#[spec(ensures: |ret| bool::from(ret) != (pbg.mold(open).is_ok_and(|left| pbg.mold(next).is_ok_and(|right| ClosingClass::opening(DelimSpelling::from(right.label)).is_some() && pbg.step(left.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(right.label)) && steps.iter().any(|step| step.crossed == StepSym::Sort(head))) && !pbg.step(right.rctx, Dir::Left).is_ok_and(|steps| steps.iter().any(|step| matches!(step.crossed, StepSym::Sort(_)))))) && pbg.application_in(head).is_some() && pbg.mold_label(next).is_some_and(|label| pbg.label_candidates(label).iter().any(|&tile| pbg.mold(tile).is_ok_and(|def| def.sort == head) && matches!(pbg.tile_kind(tile), Ok(TileKind::Operand | TileKind::Start))))))]
+pub fn continues_past_operand(
+    pbg: &Pbg,
+    open: MoldId,
+    next: MoldId,
+    head: Sort,
+) -> PastOperand
+{
+    let (Ok(left), Ok(right)) = (pbg.mold(open), pbg.mold(next))
+    else {
+        return PastOperand::from(true);
+    };
+    let offered = ClosingClass::opening(DelimSpelling::from(right.label)).is_some()
+        && pbg.step(left.rctx, Dir::Right).is_ok_and(|steps| {
+            steps
+                .iter()
+                .any(|step| step.crossed == StepSym::Tile(right.label))
+                && steps.iter().any(|step| step.crossed == StepSym::Sort(head))
+        });
+    let after_hole = pbg.step(right.rctx, Dir::Left).is_ok_and(|steps| {
+        steps
+            .iter()
+            .any(|step| matches!(step.crossed, StepSym::Sort(_)))
+    });
+    if !offered || after_hole || pbg.application_in(head).is_none() {
+        return PastOperand::from(true);
+    }
+    let argument = pbg.mold_label(next).is_some_and(|label| {
+        pbg.label_candidates(label).iter().any(|&tile| {
+            pbg.mold(tile).is_ok_and(|def| def.sort == head)
+                && matches!(pbg.tile_kind(tile), Ok(TileKind::Operand | TileKind::Start))
+        })
+    });
+    PastOperand::from(!argument)
+}
+primitive_copy_wrapper!(
     /// Whether a successor mold has one of the candidate token labels.
     struct SuccessorLabelPresence(bool);
 );
@@ -2768,6 +2841,10 @@ impl<'pbg> MeldState<'pbg>
     ///   deep-nested tile like an `extern` body's `def`, which is not in any
     ///   form's FIRST set — stays rejected where it cannot continue an open
     ///   frontier.
+    /// * With an operand at the head, a form-end or a form-mid continues the
+    ///   frontier save where [`continues_past_operand`] refuses it: the `(` of
+    ///   an observation's parameter list follows its `:` alone, so after `tail
+    ///   : Twisted` a `(` opens the type's argument, `Twisted (Twisted a)`.
     /// * A left-bounded form-start (a call `(`, a projection `.`) and an infix
     ///   / postfix operator are admissible only with a left operand at the head
     ///   — otherwise `push` would flag a [`Oblig::MissingMeld`].
@@ -3271,6 +3348,7 @@ impl<'pbg> MeldState<'pbg>
     ///   [`admissibility_frontier`](Self::admissibility_frontier)'s clause.
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     /// - witness: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`
+    /// - witness: `tests::grammar::an_observation_s_type_applies_a_parenthesized_argument_6093`
     #[inline]
     #[must_use]
     #[spec(requires: frontier.open == self.open_form_mold() && bool::from(frontier.head_operand) == bool::from(self.head_is_operand()) && frontier.head_sort == self.head_operand_sort(), ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (frontier.open.is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
@@ -3299,14 +3377,21 @@ impl<'pbg> MeldState<'pbg>
         {
             return MoldAdmissibility::from(false);
         }
+        // Past an operand, a form's next tile continues the frontier save
+        // where the token opens the operand's argument instead.
+        let past = frontier
+            .head_sort
+            .filter(|_| bool::from(frontier.head_operand));
+        let continues = |open: MoldId| {
+            bool::from(self.adjacent(open, mold))
+                && past.is_none_or(|head| {
+                    bool::from(continues_past_operand(self.pbg, open, mold, head))
+                })
+        };
         let admissible = match self.classify(mold) {
-            Kind::FormEnd => frontier
-                .open
-                .is_some_and(|open| bool::from(self.adjacent(open, mold))),
+            Kind::FormEnd => frontier.open.is_some_and(continues),
             Kind::FormMid => {
-                frontier
-                    .open
-                    .is_some_and(|open| bool::from(self.adjacent(open, mold)))
+                frontier.open.is_some_and(continues)
                     || (frontier.open.is_none()
                         && bool::from(FormTable::is_form_first(self.pbg, mold)))
             },
@@ -3968,25 +4053,32 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// Whether `incoming` continues the tail of the required-tail form whose
-    /// frontier is at `frontier`.
+    /// frontier is at `frontier`. In a tail of another sort than its form, a
+    /// juxtaposed operand continues it through the application tile the melder
+    /// pushes before it: `pack M at Model T` packs at the type `Model T`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: true exactly when the frontier's hole sort is known and
     ///   `incoming` — the tile, or any mold a label of the token may take — is
     ///   an infix or postfix operator or a left-absorbing form start of that
-    ///   sort whose group the form's group yields to.
+    ///   sort whose group the form's group yields to, or an operand or a
+    ///   non-absorbing form start of that sort while the form is of another
+    ///   sort and the slope's top takes the application tile of that sort as
+    ///   such an operator.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — through
     ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
     ///   operator tighter than the form and one looser separate the answer
-    ///   through committed type trees. Prefix-only shapes, wrong sorts and
+    ///   through committed type trees, and a type operand after a packed
+    ///   model's type applies that type. Prefix-only shapes, wrong sorts and
     ///   absent frontiers cannot extend a completed operand; token menus use
     ///   existential rather than universal candidate choice.
     /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
     /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    /// - witness: `tests::grammar::a_packed_model_s_type_applies_by_juxtaposition_6093`
     ///
     /// # Termination
     /// One step per mold a label of the token may take.
@@ -3999,20 +4091,24 @@ impl<'pbg> MeldState<'pbg>
     )]
     #[spec(ensures: |ret| {
         let context = self.stack.get(usize::from(frontier)).and_then(|cell| match cell.role {
-            Role::FormTile { mold, .. } => Some((self.pbg.mold(mold).ok()?.prec, self.frontier_hole_sort(mold)?)),
+            Role::FormTile { mold, .. } => Some((self.pbg.mold(mold).ok()?.prec, self.pbg.mold(mold).ok()?.sort, self.frontier_hole_sort(mold)?)),
             Role::Operand | Role::Operator { .. } => None,
         });
-        bool::from(ret) == context.is_some_and(|(form, hole)| {
+        bool::from(ret) == context.is_some_and(|(form, sort, hole)| {
+            let application = self.pbg.application_in(hole);
             let qualifying = |tile| self.pbg.mold(tile).is_ok_and(|definition| {
                 definition.sort == hole
                     && matches!(self.classify(tile), Kind::Operator(OpShape::Infix | OpShape::Postfix) | Kind::FormStart { absorb_left: true })
-                    && bool::from(self.pbg.dag().lt(form, definition.prec, Assoc::Right))
+                    && (bool::from(self.pbg.dag().lt(form, definition.prec, Assoc::Right)) || (sort != hole && Some(tile) == application))
             });
+            let juxtaposed = |tile| sort != hole && self.applies_next_in(hole).is_some_and(&qualifying)
+                && self.pbg.mold(tile).is_ok_and(|definition| definition.sort == hole)
+                && matches!(self.classify(tile), Kind::Operand | Kind::FormStart { absorb_left: false });
             match incoming {
-                Incoming::Tile(tile) => qualifying(tile),
+                Incoming::Tile(tile) => qualifying(tile) || juxtaposed(tile),
                 Incoming::Token(labels) => <&[LabelId]>::from(labels).iter()
                     .flat_map(|&label| self.pbg.label_candidates(label).iter().copied())
-                    .any(qualifying),
+                    .any(|tile| qualifying(tile) || juxtaposed(tile)),
             }
         })
     })]
@@ -4022,7 +4118,7 @@ impl<'pbg> MeldState<'pbg>
         incoming: Incoming<'_>,
     ) -> TailExtension
     {
-        let Some((form, hole)) = self
+        let Some((form, sort, hole)) = self
             .stack
             .get(usize::from(frontier))
             .and_then(|cell| match cell.role {
@@ -4030,14 +4126,17 @@ impl<'pbg> MeldState<'pbg>
                 Role::Operand | Role::Operator { .. } => None,
             })
             .and_then(|mold| {
-                Some((
-                    self.pbg.mold(mold).ok()?.prec,
-                    self.frontier_hole_sort(mold)?,
-                ))
+                let def = self.pbg.mold(mold).ok()?;
+                Some((def.prec, def.sort, self.frontier_hole_sort(mold)?))
             })
         else {
             return TailExtension::from(false);
         };
+        // A form of another sort than its tail's, `pack M at Model T`, has no
+        // band that the tail's application compares with, and no application
+        // of the tail's sort takes the form as its operand, so that
+        // application stays in the tail.
+        let application = self.pbg.application_in(hole);
         let continues = |tile: MoldId| {
             self.pbg.mold(tile).is_ok_and(|def| {
                 def.sort == hole
@@ -4046,16 +4145,30 @@ impl<'pbg> MeldState<'pbg>
                         Kind::Operator(OpShape::Infix | OpShape::Postfix)
                             | Kind::FormStart { absorb_left: true }
                     )
-                    && bool::from(self.pbg.dag().lt(form, def.prec, Assoc::Right))
+                    && (bool::from(self.pbg.dag().lt(form, def.prec, Assoc::Right))
+                        || (sort != hole && Some(tile) == application))
             })
         };
+        // In a tail of another sort than its form, a juxtaposed operand joins
+        // the tail's head through the application tile the melder pushes
+        // before it, so it extends the tail when that tile does, as
+        // `juxtaposed` reads the slope's top.
+        let joined = sort != hole && self.applies_next_in(hole).is_some_and(&continues);
+        let joins = |tile: MoldId| {
+            joined
+                && self.pbg.mold(tile).is_ok_and(|def| def.sort == hole)
+                && matches!(
+                    self.classify(tile),
+                    Kind::Operand | Kind::FormStart { absorb_left: false }
+                )
+        };
         TailExtension::from(match incoming {
-            Incoming::Tile(tile) => continues(tile),
+            Incoming::Tile(tile) => continues(tile) || joins(tile),
             Incoming::Token(labels) => <&[LabelId]>::from(labels).iter().any(|&label| {
                 self.pbg
                     .label_candidates(label)
                     .iter()
-                    .any(|&tile| continues(tile))
+                    .any(|&tile| continues(tile) || joins(tile))
             }),
         })
     }
