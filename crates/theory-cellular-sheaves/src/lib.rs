@@ -20,6 +20,11 @@
 //! The cells and their order are a [`GradedPoset`]. A sheaf holds each set of
 //! cells as one bit row, so it refuses a poset of more than 64 cells.
 //!
+//! Its gluing holds for stalks of entries, and its cohomology over the
+//! rationals. The general forms are sheaves of lattices (Ghrist and Riess,
+//! Theorem 3.1) and cohomology with each coefficient group (Ljungström and
+//! Mörtberg, § 4).
+//!
 //! # Items
 //!
 //! | Item | What it holds |

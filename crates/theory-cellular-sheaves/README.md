@@ -2,6 +2,8 @@
 
 This crate holds cellular sheaves over finite graded posets for gandr: a stalk on each cell, a restriction map from each cell to each cell above it, the gluing of sections over a cover, and cohomology over the rationals through a tower of levels. It is the second crate of the cell family, which presents a space by its cells and their faces.
 
+Sheaves of lattices wait on #5726, and cohomology over the integers on #5895.
+
 <!-- toc -->
 - [Synopsis](#synopsis)
 - [References](#references)

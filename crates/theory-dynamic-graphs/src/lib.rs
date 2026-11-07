@@ -8,6 +8,7 @@
 //! Repair raises each potential along an improving path, the Tarski
 //! iteration, until the least fixed point holds. A positive cycle is the
 //! obstruction that no fixed point clears.
+//! So its results hold in the order-theoretic form, in degree zero.
 //!
 //! # References
 //!

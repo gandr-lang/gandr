@@ -2,6 +2,8 @@
 
 The finite case of Stone duality for gandr: free distributive lattices in normal form, finite Birkhoff duality between posets and distributive lattices of sets, and monotone maps against lattice homomorphisms.
 
+The duality past the finite case waits on #5963.
+
 <!-- toc -->
 - [Synopsis](#synopsis)
 - [References](#references)

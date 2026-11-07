@@ -18,10 +18,11 @@
 //! the spectrum, so those two hold at most 64 cells.
 //!
 //! The cells form the cell poset of a cellular sheaf, after Curry, Ghrist and
-//! Nanda. Each cell holds its data, boundary and rank, and the caller orients
-//! its faces. [`GradedPoset::traverse`] runs Kessler's traversal of a
-//! molecule, and [`Traversal::key`] names it up to isomorphism. The crate
-//! keeps the closure of the order, not her face data.
+//! Nanda, and the caller orients their faces. Its results hold for oriented
+//! graded posets of any dimension, the level of Kessler's thesis:
+//! [`GradedPoset::traverse`] runs her traversal of a molecule, and
+//! [`Traversal::key`] names it up to isomorphism. The crate keeps the closure
+//! of the order, not her face data.
 //!
 //! # Items
 //!
