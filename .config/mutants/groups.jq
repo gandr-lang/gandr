@@ -15,12 +15,15 @@
 # innermost documented function spanning it. A mutant in no documented
 # function groups with the others of its file under a null item.
 #
-# Output: one `{file, item, names, re, filter}` per group, ordered by file
-# then item: `item` is the function's `file:line`, `re` matches the group's
-# mutant names and no other, and `filter` selects the function's witnesses as
-# the obligations report's selection does (an integration witness names its
-# target binary first), or is null when no witness names the function: those
-# mutants run under no test and read missed.
+# Output: one `{file, item, names, re, filter, tests, unit}` per group,
+# ordered by file then item: `item` is the function's `file:line`, `re`
+# matches the group's mutant names and no other, and `filter` selects the
+# function's witnesses as the obligations report's selection does (an
+# integration witness names its target binary first), or is null when no
+# witness names the function: those mutants run under no test and read missed.
+# `tests` names the integration targets the witnesses live in, and `unit` is
+# true when a witness names no target, a unit test of the crate's own targets
+# (#3210): a group builds and links only those binaries.
 
 def escaped: gsub("(?<c>[\\\\.+*?()|\\[\\]{}^$])"; "\\\(.c)");
 
@@ -60,5 +63,7 @@ def alternative($targets):
     filter: (.[0].witnesses | unique
       | if length == 0 then null
         else "package(=\($in.package)) & (" + (map(alternative($in.targets)) | join(" | ")) + ")"
-        end)
+        end),
+    tests: ([.[0].witnesses[] | split("::") as $segments | select(($segments | length) > 1 and ($in.targets | index($segments[0])) != null) | $segments[0]] | unique),
+    unit: any(.[0].witnesses[]; split("::") as $segments | ($segments | length) < 2 or ($in.targets | index($segments[0])) == null)
   })
