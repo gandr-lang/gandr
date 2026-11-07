@@ -1,13 +1,14 @@
 /// `std-build`: The standard library's manifest theories.
-/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and no type of a dependency, which an import's coordinate names; every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert declaration, while `gandr`, `features` and `systems` are content; a source under any root imports it by name, `import std.build (Gandr);`.
-/// Not implemented: `authors`, `features` and `systems` are no lists.
+/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and no type of a dependency, which an import's coordinate names; every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert declaration, while `gandr`, `features` and `systems` are content; a source under any root imports it by name, `import std.build (Gandr);`; the inert `render` writes a package model's constants as one `name = value` line each, in the order of the presentation.
+/// Not implemented: `authors`, `features` and `systems` are no lists, and `render` writes one table with no escape.
 ///
 /// - owes: #2993
 /// - see: #3135
 /// - see: #3029 — `Package`
 /// - see: #4527
+/// - see: #6046 — `render`
 
-import std.build (Gandr);
+import std.build (Gandr, render);
 
 /// A package's model, every field but what it asks of the toolchain inert:
 /// only the manifest step reads them.
@@ -36,3 +37,8 @@ pub module Package : Model(Gandr.Package) where {
   /// The directory the modules sit under, below the package's root.
   def sources = "src";
 }
+
+/// The model's lines, written by `std.build`'s inert render.
+@[ inert ]
+@[ runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"probe\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"") ]
+def rendered() -> String { render Package }

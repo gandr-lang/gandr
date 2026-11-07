@@ -21,12 +21,33 @@
 // package whose `Toolchain` the running toolchain does not meet. The
 // package's address digests the constraint.
 //
+// A theory's presentation is a `Theory` value, and `modelType` computes the
+// type of its models' entries from it: one value for each constant, in the
+// order of the presentation, as nested pairs. `encode` folds a presentation
+// and its entries together into one line for each constant. For
+// `Gandr.Package`, the inert `packageEntries` reads a model's entries, and
+// the inert `render` writes a model's lines. The equivalence of a package's
+// model and its entries is checked in `corpus/model/desc/module-reflection.gandr`
+// and not here: every package source imports this module, and the proof of
+// the equivalence would cost each check of a package.
+//
+// Limits: an entry's sort is `String`, `Bool` or opaque. An opaque entry is
+// the unit type, and the encoder writes no line for it, so a model with a
+// constant of another sort has no equivalence to its entries. The encoder
+// escapes no character of a string, because `std.string` has no operation on
+// a character. One table holds every line, in the presentation's order, and
+// the manifest step's tables wait on #4725. The checker unfolds `modelType`
+// for at most 20 `String` constants or 14 `Bool` constants, and a wider
+// presentation's type is undecided (#6181).
+//
 // - see: #533
 // - see: #3029
 // - see: #3030 — `Gandr`
 // - see: #3072
 // - see: #4527
 // - see: #2993 — `Toolchain`
+// - see: #6046 — `modelType`, `encode` and `render`
+// - see: #6181 — the widest presentation `modelType` unfolds
 
 /// The version a package and a workspace release at. [`Project`] brings it to
 /// both, so a member reads its version from its workspace's model.
@@ -119,3 +140,97 @@ pub theory Gandr.Workspace where
 pub theory Gandr.Module where
   /// The module's path, with `.` between its segments.
   oper path : String;
+
+/// The sort of a model's entry: a code for each type the encoder writes, and
+/// one for any other sort.
+pub data EntrySort : Type where
+  /// `String`.
+  | Text : EntrySort
+  /// `Bool`.
+  | Truth : EntrySort
+  /// Any other sort. Its entry is the unit type, and the encoder writes no
+  /// line for it.
+  | Opaque : EntrySort
+
+/// The code of the sort named `sort`. The comparison of two names computes
+/// while a type is checked.
+pub def entrySort(sort : String) -> EntrySort =
+  if sort == "String" { Text } else if sort == "Bool" { Truth } else { Opaque }
+
+/// The type of an entry whose code is `s`.
+pub def entryType(s : EntrySort) -> -F Type =
+  match s where
+    | Text => return String
+    | Truth => return Bool
+    | Opaque => return Unit
+
+/// The code of a constant's entry: the sort of its first output port, or
+/// `Opaque` for a constant with none.
+pub def portSort(outputs : Theory) -> EntrySort =
+  match outputs where
+    | Theory.Port(name, sort, indices, rest) => entrySort sort
+    | _ => Opaque
+
+/// An entry, then the entries after it.
+pub data Entries(a : Type, b : Type) : Type where
+  /// The entry `value`, then the entries `rest`.
+  | Entry : (value : a, rest : b) --> Entries a b
+
+/// The end of a model's entries.
+pub data NoEntries : Type where
+  /// No entry after this.
+  | Ended : NoEntries
+
+/// The type of the entries of a member chain: one entry for each constant.
+/// A member that is no constant adds no entry.
+def rec chainType(chain : Theory) -> -F Type =
+  match chain where
+    | Theory.Const(name, inputs, outputs, rest) => return (Entries (entryType (portSort outputs)) (chainType[<] rest))
+    | Theory.Oper(name, inputs, outputs, rest) => chainType[<] rest
+    | _ => return NoEntries
+
+/// The type of the entries of a model of the presentation `presented`: one
+/// entry for each constant, in the order of the presentation.
+pub def modelType(presented : Theory) -> -F Type =
+  match presented where
+    | Theory.Presents(sorts, opers, rules) => chainType opers
+    | _ => return NoEntries
+
+/// The line of the constant `name` whose entry is `x`: `name = value` for a
+/// string or a boolean, and no line for an opaque entry. A string is a TOML
+/// basic string, its characters written as they are.
+def line(name : String, s : EntrySort, x : entryType(s)) -> String =
+  match s where
+    | Text => string.append (string.append name " = \"") (string.append x "\"\n")
+    | Truth => if x { string.append name " = true\n" } else { string.append name " = false\n" }
+    | Opaque => ""
+
+/// The lines of a member chain's entries `v`, one for each constant.
+def rec chainLines(chain : Theory, v : chainType(chain)) -> String =
+  match chain where
+    | Theory.Const(name, inputs, outputs, rest) => match v where
+      | Entry(x, r) => string.append (line name (portSort outputs) x) (chainLines[<] rest r)
+    | Theory.Oper(name, inputs, outputs, rest) => chainLines[<] rest v
+    | _ => ""
+
+/// The lines of the entries `v` of a model of `presented`, one for each
+/// constant, in the order of the presentation.
+pub def encode(presented : Theory, v : modelType(presented)) -> String =
+  match presented where
+    | Theory.Presents(sorts, opers, rules) => chainLines opers v
+    | _ => ""
+
+/// The presentation of [`Gandr.Package`], from which its entries' type is
+/// computed.
+pub def packagePresentation : Theory = Gandr.Package;
+
+/// The entries of the package model `m`, in the order of the presentation.
+@[ inert ]
+pub def packageEntries(m : Model(Gandr.Package)) -> modelType(packagePresentation) =
+  Entry m.version (Entry m.gandr (Entry m.features (Entry m.systems (Entry m.spelling (Entry m.name (Entry m.authors (Entry m.licence (Entry m.documentation (Entry m.endpoint (Entry m.sources Ended))))))))))
+
+/// The lines of the package model `m`, one for each constant, in the order
+/// of the presentation: one table, with no escape.
+@[ inert ]
+pub def render(m : Model(Gandr.Package)) -> String =
+  encode packagePresentation (packageEntries m)
