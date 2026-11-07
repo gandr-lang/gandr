@@ -6,6 +6,7 @@
 use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Bound;
 use gandr_theory_exact_reals::Check;
+use gandr_theory_exact_reals::Coefficient;
 use gandr_theory_exact_reals::Conflict;
 use gandr_theory_exact_reals::Cut;
 use gandr_theory_exact_reals::DeBruijn;
@@ -29,11 +30,13 @@ use gandr_theory_exact_reals::OpenId;
 use gandr_theory_exact_reals::Orientation;
 use gandr_theory_exact_reals::Plan;
 use gandr_theory_exact_reals::PlanBuilder;
+use gandr_theory_exact_reals::Polynomial;
 use gandr_theory_exact_reals::Power;
 use gandr_theory_exact_reals::Quantifier;
 use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::RealId;
+use gandr_theory_exact_reals::Recurrence;
 use gandr_theory_exact_reals::Refusal;
 use gandr_theory_exact_reals::Root;
 use gandr_theory_exact_reals::Site;
@@ -115,6 +118,7 @@ enum Step
     Interval(i64, i64, u32, u32),
     Product(usize, usize, u32),
     Subdomain(usize, usize, u32),
+    Recurrence(usize, u8),
 }
 
 /// The strategy of one step.
@@ -131,6 +135,7 @@ fn step() -> impl Strategy<Value = Step>
             .prop_map(|(kind, left, right)| Step::Arithmetic(kind, left, right)),
         (index.clone(), index.clone(), any::<u32>())
             .prop_map(|(left, right, draw)| Step::Div(left, right, draw)),
+        (index.clone(), 0_u8 .. 3).prop_map(|(argument, kind)| Step::Recurrence(argument, kind)),
         (index.clone(), 0_u32 .. 9).prop_map(|(base, power)| Step::Power(base, power)),
         (
             -50_i64 .. 50,
@@ -241,6 +246,30 @@ fn build(steps: &[Step]) -> Parts
                         .real(Real::Power(real(base), Power::from(power)))
                         .unwrap(),
                 );
+            },
+            Step::Recurrence(argument, kind) => {
+                let polynomial = |coefficients: &[i32]| {
+                    Polynomial::try_from(
+                        coefficients
+                            .iter()
+                            .copied()
+                            .map(Coefficient::from)
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap()
+                };
+                // The ratios of `exp`, of `log` and of the cosine.
+                let (numerator, denominator) = match kind {
+                    0 => (polynomial(&[1_i32]), polynomial(&[1_i32, 1_i32])),
+                    1 => (polynomial(&[1_i32, 2_i32]), polynomial(&[3_i32, 2_i32])),
+                    _ => (polynomial(&[-1_i32]), polynomial(&[2_i32, 6_i32, 4_i32])),
+                };
+                let node = Real::Recurrence(Recurrence {
+                    argument: real(argument),
+                    numerator,
+                    denominator,
+                });
+                reals.push(builder.real(node).unwrap());
             },
             Step::Cut(lower, width, below, above, draw) => {
                 let cut = Cut {
@@ -681,6 +710,8 @@ fn refusals_render_distinct_phrases()
         },
         Check::DomainEvidence,
         Check::CutOperand,
+        Check::RatioDegree,
+        Check::RatioRoot,
     ];
     distinct_lines(&checks.map(|check| check.to_string()));
     distinct_lines(

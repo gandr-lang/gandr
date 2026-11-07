@@ -9,6 +9,7 @@
 /// - see: `corpus/model/reals/comparison.gandr` — a comparison that holds
 /// - see: `corpus/model/reals/resume.gandr` — a machine restored from its checkpoint
 /// - see: `corpus/model/reals/trigonometry.gandr` — π, the cosine and the angle of a point
+/// - see: `corpus/model/reals/exponential.gandr` — `e` as the sum of a recurrence
 /// - see: `corpus/model/reals/exists.gandr` — an overt existential that holds by a witness
 /// - see: `corpus/model/reals/forall.gandr` — a compact universal that holds by a cover
 /// - see: `corpus/model/reals/metrics.gandr` — the nine counters of `report`
