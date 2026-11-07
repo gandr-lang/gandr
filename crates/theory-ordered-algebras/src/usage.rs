@@ -19,6 +19,9 @@
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — anchor: § quant-counts —
 //!   the usage semiring `{0, 1, ω}`, and the count that the two-point grades
 //!   forget.
+//! - `Wood-2024-framework_semiringannotated_type_systems` — newest: one
+//!   calculus annotated by any semiring, whose instance at `{0, 1, ω}` is the
+//!   dual-context calculus that [`Usage`] gives the access rules.
 
 use core::cmp::Ordering;
 

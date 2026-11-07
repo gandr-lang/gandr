@@ -30,6 +30,12 @@
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
 //!   presented-spaces-crates puts the host adapter of stage C in the
 //!   dispatcher.
+//! - `Taylor-2010-lambda_calculus_real_analysis` — exemplar: a cut enters a run
+//!   only with its laws, as Axiom 6.8 asks. A quantifier enters only over a
+//!   domain with its modality, as § 8 and § 11 ask.
+//! - `Escardó-2004-synthetic_topology_data_types_classical_spaces` — exemplar:
+//!   a strict comparison is an open, so `decide` semidecides each of its poles
+//!   and replies no stop as false.
 
 use alloc::boxed::Box;
 use alloc::format;
