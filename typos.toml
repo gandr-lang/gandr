@@ -30,6 +30,9 @@ hom = "hom"
 ratatui = "ratatui"
 # Author surname: Donald Yau, co-author of the graphical-map factorizations.
 yau = "yau"
+# Author surname: Lukas Waas, author of the stratified and simple homotopy
+# theory monograph that the Tietze reading of `theory-discrete-morse` cites.
+waas = "waas"
 # ELF vocabulary: `.rela` sections hold relocations with explicit addends.
 rela = "rela"
 # Type-theory vocabulary: a function's implicit parameters, "its implicits".

@@ -21,6 +21,13 @@
 //! side less those of its right side. A pair's boundary counts the rules along
 //! its first joining path less those along its second.
 //!
+//! The suite also reads `IntOp`, the one block whose rule defines a letter,
+//! as Tietze moves. The bar complex holds no cell of that letter, because the
+//! letter is no normal form. Its drop is one move on the written presentation,
+//! and Brown's critical cells spell what that move leaves. Through integer
+//! chains, each removal of Brown's scheme, matched alone, is an equivalence
+//! that replays, and the removals compose to the scheme's collapse.
+//!
 //! A block with a binary operation is the concern of the collapse suite,
 //! which reads the bar complex of its Lawvere theory.
 //!
@@ -34,6 +41,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use core::convert::Infallible;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -64,8 +72,19 @@ use gandr_theory_coherent_resolutions::Variable;
 use gandr_theory_coherent_resolutions::critical_triples;
 use gandr_theory_computads::EtaElaboration;
 use gandr_theory_computads::Term;
+use gandr_theory_discrete_morse::Abelian;
 use gandr_theory_discrete_morse::Budget;
+use gandr_theory_discrete_morse::Chain;
+use gandr_theory_discrete_morse::Class;
+use gandr_theory_discrete_morse::Complex;
+use gandr_theory_discrete_morse::Composites as _;
 use gandr_theory_discrete_morse::Faults;
+use gandr_theory_discrete_morse::Incidence;
+use gandr_theory_discrete_morse::Invertibility;
+use gandr_theory_discrete_morse::Reduction as _;
+use gandr_theory_discrete_morse::Scheme;
+use gandr_theory_discrete_morse::Standing;
+use gandr_theory_discrete_morse::equivalence;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
@@ -1118,6 +1137,383 @@ fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
     assert!(
         undecided.is_empty(),
         "every block decides dimension four within the truncation: {undecided:?}"
+    );
+}
+
+/// One pair of a scheme's matching, read alone: the pair keeps its classes,
+/// and every other cell is critical. The scheme's faces are read unchanged.
+struct Alone<'scheme, S>
+where
+    S: Scheme,
+{
+    /// The scheme read.
+    scheme: &'scheme mut S,
+    /// The redundant cell of the pair.
+    redundant: S::Cell,
+    /// Its partner one dimension up.
+    partner: S::Cell,
+}
+
+impl<S> Complex for Alone<'_, S>
+where
+    S: Scheme,
+{
+    type Cell = S::Cell;
+    type Fault = S::Fault;
+
+    /// The scheme's standing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        &mut self,
+        cell: &S::Cell,
+    ) -> Result<Standing, S::Fault>
+    {
+        self.scheme.standing(cell)
+    }
+
+    /// The scheme's faces.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faces(
+        &mut self,
+        cell: &S::Cell,
+        faces: &mut Vec<(S::Cell, Incidence)>,
+    ) -> Result<(), S::Fault>
+    {
+        self.scheme.faces(cell, faces)
+    }
+
+    /// The scheme's pairing condition.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pairing(
+        &mut self,
+        face: &S::Cell,
+        cell: &S::Cell,
+        incidence: Incidence,
+    ) -> Result<Invertibility, S::Fault>
+    {
+        self.scheme.pairing(face, cell, incidence)
+    }
+}
+
+impl<S> Scheme for Alone<'_, S>
+where
+    S: Scheme,
+{
+    /// The pair's classes, and critical for every other cell.
+    ///
+    /// # Specification
+    /// trivial.
+    fn class(
+        &mut self,
+        cell: &S::Cell,
+    ) -> Result<Class<S::Cell>, S::Fault>
+    {
+        Ok(if *cell == self.redundant {
+            Class::Redundant(self.partner.clone())
+        }
+        else if *cell == self.partner {
+            Class::Collapsible(self.redundant.clone())
+        }
+        else {
+            Class::Critical
+        })
+    }
+}
+
+/// A cell of a unary block's written presentation.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Written
+{
+    /// A letter, of dimension one.
+    Letter(Letter),
+    /// A rule by its place, of dimension two.
+    Rule(usize),
+}
+
+/// A unary block's written presentation as integer chains, with one pair
+/// matched. A rule's faces are the letters of its left side less those of its
+/// right side.
+struct Presented<'strings>
+{
+    /// The rules.
+    strings: &'strings Strings,
+    /// The number of letters.
+    letters: LetterCount,
+    /// The matched letter, then its rule.
+    pair: (Written, Written),
+}
+
+impl Complex for Presented<'_>
+{
+    type Cell = Written;
+    type Fault = Infallible;
+
+    /// Inside for each letter and each rule of the block.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        &mut self,
+        cell: &Written,
+    ) -> Result<Standing, Infallible>
+    {
+        let inside = match *cell {
+            Written::Letter(Letter(at)) => at < self.letters.0,
+            Written::Rule(at) => at < self.strings.rules.len(),
+        };
+        Ok(if inside {
+            Standing::Inside
+        }
+        else {
+            Standing::Outside
+        })
+    }
+
+    /// A rule's letter counts, its left side less its right side; a letter
+    /// has no faces.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faces(
+        &mut self,
+        cell: &Written,
+        faces: &mut Vec<(Written, Incidence)>,
+    ) -> Result<(), Infallible>
+    {
+        faces.clear();
+        let Written::Rule(at) = *cell
+        else {
+            return Ok(());
+        };
+        let Some(&(ref left, ref right)) = self.strings.rules.get(at)
+        else {
+            return Ok(());
+        };
+        let mut counts: BTreeMap<Letter, i64> = BTreeMap::new();
+        for &letter in &left.0 {
+            let count = counts.entry(letter).or_default();
+            *count = count.saturating_add(1);
+        }
+        for &letter in &right.0 {
+            let count = counts.entry(letter).or_default();
+            *count = count.saturating_sub(1);
+        }
+        faces.extend(
+            counts
+                .into_iter()
+                .filter(|&(_, count)| count != 0)
+                .map(|(letter, count)| (Written::Letter(letter), Incidence::from(count))),
+        );
+        Ok(())
+    }
+}
+
+impl Scheme for Presented<'_>
+{
+    /// The pair's classes, and critical for every other cell.
+    ///
+    /// # Specification
+    /// trivial.
+    fn class(
+        &mut self,
+        cell: &Written,
+    ) -> Result<Class<Written>, Infallible>
+    {
+        let (letter, rule) = self.pair;
+        Ok(if *cell == letter {
+            Class::Redundant(rule)
+        }
+        else if *cell == rule {
+            Class::Collapsible(letter)
+        }
+        else {
+            Class::Critical
+        })
+    }
+}
+
+/// The `IntOp` block of the corpus, the one unary block whose rule defines a
+/// letter, with that rule's place.
+///
+/// # Specification
+/// trivial.
+fn intop() -> (UnaryBlock, RuleIndex)
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/data/arrows.gandr");
+    let text = std::fs::read_to_string(&path).expect("the arrows source reads");
+    let mut blocks = Vec::new();
+    let _lowering = each_block(&grammar, SourceText::from(text.as_str()), |cells| {
+        let Some(block) = unary(cells)
+        else {
+            return;
+        };
+        let defining: Vec<usize> = block
+            .strings
+            .rules
+            .iter()
+            .enumerate()
+            .filter(|&(_, &(ref left, _))| left.0.len() == 1)
+            .map(|(at, _)| at)
+            .collect();
+        if let [rule] = *defining.as_slice() {
+            blocks.push((block, RuleIndex(rule)));
+        }
+    });
+    assert_eq!(blocks.len(), 1, "one block defines a letter");
+    blocks.pop().expect("one block defines a letter")
+}
+
+#[test]
+fn the_intop_letter_drops_by_one_tietze_move_before_brown_collapse_6059()
+{
+    // `IntOp`'s rule `pred x <=> P x` defines the letter `pred`. The bar
+    // complex holds no cell of `pred`, which is no normal form, so Brown's
+    // scheme removes no pair of it. The drop is one Tietze move on the
+    // written presentation, the backward (T1) of § 5.1.1 of Ara and others.
+    // The letter with its rule, matched alone on the presentation's chains,
+    // is an equivalence that replays and defines the letter as `P`. Brown's
+    // critical cells of dimensions one and two spell what the move leaves.
+    let (block, RuleIndex(rule)) = intop();
+    let (ref left, ref right) = *block.strings.rules.get(rule).expect("the rule is a rule");
+    let [letter] = *left.0.as_slice()
+    else {
+        panic!("the rule's left side is one letter");
+    };
+    let [defined] = *right.0.as_slice()
+    else {
+        panic!("the rule's right side is one letter");
+    };
+    let mut written = Presented {
+        strings: &block.strings,
+        letters: block.letters,
+        pair: (Written::Letter(letter), Written::Rule(rule)),
+    };
+    let presented: Vec<Written> = (0 .. block.letters.0)
+        .map(|at| Written::Letter(Letter(at)))
+        .chain((0 .. block.strings.rules.len()).map(Written::Rule))
+        .collect();
+    let room = Budget::from(presented.len());
+    let mut chains = Abelian::new(&mut written);
+    let one = equivalence(&mut chains, &presented, room).expect("one pair is acyclic");
+    one.replay(&mut chains, &presented, room)
+        .expect("the move replays");
+    let [ref removal] = *one.removals()
+    else {
+        panic!("the move removes one pair");
+    };
+    let spelt = chains
+        .generator(&Written::Letter(defined))
+        .expect("the defining letter is a generator");
+    assert_eq!(
+        removal.definition().replacement,
+        spelt,
+        "the move defines the letter as its rule's right side"
+    );
+    let left_after: BTreeSet<(usize, Word)> = one
+        .critical()
+        .iter()
+        .map(|&cell| match cell {
+            Written::Letter(at) => (1, Word(vec![at])),
+            Written::Rule(at) => {
+                let (ref left, _) = *block.strings.rules.get(at).expect("the rule is a rule");
+                (2, left.clone())
+            },
+        })
+        .collect();
+    let mut theory = theory(&block.strings, block.letters);
+    let cells: Vec<BarCell> = bar_cells(&block.strings, block.letters)
+        .iter()
+        .flatten()
+        .map(|words| bar_cell(theory.table_mut(), words))
+        .collect();
+    let dropped = bar_cell(theory.table_mut(), core::slice::from_ref(left));
+    assert!(
+        !cells.contains(&dropped),
+        "the bar complex holds no cell of the letter"
+    );
+    let room = Budget::from(cells.len());
+    let brown = equivalence(&mut Abelian::new(&mut theory), &cells, room)
+        .expect("Brown's scheme is acyclic");
+    let critical: BTreeSet<(usize, Word)> = brown
+        .critical()
+        .iter()
+        .filter(|cell| matches!(cell.0.len(), 1 | 2))
+        .map(|cell| {
+            let words = entries(theory.table(), cell).expect("a bar cell spells words");
+            (
+                words.len(),
+                Word(
+                    words
+                        .iter()
+                        .flat_map(|word| word.0.iter().copied())
+                        .collect(),
+                ),
+            )
+        })
+        .collect();
+    assert_eq!(
+        critical, left_after,
+        "Brown's critical cells spell what the move leaves"
+    );
+}
+
+#[test]
+fn brown_collapse_of_intop_factors_through_its_tietze_moves_6059()
+{
+    // Each removal of Brown's scheme on `IntOp`'s bar complex removes a cell
+    // that its partner defines: one Tietze move of the resolution. Matched
+    // alone, each removal is an equivalence that replays, and the scheme
+    // collapses each cell as its moves do, the last removal first.
+    let (block, _) = intop();
+    let mut theory = theory(&block.strings, block.letters);
+    let cells: Vec<BarCell> = bar_cells(&block.strings, block.letters)
+        .iter()
+        .flatten()
+        .map(|words| bar_cell(theory.table_mut(), words))
+        .collect();
+    let room = Budget::from(cells.len());
+    let mut chains = Abelian::new(&mut theory);
+    let scheme = equivalence(&mut chains, &cells, room).expect("Brown's scheme is acyclic");
+    let mut bound = scheme
+        .on(&mut chains, &cells, room)
+        .expect("the scheme reads on its chains");
+    assert_eq!(bound.replay(), Ok(()), "the scheme replays as a reduction");
+    let mut reduced = Vec::with_capacity(cells.len());
+    for cell in &cells {
+        let own = bound.generator(cell).expect("the cell is a generator");
+        reduced.push(bound.collapse(&own).expect("the scheme collapses it"));
+    }
+    let mut moved: Vec<Chain<BarCell>> = Vec::with_capacity(cells.len());
+    for cell in &cells {
+        moved.push(chains.generator(cell).expect("the cell is a generator"));
+    }
+    for removal in scheme.removals().iter().rev() {
+        let mut alone = Alone {
+            scheme: &mut theory,
+            redundant: removal.redundant().clone(),
+            partner: removal.partner().clone(),
+        };
+        let mut chains = Abelian::new(&mut alone);
+        let one = equivalence(&mut chains, &cells, room).expect("one pair is acyclic");
+        assert_eq!(one.removals().len(), 1, "the move removes one pair");
+        let mut each = one
+            .on(&mut chains, &cells, room)
+            .expect("the move reads on its chains");
+        assert_eq!(each.replay(), Ok(()), "the move replays as a reduction");
+        for image in &mut moved {
+            *image = each.collapse(image).expect("the move collapses it");
+        }
+    }
+    assert_eq!(
+        moved, reduced,
+        "the moves collapse each cell as the scheme does"
     );
 }
 

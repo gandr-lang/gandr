@@ -221,6 +221,66 @@ fn the_braid_monoid_keeps_two_confluences()
     }
 }
 
+#[test]
+fn each_removal_of_the_braid_reduction_is_one_tietze_move_6059()
+{
+    // A removal is a Tietze removal: its triple's 4-cell shows the confluence
+    // superfluous, a collapsible 3-sphere in § 7.4.6 of Ara and others. Matched
+    // alone, the pair is an equivalence that replays, and the reduction
+    // collapses each cell as its moves do, the last removal first.
+    let store = braid();
+    let certificates = certificates(&store);
+    let basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
+    let cells = basis.cells();
+    let mut whole = basis.clone();
+    let reduction = equivalence(&mut whole, &cells, walk()).expect("the reduction is acyclic");
+    let mut moves = Vec::new();
+    for removal in reduction.removals() {
+        let pair = (*removal.redundant(), *removal.partner());
+        let mut alone = basis.clone().with_matching([pair]);
+        let one = equivalence(&mut alone, &cells, walk()).expect("one pair is acyclic");
+        let [ref only] = *one.removals()
+        else {
+            panic!("one removal, not {}", one.removals().len());
+        };
+        assert_eq!((*only.redundant(), *only.partner()), pair);
+        assert_eq!(
+            only.definition().replacement,
+            removal.definition().replacement,
+            "the move defines {pair:?} as the reduction does"
+        );
+        one.replay(&mut alone, &cells, walk())
+            .expect("the move replays");
+        moves.push((alone, one));
+    }
+    assert_eq!(moves.len(), 2, "C and D, one move each");
+    let mut bounds: Vec<_> = moves
+        .iter_mut()
+        .map(|&mut (ref mut alone, ref one)| {
+            one.on(alone, &cells, walk())
+                .expect("the move reads on its basis")
+        })
+        .collect();
+    for each in &mut bounds {
+        assert_eq!(each.replay(), Ok(()), "the move replays as a reduction");
+    }
+    let mut bound = reduction
+        .on(&mut whole, &cells, walk())
+        .expect("the reduction reads on its basis");
+    for cell in &cells {
+        let own = bound.generator(cell).expect("the cell is a generator");
+        let reduced = bound.collapse(&own).expect("the reduction collapses it");
+        let mut moved = own;
+        for each in bounds.iter_mut().rev() {
+            moved = each.collapse(&moved).expect("the move collapses it");
+        }
+        assert_eq!(
+            moved, reduced,
+            "the moves collapse {cell:?} as the reduction does"
+        );
+    }
+}
+
 /// Push each confluence that a move of `composite` takes onto `held`.
 ///
 /// # Specification

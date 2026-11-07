@@ -36,6 +36,7 @@ INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','basis','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','equivalence','dependency',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','reduction','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions','theory-deep-inference','reduction','exemplar','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
@@ -52,7 +53,7 @@ INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellula
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','equivalence','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','reduction','exemplar','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','cb9576c6a446bfc12f008bd794ff4c48859e8078');
+INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','reduction','exemplar','0f814f68e01c3855f0c5eaa765f41bc132a766e0','2026-11-07','a7c2a7c21843b7c98df5d3d4a542292e77e11ae0');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-exact-reals','graph','exemplar','6099d43c994e63da017541bf4588861828115dc1','2026-11-07','e18d0d9572b33421d9960d9d8bf1df8b5df19439');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-shapes','formula','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','36f894989d773771961311177868caf3f968d516');
 INSERT INTO reference VALUES('Doré-2026-dependent_multiplicities_dependent_linear_type_theory','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
@@ -111,6 +112,7 @@ INSERT INTO reference VALUES('Tarau-2008-functional_hitchhikers_guide_hereditari
 INSERT INTO reference VALUES('Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes','theory-exact-reals','ackermann','exemplar','578de397edfc0e1cf510674eb9325ce9f7418ab6','2026-11-07','b94955e326d1fedb2039fe89e7736d72a76a471e');
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
+INSERT INTO reference VALUES('Waas-2025-stratified_homotopy_theory_generalized_simple_homotopy_theory_foundations_applications_intersections','theory-discrete-morse','reduction','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','9d949b38848b499a5cfd920ea5c04c5cc8630d6e');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','access','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','a6d3b5e613083b88b2f9096f172eabdc6890b4b7');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
@@ -632,6 +634,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere::brown','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','anchor','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','reduction','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','sum','anchor','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','d0cdb8d1085104a2bb11fc971d543c12d4765c7e');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
