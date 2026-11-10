@@ -5020,9 +5020,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the empty word of the first words whose point `point` spells
     ///   as a closed term over their family's constructors inside as many
     ///   `Path.here` calls as the words' wrapping, each written node of the
-    ///   point recorded with the words so it answers at their family; the
-    ///   unnamed absence when no words are at it, and `Path.here(point)` stays
-    ///   reflexivity.
+    ///   point and each of those calls recorded with the words and its wrapping
+    ///   so it answers at the family wrapped as many times; the unnamed absence
+    ///   when no words are at it, and `Path.here(point)` stays reflexivity.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
@@ -5047,7 +5047,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let mut found = None;
-        let (base, wraps) = reflexivities_around(self.pbg, self.tree, point)?;
+        let (base, calls) = reflexivities_around(self.pbg, self.tree, point)?;
+        let wraps = gandr_kernel_term::Reflexivities::from(calls.len());
         for (index, words) in self.collected.words.iter().enumerate() {
             if words.reflexivities != wraps {
                 continue;
@@ -5075,8 +5076,22 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
-        self.pointed
-            .extend(written.iter().map(|node| (node.span, index)));
+        let point_nodes = written
+            .iter()
+            .map(|node| (node.span, gandr_kernel_term::Reflexivities::NONE));
+        // The outermost call wraps the point as many times as there are
+        // calls, the innermost once.
+        let call_nodes = calls.iter().enumerate().map(|(position, call)| {
+            (
+                call.span,
+                gandr_kernel_term::Reflexivities::from(calls.len().saturating_sub(position)),
+            )
+        });
+        self.pointed.extend(
+            call_nodes
+                .chain(point_nodes)
+                .map(|(span, wrapping)| (span, index, wrapping)),
+        );
 
         Ok(Maybe::Present(Constructor {
             family,
@@ -9832,9 +9847,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   and the word of its one letter. Each letter a cons wrote, and each
     ///   loop's name where its cell declares it, is labelled at the path type,
     ///   and each node of a point an empty word or a cell's side wrote at the
-    ///   family, since no core node holds them; the source's letters and empty
-    ///   words over words an earlier source minted are labelled at the types
-    ///   that source recorded.
+    ///   family, and each `Path.here` call around that point at the family
+    ///   wrapped as many times as the calls at and inside it, since no core
+    ///   node holds them; the source's letters and empty words over words an
+    ///   earlier source minted are labelled at the types that source recorded.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data) outcome
     ///   of a words slot and the completed outcome of a loop.
@@ -9924,16 +9940,28 @@ impl<'source> Lowerer<'_, 'source>
             let _first = self.worded.insert(index, data);
             let mark = sink.arena.watermark();
             let pointed_at = self.words_point(sink.arena, words);
-            let wrapped =
-                pointed_at.map(|based| wrapped_point(sink.arena, based, words.reflexivities));
+            // The type at each wrapping of the point, the family first.
+            let wrapped = pointed_at.map(|based| {
+                let mut levels = Vec::from([based.0]);
+                let mut at = based;
+                for _ in 0 .. usize::from(words.reflexivities) {
+                    at = wrapped_point(
+                        sink.arena,
+                        at,
+                        gandr_kernel_term::Reflexivities::from(1_usize),
+                    );
+                    levels.push(at.0);
+                }
+                (levels, at)
+            });
             record_since(sink, mark, origin, Maybe::Absent(rooted::Absent::Unminted));
-            let (Maybe::Present((carrier, _)), Maybe::Present((at, point))) = (pointed_at, wrapped)
+            let (Maybe::Present((carrier, _)), Maybe::Present((levels, (at, point)))) =
+                (pointed_at, wrapped)
             else {
                 continue;
             };
             let path = sink.arena.value_type_path(at, point, point);
             sink.origins.record_value_type(path, origin);
-            let _first = self.word_types.insert(index, (path, carrier));
             let lettered = self
                 .lettered
                 .iter()
@@ -9944,8 +9972,10 @@ impl<'source> Lowerer<'_, 'source>
                 .pointed
                 .iter()
                 .skip(self.current.pointed)
-                .filter(|&&(_, at)| at == index)
-                .map(|&(span, _)| (span, carrier));
+                .filter(|&&(_, at, _)| at == index)
+                .filter_map(|&(span, _, wrapping)| {
+                    levels.get(usize::from(wrapping)).map(|&ty| (span, ty))
+                });
             let at_point = || {
                 form.cells.iter().filter(|cell| {
                     cell.point == words.point && cell.reflexivities == words.reflexivities
@@ -9978,7 +10008,17 @@ impl<'source> Lowerer<'_, 'source>
             let named = at_point().map(|cell| (cell.named.span, path));
             let sides =
                 at_point().flat_map(|cell| cell.sides.iter().map(|side| (side.span, carrier)));
-            for (span, ty) in lettered.chain(pointed).chain(named).chain(sides) {
+            let wrappings = at_point().flat_map(|cell| {
+                cell.wrappings.iter().filter_map(|&(call, wrapping)| {
+                    levels.get(usize::from(wrapping)).map(|&ty| (call.span, ty))
+                })
+            });
+            for (span, ty) in lettered
+                .chain(pointed)
+                .chain(named)
+                .chain(sides)
+                .chain(wrappings)
+            {
                 sink.origins.record_label(crate::origin::Label {
                     span,
                     labelled: crate::origin::Labelled::ValueType {
@@ -9987,6 +10027,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                 });
             }
+            let _first = self.word_types.insert(index, (path, levels));
             let nil = sink.arena.value_constructor(
                 own,
                 word,
@@ -10007,22 +10048,21 @@ impl<'source> Lowerer<'_, 'source>
         }
         // A letter or an empty word this source writes over words an earlier
         // source minted is labelled at the types that source recorded.
-        let earlier = |&&(span, at): &&(ByteSpan, usize)| {
-            (at < self.current.words)
-                .then(|| self.word_types.get(&at).map(|&types| (span, types)))?
-        };
+        let earlier = |at: usize| (at < self.current.words).then(|| self.word_types.get(&at))?;
         let lettered = self
             .lettered
             .iter()
             .skip(self.current.lettered)
-            .filter_map(|entry| earlier(&entry))
-            .map(|(span, (path, _))| (span, path));
-        let pointed = self
-            .pointed
-            .iter()
-            .skip(self.current.pointed)
-            .filter_map(|entry| earlier(&entry))
-            .map(|(span, (_, carrier))| (span, carrier));
+            .filter_map(|&(span, at)| earlier(at).map(|&(path, _)| (span, path)));
+        let pointed =
+            self.pointed
+                .iter()
+                .skip(self.current.pointed)
+                .filter_map(|&(span, at, wrapping)| {
+                    earlier(at)
+                        .and_then(|&(_, ref levels)| levels.get(usize::from(wrapping)))
+                        .map(|&ty| (span, ty))
+                });
         for (span, ty) in lettered.chain(pointed) {
             sink.origins.record_label(crate::origin::Label {
                 span,
