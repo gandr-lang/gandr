@@ -1,0 +1,46 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+name: riscv64
+
+# The self-hosted riscv64 lane runs after the nightly. It runs no fork code.
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: riscv64-main
+  cancel-in-progress: true
+
+jobs:
+  template:
+    if: false
+    runs-on: &riscv64 [self-hosted, Linux, RISCV64] # zizmor: ignore[self-hosted-runner]
+    permissions: &contents-read
+      contents: read
+    steps:
+      - &git-checkout
+        name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+  test:
+    name: test (riscv64)
+    runs-on: *riscv64
+    permissions: *contents-read
+    timeout-minutes: 90
+    env:
+      CARGO_TARGET_DIR: ${{ runner.workspace }}/target
+    steps:
+      - *git-checkout
+      - name: test the workspace
+        run: cargo nextest run --workspace --profile ci
