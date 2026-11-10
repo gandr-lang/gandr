@@ -452,6 +452,7 @@ pub use crate::eval::UnfoldingCount;
 pub use crate::eval::UnfoldingProbe;
 #[cfg(feature = "unfolding-probe")]
 pub use crate::eval::UnfoldingRecord;
+pub use crate::eval::eval_closed_value;
 pub use crate::eval::eval_comp_within;
 pub use crate::eval::eval_computation;
 pub use crate::eval::eval_value;

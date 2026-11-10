@@ -42,10 +42,9 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
-use gandr_core_term::fill_hole;
-use gandr_core_term::hole::TermId;
 use gandr_core_term::shift_value;
 use gandr_core_term::strengthen_value;
+use gandr_core_term::value_holes;
 use gandr_kernel_strata::Level;
 use quenchant_shape::shape::Maybe;
 
@@ -1606,7 +1605,8 @@ fn rigid_comp_types(
 ///
 /// # Termination
 /// - reason: each solved metavariable is scanned at most once, which the `seen`
-///   marks enforce; the `while` loop pops one pending value per pass.
+///   marks enforce; the `while` loop pops one pending value per pass, and each
+///   pass reads the holes of its value in one walk.
 fn occurs(
     arena: &mut CoreArena,
     metas: &Metas,
@@ -1621,20 +1621,21 @@ fn occurs(
     let mut seen = alloc::vec![false; usize::from(metas.count())];
     let mut pending = Vec::from([term]);
     while let Some(scanned) = pending.pop() {
-        if stands_in(arena, hole, scanned) == Occurrence::Stands {
+        let found = value_holes(arena, scanned);
+        if found.contains(&hole) {
             return strongly(arena, metas, hole, term);
         }
-        for other in metas.ids() {
-            let (Maybe::Present(solution), Maybe::Present(other_hole)) =
-                (metas.solution(other), metas.hole(other))
+        for &other_hole in &found {
+            let Maybe::Present(other) = metas.meta(other_hole)
             else {
                 continue;
             };
-            let Some(mark) = seen.get_mut(usize::from(other))
+            let (Maybe::Present(solution), Some(mark)) =
+                (metas.solution(other), seen.get_mut(usize::from(other)))
             else {
                 continue;
             };
-            if *mark || stands_in(arena, other_hole, scanned) == Occurrence::Absent {
+            if *mark {
                 continue;
             }
             *mark = true;
@@ -1708,36 +1709,16 @@ fn standing(
     term: ValueId,
 ) -> Vec<MetaId>
 {
-    let mut found = Vec::new();
-    for other in metas.ids() {
-        if let (Maybe::Present(other_hole), Maybe::Absent(_)) =
-            (metas.hole(other), metas.solution(other))
-            && stands_in(arena, other_hole, term) == Occurrence::Stands
-        {
-            found.push(other);
-        }
-    }
-    found
-}
-
-/// Whether `hole` stands in `term`: filling it leaves `term` unchanged
-/// exactly when it does not.
-///
-/// # Specification
-/// trivial.
-fn stands_in(
-    arena: &mut CoreArena,
-    hole: gandr_core_term::hole::HoleId,
-    term: ValueId,
-) -> Occurrence
-{
-    let subject = TermId::Value(term);
-    if fill_hole(arena, subject, hole, subject) == subject {
-        Occurrence::Absent
-    }
-    else {
-        Occurrence::Stands
-    }
+    let found = value_holes(arena, term);
+    metas
+        .ids()
+        .filter(|&other| {
+            matches!(
+                (metas.hole(other), metas.solution(other)),
+                (Maybe::Present(other_hole), Maybe::Absent(_)) if found.contains(&other_hole)
+            )
+        })
+        .collect()
 }
 
 /// Bind `meta` to `term`, written under `scope` binders, once the occurs
@@ -1776,16 +1757,14 @@ fn bind(
         },
         Occurrence::Absent => {},
     }
+    let found = value_holes(arena, term);
     for other in metas.ids() {
         let (Maybe::Present(other_hole), Maybe::Present(other_scope)) =
             (metas.hole(other), metas.scope(other))
         else {
             continue;
         };
-        if other != meta
-            && other_scope > declared
-            && stands_in(arena, other_hole, term) == Occurrence::Stands
-        {
+        if other != meta && other_scope > declared && found.contains(&other_hole) {
             return Err(Stop::Postpone(
                 Reason::Pruning { meta, other },
                 Vec::from([meta, other]),

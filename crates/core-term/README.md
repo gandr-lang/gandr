@@ -16,9 +16,9 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 **What.** The core language between the surface syntax and the kernel, and the one context its typing rules read. Values and computations on the term side, value types and computation types on the type side, are nodes of an append-only `CoreArena` addressed by four typed `u32` ids. `Context` is the two-zone typing context `Γ; Σ`: flat, de Bruijn, id-addressed and name-free. `DefinitionChain` records each definition's body and unfolding height; `DefinitionalEnvironment` decides, scope by scope, whether a definition is manifest. `FailureClass` is the four-class vocabulary every refusal of the core pipeline is classified into. The crate holds syntax, contexts and native scalar operations; conversion lives in `gandr-core-nbe` and execution in `gandr-core-sequent`. It is `no_std` over `core` and `alloc`.
 
-**Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value. The core language needs formers the kernel does not represent, so its node enums are its own; its leaf vocabulary is the kernel's, so a core term erases to a kernel term by remapping ids.
+**Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value.
 
-**How.** A node holds its children as `Copy` ids minted only by constructors over children already minted, so teardown is a flat vector drop per family and the derived equality and hashing are shallow. De Bruijn indices make α-equivalence syntactic identity, so no freshness invariant is maintained. The context keeps one stack per zone, each with its own index space: `Γ` admits weakening and contraction, and `Σ` consumes a slot on its one occurrence.
+**How.** [`syntax`](src/syntax.rs) states the alphabet and the grammar, [`arena`](src/arena.rs) the nodes and [`context`](src/context.rs) the zones.
 
 ## Provided features
 
@@ -107,6 +107,8 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
 - `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — a grade as a semiring bound on uses.
 - `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface; the four identity rows of `primitive` compute in the kernel, and every other row stays an opaque assumption.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: § implicits-rule-forced-solutions, a body read with the solutions of its implicits; `Rewrite::Solved` reads them in one walk.
+- `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
 
 ## License
 
