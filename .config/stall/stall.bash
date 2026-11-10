@@ -85,10 +85,10 @@ stall_reading() {
   local repo=$1 trunk=$2 memory=$3 required raw areas activity
   required=$(gh api "repos/$repo/rules/branches/$trunk" \
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique') || return 1
-  raw=$(gh api graphql -F owner='{owner}' -F name='{repo}' -F query=@"$stall_dir/query.graphql") || return 1
+  raw=$(gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -F query=@"$stall_dir/query.graphql") || return 1
   areas=$(yq -p toml -o json -I 0 '.lane' "$stall_dir/../issues/lanes.toml") || return 1
   activity=$(stall_activity "$memory")
-  jq -c '.data.repository' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
+  jq -cs '. as $pages | $pages[0].data.repository | .refactors.nodes = [$pages[] | (.data.repository.refactors.nodes // [])[]]' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \
       --argjson thresholds "$(stall_thresholds)" --argjson config "$(stall_configuration)" --argjson memory "$memory" \
       --argjson areas "$areas" --argjson held "$(stall_held)" --argjson activity "$activity" \

@@ -236,7 +236,7 @@ site = [
   # The references watch, the stall reading and triage.
   { file = ".config/references/watch.bash", scope = "references_watch", api = "graphql", identity = "read", calls = 1, points = 2, measured = "cost", hour = 1, trigger = "the references watch, once a day" },
   { file = ".config/references/watch.bash", scope = "references_watch", api = "graphql", identity = "write", calls = 2, points = 3, measured = "rule", hour = 1, trigger = "the references watch: a comment or an issue" },
-  { file = ".config/stall/stall.bash", scope = "stall_reading", api = "graphql", identity = "read", calls = 1, points = 5, measured = "cost", hour = 12, trigger = "stall:watch, every 300 s" },
+  { file = ".config/stall/stall.bash", scope = "stall_reading", api = "graphql", identity = "read", calls = 1, points = 10, pages = 2, measured = "cost", hour = 12, trigger = "stall:watch every 300 s: 103 refactor issues on 2026-11-10 read in two pages" },
   { file = ".config/stall/stall.bash", scope = "stall_reading", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 12, trigger = "stall:watch, every 300 s: the required checks" },
   { file = ".config/triage/triage.sh", scope = "-", api = "graphql", identity = "actions", calls = 2, points = 2, measured = "rule", hour = 50, trigger = "triage.yml: each issue opened, labelled or unlabelled; one edit; the repository comes from GITHUB_REPOSITORY (repo_name)" },
   { file = ".config/triage/triage.sh", scope = "-", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "triage.yml: the issue's labels" },
