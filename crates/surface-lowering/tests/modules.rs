@@ -3874,6 +3874,52 @@ fn a_module_s_function_is_called_where_a_value_is_read_5383()
     );
 }
 
+/// A theory that a module exports is a value where a type reads a value, as
+/// the argument of a type that a function computes: `shapeOf(M.Shape)` reads
+/// `M.Shape` as the theory's presentation, as a local theory's name reads. So
+/// the type is the one the match computes, `String`. A path that names no
+/// export is still refused by name (#6174).
+#[test]
+fn a_module_s_theory_is_a_value_in_a_type_6174()
+{
+    let source = include_str!("modules/fixtures/a-module-s-theory-is-a-value-in-a-type-6174.gandr");
+    let mut lowered = lower(source);
+    let judged: Vec<Judgement> = verdicts(&mut lowered)
+        .into_iter()
+        .map(|(_, judgement)| judgement)
+        .filter(|&judgement| judgement != Judgement::Declared)
+        .collect();
+    assert_eq!(
+        judged,
+        [
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Mismatched
+        ],
+        "the theory and `shapeOf` check; `shapeOf(M.Shape)` is the type the match computes, \
+         `String`, so `qualified` checks and `mistyped` does not; the lowering refuses `absent`, \
+         so the checker does not judge it"
+    );
+    let absent: Vec<_> = rows(&lower(source))
+        .into_iter()
+        .filter(|&(ref path, ..)| path == "absent")
+        .collect();
+    assert_eq!(
+        absent,
+        [row(
+            "absent",
+            Role::Declared,
+            Amounts::Refused(LoweringRefusal::UnknownMember {
+                span: selected(source, "M.Absent"),
+                module: name("M"),
+                member: name("Absent"),
+            })
+        )],
+        "a path that names no export of the module is refused by its member's name"
+    );
+}
+
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {
