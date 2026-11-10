@@ -28,6 +28,7 @@
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared, <goals> expanded, <goals> recalled, <goals> kept, <n> ns`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work, then the goals the kernel's check of it expanded, recalled from its memo and answered by an earlier admission's kept outcome, and the time the kernel took to admit it (`gandr-surface-dispatcher`'s `measure` module); a declaration a recorded verdict admitted spells `admitted on a recorded verdict` in place of the counts | as `check`: a measure settles nothing |
+//! | `gandr check --activity <paths>` | as `check`, its lowerings forked through the pool's recording fork, plus one line per thread, `activity: <thread>: busy <time>, <share> % of the wall, <n> dropped, <n> late`, and one line for the run, to standard error; only a build with the `instrument` feature has the flag | as `check`: the occupancy settles nothing |
 //! | `gandr check --report cells <paths>` | as `check`, plus one line per cell a source discharged, `cell: <path>: <module>.<law>: <source>`: each law a model omits that the checker discharged, and the source that discharged it, `Path.here` where the law's sides convert | as `check`: a cell settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
@@ -448,6 +449,8 @@ use quenchant_shape::shape::Maybe;
 
 mod allocator;
 mod config;
+#[cfg(feature = "instrument")]
+mod occupancy;
 mod toolchain;
 mod verdicts;
 
@@ -544,6 +547,12 @@ enum Command
         /// the segment adds and its roots' expanded work.
         #[arg(long)]
         measure: bool,
+        /// Print, after the run, the occupancy of each thread that the pool's
+        /// activity ring recorded: its busy time, the marks its ring dropped
+        /// and the events that reached the fold late.
+        #[cfg(feature = "instrument")]
+        #[arg(long)]
+        activity: bool,
         /// Print the named report for each source, after its diagnostics:
         /// `cells` lists each law a model omits that a source discharged.
         #[arg(long, value_enum)]
@@ -1381,6 +1390,9 @@ struct Printing
     measuring: Measuring,
     /// Whether a check lists each cell a source discharged.
     listing: Listing,
+    /// Whether a check prints each thread's occupancy.
+    #[cfg(feature = "instrument")]
+    occupancy: Occupancy,
 }
 
 /// Whether a check prints each declaration's sizes in its kernel artifact.
@@ -1402,6 +1414,19 @@ enum Listing
     Listed,
     /// No cell prints.
     Unlisted,
+}
+
+/// Whether a check prints each thread's occupancy from the pool's activity
+/// ring.
+#[cfg(feature = "instrument")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Occupancy
+{
+    /// The walk records its lowerings, and each thread prints its
+    /// `activity:` line.
+    Printed,
+    /// No ring is made, and no occupancy prints.
+    Unprinted,
 }
 
 /// What a walk is run as: its verb, the lints it reports, the packages whose
@@ -1816,6 +1841,8 @@ fn main() -> ExitCode
     let mut store: Option<Store> = None;
     let mut measuring = Measuring::Unmeasured;
     let mut listing = Listing::Unlisted;
+    #[cfg(feature = "instrument")]
+    let mut occupancy = Occupancy::Unprinted;
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
         Some(Command::Check {
@@ -1826,6 +1853,8 @@ fn main() -> ExitCode
             recheck,
             admit,
             measure,
+            #[cfg(feature = "instrument")]
+            activity,
             report,
             verbosity,
             jobs,
@@ -1833,6 +1862,10 @@ fn main() -> ExitCode
         }) => {
             if measure {
                 measuring = Measuring::Measured;
+            }
+            #[cfg(feature = "instrument")]
+            if activity {
+                occupancy = Occupancy::Printed;
             }
             if report == Some(ReportName::Cells) {
                 listing = Listing::Listed;
@@ -2200,6 +2233,8 @@ fn main() -> ExitCode
             spelling,
             measuring,
             listing,
+            #[cfg(feature = "instrument")]
+            occupancy,
         },
         (&packages, &workspaces),
         hosting,
@@ -4012,6 +4047,8 @@ fn run(
         spelling,
         measuring,
         listing,
+        #[cfg(feature = "instrument")]
+        occupancy,
     } = printing;
     let checking = matches!(verb, Verb::Check(_));
     let measured_walk = checking && measuring == Measuring::Measured;
@@ -4029,7 +4066,7 @@ fn run(
     let mut exportings: Vec<Exporting> = packages.iter().map(|_| Exporting::default()).collect();
     // Each settled manifold the walk read, judged as a deployment after it.
     let mut manifolds: Vec<PathBuf> = Vec::new();
-    let visited = walk.visit(pool, |mut step| {
+    let visitor = |mut step: Step<'_>| {
         // The step's place among the packages, read once for its export and
         // its manifest.
         let attributed = if checking {
@@ -4100,11 +4137,25 @@ fn run(
             },
         }
         ControlFlow::Continue(())
-    });
+    };
+    #[cfg(feature = "instrument")]
+    let (visited, occupied) = match occupancy {
+        Occupancy::Printed => {
+            let (visited, occupied) = occupancy::visited(walk, pool, visitor);
+            (visited, Some(occupied))
+        },
+        Occupancy::Unprinted => (walk.visit(pool, visitor), None),
+    };
+    #[cfg(not(feature = "instrument"))]
+    let visited = walk.visit(pool, visitor);
     let report = match visited {
         ControlFlow::Continue(report) => report,
         ControlFlow::Break(error) => return Err(error),
     };
+    #[cfg(feature = "instrument")]
+    if let Some(occupied) = occupied {
+        occupied.print(stderr)?;
+    }
     let mut verdict = report.verdict(verb);
     for ((packaged, manifest), exporting) in packages.iter().zip(manifests).zip(exportings) {
         let (reached, address) = locked(packaged, verbosity, stdout, stderr)?;

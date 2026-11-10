@@ -228,6 +228,8 @@ pub use crate::forms::FormStore;
 pub use crate::instrument::Instrument;
 pub use crate::instrument::Phase;
 pub use crate::instrument::Silent;
+#[cfg(feature = "instrument")]
+pub use crate::instrument::unrecorded;
 pub use crate::item_source::Revision;
 pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;

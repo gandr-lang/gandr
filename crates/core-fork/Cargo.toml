@@ -10,10 +10,36 @@ license.workspace = true
 keywords = ["fork-join", "gandr", "no-std", "parallelism"]
 categories = ["concurrency", "no-std"]
 publish.workspace = true
+autobenches = false
+
+# The measurement: a `harness = false` bench that times the write of one
+# event into the activity ring, alone and beside other producers, and the
+# fold of one tick, with percentiles and allocations.
+[[bench]]
+harness = false
+name = "activity"
+path = "benches/activity.rs"
 
 # The trait names no thread and no pool, so the crate depends on nothing. A
-# driver implements it over its own pool.
+# driver implements it over its own pool. The activity ring of the
+# `instrument` feature writes each event into a bounded lock-free queue, and
+# states an event that names no declaration in the workspace's absent shape.
 [dependencies]
+crossbeam-queue = { workspace = true, optional = true }
+quenchant-shape = { workspace = true, optional = true }
+
+# The tests, the lints and the measurement read the activity ring, so the
+# crate's own targets turn its feature on.
+[dev-dependencies]
+allocation-counter.workspace = true
+gandr-core-fork = { workspace = true, features = ["instrument"] }
+
+[features]
+default = []
+# The activity ring: each worker writes the start and the end of each task
+# into a ring of its own, and the hub folds the rings. Off, the crate carries
+# none of the ring's bytes.
+instrument = ["dep:crossbeam-queue", "dep:quenchant-shape"]
 
 [lints]
 workspace = true

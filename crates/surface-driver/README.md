@@ -107,6 +107,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, beside `check --measure`.
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-activity.
 - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — the bound `gandr cells` prints.
 
 ## License

@@ -1000,6 +1000,84 @@ fn check_measures_each_declaration_a_source_writes()
     }
 }
 
+/// #6298: `gandr check --activity --jobs 3` prints, to standard error, one
+/// `activity:` line for each of the pool's three threads, one for the calling
+/// thread and one for the run. Four sources that import nothing are four
+/// lowering jobs, so the run numbers eight events. No ring drops a mark, and
+/// the check's own output is the output of a check without the flag.
+#[cfg(feature = "instrument")]
+#[test]
+fn check_prints_each_thread_s_occupancy_6298()
+{
+    let scratch = Scratch::new(Path::new("activity"));
+    for name in ["a", "b", "c", "d"] {
+        let _source = scratch.file(
+            &Path::new(name).with_extension("gandr"),
+            Text::from("def x = 1 ;\n"),
+        );
+    }
+    let home = scratch.0.join("configuration");
+    let cache = scratch.0.join("cache");
+    let check = |flags: &[&Path]| {
+        let mut arguments = vec![Path::new("check"), Path::new("--jobs"), Path::new("3")];
+        arguments.extend_from_slice(flags);
+        arguments.push(&scratch.0);
+        let mut command = gandr(&arguments);
+        let _configured = command
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache);
+        let output = ran(command);
+        assert_eq!(
+            code(&output),
+            Code(0_i32),
+            "the occupancy settles nothing: {}",
+            stderr(&output)
+        );
+        output
+    };
+    let plain = check(&[]);
+    let active = check(&[Path::new("--activity")]);
+    assert_eq!(
+        stdout(&active),
+        stdout(&plain),
+        "the occupancy changes no line of the check's own output"
+    );
+    assert!(
+        !stderr(&plain).contains("activity: "),
+        "a check prints no occupancy unasked"
+    );
+    let errors = stderr(&active);
+    let lines: Vec<&str> = errors
+        .lines()
+        .filter_map(|line| line.strip_prefix("activity: "))
+        .collect();
+    let [ref threads @ .., run] = *lines.as_slice()
+    else {
+        panic!("the occupancy prints its lines: {errors}");
+    };
+    let named: Vec<&str> = threads
+        .iter()
+        .map(|line| line.split_once(": ").map_or(*line, |(thread, _)| thread))
+        .collect();
+    assert_eq!(
+        named,
+        ["thread 0", "thread 1", "thread 2", "caller"],
+        "one line for each of the pool's threads, then the calling thread's"
+    );
+    for line in threads.iter().chain([&run]) {
+        // A mark can reach the fold after a later mark of another ring that a
+        // tick took first, so a late event is a race, not a fault.
+        assert!(
+            line.contains(", 0 dropped, ") && line.ends_with(" late"),
+            "no ring drops a mark, and each line counts its late events: {line}"
+        );
+    }
+    assert!(
+        run.starts_with("8 events over "),
+        "four lowering jobs, each marked at its start and at its end: {run}"
+    );
+}
+
 /// #4112: `gandr check --report cells` prints one line per law a model omits
 /// that the checker discharged, with its source. A law whose sides part is
 /// refused and lists no cell, and a check without the flag lists none.

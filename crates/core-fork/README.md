@@ -3,14 +3,12 @@
 The fork that a check hands its independent jobs to, and its serial reference.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -24,6 +22,7 @@ The fork that a check hands its independent jobs to, and its serial reference.
 ## References
 
 - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-sax), whose reader waits for its writer. That wait sets the order that `Fork::join` states, and it is the wait that `Spawn::wait` performs.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — newest: the engine surface, § engine-surface-activity and § engine-surface-stream: the rows of the activity pane and the append-only activity card.
 
 ## Provided features
 
@@ -33,10 +32,12 @@ The fork that a check hands its independent jobs to, and its serial reference.
 - `Spawn::spawn(job)` and `Spawn::wait(handle)`: a spawn starts a job and answers its handle, and a wait answers the job's result. A wait runs a job that has not started on the waiting thread. While a started job runs elsewhere, the waiting worker runs other pending jobs. `Unwound` reports a job that panicked on another worker.
 - `Scoped`: the shape of a scope's body and of each spawned job. Its `run` is generic over the spawner, so a job spawns its own jobs through the spawner that runs it.
 - `Serial`: the items in slice order from one state, the left half before the right, and each spawned job at its wait. `Deferred` holds the job until then.
+- With the `instrument` feature, `activity`: which task each worker runs, and when. `Activity` holds one ring for each core of the pool. A worker's `Producer` writes a 24-byte `Mark` at each start and end of a task, with one push into its own ring, no lock and no shared cache line. A full ring drops its oldest mark and counts the drop. The hub's `Fold` drains the rings once for each tick, merges them by the clock, then by the core, and numbers each `Event`. It keeps each core's occupancy over the last two seconds as 120 cells. A build without the feature carries none of these bytes. `benches/activity.rs` measures the write and the fold.
 
 ## Expected features
 
 - **A driver's pool.** A consumer that wants more than one thread takes a `Fork` from the driver. This crate starts no thread.
+- **A monotonic clock, with the `instrument` feature.** A producer states the clock in each mark, and the fold's tick states it too. The crate reads no clock.
 - **Independent jobs.** A job reads shared data through `Sync` borrows and writes only its own item. The results are then the same at every width. A join's right half may wait for its left half alone.
 
 ## Examples

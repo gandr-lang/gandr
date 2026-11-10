@@ -67,10 +67,13 @@ required-features = ["hotpath"]
 # program's network with. hotpath profiles the benchmark report behind the
 # `hotpath` feature. A `check` keeps the kernel's verdicts: the kernel's key
 # and policy, the dispatcher's receipt store, and getrandom's entropy for
-# minting the key, which the one writer publishes.
+# minting the key, which the one writer publishes. Under `instrument`,
+# `check --activity` folds the fork's activity ring, which the fork crate
+# owns.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
+gandr-core-fork = { workspace = true, optional = true }
 gandr-core-publish.workspace = true
 gandr-kernel-core.workspace = true
 gandr-runtime-net.workspace = true
@@ -132,9 +135,15 @@ hotpath = [
   "hotpath/hotpath-cloud",
 ]
 # The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
-# instrument layer its client chose. Off, as in `gandr check` and every
-# artifact a recipe builds, no recording sink is compiled.
-instrument = ["gandr-surface-lsp/instrument"]
+# instrument layer its client chose, and `gandr check --activity` prints each
+# core's occupancy from the activity ring. Off, as in `gandr check` and every
+# artifact a recipe builds, no recording sink and no ring is compiled.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-lsp/instrument",
+]
 # On macOS, serve every allocation from one private malloc zone rather than
 # the default zone; off, and on every other target, the system allocator.
 # Off by default: it missed its kill line. README § The global allocator.
