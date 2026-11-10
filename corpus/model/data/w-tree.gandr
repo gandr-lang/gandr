@@ -1,7 +1,8 @@
 //! A well-founded tree has a branching function.
 //!
 //! A node maps each branch to a subtree.
-//! The family occurs to the right of that arrow.
+//! The family occurs only to the right of that arrow.
+//! It is thus strictly positive.
 //!
 //! `size` applies the function to each branch.
 //! It recurses one stage below the node.

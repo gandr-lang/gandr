@@ -5,7 +5,8 @@
 //! The unit is the tuple of no components, and it equals each value
 //! of its type.
 //!
-//! A neutral product converts to its projected tuple on either side.
+//! A neutral product, record or dependent pair converts to the tuple of its
+//! projections on either side.
 //! Reflexivity proves the resulting path.
 //! Eta reads no grade, so a linear parameter of the unit type stays used once.
 //!

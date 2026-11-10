@@ -1,12 +1,18 @@
 // Generic equality follows a data type's constructors.
 //
 // `Eq.generic(T)` compares values structurally.
-// `Eq.generic.refl(T)` and `Eq.generic.sym(T)` derive its laws.
+// The checker judges `Eq.generic(T)` as any other declaration.
+// `Eq.generic.refl(T)` and `Eq.generic.sym(T)` derive its laws by congruence
+// over the constructors of `T`, and rest on the host's integer and string
+// equality laws.
+// A model of `Eq` with derived members puts `T` under `==`.
 //
 // Primitive values use their own equality.
 // Sums compare their constructor side.
 // Recursive fields use their own equality.
 // Other data fields use their type's equality.
+// A field of a sum or of `T` itself takes a proof that the derivation does
+// not write.
 //
 // - see: #2302
 // - see: `../../pathological/data/generic-eq-refused.gandr`

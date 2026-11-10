@@ -3,11 +3,15 @@
 //! `vhead` has index `Succ(n)`.
 //! `VNil` has index zero.
 //!
+//! Each branch of a case on an indexed family binds a path past its fields.
+//! The path runs from the index of its constructor to the index of the
+//! scrutinee.
 //! An omitted arm eliminates the path between those indices.
 //! Apart endpoints need no arm.
 //!
 //! - cites: [Cockx-2016-unifiers_as_equivalences]
-//! - see: `../../pathological/data/vector-head.gandr`
+//! - see: `../../pathological/data/vector-head.gandr` — the checker refuses the
+//!   omission of an arm whose ends are not apart
 //!
 //! [Cockx-2016-unifiers_as_equivalences]: https://doi.org/10.1145/2951913.2951917 "Cockx, Devriese and Piessens, Unifiers as equivalences"
 

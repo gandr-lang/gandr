@@ -1,7 +1,7 @@
 // Indexed patterns infer a case's sum.
 //
 // `run` binds a comparison before the case scrutinises it.
-// The pattern arms determine the sum injections.
+// Arms that cover `.0` to `.n-1` settle the sum that they inject into.
 //
 // A Boolean case reads back as indexed arms.
 //

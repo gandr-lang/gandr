@@ -42,15 +42,15 @@ def rec fib(n : Nat) -> Nat =
       | Zero => Succ Zero
       | Succ(q) => plusFirst (fib[<] (Succ q)) (fib[<] q)
 
-/// `reverseOnto` reverses a list onto an accumulator.
-/// Its element type stays unchanged as its accumulator grows.
+/// `reverseOnto` reverses a list onto an accumulator. Each call grows the
+/// accumulator by a bare constructor, which takes its type from its parameter.
 def rec reverseOnto(a : Type, xs : List a, acc : List a) -> List a =
   match xs where
     | Nil => acc
     | Cons(x, rest) => reverseOnto[<] a rest (Cons x acc)
 
-/// `pairwise` sums two lists and skips zero in its first list.
-/// Each recursive call descends on `xs`.
+/// `pairwise` sums two lists and skips zero in its first list. A call under
+/// the match on `ys` still descends on `xs`, which a match above takes apart.
 def rec pairwise(xs : List Integer, ys : List Integer) -> List Integer =
   match xs where
     | Nil => Nil

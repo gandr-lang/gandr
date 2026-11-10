@@ -3,9 +3,11 @@
 //! `Bush` stores its children in `List`.
 //! The list parameter is strictly positive.
 //! Its measure maps over the children at a lower stage.
+//! A run passes `map` the children's type as a code.
 //!
 //! `Rose` and `Forest` form one mutual block.
-//! Their measures share a fixpoint.
+//! Their measures are one fixpoint over the sum of their domains.
+//! Each measure is that fixpoint at its own summand.
 //! The mutual measures keep a later weight parameter.
 //! Each recursive call uses a smaller tree or forest.
 //!
