@@ -717,13 +717,17 @@ where
     /// - hypothesis: L3 — on valid memo states, fresh versus agreeing supports
     ///   distinguish exact Recorded/Replaced results and counter changes. The
     ///   second colliding entry distinguishes a deciding search from a
-    ///   first-entry overwrite. A ceiling-injected census exposes mutation
-    ///   before refusal on both existing and new digest buckets and permits
-    ///   replacement; this abstracts the unreachable-in-memory population of
-    ///   MAX entries.
+    ///   first-entry overwrite. Two supports under distinct digests open two
+    ///   buckets, and a second support under one digest opens none. These exact
+    ///   bucket counts distinguish a bucket opened for the wrong share. A
+    ///   ceiling-injected census exposes mutation before refusal on both
+    ///   existing and new digest buckets and permits replacement; this
+    ///   abstracts the unreachable-in-memory population of MAX entries.
     /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
     /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
     /// - witness: `memo::tests::ceiling_refuses_insertion_but_allows_replacement`
+    /// - witness: `memo::tests::distinct_supports_take_distinct_entries`
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     #[spec(
         captures: [entry_count = self.entry_count(), entry_buckets = self.buckets,
             was_held = self.recall(&support).is_some()],
@@ -1166,6 +1170,11 @@ mod tests
         assert_eq!(
             Ok(MemoRecord::Recorded),
             memo.remember(first, TestOutcome(9))
+        );
+        assert_eq!(
+            MemoBucketCount::from(1),
+            memo.bucket_count(),
+            "the first support opens the digest's bucket"
         );
         assert_eq!(
             Ok(MemoRecord::Recorded),

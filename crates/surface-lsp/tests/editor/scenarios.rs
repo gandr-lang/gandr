@@ -1539,12 +1539,14 @@ mod sweeps
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// How many parts the nightly typing cuts every source into, one typed a
-    /// night: a sixty-eighth of typing the whole corpus each night, and of
-    /// its costliest source, every keystroke within sixty-eight nights. The
-    /// fewest that keep its night within half the nightly sweeps' test wall
-    /// (#3013): a sixty-fourth typed for 181 s on the nightly runner (run
-    /// 40602657172), the whole about 11,600 s.
-    const TYPED_NIGHTS: Nights = Nights(68);
+    /// night: a 136th of typing the whole corpus each night, and of its
+    /// costliest source, every keystroke within 136 nights. A sixty-eighth
+    /// typed for 222 s on the nightly runner (run 42811839385) and for 50 s on
+    /// a workstation. A 136th typed for 21 s on that workstation (#6238).
+    /// Limits: a night that types `iterated-pair.gandr` past its spine of
+    /// level 20 passes the limit at any count, because the server takes about
+    /// 5 s to check each keystroke there (#6245).
+    const TYPED_NIGHTS: Nights = Nights(136);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
     /// oracle.

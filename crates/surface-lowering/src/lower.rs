@@ -725,6 +725,7 @@ use crate::resolve::Mentioned;
 use crate::resolve::OperandCount;
 use crate::resolve::Scope;
 use crate::resolve::ScopeId;
+use crate::resolve::Shadow;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeAtom;
@@ -2347,6 +2348,25 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a written binder hides no binding.
+    pub mod hidden {
+        /// Nothing the shadow index keeps answers the binder's name.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No binder, opened member, declaration, import or builtin
+            /// answers the name.
+            Unbound,
+            /// The innermost binder of the name is one the source writes
+            /// nowhere.
+            Unwritten,
+            /// The lookup past the binders refuses the name: a member declared
+            /// later, or a name two scopes answer.
+            Refused,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a call's head names no type former.
     pub mod formed {
         /// The head is not a type former's spelling, free.
@@ -3610,6 +3630,10 @@ struct Lowerer<'run, 'source>
     /// Each written name resolved, with what it names, in the order resolved:
     /// a name of a declaration refused later is kept.
     resolutions: Vec<(ByteSpan, crate::Resolution)>,
+    /// Each written binder whose name an outer scope binds, with the binding
+    /// it hides, in the form of the node that wrote the binder: a binder of a
+    /// declaration refused later is kept.
+    shadows: ByForm<Shadow>,
     /// Whether the mint sweep has carried out each node's plan, which it does
     /// once.
     taken: NodeTable<bool>,
@@ -5501,6 +5525,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             constructors,
             codata,
             mut resolutions,
+            shadows,
             stage_bounds,
             supplies,
             handler_laws,
@@ -5714,6 +5739,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_nested_sites(nested)
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)
+        .with_shadows(shadows)
         .with_reached_imports(reached)
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
@@ -6030,6 +6056,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             codata_described: BTreeMap::new(),
             codata: Vec::new(),
             resolutions: Vec::new(),
+            shadows: ByForm::default(),
             recursions: BTreeMap::new(),
             staged_parameters: BTreeMap::new(),
             stage_marks: BTreeMap::new(),
@@ -6778,51 +6805,71 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.collected.slots.push(slot);
     }
 
-    /// Report the binder `binder`, spelling `name`, against the outermost
-    /// scope.
+    /// Report the binder `binder`, spelling `name` and extending `frame`,
+    /// against the outermost scope, and keep the binding it hides.
     ///
     /// # Specification
-    /// - requires: `binder` is a lambda, parameter or `let` binder.
+    /// - requires: `binder` is a written binder's name, and `frame` the frame
+    ///   the binder extends.
     /// - ensures: a binder over a builtin root is recorded under
-    ///   warn-and-allow; the outermost scope is never changed.
-    /// - provides: the binder half of the outermost report.
+    ///   warn-and-allow; one [`Shadow`] of `binder`'s span and the binding
+    ///   [`Self::hidden_by`] finds is pushed into the form the lowering reads,
+    ///   and nothing when it finds none; the outermost scope and the reached
+    ///   imports are never changed.
+    /// - provides: the binder half of the outermost report, and the entries of
+    ///   [`LoweredModule::shadows`].
     /// - fails: [`LoweringRefusal::ShadowedBuiltin`] at the binder for a
-    ///   builtin root under the reject policy.
+    ///   builtin root under the reject policy; propagates
+    ///   [`LoweringRefusal::BudgetExceeded`] from the lookup.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::ShadowedBuiltin`].
+    /// [`LoweringRefusal::ShadowedBuiltin`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda binder over a builtin under each policy,
-    ///   asserted as the exact record and outcome.
+    ///   asserted as the exact record and outcome; the shadows as
+    ///   [`Self::hidden_by`] finds them.
     /// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+    /// - witness: `tests::scopes::each_shadowing_binder_keeps_the_binding_it_hides_6270`
     #[spec(
+        captures: before = self.shadows.entries().len(),
         ensures: |ret| {
-            ret == Ok(())
+            (ret.is_ok() && self.shadows.entries().len() <= before.saturating_add(1))
                 || ret
                     == Err(LoweringRefusal::ShadowedBuiltin {
                         span: binder.span,
                         name,
                     })
+                || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. }))
         },
     )]
     fn note_binder(
         &mut self,
         binder: Placed,
+        frame: Frame,
         name: SurfaceName<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let noted = self
             .recognition
             .note_binder(Segment::from(name.as_ref()), binder.span);
-        match noted {
-            Ok(()) => Ok(()),
-            Err(_refused) => Err(LoweringRefusal::ShadowedBuiltin {
+        let Ok(root) = noted
+        else {
+            return Err(LoweringRefusal::ShadowedBuiltin {
                 span: binder.span,
                 name,
-            }),
+            });
+        };
+        if let Maybe::Present(hidden) = self.hidden_by(binder, frame, name, root)? {
+            let _place = self.shadows.push(Shadow {
+                binder: binder.span,
+                hidden,
+            });
         }
+
+        Ok(())
     }
 
     /// Read every declaration's operands at the sort the declaration demands.
@@ -7191,6 +7238,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.cases.enter(form);
         self.arms.enter(form);
         self.projected.enter(form);
+        self.shadows.enter(form);
     }
 
     /// The key a plan keeps for the operands at the positions `written`
@@ -9148,12 +9196,126 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
+        self.past_binders(site, own, name)
+    }
+
+    /// What the modules a block opens over `site` and the declarations
+    /// enclosing it, owned by the declaration `own`, answer `name` with:
+    /// [`Self::resolve_name`] past the binders.
+    ///
+    /// # Specification
+    /// - requires: `own` owns `site`.
+    /// - ensures: the member a module open over `site` exports under the name
+    ///   ([`Self::opened_name`]); else what [`Self::declared_name`] answers.
+    /// - provides: the one order a use and a binder read past the binders.
+    /// - fails: as [`Self::opened_name`] and [`Self::declared_name`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ForwardMemberReference`],
+    /// [`LoweringRefusal::ImportShadows`],
+    /// [`LoweringRefusal::UnexportedName`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resolve_name`].
+    /// - witness: `lower::opening::tests::an_opened_module_answers_the_rest_of_its_block`
+    /// - witness: `tests::modules::a_backward_member_reference_resolves`
+    #[spec(
+        captures: before = self.fuel.remaining,
+        ensures: |_| self.fuel.remaining <= before,
+    )]
+    fn past_binders(
+        &mut self,
+        site: Site,
+        own: SlotIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
+    {
         if !self.opened.is_empty()
             && let opened @ Maybe::Present(_) = self.opened_name(site, own, name)?
         {
             return Ok(opened);
         }
         self.declared_name(site, own, name)
+    }
+
+    /// The binding a binder spelling `name`, written at `binder` and
+    /// extending `frame`, hides: what a use of the name written there would
+    /// read. `root` is where the outermost scope declares the name.
+    ///
+    /// # Specification
+    /// - requires: `frame` is the frame the binder extends, and `root` is
+    ///   [`Recognition::site`] of the name's one-segment path.
+    /// - ensures: the written site of the innermost binder of the chain rooted
+    ///   at `frame` that carries `name`; else the declaration
+    ///   [`Self::past_binders`] answers; else the builtin, when `root` is one.
+    ///   Absent when that binder is unwritten, when the lookup past the binders
+    ///   refuses the name, and when nothing answers it. The reached imports are
+    ///   as they were.
+    /// - provides: the hidden binding [`Self::note_binder`] keeps.
+    /// - fails: propagates [`LoweringRefusal::BudgetExceeded`] from the lookup,
+    ///   which spends fuel as a use's does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pattern binder over a parameter, a parameter over
+    ///   an earlier declaration, an opened member and an import, a binder over
+    ///   a builtin, over a later declaration and over a name two imports bind,
+    ///   each asserted as the exact event or its absence, and the reached
+    ///   imports unchanged.
+    /// - witness: `tests::scopes::each_shadowing_binder_keeps_the_binding_it_hides_6270`
+    /// - witness: `tests::namespace::a_shadowing_binder_hides_an_import_and_reaches_none_6270`
+    /// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+    #[spec(
+        captures: before = (self.fuel.remaining, self.collected.reached.len()),
+        ensures: |ret| self.fuel.remaining <= before.0
+            && self.collected.reached.len() == before.1
+            && ret.as_ref().err().is_none_or(|refusal| matches!(refusal, LoweringRefusal::BudgetExceeded { .. })),
+    )]
+    fn hidden_by(
+        &mut self,
+        binder: Placed,
+        frame: Frame,
+        name: SurfaceName<'source>,
+        root: Maybe<RecognitionSite, crate::namespace::binding::Absent>,
+    ) -> Result<Maybe<crate::Resolution, hidden::Absent>, LoweringRefusal<'source>>
+    {
+        if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)? {
+            return Ok(match self.scope.site(bound.binder) {
+                Maybe::Present(site) => Maybe::Present(crate::Resolution::Binder(site)),
+                Maybe::Absent(_) => Maybe::Absent(hidden::Absent::Unwritten),
+            });
+        }
+        if let Maybe::Present(own) = self.collected.owner_of(binder.node) {
+            let site = Site {
+                at: binder,
+                name: FormName::IDENTIFIER,
+                reading: Reading::Unread,
+            };
+            // A use reaches the import it reads through, and a binder reads
+            // none: the lookup reaches into a set that is then dropped.
+            let reached = core::mem::take(&mut self.collected.reached);
+            let found = self.past_binders(site, own, name);
+            self.collected.reached = reached;
+            match found {
+                Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
+                    return Ok(Maybe::Present(crate::Resolution::Declaration(constant)));
+                },
+                Ok(Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_)) => {},
+                Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+                Err(_) => return Ok(Maybe::Absent(hidden::Absent::Refused)),
+            }
+        }
+        Ok(match root {
+            Maybe::Present(RecognitionSite::Builtin) => Maybe::Present(crate::Resolution::Builtin),
+            Maybe::Present(RecognitionSite::Source(_)) | Maybe::Absent(_) => {
+                Maybe::Absent(hidden::Absent::Unbound)
+            },
+        })
     }
 
     /// What the declarations enclosing `site`, owned by the declaration `own`,
@@ -11224,7 +11386,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let (binder, declared) = parameter(site, &mut cursor)?;
         let name = self.name_at(binder);
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         let arrow = self.answered_arrow(site)?;
         let unnamed = Maybe::Absent(binder_site::Absent::Unwritten);
         if let Some(declared) = declared {
@@ -11744,7 +11906,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             for binder in core::iter::once(first).chain(shared) {
                 let name = self.name_at(binder);
-                self.note_binder(binder, name)?;
+                self.note_binder(binder, frame, name)?;
                 frame = self.bind_kept(site, &mut own, frame);
                 let written = Maybe::Present(binder.span);
                 let bound = match declared {
@@ -12397,7 +12559,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     self.binder_name(statement, component)?
                 };
-                self.note_binder(component, name)?;
+                self.note_binder(component, frame, name)?;
                 names.push((
                     label.map(|label| (self.name_at(label), label)),
                     name,
@@ -12543,7 +12705,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(Frame::Inner(inner));
         }
         let name = self.binder_name(statement, binder)?;
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         if let Some(annotation) = annotation {
             self.read(bound.node, Reading::Computation(frame));
             self.read(annotation.node, Reading::ValueType(frame));
@@ -12717,7 +12879,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.bound_statement(statement, (binder, annotation, bound), frame);
         }
         let name = self.binder_name(statement, binder)?;
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         let _bound = self.let_bound.insert(bound.node);
         // The stated type is read first. A constructor of a family with
         // arguments takes it as its classifier, as under an annotation
@@ -18368,7 +18530,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         exhausted(site, &cursor)?;
         let name = self.name_at(binder);
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         let extended = self
             .scope
             .extend_operand(frame, name, Maybe::Present(binder.span));

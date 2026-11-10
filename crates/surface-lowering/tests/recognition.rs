@@ -16,6 +16,8 @@ use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Resolution;
+use gandr_surface_lowering::Shadow;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Binding;
@@ -287,9 +289,14 @@ fn shadow_policy_uses_site_tags_independently_of_recognized_kinds()
         ))
         .collect(),
     );
-    scope
+    let root = scope
         .note_binder(Segment::from("source"), at)
         .expect("a source site is not a builtin shadow, regardless of recognized kind");
+    assert_eq!(
+        root,
+        Maybe::Present(RecognitionSite::Source(at)),
+        "and the note gives the source site the root holds"
+    );
     assert!(scope.shadowed().is_empty());
     scope.declare_resumed(
         Segment::from("builtin"),
@@ -592,9 +599,14 @@ fn a_resumed_declaration_binds_without_reporting()
 fn a_binder_over_a_builtin_reports_without_shadowing()
 {
     let mut recognition = seeded(ShadowPolicy::WarnAndAllow);
-    recognition
+    let root = recognition
         .note_binder(Segment::from("env"), site(7_usize, 10_usize))
         .expect("warn-and-allow accepts a binder collision");
+    assert_eq!(
+        root,
+        Maybe::Present(RecognitionSite::Builtin),
+        "the note gives the builtin the binder hides"
+    );
     assert_eq!(
         recognition.shadowed(),
         [ShadowedBuiltin {
@@ -617,9 +629,13 @@ fn a_binder_over_a_builtin_reports_without_shadowing()
     );
 
     let mut quiet = seeded(ShadowPolicy::Reject);
-    quiet
+    let root = quiet
         .note_binder(Segment::from("not_a_builtin"), site(0_usize, 3_usize))
         .expect("a binder over nothing is not an event");
+    assert!(
+        matches!(root, Maybe::Absent(_)),
+        "the note gives no root for a name nothing binds"
+    );
     assert!(quiet.shadowed().is_empty(), "and reports nothing");
     let refused = quiet.note_binder(Segment::from("env"), site(0_usize, 3_usize));
     assert!(
@@ -779,6 +795,15 @@ fn a_binder_shadowing_a_builtin_is_rejected_under_policy()
             }]
             .as_slice(),
             "a lambda, parameter or `let` binder over a builtin is reported at the binder"
+        );
+        assert_eq!(
+            warned.shadows(),
+            [Shadow {
+                binder: at,
+                hidden: Resolution::Builtin,
+            }]
+            .as_slice(),
+            "and the shadow index keeps the builtin it hides (#6270)"
         );
 
         let refused = lowered(SourceText::from(written), seeded(ShadowPolicy::Reject));

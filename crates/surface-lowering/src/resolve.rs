@@ -2312,6 +2312,27 @@ pub enum Resolution
         /// The family's admission position.
         family: ConstantIndex,
     },
+    /// A name the builtin namespace seeds, which no source declares.
+    Builtin,
+}
+
+/// A written binder whose name an outer scope already binds, and the binding
+/// it hides.
+///
+/// The lowering resolves a binder's name in the frame the binder extends, in
+/// the order a use reads it: the binders, the modules a block opens, the
+/// declarations and the imports, then the builtins. The first binding found
+/// is the one the binder hides.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Shadow
+{
+    /// Where the binder's name is written.
+    pub binder: ByteSpan,
+    /// The binding the binder hides.
+    pub hidden: Resolution,
 }
 
 #[cfg(test)]

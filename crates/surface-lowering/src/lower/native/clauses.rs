@@ -555,7 +555,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut inner = frame;
             for &binder in bound {
                 let name = SurfaceName::from(self.text_at(binder));
-                self.note_binder(binder, name)?;
+                self.note_binder(binder, inner, name)?;
                 let written = Maybe::Present(binder.span);
                 let id = match self.pattern_stated.get(&binder.node) {
                     Some(&stated) => self.scope.extend_typed(inner, name, stated, written),

@@ -366,6 +366,10 @@
 //!   namespace design: tries of hierarchical names, the modifier language, the
 //!   not-found, shadow and hook events a handler settles, and scopes with
 //!   sections.
+//! - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: a shadow is an
+//!   event the scope's handler settles and a diagnostic reports, never a
+//!   prohibition, so the lookup at a binder keeps the binding the binder hides
+//!   and refuses nothing.
 
 // Module documentation that predates the shape lint: 166 headings outside the
 // vocabulary, 93 decision records, 40 issue references and 33 budgets exceeded.
@@ -576,6 +580,7 @@ pub use crate::resolve::OperandCount;
 pub use crate::resolve::Resolution;
 pub use crate::resolve::Scope;
 pub use crate::resolve::ScopeId;
+pub use crate::resolve::Shadow;
 pub use crate::resolve::SurfaceName;
 pub use crate::resolve::TypeAtom;
 pub use crate::resolve::TypeFormer;

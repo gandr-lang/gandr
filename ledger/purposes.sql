@@ -2886,6 +2886,7 @@ INSERT INTO purpose VALUES('surface-lowering','resolve::OperandCount','struct','
 INSERT INTO purpose VALUES('surface-lowering','resolve::Resolution','enum','Names a name''s resolution, so the resolution''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::Scope','struct','Holds the binder scope a lambda extends, so the scope''s frames are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::ScopeId','struct','Names a scope''s id, so the id''s coordinate is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','resolve::Shadow','struct','Holds a written binder and the binding it hides, so a face reads what the binder shadows.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::SurfaceName','struct','Holds an identifier as the source wrote it, so the name''s sort is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::Telescope','enum','Names a telescope''s reading, so the reading''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::TypeAtom','enum','Names a type atom, so the atom''s kind is read.',NULL,'fits','sound',NULL);

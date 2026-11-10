@@ -35,6 +35,8 @@ use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::ModuleImports;
 use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::ReadAs;
+use gandr_surface_lowering::Resolution;
+use gandr_surface_lowering::Shadow;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unexported;
@@ -5270,6 +5272,94 @@ fn each_import_a_name_is_read_through_is_reached()
     assert!(
         !module.reached_imports().contains(idle),
         "an import nothing is read through is not reached"
+    );
+}
+
+/// #6270: a parameter over a name an import answers keeps the imported
+/// declaration it hides and reaches no import. A parameter over a name two
+/// imports answer hides nothing, and its declaration is not refused.
+#[test]
+fn a_shadowing_binder_hides_an_import_and_reaches_none_6270()
+{
+    let pbg = grammar();
+    let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-unqualified-import-answers-a-name-its-source-declares-1.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-shadowing-binder-hides-an-import-and-reaches-none-6270.gandr"
+            )),
+            &[on(0_usize)],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let end = text
+        .find("hides(one")
+        .expect("the parameter is written")
+        .saturating_add("hides(one".len());
+    let binder = ByteSpan::new(
+        ByteOffset::from(end.saturating_sub("one".len())),
+        ByteOffset::from(end),
+    )
+    .expect("the parameter is a span");
+    let one = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "one")
+        .map(LoweredDeclaration::constant)
+        .expect("the base declares `one`");
+    assert_eq!(
+        module.shadows(),
+        [Shadow {
+            binder,
+            hidden: Resolution::Declaration(one),
+        }]
+        .as_slice(),
+        "the parameter hides the declaration the import answers"
+    );
+    assert!(
+        module.reached_imports().is_empty(),
+        "and no import is reached: only the parameter is read"
+    );
+
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/two-imports-binding-one-name-refuse-its-use-1.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/two-imports-binding-one-name-refuse-its-use-2.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-shadowing-binder-hides-an-import-and-reaches-none-6270-both.gandr"
+            )),
+            &[on(0_usize), on(1_usize)],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    assert!(
+        module.shadows().is_empty(),
+        "a parameter over a name two imports answer hides nothing"
+    );
+    assert!(
+        module
+            .declarations()
+            .iter()
+            .all(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))),
+        "and its declaration lowers"
     );
 }
 
