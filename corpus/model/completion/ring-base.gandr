@@ -1,6 +1,9 @@
 //! `ring-base` defines the mock ring protocols and entries.
 //!
-//! Each submission owes one completion. The pathological twins refuse a
+//! Each submission owes one completion. The io_uring(7) manual states "exactly
+//! one matching CQE for every SQE". A read buffer moves into its submission and
+//! returns with its completion, because the kernel owns it while the operation
+//! is in flight [boats-2020-notes_on_io_uring]. The pathological twins refuse a
 //! completion left pending and a buffer reused before its completion.
 //!
 //! The checker gives the submitter a pending completion after it sends `read`.
@@ -8,7 +11,9 @@
 //!
 //! - see: corpus/pathological/completion/pending-dropped.gandr
 //! - see: corpus/pathological/completion/buffer-touched.gandr
-//! - see: https://without.boats/blog/io-uring/
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 /// A ring: its entries sealed behind the interface, the protocol of one
 /// submission as the kernel serves it, the buffer and the pending completion

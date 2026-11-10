@@ -4,7 +4,8 @@
 //! that resolves to neither.
 //!
 //! The checker resolves each link in its source. It reads footer targets at
-//! the end of their comment run.
+//! the end of their comment run. The links follow the intra-doc links of
+//! rustdoc.
 //!
 //! - see: https://doc.rust-lang.org/rustdoc/
 

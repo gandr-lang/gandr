@@ -2,8 +2,11 @@
 //!
 //! A label distinguishes one interface instance from another.
 //! A call can pass an instance by its label.
+//! The label is a parameter that the function abstracts after every parameter
+//! it writes.
 //!
-//! The checker resolves an omitted label from the current scope.
+//! The checker resolves an omitted label from a capability scope or from a
+//! label of the row of the caller [Brachthauser-2020-effects_as_capabilities].
 //! It keeps each labelled instance separate from the default.
 //!
 //! - see: #2271

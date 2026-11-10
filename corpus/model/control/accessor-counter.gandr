@@ -5,6 +5,8 @@
 //!
 //! `resume` writes a value back to the hold.
 //! `abort` runs an empty-row unwind clause.
+//! The loan follows a mutable borrow of Rust [Rust-reference],
+//! § Borrow operators.
 //!
 //! - cites: [Rust-reference]
 //!

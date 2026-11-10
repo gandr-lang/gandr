@@ -1,7 +1,9 @@
 //! `reduct` reads an included theory from an extension model.
 //!
 //! `Monoid.Semigroup` forgets the monoid members outside `Semigroup`. The
-//! checker applies this reduct when it requires a semigroup.
+//! checker applies this reduct when it requires a semigroup. Each theory that
+//! a block includes, directly or through another, takes a reduct. A reduct
+//! keeps a sort and never seals it.
 //!
 //! `endoManifest` restores its carrier before it restricts its members.
 //!
@@ -33,11 +35,13 @@ pub def multiplies(s : Model Semigroup) -> Integer =
 @[ runs("0") ]
 def asSemigroup() -> Integer { multiplies endoMonoid }
 
-/// `throughTheDiamond` reads either inclusion route to `Semigroup`.
+/// `throughTheDiamond` reads either inclusion route to `Semigroup`. The two
+/// routes give one reduct.
 def throughTheDiamond(m : Model UnitAndZero) -> Integer =
   multiplies m
 
-/// `endoManifest` writes the endomorphism monoid with its carrier.
+/// `endoManifest` writes the endomorphism monoid with its carrier. The carrier
+/// is no field of the record.
 pub def endoManifest : Model Monoid with sort M = (Integer -> Integer) = *{
   Endo.mul,
   *{Endo.one, *{Endo.assoc, *{Endo.unitL, Endo.unitR}}}
@@ -47,6 +51,7 @@ pub def endoManifest : Model Monoid with sort M = (Integer -> Integer) = *{
 @[ runs("0") ]
 def manifestAsSemigroup() -> Integer { multiplies endoManifest }
 
-/// `manifestDiamond` reads either manifest inclusion route to `Semigroup`.
+/// `manifestDiamond` reads either manifest inclusion route to `Semigroup`. The
+/// two routes compose to one inclusion.
 def manifestDiamond(u : Model UnitAndZero with sort M = Unit) -> Integer =
   multiplies u

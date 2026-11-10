@@ -5,6 +5,9 @@
 //!
 //! The checker rejects an operation outside the stated authority.
 //! The host grants the authority that a capability carries.
+//! The discipline follows Dennis and Van Horn
+//! [Dennis-1966-programming_semantics_for_multiprogrammed_computations] and the
+//! 2006 thesis of Miller.
 //!
 //! - cites: [Dennis-1966-programming_semantics_for_multiprogrammed_computations]
 //!
