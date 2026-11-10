@@ -1280,7 +1280,7 @@ impl Elaborate for Oracle
 }
 
 #[test]
-fn a_let_of_a_call_stays()
+fn a_let_of_a_call_stays_6209()
 {
     let grammar = grammar();
     let format = |source: &str| {
