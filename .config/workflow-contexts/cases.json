@@ -1,0 +1,34 @@
+[
+  {
+    "name": "#6394: a runner context in a job environment is refused",
+    "input": {
+      "workflow": ".github/workflows/riscv64.yml",
+      "jobs": {
+        "test": {
+          "env": {
+            "CARGO_TARGET_DIR": "${{ runner.workspace }}/target"
+          }
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/riscv64.yml` job `test` environment `CARGO_TARGET_DIR` names `runner.`, unavailable in job env\"]"
+  },
+  {
+    "name": "a runner context in a step environment holds",
+    "input": {
+      "workflow": ".github/workflows/riscv64.yml",
+      "jobs": {
+        "test": {
+          "steps": [
+            {
+              "env": {
+                "CARGO_TARGET_DIR": "${{ runner.workspace }}/target"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
+  }
+]

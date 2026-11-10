@@ -1347,14 +1347,32 @@ echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no c
 # step that writes or restores a tarball raises a flag in `GITHUB_ENV` and
 # the conditions read the flag.
 ["check:workflow-hashing"]
-description = "No hashFiles over a tarball in a workflow or composite action"
-run = """
+description = "No hashFiles over a tarball or unavailable context in a workflow"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+program=$root/.config/workflow-contexts/jobs.jq
+.config/cases/run.bash workflow-contexts .config/workflow-contexts/cases.json --program "$program" --mode c
+failed=0
+while IFS= read -r workflow; do
+  refusals=$(workflow="$workflow" yq -o=json '{"workflow": strenv(workflow), "jobs": .jobs}' "$workflow" | jq -c -f "$program")
+  [[ "$refusals" == "[]" ]] && continue
+  while IFS= read -r refusal; do
+    printf 'workflow context check FAILED: %s\n' "$refusal" >&2
+    failed=1
+  done < <(jq -r '.[]' <<< "$refusals")
+done < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
+if (( failed )); then
+  exit 1
+fi
 if git grep -nIE -e 'hashFiles[(][^)]*[.]tar' -- ':/.github'; then
   echo 'workflow hashing check FAILED: hashFiles over a tarball; raise a flag where the tarball is written' >&2
   exit 1
 fi
-echo 'workflow hashing check OK: no hashFiles over a tarball'
-"""
+echo 'workflow hashing check OK: no hashFiles over a tarball or unavailable context'
+'''
 
 # A landing with no enforcing shard report writes a skip result (#5496).
 # `.config/spec-cost/landed-cases.bash` invokes its runner.
