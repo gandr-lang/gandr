@@ -886,13 +886,7 @@ fn reopened<'source>(
     });
     let width = <&str>::from(opener).len();
     let mut shared = Shared::new(pbg, SourceText::from(form));
-    let (place, sort) = tokens
-        .get(.. usize::from(closer))
-        .unwrap_or_default()
-        .iter()
-        .enumerate()
-        .rev()
-        .filter(|&(_, token)| token.lexeme != Lexeme::Space)
+    let (place, sort) = recent_places(&tokens, closer)
         .filter(|&(index, _)| {
             bool::from(left_out(
                 text_of_form,
@@ -902,7 +896,6 @@ fn reopened<'source>(
             ))
         })
         .filter_map(|(_, token)| usize::try_from(token.start).ok())
-        .take(PLACES)
         .find_map(|at| {
             let place = ByteOffset::from(usize::from(run.start()).checked_add(at)?);
             let copy = written(source, run, place, opener, SourceText::from(""))?;
@@ -949,6 +942,28 @@ fn reopened<'source>(
             ByteSpan::new(place, place).ok()?,
         )],
     )
+}
+
+/// The iterator returns the recent non-space token places before `closer`.
+///
+/// It returns at most [`PLACES`] places.
+///
+/// # Specification
+///
+/// trivial.
+fn recent_places(
+    tokens: &[Token],
+    closer: TokenIndex,
+) -> impl Iterator<Item = (usize, &Token)> + '_
+{
+    tokens
+        .get(.. usize::from(closer))
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|&(_, token)| token.lexeme != Lexeme::Space)
+        .take(PLACES)
 }
 
 /// The parentheses and brackets that `tokens` of `text` leave open, counted
@@ -1967,6 +1982,7 @@ fn written(
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::vec::Vec;
 
     use gandr_surface_grammar::built_in;
@@ -1977,11 +1993,14 @@ mod tests
     use gandr_surface_syntax::SourceFragment;
     use gandr_surface_syntax::SourceText;
 
+    use super::PLACES;
+    use super::recent_places;
+    use crate::Lexeme;
+    use crate::TokenIndex;
     use crate::label::label;
     use crate::oblig::Oblig;
     use crate::parse;
     use crate::testing::reconstruct;
-
     /// #2242, #5199, #3812: a closer the source left out is minted where the
     /// rest of its form parses, not after everything the form could still
     /// take. Where more than one place parses, it is minted at the last of
@@ -2548,6 +2567,38 @@ mod tests
                 parsed.obligations()
             );
         }
+    }
+
+    #[test]
+    fn an_opener_search_bounds_a_long_form_6169()
+    {
+        let pbg = built_in().unwrap();
+        let mut source = String::from("def long = 0");
+        for _ in 0_usize .. PLACES {
+            source.push_str(" + 0");
+        }
+        source.push_str(" ;");
+        let parsed = parse(&pbg, SourceText::from(source.as_str())).unwrap();
+        assert_eq!(
+            reconstruct(parsed.tree()),
+            source,
+            "the long form keeps every source byte",
+        );
+        let tokens = label(SourceFragment::from(source.as_str()));
+        assert!(
+            tokens
+                .iter()
+                .filter(|token| token.lexeme != Lexeme::Space)
+                .take(PLACES + 1)
+                .count()
+                > PLACES,
+            "the form has more non-space tokens than the limit",
+        );
+        assert_eq!(
+            recent_places(&tokens, TokenIndex::from(tokens.len())).count(),
+            PLACES,
+            "the opener search takes only the limit's most recent places",
+        );
     }
 
     /// #5199: a misspelled keyword before a definition is a stray word, and
