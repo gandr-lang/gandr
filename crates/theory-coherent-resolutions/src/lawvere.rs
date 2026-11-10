@@ -303,6 +303,19 @@ impl TermTable
             .ok_or(LawvereError::Unissued(place))
     }
 
+    /// The place of each term that the table holds, in the order that the
+    /// table issued them: each term after its arguments.
+    ///
+    /// The walk knows its length, which is the number of terms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn issued(&self) -> impl DoubleEndedIterator<Item = TermPlace> + ExactSizeIterator + use<>
+    {
+        (0 .. self.nodes.len()).map(TermPlace::from)
+    }
+
     /// Put into `counts` the occurrences of each variable in the term at
     /// `place`, each path from the root counted once.
     ///

@@ -157,7 +157,7 @@ where
                 let _new = found.insert((place, Vec::new()));
                 continue;
             }
-            for node in (0 .. self.leader.len()).map(TermPlace::from) {
+            for node in self.table.issued() {
                 if self.leader(node).is_some() {
                     self.matches_at((place, equation), node, &mut found)?;
                 }
