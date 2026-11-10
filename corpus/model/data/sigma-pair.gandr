@@ -57,9 +57,9 @@ def rebuilt(p : *{
   match p where
     | *{.n = m, .v = w} => Path.here (*{m, w})
 
-/// `againAt` splits a three-field record under a motive that
-/// reads its scrutinee.
-/// Its arm rebuilds the record.
+/// `againAt` splits a three-field record under a motive that reads its
+/// scrutinee. Its arm rebuilds the record as a pair whose second entry `y`
+/// names the rest.
 def againAt(
   b : Type,
   w : *{x : b, y : b, p : Path[.A = b](x, y)}
@@ -114,7 +114,7 @@ def tagged_around : Path(tagged, tagged) = *{
 def moved() -> Integer { Path.walk (fun (s) { Integer }) both 5 }
 
 /// A later entry's type can call an earlier entry.
-/// The printed second type reads the pair.
+/// The printed second type, `Path[.A = Integer](e.0(0), 0)`, reads back to it.
 ///
 /// - see: #935
 def calledFiber(e : *{

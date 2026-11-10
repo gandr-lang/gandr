@@ -3,7 +3,8 @@
 // A constructor at a list's tail gets that answer type.
 // `Maybe` supplies the optional values.
 //
-// The result can omit its returner.
+// A result with no returner, `-> List(T)`, answers its element type as
+// `-> -F List(T)` does.
 // The function signature still states the element type.
 //
 // - see: #2255

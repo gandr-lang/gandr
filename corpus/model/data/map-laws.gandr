@@ -3,13 +3,15 @@
 //! A composite map equals two consecutive maps.
 //! The list source gives `map` a function value.
 //!
+//! A rule names only the operations of its block.
 //! A defunctionalised `map` exposes `app` and `compose` as operations.
 //! The coincidence check uses the definition's rules.
 //! The `normalizes` row exercises the law.
 //!
 //! - cites: [Bird-1987-an_introduction_to_the_theory_of_lists]
 //! - cites: [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]
-//! - see: `../../pathological/data/map-law-on-a-def.gandr`
+//! - see: `../../pathological/data/map-law-on-a-def.gandr` — the same law over
+//!   the `def` is refused
 //!
 //! [Bird-1987-an_introduction_to_the_theory_of_lists]: https://doi.org/10.1007/978-3-642-87374-4_1 "Bird, An Introduction to the Theory of Lists"
 //! [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]: https://doi.org/10.1145/800194.805852 "Reynolds, Definitional Interpreters for Higher-Order Programming Languages"

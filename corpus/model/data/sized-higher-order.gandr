@@ -2,6 +2,7 @@
 //
 // `apply` uses one type parameter for its function and argument.
 // A call instantiates that parameter at its argument's stage.
+// The run of `count` waits until the machine takes a type code as an argument.
 //
 // `applyAt` quantifies over a stage.
 // `predAt` returns at its argument's stage.
@@ -16,7 +17,9 @@
 // - see: #1498 — `passedAt`
 // - see: #2373 — `predAt`, `boundedAt`
 // - see: #1241 — `boundedHelped`
-// - see: `../../pathological/data/sized-higher-order.gandr`
+// - see: `../../pathological/data/sized-higher-order.gandr` — the checker
+//   refuses a `k` not below `j`, a call that no stage fits, and a named stage
+//   that the arguments do not show
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr";
@@ -47,8 +50,9 @@ def rec helped(n : Nat) -> Nat =
 @[runs("Succ (Succ Zero)")]
 def helpedTwo : () -> Nat = helped (Succ (Succ Zero));
 
-/// `predAt` computes a predecessor at stage `i` and returns zero for zero.
-/// Its result stays at stage `i`.
+/// `predAt` computes a predecessor at stage `i` and returns zero for zero. Its
+/// result stays at stage `i`, since the returner goes over the staged type and
+/// never over its base.
 pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
   match n where
     | Zero => Zero
