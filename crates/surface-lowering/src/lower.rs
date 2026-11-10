@@ -34968,7 +34968,7 @@ mod tests
             "a manifest component named in a later one stands for its type: {standing:?}"
         );
         assert!(
-            from("zero : T })").is_some_and(|at| heads.contains(&at.saturating_add(7))),
+            from("zero : T})").is_some_and(|at| heads.contains(&at.saturating_add(7))),
             "a functor parameter's type, renamed to the argument's, stands where the template \
              writes it: {standing:?}"
         );

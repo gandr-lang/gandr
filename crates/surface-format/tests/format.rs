@@ -344,7 +344,7 @@ fn a_rule_s_freshness_conditions_stay_on_its_line()
         include_str!("format/unformatted/a-rule-s-freshness-conditions-stay-on-its-line.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu (bind a. q) <=> q where { | a # q | a # q };\n}\n",
+        "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu (bind a. q) <=> q where {| a # q | a # q};\n}\n",
         "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
     );
 }
@@ -379,7 +379,7 @@ fn the_printer_decides_every_inner_space()
     let source = include_str!("format/unformatted/the-printer-decides-every-inner-space.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "@[ checks ]\n\
+        "@[checks]\n\
          def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
          def p = *{a = 1, b = - 2};\n\
          def q : +{A : Integer, B : Unit};\n\
@@ -387,9 +387,9 @@ fn the_printer_decides_every_inner_space()
          def l = fun (x) { x };\n\
          def c = thunk { fun (x) { x } };\n\
          def m = r.a[0];\n\
-         module M :> *{ type T } where { type T = Integer; }\n\
-         theory S where { boundary Q { p, q }; face left = {p, q}; }\n\
-         theory Kit.Shape where { sort T : Type; }\n\
+         module M :> *{type T} where { type T = Integer; }\n\
+         theory S where {boundary Q {p, q}; face left = {p, q};}\n\
+         theory Kit.Shape where {sort T : Type;}\n\
          module Kit.Made : Model(Kit.Shape) where { type T = Integer; }\n",
         "each space inside a line is the printer's, whatever the source wrote"
     );
@@ -714,14 +714,14 @@ const EXPLICIT: &str = include_str!("format/unformatted/explicit.gandr");
 fn an_explicit_source_keeps_its_explicit_spelling()
 {
     let grammar = grammar();
-    let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer);\ndef shown = thunk { let n = \
+    let kept = "@[form(explicit)]\ndef shown : +U (-F Integer);\ndef shown = thunk { let n = \
                 force one; become read n };\n";
     let imported = "import \"./base.gandr\" ;\n";
     let imported_kept = "import \"./base.gandr\";\n";
     let grouped = include_str!(
         "format/unformatted/an-explicit-source-keeps-its-explicit-spelling-grouped.gandr"
     );
-    let grouped_kept = "rec {\n  @[ form(explicit) ]\n  def shown : +U (-F Integer);\n  def \
+    let grouped_kept = "rec {\n  @[form(explicit)]\n  def shown : +U (-F Integer);\n  def \
                         shown = thunk { let n = force one; become read n };\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),

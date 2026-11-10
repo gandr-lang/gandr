@@ -2235,7 +2235,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "@[ explicit_exits ]\ndef kept(n : Integer) -> -F Integer { return n }\ndef called(n : \
+        "@[explicit_exits]\ndef kept(n : Integer) -> -F Integer { return n }\ndef called(n : \
              Integer) -> -F Integer { become kept n }\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
@@ -2347,7 +2347,7 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "def id(n : Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n : Integer) \
+        "def id(n : Integer) -> -F Integer { n }\n@[explicit_runs]\ndef nested(n : Integer) \
              -> -F Integer { id (run id n) }\ndef returned(n : Integer) -> -F Integer { return run \
              id n }\ndef leading(n : Integer) -> -F Integer { run id n + 1 }\ndef grouped(n : \
              Integer) -> -F Integer { return run (n + 1) }\n"

@@ -1307,7 +1307,7 @@ fn moved(
 ///
 /// # Specification
 /// - requires: `std.build` writes each operation as `oper <name> : <type>;` on
-///   one line, an `@[ inert ]` mark on the line before it, and each theory as
+///   one line, an `@[inert]` mark on the line before it, and each theory as
 ///   `pub theory <name> where {` closed by a line `}`.
 /// - ensures: the operations of `Versioned`, `Presentation` and `Gandr.Package`
 ///   marked inert, in the order the source states them.
@@ -1346,7 +1346,7 @@ fn inert_fields() -> Vec<String>
         {
             fields.push(String::from(name));
         }
-        marked = line == "@[ inert ]" || (marked && line.starts_with("///"));
+        marked = line == "@[inert]" || (marked && line.starts_with("///"));
     }
     fields
 }

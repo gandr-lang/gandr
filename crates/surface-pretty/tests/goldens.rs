@@ -3348,7 +3348,7 @@ fn a_static_redex_prints_as_its_reduct_401()
         (Root::Value(CoreNode::Value(paired)), "*{Integer, Unit}"),
         (
             Root::Value(CoreNode::Value(half)),
-            "fun (a) { type(*{Integer, a}) }",
+            "fun (a) {type(*{Integer, a})}",
         ),
     ] {
         assert_eq!(
@@ -4003,11 +4003,7 @@ fn a_quoted_chain_is_quoted_1127()
             "Flow.stay type(Unit * Integer)",
             "Flow.stay *{Unit, Integer}",
         ),
-        (
-            operator,
-            "fun (a) { type(a * a) }",
-            "fun (a) { type(*{a, a}) }",
-        ),
+        (operator, "fun (a) {type(a * a)}", "fun (a) {type(*{a, a})}"),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);

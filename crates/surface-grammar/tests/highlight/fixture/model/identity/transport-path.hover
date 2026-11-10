@@ -37,7 +37,7 @@
 15:26-15:26 2 ⇒ Integer @15:26-15:27
 15:27-15:27 ) ⇒ Path.here (Path.here 2) : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2) @15:5-15:28
 15:28-15:28 ; ⇒ moved_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2)⏎⏎A reflexive transport at a path-type motive returns a path. @12:1-15:29
-19:1-19:64 @[ runs("*{thunk { fun (… ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @19:1-20:1
+19:1-19:62 @[runs("*{thunk { fun (a… ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @19:1-20:1
 20:1-20:3 def ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @20:1-20:35
 20:5-20:18 moved_end_run( ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @20:5-20:18
 20:19-20:22 ) -> ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @20:1-20:35
@@ -64,7 +64,7 @@
 21:73-21:81 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @21:73-21:84
 21:83-21:83 2 ⇒ Integer @21:83-21:84
 21:84-21:84 ) ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @21:3-21:85
-24:1-24:28 @[ refuses("TypeMismatch… ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-25:1
+24:1-24:26 @[refuses("TypeMismatch"… ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-25:1
 25:1-25:3 def ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @25:1-28:29
 25:5-25:12 unit_end ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @25:5-25:13
 25:14-25:14 : ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @25:1-28:29
@@ -148,7 +148,7 @@
 46:77-46:85 Path.here ⇒ Path.here 2 : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2) @46:77-46:88
 46:87-46:87 2 ⇒ Integer @46:87-46:88
 46:88-46:88 ; ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @46:1-46:89
-49:1-49:14 @[ runs("2") ] ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @49:1-50:1
+49:1-49:12 @[runs("2")] ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @49:1-50:1
 50:1-50:3 def ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:33
 50:5-50:19 along_here_run( ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:5-50:19
 50:20-50:23 ) -> ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:33

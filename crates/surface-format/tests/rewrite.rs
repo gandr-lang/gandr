@@ -267,7 +267,7 @@ def noted(n : Nat) -> Nat {
   return /* the argument */ n
 }
 
-@[ explicit_exits ]
+@[explicit_exits]
 def asked(n : Nat) -> Nat {
   return n
 }
@@ -1031,7 +1031,7 @@ fn a_declared_form_wins_over_the_option()
         );
         assert_eq!(
             spelled(&grammar, source.as_str(), asked, Selection::Every),
-            format!("@[ form({declared}) ]\ndef pair : {expected};\n"),
+            format!("@[form({declared})]\ndef pair : {expected};\n"),
             "declared {declared}, asked {asked}"
         );
     }
@@ -1724,7 +1724,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         def twice(n : Integer) -> Integer { return (n + n) }
 
         /// Becomes a call.
-        @[ runs("2") ]
+        @[runs("2")]
         def becomes() -> Integer { become twice 1 }
 
         def block() -> Integer { let m = twice 1; m }
@@ -1746,7 +1746,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         def twice(n : Integer) -> -F Integer { return (n + n) }
 
         /// Becomes a call.
-        @[ runs("2") ]
+        @[runs("2")]
         def becomes() -> -F Integer { become twice 1 }
 
         def block() -> -F Integer { let m = twice 1; return m }

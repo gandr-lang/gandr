@@ -52,7 +52,7 @@
 /// both, so a member reads its version from its workspace's model.
 pub theory Versioned where {
   /// The version, as a package's manifest records it.
-  @[ inert ]
+  @[inert]
   oper version : String;
 }
 
@@ -87,7 +87,7 @@ pub theory Project where
 pub theory Presentation where {
   /// The spelling a construct with a glyph takes, `unicode` or `ascii`, or
   /// empty to leave the reader's own.
-  @[ inert ]
+  @[inert]
   oper spelling : String;
 }
 
@@ -101,27 +101,27 @@ pub theory Gandr.Package where {
   include Project;
   include Presentation;
   /// The package's name, which the manifest records it by.
-  @[ inert ]
+  @[inert]
   oper name : String;
   /// Who wrote the package, as one line, `Name <address>, Name <address>`: a
   /// list once an operation's port can be one.
-  @[ inert ]
+  @[inert]
   oper authors : String;
   /// The package's licence, an SPDX expression.
-  @[ inert ]
+  @[inert]
   oper licence : String;
   /// Where a reader finds the package's documentation.
-  @[ inert ]
+  @[inert]
   oper documentation : String;
   /// The address a resolver may try first to fetch the package.
-  @[ inert ]
+  @[inert]
   oper endpoint : String;
   /// The directory the package's modules sit under, a `/`-separated path
   /// from the package's root, `src`. The source `greet.gandr` in its `text`
   /// directory is the module `text.greet`. Discovery reads it as the string
   /// the model writes, before any source is checked, so the model states it as
   /// a string literal.
-  @[ inert ]
+  @[inert]
   oper sources : String;
 }
 
@@ -226,7 +226,7 @@ pub def encode(presented : Theory, v : modelType(presented)) -> String =
 pub def packagePresentation : Theory = Gandr.Package;
 
 /// The entries of the package model `m`, in the order of the presentation.
-@[ inert ]
+@[inert]
 pub def packageEntries(m : Model Gandr.Package) -> modelType(packagePresentation) =
   Entry
     m.version
@@ -248,6 +248,6 @@ pub def packageEntries(m : Model Gandr.Package) -> modelType(packagePresentation
 
 /// The lines of the package model `m`, one for each constant, in the order
 /// of the presentation: one table, with no escape.
-@[ inert ]
+@[inert]
 pub def render(m : Model Gandr.Package) -> String =
   encode packagePresentation (packageEntries m)

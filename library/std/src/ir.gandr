@@ -21,13 +21,13 @@
 // [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]: https://doi.org/10.1007/3-540-48959-2_11 "Dybjer and Setzer, A finite axiomatization of inductive-recursive definitions"
 
 /// The dependent pairs over a family of types, as data.
-@[ builtin(irPair) ]
+@[builtin(irPair)]
 pub data Sig(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
   | MkSig : (x : a, y : b(x)) --> Sig a b
 
 /// The codes over a type of decodes `d`, a large type.
-@[ builtin(irSignature) ]
+@[builtin(irSignature)]
 pub data IR(d : Type) : Type[+, 1] where
   /// No argument, the decode `e`.
   | Iota : (e : d) --> IR d
@@ -39,7 +39,7 @@ pub data IR(d : Type) : Type[+, 1] where
 
 /// The arguments a code asks for over a family `x`. The function `t` decodes
 /// the family.
-@[ builtin(irArgs) ]
+@[builtin(irArgs)]
 pub def rec args(d : Type, c : IR d, x : Type, t : x -> d) -> Type =
   match c where
     | Iota(e) => return Unit
@@ -48,7 +48,7 @@ pub def rec args(d : Type, c : IR d, x : Type, t : x -> d) -> Type =
 
 /// The decode of the arguments a code asks for. The code's case refines their
 /// type, since the marked call stages the code.
-@[ builtin(irDecode), form(explicit) ]
+@[builtin(irDecode), form(explicit)]
 pub def rec decodeArgs(d : Type, c : IR d, x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
   match c where
     | Iota(e) => e

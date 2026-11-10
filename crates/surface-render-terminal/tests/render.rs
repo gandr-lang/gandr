@@ -657,7 +657,7 @@ fn a_walk_renders_each_refused_declaration_at_its_line()
             },
         );
         assert_eq!(rendered.len(), 3_usize, "three refusals: {rendered:?}");
-        for ((line, column), rendered) in [(2_usize, 14_usize), (4, 13), (5, 4)]
+        for ((line, column), rendered) in [(2_usize, 14_usize), (4, 13), (5, 3)]
             .into_iter()
             .zip(&rendered)
         {

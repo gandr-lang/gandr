@@ -5,7 +5,7 @@ codata Stream(a : Type) : Type[-] where {
 
 world seat;
 
-module Pair :> *{ type Kept, one : Kept } where {
+module Pair :> *{type Kept, one : Kept} where {
   type Kept = Integer;
   def one = 1;
 }

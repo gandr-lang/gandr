@@ -1,6 +1,6 @@
 17:1-17:29 import "./circle-base.ga… ⇒ import "./circle-base.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`.⏎⏎This source supplies the identity subject's shared circle declarations.⏎⏎The declarations provide the circle, its loop words, and⏎their integer model.⏎Winding and spinning follow the HoTT book's § 8.1. The circle follows⏎cubical Agda's `Cubical/HITs/S1/Base.agda`.⏎⏎Each subject source imports these declarations to state its own law.⏎The checker evaluates their rules and path operations.⏎⏎- see: corpus/model/identity/circle.gandr @17:1-17:30
 19:1-19:29 import "./equivalence.ga… ⇒ import "./equivalence.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/equivalence.gandr`. @19:1-19:30
-22:1-22:34 @[ runs("loop ∷ Path.her… ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @22:1-23:1
+22:1-22:32 @[runs("loop ∷ Path.here… ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @22:1-23:1
 23:1-23:3 def ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:45
 23:5-23:9 once( ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:5-23:9
 23:10-23:13 ) -> ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:45
@@ -72,7 +72,7 @@
 35:26-35:29 Base ⇒ Base : Circle @35:26-35:30
 35:30-35:30 ) ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop (Path.back loop),⏎  Path.here Base) @35:5-35:31
 35:31-35:31 ; ⇒ cancelled : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop (Path.back loop),⏎  Path.here Base)⏎⏎The cancellation rule reduces the loop and its inverse to the empty word. @32:1-35:32
-38:1-38:32 @[ refuses("EndpointMism… ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @38:1-39:1
+38:1-38:30 @[refuses("EndpointMisma… ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @38:1-39:1
 39:1-39:3 def ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @39:1-42:32
 39:5-39:15 around_once ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @39:5-39:16
 39:17-39:17 : ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @39:1-42:32
@@ -96,7 +96,7 @@
 42:26-42:29 Base ⇒ Base : Circle @42:26-42:30
 42:30-42:30 ) ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base) @42:5-42:31
 42:31-42:31 ; ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @39:1-42:32
-45:1-45:32 @[ refuses("RuleNotRespe… ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @45:1-46:1
+45:1-45:30 @[refuses("RuleNotRespec… ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @45:1-46:1
 46:1-46:3 def ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @46:1-46:56
 46:5-46:9 tell( ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @46:5-46:9
 46:10-46:10 p ⇒ p : Path[.A = Circle](Base, Base) @46:10-46:11
@@ -203,7 +203,7 @@
 62:40-62:43 Base ⇒ Base : Circle @62:40-62:44
 62:44-62:44 ) ⇒ Path.here (loop ∷ loop ∷ Path.here Base) : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop loop,⏎  loop ∷ loop ∷ Path.here Base) @62:5-62:45
 62:45-62:45 ; ⇒ twice : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop loop,⏎  loop ∷ loop ∷ Path.here Base)⏎⏎The `twice` composite converts to two loops. @59:1-62:46
-65:1-65:20 @[ runs("S (S Z)") ] ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @65:1-66:1
+65:1-65:18 @[runs("S (S Z)")] ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @65:1-66:1
 66:1-66:3 def ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @66:1-66:49
 66:5-66:11 counted ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @66:5-66:12
 66:13-66:13 : ⇒ counted : () -> Int⏎⏎The `wind` and `spin` composite returns two loops from two loops. @66:1-66:49

@@ -23,7 +23,7 @@ pub def isEmpty(s : String) -> Bool =
 /// The laws of `concat` and `empty`: joining is associative and the empty
 /// string is its unit on both sides. Strings under joining are a monoid.
 /// The coincidence check certifies the three rules, and the row fires them.
-@[ normalizes("concat(concat(empty, empty), concat(empty, empty)) ~> empty") ]
+@[normalizes("concat(concat(empty, empty), concat(empty, empty)) ~> empty")]
 pub theory Strings where
   /// The strings, as the sort the laws range over.
   sort S : Type;

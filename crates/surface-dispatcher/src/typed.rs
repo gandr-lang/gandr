@@ -9735,7 +9735,7 @@ mod tests
             "typed/fixtures/a-functor-parameter-s-abstract-type-answers-at-its-kind-2183.gandr"
         ));
         let table = table(source);
-        for needle in ["T }) :>", "V }) where {"] {
+        for needle in ["T}) :>", "V}) where {"] {
             assert_eq!(
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Type, SourceText::from("Type")),

@@ -280,7 +280,7 @@
 77:5-77:5 = ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul a⏎  (force Endo.one), a)⏎⏎`unitR` verifies the right unit law. @74:3-78:16
 78:5-78:13 Path.here ⇒ Path.here f : Path[.A = Integer -> Integer](Endo.mul f (force Endo.one), f) @78:5-78:16
 78:15-78:15 f ⇒ f : Integer -> Integer @78:15-78:16
-81:1-81:14 @[ runs("8") ] ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @81:1-82:1
+81:1-81:12 @[runs("8")] ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @81:1-82:1
 82:1-82:3 def ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:1-82:27
 82:5-82:13 composed( ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:5-82:13
 82:14-82:17 ) -> ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:1-82:27

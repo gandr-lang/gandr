@@ -1,4 +1,4 @@
-@[ runs("<fun>") ]
+@[runs("<fun>")]
 def compose(
   t : Type,
   u : Type,

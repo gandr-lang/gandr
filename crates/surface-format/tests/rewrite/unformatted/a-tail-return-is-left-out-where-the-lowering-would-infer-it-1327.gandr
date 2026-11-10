@@ -40,7 +40,7 @@ def noted(n : Nat) -> -F Nat {
   return /* the argument */ n
 }
 
-@[ explicit_exits ]
+@[explicit_exits]
 def asked(n : Nat) -> -F Nat {
   return n
 }
