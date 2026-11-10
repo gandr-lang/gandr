@@ -26,6 +26,7 @@ use crate::protocol::TraceParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::WorkDone;
 use crate::protocol::WorkTitle;
+use crate::tier::KernelTiersParams;
 use crate::transport::Body;
 
 /// The version every envelope names.
@@ -33,6 +34,10 @@ const VERSION: &str = "2.0";
 
 /// The method diagnostics are published under.
 const PUBLISH_DIAGNOSTICS: &str = "textDocument/publishDiagnostics";
+
+/// The method a server notifies a document's kernel tiers under, gandr's
+/// own.
+const KERNEL_TIERS: &str = "gandr/kernelTiers";
 
 /// The method a server registers a capability with the client under, and the
 /// identifier of the one such request it sends.
@@ -534,6 +539,8 @@ pub enum Notified
     Traced(TraceParams),
     /// `window/showMessage` and `window/logMessage`.
     Told(MessageParams),
+    /// `gandr/kernelTiers`.
+    Tiered(KernelTiersParams),
 }
 
 /// The parameters of a request of the server's.
@@ -764,6 +771,21 @@ pub const fn trace(params: TraceParams) -> Outgoing
         jsonrpc: VERSION,
         method: LOG_TRACE,
         params: Notified::Traced(params),
+    }
+}
+
+/// The notification carrying the kernel tiers `params` names.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub const fn kernel_tiers(params: KernelTiersParams) -> Outgoing
+{
+    Outgoing::Notification {
+        jsonrpc: VERSION,
+        method: KERNEL_TIERS,
+        params: Notified::Tiered(params),
     }
 }
 

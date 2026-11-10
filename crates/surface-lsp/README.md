@@ -27,10 +27,10 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `run_hub`, `bind`, `bind::Absent`, `socket_for`, `Unnamed` and `LINGER`, on Unix: one hub per workspace and build, every connection served over the shared workspace on its own threads, a killed client leaving the others served, and the hub removing its socket and returning once no client has connected for its linger.
 - `relay`, on Unix: a client's frames carried to a hub and back, the session ending as a standalone one would.
 - `Face`, on Unix: `run_hub`'s second face, handed every connection whose first byte is `{` rather than a frame's header, over the same workspace.
-- `Workspace::held`, `Workspace::published`, `Workspace::watch` and `Workspace::query`: what another face reads off the shared workspace, each off the copy that synchronised last — the open documents and their versions, the diagnostics last published for each, a channel told of each publication and forgotten document, and any request the server answers, run on a connection that holds nothing.
+- `Workspace::held`, `Workspace::published`, `Workspace::watch` and `Workspace::query`: what another face reads off the shared workspace: the open documents and their versions, the diagnostics last published for each, a channel told of each publication and forgotten document, and any request the server answers, run on a connection that holds nothing.
 - `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes judged without submitting any, ranked best first, each with the diagnostics its text would publish; every copy and its session unchanged.
 - `Workspace::propose`, `Proposal` and `ProposalRefusal`: a model's fill of a range kept beside the document once it checks, refused when stale or failing, and withdrawn by the next synchronisation; kept fills served as ghost text, code lenses, code actions and hover notes.
-- `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket — a connection opening with the preface greeted with the held documents and sent each one's report, then the report of every publication; a resync answered at the current version, a detach closing it, another bus version detached at once.
+- `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket, with its greeting, its reports, a resync and a detach as [`bus`](src/bus.rs) states.
 - Incremental synchronisation: each content change applied in order and the document judged again in its session on the worker pool, molding only the forms the change touched; one log line per publication.
 - Notebook synchronisation: a Jupyter `.ipynb` of `gandr` cells judged as one document, each cell published its own diagnostics ([`notebook`](src/notebook.rs)).
 - `Server::admit`, `Server::admitted`, `Admissions` and `Awaiting`: the judgement each synchronisation leaves due, run on the worker pool and published once delivered, then the kernel admission it left, run once its diagnostics are published.
@@ -108,6 +108,8 @@ Mechanism and witnesses live in the rustdoc beside the code:
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: an item slot offers `flow`.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `flow` supplies an import's translation.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming in a `flow` body is free.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
 
 ## License
 

@@ -342,6 +342,56 @@
           "highContrast": "editorHoverWidget.foreground",
           "highContrastLight": "editorHoverWidget.foreground"
         }
+      },
+      {
+        "id": "gandr.warrant.pending",
+        "description": "The colour of the `pending` warrant: this revision has no verdict yet from the layer shown.",
+        "defaults": {
+          "dark": "disabledForeground",
+          "light": "disabledForeground",
+          "highContrast": "disabledForeground",
+          "highContrastLight": "disabledForeground"
+        }
+      },
+      {
+        "id": "gandr.warrant.checked",
+        "description": "The colour of the `checked` warrant: the checker accepted it, and the kernel has not replayed the whole.",
+        "defaults": {
+          "dark": "foreground",
+          "light": "foreground",
+          "highContrast": "foreground",
+          "highContrastLight": "foreground"
+        }
+      },
+      {
+        "id": "gandr.warrant.replayed",
+        "description": "The colour of the `replayed` warrant: the kernel replayed it.",
+        "defaults": {
+          "dark": "testing.iconPassed",
+          "light": "testing.iconPassed",
+          "highContrast": "testing.iconPassed",
+          "highContrastLight": "testing.iconPassed"
+        }
+      },
+      {
+        "id": "gandr.warrant.refused",
+        "description": "The colour of the `refused` warrant: the kernel refused it.",
+        "defaults": {
+          "dark": "errorForeground",
+          "light": "errorForeground",
+          "highContrast": "errorForeground",
+          "highContrastLight": "errorForeground"
+        }
+      },
+      {
+        "id": "gandr.warrant.withheld",
+        "description": "The colour of the `withheld` warrant: it did not cross to the kernel, and the mark's text says why.",
+        "defaults": {
+          "dark": "editorWarning.foreground",
+          "light": "editorWarning.foreground",
+          "highContrast": "editorWarning.foreground",
+          "highContrastLight": "editorWarning.foreground"
+        }
       }
     ],
     "commands": [

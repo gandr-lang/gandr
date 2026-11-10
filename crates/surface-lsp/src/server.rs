@@ -183,6 +183,7 @@ use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::DrawsTiers;
 use crate::protocol::EditsShaped;
 use crate::protocol::ExecuteCommandParams;
 use crate::protocol::FORM_CLOSER;
@@ -310,6 +311,7 @@ use crate::rpc::apply_edit;
 use crate::rpc::choose;
 use crate::rpc::classify;
 use crate::rpc::failure;
+use crate::rpc::kernel_tiers;
 use crate::rpc::list_folders;
 use crate::rpc::progress_begun;
 use crate::rpc::progress_ended;
@@ -337,6 +339,7 @@ use crate::sweep::Seen;
 use crate::sweep::Sweep;
 use crate::sweep::Sweeping;
 use crate::syntax::printed;
+use crate::tier::Tiers;
 use crate::tokens::Resolved;
 use crate::tokens::ResultId;
 use crate::tokens::TokenStream;
@@ -450,6 +453,9 @@ struct Document
     written: Maybe<Vec<ImportPath>, written::Absent>,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
+    /// The kernel tier of each of its declarations: pending from its
+    /// judgement until its admission ends.
+    tiers: Tiers,
     /// The checked proposals kept for its version, in the order kept.
     proposals: Vec<Proposal>,
     /// The requests about it read while its judgement was due or running, in
@@ -510,6 +516,7 @@ impl Document
             named: Vec::new(),
             written: Maybe::Absent(written::Absent::Unread),
             published: Vec::new(),
+            tiers: Tiers::default(),
             proposals: Vec::new(),
             asked: Vec::new(),
             saving: Saving::Idle,
@@ -2102,6 +2109,7 @@ impl Workspace
             applying: AppliesEdits(false),
             editing: EditsShaped::BY_URI,
             showing: ShowsDocuments(false),
+            tiering: DrawsTiers(false),
             listing: ListsFolders(false),
             viewer: ViewsContent(false),
             announced: BTreeMap::new(),
@@ -2380,6 +2388,9 @@ pub struct Server
     /// Whether its client shows a document the server asks it to, read at
     /// `initialize`: a fill kept elsewhere is then offered to its user.
     showing: ShowsDocuments,
+    /// Whether its client draws the kernel tiers, read at `initialize`: each
+    /// admission that ends then notifies its document's tiers.
+    tiering: DrawsTiers,
     /// Whether its client answers a request for its workspace folders, read
     /// at `initialize`: a folder change that does not read then asks for
     /// them whole.
@@ -2495,6 +2506,7 @@ impl Server
             applying: AppliesEdits(false),
             editing: EditsShaped::BY_URI,
             showing: ShowsDocuments(false),
+            tiering: DrawsTiers(false),
             listing: ListsFolders(false),
             viewer: ViewsContent(false),
             announced: BTreeMap::new(),
@@ -3754,27 +3766,32 @@ impl Server
     ///   once no judgement it waits for runs. Then each delivered admission
     ///   whose document this connection still holds at its line's version
     ///   settles into the copy's session, as [`settle`] states, its line
-    ///   carrying its wall; a kernel disagreement adds one diagnostic
-    ///   notification at the line's URI and version whose one diagnostic names
-    ///   it, recorded as the copy's publication and as all it checked, and the
-    ///   line holds nothing. A delivered admission whose copy is gone is logged
-    ///   as retired. Each notification is sent as [`Server::pushed`] sends it:
-    ///   to a client that pulls its diagnostics, none is sent for a document no
-    ///   notebook of its own: each publication is recorded alone, and when one
-    ///   was recorded that no pull held on its copy answers, a client that
-    ///   refreshes its diagnostics is asked to pull again, once. Before each
-    ///   wait for a judgement, while no copy is judged, the sweep's next step
-    ///   starts, as [`Server::sweep_next`] states; the delivered judgement of
-    ///   the source the sweep judges is kept as its report, as [`reported`]
-    ///   reads it, and once no source is swept the pulls waiting are answered
-    ///   as [`Server::swept`] states. A judgement whose parse read other
-    ///   imports than its lay-out was made over ([`Rechecked::misread`]) is
-    ///   laid out again over them, which its copy, still at its version, keeps:
-    ///   over the same closure (the same text before the document and the same
-    ///   unit) it stands, its lay-out and named paths the new lay-out's; over
-    ///   another it publishes nothing and ends no progress, and while the copy
-    ///   runs it is judged again. With [`Awaiting::All`], no judgement or
-    ///   admission is left running and no progress end left waiting.
+    ///   carrying its wall. The copy's kernel tiers take the admission's, as
+    ///   [`Tiers::settle`] states. Then a client that refreshes its lenses is
+    ///   asked for them again, and a client that draws the tiers is sent
+    ///   `gandr/kernelTiers` at the line's URI and version. A kernel
+    ///   disagreement marks the declaration the kernel stopped at and adds one
+    ///   diagnostic notification at the line's URI and version whose one
+    ///   diagnostic names it, recorded as the copy's publication and as all it
+    ///   checked, and the line holds nothing. A delivered admission whose copy
+    ///   is gone is logged as retired. Each notification is sent as
+    ///   [`Server::pushed`] sends it: to a client that pulls its diagnostics,
+    ///   none is sent for a document no notebook of its own: each publication
+    ///   is recorded alone, and when one was recorded that no pull held on its
+    ///   copy answers, a client that refreshes its diagnostics is asked to pull
+    ///   again, once. Before each wait for a judgement, while no copy is
+    ///   judged, the sweep's next step starts, as [`Server::sweep_next`]
+    ///   states; the delivered judgement of the source the sweep judges is kept
+    ///   as its report, as [`reported`] reads it, and once no source is swept
+    ///   the pulls waiting are answered as [`Server::swept`] states. A
+    ///   judgement whose parse read other imports than its lay-out was made
+    ///   over ([`Rechecked::misread`]) is laid out again over them, which its
+    ///   copy, still at its version, keeps: over the same closure (the same
+    ///   text before the document and the same unit) it stands, its lay-out and
+    ///   named paths the new lay-out's; over another it publishes nothing and
+    ///   ends no progress, and while the copy runs it is judged again. With
+    ///   [`Awaiting::All`], no judgement or admission is left running and no
+    ///   progress end left waiting.
     /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
     /// - fails: never; a disagreement is a diagnostic.
@@ -3981,6 +3998,17 @@ impl Server
             };
             let admitted = settle(&mut locked(&document.session), finished);
             logged.timing = admitted.timing;
+            document.tiers.settle(admitted.tiers);
+            if self.phase == Phase::Running {
+                if self.refreshing.lenses.0 {
+                    settled.messages.push(self.asked(Refreshed::Lenses));
+                }
+                if self.tiering.0 {
+                    settled.messages.push(kernel_tiers(
+                        document.tiers.notified(&logged.uri, logged.version),
+                    ));
+                }
+            }
             let deferred: Vec<Diagnostic> = admitted
                 .declined
                 .iter()
@@ -4776,6 +4804,7 @@ impl Server
                 self.applying = initial_applying(&params);
                 self.editing = initial_editing(&params);
                 self.showing = initial_showing(&params);
+                self.tiering = initial_tiering(&params);
                 self.listing = initial_listing(&params);
                 self.viewer = initial_viewer(&params);
                 workspace.rooted(self.peer, &roots);
@@ -5493,7 +5522,7 @@ impl Server
                     || error.code == ErrorCode::SERVER_CANCELLED)
                     && matches!(method.as_ref(), "textDocument/didChange" | "textDocument/didClose"
                         | "notebookDocument/didChange" | "notebookDocument/didClose"),
-                Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
+                Outgoing::Notification { params: Notified::Traced(_) | Notified::Tiered(_), .. } | Outgoing::Success { .. }
                 | Outgoing::Progress(_) => false,
             })
         },
@@ -7627,20 +7656,22 @@ impl Workspace
 
     /// What a code-lens request for the copy of the document at `uri` that
     /// `peer` is answered from answers: the lens over each range a model's
-    /// kept proposals fill, a references lens, unresolved, over each name the
-    /// document declares, and a run lens over each name of a declaration that
-    /// runs applied to nothing.
+    /// kept proposals fill, a kernel tier lens over each marked declaration, a
+    /// references lens, unresolved, over each name the document declares, and
+    /// a run lens over each name of a declaration that runs applied to
+    /// nothing.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI is admitted.
     /// - ensures: Nothing for an unknown document; otherwise the lenses
     ///   [`lenses`] answers for its proposals, given whether the client
-    ///   `applies` edits, one lens per range [`declared`] answers, carrying the
+    ///   `applies` edits, the lenses [`Tiers::lenses`] answers for the copy's
+    ///   kernel tiers, one lens per range [`declared`] answers, carrying the
     ///   URI and the range's start as its data and no command, and one lens per
     ///   range [`runs`] answers, titled `Run` and running [`RUN`] with the URI
     ///   and the range's start, carrying no data; in range order, over the same
-    ///   range a fill lens, then a references lens, then a run lens. A document
-    ///   whose session holds no grammar declares nothing.
+    ///   range a fill lens, then a tier lens, then a references lens, then a
+    ///   run lens. A document whose session holds no grammar declares nothing.
     /// - provides: the answer to `textDocument/codeLens`.
     /// - fails: never.
     /// - panics: none.
@@ -7652,6 +7683,7 @@ impl Workspace
     ///   list a run lens beside their references lens, and a function, a type
     ///   and a family none.
     /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
@@ -7673,6 +7705,7 @@ impl Workspace
             return Answer::Nothing;
         };
         let mut found = lenses(uri, &document.proposals, applies);
+        found.extend(document.tiers.lenses());
         if let Ok(hovering) = document.hovering(uri, &shadows) {
             let text = document.text.source();
             found.extend(declared(text, hovering).into_iter().map(|range| CodeLens {
@@ -8468,6 +8501,18 @@ fn initial_showing(params: &Value) -> ShowsDocuments
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` draws the kernel tiers
+/// the server notifies; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_tiering(params: &Value) -> DrawsTiers
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.draws_tiers())
+        .unwrap_or_default()
+}
+
 /// Whether the client `initialize` names in `params` answers a request for
 /// its workspace folders; not when the parameters do not read.
 ///
@@ -9077,6 +9122,7 @@ fn publication(
     let form = caret_range(document, rechecked.form);
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
+    document.tiers = Tiers::judged(rechecked.declared, &index);
     document.named = rechecked.named;
     document.written = match rechecked.written {
         Maybe::Present(written) => Maybe::Present(written),
@@ -11499,6 +11545,280 @@ mod tests
             resolve(&closed),
             closed,
             "a lens whose document is not open resolves to no command"
+        );
+    }
+
+    /// The kernel tier lenses of the document at `uri` that `server` holds,
+    /// each named by the declaration its line stands in within `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tier_lenses(
+        (server, workspace): (&mut Server, &mut Workspace),
+        uri: &DocumentUri,
+        text: crate::anchor::Source<'_>,
+    ) -> Vec<String>
+    {
+        let request = serde_json::json!({"jsonrpc": "2.0", "id": 2_i32, "method": "textDocument/codeLens",
+            "params": {"textDocument": {"uri": uri}}});
+        let answered = server.handle(workspace, &Body::from(request.to_string().into_bytes()));
+        let [ref answer] = *answered.messages.as_slice()
+        else {
+            panic!("the lens request is answered once: {:?}", answered.messages);
+        };
+        let answer = serde_json::to_value(answer).expect("the answer encodes");
+        answer
+            .pointer("/result")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|lens| {
+                let title = lens.pointer("/command/title")?.as_str()?;
+                let line = lens.pointer("/range/start/line")?.as_u64()?;
+                title.starts_with("kernel ").then(|| {
+                    format!(
+                        "{}: {title}",
+                        crate::anchor::anchored(
+                            text,
+                            crate::anchor::Row(u32::try_from(line).unwrap_or(u32::MAX))
+                        )
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// #2517: a document's own declarations show `kernel pending` once the
+    /// checker accepts them, and their tiers once the admission ends, each at
+    /// its own line: a resumed prelude and the imported declarations stand
+    /// before them in the admission and shift none. The admission's end asks
+    /// a refreshing client for its lenses and notifies a drawing client each
+    /// mark's warrant and its glyph twin. An edit's admission keeps every
+    /// tier, and one range with one title draws one lens.
+    #[test]
+    fn each_declaration_shows_its_kernel_tier_2517()
+    {
+        // A first connection admits a module of its own: the prelude it
+        // crosses then resumes in every later admission of the process, which
+        // numbers its declarations past it. A member and the member its
+        // signature exports stand at one range, and draw one lens.
+        let nat_add = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/modules/nat-add.gandr")
+            .canonicalize()
+            .expect("the modules subject is checked out");
+        let nat_add_uri = format!("file://{}", nat_add.display());
+        let nat_add_text = std::fs::read_to_string(&nat_add).expect("the module is read");
+        let mut first = initialized();
+        let _published = send(
+            &mut first,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                    "textDocument": {"uri": nat_add_uri, "languageId": "gandr", "version": 1_i32,
+                        "text": nat_add_text}}})
+                .to_string(),
+            ),
+        );
+        assert_eq!(
+            tier_lenses(
+                (&mut first.server, &mut first.workspace),
+                &DocumentUri::from(nat_add_uri.as_str()),
+                crate::anchor::Source(&nat_add_text)
+            ),
+            [
+                "module NatAdd+2: kernel replayed",
+                "module NatAdd+5: kernel replayed"
+            ],
+            "each member of the module replays, and one range draws one lens"
+        );
+        let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::MIN.saturating_add(1),
+        ))));
+        let (mut blocking, mut gates) = gated(&pool);
+        let mut connected = Connected::default();
+        let _initialized = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+                    "params": {"capabilities": {"experimental": {"kernelTiers": true},
+                        "workspace": {"codeLens": {"refreshSupport": true}}}}})
+                .to_string(),
+            ),
+        );
+        let Connected {
+            mut server,
+            mut workspace,
+            ..
+        } = connected;
+        let mut admissions = Admissions::new(Arc::clone(&pool), Inbox::default().changes());
+        // The endpoint loops of the sessions subject, under an import of the
+        // circle's base: its declarations take several tiers, and the base's
+        // stand before them in the admission.
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model");
+        let directory = std::env::temp_dir().join(format!("gandr-tiers-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        std::fs::copy(
+            corpus.join("identity/circle-base.gandr"),
+            directory.join("circle-base.gandr"),
+        )
+        .expect("the base is copied");
+        let text = format!(
+            "{}{}",
+            include_str!(
+                "server/fixtures/each-declaration-shows-its-kernel-tier-2517-import.gandr"
+            ),
+            std::fs::read_to_string(corpus.join("sessions/endpoint-loop.gandr"))
+                .expect("the loops are read")
+        );
+        let path = directory.join("loops.gandr");
+        std::fs::write(&path, &text).expect("the importer is written");
+        let uri = format!("file://{}", path.display());
+        let document = DocumentUri::from(uri.as_str());
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}});
+        let _opened = server.handle(&mut workspace, &Body::from(open.to_string().into_bytes()));
+        let _waiting = server.admit(&mut workspace, &mut admissions);
+        // A third blocking job queues behind the judgement: once it starts,
+        // the judgement has run, and the admission waits for the pool.
+        let (started, began) = std::sync::mpsc::channel();
+        gates.push(blocked(&mut blocking, Gated(2_u8), &started));
+        drop(gates.remove(0));
+        began
+            .recv()
+            .expect("the third blocking job starts after the judgement");
+        let judged = server.admitted(&mut workspace, &mut admissions, Awaiting::Ended);
+        assert_eq!(
+            (judged.judged.len(), judged.log.len()),
+            (1_usize, 0_usize),
+            "the opening is published, and its line waits for its admission: {judged:?}"
+        );
+        assert_eq!(
+            tier_lenses(
+                (&mut server, &mut workspace),
+                &document,
+                crate::anchor::Source(&text)
+            ),
+            [
+                "def follow+0: kernel pending",
+                "def tally+0: kernel pending",
+                "def asking+0: kernel pending",
+                "def serving+0: kernel pending",
+                "def beacon+0: kernel pending",
+                "def followed+0: kernel pending",
+            ],
+            "each accepted declaration waits on its admission at its own line"
+        );
+        drop(gates);
+        let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+        let settled_lenses = tier_lenses(
+            (&mut server, &mut workspace),
+            &document,
+            crate::anchor::Source(&text),
+        );
+        assert_eq!(
+            settled_lenses,
+            [
+                "def follow+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
+                "def tally+0: kernel withheld: outside the fragment, Memory (#1626)",
+                "def asking+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
+                "def serving+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
+                "def beacon+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
+                "def followed+0: kernel withheld: behind follow",
+            ],
+            "each tier stands at its own declaration, past the base's, and a withheld \
+             one names the declaration it waits on"
+        );
+        let sent: Vec<Value> = settled
+            .messages
+            .iter()
+            .map(|message| serde_json::to_value(message).expect("a message encodes"))
+            .collect();
+        let methods: Vec<&str> = sent
+            .iter()
+            .filter_map(|message| message.get("method").and_then(Value::as_str))
+            .collect();
+        assert_eq!(
+            methods,
+            [
+                "workspace/codeLens/refresh",
+                "gandr/kernelTiers",
+                "textDocument/publishDiagnostics"
+            ],
+            "the admission's end asks for lenses, notifies the tiers, then publishes \
+             the loops' declines"
+        );
+        let declines = sent
+            .get(2)
+            .and_then(|published| published.pointer("/params/diagnostics"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|diagnostic| diagnostic.get("message").and_then(Value::as_str))
+            .filter(|message| message.contains("no kernel image: EndpointLoop"))
+            .count();
+        assert_eq!(
+            declines, 4_usize,
+            "each endpoint loop's decline finds its declaration past the resumed prelude"
+        );
+        let tiers = sent.get(1).expect("the tiers are notified second");
+        assert_eq!(
+            (
+                tiers.pointer("/params/uri"),
+                tiers.pointer("/params/version")
+            ),
+            (Some(&Value::from(uri.as_str())), Some(&Value::from(1_i32))),
+            "the tiers name the document and the version its admission settled"
+        );
+        let marks: Vec<(String, String, String)> = tiers
+            .pointer("/params/tiers")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|mark| {
+                let field = |name: &str| {
+                    mark.get(name)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned()
+                };
+                (field("warrant"), field("glyph"), field("title"))
+            })
+            .collect();
+        assert_eq!(
+            marks,
+            settled_lenses
+                .iter()
+                .map(|row| {
+                    let title = row.split_once(": ").map_or("", |(_, title)| title);
+                    (
+                        String::from("withheld"),
+                        String::from("○"),
+                        title.to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            "each mark carries its warrant, the warrant's glyph twin and its lens's title"
+        );
+        // An edit after the last declaration: the next admission resumes the
+        // leading declarations, and each keeps its tier.
+        let edited = format!("{text}\n");
+        let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": 2_i32},
+            "contentChanges": [{"text": edited}]}});
+        let _changed = server.handle(&mut workspace, &Body::from(change.to_string().into_bytes()));
+        let _waiting = server.admit(&mut workspace, &mut admissions);
+        let _resettled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+        let resettled_lenses = tier_lenses(
+            (&mut server, &mut workspace),
+            &document,
+            crate::anchor::Source(&edited),
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+        assert_eq!(
+            resettled_lenses, settled_lenses,
+            "an edit's admission resumes the declarations before it, and each keeps its tier"
         );
     }
 

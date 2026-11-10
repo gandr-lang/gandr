@@ -29,11 +29,13 @@ path = "tests/lib.rs"
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a recheck for the
 # benchmark report. The documentation site renders its prose through
-# pulldown-cmark.
+# pulldown-cmark. A declaration's kernel tier is keyed by the kernel's
+# constant index, its position in the admission.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 gandr-core-incremental.workspace = true
+gandr-kernel-term.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
