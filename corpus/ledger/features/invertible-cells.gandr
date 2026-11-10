@@ -1,10 +1,13 @@
 /// `invertible-cells`: Invertible cells between distinct points.
 /// Implemented: a free invertible cell at a point, its loop space the words
 /// over the cell and its inverse with the cancellations as rules (the circle).
+/// A cell at the point's reflexivity is a loop of dimension two, with its own
+/// words (the spheres).
 /// Not implemented: a cell between two distinct points, which would present a
 /// segment and is refused by name.
 ///
 /// - owes: #2712
+/// - see: corpus/model/identity/sphere.gandr — the spheres
 // The circle as the book states it: one point, one loop at it, and the loops
 // at the point equivalent to the integers, `Path[.A = Circle](Base,
 // Base) ≃ Int`.

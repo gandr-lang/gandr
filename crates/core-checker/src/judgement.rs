@@ -12035,10 +12035,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return self.path_expected(at, classifier);
         };
         let signatures = self.context.data_signatures();
-        let Some(sort) = signatures
+        let Some((sort, reflexivities)) = signatures
             .get(&words)
             .and_then(|signature| signature.presentation().cells())
-            .map(gandr_core_term::FreeCells::sort)
+            .map(|cells| (cells.sort(), cells.reflexivities()))
         else {
             return self.path_expected(at, classifier);
         };
@@ -12051,6 +12051,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .collect();
         let carrier = self.context.arena_mut().value_type_data(sort, Vec::new());
         let point = crate::loops::point(self.context, (carrier, &arities), words)?;
+        let (carrier, point) = crate::loops::wrapped(self.context, (carrier, point), reflexivities);
         Ok(PathReading::Known {
             carrier,
             left: point,

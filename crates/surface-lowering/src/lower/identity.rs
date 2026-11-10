@@ -379,7 +379,7 @@ quenchant_shape::reason_enum! {
 }
 
 /// Reflexivity's spelling, which no pattern may take.
-pub(super) const HERE: &str = "here";
+pub const HERE: &str = "here";
 
 /// The inverse's spelling: of a path, and of a loop where a word's letter is
 /// written.
@@ -4949,8 +4949,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `point` is minted in `sink`'s arena.
     /// - ensures: for the first words whose point `point` spells — a closed
     ///   constructor term of the words' family, unapplied, whose tags in
-    ///   pre-order are the point's — that words' empty word, minted as a
-    ///   written `here` at the point mints it; none for any other value.
+    ///   pre-order are the point's, inside as many `here(_)` as the words'
+    ///   wrapping — that words' empty word, minted as a written `here` at the
+    ///   point mints it; none for any other value.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is minted, and the words it matches are
@@ -4977,6 +4978,11 @@ impl<'source> Lowerer<'_, 'source>
         };
         let mut tags = Vec::new();
         let mut pending = Vec::new();
+        let (mut base, mut wraps) = (point, 0_usize);
+        while let Some(&Value::Here(inner)) = sink.arena.value(base) {
+            base = inner;
+            wraps = wraps.saturating_add(1);
+        }
         let words = self.collected.words.iter().find(|words| {
             let Some(family) = self
                 .collected
@@ -4986,9 +4992,12 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return false;
             };
+            if usize::from(words.reflexivities) != wraps {
+                return false;
+            }
             tags.clear();
             pending.clear();
-            pending.push(point);
+            pending.push(base);
             while let Some(at) = pending.pop() {
                 let Some(&Value::Constructor {
                     datatype,
@@ -5516,11 +5525,15 @@ impl<'source> Lowerer<'_, 'source>
             return unread;
         };
         match self.words_point(sink.arena, words) {
-            Maybe::Present((carrier, point)) => Maybe::Present(Identity {
-                carrier,
-                left: point,
-                right: point,
-            }),
+            Maybe::Present(based) => {
+                let (carrier, point) =
+                    super::native::wrapped_point(sink.arena, based, words.reflexivities);
+                Maybe::Present(Identity {
+                    carrier,
+                    left: point,
+                    right: point,
+                })
+            },
             Maybe::Absent(_) => unread,
         }
     }

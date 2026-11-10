@@ -80,6 +80,7 @@ use gandr_core_checker::TypeNode;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Reflexivities;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::SettleReport;
@@ -799,7 +800,8 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
 /// by `.`; a position no declaration holds is the empty name. The words of a
 /// family's loops are named by the path type they read as, `Path[.A = Circle](
 /// Base, Base)`, so a word's type spells as it is written and its letters are
-/// not looked up under its family's name.
+/// not looked up under its family's name. Words over a cell at the point's
+/// reflexivity are named by the path type at the wrapped point.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -845,14 +847,57 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
         }
     }
     for declaration in module.declarations() {
-        if let Maybe::Present((sort, point)) = words_point(module, declaration) {
+        if let Maybe::Present((sort, point, wraps)) = words_point(module, declaration) {
             let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
+            let (carrier, point) = wrapped(family, point, wraps);
             if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
-                *slot = alloc::format!("Path[.A = {family}]({point}, {point})");
+                *slot = alloc::format!("Path[.A = {carrier}]({point}, {point})");
             }
         }
     }
     paths
+}
+
+/// The carrier and the point a type of words reads its path at, spelled: the
+/// family `family` and its point `point`, then for each of `wraps` wrappings
+/// the path type at the point below and `Path.here` applied to it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `(family, point)` for no wrapping; otherwise `(Path[.A = c](p,
+///   p), Path.here p)` over the pair `(c, p)` for one wrapping fewer, `p` in
+///   parentheses unless it is a bare name, as the printer writes an
+///   application.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the wrappings, not recursion.
+/// - measure: the wrappings left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's words spell the path type at the reflexivity
+///   of its point, which reads back to their certificate and reprints as
+///   itself.
+/// - witness: `census::sweeps::every_printed_type_reads_back_to_its_certificate_changed`
+#[spec(ensures: |ret| ret.1.matches("Path.here").count() >= usize::from(wraps))]
+fn wrapped(
+    family: String,
+    point: String,
+    wraps: Reflexivities,
+) -> (String, String)
+{
+    let (mut carrier, mut point) = (family, point);
+    for _ in 0 .. usize::from(wraps) {
+        carrier = alloc::format!("Path[.A = {carrier}]({point}, {point})");
+        point = if point.contains([' ', '(']) {
+            alloc::format!("Path.here ({point})")
+        }
+        else {
+            alloc::format!("Path.here {point}")
+        };
+    }
+    (carrier, point)
 }
 
 /// `paths`, each name that the source `reader` writes otherwise written as
@@ -1124,14 +1169,16 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The sort the words `declaration` declares are over, and the point their
-/// loops are at, spelled by the sort's constructor names.
+/// The sort the words `declaration` declares are over, the point their loops
+/// are at, spelled by the sort's constructor names, and how many times the
+/// point is wrapped in its reflexivity.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: for the words of a family's loops whose family the module holds,
-///   the family's admission position and the closed term its loops are at, each
-///   constructor by its name, applied to its fields when it has any.
+///   the family's admission position, the closed term its loops are at, each
+///   constructor by its name, applied to its fields when it has any, and the
+///   cells' wrapping.
 /// - fails: [`words_point::Absent::Unworded`] for any other declaration.
 /// - panics: none.
 ///
@@ -1145,13 +1192,13 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
 /// - witness: `tests::diagnostics::a_words_point_spells_its_constructors_arguments`
 #[spec(ensures: |ret| match ret {
-    Maybe::Present((_, ref point)) => !point.is_empty(),
+    Maybe::Present((_, ref point, _)) => !point.is_empty(),
     Maybe::Absent(_) => true,
 })]
 fn words_point(
     module: &LoweredModule<'_>,
     declaration: &gandr_surface_lowering::LoweredDeclaration<'_>,
-) -> Maybe<(ConstantIndex, String), words_point::Absent>
+) -> Maybe<(ConstantIndex, String, Reflexivities), words_point::Absent>
 {
     let unworded = Maybe::Absent(words_point::Absent::Unworded);
     if declaration.role() != Role::Words {
@@ -1219,7 +1266,7 @@ fn words_point(
         spelled.push(text);
     }
     match (spelled.pop(), spelled.is_empty()) {
-        (Some(point), true) => Maybe::Present((cells.sort(), point)),
+        (Some(point), true) => Maybe::Present((cells.sort(), point, cells.reflexivities())),
         _ => unworded,
     }
 }
@@ -1457,11 +1504,13 @@ impl Families
                     })
                     .collect();
                 // The empty word's pattern is its bare name, `here`; as a
-                // value it is reflexivity at the point, under its former.
+                // value it is reflexivity at the wrapped point, under its
+                // former.
                 let empty = match point {
-                    Maybe::Present((_, ref point)) => names
-                        .first()
-                        .map(|name| alloc::format!("Path.{name}({point})")),
+                    Maybe::Present((_, point, wraps)) => names.first().map(|name| {
+                        let (_, point) = wrapped(String::new(), point, wraps);
+                        alloc::format!("Path.{name}({point})")
+                    }),
                     Maybe::Absent(_) => None,
                 };
                 Some(Family {

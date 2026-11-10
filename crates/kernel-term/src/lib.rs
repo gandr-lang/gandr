@@ -90,7 +90,9 @@
 //! list appended to every presented declaration, which moves every presented
 //! artifact's bytes for a count most of them hold at zero. **Reversal.** When
 //! most presented declarations carry cells, one kind with an always-written
-//! count is the smaller format.
+//! count is the smaller format. Words over cells above dimension one take a
+//! kind of their own too ([`KIND_DATA_WORDS_HIGHER`]), with how many times
+//! their point is wrapped in its reflexivity after the sort's position.
 //!
 //! # Specification attributes
 //!
@@ -281,6 +283,7 @@ pub use crate::presented::FreeCells;
 pub use crate::presented::Normalized;
 pub use crate::presented::Presentation;
 pub use crate::presented::PresentedRule;
+pub use crate::presented::Reflexivities;
 pub use crate::presented::RewriteFuel;
 pub use crate::presented::RuleFault;
 pub use crate::presented::RuleIndex;
@@ -331,6 +334,7 @@ pub use crate::tags::KIND_DATA;
 pub use crate::tags::KIND_DATA_INDEXED;
 pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DATA_WORDS;
+pub use crate::tags::KIND_DATA_WORDS_HIGHER;
 pub use crate::tags::KIND_DEF;
 pub use crate::tags::KIND_DEF_COVERED;
 pub use crate::tags::KIND_DEF_LAWFUL;
