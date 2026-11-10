@@ -198,6 +198,14 @@
 //! next one parses whole. The boundary is any declaration head, not the `def`
 //! keyword alone.
 //!
+//! An item form of one tile at the start of a line, as `pub`, stands before
+//! the head of a top-level declaration. No container holds a declaration at the
+//! margin. So the molder closes every open form at that prefix, as the end of
+//! the input closes them, when the head after it bounds the open declaration
+//! ([`MeldState::settle_top_level_boundary`]). At the head, the close comes one
+//! token late, and the prefix costs an obligation in the reading that closes
+//! the damaged declaration (#6101).
+//!
 //! A separator can also end a declaration that lacks a tile, as a `def`
 //! without its `=` does. The molder finds that end: a `;` or a layout
 //! separator, and the head of a next top-level declaration after it. There, no
@@ -1130,6 +1138,10 @@ primitive_copy_wrapper!(
 primitive_copy_wrapper!(
     /// Whether a separator closes the open declaration as its last tile.
     pub struct SeparatorTaken(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a declaration head closes the open declaration before it.
+    pub struct DeclarationBound(bool);
 );
 primitive_copy_wrapper!(
     /// Whether a melder weighs a repair: an obligation, or an ended
@@ -3303,6 +3315,85 @@ impl<'pbg> MeldState<'pbg>
         candidates: &[MoldId],
     )
     {
+        if !bool::from(self.bounds_declaration(candidates)) {
+            return;
+        }
+        let floor = self
+            .open_declaration_frontier()
+            .map_or_else(|| StackIndex::from(0), StackIndex::from);
+        self.collapse(StackFloor::from(floor));
+    }
+
+    /// Close every open form before a declaration that starts at the margin,
+    /// as the end of the input closes them.
+    ///
+    /// An item form of one tile at the start of a line, as `pub`, stands
+    /// before the head of a top-level declaration. No container holds a
+    /// declaration at the margin, so the boundary closes every form left open,
+    /// a container's too, and the prefix starts the next item. The close at
+    /// the head ([`settle_declaration_boundary`](Self::settle_declaration_boundary))
+    /// comes one token late: the prefix meets a closed operand there and costs
+    /// an [`Oblig::InconMeld`], or an open form takes it and the next item
+    /// nests in a member of the damaged one.
+    ///
+    /// # Specification
+    /// - requires: `candidates` are the molds gathered for the head that the
+    ///   prefix stands before, at this state.
+    /// - ensures: when [`bounds_declaration`](Self::bounds_declaration) holds
+    ///   for `candidates`, force-closes every form on the slope; the state is
+    ///   untouched otherwise.
+    /// - provides: the top-level boundary at a prefix.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `def` whose type stays open before `pub def`, and a
+    ///   member left open before `pub module` in the dropped rows of
+    ///   `pathological/worlds/offered`, separate the close at the margin from
+    ///   the close at the head. Closing at the nearest declaration frontier
+    ///   nests the module in the open member; no close lets the window prefer
+    ///   the open type.
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    #[inline]
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    pub fn settle_top_level_boundary(
+        &mut self,
+        candidates: &[MoldId],
+    )
+    {
+        if bool::from(self.bounds_declaration(candidates)) {
+            self.collapse(StackFloor::from(StackIndex::from(0)));
+        }
+    }
+
+    /// Return whether a declaration head among `candidates` closes the open
+    /// declaration at this state: the three guards of
+    /// [`settle_declaration_boundary`](Self::settle_declaration_boundary).
+    ///
+    /// # Specification
+    /// - requires: `candidates` are molds of this state's PBG.
+    /// - ensures: true exactly when some candidate opens a declaration, no
+    ///   candidate continues the open frontier or opens a non-item form of the
+    ///   open slot's sort, and the innermost open form is non-item; leaves
+    ///   `self` unchanged.
+    /// - provides: the shared test of the two boundary closes.
+    /// - fails: never; invalid molds are ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`settle_declaration_boundary`](Self::settle_declaration_boundary).
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(self.has_open_form()))]
+    pub fn bounds_declaration(
+        &self,
+        candidates: &[MoldId],
+    ) -> DeclarationBound
+    {
         // Every candidate is consulted before anything is force-closed: one
         // that continues the open frontier is a live reading of this token, and
         // acting on a losing candidate would close a form the winner needs.
@@ -3310,33 +3401,26 @@ impl<'pbg> MeldState<'pbg>
         let expected = self.expected_operand_sort();
         for &mold in candidates {
             if bool::from(self.would_continue_form(mold)) {
-                return;
+                return DeclarationBound::from(false);
             }
             let fills_slot =
                 self.pbg.mold(mold).is_ok_and(|def| {
                     def.sort == expected && !bool::from(is_item_position(def.sort))
                 }) && bool::from(FormTable::is_form_first(self.pbg, mold));
             if fills_slot {
-                return;
+                return DeclarationBound::from(false);
             }
             saw_declaration_head = saw_declaration_head || bool::from(self.opens_declaration(mold));
         }
-        if !saw_declaration_head {
-            return;
-        }
-        let innermost_is_value_form = self
-            .nearest_open_form()
-            .and_then(|index| self.stack.get(usize::from(index)))
-            .is_some_and(
-                |cell| matches!(cell.role, Role::FormTile { sort, .. } if !bool::from(is_item_position(sort))),
-            );
-        if !innermost_is_value_form {
-            return;
-        }
-        let floor = self
-            .open_declaration_frontier()
-            .map_or_else(|| StackIndex::from(0), StackIndex::from);
-        self.collapse(StackFloor::from(floor));
+        DeclarationBound::from(
+            saw_declaration_head
+                && self
+                    .nearest_open_form()
+                    .and_then(|index| self.stack.get(usize::from(index)))
+                    .is_some_and(
+                        |cell| matches!(cell.role, Role::FormTile { sort, .. } if !bool::from(is_item_position(sort))),
+                    ),
+        )
     }
 
     /// Close the open declaration at a separator that ends it unfinished, with

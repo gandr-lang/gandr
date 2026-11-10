@@ -1531,6 +1531,54 @@ fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// A `def rec` whose `match` lost its first `|` recovers alike before a
+/// declaration with `pub` and before the same declaration without it.
+///
+/// The last arm ends in the ascription `: Prog e a)`, and a window decides
+/// whether its `e` is a type variable or the head of a call form. `pub` is no
+/// declaration head, so the boundary came only at the head after it. In the
+/// window of the type variable, `pub` met a closed operand and cost an
+/// `InconMeld`. The window of the call form owed less, so the type stayed open
+/// to the end of the source. The source owed 11 obligations where the call
+/// form owes 5 (#6101). A `pub` at the margin before a head now closes every
+/// open form, as the head does.
+#[test]
+fn a_pub_at_the_margin_closes_the_open_declaration_6101() -> Result<(), Box<dyn Error>>
+{
+    let damaged = |follower: &str| {
+        format!(
+            include_str!(
+                "acceptance/unformatted/a-pub-at-the-margin-closes-the-open-declaration-6101.gandr"
+            ),
+            follower = follower
+        )
+    };
+    let owed = |follower: &str| -> Result<Vec<Oblig>, Box<dyn Error>> {
+        let source = damaged(follower);
+        let result = parse(built(), SourceText::from(source.as_str()))?;
+        Ok(result
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.class)
+            .collect())
+    };
+    let alone = owed("")?;
+    let documented = include_str!("acceptance/unformatted/a-documented-pub-follower-6101.gandr");
+    let mut followers = vec![documented.to_owned()];
+    for declaration in ["def g() -> A = b;", "data G where { }"] {
+        followers.push(declaration.to_owned());
+        followers.push(format!("pub {declaration}"));
+    }
+    for follower in followers {
+        assert_eq!(
+            alone,
+            owed(&follower)?,
+            "the damaged declaration before {follower:?} owes what it owes alone"
+        );
+    }
+    Ok(())
+}
+
 /// A group pattern whose first label has no dot recovers with the one
 /// missing tile, and the declaration around it stays one form.
 ///

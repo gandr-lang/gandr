@@ -3171,6 +3171,7 @@ INSERT INTO purpose VALUES('surface-parser','meld::CheckpointError','enum','A fa
 INSERT INTO purpose VALUES('surface-parser','meld::Completion','struct','The completion the melder would insert to close the input at a prefix.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::CompletionStatus','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::Continuations','struct','What may follow the slope head, from MeldState::continuations.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::DeclarationBound','struct','Whether a declaration head closes the open declaration before it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::DeclarationStart','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::Expected','enum','One expected item in a completion to `⊢`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::FormContinuation','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
