@@ -429,6 +429,7 @@ INSERT INTO purpose VALUES('core-nbe','eval::EvalFault','enum','Why an evaluatio
 INSERT INTO purpose VALUES('core-nbe','eval::Fuel','struct','The number of machine steps an evaluation may take.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','eval::LoweredChain','struct','A definition chain with every body lowered into the core arena a run evaluates against.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','eval::Recursion','enum','How a readback names a fixpoint that is a definition''s own recursion.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','eval::eval_closed_value','function','Evaluate a closed core value, reporting the fuel the run did not spend.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','eval::eval_comp_within','function','Evaluate a core computation to weak head in an environment.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','eval::eval_computation','function','Evaluate a core computation to weak head in the empty environment.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','eval::eval_value','function','Evaluate a core value in the empty environment.',NULL,'fits','sound',NULL);
@@ -524,7 +525,7 @@ INSERT INTO purpose VALUES('core-nbe','readback::ReadbackMode','enum','Which of 
 INSERT INTO purpose VALUES('core-nbe','readback::SpentCalls','enum','Whether a readback holds a call it spent without running.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','readback::readback_computation','function','Read a domain computation back into the core arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','readback::readback_value','function','Read a domain value back into the core arena.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-nbe','readback::readback_value_spending','function','Read a domain value back, reporting whether it holds a spent call unrun.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','readback::readback_value_spending','function','Read a domain value back, reporting whether it holds a spent call unrun and the fuel the run did not spend.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','resharing::EdgeCount','struct','How many support edges a run''s memo entries hold.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','resharing::GoalSupport','struct','The whole input of a goal the machine starts fresh.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','resharing::ResharingMemo','type_alias','The memo the conversion machine re-shares its goals through.','sharing','fits','sound',NULL);
@@ -852,6 +853,7 @@ INSERT INTO purpose VALUES('core-term','rewrite::LiteralKind','enum','The kind o
 INSERT INTO purpose VALUES('core-term','rewrite::LiteralReader','struct','A literal reader a module lends the checker: a model''s reading member and the kind of literal it reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::Nesting','enum','The nesting of a computation under its regions, the step a rewrite of nested computations carries by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::Renaming','struct','The renaming an instantiation needs: it names no binder, replacing a constant by another, an atom by a type and a bound region by a region.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::Solutions','type_alias','Each solved hole beside its solution and the binders the solution is written under, the map a solved fill reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::Unenclosed','struct','A computation that stands in no region, the step a rewrite of nested computations refuses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::abstract_constant_value_type','function','Abstracts a constant in a value type, the step a functor application instantiates its body by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::build_type_updates','function','Builds the updates a type rewrite schedules, the heap task stack a deep type costs heap rather than stack.',NULL,'fits','sound',NULL);
@@ -861,10 +863,10 @@ INSERT INTO purpose VALUES('core-term','rewrite::constructor_classifier_at','fun
 INSERT INTO purpose VALUES('core-term','rewrite::cross_reducts','function','Crosses the reducts of two computations, the step a conversion compares them by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::delinearise','function','Reads a linear binder as an intuitionistic binder, the delinearisation that a rewrite of the intuitionistic indices passes through.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::elaborate_nested_traced','function','Replaces a nested computation and its runs once the decisions are in: a suspended one by a thunk, and the runs of each region by binds around it, traced.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','rewrite::fill_comp_type_hole','function','Replaces every computation-type hole of a name by its fill, raised past the binders between.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::fill_comp_type_holes','function','Replaces every value hole a map of solutions names in a computation type, reading each solution with the others in one walk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::fill_hole','function','Replaces every hole of a name by its fill, written in the context the hole stands in, so a fill is a substitution of syntax.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','rewrite::fill_value_hole','function','Replaces every value hole of a name by its fill, raised past the binders between.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','rewrite::fill_value_type_hole','function','Replaces every value-type hole of a name by its fill, raised past the binders between.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::fill_value_holes','function','Replaces every value hole a map of solutions names in a value, reading each solution with the others in one walk.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::fill_value_type_holes','function','Replaces every value hole a map of solutions names in a value type, reading each solution with the others in one walk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::instantiate_comp_type','function','Instantiates a dependent codomain at an argument, substituting a value for the innermost index and lowering the rest in one walk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::instantiate_comp_type_at_call','function','Instantiates a dependent codomain at a call''s argument, the substitution the call places a definition''s regions by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::instantiate_computation_traced','function','Instantiates a computation at an argument, substituting a value for the innermost index and lowering the rest in one walk, traced.',NULL,'fits','sound',NULL);
@@ -892,6 +894,7 @@ INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_comp_typ
 INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_copied_traced','function','Replaces every free index at once by its environment entry, traced, with a copy of the entry at each occurrence, so a refinement reads each occurrence back to its own written node.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_traced','function','Replaces every free index at once by the entry an evaluation environment holds for it, traced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_value_type','function','Replaces every free index of a value type at once by its environment entry, how a binder''s type is read at a solved variable''s value.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::value_holes','function','Names every value hole that stands in a value, in one walk, the survey an occurs check reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::wrap_marks','function','Wraps each named node once with the marks an elaboration recorded, the last step of a total elaboration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','row::Label','struct','The name of a row''s entry: a record field, a variant constructor or an effect instance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','row::LabelTwice','struct','A label a row would hold twice.',NULL,'fits','sound',NULL);
@@ -2154,6 +2157,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::Composed','enum','What
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Elaborating','struct','The checker the formatter''s meaning check asks for elaborated bodies.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Judged','struct','A lowered module judged and settled, its kernel admission still to run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::JudgedClosure','struct','A closure''s own declarations judged once, held with the closure''s lowering.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::KernelTier','enum','How far the kernel took one declaration that an admission offered it, read off the bridge''s outcome, so an editor shows it beside the declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowered','enum','What the lowering made of one parsed source, before any checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Lowering','struct','One source parsed and lowered: what the lowering made of it, beside the completion obligations the parser recorded while committing its tree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::LoweringCount','struct','How many sources a run has lowered.',NULL,'fits','sound',NULL);
@@ -2161,9 +2165,11 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::Placed','struct','Wher
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Positioning','enum','Whether an admission records where each declaration stands in its artifact and what its admission tallied, which a measure reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Recorded','struct','The untabled judgement of a module''s latest revision, held so that the next revision whose judgement reads the same inputs takes its verdicts rather than judging again.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Recording','enum','Whether an untabled judgement answers from, and keeps, the judgement of a module''s revision before.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::Rejection','struct','Writes why the kernel did not re-derive a declaration the checker accepted, with no subject, so a fault and a lens both read it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Resumption','struct','What Admission::admit_resuming answers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::SpellingCount','struct','How many spelling passes a run has made: one per judged unit, each spelling every type the unit''s checker refusals compare and its failures name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::Unheld','enum','Why an import closure''s lowering is not held for the documents laid after it: each such document is lowered with its closure, whole.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','compose::Unruled','enum','A form that the kernel has no rule for, which keeps a declaration''s verdict on the checker''s side.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::adapt','function','The checker''s input for `module`: every declaration the lowering did not refuse, in admission order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::compose','function','Carry one source through the pipeline: parse, lower, adapt, check, settle.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','compose::compose_on','function','Carry one source through the pipeline as `compose` does, its `runs` items settled on the schedule the caller selects.',NULL,'fits','sound',NULL);
@@ -3099,6 +3105,10 @@ INSERT INTO purpose VALUES('surface-lsp','site::File','struct','One file of a pa
 INSERT INTO purpose VALUES('surface-lsp','site::Sourced','struct','One source of a package as the documentation site reads it: its path in the package and its items, each hover in the site''s classes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','site::site','function','Writes a package''s documentation site: a page per source and per public item, the item index, the source views, the search index and the assets.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','site::sourced','function','Reads one source for the documentation site, so `gandr doc` reports a source it cannot read and goes on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','tier::Glyph','struct','The mark that a gutter draws for a warrant, serialised as its text.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','tier::KernelTiersParams','struct','The parameters of `gandr/kernelTiers`: the kernel tier marks of one open document at the version whose admission settled them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','tier::TierMark','struct','One declaration''s kernel tier mark: its range, its warrant, the warrant''s glyph and the title its lens shows.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','tier::Warrant','enum','How far a layer vouches for what a tier mark shows: the one variable that the mark''s glyph and colour carry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::ResultId','struct','What names a full answer to a later request that holds it: for a token stream, the hexadecimal BLAKE3 digest of its integers, each in little-endian bytes; for any other answer, of its JSON text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::TOKEN_MODIFIERS','constant','The advertised token modifiers, in the order a token''s modifier bits index.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::TOKEN_TYPES','constant','The advertised token types, in the order a token''s type integer indexes: the standard types, then `unresolvedReference`.',NULL,'fits','sound',NULL);

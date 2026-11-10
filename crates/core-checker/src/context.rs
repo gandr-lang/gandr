@@ -3470,9 +3470,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         else {
             return value;
         };
-        crate::module::rounds(value, &bound, |subject, hole, solution| {
-            gandr_core_term::fill_value_hole(self.arena, (subject, under), hole, solution)
-        })
+        gandr_core_term::fill_value_holes(self.arena, (value, under), &bound)
     }
 
     /// Record a permitted residual, or retain ordinary rigid conversion.

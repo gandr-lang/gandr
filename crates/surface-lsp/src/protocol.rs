@@ -909,6 +909,26 @@ impl InitializeParams
         )
     }
 
+    /// Whether this client draws the kernel tiers the server notifies: when
+    /// it declares `experimental.kernelTiers` true. The protocol leaves
+    /// `experimental` to each client, so any other shape reads as not.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn draws_tiers(&self) -> DrawsTiers
+    {
+        DrawsTiers(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.experimental.as_ref())
+                .and_then(|experimental| experimental.get("kernelTiers"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )
+    }
+
     /// Whether this client answers a request for its workspace folders: when
     /// it declares `workspace.workspaceFolders`.
     ///
@@ -1009,6 +1029,12 @@ pub struct AppliesEdits(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShowsDocuments(pub bool);
+
+/// Whether a client draws the kernel tiers the server notifies as
+/// `gandr/kernelTiers`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DrawsTiers(pub bool);
 
 /// Whether a client answers a request for its workspace folders.
 #[repr(transparent)]
@@ -1267,6 +1293,10 @@ pub struct ClientCapabilities
     /// `window`.
     #[serde(default)]
     pub window: Option<WindowCapabilities>,
+    /// `experimental`: any value, which only [`InitializeParams::draws_tiers`]
+    /// reads.
+    #[serde(default)]
+    pub experimental: Option<Value>,
 }
 
 /// The window client capabilities the server reads.

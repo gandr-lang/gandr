@@ -5,6 +5,9 @@
 //!
 //! The checker binds a computed condition.
 //! It checks each branch at a stated answer when present.
+//! `if` is the eliminator of the Booleans, where the case of a sum is a
+//! computation, as § 2.3 of
+//! [Levy-2003-callbypushvalue_functional_imperative_synthesis] states.
 //!
 //! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
 //!

@@ -36,6 +36,8 @@
 //! depth. The derived equality is child-id equality rather than structural
 //! equality: two structurally equal subterms need not share an id, so every use
 //! site either compares inline leaf payloads or resolves ids explicitly.
+//! Binders are de Bruijn indices, so α-equivalence is syntactic identity and
+//! no freshness invariant is kept.
 //!
 //! # Kernel alphabet and core grammar
 //!

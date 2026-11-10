@@ -24,7 +24,7 @@ def plus_two : +U[1] (Integer -> -F Integer);
 def plus_two(x : Integer) -> -F Integer =
   return (x + 2)
 
-/// `seeded` applies `plus_two` to `seed`.
+/// `seeded` applies `plus_two`, which the checker refuses above, to `seed`.
 /// The unknown declaration type refuses the call.
 @[ refuses("UnknownConstant") ]
 def seeded() -> Integer { plus_two seed }

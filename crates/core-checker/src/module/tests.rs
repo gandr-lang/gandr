@@ -4172,8 +4172,8 @@ fn a_solution_naming_a_later_hole_is_read_through_1216()
 
     // `?first`, declared two binders deep, is solved as `?second`, declared
     // one binder deep and solved as `#0`. In `thunk λ λ. return ?first` the
-    // second round reads `?second` two binders deep, raised past one: `#1`.
-    // A type recorded two binders deep reads the same.
+    // walk reads `?second` inside the first solution two binders deep, raised
+    // past one: `#1`. A type recorded two binders deep reads the same.
     let mut arena = CoreArena::new();
     let [first, second] = [0_u32, 1]
         .map(|index| HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"));

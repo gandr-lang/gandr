@@ -81,6 +81,7 @@ INSERT INTO reference VALUES('Kessler-2025-computational_aspects_rewriting_highe
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','db60bc4ed0a81c61929941b9f01c0256c2af1168','2026-11-02','bb7ea16a861957dfc8f4ee999b33a4d61bed1863');
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Li-2024-nominal_approach_probabilistic_separation_logic','theory-probability','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','234f19cce3f96fa69a4cea4c6ff5b3cbaadb754d');
+INSERT INTO reference VALUES('Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments','core-term','rewrite','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ljungström-2025-computational_synthetic_cohomology_theory_homotopy_type_theory','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
 INSERT INTO reference VALUES('Malbos-2021-completion_operads_essential_syzygies','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Malbos-2021-completion_operads_essential_syzygies','theory-coherent-resolutions','triple','background',NULL,NULL,NULL);
@@ -479,7 +480,10 @@ INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kerne
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','replay','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-term','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','compose','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','schedule','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-lsp','tier','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-session','session','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-checker','capability','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-incremental','typing','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-term','effect::host','lineage',NULL,NULL,NULL);
@@ -530,6 +534,7 @@ INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surfa
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','6de02bb253a1b29fd88181f0a1bf888e5e741f78','2026-11-02','b87e55bc6de0e06c75d5c67fb3bb8a6331151936');
 INSERT INTO reference VALUES('vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a','surface-corpus','settle','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a','surface-lowering','description','anchor','9c69093bd6aa7636622a7efb9b6e3b3ffaa60bf6','2026-11-06','e13d3fb39f8f7fe56f23ff5743148a1ee632395e');
+INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','core-term','rewrite','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','surface-lowering','classify','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','ua::strata','lineage',NULL,NULL,NULL);
@@ -662,6 +667,7 @@ INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theor
 INSERT INTO reference VALUES('vault:01a1b32b-755c-7b73-85f1-3055991c2bee','theory-exact-reals','dyadic','exemplar','8f97dfc1113b4fc1febb9a04e053f6cdba9f6861','2026-11-07','efc1b3ca0f4e734dbbec66e0cb9e66048f3844e8');
 INSERT INTO reference VALUES('vault:01a1b53e-d768-7e62-8825-088be647563b','theory-exact-reals','recurrence','exemplar','1c8ce077c60d346ee2ad18982b90b168809e8526','2026-11-07','9d0ddffe5990a84e450a607a284c76457bf5ff76');
 INSERT INTO reference VALUES('vault:01a1b567-b34b-77a2-9ace-075796f0eb3e','core-checker','divergence','exemplar','4a92e372fd0ce78fd4e257276266d7c97b0d8c38','2026-11-07','5e292eca6ae863067b2f03cb2d34ab7d50ebf993');
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','tier','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

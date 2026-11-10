@@ -4,7 +4,9 @@
 //! An exclusive view writes its element back.
 //!
 //! The checker lends the held list as a whole.
-//! Shared views can coexist on that list.
+//! Two views of that list coexist only when each view is a shared view.
+//! The place follows the index expression of Rust on a place
+//! [Rust-reference], § Index expressions.
 //!
 //! - cites: [Rust-reference]
 //!
@@ -14,7 +16,7 @@
 import std.list (List);
 
 /// `pair` supplies the list for each access.
-/// Its declaration states the list type.
+/// Its declaration states the list type, which the checker never infers.
 @[ runs("cons 1 (cons 2 nil)") ]
 pub def pair : List Integer = cons 1 (cons 2 nil);
 

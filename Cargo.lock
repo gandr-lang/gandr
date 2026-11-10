@@ -1660,6 +1660,7 @@ dependencies = [
  "blake3",
  "expect-test",
  "gandr-core-incremental",
+ "gandr-kernel-term",
  "gandr-storage-records",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",

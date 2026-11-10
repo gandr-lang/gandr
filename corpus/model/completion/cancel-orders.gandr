@@ -1,7 +1,9 @@
 //! `cancel-orders` reaps a target and cancellation completion in either order.
 //!
-//! Cancellation and its target owe independent completions. Cancellation can
-//! also take and reap the target's pending completion.
+//! Cancellation and its target owe independent completions. The target's
+//! completion stays owed after the cancellation posts its own, in either order
+//! (io_uring_prep_cancel(3), io_uring_cancelation(7)). Cancellation can also
+//! take and reap the target's pending completion.
 //!
 //! The checker tracks each completion as a separate endpoint. `cancelConsumes`
 //! transfers the pending endpoint to cancellation.
