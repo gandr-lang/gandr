@@ -3075,7 +3075,7 @@ fn hub(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`hub`].
-/// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
+/// - witness: `tests::cli::serve_offers_the_toolset_by_default`
 #[cfg(unix)]
 fn toolset(
     address: core::net::SocketAddr,

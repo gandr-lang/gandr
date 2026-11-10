@@ -321,9 +321,8 @@ pub fn checkpoints() -> Option<PathBuf>
 /// - executable: none — the result depends on the environment.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a hub given a port under a scratch state home serves its
-///   toolset.
-/// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
+/// - hypothesis: L3 — a hub under a scratch state home serves its toolset.
+/// - witness: `tests::cli::serve_offers_the_toolset_by_default`
 #[cfg(unix)]
 pub fn calls() -> Option<PathBuf>
 {

@@ -899,7 +899,7 @@ impl Announcement
     /// # Adequacy
     /// - hypothesis: L3 — a second `gandr serve` in one workspace refuses and
     ///   names the file that the first one wrote.
-    /// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+    /// - witness: `rap::tests::an_announcement_names_the_manifest_and_refuses_a_second_hub`
     #[inline]
     pub fn vacant(&self) -> io::Result<()>
     {
@@ -947,7 +947,7 @@ impl Announcement
     /// # Adequacy
     /// - hypothesis: L3 — a client reads the URL from the file and fetches the
     ///   manifest there, and the file goes when the hub stops.
-    /// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+    /// - witness: `rap::tests::an_announcement_names_the_manifest_and_refuses_a_second_hub`
     #[inline]
     pub fn write(
         self,
@@ -1485,6 +1485,7 @@ mod tests
     use serde_json::Value;
     use serde_json::json;
 
+    use super::Announcement;
     use super::Buffer;
     use super::LOST;
     use super::Policy;
@@ -2225,5 +2226,69 @@ mod tests
             "a listener that refused an event hears nothing more"
         );
         drop(editor);
+    }
+
+    #[test]
+    fn an_announcement_names_the_manifest_and_refuses_a_second_hub()
+    {
+        let scratch = Scratch::new(&json!("rap-announced"));
+        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
+            .expect("the store opens");
+        let address = toolset.address().expect("the toolset listens");
+        hub(&scratch, toolset);
+        let socket = scratch.socket();
+        let file = socket.with_extension("rap");
+        assert_eq!(
+            Announcement::beside(&socket)
+                .vacant()
+                .map_err(|error| error.kind()),
+            Ok(()),
+            "no file names a toolset yet"
+        );
+        let announced = Announcement::beside(&socket)
+            .write(address)
+            .expect("the file is written");
+        let url = std::fs::read_to_string(&file).expect("the file reads");
+        let (at, path) = url
+            .trim_end()
+            .strip_prefix("http://")
+            .and_then(|rest| rest.split_once('/'))
+            .expect("the file holds a URL");
+        let manifest = exchange(at.parse().expect("the URL names an address"), &Message {
+            head: alloc::format!("GET /{path} HTTP/1.1\r\nhost: {at}"),
+            body: Vec::new(),
+        })
+        .json();
+        assert_eq!(
+            entries(manifest.get("tools")).len(),
+            tools::list().len(),
+            "a client fetches the manifest at the URL that the file names"
+        );
+        let refused = Announcement::beside(&socket)
+            .vacant()
+            .expect_err("a second hub refuses while the first listens");
+        assert_eq!(
+            (
+                refused.kind(),
+                refused.to_string().contains(&*file.to_string_lossy())
+            ),
+            (std::io::ErrorKind::AddrInUse, true),
+            "the refusal names the file: {refused}"
+        );
+        drop(announced);
+        assert!(!file.exists(), "the file goes when the hub lets it go");
+        let gone = loopback();
+        let stale = Announcement::beside(&socket)
+            .write(gone.local_addr().expect("the loopback has an address"))
+            .expect("the file is written");
+        drop(gone);
+        assert_eq!(
+            Announcement::beside(&socket)
+                .vacant()
+                .map_err(|error| error.kind()),
+            Ok(()),
+            "a file whose listener has gone is vacant"
+        );
+        drop(stale);
     }
 }
