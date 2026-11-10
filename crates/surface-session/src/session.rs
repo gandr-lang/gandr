@@ -407,6 +407,10 @@ use crate::edit::Snapshot;
 use crate::edit::diff;
 use crate::forms::FormCensus;
 use crate::forms::FormStore;
+use crate::instrument::Instrument;
+use crate::instrument::Phase;
+use crate::instrument::Silent;
+use crate::instrument::within;
 use crate::lowerings;
 use crate::lowerings::Closure;
 use crate::lowerings::Held;
@@ -527,6 +531,18 @@ struct Quiet;
 
 impl CheckpointObserver for Quiet
 {
+}
+
+/// How many declarations `resumption` offered the kernel again: those it
+/// judged, less those it resumed from a readmission it held.
+///
+/// # Specification
+/// trivial.
+fn crossed_of(resumption: &Resumption) -> DeclarationCount
+{
+    DeclarationCount::from(
+        usize::from(resumption.judged).saturating_sub(usize::from(resumption.resumed)),
+    )
 }
 
 /// One import of the latest accepted revision, owned so it outlives the text
@@ -1808,7 +1824,7 @@ pub struct Ran
 impl Detached
 {
     /// Run the admission, polling `retirement` before each declaration it
-    /// crosses.
+    /// crosses and telling `sink` what it does.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1818,7 +1834,9 @@ impl Detached
     ///   before a declaration, [`Polled::Retired`], and the record of the
     ///   declarations crossed before it, when the readmission made one, is held
     ///   in the process's store under the closure's text and their checkpoints,
-    ///   for a later admission to resume.
+    ///   for a later admission to resume. `sink` is told the admission's phase
+    ///   entered and left, then, when it ran whole, how many declarations it
+    ///   offered the kernel again ([`Instrument::crossed`]).
     /// - provides: the half of an admission that runs off the session's thread.
     /// - fails: never; a disagreement is in the answer.
     /// - panics: none.
@@ -1828,6 +1846,7 @@ impl Detached
     ///   the next admission of the same revision crosses only the declarations
     ///   after it.
     /// - witness: `tests::session::a_retired_admission_leaves_what_it_crossed_to_the_next_1547`
+    /// - witness: `tests::instrument::an_admission_tells_its_sink_what_it_crossed`
     #[inline]
     #[spec(
         captures: [judged = self.checkpoints.len()],
@@ -1836,12 +1855,14 @@ impl Detached
             Polled::Retired(..) => true,
         },
     )]
-    pub fn run<Poll>(
+    pub fn run<Poll, Sink>(
         self,
         retirement: &Poll,
+        sink: &mut Sink,
     ) -> Polled<Ran, Poll::Retired, ()>
     where
         Poll: Retirement,
+        Sink: Instrument,
     {
         let Self {
             pending:
@@ -1859,14 +1880,20 @@ impl Detached
             .map_or(Maybe::Absent(crossed::Absent::Unasked), |found| {
                 Maybe::Present(found.crossed())
             });
-        match admission.admit_retiring(LeadingCount::from(record), resumed, retirement) {
-            Polled::Whole(resumption) => Polled::Whole(Ran {
-                resumption,
-                boundary,
-                closure,
-                checkpoints,
-                found,
-            }),
+        let admitted = within(sink, Phase::Admit, || {
+            admission.admit_retiring(LeadingCount::from(record), resumed, retirement)
+        });
+        match admitted {
+            Polled::Whole(resumption) => {
+                sink.crossed(crossed_of(&resumption));
+                Polled::Whole(Ran {
+                    resumption,
+                    boundary,
+                    closure,
+                    checkpoints,
+                    found,
+                })
+            },
             Polled::Retired(retired, record) => {
                 if let Maybe::Present(record) = record
                     && let Some(leading) = checkpoints.get(.. usize::from(record.boundary()))
@@ -2256,7 +2283,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 (&Unit::single(), ByteOffset::from(0_usize)),
                 None,
                 |_| (),
-                &Unretired,
+                (&Unretired, &mut Silent),
             )?
             .whole();
         self.admit_into(submission)
@@ -2298,7 +2325,13 @@ impl<Store, Blocks> Session<Store, Blocks>
         Blocks: BlockStore,
     {
         let submission = self
-            .judge_with(revision, (unit, base), Some(slot), |_| (), &Unretired)?
+            .judge_with(
+                revision,
+                (unit, base),
+                Some(slot),
+                |_| (),
+                (&Unretired, &mut Silent),
+            )?
             .whole();
         self.admit_into(submission)
     }
@@ -2540,14 +2573,15 @@ impl<Store, Blocks> Session<Store, Blocks>
             (&Unit::single(), ByteOffset::from(0_usize)),
             None,
             read,
-            &Unretired,
+            (&Unretired, &mut Silent),
         )
         .map(Polled::whole)
     }
 
     /// [`judge_reading`](Self::judge_reading), polling `retirement` before each
     /// declaration the member judgement checks, once before their settle, and
-    /// before each item the incremental pass adopts or judges.
+    /// before each item the incremental pass adopts or judges, and telling
+    /// `sink` what the judgement does.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2556,7 +2590,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   declaration, the settle or an item, [`Polled::Retired`]: the
     ///   incremental session holds the resume it held, and the imports,
     ///   snapshot and documentation the session holds are the last accepted
-    ///   revision's; the session holds no admission.
+    ///   revision's; the session holds no admission. `sink` is told the parse,
+    ///   the lowering and the judgement, each entered and left in that order,
+    ///   as far as the judgement reached; the forms the parse molded after the
+    ///   parse ([`Instrument::molded`]); and the items the incremental pass
+    ///   judged after the judgement, when it ran whole
+    ///   ([`Instrument::judged`]).
     /// - provides: an editor's judgement that a newer revision overtakes stops
     ///   at its next declaration or item, on whatever thread runs it.
     /// - fails: as [`judge`](Self::judge).
@@ -2573,24 +2612,26 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   their settle and once before each item.
     /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
     /// - witness: `tests::session::a_judgement_polls_before_each_declaration_it_checks_1663`
+    /// - witness: `tests::instrument::a_judgement_tells_its_sink_each_phase_and_count`
     #[inline]
-    pub fn judge_reading_retiring<'text, Read, Poll>(
+    pub fn judge_reading_retiring<'text, Read, Poll, Sink>(
         &mut self,
         revision: SourceText<'text>,
         read: Read,
-        retirement: &Poll,
+        (retirement, sink): (&Poll, &mut Sink),
     ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
         Read: FnOnce(JudgedParse<'_, 'text>),
         Poll: Retirement,
+        Sink: Instrument,
     {
         self.judge_with(
             revision,
             (&Unit::single(), ByteOffset::from(0_usize)),
             None,
             read,
-            retirement,
+            (retirement, sink),
         )
     }
 
@@ -2664,12 +2705,19 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Read: FnOnce(JudgedParse<'_, 'text>),
     {
-        self.judge_with(revision, (unit, base), Some(slot), read, &Unretired)
-            .map(Polled::whole)
+        self.judge_with(
+            revision,
+            (unit, base),
+            Some(slot),
+            read,
+            (&Unretired, &mut Silent),
+        )
+        .map(Polled::whole)
     }
 
     /// [`judge_unit_reading`](Self::judge_unit_reading), polling `retirement`
-    /// as [`judge_reading_retiring`](Self::judge_reading_retiring) polls it.
+    /// and telling `sink` what it does, as
+    /// [`judge_reading_retiring`](Self::judge_reading_retiring) does.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
@@ -2690,21 +2738,23 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - hypothesis: L3 — as
     ///   [`judge_reading_retiring`](Self::judge_reading_retiring).
     /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
+    /// - witness: `tests::instrument::a_judgement_tells_its_sink_each_phase_and_count`
     #[inline]
-    pub fn judge_unit_reading_retiring<'text, Read, Poll>(
+    pub fn judge_unit_reading_retiring<'text, Read, Poll, Sink>(
         &mut self,
         revision: SourceText<'text>,
         (unit, base): (&Unit, ByteOffset),
         slot: &'text ClosureSlot,
         read: Read,
-        retirement: &Poll,
+        (retirement, sink): (&Poll, &mut Sink),
     ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
         Read: FnOnce(JudgedParse<'_, 'text>),
         Poll: Retirement,
+        Sink: Instrument,
     {
-        self.judge_with(revision, (unit, base), Some(slot), read, retirement)
+        self.judge_with(revision, (unit, base), Some(slot), read, (retirement, sink))
     }
 
     /// Judge `revision` as
@@ -2732,18 +2782,19 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
     /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
-    fn judge_with<'text, Read, Poll>(
+    fn judge_with<'text, Read, Poll, Sink>(
         &mut self,
         revision: SourceText<'text>,
         (unit, base): (&Unit, ByteOffset),
         slot: Option<&'text ClosureSlot>,
         read: Read,
-        retirement: &Poll,
+        (retirement, sink): (&Poll, &mut Sink),
     ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
         Read: FnOnce(JudgedParse<'_, 'text>),
         Poll: Retirement,
+        Sink: Instrument,
     {
         let own = SourceIndex::from(unit.sources().len().saturating_sub(1_usize));
         self.admission = Maybe::Absent(admission::Absent::Idle);
@@ -2763,10 +2814,11 @@ impl<Store, Blocks> Session<Store, Blocks>
                     .get(usize::from(base) ..)
                     .unwrap_or_default(),
             );
-            let (own, forms) = self
-                .forms
-                .parse(&self.grammar, document, &*self.pool)
-                .map_err(parse_fault)?;
+            let (own, forms) = within(sink, Phase::Parse, || {
+                self.forms.parse(&self.grammar, document, &*self.pool)
+            })
+            .map_err(parse_fault)?;
+            sink.molded(forms.molded());
             let written = Maybe::Present(path_imports(&self.grammar, own.tree()));
             let parsed = own
                 .after(closure.lowering().tree(), revision)
@@ -2782,14 +2834,16 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Some(judged) => {
                     let led = closure.led(root);
                     let onto = led.map_or_else(|| judged.arena(), Led::arena);
-                    lower_onto_closure(
-                        judged,
-                        onto,
-                        parsed,
-                        unit,
-                        &mut self.lowerings,
-                        &mut self.decisions,
-                    )
+                    within(sink, Phase::Lower, || {
+                        lower_onto_closure(
+                            judged,
+                            onto,
+                            parsed,
+                            unit,
+                            &mut self.lowerings,
+                            &mut self.decisions,
+                        )
+                    })
                     .map(|(lowering, checking)| {
                         // The incremental pass starts after the closure's
                         // items only over the arena it left them in.
@@ -2800,23 +2854,26 @@ impl<Store, Blocks> Session<Store, Blocks>
                         (lowering, checking, led)
                     })
                 },
-                None => lower_resumed_unit(
-                    closure.lowering(),
-                    parsed,
-                    unit,
-                    &mut self.lowerings,
-                    &mut self.decisions,
-                )
+                None => within(sink, Phase::Lower, || {
+                    lower_resumed_unit(
+                        closure.lowering(),
+                        parsed,
+                        unit,
+                        &mut self.lowerings,
+                        &mut self.decisions,
+                    )
+                })
                 .map(|lowering| (lowering, Checking::Whole, None)),
             }
             .map_err(SessionFault::Compose)?;
             (lowering, checking, led, forms, written)
         }
         else {
-            let (parsed, forms) = self
-                .forms
-                .parse(&self.grammar, revision, &*self.pool)
-                .map_err(parse_fault)?;
+            let (parsed, forms) = within(sink, Phase::Parse, || {
+                self.forms.parse(&self.grammar, revision, &*self.pool)
+            })
+            .map_err(parse_fault)?;
+            sink.molded(forms.molded());
             let written = if usize::from(base) == 0 {
                 Maybe::Present(path_imports(&self.grammar, parsed.tree()))
             }
@@ -2828,13 +2885,15 @@ impl<Store, Blocks> Session<Store, Blocks>
                 own: (usize::from(base) == 0).then(|| parsed.tree()),
                 closure: None,
             });
-            let lowering = lower_parsed_unit(
-                &self.grammar,
-                parsed,
-                unit,
-                &mut self.lowerings,
-                &mut self.decisions,
-            )
+            let lowering = within(sink, Phase::Lower, || {
+                lower_parsed_unit(
+                    &self.grammar,
+                    parsed,
+                    unit,
+                    &mut self.lowerings,
+                    &mut self.decisions,
+                )
+            })
             .map_err(SessionFault::Compose)?;
             (lowering, Checking::Whole, None, forms, written)
         };
@@ -2890,78 +2949,94 @@ impl<Store, Blocks> Session<Store, Blocks>
         if let Some(closure) = closure {
             closure.keep_snapshot(|| snapshot.leading(ItemOrdinal::from(boundary)));
         }
-        let judged = match self.tables {
-            Tables::Kept => match judge_member_tabled_retiring(
-                self.root.corpus_root(),
-                (module, revision),
-                arena,
-                (&HostGrant::UNBOUNDED, checking),
-                (unit, base),
-                retirement,
-            ) {
-                Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
-                Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
-            },
-            Tables::Unkept => match judge_member_after_retiring(
-                self.root.corpus_root(),
-                (module, revision),
-                arena,
-                (&HostGrant::UNBOUNDED, checking),
-                base,
-                (retirement, Recording::Recorded(&mut self.recorded)),
-            ) {
-                Polled::Whole(judged) => {
-                    Polled::Whole((judged.into_parts(), Maybe::Absent(tabled::Absent::Untabled)))
+        let judged = within(sink, Phase::Judge, || {
+            let judged = match self.tables {
+                Tables::Kept => match judge_member_tabled_retiring(
+                    self.root.corpus_root(),
+                    (module, revision),
+                    arena,
+                    (&HostGrant::UNBOUNDED, checking),
+                    (unit, base),
+                    retirement,
+                ) {
+                    Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
+                    Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
                 },
-                Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
-            },
-        };
-        // Retired before a declaration or the settle: as retired before an
-        // item, the session keeps what its last accepted revision left.
-        let ((settled, admission), table) = match judged {
+                Tables::Unkept => match judge_member_after_retiring(
+                    self.root.corpus_root(),
+                    (module, revision),
+                    arena,
+                    (&HostGrant::UNBOUNDED, checking),
+                    base,
+                    (retirement, Recording::Recorded(&mut self.recorded)),
+                ) {
+                    Polled::Whole(judged) => Polled::Whole((
+                        judged.into_parts(),
+                        Maybe::Absent(tabled::Absent::Untabled),
+                    )),
+                    Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+                },
+            };
+            // Retired before a declaration or the settle: as retired before an
+            // item, the session keeps what its last accepted revision left.
+            let ((settled, admission), table) = match judged {
+                Polled::Whole(judged) => judged,
+                Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
+            };
+            let composed = match settled {
+                Ok(composed) => composed,
+                // The readmission ran before the settle comparison once; a
+                // kernel disagreement still takes precedence over a settle
+                // fault.
+                Err(fault) => {
+                    return Err(SessionFault::Compose(match admission.admit() {
+                        Ok(_) => ComposeFault::Settle(fault),
+                        Err(disagreement) => ComposeFault::Readmission(disagreement),
+                    }));
+                },
+            };
+            let submitted = match led {
+                Some(led) => self.incremental.submit_after_retiring(
+                    &mut items,
+                    led.leading(),
+                    &mut Quiet,
+                    retirement,
+                ),
+                None => self
+                    .incremental
+                    .submit_retiring(&mut items, &mut Quiet, retirement),
+            };
+            let (census, persistence) = match submitted {
+                Ok(Polled::Whole(census)) => (census, match Store::KEEPING {
+                    Keeping::Kept => Persistence::Stored,
+                    Keeping::Discarded => Persistence::Discarded,
+                }),
+                // Retired before an item: the incremental session holds the
+                // resume it held, and the session keeps the imports, snapshot
+                // and documentation of the revision it last accepted.
+                Ok(Polled::Retired(retired, ())) => return Ok(Polled::Retired(retired, ())),
+                Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
+                // The incremental session keeps the new resume when persisting
+                // fails; were it to hold none, there is no census to report, so
+                // the store's failure fails the submission instead.
+                Err(SessionError::Store(error)) => match self.incremental.last() {
+                    Maybe::Present(resume) => (resume.census(), Persistence::Failed(error)),
+                    Maybe::Absent(_) => return Err(SessionFault::Store(error)),
+                },
+            };
+            Ok(Polled::Whole((
+                composed,
+                admission,
+                table,
+                census,
+                persistence,
+            )))
+        });
+        let (composed, admission, table, census, persistence) = match judged? {
             Polled::Whole(judged) => judged,
             Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
         };
-        let composed = match settled {
-            Ok(composed) => composed,
-            // The readmission ran before the settle comparison once; a kernel
-            // disagreement still takes precedence over a settle fault.
-            Err(fault) => {
-                return Err(SessionFault::Compose(match admission.admit() {
-                    Ok(_) => ComposeFault::Settle(fault),
-                    Err(disagreement) => ComposeFault::Readmission(disagreement),
-                }));
-            },
-        };
-        let submitted = match led {
-            Some(led) => self.incremental.submit_after_retiring(
-                &mut items,
-                led.leading(),
-                &mut Quiet,
-                retirement,
-            ),
-            None => self
-                .incremental
-                .submit_retiring(&mut items, &mut Quiet, retirement),
-        };
-        let (census, persistence) = match submitted {
-            Ok(Polled::Whole(census)) => (census, match Store::KEEPING {
-                Keeping::Kept => Persistence::Stored,
-                Keeping::Discarded => Persistence::Discarded,
-            }),
-            // Retired before an item: the incremental session holds the resume
-            // it held, and the session keeps the imports, snapshot and
-            // documentation of the revision it last accepted.
-            Ok(Polled::Retired(retired, ())) => return Ok(Polled::Retired(retired, ())),
-            Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
-            // The incremental session keeps the new resume when persisting
-            // fails; were it to hold none, there is no census to report, so
-            // the store's failure fails the submission instead.
-            Err(SessionError::Store(error)) => match self.incremental.last() {
-                Maybe::Present(resume) => (resume.census(), Persistence::Failed(error)),
-                Maybe::Absent(_) => return Err(SessionFault::Store(error)),
-            },
-        };
+        sink.judged(census.judged);
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;
@@ -3190,7 +3265,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         else {
             return Ok(Maybe::Absent(admission::Absent::Idle));
         };
-        self.settle(detached.run(&Unretired).whole())
+        self.settle(detached.run(&Unretired, &mut Silent).whole())
     }
 
     /// Take the admission the latest judgement left, to run off the session.
@@ -3306,6 +3381,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             checkpoints,
             found,
         } = ran;
+        let offered = crossed_of(&resumption);
         let held = match resumption.crossed {
             Maybe::Present(crossed) => {
                 let reach = usize::from(crossed.boundary());
@@ -3333,9 +3409,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             declined: resumption.declined,
             tiers: resumption.tiers,
             checkpoint,
-            crossed: DeclarationCount::from(
-                usize::from(resumption.judged).saturating_sub(usize::from(resumption.resumed)),
-            ),
+            crossed: offered,
             judged: DeclarationCount::from(usize::from(resumption.judged)),
         }))
     }

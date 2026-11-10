@@ -63,5 +63,12 @@ gandr-surface-render-terminal.workspace = true
 gandr-workflow-sweep.workspace = true
 proptest.workspace = true
 
+[features]
+default = []
+# The instrument's recording sinks, which the hub's build compiles and every
+# other build leaves out. Each layer compiles its sink under this feature.
+# The silent sink, which records nothing, is in every build.
+instrument = []
+
 [lints]
 workspace = true
