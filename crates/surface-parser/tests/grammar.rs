@@ -575,3 +575,58 @@ fn assert_parses_clean(
     );
     Ok(())
 }
+
+/// #6130: the last hole of a type form at the application band takes a
+/// juxtaposed application as its operand, whatever tile precedes that hole.
+/// So `+U T Integer` thunks `T Integer` as `-F T Integer` returns it, with a
+/// grade or without one. A row before the returned type keeps that reading,
+/// as `-F [Partial] Maybe Integer` and the result form `[Partial] Maybe
+/// Integer` show. The application band is tighter than the band of `+U`, so
+/// `Vec +U A B` applies `Vec` to the thunk of `A B`.
+#[test]
+fn a_type_form_s_last_hole_takes_a_juxtaposed_application_6130() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def x : +U T Integer;", "u_type", "+U T Integer"),
+        ("def x : +U Maybe Integer;", "u_type", "+U Maybe Integer"),
+        (
+            "def x : +U[1] Maybe Integer;",
+            "u_type",
+            "+U[1] Maybe Integer",
+        ),
+        ("def x : Vec +U A B;", "u_type", "+U A B"),
+        ("def x : -F T Integer;", "f_type", "-F T Integer"),
+        (
+            "def x : -F [Partial] Maybe Integer;",
+            "f_type.row",
+            "-F [Partial] Maybe Integer",
+        ),
+        (
+            "def f() -> [Partial] Maybe Integer { pure 1 }",
+            "f_type.result",
+            "[Partial] Maybe Integer",
+        ),
+        (
+            "def again(T : Type -> Type[-], m : +U T Integer) -> T Integer { force m }",
+            "u_type",
+            "+U T Integer",
+        ),
+    ];
+    let grammar = built();
+    for (source, rule, formed) in cases {
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let read = tree
+            .positions()
+            .find(|&position| {
+                tree.node(position).is_some_and(|node| {
+                    matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(mold)
+                        if grammar.rule_of(mold).is_ok_and(|found| found.name().0 == rule))
+                })
+            })
+            .and_then(|position| tree.fragment(position))
+            .map(<&str>::from);
+        assert_eq!(read, Some(formed), "`{source}`: the type its {rule} forms");
+    }
+    Ok(())
+}

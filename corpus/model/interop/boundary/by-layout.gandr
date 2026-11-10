@@ -59,7 +59,7 @@ def past(n : Integer, offset : Integer) -> u64 { u64.from_integer (n + offset) }
 def low(w : u64) -> i32 { i32.from_integer (u64.to_integer w) }
 
 /// The tagged list at the word `w`, or `None` once `fuel` runs out.
-def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) =
+def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =
   match fuel where
     | Zero => None
     | Succ(rest) => {
@@ -81,7 +81,7 @@ def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) =
 /// The packed list at the word `w`, or `None` once `fuel` runs out or at the
 /// fourth tag. A pointer's cell holds two elements in its first word and the
 /// rest in its second.
-def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) =
+def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe Packed =
   match fuel where
     | Zero => None
     | Succ(rest) => {
