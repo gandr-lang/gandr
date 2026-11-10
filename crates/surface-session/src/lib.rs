@@ -61,6 +61,14 @@
 //! judges no item, molds no form, and composes the same report and kernel
 //! manifest.
 //!
+//! # The engine records its own work through one sink
+//!
+//! [`Session::judge_reading_retiring`] and [`Detached::run`] take an
+//! [`Instrument`] as a type parameter, and tell it each phase they enter and
+//! leave and the forms, items and declarations they count. [`Silent`] records
+//! nothing, and the compiler removes each call on it, so a face that records
+//! nothing pays nothing.
+//!
 //! # Edits are reconstructed from the lowered core
 //!
 //! Each accepted [`Submission`] carries the [`EditScript`] from the latest
@@ -183,6 +191,7 @@ extern crate alloc;
 mod closures;
 mod edit;
 mod forms;
+mod instrument;
 mod item_source;
 mod live_match;
 mod lowerings;
@@ -208,6 +217,9 @@ pub use crate::edit::spanned;
 pub use crate::forms::FormCensus;
 pub use crate::forms::FormCount;
 pub use crate::forms::FormStore;
+pub use crate::instrument::Instrument;
+pub use crate::instrument::Phase;
+pub use crate::instrument::Silent;
 pub use crate::item_source::Revision;
 pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;
