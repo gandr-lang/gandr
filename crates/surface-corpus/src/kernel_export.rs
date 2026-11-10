@@ -147,6 +147,12 @@ use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_kernel_core::EndpointSide;
+use gandr_kernel_core::IdentityError;
+use gandr_kernel_core::KernelError;
+use gandr_kernel_core::KernelVerdict;
+use gandr_kernel_core::ReplayDecline;
+use gandr_kernel_core::ReplayRefusal;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::EncodedArtifact;
@@ -342,6 +348,14 @@ enum Swept
 ///
 /// - see: #5797 — the decoder refuses such an artifact as malformed.
 const PAST_THE_WORK_CAP: [&str; 1] = ["model/records/iterated-pair.gandr"];
+
+/// The declarations that the checker admits and the kernel's identity replay
+/// declines. The kernel admits each one when it derives the conversion itself.
+///
+/// - see: #6321 — the replay declines a transport along three composed `ua`
+///   paths.
+const REPLAY_DECLINES: [(&str, &str); 1] =
+    [("model/identity/negation-composite.gandr", "negEleven")];
 
 /// Every `.gandr` source under `root`, sorted, symbolic links not followed.
 ///
@@ -696,6 +710,32 @@ fn export(
             }) = *crossing.outcome()
             {
                 withheld.push((constant, named));
+            }
+            if REPLAY_DECLINES.iter().any(|&(held, name)| {
+                path.ends_with(held)
+                    && names.get(&constant)
+                        == NameSegment::from_text(name.into())
+                            .map(|segment| StructuredName::from(vec![segment]))
+                            .as_ref()
+            }) {
+                assert!(
+                    matches!(
+                        *crossing.outcome(),
+                        bridge::Outcome::Rejected(KernelError::Identity(
+                            IdentityError::EndpointsDiffer {
+                                side: EndpointSide::Left,
+                                verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                                    ReplayRefusal::Inapplicable { .. }
+                                )),
+                                ..
+                            }
+                        ))
+                    ),
+                    "{}: the identity replay declines the held declaration until #6321: {:?}",
+                    path.display(),
+                    crossing.outcome()
+                );
+                continue;
             }
             class_of(&path, judgement.verdict(), crossing.outcome())
         };
