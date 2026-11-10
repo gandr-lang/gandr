@@ -30,14 +30,14 @@
 //! | ---- | ------------- |
 //! | [`Complex`], [`Incidence`], [`Standing`], [`Invertibility`] | the caller's complex, the incidence of a face, and whether a cell lies in the complex |
 //! | [`Scheme`], [`Class`] | a matching that gives the class of each cell, and the class: critical, or paired up or down |
-//! | [`Composites`], [`Definition`], [`Closure`], [`Images`] | a scheme whose cells compose in the free (n,1)-category, the definition of a redundant cell by its partner, whether a witness closes, and the images that a substitution reads |
+//! | [`Composites`], [`Definition`], [`Closure`], [`Images`] | a complex whose cells compose in the free (n,1)-category, the definition of a redundant cell by its partner, whether a witness closes, and the images that a substitution reads |
 //! | [`collapse()`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
 //! | [`greedy()`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, a matching that a caller states pair by pair, and a matching read as a scheme over any complex |
 //! | [`reduct()`], [`Reduct`], [`Place`] | the reduct along an acyclic matching: the critical cells, the Morse boundary of each and the walk of its gradient |
 //! | [`equivalence()`], [`Equivalence`], [`EquivalenceOf`], [`Removal`], [`Bound`], [`Refusal`] | the equivalence along an acyclic matching, its removals, the equivalence read on its complex, and each refusal of its replay by name |
 //! | [`Reduction`], [`Then`], [`Answer`] | a reduction: the collapse, the inclusion, both inverse witnesses and the replay, two reductions in sequence, and what a step gives |
 //! | [`Sum`], [`Summand`], [`PartIndex`], [`SumFault`] | reductions of one type side by side as one reduction, a value of one part with its part, the place of a part, and why a sum cannot answer |
-//! | [`Abelian`], [`Chain`] | the abelianisation of a scheme: its composites as integer chains |
+//! | [`Abelian`], [`Chain`] | the abelianisation of a complex: its composites as integer chains |
 //! | [`MorseError`] | every refusal: the caller's own fault, a walk past its budget, or a sum past the integers |
 //!
 //! A [`GradedPoset`] is a [`Complex`]: the faces of a cell are the cells of
