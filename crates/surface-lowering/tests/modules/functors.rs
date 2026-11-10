@@ -722,8 +722,58 @@ fn a_flow_reads_its_domain_s_members_by_name()
         found
             .iter()
             .all(|&(ref path, ..)| path != "answer" && path != "tag"),
-        "a flow is a template: its members reach the kernel only through an import's \
-         translation: {found:?}"
+        "a flow is a template: its members reach the kernel only through an application or \
+         an import's translation: {found:?}"
+    );
+}
+
+/// #3461: a module binding applies a flow to a module as it applies a
+/// functor. A member that renames one member of the domain binds the
+/// module's member and declares nothing, and any other member is the
+/// instance's own declaration.
+#[test]
+fn a_flow_applies_to_a_module_3461()
+{
+    let source = [
+        VERSIONS,
+        "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = 9 ; }\n",
+        "module Replying : Model(Newer) where { def reply = 42 ; def tag = 7 ; }\n",
+        "module Read = downgrade(Replying) ;\n",
+        "def read = Read.answer ;\n",
+    ]
+    .concat();
+    let found = rows(&lower(source.as_str()));
+    assert!(
+        found
+            .iter()
+            .all(|&(_, _, amounts)| !matches!(amounts, Amounts::Refused(_))),
+        "the application and a read through it settle: {found:?}"
+    );
+    assert!(
+        found.iter().any(|&(ref path, ..)| path == "Read.tag")
+            && found.iter().all(|&(ref path, ..)| path != "Read.answer"),
+        "the code member `tag` is the instance's own, and the renaming `answer` declares \
+         nothing: {found:?}"
+    );
+}
+
+/// #3461: a flow's body reads its domain's sorts by name, as it reads its
+/// values, so `type C = C ;` names the domain's `C` and a flow translates
+/// between theories with sorts. Applied to a module, the instance holds the
+/// argument's types under the codomain's sorts.
+#[test]
+fn a_flow_reads_its_domain_s_sorts_by_name_3461()
+{
+    let source =
+        include_str!("functors/unformatted/a-flow-reads-its-domain-s-sorts-by-name-3461.gandr");
+    let found = rows(&lower(source));
+    assert!(
+        !found.is_empty()
+            && found
+                .iter()
+                .all(|&(_, _, amounts)| !matches!(amounts, Amounts::Refused(_))),
+        "a flow over sorted theories, its application to a module and a read of the \
+         instance's sort settle: {found:?}"
     );
 }
 

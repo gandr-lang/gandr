@@ -13,6 +13,7 @@ use super::Secreted;
 use super::Secrets;
 use super::Site;
 use super::Stated;
+use super::Translation;
 use super::Undeployed;
 use crate::compose::Composed;
 use crate::walk::Step;
@@ -386,6 +387,131 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
          types, an offer leaving an entry out is refused at each, an interface the site's \
          authority does not hold is refused naming the capability, a site no imported file \
          states is unsited, and a refused world is refused as it is: {refused:?}"
+    );
+}
+
+/// #3461: an offer read through a translation is judged first by the
+/// manifold's `translation`, then in the written text. `Path` admits a
+/// renaming and a flow each of whose members renames one member, and the
+/// older role settles at the newer site. `Exact`, the default, refuses any
+/// translation at its label by name. `Path` refuses a flow with code, naming
+/// the member. `Flow` admits a flow with code. A flow `Flow` admits is still
+/// judged, so a module at other sorts is refused naming both types. A
+/// `translation` that spells no policy is refused as it is read.
+#[test]
+fn an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461()
+{
+    let judged = |path: &Path| Manifold::read(path).expect("the manifold reads").judged();
+    let translations = worlds().join("../translations");
+    let pathological = worlds().join("../../pathological/worlds");
+    assert_eq!(
+        judged(&translations.join("translated.manifold.gandr")),
+        Vec::new(),
+        "`Path` admits a renaming and a flow that renames, and the older role takes the newer \
+         module read through each"
+    );
+    let refused = judged(&pathological.join("translated.gandr"));
+    assert!(
+        matches!(
+            refused.as_slice(),
+            [Undeployed::Untranslated { entry, policy: Translation::Exact, why, .. }]
+                if entry == "store" && why.contains("via the flow `downgrade`")
+        ),
+        "a manifold that states no translation refuses a flow at its label: {refused:?}"
+    );
+    let refused = judged(&pathological.join("rewritten.gandr"));
+    assert!(
+        matches!(
+            refused.as_slice(),
+            [Undeployed::Untranslated { entry, policy: Translation::Path, why, .. }]
+                if entry == "store" && why.contains("the member `put` of the flow `keeping`")
+        ),
+        "`Path` refuses a flow with code, naming the member: {refused:?}"
+    );
+
+    let scratch = Scratch::new(Path::new("translated"));
+    let _versions = scratch.file(
+        Path::new("v.gandr"),
+        Text(include_str!(
+            "tests/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-versions.gandr"
+        )),
+    );
+    let _program = scratch.file(
+        Path::new("p.gandr"),
+        Text(
+            "import \"./v.gandr\" (Older);\npub world far requires [store : Older with sort V = \
+             String];\n",
+        ),
+    );
+    let site = |name: &str, sort: &str, offers: &str| {
+        scratch.file(
+            Path::new(name),
+            Text(&format!(
+                include_str!(
+                    "tests/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-site.gandr"
+                ),
+                sort = sort,
+                offers = offers,
+                key = SITE_KEY,
+            )),
+        )
+    };
+    let manifold = |name: &str, site: &str, translation: &str| {
+        scratch.file(
+            Path::new(name),
+            Text(&format!(
+                include_str!(
+                    "tests/unformatted/an-offer-is-admitted-through-a-translation-by-the-manifold-s-policy-3461-manifold.gandr"
+                ),
+                site = site,
+                translation = translation,
+            )),
+        )
+    };
+    let _integers = site(
+        "integers.gandr",
+        "Integer",
+        "pub offers [store = Echo via downgrade];",
+    );
+    let _renamed = site(
+        "renamed.gandr",
+        "String",
+        "pub offers [store = Echo renaming { fetch as get }];",
+    );
+    let refused = judged(&manifold(
+        "flowed.gandr",
+        "integers.gandr",
+        "pub def translation : Translation = Flow;",
+    ));
+    assert!(
+        matches!(
+            refused.as_slice(),
+            [Undeployed::Unoffered { entry, why, .. }]
+                if entry == "store" && why.contains("expected `String`, found `Integer`")
+        ),
+        "a flow `Flow` admits is judged in the written text: {refused:?}"
+    );
+    let refused = judged(&manifold("exact.gandr", "renamed.gandr", ""));
+    assert!(
+        matches!(
+            refused.as_slice(),
+            [Undeployed::Untranslated { entry, policy: Translation::Exact, why, .. }]
+                if entry == "store" && why.contains("through a renaming")
+        ),
+        "the default refuses a renaming at its label: {refused:?}"
+    );
+    let unspelled = manifold(
+        "unspelled.gandr",
+        "renamed.gandr",
+        "pub def translation = 3;",
+    );
+    assert_eq!(
+        Manifold::read(&unspelled).map(|read| read.judged()),
+        Err(Undeployed::Untranslatable {
+            file: unspelled.clone(),
+            came: String::from("3"),
+        }),
+        "a `translation` that spells no policy is refused as it is read"
     );
 }
 

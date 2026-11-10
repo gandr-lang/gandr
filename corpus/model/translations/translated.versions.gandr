@@ -1,0 +1,45 @@
+// Two versions of a store's signature, and the flow from the newer to the
+// older.
+//
+// The older store reads by `get`, and the newer one by `fetch`. A role
+// written against the older version can run at a site whose module models
+// the newer one. The site reads its module through a translation, and the
+// manifold admits it.
+//
+// The flow `downgrade` reads the newer store as the older one. Each of its
+// members renames one member, so it is a path: no code runs at the boundary.
+// Its body reads the domain's sorts and operations by their names.
+//
+// - see: `translated.gandr` — the older role
+// - see: `translated.site.gandr` — a site reading its module through a
+//   renaming and via `downgrade`
+
+/// The older store: values held by key, read by `get`.
+pub theory Older where
+  /// The store holds values of this sort.
+  sort V : Type+;
+  /// What a computation over the store answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Holds `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
+
+/// The newer store: values held by key, read by `fetch`.
+pub theory Newer where
+  /// The store holds values of this sort.
+  sort V : Type+;
+  /// What a computation over the store answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper fetch : (key : V, k : pi+ (v : V). C) --> C;
+  /// Holds `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
+
+/// The newer store read as the older one: each member renames one member.
+pub flow downgrade : Newer ~~> Older where {
+  type V = V;
+  type C = C;
+  def get = fetch;
+  def put = put;
+}

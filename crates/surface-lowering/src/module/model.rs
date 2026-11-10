@@ -617,7 +617,7 @@ impl<'source> Collected<'source>
             None => match self.through_imports(
                 self.unit.source_at(at),
                 name,
-                |target| {
+                |target, _read| {
                     self.modules
                         .get(&(Container::TopLevel(target), name))
                         .copied()

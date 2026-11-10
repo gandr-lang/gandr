@@ -5072,6 +5072,60 @@ fn a_manifold_s_deployment_is_judged_at_its_check_3523()
     );
 }
 
+/// `gandr check` of a manifold judges an offer read through a translation by
+/// the manifold's `translation`: `Path` admits a renaming and a flow that
+/// renames, and the deployment settles silently. A manifold that states no
+/// translation refuses a flow at its label, and `Path` refuses a flow with
+/// code, naming the member (#3461).
+#[test]
+fn a_translation_is_judged_by_the_manifold_s_policy_3461()
+{
+    let checked = |paths: &[&str]| {
+        let mut arguments = vec!["check"];
+        arguments.extend_from_slice(paths);
+        let mut command = gandr(&arguments);
+        command.current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+        ran(command)
+    };
+    let admitted = checked(&[
+        "corpus/model/translations/translated.manifold.gandr",
+        "corpus/model/translations/translated.site.gandr",
+    ]);
+    assert_eq!(
+        (code(&admitted), stderr(&admitted)),
+        (Code(0_i32), String::new()),
+        "`Path` admits the site's renaming and its flow, and the older role takes the module"
+    );
+    let exact = checked(&["corpus/pathological/worlds/translated.gandr"]);
+    assert_eq!(
+        (code(&exact), stderr(&exact)),
+        (
+            Code(1_i32),
+            String::from(concat!(
+                "gandr: `far` requires `store`, and the manifold's `translation`, `Exact`, ",
+                "refuses how the site `corpus/pathological/worlds/translated.gandr` answers it: ",
+                "the offer reads `Echo` via the flow `downgrade`, and `Exact` admits no ",
+                "translation\n",
+            ))
+        ),
+        "the default refuses a flow at its label, by name"
+    );
+    let rewritten = checked(&["corpus/pathological/worlds/rewritten.gandr"]);
+    assert_eq!(
+        (code(&rewritten), stderr(&rewritten)),
+        (
+            Code(1_i32),
+            String::from(concat!(
+                "gandr: `far` requires `store`, and the manifold's `translation`, `Path`, ",
+                "refuses how the site `corpus/pathological/worlds/rewritten.gandr` answers it: ",
+                "the member `put` of the flow `keeping` does more than rename a member of ",
+                "`Echo`, and `Path` admits only renamings\n",
+            ))
+        ),
+        "`Path` refuses a flow with code at the member"
+    );
+}
+
 /// A toolchain directory under `scratch` named `name`, whose `gandr` prints
 /// `ran <name> <its arguments>` and exits 0.
 ///

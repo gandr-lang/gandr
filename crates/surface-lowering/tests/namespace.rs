@@ -3883,6 +3883,134 @@ fn a_translation_is_refused_at_its_domain_or_its_codomain_3378()
     }
 }
 
+/// #3461: an import read through a renaming matches its signature's members
+/// against the source's members the renaming reads, binds each under the
+/// signature's name, and reads the source's declaration as that name, after
+/// the alias where the import writes one. A pair reading no member of the
+/// source is refused at the pair, naming the member. A pair giving the name
+/// of a member the source keeps is refused at that name.
+#[test]
+fn an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461()
+{
+    let pbg = grammar();
+    let renamed = |import: &str, read: &str| {
+        let importer = [
+            VERSIONS,
+            &format!(
+                include_str!(
+                    "namespace/unformatted/an-import-renaming-reads-its-source-s-member-under-the-signature-s-name-3461-renamed.gandr"
+                ),
+                import = import,
+                read = read
+            ),
+        ]
+        .concat();
+        let (text, unit) = laid(&[
+            (SourceText::from(NEWER), &[]),
+            (SourceText::from(importer.as_str()), &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+            ]),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        let refused: Vec<String> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                    Some(format!("{refusal:?}"))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        let mut reads: Vec<(String, String)> = module
+            .reads(SourceIndex::from(1_usize))
+            .filter_map(|(constant, read)| {
+                let declared = module
+                    .declarations()
+                    .iter()
+                    .find(|declaration| declaration.constant() == constant)?;
+                let written = match read {
+                    ReadAs::Under(under) => format!("{}.*", under.as_ref()),
+                    ReadAs::Member { under, member } => {
+                        format!("{}.{}", under.as_ref(), member.as_ref())
+                    },
+                    ReadAs::Opened(member) => String::from(member.as_ref()),
+                };
+                Some((String::from(declared.name().as_ref()), written))
+            })
+            .collect();
+        reads.sort();
+        (refused, reads)
+    };
+    let owned = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|&(name, written)| (String::from(name), String::from(written)))
+            .collect()
+    };
+    assert_eq!(
+        renamed(" as old", "old.answer"),
+        (
+            Vec::new(),
+            owned(&[("label", "old.tag"), ("reply", "old.answer")])
+        ),
+        "an aliased import reads each source declaration under the name it is renamed to"
+    );
+    assert_eq!(
+        renamed("", "answer"),
+        (Vec::new(), owned(&[("label", "tag"), ("reply", "answer")])),
+        "an unqualified import binds each renamed member bare"
+    );
+
+    let refusals = |renaming: &str| {
+        let importer = [
+            VERSIONS,
+            &format!(
+                include_str!(
+                    "namespace/unformatted/an-import-renaming-reads-its-source-s-member-under-the-signature-s-name-3461-refused.gandr"
+                ),
+                renaming = renaming
+            ),
+        ]
+        .concat();
+        let (text, found) = translated(
+            &pbg,
+            SourceText::from(NEWER),
+            SourceText::from(importer.as_str()),
+        );
+        let refused: Vec<Seen> = found
+            .into_iter()
+            .filter(|&(_, ref seen)| *seen != Seen::Settled)
+            .map(|(_, seen)| seen)
+            .collect();
+        (text, refused)
+    };
+    let (text, refused) = refusals("reply as answer, lost as tag");
+    let at = text.rfind("lost").expect("the pair is written");
+    assert!(
+        !refused.is_empty()
+            && refused.iter().all(|seen| *seen
+                == Seen::Mismatched(
+                    bytes(at, at + "lost".len()),
+                    String::from("Older"),
+                    String::from("lost"),
+                    MatchFault::Missing
+                )),
+        "a pair reading no member refuses the importer at it: {refused:?}"
+    );
+    let (_, refused) = refusals("reply as label");
+    assert!(
+        refused.iter().any(|seen| matches!(
+            *seen,
+            Seen::Other(ref refusal) if refusal.contains("DuplicateDefinition")
+        )),
+        "a pair giving a name the source keeps for a member of its own is refused: {refused:?}"
+    );
+}
+
 #[test]
 fn a_constructor_an_import_binds_again_refuses_its_family()
 {

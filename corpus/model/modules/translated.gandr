@@ -2,11 +2,14 @@
 //
 // A flow presents a newer package at an older signature.
 // This source also defines a flow that adds scaling.
+// A renaming presents the newer package at the older signature too.
 //
 // The checker reads a flow as a functor between theory models.
 // It resolves each imported member through the selected flow.
+// It reads a renamed member as the source member that the renaming names.
 //
 // - see: #3378
+// - see: #3461
 // - see: model/modules/translated-newer.gandr
 // - see: pathological/modules/translated.gandr
 /// `Legacy` states the older answer.
@@ -40,6 +43,9 @@ import "./translated-newer.gandr" as published : Legacy via downgrade;
 // The import reads the local flow at `Scaling`.
 import "./translated-newer.gandr" as counted : Scaling via scaling;
 
+// The import reads the newer package at `Legacy`, its `reply` named `answer`.
+import "./translated-newer.gandr" as renamed : Legacy renaming { reply as answer };
+
 /// `relayed` reads the published answer.
 @[runs("42")]
 def relayed() -> Integer { published.answer }
@@ -51,3 +57,7 @@ def recounted() -> Integer { counted.answer }
 /// `doubled` scales two by the count.
 @[runs("6")]
 def doubled() -> Integer { counted.scaled 2 }
+
+/// `renamedAnswer` reads the answer through the renaming.
+@[runs("42")]
+def renamedAnswer() -> Integer { renamed.answer }

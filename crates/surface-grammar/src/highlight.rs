@@ -165,9 +165,10 @@ const KEYWORDS: &[&str] = &[
     "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob", "handle", "hold", "if",
     "import", "in", "include", "infix", "infixl", "infixr", "is", "law", "let", "loop", "match",
     "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers", "on", "op", "oper",
-    "pack", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release", "requires",
-    "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail", "theory",
-    "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while", "with", "world",
+    "pack", "pi+", "postfix", "prefix", "pub", "pure", "rec", "recv", "release", "renaming",
+    "requires", "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail",
+    "theory", "thunk", "type", "type(", "under", "unwind", "var", "via", "where", "while", "with",
+    "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -857,8 +858,10 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///   parameter and any other name an attribute; inside `[…]` a grade word is a
 ///   number, a migration's world a label, and a decoration [`HlRole::Other`]; a
 ///   name an import's list names is a variable, and every other identifier
-///   inside a parenthesised list is a parameter. An identifier none of these
-///   reach is a variable.
+///   inside a parenthesised list is a parameter. A name inside a renaming's
+///   braces, after an import's signature or an offer's module, is a member on
+///   either side of `as`, and the flow an offer names after `via` is a
+///   variable. An identifier none of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -876,6 +879,8 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
     "attribute_block" => HlRole::Other,
     "instantiation_expression" | "staged_type" => HlRole::VariableParam,
     "as_pattern" => HlRole::VariableDef,
+    "import_declaration" | "offers_declaration" if matches!(facts.opener, Opener::Bracket { label: TileLabel("{"), .. }) => HlRole::Member,
+    "offers_declaration" if facts.left.crosses(TileLabel("via")).0 => HlRole::Variable,
     _ if facts.left.crosses(TileLabel(".")).0 => HlRole::Member,
     _ if facts.left.crosses(TileLabel(":")).0 && facts.right.crosses(TileLabel("(")).0 => HlRole::FunctionCall,
     _ if DEFINERS.iter().any(|&label| facts.left.crosses(TileLabel(label)).0) => if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) { HlRole::VariableParam } else { HlRole::FunctionDef },
@@ -910,6 +915,19 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
     }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));
     let right_crosses = |tile: &'static str| bool::from(facts.right.crosses(TileLabel(tile)));
+    // A name in a renaming's braces is a signature's member on either side of
+    // `as`, and the flow an offer names after `via` reads as any name does.
+    if matches!(kind, "import_declaration" | "offers_declaration") {
+        if matches!(facts.opener, Opener::Bracket {
+            label: TileLabel("{"),
+            ..
+        }) {
+            return HlRole::Member;
+        }
+        if kind == "offers_declaration" && left_crosses("via") {
+            return HlRole::Variable;
+        }
+    }
     if left_crosses(".") {
         return HlRole::Member;
     }
@@ -1199,9 +1217,15 @@ mod tests
             ("def_value", "[", Some(":"), HlRole::VariableParam),
             ("attribute_block", "@[", Some("("), HlRole::Other),
             ("data_declaration", "[", None, HlRole::Other),
-            ("import_declaration", "as", None, HlRole::VariableDef),
+            ("import_declaration", "as", Some(";"), HlRole::VariableDef),
             ("import_declaration", "(", None, HlRole::Variable),
-            ("import_declaration", ",", None, HlRole::Variable),
+            ("import_declaration", ",", Some(")"), HlRole::Variable),
+            ("import_declaration", "via", None, HlRole::Variable),
+            ("import_declaration", "{", None, HlRole::Member),
+            ("import_declaration", "as", Some("}"), HlRole::Member),
+            ("offers_declaration", "via", None, HlRole::Variable),
+            ("offers_declaration", "{", None, HlRole::Member),
+            ("offers_declaration", "as", Some("}"), HlRole::Member),
             ("for_expression", "for", None, HlRole::VariableDef),
             ("module_declaration", "module", None, HlRole::VariableDef),
             ("theory_declaration", "node", None, HlRole::VariableDef),
