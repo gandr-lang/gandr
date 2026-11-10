@@ -631,7 +631,7 @@ pub mod tests
     }
 
     /// A model's connection: one JSON message per line.
-    struct Model
+    pub struct Model
     {
         /// The end it writes.
         writing: UnixStream,
@@ -645,7 +645,7 @@ pub mod tests
         ///
         /// # Specification
         /// trivial.
-        fn new(scratch: &Scratch) -> Self
+        pub fn new(scratch: &Scratch) -> Self
         {
             let writing = UnixStream::connect(scratch.socket()).expect("the hub accepts");
             let reading = BufReader::new(writing.try_clone().expect("the stream clones"));
@@ -656,7 +656,7 @@ pub mod tests
         ///
         /// # Specification
         /// trivial.
-        fn ask(
+        pub fn ask(
             &mut self,
             message: &Value,
         ) -> Value

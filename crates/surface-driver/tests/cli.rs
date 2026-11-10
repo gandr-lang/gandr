@@ -3375,6 +3375,7 @@ fn lsp_clients_share_one_engine_hub()
     assert_eq!(code(&second), Code(0_i32), "{}", stderr(&second));
     let another = gandr(&[
         OsStr::new("serve"),
+        OsStr::new("--no-toolset"),
         OsStr::new("--socket"),
         socket.as_os_str(),
     ])
@@ -3402,34 +3403,35 @@ fn lsp_clients_share_one_engine_hub()
 }
 
 #[test]
-fn serve_offers_the_toolset_on_a_named_port()
+fn serve_offers_the_toolset_by_default()
 {
     use std::ffi::OsStr;
-    use std::io::BufRead as _;
     use std::io::Read as _;
 
     // The name is short: a socket path must fit the platform's limit.
     let scratch = Scratch::new(Path::new("rap"));
     let socket = scratch.0.join("hub.sock");
-    let mut hub = gandr(&[
+    let file = scratch.0.join("hub.rap");
+    let serve = [
         OsStr::new("serve"),
         OsStr::new("--socket"),
         socket.as_os_str(),
-        OsStr::new("--port"),
-        OsStr::new("0"),
-    ])
-    .current_dir(&scratch.0)
-    .stdin(Stdio::null())
-    .stderr(Stdio::piped())
-    .spawn()
-    .expect("the hub starts");
-    let mut said = String::new();
-    let _read = std::io::BufReader::new(hub.stderr.take().expect("standard error is piped"))
-        .read_line(&mut said)
-        .expect("the hub says where its toolset is");
-    let address = said
+    ];
+    let mut hub = gandr(&serve)
+        .current_dir(&scratch.0)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the hub starts");
+    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+    let mut url = String::new();
+    while url.is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(core::time::Duration::from_millis(20));
+        url = std::fs::read_to_string(&file).unwrap_or_default();
+    }
+    let address = url
         .trim_end()
-        .strip_prefix("gandr: the toolset is at http://")
+        .strip_prefix("http://")
         .and_then(|url| url.strip_suffix("/.well-known/rap-toolset"))
         .map(String::from);
     let answer = address.as_deref().map(|address| {
@@ -3445,9 +3447,13 @@ fn serve_offers_the_toolset_on_a_named_port()
             .expect("the toolset answers");
         answer
     });
+    let second = gandr(&serve)
+        .current_dir(&scratch.0)
+        .output()
+        .expect("the driver runs");
     drop(hub.kill());
     drop(hub.wait());
-    let answer = answer.unwrap_or_else(|| panic!("the hub names its manifest: {said}"));
+    let answer = answer.unwrap_or_else(|| panic!("the address file names the manifest: {url:?}"));
     let (head, body) = answer
         .split_once("\r\n\r\n")
         .expect("the answer has a head");
@@ -3472,7 +3478,13 @@ fn serve_offers_the_toolset_on_a_named_port()
             "trial",
             "type_of"
         ],
-        "the toolset offers every tool of the line face"
+        "the toolset offers every operation of the table"
+    );
+    assert_eq!(code(&second), Code(2_i32), "{}", stderr(&second));
+    assert!(
+        stderr(&second).contains(&file.display().to_string()),
+        "a second hub of the workspace names the address file: {}",
+        stderr(&second)
     );
 }
 

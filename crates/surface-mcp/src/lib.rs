@@ -166,6 +166,10 @@ pub use crate::face::relay;
 #[cfg(unix)]
 pub use crate::face::serve;
 #[cfg(unix)]
+pub use crate::rap::Announced;
+#[cfg(unix)]
+pub use crate::rap::Announcement;
+#[cfg(unix)]
 pub use crate::rap::Policy;
 #[cfg(unix)]
 pub use crate::rap::Retries;

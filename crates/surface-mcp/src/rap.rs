@@ -2,21 +2,21 @@
 //! discovers over HTTP, the invoke endpoint that acknowledges each call, and
 //! the callbacks that carry each result and each new state of a subscription.
 //!
-//! `gandr serve --port <port>` gives the hub a [`Toolset`] beside its socket.
-//! The toolset listens on the loopback interface. A `GET` of
-//! `/.well-known/rap-toolset` returns the manifest: the name `gandr`, the
-//! invoke endpoint, and each tool of the Model Context Protocol face, with its
-//! name, description and input schema. A `POST` to `/invoke` carries an
+//! `gandr serve` gives the hub a [`Toolset`] beside its socket, unless it is
+//! told `--no-toolset`. The toolset listens on the loopback interface. A `GET`
+//! of `/.well-known/rap-toolset` returns the manifest: the name `gandr`, the
+//! invoke endpoint, and each operation of the hub's one table, with its name,
+//! description and input schema. A `POST` to `/invoke` carries an
 //! invocation. The toolset appends a row for the call to its store, answers
 //! `200` with no body, and queues the call. An invocation that is not JSON,
 //! that has no field RAP requires, or whose callback URL is not `http`, gets
 //! `400`, because no result can reach its caller.
 //!
 //! One worker runs each queued call over the workspace that the editors share,
-//! as `tools/call` runs it, and owes a `tool_result` to the callback URL. The
-//! text of the result is the answer of the tool as JSON. A refusal, an unknown
-//! operation and arguments that the tool cannot read give a text that starts
-//! with `Error: `.
+//! through the table that `tools/call` reads, and owes a `tool_result` to the
+//! callback URL. The text of the result is the answer of the tool as JSON. A
+//! refusal, an unknown operation and arguments that the tool cannot read give
+//! a text that starts with `Error: `.
 //!
 //! # Frames
 //!
@@ -65,6 +65,10 @@
 //! The toolset keeps its subscriptions in memory, and no operation of the
 //! manifest opens one.
 //!
+//! The driver writes the URL of the manifest to the [`Announcement`] beside the
+//! hub's socket, readable by its owner alone. A runtime that did not start the
+//! hub reads the URL there, and the file goes when the hub stops.
+//!
 //! # Dependencies
 //!
 //! `httparse` reads the head of each request and of each callback's answer in
@@ -98,6 +102,7 @@ use std::net::TcpStream;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
@@ -183,6 +188,11 @@ const BODY_LIMIT: usize = 16 * 1024 * 1024;
 /// holds its own acceptor no longer than this, and the other acceptors answer
 /// the other calls.
 const REQUEST_WAIT: Duration = Duration::from_secs(1);
+
+/// How long the check of an address file waits for the listener it names:
+/// half a second. A listener on the loopback interface accepts in
+/// microseconds.
+const ANNOUNCED_WAIT: Duration = Duration::from_millis(500);
 
 /// An invocation, as a RAP runtime posts it to the invoke endpoint. The fields
 /// that the hub does not read, such as `user_id`, are ignored.
@@ -553,8 +563,8 @@ impl Toolset
     ///   `calls` that no settlement follows is kept with its answer, when the
     ///   store holds one, to be delivered again once the toolset serves. A row
     ///   with no answer is answered with an error.
-    /// - provides: `gandr serve --port`'s face, opened before the hub runs, so
-    ///   a store that cannot open stops the command.
+    /// - provides: `gandr serve`'s face, opened before the hub runs, so a store
+    ///   that cannot open stops the command.
     /// - fails: when the directory cannot be made, or the file opened or read.
     /// - panics: none.
     /// - executable: none — the effects are a directory and a file.
@@ -713,13 +723,13 @@ impl Toolset
     /// - requires: nothing.
     /// - ensures: a `GET` of `/.well-known/rap-toolset` is answered with the
     ///   manifest, which names the invoke endpoint at the listener's address
-    ///   and every tool that `tools/list` lists, by its name, description and
-    ///   input schema. A `POST` to `/invoke` whose body is an invocation with a
-    ///   callback URL in `http` is answered `200` with no body once its row is
-    ///   in the store, `503` when the row cannot be written. Another body is
-    ///   answered `400`, a body past the limit `413`, and another path `404`.
-    ///   Each acknowledged call, and each call that a crash cut short, is
-    ///   answered once by a `tool_result` owed to its callback URL with the
+    ///   and every operation of the hub's one table, by its name, description
+    ///   and input schema. A `POST` to `/invoke` whose body is an invocation
+    ///   with a callback URL in `http` is answered `200` with no body once its
+    ///   row is in the store, `503` when the row cannot be written. Another
+    ///   body is answered `400`, a body past the limit `413`, and another path
+    ///   `404`. Each acknowledged call, and each call that a crash cut short,
+    ///   is answered once by a `tool_result` owed to its callback URL with the
     ///   caller's bearer when it sent one. Its row is settled once a runtime
     ///   takes or refuses it. The text is the answer of the tool as JSON, or a
     ///   text that starts with `Error: `. The result of `diagnostics` carries
@@ -728,7 +738,7 @@ impl Toolset
     ///   the frame of a document owes one `subscription_event` to each
     ///   subscription that follows the document. Each delivery is retried as
     ///   the policy states.
-    /// - provides: `gandr serve --port`, the face beside the hub's socket.
+    /// - provides: `gandr serve`, the face beside the hub's socket.
     /// - fails: when accepting a connection fails on every acceptor for a
     ///   reason other than an interruption or an aborted connection.
     /// - panics: none.
@@ -778,13 +788,7 @@ impl Toolset
             subscriptions,
             policy,
         } = self;
-        let tools = tools::list();
-        let names: BTreeSet<String> = tools
-            .iter()
-            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
-            .map(String::from)
-            .collect();
-        let manifest = manifest(listener.local_addr()?, tools);
+        let manifest = manifest(listener.local_addr()?);
         let deliveries = Deliveries::new(policy);
         let (queue, queued) = channel();
         for (pending, answer) in lost {
@@ -812,17 +816,16 @@ impl Toolset
             Mutex::new(subscriptions),
             Mutex::new(log),
         );
-        let (listener, manifest, store, names, subscriptions, log, deliveries) = (
+        let (listener, manifest, store, subscriptions, log, deliveries) = (
             &listener,
             &manifest,
             &store,
-            &names,
             &subscriptions,
             &log,
             &deliveries,
         );
         thread::scope(|scope| {
-            drop(scope.spawn(move || work(queued, workspace, store, names, deliveries, log)));
+            drop(scope.spawn(move || work(queued, workspace, store, deliveries, log)));
             drop(scope.spawn(move || fan_out(changes, workspace, subscriptions, deliveries)));
             for _delivery in 0 .. width {
                 drop(scope.spawn(move || {
@@ -856,31 +859,152 @@ impl Toolset
     }
 }
 
+/// The file beside the hub's socket that names the URL of the toolset's
+/// manifest. A runtime that did not start the hub reads the URL there.
+#[repr(transparent)]
+pub struct Announcement(PathBuf);
+
+impl Announcement
+{
+    /// The file beside `socket`: the name of the socket with the extension
+    /// `rap`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn beside(socket: &Path) -> Self
+    {
+        Self(socket.with_extension("rap"))
+    }
+
+    /// Refuse when the file names a toolset that still listens.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` when no file is there, or when the URL in the file names
+    ///   no address that accepts a connection within [`ANNOUNCED_WAIT`].
+    /// - provides: the check that `gandr serve` makes before it opens a
+    ///   toolset, so that a second hub of one workspace stops and names the
+    ///   file.
+    /// - fails: when the file names a listener that accepts, or the file cannot
+    ///   be read.
+    /// - panics: none.
+    /// - executable: none — the result depends on a file and a listener.
+    ///
+    /// # Errors
+    /// [`io::ErrorKind::AddrInUse`] that names the file and its URL, or the
+    /// error of the read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second `gandr serve` in one workspace refuses and
+    ///   names the file that the first one wrote.
+    /// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+    #[inline]
+    pub fn vacant(&self) -> io::Result<()>
+    {
+        let url = match std::fs::read_to_string(&self.0) {
+            Ok(url) => url,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let url = url.trim_end();
+        let listens = url
+            .strip_prefix("http://")
+            .and_then(|rest| rest.split_once('/'))
+            .and_then(|(address, _path)| address.parse::<SocketAddr>().ok())
+            .is_some_and(|address| TcpStream::connect_timeout(&address, ANNOUNCED_WAIT).is_ok());
+        if listens {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                alloc::format!(
+                    "{} names a toolset that still listens at {url}",
+                    self.0.display()
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Write the URL of the manifest of the toolset at `address` to the file,
+    /// readable by its owner alone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the file holds one line, `http://<address>` followed by the
+    ///   path of the manifest. The file replaces an earlier one whole, so a
+    ///   reader never reads half a URL, and a crash leaves the earlier file or
+    ///   the new one.
+    /// - provides: the address of the toolset for a runtime, until the hub lets
+    ///   the returned file go.
+    /// - fails: when the file cannot be written or put in place.
+    /// - panics: none.
+    /// - executable: none — the effect is a file.
+    ///
+    /// # Errors
+    /// The error of the write, the flush or the rename.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a client reads the URL from the file and fetches the
+    ///   manifest there, and the file goes when the hub stops.
+    /// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+    #[inline]
+    pub fn write(
+        self,
+        address: SocketAddr,
+    ) -> io::Result<Announced>
+    {
+        let mut staged = self.0.clone().into_os_string();
+        staged.push(".new");
+        let staged = PathBuf::from(staged);
+        match std::fs::remove_file(&staged) {
+            Ok(()) => {},
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+            Err(error) => return Err(error),
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&staged)?;
+        file.write_all(alloc::format!("http://{address}{MANIFEST}\n").as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&staged, &self.0)?;
+        Ok(Announced(self.0))
+    }
+}
+
+/// The address file that an [`Announcement`] wrote. The file goes when the
+/// hub lets this value go.
+#[repr(transparent)]
+pub struct Announced(PathBuf);
+
+impl Drop for Announced
+{
+    /// Remove the file.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn drop(&mut self)
+    {
+        drop(std::fs::remove_file(&self.0));
+    }
+}
+
 /// The answer to a `GET` of the manifest, encoded once: the manifest of the
-/// toolset at `address`, listing `tools`.
+/// toolset at `address`, which lists each operation of the hub's one table.
 ///
 /// # Specification
 /// trivial.
-fn manifest(
-    address: SocketAddr,
-    tools: Vec<Value>,
-) -> Buffer
+fn manifest(address: SocketAddr) -> Buffer
 {
-    let tools: Vec<Value> = tools
-        .into_iter()
-        .map(|mut tool| {
-            // RAP's tool has no title.
-            if let Some(fields) = tool.as_object_mut() {
-                drop(fields.remove("title"));
-            }
-            tool
-        })
-        .collect();
     let body = json!({
         "name": "gandr",
         "description": DESCRIPTION,
         "endpoint": alloc::format!("http://{address}{INVOKE}"),
-        "tools": tools,
+        "tools": tools::offered(),
     })
     .to_string();
     let mut answer = alloc::format!(
@@ -1093,14 +1217,13 @@ fn work<Log>(
     queued: Receiver<Call>,
     workspace: &Mutex<Workspace>,
     store: &Mutex<Store>,
-    names: &BTreeSet<String>,
     deliveries: &Deliveries,
     log: &Mutex<Log>,
 ) where
     Log: Write,
 {
     for Call { pending, arguments } in queued {
-        let answer = answered(&pending, arguments, workspace, names);
+        let answer = answered(&pending, arguments, workspace);
         let kept = lock(store).answered(&answer);
         if let Err(error) = kept {
             drop(writeln!(
@@ -1126,7 +1249,6 @@ fn answered(
     pending: &Pending,
     arguments: Option<Value>,
     workspace: &Mutex<Workspace>,
-    names: &BTreeSet<String>,
 ) -> Answer
 {
     let mut answer = Answer {
@@ -1138,9 +1260,8 @@ fn answered(
     };
     answer.text = match arguments {
         None => String::from(LOST),
-        Some(_) if !names.contains(&pending.operation) => {
-            alloc::format!("Error: no tool is named `{}`", pending.operation)
-        },
+        // This face encodes the answer of `diagnostics` as the bus's frame of
+        // the document, a projection of the state that the table's row reads.
         Some(arguments) if pending.operation == DIAGNOSTICS => {
             let workspace = lock(workspace);
             let frame =
@@ -1158,6 +1279,8 @@ fn answered(
                 },
             }
         },
+        // The table answers every other operation, and refuses a name that it
+        // does not hold.
         Some(arguments) => {
             let name = Value::String(pending.operation.clone());
             let called = tools::call(&mut lock(workspace), Some(&name), &arguments);
@@ -1368,6 +1491,7 @@ mod tests
     use super::REQUEST_WAIT;
     use super::Toolset;
     use crate::face::tests::Editor;
+    use crate::face::tests::Model;
     use crate::face::tests::Scratch;
     use crate::tools;
 
@@ -1623,6 +1747,96 @@ mod tests
         .expect("the text is a frame as JSON")
     }
 
+    /// Each tool that `tools` lists, as its name and its input schema.
+    ///
+    /// # Specification
+    /// trivial.
+    fn entries(tools: Option<&Value>) -> Vec<Value>
+    {
+        tools
+            .and_then(Value::as_array)
+            .expect("the face lists its tools")
+            .iter()
+            .map(|tool| json!([tool.get("name"), tool.get("inputSchema")]))
+            .collect()
+    }
+
+    #[test]
+    fn both_faces_offer_one_table()
+    {
+        let scratch = Scratch::new(&json!("faces"));
+        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
+            .expect("the store opens");
+        let address = toolset.address().expect("the toolset listens");
+        hub(&scratch, toolset);
+        let mut editor = Editor::new(&scratch);
+        let uri = json!("file:///tmp/faces.gandr");
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let mut model = Model::new(&scratch);
+
+        let listed = model.ask(&json!({ "jsonrpc": "2.0", "id": 1_i32, "method": "tools/list" }));
+        let manifest = exchange(address, &Message {
+            head: alloc::format!("GET /.well-known/rap-toolset HTTP/1.1\r\nhost: {address}"),
+            body: Vec::new(),
+        })
+        .json();
+        let offered = entries(manifest.get("tools"));
+        assert_eq!(
+            offered.len(),
+            tools::list().len(),
+            "the manifest offers each row of the table"
+        );
+        assert_eq!(
+            offered,
+            entries(listed.pointer("/result/tools")),
+            "the two faces name the same operations with the same schemas"
+        );
+
+        let arguments = json!({ "uri": uri, "line": 0_u32, "character": 4_u32 });
+        let mut over_mcp = model
+            .ask(
+                &json!({ "jsonrpc": "2.0", "id": 2_i32, "method": "tools/call",
+                "params": { "name": "type_of", "arguments": arguments } }),
+            )
+            .pointer("/result/structuredContent")
+            .cloned()
+            .expect("the call has a structured result");
+        // Only the line face writes what changed since the model's last call.
+        drop(
+            over_mcp
+                .as_object_mut()
+                .and_then(|answer| answer.remove("changes")),
+        );
+        let callback = loopback();
+        let callback_url = alloc::format!(
+            "http://{}/results/faces",
+            callback.local_addr().expect("the callback listens")
+        );
+        let acknowledged = invoke(
+            address,
+            &json!({ "operation": "type_of", "arguments": arguments, "id": "call-1",
+                "callback_url": callback_url, "group_id": "thread-1" }),
+            None,
+        );
+        assert!(
+            acknowledged.head.starts_with("HTTP/1.1 200 "),
+            "{}",
+            acknowledged.head
+        );
+        let over_rap: Value = serde_json::from_str(
+            received(&callback)
+                .json()
+                .get("text")
+                .and_then(Value::as_str)
+                .expect("the result is a text"),
+        )
+        .expect("the text is the answer as JSON");
+        assert_eq!(
+            over_rap, over_mcp,
+            "a call of `type_of` over each face gives the same answer"
+        );
+    }
+
     #[test]
     fn the_toolset_answers_a_call_by_its_callback()
     {
@@ -1648,33 +1862,6 @@ mod tests
         assert_eq!(
             manifest.get("endpoint"),
             Some(&json!(alloc::format!("http://{address}/invoke")))
-        );
-        let listed: Vec<Value> = tools::list()
-            .into_iter()
-            .map(|tool| {
-                json!([
-                    tool.get("name"),
-                    tool.get("description"),
-                    tool.get("inputSchema")
-                ])
-            })
-            .collect();
-        let offered: Vec<Value> = manifest
-            .get("tools")
-            .and_then(Value::as_array)
-            .expect("the manifest lists tools")
-            .iter()
-            .map(|tool| {
-                json!([
-                    tool.get("name"),
-                    tool.get("description"),
-                    tool.get("inputSchema")
-                ])
-            })
-            .collect();
-        assert_eq!(
-            offered, listed,
-            "the manifest offers every tool of the line face"
         );
 
         let callback = loopback();

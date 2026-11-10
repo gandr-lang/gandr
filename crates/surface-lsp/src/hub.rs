@@ -73,10 +73,10 @@
 //! **A face beside the socket.** `run_hub` can also be given a `Beside`: a face
 //! that serves a listener of its own over the same locked workspace, on a
 //! thread of its own for the hub's life. The driver gives it the Reactive
-//! Agent Protocol's toolset when `gandr serve` names a port. The hub counts
-//! that face as an open connection, so a hub that serves a port does not
-//! linger out: an agent runtime opens no connection on the socket that would
-//! keep it alive.
+//! Agent Protocol's toolset unless `gandr serve` is told `--no-toolset`. The
+//! hub counts that face as an open connection, so a hub that serves a toolset
+//! does not linger out: an agent runtime opens no connection on the socket
+//! that would keep it alive.
 //!
 //! **Alternatives.** A hub per document would keep a judgement per process
 //! that a face beside the editors could not read; one workspace per hub
@@ -417,10 +417,11 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// A face that serves a listener of its own over the workspace every
 /// connection shares, for the hub's whole life, as the peer it is given.
 ///
-/// The Reactive Agent Protocol's toolset is one: it answers HTTP on the port
-/// `gandr serve` names. The hub runs it on a thread of its own and counts it as
-/// an open connection until it returns. Its peer is [`Peer::BESIDE`], which no
-/// connection takes, so the face can watch the workspace as a connection does.
+/// The Reactive Agent Protocol's toolset is one: it answers HTTP on the port of
+/// the loopback interface that `gandr serve` takes. The hub runs it on a thread
+/// of its own and counts it as an open connection until it returns. Its peer is
+/// [`Peer::BESIDE`], which no connection takes, so the face can watch the
+/// workspace as a connection does.
 pub type Beside = Box<dyn FnOnce(Arc<Mutex<Workspace>>, Peer) + Send>;
 
 /// Serve every connection `listener`, bound to `socket`, accepts over one

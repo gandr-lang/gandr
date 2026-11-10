@@ -100,7 +100,7 @@
 //!
 //! # Calls under the XDG state directory
 //!
-//! `gandr serve --port` keeps each call its toolset acknowledged, until a
+//! `gandr serve` keeps each call its toolset acknowledged, until a
 //! runtime takes or refuses its result, in `gandr/calls` under the user's state
 //! directory: `$XDG_STATE_HOME` when it names an absolute path, and
 //! `$HOME/.local/state` otherwise, by the same rule. The file of a workspace
@@ -109,7 +109,7 @@
 //!
 //! # The retries of the toolset
 //!
-//! The toolset of `gandr serve --port` tries a callback that fails again, as
+//! The toolset of `gandr serve` tries a callback that fails again, as
 //! the `[deliveries]` table names:
 //!
 //! ```toml
@@ -315,7 +315,7 @@ pub fn checkpoints() -> Option<PathBuf>
 /// - ensures: `<home>/gandr/calls` under `$XDG_STATE_HOME` and `$HOME` by
 ///   [`directory`]'s rule, with `.local/state` the default; absent when neither
 ///   names a directory.
-/// - provides: where `gandr serve --port` keeps the rows of its calls.
+/// - provides: where `gandr serve` keeps the rows of its calls.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the result depends on the environment.
@@ -706,7 +706,7 @@ impl Configuration
     /// - requires: nothing.
     /// - ensures: as [`deliveries_parsed`] reads the file's document; the
     ///   default policy when no directory is named or no file is there.
-    /// - provides: the retries of `gandr serve --port`.
+    /// - provides: the retries of `gandr serve`.
     /// - fails: a file that exists and cannot be read, and the faults of
     ///   [`deliveries_parsed`].
     /// - panics: none.
