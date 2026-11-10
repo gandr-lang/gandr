@@ -5251,6 +5251,7 @@ impl<'source> Collector<'_, 'source>
             }),
             Shape::Form { name, .. } => Err(self
                 .closed_early(child)
+                .or_else(|| self.doubled_within(child))
                 .or_else(|| {
                     self.described_refusals(child)
                         .into_iter()

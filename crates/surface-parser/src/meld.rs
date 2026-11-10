@@ -5483,18 +5483,21 @@ impl<'pbg> MeldState<'pbg>
     /// first, so a form's content is reduced before the form is force-closed
     /// and the loop ends. A fragment is a form whose start stands above every
     /// operator and open frontier: no frontier carries it, so it can take no
-    /// tile, and its run ends at the top of the slope
+    /// tile. Its run ends at the top of the slope, or before the first
+    /// declaration head above its start
     /// ([`fragment_above`](Self::fragment_above)). A mid that no frontier
     /// takes opens one ([`continue_form`](Self::continue_form)). It closes
     /// before the step below it, so the end that the step pushes or mints
     /// pairs with the start of its own form. In `[.A = Rung]` read as an
     /// effect row, the `=` opens a fragment. The `]` then closes the row, and
-    /// the fragment `= Rung` is one operand of it.
+    /// the fragment `= Rung` is one operand of it. A stray closer at the root
+    /// opens a fragment that ends before the next declaration, so the
+    /// declaration stays an item of the root.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: no operator, no open form frontier and no form start remains
-    ///   at or above `floor`.
+    /// - ensures: no operator, no open form frontier and no fragment remains at
+    ///   or above `floor`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5533,39 +5536,44 @@ impl<'pbg> MeldState<'pbg>
         }
     }
 
-    /// Return the top of the slope when the form start nearest below it is
-    /// a fragment above `step` and at or above `floor`.
+    /// Return the last cell of the fragment that the form start nearest below
+    /// the top of the slope opens, when that start lies above `step` and at
+    /// or above `floor`.
     ///
     /// `step` is the highest operator or open frontier at or above `floor`
     /// ([`highest_reducible`](Self::highest_reducible)). A form start above it
     /// has no open frontier in its run, since every frontier lies at or below
-    /// `step`. The start and every cell above it are then one form whose run
-    /// ends at the top.
-    ///
-    /// O(1) while the top barrier is a form start: the scan walks the
-    /// `barriers` cache down to the nearest start, as
-    /// [`form_start_index`](Self::form_start_index) does.
+    /// `step`. The start and the cells above it are then one form. Its run
+    /// ends at the top, or before the first cell of item sort above the
+    /// start. That cell is the head of a declaration, and a declaration is an
+    /// item of the root that no fragment holds. Thus a stray closer at the
+    /// root takes no later declaration into a form of its own.
     ///
     /// # Specification
-    /// - ensures: returns the top index exactly when the nearest form start at
-    ///   or below it lies at or above `floor` and above the index `step` names.
+    /// - ensures: present exactly when the nearest form start at or below the
+    ///   top lies at or above `floor` and above the index `step` names; then
+    ///   the cell before the first cell of item sort above that start, or the
+    ///   top when no such cell stands there.
     /// - panics: none.
     ///
     /// # Clause cost
     /// - bound: one [`form_start_index`](Self::form_start_index) walk from the
-    ///   top of the slope down to the nearest form start.
+    ///   top of the slope down to the nearest form start, and one pass over the
+    ///   cells above that start.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fragment above a group, a fragment above an
-    ///   operator and a form start below an open frontier expose the selected
-    ///   top. Selecting a start below the step or below the floor changes the
-    ///   committed tree.
+    ///   operator, a form start below an open frontier and a stray closer at
+    ///   the root before a declaration expose the selected end. Selecting a
+    ///   start below the step or below the floor, or an end past a declaration
+    ///   head, changes the committed tree.
     /// - witness: `tests::acceptance::a_torn_group_stays_the_operand_of_its_juxtaposition_6029`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[spec(ensures: |ret| {
         let lowest = step.map_or(floor.0, |step| match step { CollapseStep::ForceCloseForm(index) => usize::from(index).saturating_add(1), CollapseStep::ReduceOperator(index) => usize::from(index).saturating_add(1) }).max(floor.0);
         let top = self.stack.len().checked_sub(1);
-        ret == top.filter(|&top| self.form_start_index(StackIndex::from(top)).is_some_and(|start| start.0 >= lowest)).map(StackIndex::from)
+        let start = top.and_then(|top| self.form_start_index(StackIndex::from(top))).filter(|start| start.0 >= lowest);
+        ret == start.zip(top).map(|(start, top)| StackIndex::from(self.stack.get(start.0.saturating_add(1) ..= top).and_then(|run| run.iter().position(|cell| cell.sort == Sort::Item)).map_or(top, |at| start.0.saturating_add(at))))
     })]
     fn fragment_above(
         &self,
@@ -5579,9 +5587,18 @@ impl<'pbg> MeldState<'pbg>
                 CollapseStep::ReduceOperator(index) => usize::from(index).saturating_add(1),
             })
             .max(floor.0);
-        let top = StackIndex::from(self.stack.len().checked_sub(1)?);
-        let start = self.form_start_index(top)?;
-        (usize::from(start) >= lowest).then_some(top)
+        let top = self.stack.len().checked_sub(1)?;
+        let start = usize::from(self.form_start_index(StackIndex::from(top))?);
+        if start < lowest {
+            return None;
+        }
+        // The run stops before the first declaration head above the start.
+        let end = self
+            .stack
+            .get(start.saturating_add(1) ..= top)
+            .and_then(|run| run.iter().position(|cell| cell.sort == Sort::Item))
+            .map_or(top, |at| start.saturating_add(at));
+        Some(StackIndex::from(end))
     }
 
     /// Return the highest index at or above `floor` holding an operator or an

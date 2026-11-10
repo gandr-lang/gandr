@@ -171,6 +171,64 @@ impl<'source> Collector<'_, 'source>
         })
     }
 
+    /// The refusal of `form`, a root child the parser kept whole, at a closer
+    /// written twice on one of its lines.
+    ///
+    /// A closer written twice closes nothing, and the form it would close
+    /// takes the rest of the line as a form of the wrong sort. Where the
+    /// parser keeps the declaration whole around that closer, the pieces of
+    /// the line are the declaration's children and not the root's. They are
+    /// read as [`Self::torn_lines`] reads the root's pieces, and the run that
+    /// the declaration's first child leads gives the refusal.
+    ///
+    /// # Specification
+    /// - requires: `form` is a root child of the tree.
+    /// - ensures: the refusal of the run that [`Self::torn_lines`] finds over
+    ///   the children of `form`, spaces and documentation aside, when the first
+    ///   child leads one; nothing otherwise.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk of
+    ///   [`Self::torn_lines`] over the children of `form`.
+    ///
+    /// # Clause cost
+    /// - bound: one pass over the children of `form`, and the walk of
+    ///   [`Self::torn_lines`] over them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata declaration whose universe's `]` is doubled,
+    ///   which the parser keeps whole, refuses at the second `]`. A closer
+    ///   after a word, an opener left out, keeps its own refusal.
+    /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
+    pub(super) fn doubled_within(
+        &self,
+        form: Placed,
+    ) -> Option<LoweringRefusal<'source>>
+    {
+        let children: Vec<Placed> = self
+            .tree
+            .children(form.node)
+            .filter_map(|position| {
+                let node = self.tree.node(position)?;
+                match node.label() {
+                    NodeLabel::Space | NodeLabel::Doc => None,
+                    NodeLabel::Wald
+                    | NodeLabel::Meld(_)
+                    | NodeLabel::Tile(_)
+                    | NodeLabel::Grout { .. }
+                    | NodeLabel::GhostClose { .. } => Some(Placed {
+                        node: position,
+                        span: node.span(),
+                    }),
+                }
+            })
+            .collect();
+        let lead = children.first()?.node;
+        match self.torn_lines(&children).remove(&lead)? {
+            Tearing::Leads { refusal, .. } => Some(refusal),
+            Tearing::Follows { .. } => None,
+        }
+    }
+
     /// The closer before `stray` that was written once too often, with its
     /// family and the opener it closes, read from the layout of `stray`'s
     /// source.

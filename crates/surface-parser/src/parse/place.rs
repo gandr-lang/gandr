@@ -392,9 +392,10 @@ impl Target
 ///   before its `=`, and the inner `)` of a result type that the outer bracket
 ///   takes at no place; a definition's last `;` left out at the end of the
 ///   source is never minted inside its body; a `(` left out before a juxtaposed
-///   operand is minted where its declaration parses; and a `)` left out after a
+///   operand is minted where its declaration parses; a `)` left out after a
 ///   line that ends in a `,` keeps the first search's reading when the gap's
-///   copy owes more than its minted tiles.
+///   copy owes more than its minted tiles; and a `)` that the gap mints where
+///   the first search mints it keeps the first search's reach.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
@@ -412,9 +413,13 @@ pub(super) fn placed<'source>(
     // The gap search wins over the first target where it keeps a place
     // before a line inside the target's top-level form and owes nothing but
     // the tiles it mints: the line tells where the repair stands, and the
-    // whole form's reading tells only that it parses.
+    // whole form's reading tells only that it parses. A gap parse that mints
+    // nothing the first parse does not mint at the same place tells nothing
+    // more, and the first parse keeps the reach of its closers.
     let searched = match earlier(pbg, &parsed, Pass::First) {
-        Some((found, form)) => super::gap::gapped(pbg, &parsed, Some(form)).or(Some(found)),
+        Some((found, form)) => super::gap::gapped(pbg, &parsed, Some(form))
+            .filter(|gap| !minted_places(&gap.tree).is_subset(&minted_places(&found.tree)))
+            .or(Some(found)),
         None => super::gap::gapped(pbg, &parsed, None)
             .or_else(|| earlier(pbg, &parsed, Pass::Last).map(|(found, _)| found)),
     };
@@ -425,6 +430,44 @@ pub(super) fn placed<'source>(
         found.obligations.len().min(parsed.obligations.len())
     }));
     opened(pbg, &parsed, bound).or(searched).unwrap_or(parsed)
+}
+
+/// The places where `tree` mints a closer or a tile: a ghost closer with its
+/// family, and an empty grout with none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the set of the starts of each ghost closer and each grout of
+///   `tree` whose span is empty, each with its family.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the walk.
+///
+/// # Clause cost
+/// - bound: one walk over the nodes of `tree`, and one insertion into the set
+///   for each node it mints.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`placed`].
+/// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+fn minted_places(tree: &SyntaxTree<'_>) -> BTreeSet<(ByteOffset, Option<ClosingClass>)>
+{
+    tree.positions()
+        .filter_map(|position| tree.node(position))
+        .filter_map(|node| {
+            let span = node.span();
+            match node.label() {
+                NodeLabel::GhostClose { class, .. } => Some((span.start(), Some(class))),
+                NodeLabel::Grout { .. } if span.start() == span.end() => Some((span.start(), None)),
+                NodeLabel::Wald
+                | NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => None,
+            }
+        })
+        .collect()
 }
 
 /// `parsed` with a placeable repair placed, if a place parses, over the targets
