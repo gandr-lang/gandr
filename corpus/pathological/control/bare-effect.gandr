@@ -5,11 +5,11 @@
 // - see: #4495
 
 /// A row naming the console bare.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def bareRow() -> -F [Console] Unit { pure *{} }
 
 /// A scope handling the early exit bare.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def bareScope() -> -F Unit =
   handle c : Proc {
     pure *{}

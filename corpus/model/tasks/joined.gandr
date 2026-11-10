@@ -15,7 +15,7 @@ import "./task-base.gandr";
 import std.process;
 
 /// A scope exits after its parent reads the task end to its close.
-@[ runs("*{}") ]
+@[runs("*{}")]
 def joined() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Task.Join) {

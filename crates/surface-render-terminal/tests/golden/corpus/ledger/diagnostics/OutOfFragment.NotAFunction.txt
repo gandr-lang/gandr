@@ -1,8 +1,8 @@
 error[OutOfFragment.NotAFunction]: `Path.ap` maps a path by a function, and a constructor is none; write `fun (q) { e }`, or a function definition that applies the constructor
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.NotAFunction.gandr:9:21
-  │
-9 │ def cong_at_point = Path.ap Base loop ;
-  │                     ━━━━━━━━━━━━━━━━━ no function `Path.ap` maps a path by
-  │
-  ├ note: `cong_at_point` is refused with OutOfFragment.NotAFunction, as its expectation states
-  ╰ help: pass a function to `Path.ap`
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.NotAFunction.gandr:10:21
+   │
+10 │ def cong_at_point = Path.ap Base loop;
+   │                     ━━━━━━━━━━━━━━━━━ no function `Path.ap` maps a path by
+   │
+   ├ note: `cong_at_point` is refused with OutOfFragment.NotAFunction, as its expectation states
+   ╰ help: pass a function to `Path.ap`

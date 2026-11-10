@@ -1,6 +1,6 @@
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def a() -> Integer { become force (thunk { 3 }) }
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def b : Integer = thunk { 3 };
-@[ refuses("MalformedLiteral") ]
+@[refuses("MalformedLiteral")]
 def c : f64 = 1e99999999;

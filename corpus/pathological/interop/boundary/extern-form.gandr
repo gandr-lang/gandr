@@ -23,7 +23,7 @@ import std.layout (U32);
 
 /// A member that takes an arbitrary-precision integer, which no fixed width
 /// carries.
-@[ refuses("OutOfFragment.extern_block") ]
+@[refuses("OutOfFragment.extern_block")]
 extern "rust" from "wide" as Wide {
   def widen(x : Integer) -> u64;
 }
@@ -33,7 +33,7 @@ def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
 
 /// The adder declared with a count twice its row's width: rustc lays a `u64`
 /// out in eight bytes, the row's `u32` in four.
-@[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
+@[boundary(addRow), refuses("BoundaryUnrealised.Size")]
 extern "rust" from "counted" as Counted {
   def add(x : u32, n : u64) -> u32;
 }
@@ -44,5 +44,5 @@ extern "rust" from "boundary" as Boundary {
 }
 
 /// `Boundary` declares no `sub`.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def less(x : u32) -> [Boundary] u32 { Boundary.sub x x }

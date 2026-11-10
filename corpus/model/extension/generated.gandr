@@ -12,9 +12,9 @@
 //!
 /// `Generated` states how `left` fixes `Val` cells to `zero` over `Two`.
 /// `Generated` uses its boundary, β and η laws for `c` and cells from `inCell`.
-@[ normalizes("cells(outCellp(c), outCellq(inCell(one)), inCell(outCellq(c))) ~> cells(zero, one, c)") ]
+@[normalizes("cells(outCellp(c), outCellq(inCell(one)), inCell(outCellq(c))) ~> cells(zero, one, c)")]
 theory Generated where
-  boundary Two { p, q };
+  boundary Two {p, q};
   face left = {p};
   sort Val : Type;
 
@@ -26,9 +26,9 @@ theory Generated where
 
 /// `Wider` states how `left` fixes `Val` cells to `zero` over `Three`.
 /// `Wider` uses its boundary, β and η laws for `d` and values from `inWide`.
-@[ normalizes("cells(outWidep(d), outWider(inWide(one, zero)), inWide(outWideq(d), outWider(d))) ~> cells(zero, zero, d)") ]
+@[normalizes("cells(outWidep(d), outWider(inWide(one, zero)), inWide(outWideq(d), outWider(d))) ~> cells(zero, zero, d)")]
 theory Wider where
-  boundary Three { p, q, r };
+  boundary Three {p, q, r};
   face left = {p};
   sort Val : Type;
 

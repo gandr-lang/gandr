@@ -1,4 +1,4 @@
 /// `boolean.expression`: a boolean.
-@[ checks ]
-def yes : Bool ;
-def yes = true ;
+@[checks]
+def yes : Bool;
+def yes = true;

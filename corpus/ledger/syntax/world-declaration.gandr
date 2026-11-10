@@ -1,8 +1,9 @@
-/// `world_declaration`: a world: a name a computation can be placed at, and the row a role placed there requires of its site.
+/// `world_declaration`: a world: a name a computation can be placed at, and the
+/// row a role placed there requires of its site.
 
 // The console's host interface.
 import std.io;
 
 /// A world whose role requires the console.
-@[ checks ]
-world far requires [std.io.Console.Eff] ;
+@[checks]
+world far requires [std.io.Console.Eff];

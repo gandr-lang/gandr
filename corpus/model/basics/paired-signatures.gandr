@@ -14,17 +14,17 @@
 
 /// The seed, through two primitive calls. The calls are pure, so the
 /// definition's value stands as what they return.
-@[ runs("40") ]
+@[runs("40")]
 def seed : Integer = prim.const 40 (prim.id 999);
 
 /// `plus_two` adds two at thunk grade one.
 /// The lowering accepts no grade other than `ω`.
-@[ refuses("GradedBridge") ]
+@[refuses("GradedBridge")]
 def plus_two : +U[1] (Integer -> -F Integer);
 def plus_two(x : Integer) -> -F Integer =
   return (x + 2)
 
 /// `seeded` applies `plus_two`, which the checker refuses above, to `seed`.
 /// The unknown declaration type refuses the call.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def seeded() -> Integer { plus_two seed }

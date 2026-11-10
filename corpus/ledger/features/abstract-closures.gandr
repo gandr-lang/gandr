@@ -1,14 +1,21 @@
-/// `abstract-closures` converts each closure of a program to an abstract closure over the context variables its code names.
+/// `abstract-closures` converts each closure of a program to an abstract
+/// closure over the context variables its code names.
 ///
-/// Implemented: conversion adds one captured variable at a time, and every converted program runs to what it runs to as written.
-/// Not implemented: the closure's type summaries, linear captures, lambda sets, a run path that converts and environment sharing.
-/// Not implemented: a checked form that applies a block where the block stands, and entering reaches its closure at a distance.
+/// Implemented: conversion adds one captured variable at a time, and every
+/// converted program runs to what it runs to as written.
+/// Not implemented: the closure's type summaries, linear captures, lambda sets,
+/// a run path that converts and environment sharing.
+/// Not implemented: a checked form that applies a block where the block stands,
+/// and entering reaches its closure at a distance.
 ///
-/// The function `constantly` returns names its argument, so conversion moves that argument into the closure's environment.
-/// The thunk `either` returns names both arguments, and conversion moves them one at a time, the later one first.
+/// The function `constantly` returns names its argument, so conversion moves
+/// that argument into the closure's environment.
+/// The thunk `either` returns names both arguments, and conversion moves them
+/// one at a time, the later one first.
 ///
 /// - see: crates/core-sequent/src/closure.rs
-/// - owes: #3077 — the closure's type summaries, linear captures, lambda sets and a run path that converts
+/// - owes: #3077 — the closure's type summaries, linear captures, lambda sets
+///   and a run path that converts
 /// - owes: #2770 — environment sharing
 /// - owes: #3636 — a checked form that applies a block where the block stands
 
@@ -27,8 +34,9 @@ def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) =
 def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat =
   g Zero
 
-/// The closure `constantly` returns, applied at zero, answers the natural it closed over.
-@[ runs("Succ Zero") ]
+/// The closure `constantly` returns, applied at zero, answers the natural
+/// it closed over.
+@[runs("Succ Zero")]
 def applied() -> -F Nat =
   at_zero (constantly (Succ Zero))
 
@@ -40,8 +48,9 @@ def either(a : Nat, b : Nat) -> -F (+U (-F Nat)) =
       | Succ(_p) => a
   }
 
-/// The thunk `either` returns, forced, answers the second natural when the first is zero.
-@[ runs("Succ Zero") ]
+/// The thunk `either` returns, forced, answers the second natural when the
+/// first is zero.
+@[runs("Succ Zero")]
 def forced() -> -F Nat =
   let k = either Zero (Succ Zero)
   force k

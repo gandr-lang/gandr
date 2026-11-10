@@ -5,17 +5,17 @@ module Seat :> *{
 } where {
   type Dispatch = String;
   /// The dispatch a seat receives.
-  @[ checks ]
+  @[checks]
   def task = "task";
 }
 
-@[ checks ]
+@[checks]
 world operator;
 
-@[ checks ]
+@[checks]
 world seat;
 
-@[ refuses("Immobile") ]
-@[ entry(*{operator, seat}) ]
+@[refuses("Immobile")]
+@[entry(*{operator, seat})]
 def unmarkedBack() -> Seat.Dispatch =
   migrate [seat] { pure Seat.task }

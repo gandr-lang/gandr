@@ -1,4 +1,4 @@
 /// `binary_expression.and`: a conjunction.
-@[ checks ]
+@[checks]
 def both() -> -F Bool =
   return true && false

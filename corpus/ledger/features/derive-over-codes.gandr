@@ -1,6 +1,10 @@
 /// `derive-over-codes`: Derivations over levitated codes.
-/// Implemented: `Eq.generic(T)` reads a closed family's levitated code — the constructor table, the product spine, a `var` as the recursion and each leaf at the type it names — into closed core the checker judges and the kernel replays.
-/// Not implemented: a code with a parameter, a `rec` pair read as one code of two sorts, and the derivation written in gandr over a code value.
+/// Implemented: `Eq.generic(T)` reads a closed family's levitated code — the
+/// constructor table, the product spine, a `var` as the recursion and each leaf
+/// at the type it names — into closed core the checker judges and
+/// the kernel replays.
+/// Not implemented: a code with a parameter, a `rec` pair read as one code of
+/// two sorts, and the derivation written in gandr over a code value.
 ///
 /// - owes: #2345
 /// - owes: #2343
@@ -12,19 +16,19 @@
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// Unary naturals: a unit and a recursive occurrence.
-@[ checks ]
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
 /// Naturals compared constructor by constructor, recursing at `var Nat`.
-@[ checks ]
-def eqNat = Eq.generic Nat ;
+@[checks]
+def eqNat = Eq.generic Nat;
 
 /// Two is two.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
 
 /// One is not two: the recursion reaches `Zero` on one side only.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }

@@ -1,7 +1,7 @@
 error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held value: a name a `var` statement holds
-   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Held.gandr:12:3
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Held.gandr:13:3
    │
-12 │   n.bump ()
+13 │   n.bump ()
    │   ━ not a value a hold holds
    │
    ├ note: `unheld` is refused with OutOfFragment.Held, as its expectation states

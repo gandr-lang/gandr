@@ -1,4 +1,4 @@
-@[ checks ]
+@[checks]
 oper split : (b : Bit) --> (_ : Bit, _ : Bit)
 
 def one = 1;

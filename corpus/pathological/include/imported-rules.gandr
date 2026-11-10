@@ -12,14 +12,14 @@
 import "../../model/include/monoid.gandr";
 
 /// `Swapping` conflicts with the imported left unit rule.
-@[ refuses("RulesUncompleted") ]
+@[refuses("RulesUncompleted")]
 theory Swapping where
   include Monoid;
   oper pair : (x : M, y : M) --> M;
   rule swap : mul (one ()) (pair x y) ==> pair y x;
 
 /// `Orphan` includes a theory that no source presents.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Orphan where
   include Unwritten;
   oper one : () --> M;

@@ -1,5 +1,5 @@
 module Base where { type Ask = ?Integer >> end; }
-module Gate :> *{ type T } where { type T = end; }
+module Gate :> *{type T} where { type T = end; }
 type Local = !Integer >> end;
 type Again = Local;
 type Count = Integer;

@@ -1,7 +1,8 @@
-/// `imports`: a source imports a sibling source and reaches its declarations as its own.
-import "./modules.gandr" ;
+/// `imports`: a source imports a sibling source and reaches its declarations
+/// as its own.
+import "./modules.gandr";
 
 /// The imported module's member, called here.
-@[ runs("0") ]
-def again : () -> Integer ;
-def again = thunk { Origin.zero () } ;
+@[runs("0")]
+def again : () -> Integer;
+def again = thunk { Origin.zero () };

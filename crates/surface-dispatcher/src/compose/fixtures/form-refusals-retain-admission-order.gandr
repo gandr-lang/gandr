@@ -1,4 +1,4 @@
-module A : *{ x : Integer, p : Integer } where { def x = 1; }
+module A : *{x : Integer, p : Integer} where { def x = 1; }
 def broken = missing;
 def value = 3;
-module B : *{ y : Integer, q : Integer } where { def y = 1; }
+module B : *{y : Integer, q : Integer} where { def y = 1; }

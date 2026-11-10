@@ -14,7 +14,7 @@ import std.process;
 def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) { pure k }
 
 /// `outlived` binds `pass` output at no region.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def outlived() -> Integer =
   var s = 4
   handle c : std.process.Exit.Eff {

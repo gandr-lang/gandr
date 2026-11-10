@@ -1,24 +1,24 @@
-@[ refuses("OutOfFragment.unknown_type") ]
+@[refuses("OutOfFragment.unknown_type")]
 def anything : ?;
 
-@[ refuses("OutOfFragment.WrongSort") ]
+@[refuses("OutOfFragment.WrongSort")]
 def pure_unknown : -F ?;
-@[ refuses("OutOfFragment.WrongSort") ]
+@[refuses("OutOfFragment.WrongSort")]
 def legacy_pure_unknown : -F Unknown;
 
-@[ refuses("OutOfFragment.unknown_type") ]
+@[refuses("OutOfFragment.unknown_type")]
 def partial : Integer -> ?;
-@[ refuses("OutOfFragment.unknown_type") ]
+@[refuses("OutOfFragment.unknown_type")]
 def suspended : +U ?;
-@[ refuses("OutOfFragment.WrongSort") ]
+@[refuses("OutOfFragment.WrongSort")]
 def choice : -F Unit & ?;
 
-@[ refuses("OutOfFragment.unknown_type") ]
+@[refuses("OutOfFragment.unknown_type")]
 def pair_left : ? * Integer;
-@[ refuses("OutOfFragment.unknown_type") ]
+@[refuses("OutOfFragment.unknown_type")]
 def takes_unknown : ? -> -F Unit;
 
-@[ refuses("OutOfFragment.unknown_type") ]
+@[refuses("OutOfFragment.unknown_type")]
 def parenthesized : Integer -> (?);
 
 def term_hole = ?;

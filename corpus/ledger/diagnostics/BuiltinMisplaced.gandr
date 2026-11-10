@@ -1,4 +1,5 @@
-/// `BuiltinMisplaced`: a datatype takes the decode role, which marks a definition.
-@[ refuses("BuiltinMisplaced"), builtin(irDecode) ]
+/// `BuiltinMisplaced`: a datatype takes the decode role, which
+/// marks a definition.
+@[refuses("BuiltinMisplaced"), builtin(irDecode)]
 data Wrong : Type where
   | Only : Wrong

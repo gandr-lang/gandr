@@ -14,7 +14,7 @@
 import std.process;
 
 /// `suspended` reads a view after its stack resumes.
-@[ runs("12") ]
+@[runs("12")]
 def suspended() -> Integer =
   var x = 5
   let r : Integer = handle c : std.process.Exit.Eff {

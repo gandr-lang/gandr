@@ -53,17 +53,17 @@ def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
   s.read (s.incr s.zero)
 
 /// `suppliedUp` passes `Up`.
-@[ runs("5") ]
+@[runs("5")]
 def suppliedUp() -> Integer { stepped[.s = Up] 4 }
 
 /// `suppliedTens` passes the `Tens` reduct.
-@[ runs("14") ]
+@[runs("14")]
 def suppliedTens() -> Integer { stepped[.s = Tens] 4 }
 
 /// `passedOn` passes `Tens` through `further`.
-@[ runs("24") ]
+@[runs("24")]
 def passedOn() -> Integer { further[.t = Tens] 4 }
 
 /// `manifest` passes `Up` at its manifest carrier.
-@[ runs("1") ]
+@[runs("1")]
 def manifest() -> Integer { fromZero[.s = Up] () }

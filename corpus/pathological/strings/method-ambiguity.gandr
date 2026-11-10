@@ -18,7 +18,7 @@ module Bytes where
 /// A string's length, which both `Str` and `Bytes` declare as `len`: the call
 /// is refused though only `Str`'s receives a string, since the receiver's
 /// type does not yet choose between them.
-@[ refuses("AmbiguousMethod") ]
+@[refuses("AmbiguousMethod")]
 def measured() -> -F Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   s.len ()

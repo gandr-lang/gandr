@@ -15,7 +15,7 @@
 import std.string (empty, concat);
 
 /// The empty string's unit law over the definition `concat` is refused.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory JoinLaws where
   /// The sort the law ranges over.
   sort S : Type;

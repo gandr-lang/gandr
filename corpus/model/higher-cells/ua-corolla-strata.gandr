@@ -43,60 +43,60 @@ def seven = ua[
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `above` refuses a degree past every wiring at its bound.
-@[ refuses("UncertifiedDegree") ]
+@[refuses("UncertifiedDegree")]
 def above = ua[
   5,
   4
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `empty` refuses a catalogue with no vertices.
-@[ refuses("UncertifiedCondition") ]
+@[refuses("UncertifiedCondition")]
 def empty = ua[
   1,
   0
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `wide` refuses a bound past the largest catalogue bound.
-@[ refuses("UncertifiedAllowance") ]
+@[refuses("UncertifiedAllowance")]
 def wide = ua[
   1,
   65
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `crowded` refuses a bound that exceeds the shape budget.
-@[ refuses("UncertifiedBudget") ]
+@[refuses("UncertifiedBudget")]
 def crowded = ua[
   1,
   8
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `short` refuses a bound smaller than the binary corolla.
-@[ refuses("PastTheBound") ]
+@[refuses("PastTheBound")]
 def short = ua[
   1,
   3
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `lopsided` refuses `exchange` and `boolId` as an inverse pair.
-@[ refuses("NotInverse") ]
+@[refuses("NotInverse")]
 def lopsided = ua[
   1,
   4
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep});
 
 /// `partial` refuses a missing corolla table.
-@[ refuses("CorollaTables") ]
+@[refuses("CorollaTables")]
 def partial = ua[1, 4] Magma Magma (*{.mul = exchange}) (*{.mul = exchange, .one = keep});
 
 /// `misspelt` refuses a table for an unknown generator.
-@[ refuses("UnknownGenerator") ]
+@[refuses("UnknownGenerator")]
 def misspelt = ua[
   1,
   4
 ] Magma Magma (*{.mul = exchange, .zero = keep}) (*{.mul = exchange, .one = keep});
 
 /// `unnamed` refuses an undeclared signature.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def unnamed = ua[
   1,
   4

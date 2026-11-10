@@ -35,17 +35,17 @@ pub module Echo : Model(Kept) with sort V = String where
   def put(key : String, value : String, k : String) -> String { k }
 
 /// An offer granting an interface no host declares.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 pub offers [Missing];
 
 /// An offer granting the console twice.
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 pub offers [std.io.Console.Eff, std.io.Console.Eff];
 
 /// An offer answering a label by a module the file does not declare.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 pub offers [store = Absent];
 
 /// A second offer in one file.
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 pub offers [store = Echo];

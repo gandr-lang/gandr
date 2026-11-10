@@ -64,21 +64,21 @@ pub def rec encodeAll(cs : List Integer) -> List Integer =
     | Cons(c, rest) => concat (encode c) (encodeAll[<] rest)
 
 /// This test encodes `$` as one byte.
-@[ runs("Cons 36 Nil") ]
+@[runs("Cons 36 Nil")]
 def dollar() -> List Integer { encode 36 }
 
 /// This test encodes `é` as two bytes.
-@[ runs("Cons 195 (Cons 169 Nil)") ]
+@[runs("Cons 195 (Cons 169 Nil)")]
 def eAcute() -> List Integer { encode 233 }
 
 /// This test encodes `€` as three bytes.
-@[ runs("Cons 226 (Cons 130 (Cons 172 Nil))") ]
+@[runs("Cons 226 (Cons 130 (Cons 172 Nil))")]
 def euro() -> List Integer { encode 8364 }
 
 /// This test encodes `😀` as four bytes.
-@[ runs("Cons 240 (Cons 159 (Cons 152 (Cons 128 Nil)))") ]
+@[runs("Cons 240 (Cons 159 (Cons 152 (Cons 128 Nil)))")]
 def grin() -> List Integer { encode 128512 }
 
 /// This test encodes `hé` as one byte and two bytes.
-@[ runs("Cons 104 (Cons 195 (Cons 169 Nil))") ]
+@[runs("Cons 104 (Cons 195 (Cons 169 Nil))")]
 def he() -> List Integer { encodeAll (Cons 104 (Cons 233 Nil) : List Integer) }

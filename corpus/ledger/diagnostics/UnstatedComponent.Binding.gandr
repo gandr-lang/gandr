@@ -1,13 +1,14 @@
-/// `UnstatedComponent.Binding`: a model component the derivation cannot state: a law relating a term at a port that binds a variable.
+/// `UnstatedComponent.Binding`: a model component the derivation cannot state:
+/// a law relating a term at a port that binds a variable.
 ///
 /// The theory the model derives from: a binder no body uses is collected.
-@[ checks ]
+@[checks]
 theory T where
   sort Val : Type+;
   sort Proc : Type;
   oper nil : Proc;
-  oper new : (body : pi+ (x : Val) . Proc) --> Proc;
-  rule collect : new (bind x . nil) <=> nil;
+  oper new : (body : pi+ (x : Val). Proc) --> Proc;
+  rule collect : new (bind x. nil) <=> nil;
 
-@[ refuses("UnstatedComponent.Binding") ]
-def model : Model T ;
+@[refuses("UnstatedComponent.Binding")]
+def model : Model T;

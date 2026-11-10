@@ -10,9 +10,9 @@
 // - see: #4522
 
 /// The identity on buffers, which writes the buffer type unimported.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def keep(b : Buf) -> Buf { b }
 
 /// The identity on webs, which writes the web type unimported.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def same(w : Web) -> Web { w }

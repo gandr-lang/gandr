@@ -19,7 +19,7 @@ import "./circle-base.gandr";
 import "./equivalence.gandr";
 
 /// The loop word has one letter before the empty word.
-@[ runs("loop ∷ Path.here Base") ]
+@[runs("loop ∷ Path.here Base")]
 def once() -> Path[.A = Circle](Base, Base) { loop }
 
 /// The inverse loop converts to `back(loop) ∷ Path.here Base`.
@@ -35,14 +35,14 @@ def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
 ) = Path.here (Path.here Base);
 
 /// No rule identifies the loop with the empty word.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def around_once : Path[.A = Path[.A = Circle](Base, Base)](
   loop,
   Path.here Base
 ) = Path.here (Path.here Base);
 
 /// The checker refuses `tell` because it reads the empty word as 1.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def tell(p : Path[.A = Circle](Base, Base)) -> Integer =
   match p where
     | here => 0
@@ -62,7 +62,7 @@ def twice : Path[.A = Path[.A = Circle](Base, Base)](
 ) = Path.here (loop ∷ loop ∷ Path.here Base);
 
 /// The `wind` and `spin` composite returns two loops from two loops.
-@[ runs("S (S Z)") ]
+@[runs("S (S Z)")]
 def counted : () -> Int = wind (spin (S (S Z)));
 
 /// Winding and spinning form a quasi-inverse with two round trips.

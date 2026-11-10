@@ -36,5 +36,5 @@ def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Part
   force t
 
 /// `widenedRow` runs `Partial` where its row also holds `std.fs.Eff`.
-@[ runs("3") ]
+@[runs("3")]
 def widenedRow() -> [std.fs.Eff, Partial] Integer { once 3 }

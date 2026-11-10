@@ -1,12 +1,13 @@
-/// `NotOpen`: a handle crossing to another world over a thunk reached through a variable, which carries no image.
-@[ checks ]
+/// `NotOpen`: a handle crossing to another world over a thunk reached through a
+/// variable, which carries no image.
+@[checks]
 world operator;
 
-@[ checks ]
+@[checks]
 world seat;
 
-@[ refuses("NotOpen") ]
-@[ entry(*{operator, seat}) ]
+@[refuses("NotOpen")]
+@[entry(*{operator, seat})]
 def heldThunk() -> -F ((() -> Integer) at seat) =
   migrate [seat] {
     let later : () -> Integer = thunk { pure 3 };

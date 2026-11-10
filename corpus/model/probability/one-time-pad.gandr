@@ -24,24 +24,24 @@ import std.crypto (key, pad, unpad);
 
 /// `pad` sends the message 3 under the key 1 to 0. `unpad` with the same key
 /// gives 3 again.
-@[ runs("3") ]
+@[runs("3")]
 def opened() -> Integer =
   unpad 2 (pad 2 3 1) 1
 
 /// The message 1 under a uniform key: each ciphertext at `1/4`.
-@[ distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3")) ]
+@[distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3"))]
 def sealedOne() -> [std.rand.Eff] Integer =
   let k = key 2
   pad 2 1 k
 
 /// The message 2 under a uniform key: each ciphertext at `1/4`.
-@[ distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3")) ]
+@[distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3"))]
 def sealedTwo() -> [std.rand.Eff] Integer =
   let k = key 2
   pad 2 2 k
 
 /// A message of 1 or 2 and its ciphertext under a fresh key.
-@[ distributes((
+@[distributes((
   "1/8 *{1, 0}",
   "1/8 *{1, 1}",
   "1/8 *{1, 2}",
@@ -50,7 +50,7 @@ def sealedTwo() -> [std.rand.Eff] Integer =
   "1/8 *{2, 1}",
   "1/8 *{2, 2}",
   "1/8 *{2, 3}"
-)) ]
+))]
 pub def joint() -> [std.rand.Eff] (Integer * Integer) =
   let message = 1 + std.rand.draw 1
   let k = key 2
@@ -58,7 +58,7 @@ pub def joint() -> [std.rand.Eff] (Integer * Integer) =
 
 /// A message of 1 or 2 and the difference of two ciphertexts under one key:
 /// the message itself and the message 1.
-@[ distributes(("1/2 *{1, 0}", "1/2 *{2, 1}")) ]
+@[distributes(("1/2 *{1, 0}", "1/2 *{2, 1}"))]
 pub def reused() -> [std.rand.Eff] (Integer * Integer) =
   let message = 1 + std.rand.draw 1
   let k = key 2

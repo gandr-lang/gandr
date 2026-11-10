@@ -1,4 +1,4 @@
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Unmarked where
   sort Q : Type;
   oper f : (a : Q) --> (b : Q);

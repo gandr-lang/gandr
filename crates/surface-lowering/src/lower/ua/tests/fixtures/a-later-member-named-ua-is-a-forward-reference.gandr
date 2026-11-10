@@ -1,2 +1,2 @@
-theory S where { sort M : Type; }
+theory S where {sort M : Type;}
 module M where { def o = ua[1, 4] S (S (*{})) (*{}); def ua = 1; }

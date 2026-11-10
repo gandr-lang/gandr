@@ -1,5 +1,8 @@
-/// `std-string`: `std.string` joins strings with `concat`, its unit `empty` and the test `isEmpty`, and states the monoid laws of joining beside them.
-/// Implemented: the functions over the native `string` namespace, and the laws stated over joining presented as an operation, which the coincidence check certifies.
+/// `std-string`: `std.string` joins strings with `concat`, its unit `empty` and
+/// the test `isEmpty`, and states the monoid laws of joining beside them.
+/// Implemented: the functions over the native `string` namespace, and the laws
+/// stated over joining presented as an operation, which the
+/// coincidence check certifies.
 /// Not implemented: the scanning functions, and a law over a definition itself.
 ///
 /// - owes: #318 — the scanning functions
@@ -8,5 +11,5 @@
 import std.string (concat, isEmpty);
 
 /// `named` joins a name to a greeting and asks whether the result is empty.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def named() -> Bool { isEmpty (concat "hello, " "ada") }

@@ -14,6 +14,6 @@ import std.fs;
 def save(c : Cap { read, write }) -> [std.fs.Eff] Unit =
   c.write "notes" "draft"
 
-@[ refuses("CapabilityAmplified") ]
+@[refuses("CapabilityAmplified")]
 def widen(c : Cap { read }) -> [std.fs.Eff] Unit =
   save c

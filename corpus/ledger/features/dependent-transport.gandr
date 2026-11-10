@@ -1,6 +1,9 @@
 /// `dependent-transport`: Transport in path-dependent motives.
-/// Implemented: a motive depending on the identification itself, path induction derived in the singleton, and transport along a closed path of native evidence at the unit type or at a sealed atom.
-/// Not implemented: transport into a product fibre or along a computed relation, and univalence in full generality.
+/// Implemented: a motive depending on the identification itself, path induction
+/// derived in the singleton, and transport along a closed path of native
+/// evidence at the unit type or at a sealed atom.
+/// Not implemented: transport into a product fibre or along a computed
+/// relation, and univalence in full generality.
 ///
 /// - owes: #2053 — transport into a product fibre or along a computed relation
 /// - owes: #312 — univalence in full generality
@@ -14,10 +17,10 @@
 // one that reads no path.
 
 // The free naturals.
-import "../../model/identity/circle-base.gandr" ;
+import "../../model/identity/circle-base.gandr";
 
 /// Transport along reflexivity at zero returns the element given.
-@[ checks ]
+@[checks]
 def reduced : Path[.A = Nat](
   Path.walk
     ((y : Nat, Path[.A = Nat](Zero, y)) -> Nat)
@@ -30,12 +33,12 @@ def reduced : Path[.A = Nat](
 
 /// The unit type's evidence between its point and itself, a closed path
 /// that is no reflexivity.
-@[ checks ]
+@[checks]
 def unitPath : Path[.A = Unit](*{}, *{}) = *{};
 
 /// Transport along that evidence, in a family that reads neither the point
 /// nor the path, returns the element given.
-@[ checks ]
+@[checks]
 def carriedUnit : Path[.A = Nat](
   Path.walk
     ((y : Unit, Path[.A = Unit](*{}, y)) -> Nat)
@@ -48,7 +51,7 @@ def carriedUnit : Path[.A = Nat](
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre.
-@[ checks ]
+@[checks]
 def backUnit : Path[.A = Path[.A = Unit](*{}, *{})](
   Path.walk
     ((y : Unit, Path[.A = Unit](*{}, y)) -> Path[.A = Unit](y, *{}))
@@ -61,7 +64,7 @@ def backUnit : Path[.A = Path[.A = Unit](*{}, *{})](
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
-@[ checks ]
+@[checks]
 def reversed(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) =
   Path.walk
     ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))

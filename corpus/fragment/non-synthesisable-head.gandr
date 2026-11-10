@@ -1,2 +1,2 @@
-@[ refuses("NotSynthesisable"), form(explicit) ]
+@[refuses("NotSynthesisable"), form(explicit)]
 def applied() -> -F Integer { become (fun (x) { return x }) 3 }

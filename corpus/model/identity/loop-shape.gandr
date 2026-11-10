@@ -37,7 +37,7 @@ def law_count(presented : Theory) -> Integer =
     | _ => 0
 
 /// The `shape_laws` run counts the two circle laws.
-@[ runs("2") ]
+@[runs("2")]
 def shape_laws() -> Integer { law_count CircleShape }
 
 /// The `Winding` model interprets the circle shape with presented integers.
@@ -56,7 +56,7 @@ pub module Winding : Model(CircleShape) where {
   def unturnTurn(n : Int) -> Path[.A = Int](unturn (turn n), n) =
     Path.here n
 
-  @[ runs("S (S Z)") ]
+  @[runs("S (S Z)")]
   def wound() -> Int =
     turn (turn base)
 }
@@ -71,13 +71,13 @@ pub module NativeWinding : Model(CircleShape) where {
 
   def unturn(n : Integer) -> Integer { n - 1 }
 
-  @[ owes(1) ]
+  @[owes(1)]
   def turnUnturn : (n : Integer) -> Path[.A = Integer](turn (unturn n), n);
 
-  @[ owes(1) ]
+  @[owes(1)]
   def unturnTurn : (n : Integer) -> Path[.A = Integer](unturn (turn n), n);
 
-  @[ runs("2") ]
+  @[runs("2")]
   def wound() -> Integer =
     let n = turn base
     turn n

@@ -1,8 +1,8 @@
 error[ShadowCaptured]: the linear parameter is used inside a thunk, which may use it other than once
-  ╭▸ corpus/ledger/diagnostics/ShadowCaptured.gandr:3:48
+  ╭▸ corpus/ledger/diagnostics/ShadowCaptured.gandr:4:48
   │
-3 │ def suspended(x : Integer) ⊸ +U (-F Integer) = thunk { pure x } ;
-  │ ┬─────────────┬────────────────────────────────┯━━━━━━━━━━━━━━━──
+4 │ def suspended(x : Integer) ⊸ +U (-F Integer) = thunk { pure x };
+  │ ┬─────────────┬────────────────────────────────┯━━━━━━━━━━━━━━━─
   │ │             │                                │
   │ │             │                                a linear parameter that may be used other than once
   │ │             checked against `(x : Integer) ⊸ -F (() -> Integer)`; while checking the body of this function; binds x : Integer

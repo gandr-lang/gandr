@@ -1,10 +1,10 @@
 error[ImportUnresolved]: this import names no source the root holds, so this source's declarations are not read
-  ╭▸ corpus/ledger/diagnostics/ImportUnresolved.gandr:2:1
+  ╭▸ corpus/ledger/diagnostics/ImportUnresolved.gandr:3:1
   │
-2 │ import "./circle-absent.gandr" ;
-  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ names no source this root holds
+3 │ import "./circle-absent.gandr";
+  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ names no source this root holds
   ┆
-5 │ data Point : Type where
+6 │ data Point : Type where
   │      ───── declared here
   │
   ├ note: `Point` is refused with ImportUnresolved, as its expectation states

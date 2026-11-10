@@ -29,11 +29,11 @@ pub def rec windWords(c : Words) -> Int =
     | Unloop(x) => P (windWords[<] x)
 
 /// Two loops map to two successors.
-@[ runs("S (S Z)") ]
+@[runs("S (S Z)")]
 def twice_wound() -> Int { windWords (Loop (Loop Nil)) }
 
 /// The run keeps the cancelled word before conversion normalises it.
-@[ runs("S (P Z)") ]
+@[runs("S (P Z)")]
 def wound_letterwise() -> Int { windWords (Loop (Unloop Nil)) }
 
 /// Conversion maps two loops to two successors.
@@ -43,7 +43,7 @@ def wound_twice : Path[.A = Int](windWords (Loop (Loop Nil)), S (S Z)) = Path.he
 def wound_never : Path[.A = Int](windWords (Loop (Unloop Nil)), Z) = Path.here Z;
 
 /// The `native_wind` function maps words through the native model.
-@[ respects(*{NativeWinding.turnUnturn, NativeWinding.unturnTurn}), owes(2) ]
+@[respects(*{NativeWinding.turnUnturn, NativeWinding.unturnTurn}), owes(2)]
 def rec native_wind(c : Words) -> Integer =
   match c where
     | Nil => 0
@@ -51,9 +51,9 @@ def rec native_wind(c : Words) -> Integer =
     | Unloop(x) => NativeWinding.unturn (native_wind[<] x)
 
 /// Two loops map to two native integer units.
-@[ runs("2") ]
+@[runs("2")]
 def native_twice() -> Integer { native_wind (Loop (Loop Nil)) }
 
 /// A cancelled word maps to native zero.
-@[ runs("0") ]
+@[runs("0")]
 def native_unwound() -> Integer { native_wind (Loop (Unloop Nil)) }

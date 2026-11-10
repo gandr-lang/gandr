@@ -19,7 +19,7 @@ pub def succ(n : Integer) -> Integer =
 /// A count held at zero and two accesses through the view: the first resumes
 /// with the increment, the second aborts. The count observes the write-back on
 /// `resume` and none on `abort`.
-@[ runs("1") ]
+@[runs("1")]
 def counter() -> Integer =
   var c = 0
   access c as v { let n = succ v; resume v n };
@@ -28,7 +28,7 @@ def counter() -> Integer =
 
 /// The view reads the value it lends, so each write-back sees the one before
 /// it.
-@[ runs("12") ]
+@[runs("12")]
 def doubled() -> Integer =
   var c = 3
   access c as v { resume v (v + v) };
@@ -44,5 +44,5 @@ def add_to(n : Integer) -> Integer =
   pure c
 
 /// This hold adds five.
-@[ runs("6") ]
+@[runs("6")]
 def add_five : () -> Integer = add_to 5;

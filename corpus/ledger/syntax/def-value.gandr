@@ -1,5 +1,6 @@
-/// `def_value`: a definition: a name and the value it stands for, its linear tail written with its glyph and in ASCII.
-@[ checks ]
-def kept(x : Integer) ⊸ Integer = x ;
-@[ checks ]
-def keptAscii(x : Integer) -o Integer = x ;
+/// `def_value`: a definition: a name and the value it stands for, its linear
+/// tail written with its glyph and in ASCII.
+@[checks]
+def kept(x : Integer) ⊸ Integer = x;
+@[checks]
+def keptAscii(x : Integer) -o Integer = x;

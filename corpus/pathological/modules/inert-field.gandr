@@ -16,7 +16,7 @@
 /// A labelled thing: its label inert, its tag content.
 theory Labelled where {
   /// The label.
-  @[ inert ]
+  @[inert]
   oper label : String;
   /// The tag.
   oper tag : String;
@@ -25,50 +25,50 @@ theory Labelled where {
 /// A box, whose content member reads its own label.
 module Box : Model(Labelled) where {
   /// The label.
-  @[ runs("\"box\"") ]
+  @[runs("\"box\"")]
   def label = "box";
   /// The tag, read off the label.
-  @[ refuses("InertRead") ]
+  @[refuses("InertRead")]
   def tag = label;
 }
 
 /// The label, read by its path.
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def shown = Box.label;
 
 /// The label of any labelled thing.
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def labelOf(l : Model Labelled) -> String { l.label }
 
 /// The label, read by an inert definition.
-@[ inert ]
-@[ runs("\"box\"") ]
+@[inert]
+@[runs("\"box\"")]
 def boxLabel = Box.label;
 
 /// The inert definition, read by a content one.
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def boxShown = boxLabel;
 
 /// A module whose member carries the mark.
 module Marked where {
   /// The member.
-  @[ refuses("MalformedForm") ]
-  @[ inert ]
+  @[refuses("MalformedForm")]
+  @[inert]
   def kept = "kept";
 }
 
 /// The mark on a sort, which is no field.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Sorted where {
   /// The sort.
-  @[ inert ]
+  @[inert]
   sort T : Type;
 }
 
 /// A declaration's attribute on an operation.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Checked where {
   /// The operation.
-  @[ checks ]
+  @[checks]
   oper x : String;
 }

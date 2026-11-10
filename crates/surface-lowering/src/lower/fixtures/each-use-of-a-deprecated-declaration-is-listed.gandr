@@ -1,6 +1,6 @@
-@[ deprecated(*{since = "0.2", note = "use cube"}) ]
+@[deprecated(*{since = "0.2", note = "use cube"})]
 def square = 1;
-@[ deprecated ]
+@[deprecated]
 def old : Integer = 2;
 def cube = 3;
 def a = square;
@@ -8,6 +8,6 @@ def b = old;
 def c = cube;
 def d = square;
 module Holder where {
-  @[ deprecated ] def member = 4;
+  @[deprecated] def member = 4;
 }
 def e = Holder.member;

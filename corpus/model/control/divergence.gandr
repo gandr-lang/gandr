@@ -31,7 +31,7 @@ pub def once(x : Integer) -> [Partial] Integer =
   y
 
 /// It runs, at a row holding `Partial`.
-@[ runs("3") ]
+@[runs("3")]
 def onceThree() -> [Partial] Integer =
   once 3
 

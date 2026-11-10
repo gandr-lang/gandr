@@ -27,7 +27,7 @@ import std.buffer (Web);
 
 /// `retiring` records a report and a retirement.
 /// Its web is series-parallel.
-@[ decomposes(
+@[decomposes(
   series
     (event right 0)
     (event left 0)
@@ -36,7 +36,7 @@ import std.buffer (Web);
     (event right 2)
     (event right 3)
     (parallel (series (event left 3) (event left 4)) (event right 4))
-) ]
+)]
 pub def retiring : Dialogue Seat.SeatEnd = dialogue
   (right (sent Seat.task))
   (left (received Seat.task))
@@ -51,7 +51,7 @@ pub def retiring : Dialogue Seat.SeatEnd = dialogue
 
 /// `retiringLater` records the same dialogue with the offer before the report.
 /// Its web has no prime node.
-@[ decomposes(primes = 0) ]
+@[decomposes(primes = 0)]
 def retiringLater : Dialogue Seat.SeatEnd = dialogue
   (right (sent Seat.task))
   (left (received Seat.task))
@@ -77,13 +77,13 @@ def sameWeb : Path[.A = Web](
 
 /// `handedOff` records a handoff with a prime web node.
 /// `N` forms a factor with the operator's receipt and close.
-@[ decomposes(
+@[decomposes(
   series
     (event right 0)
     (event left 0)
     (event left 1)
     (prime (event left 2) (event left 3) (event right 1) (series (event right 2) (event right 3)))
-) ]
+)]
 pub def handedOff : Dialogue Seat.SeatEnd = dialogue
   (right (sent Seat.task))
   (left (received Seat.task))

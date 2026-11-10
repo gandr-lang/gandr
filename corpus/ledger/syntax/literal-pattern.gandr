@@ -1,5 +1,5 @@
 /// `literal_pattern`: a literal pattern.
-@[ checks ]
+@[checks]
 def sign(n : Integer) -> -F Integer =
   match n where
     | 0 => return 0

@@ -68,7 +68,7 @@ pub def restored(plan : String) -> [std.reals.Eff] String =
 
 /// `restored` under a handler of this source, a second model of
 /// `std.reals.Eff` whose machines hold after one step with the same work.
-@[ runs("\"holds\"") ]
+@[runs("\"holds\"")]
 def restoredModelled() -> String =
   handle r : std.reals.Eff {
     restored belowThreeHalves

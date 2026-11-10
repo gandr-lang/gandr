@@ -3,8 +3,8 @@
 // not held apart it states nothing, and the family is refused at the block.
 
 /// A bit whose first constructor carries an expectation it cannot state.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 data Stray : Type where
-  @[ checks ]
+  @[checks]
   | Low : Stray
   | High : Stray

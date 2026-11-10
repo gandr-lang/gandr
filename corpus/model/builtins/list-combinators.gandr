@@ -8,30 +8,30 @@
 // - see: #1106 — `sorted`
 
 /// `doubled` doubles each element.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def doubled = list.each (thunk { fun (x) { return x * 2 } }) (#[1, 2, 3]);
 
 /// `big` filters elements that exceed two.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def big = list.filter (thunk { fun (x) { return x > 2 } }) doubled;
 
 /// `total` sums the large elements.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def total = list.reduce (thunk { fun (acc, x) { return acc + x } }) 0 big;
 
 /// `any_big` tests for a large element over five.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def any_big = list.any (thunk { fun (x) { return x > 5 } }) big;
 
 /// `all_even` tests whether every doubled element is over one.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def all_even = list.all (thunk { fun (x) { return x > 1 } }) doubled;
 
 /// `flattened` joins two lists in sequence.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def flattened = list.flatten (#[#[3, 1], #[2, 2]]);
 
 /// `sorted` deduplicates and sorts `flattened`. The lowering does not read a
 /// `list` primitive.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def sorted = list.sort (list.uniq flattened);

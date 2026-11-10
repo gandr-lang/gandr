@@ -1,10 +1,10 @@
 error[BuiltinNotCanonical]: this declaration departs from the canonical form of the built-in role `irSignature` at field 1 of constructor 1
-  ╭▸ corpus/ledger/diagnostics/BuiltinNotCanonical.gandr:3:1
+  ╭▸ corpus/ledger/diagnostics/BuiltinNotCanonical.gandr:4:1
   │
-3 │ ┏ data Swapped(d : Type) : Type[+, 1] where
-4 │ ┃   | Stop : (e : d) --> Swapped d
-5 │ ┃   | Read : (a : Type, f : (a -> d) -> Swapped d) --> Swapped d
-6 │ ┃   | Ask : (a : Type, f : a -> Swapped d) --> Swapped d
+4 │ ┏ data Swapped(d : Type) : Type[+, 1] where
+5 │ ┃   | Stop : (e : d) --> Swapped d
+6 │ ┃   | Read : (a : Type, f : (a -> d) -> Swapped d) --> Swapped d
+7 │ ┃   | Ask : (a : Type, f : a -> Swapped d) --> Swapped d
   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role's holder in another form
   │
   ├ note: `Swapped` is refused with BuiltinNotCanonical, as its expectation states

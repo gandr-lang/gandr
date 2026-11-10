@@ -27,18 +27,18 @@ def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{y : Unit, 
 ) { *{*{}, *{}} }
 
 /// The `Point` module seals unit points with `related` as their identity.
-pub module Point :> *{ type T, origin : T, other : T } where {
+pub module Point :> *{type T, origin : T, other : T} where {
   /// The sealed points use `related` as their identity relation.
-  @[ identity(*{related, reflexivity, contraction}) ]
-  @[ checks ]
+  @[identity(*{related, reflexivity, contraction})]
+  @[checks]
   type T = Unit;
 
   /// One point.
-  @[ checks ]
+  @[checks]
   def origin = *{};
 
   /// The relation joins the other point to the first point.
-  @[ checks ]
+  @[checks]
   def other = *{};
 }
 
@@ -119,18 +119,18 @@ def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = *{
 
 /// The `PathPoint` module seals unit points with `pathRelated`
 /// as their identity.
-module PathPoint :> *{ type T, origin : T, other : T } where {
+module PathPoint :> *{type T, origin : T, other : T} where {
   /// The module gives its points the `pathRelated` identity relation.
-  @[ identity(*{pathRelated, pathReflexivity, pathContraction}) ]
-  @[ checks ]
+  @[identity(*{pathRelated, pathReflexivity, pathContraction})]
+  @[checks]
   type T = Unit;
 
   /// One point.
-  @[ checks ]
+  @[checks]
   def origin = *{};
 
   /// The relation joins the other point to the first point.
-  @[ checks ]
+  @[checks]
   def other = *{};
 }
 

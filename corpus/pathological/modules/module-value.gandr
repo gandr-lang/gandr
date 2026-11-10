@@ -31,5 +31,5 @@ module Bare where
   def step(n : Integer) -> Integer { n + 1 }
 
 /// The unascribed module, named as a ticker.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def named : Model Ticker = Bare;

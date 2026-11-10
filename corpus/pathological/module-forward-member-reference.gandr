@@ -1,6 +1,6 @@
 module Bad where {
-  @[ refuses("ForwardMemberReference") ]
+  @[refuses("ForwardMemberReference")]
   def first = second + 1;
-  @[ runs("2") ]
+  @[runs("2")]
   def second = 2;
 }

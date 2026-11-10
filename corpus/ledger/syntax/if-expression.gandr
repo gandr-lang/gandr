@@ -1,4 +1,4 @@
 /// `if_expression`: a conditional.
-@[ checks ]
+@[checks]
 def pick(b : Bool) -> -F Integer =
   if b { return 1 } else { return 2 }

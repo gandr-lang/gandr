@@ -1,5 +1,5 @@
 /// `ViewEscaped`: a view named where it would outlive its access's body.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def leak() -> -F Integer =
   var c = 0
   access c as v { force thunk { resume v 1 } };

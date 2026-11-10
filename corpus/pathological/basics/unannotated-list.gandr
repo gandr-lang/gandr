@@ -3,5 +3,5 @@
 // in a signature.
 
 /// Three integers, no type stated.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def three = #[1, 2, 3];

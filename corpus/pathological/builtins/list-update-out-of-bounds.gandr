@@ -5,5 +5,5 @@
 // - see: #1106 — `set`
 
 /// The tenth element of a three-element list set to zero.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def set = list.set (#[1, 2, 3]) 9 0;

@@ -7,18 +7,18 @@
 /// A port binds a variable of `Tm`, which is not representable: the
 /// description check refuses the binder, and its refusal names the sort `Tm`
 /// and the port `t`.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory Unbindable where
   sort Tm : Type;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
 
 /// A sort's index is a plain variable: an operation's input port binds, an
 /// index does not.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory BoundIndex where
   sort Tm : Type+;
   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
 
 /// The universe of representable sorts classifies a sort member only.
-@[ refuses("OutOfFragment.Misplaced") ]
+@[refuses("OutOfFragment.Misplaced")]
 def universeOutside : Type+;

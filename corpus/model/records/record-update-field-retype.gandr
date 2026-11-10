@@ -14,5 +14,5 @@ def cell = *{count = 3, label = "start"};
 def named : *{count : String, label : String} = *{cell | count = "three"};
 
 /// `recounted` returns `cell` with a string count.
-@[ runs("*{.count = \"three\", .label = \"start\"}") ]
+@[runs("*{.count = \"three\", .label = \"start\"}")]
 def recounted() -> *{count : String, label : String} { *{cell | count = "three"} }

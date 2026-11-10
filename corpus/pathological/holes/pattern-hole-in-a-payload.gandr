@@ -9,7 +9,7 @@ data Maybe : Type where
   | Just : (x : Integer) --> Maybe
 
 /// The hole stands for `Just`'s payload.
-@[ refuses("UndecidedCoverage") ]
+@[refuses("UndecidedCoverage")]
 def describe(m : Maybe) -> Integer =
   match m where
     | Just(?) => 100

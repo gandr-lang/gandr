@@ -4,7 +4,7 @@
 import std.io;
 
 /// Frees one buffer twice in one scope.
-@[ refuses("BufferReturnedTwice") ]
+@[refuses("BufferReturnedTwice")]
 def freedTwice() -> -F Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;

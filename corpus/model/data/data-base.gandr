@@ -26,16 +26,16 @@ pub def rec plus(n : Nat, m : Nat) -> Nat =
     | Succ(p) => Succ (plus[<] n p)
 
 /// Two.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 pub def two : Nat = Succ (Succ Zero);
 
 /// Three.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 pub def three : Nat = Succ two;
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel, each rule invertible.
-@[ normalizes("S(P(S(Z))) ~> S(Z)") ]
+@[normalizes("S(P(S(Z))) ~> S(Z)")]
 pub data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int

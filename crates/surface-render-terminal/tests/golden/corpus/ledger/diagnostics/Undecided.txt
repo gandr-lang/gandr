@@ -1,11 +1,11 @@
 error[Undecided]: the checker could not decide what this code unfolds to
-   ╭▸ corpus/ledger/diagnostics/Undecided.gandr:30:16
+   ╭▸ corpus/ledger/diagnostics/Undecided.gandr:31:16
    │
-30 │   def compared = ua[
+31 │   def compared = ua[
    │ ┌────────────────┘
-31 │ │   1,
-32 │ │   4
-33 │ │ ] Magma Magma (*{.mul = measured, .one = keep}) (*{.mul = measured, .one = keep}) ;
+32 │ │   1,
+33 │ │   4
+34 │ │ ] Magma Magma (*{.mul = measured, .one = keep}) (*{.mul = measured, .one = keep});
    │ └─────────────────────────────────────────────────────────────────────────────────┘ synthesised; while checking the translators of this univalence against their corollas
    │
    ├ note: `compared` is refused with Undecided, as its expectation states

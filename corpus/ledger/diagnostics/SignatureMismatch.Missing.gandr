@@ -1,5 +1,6 @@
-/// `SignatureMismatch.Missing`: an import at a signature that states a member its source exports no `pub` declaration of.
-@[ refuses("SignatureMismatch.Missing") ]
+/// `SignatureMismatch.Missing`: an import at a signature that states a member
+/// its source exports no `pub` declaration of.
+@[refuses("SignatureMismatch.Missing")]
 theory Wider where
   oper answer : Integer;
   oper extra : Integer;
@@ -7,5 +8,5 @@ theory Wider where
 // The source declares `answer` and no `extra`.
 import "../syntax/pub-declaration.gandr" as declared : Wider;
 
-@[ refuses("SignatureMismatch.Missing") ]
+@[refuses("SignatureMismatch.Missing")]
 def relayed = declared.answer;

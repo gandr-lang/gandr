@@ -1,7 +1,8 @@
-/// `ForwardMemberReference`: a module member named at or after the member naming it.
+/// `ForwardMemberReference`: a module member named at or after the
+/// member naming it.
 module Bad where {
-  @[ refuses("ForwardMemberReference") ]
+  @[refuses("ForwardMemberReference")]
   def first = second + 1;
-  @[ runs("2") ]
+  @[runs("2")]
   def second = 2;
 }

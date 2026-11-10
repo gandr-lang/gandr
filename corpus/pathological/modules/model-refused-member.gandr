@@ -13,6 +13,6 @@ module Bits : Model(Toggle) where {
   type T = Integer;
 
   /// Refused where it is written, and not again as its witness.
-  @[ refuses("UnresolvedName") ]
+  @[refuses("UnresolvedName")]
   def flip(n : Integer) -> -F Integer { return missing }
 }

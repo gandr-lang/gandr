@@ -16,7 +16,7 @@ import std.process;
 
 /// The handler abandons the access continuation before it writes back the held
 /// value.
-@[ runs("1") ]
+@[runs("1")]
 def unwritten() -> Integer =
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {

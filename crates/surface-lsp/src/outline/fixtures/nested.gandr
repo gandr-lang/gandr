@@ -1,9 +1,9 @@
 /// Doubles nothing.
-@[ checks ]
+@[checks]
 def twice(x : Integer) -> -F Integer =
   return x
 def answer = 42;
-@[ checks ]
+@[checks]
 data Color : Type where { | Red : Color }
 module Outer where
   def inner = 1;

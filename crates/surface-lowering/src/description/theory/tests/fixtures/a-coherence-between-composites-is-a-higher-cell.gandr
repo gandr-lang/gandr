@@ -3,5 +3,5 @@ theory C where {
   oper id : (a : Ob) --> Ob;
   rule unitL : id a ==> a;
   rule triangle : (Path.step (unitL a) (unitL a)) ==> unitL a;
-  rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
+  rule face : (f) ==> (z : Ob) {node : id(f) --> (z);};
 }

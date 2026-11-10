@@ -1,4 +1,4 @@
 /// `string.expression`: a string with an interpolated expression, its text
 /// and the interpolated string appended in written order.
-@[ runs("\"hello, types\"") ]
+@[runs("\"hello, types\"")]
 def greeting() -> -F String { return "hello, ${ "types" }" }

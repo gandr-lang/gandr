@@ -29,18 +29,18 @@ def eqNat = Eq.generic Nat;
 def eqTagged = Eq.generic Tagged;
 
 /// `sameNat` compares two copies of two.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
 
 /// `shorterNat` compares one and two, and the recursion reaches `Zero`
 /// on one side.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }
 
 /// `sameTagged` compares two tagged naturals with equal leaves.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def sameTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true (Succ Zero)) }
 
 /// `recountedTagged` compares tagged naturals that differ only in `count`.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def recountedTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true Zero) }

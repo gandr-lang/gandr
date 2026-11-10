@@ -14139,7 +14139,14 @@ impl Walk<'_, '_>
                 else {
                     body.doc
                 };
-                (self.block(head, body)?, Binding::Prefix)
+                let block = if matches!(join, Join::StaticLambda { .. }) {
+                    let close = self.leaf(Glyphs("}"))?;
+                    self.builder.concat_all(&[head, body, close])?
+                }
+                else {
+                    self.block(head, body)?
+                };
+                (block, Binding::Prefix)
             },
             Join::Sequence | Join::DiscardedSequence => {
                 let rest = self.pop()?;

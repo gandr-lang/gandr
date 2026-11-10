@@ -1,7 +1,7 @@
 /// `type_identifier`: a named type.
 module Counts where {
   type Count = Integer;
-  @[ checks ]
-  def zero : Count ;
-  def zero = 0 ;
+  @[checks]
+  def zero : Count;
+  def zero = 0;
 }

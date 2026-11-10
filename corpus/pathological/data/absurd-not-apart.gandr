@@ -12,12 +12,12 @@ data Int : Type where {
 }
 
 /// `S(P(Z))` is `Z`: the normal forms agree, and the path is reflexivity.
-@[ refuses("NotApart") ]
+@[refuses("NotApart")]
 def agree(e : Path(S (P Z), Z)) -> Empty =
   match e {}
 
 /// `S(n)` is `Z` once `n` is `P(Z)`: an endpoint holds a variable of the type.
-@[ refuses("NotApart") ]
+@[refuses("NotApart")]
 def open(n : Int, e : Path(S n, Z)) -> Empty =
   match e {}
 
@@ -26,7 +26,7 @@ data Circle : Type where
   | loop : Base <-> Base
 
 /// The loop then its inverse is the empty word.
-@[ refuses("NotApart") ]
+@[refuses("NotApart")]
 def cancelled(e : Path[.A = Path[.A = Circle](Base, Base)](
   loop ∷ back loop ∷ Path.here Base,
   Path.here Base
@@ -34,6 +34,6 @@ def cancelled(e : Path[.A = Path[.A = Circle](Base, Base)](
   match e {}
 
 /// A match of no arm over a type with constructors misses them.
-@[ refuses("NonExhaustiveMatch") ]
+@[refuses("NonExhaustiveMatch")]
 def unmatched(n : Int) -> -F Empty =
   match n {}

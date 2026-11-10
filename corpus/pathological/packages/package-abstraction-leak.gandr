@@ -26,20 +26,20 @@ module Ints : Model(Seeded) where
 def ints : Model Seeded = Ints;
 
 /// Returns the seed at the integers its sort stands for.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def leak() -> Integer =
   module m = ints
   m.seed
 
 /// Reads one opening's seed through another opening's reader.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def mixed() -> Integer =
   module a = ints
   module b = ints
   a.read b.seed
 
 /// Binds a block whose type is the opened sort.
-@[ refuses("DependentBind") ]
+@[refuses("DependentBind")]
 def escaped() -> Integer =
   let y = {
     module m = ints;

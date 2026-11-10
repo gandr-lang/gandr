@@ -13,7 +13,7 @@
 /// `Released` states an inert version.
 theory Released where {
   /// The version.
-  @[ inert ]
+  @[inert]
   oper version : String;
 }
 
@@ -22,7 +22,7 @@ theory Named where {
   /// `Released` provides the inert version.
   include Released;
   /// The name.
-  @[ inert ]
+  @[inert]
   oper name : String;
   /// The greeting.
   oper greeting : String;
@@ -31,37 +31,37 @@ theory Named where {
 /// `Family` provides a shared release version.
 module Family : Model(Released) where {
   /// `version` gives the family version.
-  @[ runs("\"0.1.0\"") ]
+  @[runs("\"0.1.0\"")]
   def version = "0.1.0";
 }
 
 /// `Hello` reads the family version and defines content.
 module Hello : Model(Named) where {
   /// `version` reads the family version.
-  @[ runs("\"0.1.0\"") ]
+  @[runs("\"0.1.0\"")]
   def version = Family.version;
   /// `name` gives the package name.
-  @[ runs("\"hello\"") ]
+  @[runs("\"hello\"")]
   def name = "hello";
   /// `greeting` gives the package greeting.
-  @[ runs("\"hello, world\"") ]
+  @[runs("\"hello, world\"")]
   def greeting = "hello, world";
 }
 
 /// `welcome` reads the greeting through `Hello`.
-@[ runs("\"hello, world\"") ]
+@[runs("\"hello, world\"")]
 def welcome = Hello.greeting;
 
 /// `helloName` reads the inert name by its path, so it is inert too.
-@[ inert ]
-@[ runs("\"hello\"") ]
+@[inert]
+@[runs("\"hello\"")]
 def helloName = Hello.name;
 
 /// `nameOf` reads the inert name off any model of `Named`.
-@[ inert ]
+@[inert]
 def nameOf(n : Model Named) -> String { n.name }
 
 /// `shownName` reads another inert definition.
-@[ inert ]
-@[ runs("\"hello\"") ]
+@[inert]
+@[runs("\"hello\"")]
 def shownName = helloName;

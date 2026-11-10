@@ -1,6 +1,19 @@
 /// `std-build`: The standard library's manifest theories.
-/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and no type of a dependency, which an import's coordinate names; every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert declaration, while `gandr`, `features` and `systems` are content; a source under any root imports it by name, `import std.build (Gandr);`; the inert `render` writes a package model's constants as one `name = value` line each, in the order of the presentation.
-/// Not implemented: `authors`, `features` and `systems` are no lists, and `render` writes one table with no escape.
+/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned`
+/// and `Toolchain`, which `Project` joins once, `Presentation`,
+/// `Gandr.Package`, including `Project` and `Presentation`, and
+/// `Gandr.Workspace`, including `Project`, which a package source's and a
+/// workspace's models implement, `Gandr.Module`, which no source models yet,
+/// and no type of a dependency, which an import's coordinate names; every field
+/// of a package but what it asks of the toolchain, its `name`, `version`,
+/// `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert,
+/// read only by the manifest step and another inert declaration, while `gandr`,
+/// `features` and `systems` are content; a source under any root imports it by
+/// name, `import std.build (Gandr);`; the inert `render` writes a package
+/// model's constants as one `name = value` line each, in the order
+/// of the presentation.
+/// Not implemented: `authors`, `features` and `systems` are no lists, and
+/// `render` writes one table with no escape.
 ///
 /// - owes: #2993
 /// - see: #3135
@@ -16,7 +29,7 @@ pub module Package : Model(Gandr.Package) where {
   /// The package's name, which the manifest records it by.
   def name = "probe";
   /// The version the package releases at.
-  @[ runs("\"0.1.0\"") ]
+  @[runs("\"0.1.0\"")]
   def version = "0.1.0";
   /// The package's authors.
   def authors = "The gandr authors";
@@ -39,6 +52,6 @@ pub module Package : Model(Gandr.Package) where {
 }
 
 /// The model's lines, written by `std.build`'s inert render.
-@[ inert ]
-@[ runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"probe\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"") ]
+@[inert]
+@[runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"probe\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"")]
 def rendered() -> String { render Package }

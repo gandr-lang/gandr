@@ -4,5 +4,5 @@
 import std.list (List);
 
 /// Three integers in a list.
-@[ checks ]
-def three = (#[1, 2, 3] : List Integer) ;
+@[checks]
+def three = (#[1, 2, 3] : List Integer);

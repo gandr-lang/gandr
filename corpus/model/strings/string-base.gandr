@@ -41,5 +41,5 @@ pub def rec concat(xs : List Integer, ys : List Integer) -> List Integer =
 
 /// `inlineCapacity` gives the inline byte count.
 /// The count includes the terminating zero.
-@[ runs("24") ]
+@[runs("24")]
 pub def inlineCapacity : Integer = 24;

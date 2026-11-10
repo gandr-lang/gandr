@@ -26,7 +26,7 @@
 
 /// A restricted send has no receiver, and it is inert. The checker orients the
 /// law, and the kernel replays the verdict for restrictions named `a` or `b`.
-@[ normalizes("nu(bind b . out(b, nil)) ~> nil") ]
+@[normalizes("nu(bind b . out(b, nil)) ~> nil")]
 theory Unheard where
   sort Name : Atom;
   sort Proc : Type;
@@ -37,7 +37,7 @@ theory Unheard where
 
 /// This send uses the outer channel. Its depth differs from the law depth, so
 /// the law does not apply.
-@[ normalizes("nu(bind a . nu(bind b . out(a, nil))) ~> nu(bind a0 . nu(bind a1 . out(a0, nil)))") ]
+@[normalizes("nu(bind a . nu(bind b . out(a, nil))) ~> nu(bind a0 . nu(bind a1 . out(a0, nil)))")]
 theory Overheard where
   sort Name : Atom;
   sort Proc : Type;
@@ -48,7 +48,7 @@ theory Overheard where
 
 /// The inner restriction shadows the outer name. The law applies below the
 /// outer restriction.
-@[ normalizes("nu(bind a . nu(bind a . out(a, nil))) ~> nu(bind a0 . nil)") ]
+@[normalizes("nu(bind a . nu(bind a . out(a, nil))) ~> nu(bind a0 . nil)")]
 theory Shadowed where
   sort Name : Atom;
   sort Proc : Type;
@@ -59,7 +59,7 @@ theory Shadowed where
 
 /// Scope extrusion moves `q` under a fresh restriction. Each occurrence of
 /// `q` is one abstraction deeper.
-@[ normalizes("nu(bind c . par(nu(bind b . out(b, nil)), out(c, nil))) ~> nu(bind a0 . nu(bind a1 . par(out(a1, nil), out(a0, nil))))") ]
+@[normalizes("nu(bind c . par(nu(bind b . out(b, nil)), out(c, nil))) ~> nu(bind a0 . nu(bind a1 . par(out(a1, nil), out(a0, nil))))")]
 theory Extruding where
   sort Name : Atom;
   sort Proc : Type;
@@ -67,22 +67,22 @@ theory Extruding where
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where { | a # q };
+  rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where {| a # q};
 
 /// Garbage collection removes a restriction when its process omits the channel.
 /// This rule applies only to the inner restriction.
-@[ normalizes("nu(bind c . nu(bind b . out(c, nil))) ~> nu(bind a0 . out(a0, nil))") ]
+@[normalizes("nu(bind c . nu(bind b . out(c, nil))) ~> nu(bind a0 . out(a0, nil))")]
 theory Collected where
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule gc : nu (bind a. p) <=> p where { | a # p };
+  rule gc : nu (bind a. p) <=> p where {| a # p};
 
 /// Scope extrusion and garbage collection form a higher-order critical pair.
 /// The checker joins both rewrites of the peak.
-@[ normalizes("nu(bind c . par(nu(bind b . nil), out(c, nil))) ~> nu(bind a0 . par(nil, out(a0, nil)))") ]
+@[normalizes("nu(bind c . par(nu(bind b . nil), out(c, nil))) ~> nu(bind a0 . par(nil, out(a0, nil)))")]
 theory Collecting where
   sort Name : Atom;
   sort Proc : Type;
@@ -90,17 +90,17 @@ theory Collecting where
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where { | a # q };
-  rule gc : nu (bind a. p) <=> p where { | a # p };
+  rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where {| a # q};
+  rule gc : nu (bind a. p) <=> p where {| a # p};
 
 /// Garbage collection and the inert-restriction law have unifiable left sides.
 /// The freshness condition prevents an overlap.
-@[ normalizes("nu(bind c . nu(bind b . out(b, nil))) ~> nil") ]
+@[normalizes("nu(bind c . nu(bind b . out(b, nil))) ~> nil")]
 theory Quiet where
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule gc : nu (bind a. p) <=> p where { | a # p };
+  rule gc : nu (bind a. p) <=> p where {| a # p};
   rule quiet : nu (bind a. (out a (nil ()))) <=> nil ();

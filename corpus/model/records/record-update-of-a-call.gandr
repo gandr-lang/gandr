@@ -10,5 +10,5 @@
 def placed(n : Integer) -> *{x : Integer, y : Integer} { *{x = n, y = 2} }
 
 /// `moved_call` changes `x` in the record that `placed` returns.
-@[ runs("*{.x = 9, .y = 2}") ]
+@[runs("*{.x = 9, .y = 2}")]
 def moved_call() -> *{x : Integer, y : Integer} { *{placed 1 | x = 9} }

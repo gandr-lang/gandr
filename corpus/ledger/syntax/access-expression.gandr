@@ -1,5 +1,5 @@
 /// `access_expression`: an access to a held cell under a name.
-@[ checks ]
+@[checks]
 def bump() -> -F Integer =
   var c = 0
   access c as v { resume v (v + 1) };

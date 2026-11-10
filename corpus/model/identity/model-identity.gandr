@@ -37,7 +37,7 @@ def oneModel : Path(plainModel, flippedModel) = *{
 
 /// The `startUnmoved` path keeps the start at false.
 /// Negation maps that start to true.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def startUnmoved : Path(plainModel, flippedModel) = *{
   negation,
   *{Path.here (+{.0 = *{}}), *{stepped, reread}}

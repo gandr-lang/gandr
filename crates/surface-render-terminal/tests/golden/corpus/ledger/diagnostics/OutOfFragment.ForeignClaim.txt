@@ -1,17 +1,17 @@
 error[OutOfFragment.ForeignClaim]: a descent claim `[<]` heads a call of the recursive function it is written in, or of a member of its mutual block; this one names another function
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.gandr:6:45
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.gandr:8:45
   │
-6 │   def even(n : Integer) -> -F Bool { return odd[<] n }
+8 │   def even(n : Integer) -> -F Bool { return odd[<] n }
   │                                             ━━━━━━ not the recursive function this claim is in
   │
   ├ note: `even` is refused with OutOfFragment.ForeignClaim, as its expectation states
   ╰ help: put the descent claim on its recursive function or a mutual member
 
 error[OutOfFragment.ForeignClaim]: a descent claim `[<]` heads a call of the recursive function it is written in, or of a member of its mutual block; this one names another function
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.gandr:9:44
-  │
-9 │   def odd(n : Integer) -> -F Bool { return even[<] n }
-  │                                            ━━━━━━━ not the recursive function this claim is in
-  │
-  ├ note: `odd` is refused with OutOfFragment.ForeignClaim, as its expectation states
-  ╰ help: put the descent claim on its recursive function or a mutual member
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.gandr:11:44
+   │
+11 │   def odd(n : Integer) -> -F Bool { return even[<] n }
+   │                                            ━━━━━━━ not the recursive function this claim is in
+   │
+   ├ note: `odd` is refused with OutOfFragment.ForeignClaim, as its expectation states
+   ╰ help: put the descent claim on its recursive function or a mutual member

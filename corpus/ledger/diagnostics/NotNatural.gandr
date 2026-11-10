@@ -1,10 +1,11 @@
-/// `NotNatural`: translator tables that do not commute with a corolla's automorphisms.
+/// `NotNatural`: translator tables that do not commute with
+/// a corolla's automorphisms.
 theory Rig where
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
 
-@[ checks ]
+@[checks]
 def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) =
   match e where
     | +{.0 = u} => +{.2 = u}
@@ -12,5 +13,5 @@ def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) =
     | +{.2 = u} => +{.0 = u}
     | +{.3 = u} => +{.3 = u}
 
-@[ refuses("NotNatural") ]
-def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross}) ;
+@[refuses("NotNatural")]
+def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});

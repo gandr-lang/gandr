@@ -22,7 +22,7 @@ import std.process;
 
 /// `keptView` keeps a thunk in scope `c`.
 /// The thunk reads its shared view after the access ends.
-@[ runs("3") ]
+@[runs("3")]
 def keptView() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -35,7 +35,7 @@ def keptView() -> Integer =
 
 /// `keptAgain` binds the kept thunk at its region type.
 /// It then forces that thunk.
-@[ runs("3") ]
+@[runs("3")]
 def keptAgain() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -49,7 +49,7 @@ def keptAgain() -> Integer =
 
 /// The region releases the held value when its scope ends.
 /// `released` then writes the value back.
-@[ runs("4") ]
+@[runs("4")]
 def released() -> Integer =
   var s = 3
   let n : Integer = handle c : std.process.Exit.Eff {
@@ -64,7 +64,7 @@ def released() -> Integer =
 
 /// A value read out of a view enters the region as any value does: the read
 /// copies it, so it needs no keep.
-@[ runs("3") ]
+@[runs("3")]
 def keptRead() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -78,7 +78,7 @@ def keptRead() -> Integer =
 
 /// A hold opens a region for its own value.
 /// `keptInHold` keeps a shared view in that region.
-@[ runs("3") ]
+@[runs("3")]
 def keptInHold() -> Integer =
   var s = 3
   let k : (() -> Integer) at s = access shared s as w { pure pure w };
@@ -86,7 +86,7 @@ def keptInHold() -> Integer =
 
 /// An inner region can keep an outer shared view.
 /// `keptInInner` writes the outer value back after the inner scope ends.
-@[ runs("4") ]
+@[runs("4")]
 def keptInInner() -> Integer =
   var s = 3
   let n : Integer = {

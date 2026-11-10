@@ -1,4 +1,4 @@
-@[ refuses("UndescribedMember.ParallelRedexes") ]
+@[refuses("UndescribedMember.ParallelRedexes")]
 theory Cong where
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
@@ -14,7 +14,7 @@ theory Cong where
     node : add(x′, y′) --> (z);
   };
 
-@[ refuses("UndescribedMember.OperationFiller") ]
+@[refuses("UndescribedMember.OperationFiller")]
 theory Chain where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
@@ -27,13 +27,13 @@ theory Chain where
     node s3 : h(m2) --> (o);
   };
 
-@[ refuses("UndescribedMember.OperationFiller") ]
+@[refuses("UndescribedMember.OperationFiller")]
 oper accumulate : (stream : Stream) --> (out : Stream) {
   node : zip(stream, state) --> (next, out);
   feed : (next) --> (state);
 }
 
-@[ refuses("UndescribedMember.OperationFiller") ]
+@[refuses("UndescribedMember.OperationFiller")]
 oper split : (b : Bit) --> (_ : Bit, _ : Bit) {
   node : tee(b) --> (_, _);
 }

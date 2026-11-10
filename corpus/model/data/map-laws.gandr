@@ -16,7 +16,7 @@
 
 /// `ListMap` defines `map` and its branches.
 /// It defines composition and fuses two maps.
-@[ normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)") ]
+@[normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)")]
 theory ListMap where
   sort E : Type;
   sort F : Type;

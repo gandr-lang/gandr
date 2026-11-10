@@ -5,5 +5,5 @@
 // - see: #1106 — `reader`
 
 /// `fs.read`, never handed its path.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def reader = fs.read;

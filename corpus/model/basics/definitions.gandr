@@ -11,5 +11,5 @@
 def greeting = "the value zone";
 
 /// The named value, named again.
-@[ runs("\"the value zone\"") ]
+@[runs("\"the value zone\"")]
 def shown = greeting;

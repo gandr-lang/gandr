@@ -47,7 +47,7 @@ theory LetOverlap where
   rule zetaZero : let (zero ()) t <=> t (zero ());
 
 /// The presentation stores ζ's right side as an `Inst` node.
-@[ runs("1") ]
+@[runs("1")]
 def instantiates() -> Integer { match Let {
   | Presents(sorts, opers, rules) => match rules where
     | Rule(name, left, right, rest) => match right where

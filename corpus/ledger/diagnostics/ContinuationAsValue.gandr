@@ -1,4 +1,5 @@
-/// `ContinuationAsValue`: a continuation holding an obligation read as a value, other than as what a resumption or an abandonment ends.
+/// `ContinuationAsValue`: a continuation holding an obligation read as a value,
+/// other than as what a resumption or an abandonment ends.
 
 // Early exit's host interface.
 import std.process;
@@ -9,15 +10,15 @@ module Cancel :> *{
   notes : String
 } where {
   /// The path a task reads.
-  @[ checks ]
+  @[checks]
   def notes = "notes";
 }
 
-@[ checks ]
+@[checks]
 def resume_stack(j : Stack (-F Unit) (-F Unit)) -> -F Unit =
   j *{}
 
-@[ refuses("ContinuationAsValue") ]
+@[refuses("ContinuationAsValue")]
 def handed() -> -F Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {

@@ -39,7 +39,7 @@ pub module Str where
 
 /// `lengths` adds the lengths before and after it appends `!`.
 /// The result is seven.
-@[ runs("7") ]
+@[runs("7")]
 def lengths() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   let n = s.len ()
@@ -48,7 +48,7 @@ def lengths() -> Integer =
   pure n + m
 
 /// This test takes `hi` after it receives `!`.
-@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
+@[runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))")]
 def taken() -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   s.push 33
@@ -63,19 +63,19 @@ def takenInOneArm(t : Repr) -> List Integer =
     | Shared(n, bs) => bs
 
 /// `takenOnInline` runs the arm that takes the string.
-@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
 def takenOnInline() -> List Integer =
   takenInOneArm (Inline (Nil : List Integer))
 
 /// `keptOnShared` runs the arm that preserves the string.
 /// The match ends the `hi` hold.
-@[ runs("Cons 33 Nil") ]
+@[runs("Cons 33 Nil")]
 def keptOnShared() -> List Integer =
   takenInOneArm (Shared 1 (Cons 33 Nil : List Integer))
 
 /// `readWhereNotTaken` reads a string in the arm that does not take it.
 /// That arm reads the string that its match found.
-@[ runs("3") ]
+@[runs("3")]
 def readWhereNotTaken() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   match Shared 1 (Nil : List Integer) where

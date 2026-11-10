@@ -1,9 +1,11 @@
-/// `UndescribedMember.TypeShape`: a member the description does not read: a type shape with no first-order reference.
+/// `UndescribedMember.TypeShape`: a member the description does not read: a
+/// type shape with no first-order reference.
 ///
-/// The sort `Big` stands in the universe at level one. The description code holds sorts at level zero only.
+/// The sort `Big` stands in the universe at level one. The description code
+/// holds sorts at level zero only.
 ///
 /// - see: #5662
-@[ refuses("UndescribedMember.TypeShape") ]
+@[refuses("UndescribedMember.TypeShape")]
 theory Shape where
   sort Nat : Type+;
   sort Big : Type[+, 1];

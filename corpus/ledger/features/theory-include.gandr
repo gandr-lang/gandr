@@ -1,6 +1,9 @@
 /// `theory-include`: Theory inclusion.
-/// Implemented: a theory including another with the morphism kept, imported includes, manifest sorts, and the reduct `T.S` applied by the checker where a model of `S` is asked.
-/// Not implemented: the printer writing the sugared reduct and hover naming it; the union's critical pairs are refused by name.
+/// Implemented: a theory including another with the morphism kept, imported
+/// includes, manifest sorts, and the reduct `T.S` applied by the checker where
+/// a model of `S` is asked.
+/// Not implemented: the printer writing the sugared reduct and hover naming it;
+/// the union's critical pairs are refused by name.
 ///
 /// - owes: #2714
 /// - see: #738
@@ -13,7 +16,7 @@
 // the unit laws join.
 
 /// A semigroup: one carrier and an associative multiplication.
-@[ checks ]
+@[checks]
 theory Semigroup where
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
@@ -21,7 +24,7 @@ theory Semigroup where
 
 /// A monoid: the semigroup with a two-sided unit. Its rules are the
 /// semigroup's associativity, then the unit laws, and they join.
-@[ checks ]
+@[checks]
 theory Monoid where
   include Semigroup;
   oper one : () --> M;
@@ -29,7 +32,7 @@ theory Monoid where
   rule unitR : mul x (one ()) ==> x;
 
 /// The semigroup with a zero that absorbs on the left.
-@[ checks ]
+@[checks]
 theory LeftZero where
   include Semigroup;
   oper zero : () --> M;
@@ -37,7 +40,7 @@ theory LeftZero where
 
 /// Both extensions at once: one carrier, one multiplication, its unit and
 /// its zero.
-@[ checks ]
+@[checks]
 theory UnitAndZero where
   include Monoid;
   include LeftZero;
@@ -68,7 +71,7 @@ module Endo : Model(Monoid) where {
   def one() -> Integer -> Integer { ident }
 
   /// Associativity, the included law.
-  @[ checks ]
+  @[checks]
   def assoc(
     f : Integer -> Integer,
     g : Integer -> Integer,
@@ -77,7 +80,7 @@ module Endo : Model(Monoid) where {
     Path.here (thunk { andThen f (thunk { andThen g h }) })
 
   /// The left unit law.
-  @[ checks ]
+  @[checks]
   def unitL(f : Integer -> Integer) -> Path(
     mul (one ()) f,
     f
@@ -85,7 +88,7 @@ module Endo : Model(Monoid) where {
     Path.here f
 
   /// The right unit law.
-  @[ checks ]
+  @[checks]
   def unitR(f : Integer -> Integer) -> Path(
     mul f (one ()),
     f
@@ -94,7 +97,7 @@ module Endo : Model(Monoid) where {
 }
 
 /// The included multiplication, run at the model: add one, then double.
-@[ runs("8") ]
+@[runs("8")]
 def composed() -> Integer =
-  let h = Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) 
+  let h = Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 })
   h 3

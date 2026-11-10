@@ -1,4 +1,4 @@
 /// `lazy_product_type`: a lazy product type.
-@[ checks ]
-def choice : +U (-F Unit & -F Integer) ;
-def choice = &{.0 => *{}, .1 => 1} ;
+@[checks]
+def choice : +U (-F Unit & -F Integer);
+def choice = &{.0 => *{}, .1 => 1};

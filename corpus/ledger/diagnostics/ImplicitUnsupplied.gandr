@@ -1,9 +1,10 @@
-/// `ImplicitUnsupplied`: a function standing as a value with one of its implicits unsupplied.
+/// `ImplicitUnsupplied`: a function standing as a value with one of
+/// its implicits unsupplied.
 ///
 /// The identity at a type supplied by name.
-@[ checks ]
+@[checks]
 def same[a : Type](x : a) -> -F a { return x }
 
-@[ refuses("ImplicitUnsupplied") ]
-def unsupplied : +U (Integer -> -F Integer) ;
-def unsupplied = same ;
+@[refuses("ImplicitUnsupplied")]
+def unsupplied : +U (Integer -> -F Integer);
+def unsupplied = same;

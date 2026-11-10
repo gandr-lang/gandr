@@ -17,7 +17,7 @@
 import std.fs;
 
 /// `fs` gives the host read and write authority.
-@[ owes(1) ]
+@[owes(1)]
 def fs : Cap { read, write };
 
 /// A reader that asks only for reading.
@@ -29,6 +29,6 @@ def granted() -> [std.fs.Eff] String =
   peek fs
 
 /// A holder of reading alone cannot write.
-@[ refuses("CapabilityOutsideAuthority") ]
+@[refuses("CapabilityOutsideAuthority")]
 def save(c : Cap { read }) -> [std.fs.Eff] Unit =
   c.write "notes" "draft"

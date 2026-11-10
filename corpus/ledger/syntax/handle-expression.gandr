@@ -4,7 +4,7 @@
 import std.process;
 
 /// Returns `n` after an exit its handler resumes.
-@[ checks ]
+@[checks]
 def quiet(n : Integer) -> -F Integer =
   handle c : std.process.Exit.Eff {
     c.exit 1;

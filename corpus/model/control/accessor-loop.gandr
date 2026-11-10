@@ -13,7 +13,7 @@
 
 /// `countdown` decrements its held count.
 /// Each condition reads the preceding write-back.
-@[ runs("0") ]
+@[runs("0")]
 def countdown() -> [Partial] Integer =
   var n = 3
   while n > 0 { access n as v { resume v (v - 1) } };
@@ -21,7 +21,7 @@ def countdown() -> [Partial] Integer =
 
 /// `opposed` carries two slots.
 /// It decrements one slot and increments the other.
-@[ runs("704") ]
+@[runs("704")]
 def opposed() -> [Partial] Integer =
   var a = 10
   var b = 1
@@ -33,7 +33,7 @@ def opposed() -> [Partial] Integer =
 
 /// `sum` adds each count to its total.
 /// It decrements the count after each addition.
-@[ runs("6") ]
+@[runs("6")]
 def sum() -> [Partial] Integer =
   var i = 3
   var total = 0
@@ -44,7 +44,7 @@ def sum() -> [Partial] Integer =
   pure total
 
 /// `beside` carries an unread slot unchanged.
-@[ runs("7") ]
+@[runs("7")]
 def beside() -> [Partial] Integer =
   var a = 4
   var b = 3
@@ -52,7 +52,7 @@ def beside() -> [Partial] Integer =
   pure a + 3
 
 /// `continue` carries the current slot value to the next pass.
-@[ runs("0") ]
+@[runs("0")]
 def skipping() -> [Partial] Integer =
   var n = 3
   while n > 0 {
@@ -63,7 +63,7 @@ def skipping() -> [Partial] Integer =
 
 /// A `loop` left by a `break`: the break's value reads the slot the pass
 /// wrote, and the statement binds it.
-@[ runs("5") ]
+@[runs("5")]
 def climb() -> [Partial] Integer =
   var n = 0
   let m = loop {
@@ -76,7 +76,7 @@ def climb() -> [Partial] Integer =
   pure m
 
 /// A bare `break`: what follows the loop reads the slot the last pass left.
-@[ runs("4") ]
+@[runs("4")]
 def stride() -> [Partial] Integer =
   var n = 0
   loop {

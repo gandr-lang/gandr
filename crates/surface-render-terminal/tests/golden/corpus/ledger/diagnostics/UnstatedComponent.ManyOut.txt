@@ -1,7 +1,7 @@
 error[UnstatedComponent.ManyOut]: the model signature cannot state `swap`, which relates the results of a many-out operation
-   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.ManyOut.gandr:11:19
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.ManyOut.gandr:12:19
    │
-11 │ def model : Model T ;
+12 │ def model : Model T;
    │                   ━ the signature this model derives
    │
    ├ note: `model` is refused with UnstatedComponent.ManyOut, as its expectation states

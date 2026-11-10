@@ -41,11 +41,11 @@ def splitPair(p : spoolPair(Bare)) -> Spool =
     | *{n, t} => atTurns n t
 
 /// The split by position of the record has no order to read.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def splitRecord(p : spoolRecord(Bare)) -> Spool =
   match p where
     | *{n, t} => t
 
 /// The projection by position of the record has no order to read.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def firstOfRecord(p : spoolRecord(Bare)) -> Spool = p.0;

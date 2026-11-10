@@ -11,9 +11,9 @@
 def point = *{x = 1, y = 2};
 
 /// `moved` changes `point.x` and keeps `point.y`.
-@[ runs("*{.x = 9, .y = 2}") ]
+@[runs("*{.x = 9, .y = 2}")]
 def moved() -> *{x : Integer, y : Integer} { *{point | x = 9} }
 
 /// `kept` is the same update as its own value. Its run builds the record.
-@[ runs("*{.x = 9, .y = 2}") ]
+@[runs("*{.x = 9, .y = 2}")]
 def kept : *{x : Integer, y : Integer} = *{point | x = 9};

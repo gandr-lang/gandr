@@ -43,7 +43,7 @@ pub def halfRow : Row = Row (Arg (Plain U64) NoCode) (Plain U32);
 
 /// Reads of the Rust caller's memory at the addresses it lends. Its check
 /// admits each read against its row.
-@[ boundary(*{wordRow, halfRow}) ]
+@[boundary(*{wordRow, halfRow})]
 extern "rust" from "memory" as Memory {
   def word(address : u64) -> u64;
   def half(address : u64) -> u32;

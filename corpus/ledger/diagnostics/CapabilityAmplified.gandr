@@ -1,12 +1,13 @@
-/// `CapabilityAmplified`: a capability standing where one granting more is expected.
+/// `CapabilityAmplified`: a capability standing where one granting
+/// more is expected.
 
 // The filesystem's host interface.
 import std.fs;
 
 /// A file saved through a capability that grants reading and writing.
-def save(c : Cap {read, write}) -> -F [std.fs.Eff] Unit =
+def save(c : Cap { read, write }) -> -F [std.fs.Eff] Unit =
   c.write "notes" "draft"
 
-@[ refuses("CapabilityAmplified") ]
-def widen(c : Cap {read}) -> -F [std.fs.Eff] Unit =
+@[refuses("CapabilityAmplified")]
+def widen(c : Cap { read }) -> -F [std.fs.Eff] Unit =
   save c

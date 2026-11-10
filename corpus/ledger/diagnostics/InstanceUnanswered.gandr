@@ -1,4 +1,5 @@
-/// `InstanceUnanswered`: a call omitting an instance where none of its interface stands.
+/// `InstanceUnanswered`: a call omitting an instance where none of
+/// its interface stands.
 
 // The console's host interface.
 import std.io;
@@ -7,6 +8,6 @@ import std.io;
 def say() -> [out : std.io.Console.Eff] Unit =
   out.print "said"
 
-@[ refuses("InstanceUnanswered") ]
+@[refuses("InstanceUnanswered")]
 def unanswered() -> [std.io.Console.Eff] Unit =
   say ()

@@ -1,7 +1,7 @@
 error[Boundary]: this boundary flow runs against the variance of its position
    ╭▸ corpus/ledger/diagnostics/Boundary.gandr:14:27
    │
-14 │   def reader = Flow.arrow upgrade (Flow.stay Integer) ;
+14 │   def reader = Flow.arrow upgrade (Flow.stay Integer);
    │                ┬──────────┯━━━━━━────────────────────
    │                │          │
    │                │          a boundary flow running against its variance

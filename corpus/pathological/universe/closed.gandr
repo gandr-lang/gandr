@@ -24,12 +24,12 @@ def rec el(u : U) -> Type =
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 
 /// One is a natural, and the decode of the arrow code runs to `Nat => Nat`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def one : el(Arrow NatC NatC) = Succ Zero;
 
 /// At every code `c`, a value at `el(c)` is no function from `el(c)` to
 /// `el(c)`: the decode of the arrow code reads to that function type.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def idAt(c : U, v : el(c)) -> el(Arrow c c) { v }
 
 /// A value packed with its code: the second field's type is the decode of the
@@ -39,11 +39,11 @@ data Coded : Type where
 
 /// A code packed where the natural code says a natural stands: the second
 /// field checks at `el(NatC)`, which runs to `Nat`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def miscoded : Coded = Pack NatC NatC;
 
 /// The decoder named bare where a type is read: `el` computes a code only once
 /// applied, so the head is refused at the arity it was offered, not read as a
 /// path endpoint.
-@[ refuses("OutOfFragment.Arity") ]
+@[refuses("OutOfFragment.Arity")]
 def unapplied(c : U) -> -F el { return c }

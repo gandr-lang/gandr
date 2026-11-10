@@ -1,5 +1,8 @@
 /// `directed-paths`: Directed paths (Flow).
-/// Implemented: `Flow[.A = A](a, b)` with `Flow.stay`, `Flow.then` and covariant `Flow.ride`, certified on readmission, and `Flow.into(f)` decided for a closed translator at its finitely many patterns. `Flow(a, b)` omits the carrier, and the endpoints fix it.
+/// Implemented: `Flow[.A = A](a, b)` with `Flow.stay`, `Flow.then` and
+/// covariant `Flow.ride`, certified on readmission, and `Flow.into(f)` decided
+/// for a closed translator at its finitely many patterns. `Flow(a, b)` omits
+/// the carrier, and the endpoints fix it.
 /// Not implemented: a forward the rule does not decide, which is refused.
 ///
 /// - owes: #1835
@@ -18,42 +21,42 @@ module Versions where {
   type V2 = Integer * String;
   type V3 = (Unit + Unit) * Integer * String;
   /// The first translator: the fields swapped.
-  @[ checks ]
+  @[checks]
   def toV2(record : V1) -> V2 =
     match record where
       | *{name, age} => *{age, name}
   /// The second translator: a flag added.
-  @[ checks ]
+  @[checks]
   def toV3(record : V2) -> V3 =
     match record where
       | *{age, name} => *{+{.1 = *{}}, age, name}
   /// The flow from the first version to the second.
-  @[ checks ]
-  def first : Flow[.A = Type](V1, V2) = Flow.into toV2 ;
+  @[checks]
+  def first : Flow[.A = Type](V1, V2) = Flow.into toV2;
   /// The flow from the second version to the third.
-  @[ checks ]
-  def second : Flow[.A = Type](V2, V3) = Flow.into toV3 ;
+  @[checks]
+  def second : Flow[.A = Type](V2, V3) = Flow.into toV3;
   /// The stationary flow at the first version.
-  @[ checks ]
-  def kept : Flow[.A = Type](V1, V1) = Flow.stay V1 ;
+  @[checks]
+  def kept : Flow[.A = Type](V1, V1) = Flow.stay V1;
   /// The stationary flow, then the first.
-  @[ checks ]
+  @[checks]
   def early() -> Flow[.A = Type](V1, V2) =
     Flow.then kept first
   /// Both translations in sequence.
-  @[ checks ]
+  @[checks]
   def both() -> Flow[.A = Type](V1, V3) =
-    let start = early () 
+    let start = early ()
     Flow.then start second
   /// A record ridden along the composite.
-  @[ checks ]
+  @[checks]
   def moved(record : V1) -> V3 =
-    let along = both () 
+    let along = both ()
     Flow.ride (fun (X) { X }) along record
   /// A first-version record migrated to the third by a run.
-  @[ runs("*{+{.1 = *{}}, 30, \"ada\"}") ]
-  def latest : () -> V3 = moved (*{"ada", 30}) ;
+  @[runs("*{+{.1 = *{}}, 30, \"ada\"}")]
+  def latest : () -> V3 = moved (*{"ada", 30});
   /// Four flows to itself. The endpoints fix the carrier the source omits.
-  @[ checks ]
-  def stayed : Flow 4 4 = Flow.stay 4 ;
+  @[checks]
+  def stayed : Flow 4 4 = Flow.stay 4;
 }

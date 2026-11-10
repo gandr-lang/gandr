@@ -25,7 +25,7 @@ def named() -> Unit =
 
 /// A capability held for the whole run is not one a scope introduced: the
 /// scope's capability would outlive its scope there.
-@[ refuses("CapabilityEscaped") ]
+@[refuses("CapabilityEscaped")]
 def held() -> Unit =
   handle c : std.process.Exit.Eff {
     let d : Cap { exit } = c;
@@ -52,7 +52,7 @@ def outer() -> Unit =
 
 /// An outer capability can enter an inner region.
 /// An inner capability cannot enter an outer region.
-@[ refuses("CapabilityEscaped") ]
+@[refuses("CapabilityEscaped")]
 def swapped() -> Unit =
   handle c : std.process.Exit.Eff {
     handle e : std.process.Exit.Eff {
@@ -69,7 +69,7 @@ def swapped() -> Unit =
   }
 
 /// Only a scope capability names a region.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def unbound(c : Integer) -> -F Unit =
   handle e : std.process.Exit.Eff {
     let d : Cap { exit } at c = e;

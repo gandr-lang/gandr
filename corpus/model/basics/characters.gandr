@@ -11,28 +11,28 @@
 def letter : Char = 'a';
 
 /// An escape stands for the scalar it names, decoded as in a string.
-@[ runs("'\\n'") ]
+@[runs("'\\n'")]
 def newline() -> Char { '\n' }
 
 /// This escape writes a quote inside matching quotes.
-@[ runs("'\\''") ]
+@[runs("'\\''")]
 def quote() -> Char { '\'' }
 
 /// A multibyte scalar is still one character.
-@[ runs("'é'") ]
+@[runs("'é'")]
 def accented() -> Char { 'é' }
 
 /// The identity at `Char`.
 def echo(c : Char) -> Char { c }
 
 /// A character passes through a function at `Char` unchanged.
-@[ runs("'z'") ]
+@[runs("'z'")]
 def echoed() -> Char { echo 'z' }
 
 /// A character is not a string.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def spelled : String = 'a';
 
 /// Nor is a string a character.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def lettered : Char = "a";

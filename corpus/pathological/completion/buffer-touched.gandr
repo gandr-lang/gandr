@@ -12,7 +12,7 @@ import "../../model/completion/ring-base.gandr";
 /// The buffer finished by its submitter after it was moved into the
 /// submission: the send consumed the submitter's end, so the close acts on a
 /// spent slot.
-@[ refuses("UsedAfterClose") ]
+@[refuses("UsedAfterClose")]
 def bufferTouched() -> Unit =
   let buffer = fork (owner : Ring.Buffer) { close owner };
   let ring = fork (kernel : Ring.Moving) {

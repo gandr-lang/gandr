@@ -1,5 +1,6 @@
-/// `UndescribedMember.HigherCell`: a member the description does not read: a rule between rules.
-@[ refuses("UndescribedMember.HigherCell") ]
+/// `UndescribedMember.HigherCell`: a member the description does not read: a
+/// rule between rules.
+@[refuses("UndescribedMember.HigherCell")]
 theory Invertible where
   sort Bit : Type;
   oper flip : (b : Bit) --> (c : Bit);

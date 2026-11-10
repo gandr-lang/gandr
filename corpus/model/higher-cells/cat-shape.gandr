@@ -33,11 +33,11 @@ module SetoidCat : Model(CatShape) where {
   type Hom(a : Ob, b : Ob) = a -> b;
 
   /// `ident` is the identity function at one type.
-  @[ runs("fun (a) { fun (b) { b } }") ]
+  @[runs("fun (a) { fun (b) { b } }")]
   def ident(t : Type, x : t) -> t { x }
 
   /// `compose` applies two functions in sequence.
-  @[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }") ]
+  @[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
   def compose(
     t : Type,
     u : Type,
@@ -50,11 +50,11 @@ module SetoidCat : Model(CatShape) where {
 
   /// `id` exposes an opaque interface operation. Its run applies the hidden
   /// `ident` function.
-  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)") ]
+  @[runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)")]
   def id(t : Type) -> t -> t { thunk { ident t } }
 
   /// `comp` exposes an opaque interface operation through `compose`.
-  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)") ]
+  @[runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)")]
   def comp(
     t : Type,
     u : Type,
@@ -110,11 +110,11 @@ module SetoidCat : Model(CatShape) where {
 }
 
 /// `identity_observed` calls the interface operation at `Integer`.
-@[ runs("3") ]
+@[runs("3")]
 def identity_observed() -> Integer { let f = SetoidCat.id Integer; f 3 }
 
 /// `composite_observed` composes `n + 1` with `n + 2` and applies them to `1`.
-@[ runs("4") ]
+@[runs("4")]
 def composite_observed() -> Integer {
   let h = SetoidCat.comp
     Integer

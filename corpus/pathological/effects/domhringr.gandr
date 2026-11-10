@@ -7,7 +7,7 @@
 
 /// A put answers a digest, not a value: putting the digest a put answered
 /// names a `Digest` at the port of a `Value`.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory StoreDigestPut where
   sort Value : Type+;
   sort Digest : Type+;
@@ -19,7 +19,7 @@ theory StoreDigestPut where
 /// the builtin empty type, and `Nonsense` is neither a sort of the theory nor
 /// a builtin, so the description check refuses the port by name
 /// (`UnknownPortSort`).
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory FailNonsense where
   sort Reason : Type;
   oper raise : (r : Reason) --> Nonsense;

@@ -57,7 +57,7 @@ def ext(A : Type, B : Type, m : () -> Maybe A, k : A -> Maybe B) -> Maybe B =
     | Some(x) => k x
 
 /// This extension of one returns two.
-@[ runs("2") ]
+@[runs("2")]
 def two() -> Integer =
   let r = ext
     Integer

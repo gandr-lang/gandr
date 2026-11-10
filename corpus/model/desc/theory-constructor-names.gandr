@@ -30,18 +30,18 @@ def rec opsOf(chain : Theory) -> Integer =
     | _ => 0
 
 /// `Presents` reads the two operations of `Mon`.
-@[ runs("2") ]
+@[runs("2")]
 def presentedOps() -> Integer =
   match Mon where
     | Presents(sorts, opers, rules) => opsOf opers
     | _ => 0
 
 /// `App` builds a `Bruijn`.
-@[ runs("App (Ix 0) (Ix 1)") ]
+@[runs("App (Ix 0) (Ix 1)")]
 def applied() -> Bruijn { App (Ix 0) (Ix 1) }
 
 /// `Sort` matches a `Kind`.
-@[ runs("1") ]
+@[runs("1")]
 def sorted() -> Integer =
   match Sort where
     | Sort => 1

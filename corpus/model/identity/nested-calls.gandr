@@ -28,7 +28,7 @@ def quadrupled : Path[.A = Nat](
 ) = Path.here (Succ (Succ (Succ (Succ Zero))));
 
 /// The nested call's value is four, not three.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def miscounted : Path[.A = Nat](
   doubleNat (doubleNat (Succ Zero)),
   Succ (Succ (Succ Zero))
@@ -45,7 +45,7 @@ def turn_unturn(n : Int) -> Path[.A = Int](up (down n), n) =
 
 /// The checker reads the inner call.
 /// The rules cancel one step.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def overturned : Path[.A = Int](up (down Z), S Z) = Path.here (S Z);
 
 /// The `bound` function returns a function from a call.
@@ -65,7 +65,7 @@ def bound_is_applied(
   Path.here (bound k s)
 
 /// The call function gives a different result at zero.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def applied_elsewhere(
   k : Integer -> (Integer -> Integer),
   s : Integer

@@ -19,14 +19,14 @@ type Temp = Fahrenheit;
 
 /// A Celsius value ascribed Fahrenheit: the constructor keeps its own family,
 /// never read as the Fahrenheit constructor of its place.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def ascribed = (Cel 20 : Fahrenheit);
 
 /// A Celsius value ascribed Fahrenheit through the alias.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def aliased = (Cel 20 : Temp);
 
 /// A Celsius value ascribed Fahrenheit, judged as every declaration is before
 /// anything runs it.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def mislabelled = (Cel 20 : Fahrenheit);

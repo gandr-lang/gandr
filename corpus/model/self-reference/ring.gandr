@@ -25,7 +25,7 @@ def rec node(nodes : List Integer, i : Integer) -> Integer =
     }
 
 /// `ring` follows a four-link cycle from the first node.
-@[ runs("1") ]
+@[runs("1")]
 def ring() -> [Partial] Integer =
   var i = 0
   var steps = 4

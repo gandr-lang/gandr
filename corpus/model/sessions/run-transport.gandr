@@ -68,7 +68,7 @@ def heardDecoded : Path[.A = Run Ask.Decoded](
 ) = Path.here (recorded (received Yes) closed);
 
 /// `heardKept` refuses a transported run that receives `No`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def heardKept : Path(
   Path.walk (fun (X) { Run (type(?X. end)) }) codes heard,
   recorded (received No) closed
@@ -79,5 +79,5 @@ def heardRun() -> Run Ask.Decoded =
   Path.walk (fun (X) { Run (type(?X. end)) }) codes heard
 
 /// On the machine the carried run hears the yes, as it does by conversion.
-@[ runs("recorded (received Yes) (closed)") ]
+@[runs("recorded (received Yes) (closed)")]
 def decodedRun() -> Run Ask.Decoded { heardRun () }

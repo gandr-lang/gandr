@@ -57,7 +57,7 @@ def rec plus(n : Nat, m : Nat) -> Nat =
 
 /// The naturals under addition as cells at one object, with no associator
 /// written.
-@[ refuses("NoFiller.Omitted") ]
+@[refuses("NoFiller.Omitted")]
 module Unwitnessed : Model(Glob) where
   /// The one object.
   type Ob = One;
@@ -85,7 +85,7 @@ theory Skipping where
 
 /// Every write answers nine and drops what follows it. The cell's left side is
 /// then nine, and its right side what follows.
-@[ refuses("HandlerUnlawful") ]
+@[refuses("HandlerUnlawful")]
 def discarding() -> Integer =
   handle st : Skipping with sort S = Integer {
     st.put 1;

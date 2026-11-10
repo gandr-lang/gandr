@@ -9,7 +9,7 @@ data Tree : Type where
   | App : (t : Tree, u : Tree) --> Tree
 
 /// `Tree` has no `Lam`, so `Tree.Lam` names nothing.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def lambda(t : Tree) -> Integer =
   match t where
     | Tree.Lam(body) => 1

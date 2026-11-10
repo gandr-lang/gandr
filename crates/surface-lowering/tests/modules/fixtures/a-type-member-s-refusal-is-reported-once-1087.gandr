@@ -1,4 +1,4 @@
-module M : *{ count : Integer, type Q } where {
+module M : *{count : Integer, type Q} where {
   def count = 3;
-  @[ checks ] type Q = Path[.A = Integer](count, 3);
+  @[checks] type Q = Path[.A = Integer](count, 3);
 }

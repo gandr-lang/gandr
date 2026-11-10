@@ -17,14 +17,14 @@ import "../data/data-base.gandr";
 import "../data/empty.gandr";
 
 /// The pairs of two types, as data.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 pub data Both(a : Type, b : Type) : Type where
   /// A value of each type.
   | MkBoth : (x : a, y : b) --> Both a b
 
 /// The apartness of two naturals. It is the unit type for distinct naturals
 /// and the empty type for equal ones.
-@[ checks ]
+@[checks]
 pub def rec apart(x : Nat, y : Nat) -> -F Type =
   match x where
     | Zero => match y where
@@ -37,7 +37,7 @@ pub def rec apart(x : Nat, y : Nat) -> -F Type =
 /// The fresh lists and their freshness, in one block.
 rec {
   /// The lists of pairwise distinct naturals.
-  @[ checks ]
+  @[checks]
   pub data Fresh : Type where {
     /// The empty list.
     | FNil : Fresh
@@ -47,7 +47,7 @@ rec {
 
   /// The freshness of a natural for a fresh list. It pairs the natural's
   /// apartness from each element.
-  @[ checks ]
+  @[checks]
   pub def rec fresh(x : Nat, xs : Fresh) -> -F Type =
     match xs where
       | FNil => return Unit
@@ -55,12 +55,12 @@ rec {
 }
 
 /// The fresh list of one. Each natural is fresh for the empty list.
-@[ checks ]
+@[checks]
 pub def freshOne : Fresh;
 def freshOne = FCons (Succ Zero) FNil *{};
 
 /// The fresh list of zero, then one. Its evidence is a pair at the type the
 /// freshness computes for the tail.
-@[ checks ]
+@[checks]
 def freshZeroOne : Fresh;
 def freshZeroOne = FCons Zero freshOne (MkBoth *{} *{});

@@ -8,7 +8,7 @@
 //! - see: #1057 — `probed`
 
 /// `probed` runs `test -d /tmp` and reads its exit code in `if`.
-@[ refuses("OutOfFragment.shell_block") ]
+@[refuses("OutOfFragment.shell_block")]
 def probed() -> -F String =
   let probe = #!{ test -d /tmp; };
   if probe.exit_code == 0 -> -F String { pure "present" } else { pure "absent" }

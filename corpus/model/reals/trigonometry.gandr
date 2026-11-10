@@ -62,7 +62,7 @@ pub def bounds() -> [std.reals.Eff] String =
 
 /// `bounds` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
-@[ runs("\"holds holds holds holds\"") ]
+@[runs("\"holds holds holds holds\"")]
 def boundsModelled() -> String =
   handle r : std.reals.Eff {
     bounds ()
@@ -79,7 +79,7 @@ def boundsModelled() -> String =
 
 /// `enclosed` under a handler of this source, a second model of
 /// `std.reals.Eff` that answers each enclosure with `0` and `1/2`.
-@[ runs("\"0p0 1p-1\"") ]
+@[runs("\"0p0 1p-1\"")]
 def angleModelled() -> String =
   handle r : std.reals.Eff {
     enclosed betaOne 16

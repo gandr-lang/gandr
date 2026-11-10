@@ -1,10 +1,10 @@
 /// `or_pattern`: an or-pattern: either alternative matches.
-@[ checks ]
+@[checks]
 data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-@[ checks ]
+@[checks]
 def cool(c : Color) -> -F Integer =
   match c where
     | Red | Green => return 0

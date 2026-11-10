@@ -1,8 +1,8 @@
 error[AbstractKindNotUniverse]: an abstract type's kind must be a universe
-  ╭▸ corpus/ledger/diagnostics/AbstractKindNotUniverse.gandr:2:30
+  ╭▸ corpus/ledger/diagnostics/AbstractKindNotUniverse.gandr:3:29
   │
-2 │ module Kinded :> *{ type T : Integer } where {
-  │                              ━━━━━━━ not a value universe
+3 │ module Kinded :> *{type T : Integer} where {
+  │                             ━━━━━━━ not a value universe
   │
   ├ note: `T` is refused with AbstractKindNotUniverse, as its expectation states
   ╰ help: give the abstract type a universe as its kind

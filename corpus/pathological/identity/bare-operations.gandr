@@ -3,13 +3,13 @@
 // ordinary name, refused where no binder declares it.
 
 /// The bare reflexivity, `here`, which no binder declares.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def bareHere : Path(4, 4) = here 4;
 
 /// A transport written bare, which no binder declares.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def bareTransport : Integer = transport (fun (X) { X }) (Path.here Integer) 2;
 
 /// A directed reflexivity written bare, which no binder declares.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def bareStay : Flow[.A = Integer](4, 4) = stay 4;

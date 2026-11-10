@@ -14,7 +14,7 @@
 import "../../model/moves/file-base.gandr";
 
 /// `leaked` returns with a handle in its linear slot.
-@[ refuses("LinearResidue") ]
+@[refuses("LinearResidue")]
 def leaked() -> Unit =
   let file = fork (owner : File.Handle) { close owner };
   pure *{}

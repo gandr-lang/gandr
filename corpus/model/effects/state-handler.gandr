@@ -12,7 +12,7 @@ import "./state.gandr";
 import "./state-model.gandr";
 
 /// `constant` returns four for every read. It ignores every store.
-@[ runs("9") ]
+@[runs("9")]
 def constant() -> Integer =
   handle st : State.Eff with sort S = Integer {
     let a = st.get ();
@@ -35,7 +35,7 @@ def answeredByPassing() -> Integer -> Integer =
   } with Passing
 
 /// `answeredFromZero` runs the state model from zero.
-@[ runs("44") ]
+@[runs("44")]
 def answeredFromZero() -> Integer =
   let f = answeredByPassing ()
   f 0
@@ -50,7 +50,7 @@ def answeredInScope() -> Integer -> Integer =
   }
 
 /// `inScopeFromZero` runs the in-scope model from zero.
-@[ runs("44") ]
+@[runs("44")]
 def inScopeFromZero() -> Integer =
   let f = answeredInScope ()
   f 0

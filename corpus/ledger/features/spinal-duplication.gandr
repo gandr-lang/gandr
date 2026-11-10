@@ -1,11 +1,17 @@
-/// `spinal-duplication` states the spinal stance on one abstraction applied twice.
+/// `spinal-duplication` states the spinal stance on one
+/// abstraction applied twice.
 ///
-/// Implemented: the engine's spinal stance copies an abstraction's spine, shares each rib, and erases to the term the copying stance evaluates.
-/// Not implemented: a checker path and the kernel's replay of the stance's trace.
+/// Implemented: the engine's spinal stance copies an abstraction's spine,
+/// shares each rib, and erases to the term the copying stance evaluates.
+/// Not implemented: a checker path and the kernel's replay of
+/// the stance's trace.
 ///
-/// Every check runs the copying stance, which evaluates `ten()` at each application of `tagged`.
-/// The engine's witness holds this term, and its spinal stance evaluates the rib once instead of twice.
-/// A property over generated roots admits the stance: each spinal run reads back as the copying run, or refuses as it does.
+/// Every check runs the copying stance, which evaluates `ten()` at each
+/// application of `tagged`.
+/// The engine's witness holds this term, and its spinal stance evaluates the
+/// rib once instead of twice.
+/// A property over generated roots admits the stance: each spinal run reads
+/// back as the copying run, or refuses as it does.
 ///
 /// - see: crates/core-nbe/tests/full_laziness.rs
 /// - see: crates/core-nbe/tests/duplication.rs
@@ -18,6 +24,6 @@ def ten() -> Integer { 1 + 2 + 3 + 4 }
 def tagged : Integer -> Integer * Integer = fun (y : Integer) { *{y, ten ()} };
 
 /// The abstraction applied twice, with the rib's result in both pairs.
-@[ runs("*{*{1, 10}, *{2, 10}}") ]
+@[runs("*{*{1, 10}, *{2, 10}}")]
 def twice() -> (Integer * Integer) * (Integer * Integer) =
   *{tagged 1, tagged 2}

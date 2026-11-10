@@ -1,10 +1,11 @@
-/// `OutOfFragment.Reserved`: a form parsed so it can be declined by name: a recursive call claiming both descent and productivity.
-@[ checks ]
+/// `OutOfFragment.Reserved`: a form parsed so it can be declined by name: a
+/// recursive call claiming both descent and productivity.
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("OutOfFragment.instantiation_expression.computation") ]
+@[refuses("OutOfFragment.instantiation_expression.computation")]
 def rec both(n : Nat) -> -F Nat =
   match n where
     | Zero => return n

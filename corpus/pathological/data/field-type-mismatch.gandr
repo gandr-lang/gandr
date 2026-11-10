@@ -7,5 +7,5 @@ data Maybe(a : Type) : Type where
   | Some : (x : a) --> Maybe a
 
 /// A string where an integer is expected.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def held = (Some "hello" : Maybe Integer);

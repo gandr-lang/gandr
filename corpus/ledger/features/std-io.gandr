@@ -1,4 +1,6 @@
-/// `std-io`: `print`, `eprint` and `read_line` write standard output and standard error and read standard input through the console capability `main` opens from its authority.
+/// `std-io`: `print`, `eprint` and `read_line` write standard output and
+/// standard error and read standard input through the console capability `main`
+/// opens from its authority.
 
 import std.authority (Authority, console);
 import std.io (print, eprint, read_line);

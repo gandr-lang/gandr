@@ -14,7 +14,7 @@
 import "../model-in-source.gandr";
 
 /// `LC` is the pure lambda calculus with single substitution.
-@[ refuses("RulesUnoriented") ]
+@[refuses("RulesUnoriented")]
 pub theory LC where
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;

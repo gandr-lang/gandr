@@ -96,7 +96,7 @@ def lcSyntax : *{
 def lcModel : Model LC = lcSyntax;
 
 /// The identity application reduces to the identity.
-@[ runs("Lam (Ix Z)") ]
+@[runs("Lam (Ix Z)")]
 def betaIdentity() -> Term =
   let q = LCSyntax.qTm Z
   let identity = LCSyntax.lam Z q

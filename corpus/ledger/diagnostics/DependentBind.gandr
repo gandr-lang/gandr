@@ -1,9 +1,10 @@
-/// `DependentBind`: a bind whose body synthesises a type naming the value it binds.
-@[ checks ]
+/// `DependentBind`: a bind whose body synthesises a type naming the
+/// value it binds.
+@[checks]
 def one() -> -F Integer =
   pure 1
 
-@[ refuses("DependentBind") ]
+@[refuses("DependentBind")]
 def bound() -> -F Integer =
   let p = {
     let n = one ();

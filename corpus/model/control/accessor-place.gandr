@@ -17,18 +17,18 @@ import std.list (List);
 
 /// `pair` supplies the list for each access.
 /// Its declaration states the list type, which the checker never infers.
-@[ runs("cons 1 (cons 2 nil)") ]
+@[runs("cons 1 (cons 2 nil)")]
 pub def pair : List Integer = cons 1 (cons 2 nil);
 
 /// `second` reads the indexed element through a shared view.
-@[ runs("2") ]
+@[runs("2")]
 def second() -> Integer =
   var xs = pair
   access shared xs.#[1] as w { pure w }
 
 /// `bumped` writes the indexed element back.
 /// The rest of the list does not change.
-@[ runs("cons 1 (cons 3 nil)") ]
+@[runs("cons 1 (cons 3 nil)")]
 def bumped() -> List Integer =
   var xs = pair
   access xs.#[1] as v { resume v (v + 1) };
@@ -41,7 +41,7 @@ def tagged(a : Integer) -> List (Integer * Integer) =
 /// `rebuilt` writes an element after the head.
 /// The runtime copies prefix cells, shares suffix cells and leaves
 /// fresh pairs unchanged.
-@[ runs("cons *{9, 9} (cons *{1, 1} (cons *{5, 5} (cons *{1, 3} nil)))") ]
+@[runs("cons *{9, 9} (cons *{1, 1} (cons *{5, 5} (cons *{1, 3} nil)))")]
 def rebuilt() -> List (Integer * Integer) =
   let l = tagged 1
   var xs = l
@@ -49,7 +49,7 @@ def rebuilt() -> List (Integer * Integer) =
   pure cons (9, 9) xs
 
 /// An abort writes nothing back: the list stands as it was.
-@[ runs("cons 1 (cons 2 nil)") ]
+@[runs("cons 1 (cons 2 nil)")]
 def kept() -> List Integer =
   var xs = pair
   access xs.#[0] as v { abort v } unwind { pure *{} };

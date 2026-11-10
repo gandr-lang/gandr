@@ -7,12 +7,12 @@ def greet(name : String) -> String =
   "hello ${ name }!"
 
 /// A call interpolated, run where the string reads it, between escapes.
-@[ runs("\"<hello types!>\\t\"") ]
+@[runs("\"<hello types!>\\t\"")]
 def greeted() -> String =
   "<${ greet "types" }>\t"
 
 /// A lone interpolation is the string it holds.
-@[ runs("\"machines\"") ]
+@[runs("\"machines\"")]
 def alone() -> String =
   "${ "machines" }"
 
@@ -21,6 +21,6 @@ def price(count : String) -> String =
   "total: $5.00 for ${ count } items"
 
 /// A record is not a string, and an interpolation formats nothing into one.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def describe(user : String, count : Integer) -> String =
   return "user=${ user }\trow=${ *{ n = count } }\n"

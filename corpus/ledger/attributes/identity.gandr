@@ -1,18 +1,21 @@
 /// `identity`: names the relation, its reflexivity and its transport law a
 /// sealed type's identity is.
-@[ checks ]
+@[checks]
 def related(a : Unit, b : Unit) -> -F Type { return Unit }
-@[ checks ]
+@[checks]
 def reflexive(a : Unit) -> -F related(a, a) { return *{} }
-@[ checks ]
-def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path[.A = *{ y : Unit, s : related(a, y) }](
+@[checks]
+def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path[.A = *{
+  y : Unit,
+  s : related(a, y)
+}](
   *{b, r},
   *{a, reflexive a}
 ) =
   return *{*{}, *{}}
-module Point :> *{ type T, origin : T } where {
-  @[ identity(*{related, reflexive, contraction}) ]
-  @[ checks ]
+module Point :> *{type T, origin : T} where {
+  @[identity(*{related, reflexive, contraction})]
+  @[checks]
   type T = Unit;
   def origin = *{};
 }

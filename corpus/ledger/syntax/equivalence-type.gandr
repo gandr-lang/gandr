@@ -1,7 +1,8 @@
-/// `equivalence_type`: an equivalence type, written with its glyph and in ASCII.
-@[ checks ]
+/// `equivalence_type`: an equivalence type, written with its glyph
+/// and in ASCII.
+@[checks]
 def same(e : Integer ≃ Integer) -> -F Unit =
   pure *{}
-@[ checks ]
+@[checks]
 def sameAscii(e : Integer <~> Integer) -> -F Unit =
   pure *{}

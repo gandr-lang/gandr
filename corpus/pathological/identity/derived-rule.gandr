@@ -7,5 +7,5 @@
 import "../../model/identity/group-laws.gandr";
 
 /// Commutativity, refused: its sides are their own normal forms.
-@[ refuses("UnderivedRule") ]
+@[refuses("UnderivedRule")]
 rule Group.comm : mul x y <=> mul y x;

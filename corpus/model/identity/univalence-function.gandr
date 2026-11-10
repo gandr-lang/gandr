@@ -28,7 +28,7 @@ def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
   Path.here (fun (n) { wind (f (spin n)) })
 
 /// A run maps a loop function to the successor of its winding.
-@[ runs("S (S (S Z))") ]
+@[runs("S (S (S Z))")]
 def funRun() -> Int =
   let g = Path.walk (fun (X) { X -> X }) loopsAreIntegers (fun (l) { loopOn l })
   g (S (S Z))

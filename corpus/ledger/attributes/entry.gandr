@@ -1,7 +1,7 @@
 /// `entry`: names the worlds a declaration is entered at.
-@[ checks ]
-world seat ;
-@[ entry(seat) ]
-@[ checks ]
+@[checks]
+world seat;
+@[entry(seat)]
+@[checks]
 def opened() -> -F Unit =
   pure *{}

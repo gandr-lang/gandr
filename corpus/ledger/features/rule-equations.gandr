@@ -1,5 +1,6 @@
-/// `rule-equations`: a data type presented with rules written as equations, `<=>`; the normal form runs each left side to its right.
-@[ normalizes("S(P(S(Z))) ~> S(Z)") ]
+/// `rule-equations`: a data type presented with rules written as equations,
+/// `<=>`; the normal form runs each left side to its right.
+@[normalizes("S(P(S(Z))) ~> S(Z)")]
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int

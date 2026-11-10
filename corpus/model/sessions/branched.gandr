@@ -32,7 +32,7 @@ def draining(seat : mu open. +{more : !Integer. open, done : end}, more : Bool) 
   close seat
 
 /// A desk that hears one report from a seat closing on its late branch.
-@[ runs("2") ]
+@[runs("2")]
 def hearsOneReport() -> Integer =
   let seat = fork (desk : end) { closing desk false };
   close seat
@@ -51,7 +51,7 @@ def hearing(desk : mu open. &{more : ?Integer. open, done : end}) -> Unit =
   }
 
 /// A desk that follows a seat which has nothing more to report.
-@[ runs("*{}") ]
+@[runs("*{}")]
 def drained() -> Unit =
   let desk = fork (seat : mu open. +{more : !Integer. open, done : end}) {
     draining seat false

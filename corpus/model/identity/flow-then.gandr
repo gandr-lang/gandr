@@ -16,39 +16,39 @@ module Versions where {
   type V2 = Integer * String;
   type V3 = (Unit + Unit) * Integer * String;
   /// The first translator swaps fields.
-  @[ checks ]
+  @[checks]
   def toV2(record : V1) -> V2 =
     match record where
       | *{name, age} => *{age, name}
   /// The second translator adds a flag.
-  @[ checks ]
+  @[checks]
   def toV3(record : V2) -> V3 =
     match record where
       | *{age, name} => *{+{.1 = *{}}, age, name}
   /// The first flow maps the first schema to the second.
-  @[ checks ]
+  @[checks]
   def first : Flow[.A = Type](V1, V2) = Flow.into toV2;
   /// The second flow maps the second schema to the third.
-  @[ checks ]
+  @[checks]
   def second : Flow[.A = Type](V2, V3) = Flow.into toV3;
   /// The `kept` flow remains at the first schema.
-  @[ checks ]
+  @[checks]
   def kept : Flow[.A = Type](V1, V1) = Flow.stay V1;
   /// The `early` flow composes the stationary flow and the first flow.
-  @[ checks ]
+  @[checks]
   def early() -> Flow[.A = Type](V1, V2) =
     Flow.then kept first
   /// The `both` flow composes the two translators.
-  @[ checks ]
+  @[checks]
   def both() -> Flow[.A = Type](V1, V3) =
     let start = early ()
     Flow.then start second
   /// The `moved` function rides a record through the composite.
-  @[ checks ]
+  @[checks]
   def moved(record : V1) -> V3 =
     let along = both ()
     Flow.ride (fun (X) { X }) along record
   /// The run migrates a first-version record to the third version.
-  @[ runs("*{+{.1 = *{}}, 30, \"ada\"}") ]
+  @[runs("*{+{.1 = *{}}, 30, \"ada\"}")]
   def latest : () -> V3 = moved (*{"ada", 30});
 }

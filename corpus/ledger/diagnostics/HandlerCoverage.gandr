@@ -4,7 +4,7 @@
 import std.process;
 
 /// A handler of early exit with no clause for `exit`.
-@[ refuses("HandlerCoverage") ]
+@[refuses("HandlerCoverage")]
 def asked() -> -F Integer =
   handle c : std.process.Exit.Eff {
     pure 1

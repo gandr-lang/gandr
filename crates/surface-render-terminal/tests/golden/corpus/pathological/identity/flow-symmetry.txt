@@ -1,7 +1,7 @@
 error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it would be produced
    ╭▸ corpus/pathological/identity/flow-symmetry.gandr:13:5
    │
-11 │ ┌   @[ refuses("NonCovariantMotive") ]
+11 │ ┌   @[refuses("NonCovariantMotive")]
 12 │ │   def reversed() -> Flow[.A = Type](New, Old) =
 13 │ │     Flow.ride (fun (X) { type(Flow[.A = Type](X, Old)) }) upgrade (Flow.stay Old)
    │ │     ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
@@ -15,7 +15,7 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
 error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it would be produced
    ╭▸ corpus/pathological/identity/flow-symmetry.gandr:20:5
    │
-18 │ ┌   @[ refuses("NonCovariantMotive") ]
+18 │ ┌   @[refuses("NonCovariantMotive")]
 19 │ │   def reader() -> New -> Count =
 20 │ │     Flow.ride (fun (X) { X -> Count }) upgrade age
    │ │     ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│

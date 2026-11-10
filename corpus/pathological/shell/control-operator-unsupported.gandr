@@ -8,5 +8,5 @@
 //! - see: #1057 — `both`
 
 /// `both` uses `&&` between two commands.
-@[ refuses("OutOfFragment.shell_block") ]
+@[refuses("OutOfFragment.shell_block")]
 def both() -> -F Unit { #!{ true && false; } }

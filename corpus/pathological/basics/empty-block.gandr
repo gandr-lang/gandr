@@ -2,5 +2,5 @@
 // a definition's body here.
 
 /// An empty block.
-@[ refuses("OutOfFragment.Arity") ]
+@[refuses("OutOfFragment.Arity")]
 def nothing() -> -F Unit {}

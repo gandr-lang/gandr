@@ -3,7 +3,7 @@ error[ForwardMemberReference]: the member `second` is used before it is declared
   │
 3 │   def first = second + 1;
   │               ━━━━━━ named before it is declared
-4 │   @[ runs("2") ]
+4 │   @[runs("2")]
 5 │   def second = 2;
   │       ────── declared here
   │

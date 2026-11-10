@@ -1,5 +1,5 @@
 /// `normalizes`: states a normal form a datatype's rules are expected to reach.
-@[ normalizes("S(P(S(Z))) ~> S(Z)") ]
+@[normalizes("S(P(S(Z))) ~> S(Z)")]
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int

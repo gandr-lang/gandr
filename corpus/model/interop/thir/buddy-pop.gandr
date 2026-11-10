@@ -26,7 +26,7 @@ import "../../data/data-maybe.gandr";
 /// A Rust value as a forest, and the fields of a tree.
 rec {
   /// A value: an integer, a pointer, an option, the unit, or a tree of fields.
-  @[ checks ]
+  @[checks]
   pub data Val : Type where {
     /// The integer `n`.
     | IntV : (n : Nat) --> Val
@@ -43,7 +43,7 @@ rec {
   }
 
   /// Fields or elements, in order.
-  @[ checks ]
+  @[checks]
   pub data Vals : Type where
     /// No more.
     | VNil : Vals

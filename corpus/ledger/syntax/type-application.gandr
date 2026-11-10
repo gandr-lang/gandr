@@ -12,6 +12,6 @@ def after(a : Type) -> Integer -> Type { return fun (x) { a } }
 
 /// A list of points at the type that the calls name. The type applies `List`,
 /// calls `unit` with no arguments, and applies the result of `after` again.
-@[ checks ]
-def points : (n : Integer) -> after(List unit())(n) ;
-def points = fun (n) { cons *{} nil } ;
+@[checks]
+def points : (n : Integer) -> after(List unit())(n);
+def points = fun (n) { cons *{} nil };

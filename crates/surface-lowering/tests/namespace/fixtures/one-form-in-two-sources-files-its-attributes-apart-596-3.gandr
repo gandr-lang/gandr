@@ -1,5 +1,5 @@
 import "./base.gandr";
 /// The right two.
-@[ checks ]
+@[checks]
 def two : Integer;
 def two = 2;

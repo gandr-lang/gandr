@@ -10,7 +10,7 @@ pub world near;
 
 pub world far;
 
-@[ entry(*{near, far, far}), runs("42") ]
+@[entry(*{near, far, far}), runs("42")]
 def main() -> Integer =
   let held : Integer at far = migrate [far] { (hold (6 * 7)) };
   let answer at far = held

@@ -21,7 +21,7 @@ import std.list (List);
 def constantBeta : Path[.A = Int](Path.walk (fun (X) { Int }) (ua winding) Z, Z) = Path.here Z;
 
 /// A family that never reads its argument keeps the value, by a run.
-@[ runs("Z") ]
+@[runs("Z")]
 def constantRun() -> Int { Path.walk (fun (X) { Int }) (ua winding) Z }
 
 /// A pair carried along the loops' path carries each component, by
@@ -32,7 +32,7 @@ def pairBeta : Path[.A = Int * Int](
 ) = Path.here (*{S Z, S Z});
 
 /// A pair carried along the loops' path carries each component, by a run.
-@[ runs("*{S Z, S Z}") ]
+@[runs("*{S Z, S Z}")]
 def pairRun() -> Int * Int { Path.walk (fun (X) { type(X * X) }) (ua winding) (*{loop, loop}) }
 
 /// An injection carried along the loops' path carries its payload in its own
@@ -43,7 +43,7 @@ def sumBeta : Path[.A = Unit + Int](
 ) = Path.here (+{.1 = S Z});
 
 /// An injection carried along the loops' path carries its payload, by a run.
-@[ runs("+{.1 = S Z}") ]
+@[runs("+{.1 = S Z}")]
 def sumRun() -> Unit + Int { Path.walk (fun (X) { type(Unit + X) }) (ua winding) (+{.1 = loop}) }
 
 /// A list carried along the loops' path carries every cell, by conversion.
@@ -53,5 +53,5 @@ def listBeta : Path[.A = List Int](
 ) = Path.here (cons (S Z) nil);
 
 /// A list carried along the loops' path carries every cell, by a run.
-@[ runs("cons (S Z) nil") ]
+@[runs("cons (S Z) nil")]
 def listRun() -> List Int { Path.walk (fun (X) { List X }) (ua winding) (cons loop nil) }

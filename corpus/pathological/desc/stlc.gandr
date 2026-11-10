@@ -17,7 +17,7 @@ import "../../model/desc/stlc.gandr";
 
 /// The renamer past one more entry. The constructor `There` is the body of a
 /// lambda, where it reads no stated type.
-@[ refuses("OutOfFragment.Unannotated") ]
+@[refuses("OutOfFragment.Unannotated")]
 def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren d g) -> Ren (Extend d b) g =
   return fun (a) { return fun (x) { There d a b (r a x) } }
 
@@ -25,7 +25,7 @@ def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren d g) -> Ren (Extend d b) g =
 /// parameter, whose type reads the two before it.
 rec {
   /// The renamer of a neutral.
-  @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
+  @[refuses("OutOfFragment.mutual_block.staged_after_first")]
   def rec renNe(g : Ctx, a : ObjTy, t : Ne g a, d : Ctx, r : Ren d g) -> Ne d a {
     match t where
       | NVar(_h, b, x) => NVar d b (r b x)
@@ -36,7 +36,7 @@ rec {
       }
   }
   /// The renamer of a normal form.
-  @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
+  @[refuses("OutOfFragment.mutual_block.staged_after_first")]
   def rec renNf(g : Ctx, a : ObjTy, t : Nf g a, d : Ctx, r : Ren d g) -> Nf d a =
     match t where
       | NNe(h, n) => { let n2 = renNe[<] h Base n d r; NNe d n2 }
@@ -54,7 +54,7 @@ def rec envs(g : Ctx, d : Ctx) -> Type =
 
 /// An environment and one more value. The tuple meets `envs(Extend(g, a),
 /// d)`, which the shape check does not unfold.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> envs(
   Extend g a,
   d

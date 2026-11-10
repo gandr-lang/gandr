@@ -4,9 +4,9 @@
   refuses("UnknownAttribute"),
   note("a note long enough to break the block at a narrow page")
 ]
-@[ doc("Squares its argument.") ]
+@[doc("Squares its argument.")]
 def square(x : Integer) -> -F Integer =
   return (x * x)
 
-@[ checks ]
+@[checks]
 def greet = "hello, ${ name }!";

@@ -18,7 +18,7 @@ import "./accessor-counter.gandr";
 
 /// `counted` creates a grade-one count.
 /// Its exclusive view moves the count and writes its successor back.
-@[ runs("1") ]
+@[runs("1")]
 def counted() -> Integer =
   var[1] c = 0
   access c as v { let n = succ v; resume v n; pure n }
@@ -30,7 +30,7 @@ def untouched() -> Unit =
   access p as v { abort v } unwind { pure *{} }
 
 /// A hold at the default grade, under which each read copies.
-@[ runs("2") ]
+@[runs("2")]
 def copied() -> Integer =
   var c = 1
   pure c + c

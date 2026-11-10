@@ -1,18 +1,18 @@
 error[BufferRead]: a buffer can be used only by the `send`, the operation or the resumption that hands it back
-   ╭▸ corpus/ledger/diagnostics/BufferRead.gandr:14:24
+   ╭▸ corpus/ledger/diagnostics/BufferRead.gandr:15:24
    │
-11 │ ┌  def readWhileHeld() -> -F Unit =
-12 │ │┌   handle r : std.io.Ring.Eff {
-13 │ ││     let b = r.alloc 4096;
+12 │ ┌  def readWhileHeld() -> -F Unit =
+13 │ │┌   handle r : std.io.Ring.Eff {
+14 │ ││     let b = r.alloc 4096;
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
-14 │ ││     let copied : Buf = b;
+15 │ ││     let copied : Buf = b;
    │ ││     ┬──                ━ a buffer read other than by its return
    │ ││     │
    │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while finishing the type of this
-15 │ ││     r.free b
+16 │ ││     r.free b
    ┆ ┆┆
-19 │ ││     | oper free(b, k) => k *{}
-20 │ ││   }
+20 │ ││     | oper free(b, k) => k *{}
+21 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk

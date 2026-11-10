@@ -37,9 +37,9 @@ def warmth(c : Paint) -> Integer =
     | Green => 0
 
 /// The pause at the red lamp.
-@[ runs("2") ]
+@[runs("2")]
 def stopped() -> Integer { pause Light.Red }
 
 /// The warmth of the red paint.
-@[ runs("1") ]
+@[runs("1")]
 def redWarmth() -> Integer { warmth Paint.Red }

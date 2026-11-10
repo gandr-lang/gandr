@@ -1,5 +1,5 @@
 /// `HeldShared`: a hold at grade one entering a value not made in place.
-@[ refuses("HeldShared") ]
+@[refuses("HeldShared")]
 def entered(n : Integer) -> -F Unit =
   var[1] c = n
   pure *{}

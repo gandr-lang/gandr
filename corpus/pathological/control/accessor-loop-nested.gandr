@@ -5,7 +5,7 @@
 ///
 /// - see: #1143
 /// - see: #1481
-@[ refuses("HeldCaptured") ]
+@[refuses("HeldCaptured")]
 def nested() -> [Partial] Integer =
   var n = 0
   var i = 3

@@ -1,15 +1,16 @@
-/// `PointwiseDistinct`: a function extensionality whose functions disagree at some covering input.
-@[ checks ]
+/// `PointwiseDistinct`: a function extensionality whose functions disagree at
+/// some covering input.
+@[checks]
 def not(b : Unit + Unit) -> -F (Unit + Unit) =
   match b where
     | +{.0 = u} => +{.1 = u}
     | +{.1 = u} => +{.0 = u}
 
-@[ checks ]
+@[checks]
 def same(b : Unit + Unit) -> -F (Unit + Unit) =
   b
 
-@[ refuses("PointwiseDistinct") ]
-def not_identity : Path(not, same) ;
+@[refuses("PointwiseDistinct")]
+def not_identity : Path(not, same);
 
-def not_identity = Path.funext not same ;
+def not_identity = Path.funext not same;

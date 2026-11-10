@@ -14,5 +14,5 @@ theory Shapes where
 module Plain where
   def one = 1;
 world seat;
-module Kit.Tools : *{ two : Integer } where
+module Kit.Tools : *{two : Integer} where
   def two = 2;

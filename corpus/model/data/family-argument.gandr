@@ -26,6 +26,6 @@ def keptTagged(
   t
 
 /// A `String` is no left summand of `SumOb(Integer, String)`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def misplaced(b : String, t : Tagged Integer String (Inl b)) -> Integer =
   0

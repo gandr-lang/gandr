@@ -1,5 +1,5 @@
 /// `identifier.expression`: a name.
-@[ checks ]
-def answer = 42 ;
-@[ checks ]
-def same = answer ;
+@[checks]
+def answer = 42;
+@[checks]
+def same = answer;

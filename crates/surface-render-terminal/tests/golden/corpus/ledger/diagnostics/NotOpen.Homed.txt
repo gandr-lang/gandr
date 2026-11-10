@@ -1,8 +1,8 @@
 error[NotOpen.Homed]: a thunk crossing to another world reads this declaration away from its home, and its type is not open
-   ╭▸ corpus/ledger/diagnostics/NotOpen.Homed.gandr:17:34
+   ╭▸ corpus/ledger/diagnostics/NotOpen.Homed.gandr:18:34
    │
-16 │ ┌ def heldHomed() -> -F ((() -> Integer) at seat) =
-17 │ │   migrate [seat] { (hold thunk { pending () }) }
+17 │ ┌ def heldHomed() -> -F ((() -> Integer) at seat) =
+18 │ │   migrate [seat] { (hold thunk { pending () }) }
    │ │   ┬──────────────────────────────┯━━━━━━───────│
    │ └───│──────────────────────────────│─────────────┤
    │     │                              │             checked against `() -> (() -> Integer) at seat`; while checking the body of this thunk

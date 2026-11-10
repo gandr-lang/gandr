@@ -17,16 +17,16 @@ def banded(low : Integer, high : Integer) -> Bool =
     | false => false
 
 /// This band reverses its bounds. `banded` returns `false`.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def inverted() -> Bool { banded 750000 250000 }
 
 /// A band low below high, the high one under one, is one.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def ordered() -> Bool { banded 200000 800000 }
 
 /// `true` at a stated `Bool`.
 def truth : Bool = true;
 
 /// This pair checks each Boolean literal against its component.
-@[ runs("*{+{.0 = *{}}, +{.1 = *{}}}") ]
+@[runs("*{+{.0 = *{}}, +{.1 = *{}}}")]
 def both() -> Bool * Bool { *{truth, false} }

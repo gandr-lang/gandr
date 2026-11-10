@@ -68,7 +68,7 @@ def declared(presented : Theory) -> String =
 
 /// The members of `Gandr.Package` as its presentation gives them: eleven
 /// constants at `String`.
-@[ runs("\"version : String\\ngandr : String\\nfeatures : String\\nsystems : String\\nspelling : String\\nname : String\\nauthors : String\\nlicence : String\\ndocumentation : String\\nendpoint : String\\nsources : String\\n\"") ]
+@[runs("\"version : String\\ngandr : String\\nfeatures : String\\nsystems : String\\nspelling : String\\nname : String\\nauthors : String\\nlicence : String\\ndocumentation : String\\nendpoint : String\\nsources : String\\n\"")]
 def packageMembers() -> String { declared Gandr.Package }
 
 /// A package's model, with the values of `std`'s.
@@ -102,18 +102,18 @@ def toolchain(m : Model Gandr.Package) -> String =
   concat (concat "gandr = " m.gandr) (concat "\nsystems = " m.systems)
 
 /// The toolchain lines of `std`'s model.
-@[ runs("\"gandr = >= 0.0\\nsystems = \"") ]
+@[runs("\"gandr = >= 0.0\\nsystems = \"")]
 def stdToolchain() -> String { toolchain Package }
 
 /// The lines of `std`'s model through `std.build`'s render: one line for each
 /// constant, in the order of the presentation.
-@[ inert ]
-@[ runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"std\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr/tree/main/library/std\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"") ]
+@[inert]
+@[runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"std\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr/tree/main/library/std\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"")]
 def packageLines() -> String { render Package }
 
 /// The package model whose entries are `e`.
 /// - see: #6201
-@[ inert ]
+@[inert]
 def packageOf(e : modelType(packagePresentation)) -> Model Gandr.Package =
   match e where
     | Entry(version, e1) => match e1 where
@@ -141,7 +141,7 @@ def packageOf(e : modelType(packagePresentation)) -> Model Gandr.Package =
                         }
 
 /// A package model comes back from its entries.
-@[ inert ]
+@[inert]
 def packageBack(m : Model Gandr.Package) -> Path[.A = Model Gandr.Package](
   packageOf (packageEntries m),
   m
@@ -149,7 +149,7 @@ def packageBack(m : Model Gandr.Package) -> Path[.A = Model Gandr.Package](
   Path.here m
 
 /// Entries come back from their package model.
-@[ inert ]
+@[inert]
 def packageEntriesBack(e : modelType(packagePresentation)) -> Path[.A = modelType(packagePresentation)](
   packageEntries (packageOf e),
   e
@@ -191,7 +191,7 @@ def packageEntriesBack(e : modelType(packagePresentation)) -> Path[.A = modelTyp
 
 /// A package model and its entries are equivalent. The maps are inert, so a
 /// run of a program converts nothing.
-@[ inert ]
+@[inert]
 def packageEquivalence : Model Gandr.Package ≃ modelType(packagePresentation) = *{
   packageEntries,
   *{*{packageOf, packageBack}, *{packageOf, packageEntriesBack}}
@@ -244,5 +244,5 @@ module Shown : Model(Flagged) where {
 }
 
 /// The lines of `Shown`: a string and a boolean.
-@[ runs("\"label = \\\"here\\\"\\nshown = true\\n\"") ]
+@[runs("\"label = \\\"here\\\"\\nshown = true\\n\"")]
 def shownLines() -> String { encode Flagged (flaggedEntries Shown) }

@@ -1,6 +1,10 @@
 /// `higher-order-fields`: Function fields in described families.
-/// Implemented: a constructor field `A => T` is the description code's function former, decoded to the thunked arrow, so a presented type holds a continuation and a fold reaches its rest by applying it.
-/// Not implemented: an observation taking an argument, `step : (a : Integer) -> -F Integer`, has no code and is refused. A rule applying a continuation, put-get's `Put(s, Get(k)) <=> Put(s, k(s))`, is refused.
+/// Implemented: a constructor field `A => T` is the description code's function
+/// former, decoded to the thunked arrow, so a presented type holds a
+/// continuation and a fold reaches its rest by applying it.
+/// Not implemented: an observation taking an argument, `step : (a : Integer) ->
+/// -F Integer`, has no code and is refused. A rule applying a continuation,
+/// put-get's `Put(s, Get(k)) <=> Put(s, k(s))`, is refused.
 ///
 /// - owes: #2859 — an observation taking an argument
 /// - owes: #2861 — a rule applying a continuation
@@ -36,5 +40,5 @@ def rec final(p : Program, s : Integer) -> Integer =
 def answered(x : Integer) -> Program { Done x }
 
 /// A store, then a read of it.
-@[ runs("5") ]
+@[runs("5")]
 def readBack : () -> Integer = final (Put 5 (Get answered)) 0;

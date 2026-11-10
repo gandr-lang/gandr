@@ -1,2 +1,2 @@
-module Dig(S : *{ type T, seed : T }) where { def wrong = S.seed.inner; def typed : S.T.U; }
+module Dig(S : *{type T, seed : T}) where { def wrong = S.seed.inner; def typed : S.T.U; }
 module D = Dig(Seed);

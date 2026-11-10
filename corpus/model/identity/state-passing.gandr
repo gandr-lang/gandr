@@ -25,5 +25,5 @@ def rec final(p : Stores, s : Integer) -> Integer =
     | Store(t, k) => final[<] k t
 
 /// Three stores leave the last stored value.
-@[ runs("3") ]
+@[runs("3")]
 def finalOfThree : () -> Integer = final (Store 1 (Store 2 (Store 3 (End 0)))) 0;

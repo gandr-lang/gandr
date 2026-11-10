@@ -11,7 +11,7 @@ import "../../model/specification/tree-state-wp.gandr";
 
 /// A precondition the increment does not meet: ending at one needs the
 /// successor of the initial state to be one, not the state itself.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def incrMissesOne : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, isOne(*{}, s)) -> wp(m, isOne, s)
@@ -22,7 +22,7 @@ def incrByTwoSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post *{
 
 /// The increment against two more: both sides read as `post`'s call over a
 /// held sum, and the sums differ.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def incrMissesTwo(
   post : (Unit, Integer) -> Type,
   s : Integer,

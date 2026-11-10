@@ -1,2 +1,2 @@
-@[ refuses(42) ]
+@[refuses(42)]
 def f = 42;

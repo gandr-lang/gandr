@@ -68,5 +68,5 @@ module ByCode : Model(Eq) with sort Carrier = Code where
         | No => Path.here true
 
 /// Two modules answer the comparison's model.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def twice : decoded(ofFlag(Yes == No)) = "x";

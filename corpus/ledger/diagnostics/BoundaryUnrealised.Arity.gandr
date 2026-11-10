@@ -1,4 +1,5 @@
-/// `BoundaryUnrealised.Arity`: an `extern "rust"` block whose member takes another number of arguments than its row.
+/// `BoundaryUnrealised.Arity`: an `extern "rust"` block whose member takes
+/// another number of arguments than its row.
 // The boundary check reads `admitBlock` here, whatever the listing names.
 import std.boundary (Arg, NoCode, Plain, Row);
 import std.layout (U32);
@@ -6,7 +7,7 @@ import std.layout (U32);
 /// Two `u32` to a `u32`.
 def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
 
-@[ boundary(addRow), refuses("BoundaryUnrealised.Arity") ]
+@[boundary(addRow), refuses("BoundaryUnrealised.Arity")]
 extern "rust" from "short" as Short {
   def add(x : u32) -> u32;
 }

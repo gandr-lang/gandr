@@ -37,6 +37,6 @@ pub world near;
 pub world far requires [std.io.Console.Eff, store : Store with sort V = String];
 
 /// `far` computes forty-two and hands it back.
-@[ entry(*{near, far}), runs("42") ]
+@[entry(*{near, far}), runs("42")]
 def main() -> Integer =
   migrate [far] { pure (6 * 7) }

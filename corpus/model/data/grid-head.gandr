@@ -45,9 +45,9 @@ def corner() -> Grid (Succ Zero) (Succ Zero) =
     (GCol Zero Zero 7 (GNil : Grid Zero Zero) : Grid Zero (Succ Zero))
 
 /// The last cell of the corner as a row.
-@[ runs("4") ]
+@[runs("4")]
 def cornerRow() -> Integer { rowCell Zero (Succ Zero) (corner ()) }
 
 /// The last cell of the corner as a column.
-@[ runs("4") ]
+@[runs("4")]
 def cornerCol() -> Integer { colCell Zero (Succ Zero) (corner ()) }

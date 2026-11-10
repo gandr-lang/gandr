@@ -1,5 +1,6 @@
-/// `RepresentationAboveKind`: an abstract type represented by a type above the kind it states.
-module Above :> *{ type T : Type } where {
-  @[ refuses("RepresentationAboveKind") ]
+/// `RepresentationAboveKind`: an abstract type represented by a type above the
+/// kind it states.
+module Above :> *{type T : Type} where {
+  @[refuses("RepresentationAboveKind")]
   type T = Type;
 }

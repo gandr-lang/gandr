@@ -1,7 +1,7 @@
 /// Squares, as [cube] cubes.
 /// Twice.
 def square = 1;
-@[ doc("Cubes.") ] def cube = 2;
+@[doc("Cubes.")] def cube = 2;
 /// A colour.
 data Color : Type where { | Red : Color }
 def plain = 3;

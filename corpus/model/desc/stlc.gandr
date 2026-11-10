@@ -201,7 +201,7 @@ def redex() -> Tm (Extend Empty Base) Base =
 
 /// The redex has four nodes: an application, an abstraction and two
 /// variables.
-@[ runs("4") ]
+@[runs("4")]
 def redexSize() -> Integer { size (Extend Empty Base) Base (redex ()) }
 
 /// Environments: a semantic value for each entry of `g`, at the context `d`.
@@ -231,7 +231,7 @@ rec {
 }
 
 /// The depth of `Base -> Base` as reification reads it: one arrow.
-@[ runs("1") ]
+@[runs("1")]
 def arrowDepth() -> Integer { reifyDepth (Arr Base Base) Empty }
 
 /// The lookup of a variable in an environment. Each inner case omits `ENil`

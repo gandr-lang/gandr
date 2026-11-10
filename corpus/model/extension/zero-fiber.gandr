@@ -10,9 +10,9 @@
 //!
 /// `ZeroFiber` states how `left` fixes `Val` cells to `zero` over `Two`.
 /// `ZeroFiber` uses its boundary, β and η laws for `c` and cells from `ins`.
-@[ normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)") ]
+@[normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)")]
 theory ZeroFiber where
-  boundary Two { p, q };
+  boundary Two {p, q};
   face left = {p};
   sort Val : Type;
   sort Ext : Type;

@@ -1,5 +1,5 @@
 /// `representable_universe_type`: the universe of representable types.
-@[ checks ]
+@[checks]
 theory Terms where
   sort Tm : Type+;
   oper app : (t : Tm, u : Tm) --> Tm;

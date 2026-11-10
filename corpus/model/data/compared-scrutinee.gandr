@@ -11,7 +11,7 @@
 import "./data-base.gandr";
 
 /// This case scrutinises the comparison where it occurs.
-@[ runs("1") ]
+@[runs("1")]
 def compared() -> Integer =
   match 3 >= 5 where
     | true => 2
@@ -24,7 +24,7 @@ def sized(n : Integer) -> Integer =
     | false => 2
 
 /// This case scrutinises the call to `plus`.
-@[ runs("1") ]
+@[runs("1")]
 def summed() -> Integer =
   match plus two (Succ Zero) where
     | Zero => 0

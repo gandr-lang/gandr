@@ -1,7 +1,7 @@
 /// `constructor.expression`: a constructor.
-@[ checks ]
+@[checks]
 data Colour : Type where
   | Blue : Colour
-@[ checks ]
-def colour : Colour ;
-def colour = Blue ;
+@[checks]
+def colour : Colour;
+def colour = Blue;

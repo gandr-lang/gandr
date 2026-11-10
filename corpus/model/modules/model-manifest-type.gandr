@@ -68,7 +68,7 @@ def stepOnce(m : Model Counter with sort C = Unit + (Unit + Unit)) -> Unit + (Un
     | *{.start = s, .step = t} => t (s ())
 
 /// `second` gives the second right-nested state.
-@[ runs("+{.1 = +{.0 = *{}}}") ]
+@[runs("+{.1 = +{.0 = *{}}}")]
 def second() -> Unit + (Unit + Unit) { stepOnce rightward }
 
 /// `stepOnceLeft` steps a left-nested counter.
@@ -77,11 +77,11 @@ def stepOnceLeft(m : Model Counter with sort C = (Unit + Unit) + Unit) -> (Unit 
     | *{.start = s, .step = t} => t (s ())
 
 /// `secondLeft` transports the second state to the left nesting.
-@[ runs("+{.0 = +{.1 = *{}}}") ]
+@[runs("+{.0 = +{.1 = *{}}}")]
 def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft leftward }
 
 /// `inlineLeft` transports the counter inside the call.
-@[ runs("+{.0 = +{.1 = *{}}}") ]
+@[runs("+{.0 = +{.1 = *{}}}")]
 def inlineLeft() -> (Unit + Unit) + Unit =
   stepOnceLeft (Path.walk (fun (x) { type(Model Counter with sort C = x) }) nestings rightward)
 
@@ -97,12 +97,12 @@ module Thirds : Model(Counter) where
   def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { onward c }
 
 /// `secondThirds` passes `Thirds` at its manifest carrier.
-@[ runs("+{.1 = +{.0 = *{}}}") ]
+@[runs("+{.1 = +{.0 = *{}}}")]
 def secondThirds() -> Unit + (Unit + Unit) { stepOnce Thirds }
 
 /// `thirds` packages `Thirds` at its manifest type.
 def thirds : Model Counter with sort C = Unit + (Unit + Unit) = Thirds;
 
 /// `secondPacked` steps the packed counter.
-@[ runs("+{.1 = +{.0 = *{}}}") ]
+@[runs("+{.1 = +{.0 = *{}}}")]
 def secondPacked() -> Unit + (Unit + Unit) { stepOnce thirds }

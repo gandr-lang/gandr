@@ -1,4 +1,4 @@
-module M : *{ x : Integer, f : -F Integer } where {
+module M : *{x : Integer, f : -F Integer} where {
   def x = 1;
   def f(a : Integer) -> -F Integer { pure a }
 }

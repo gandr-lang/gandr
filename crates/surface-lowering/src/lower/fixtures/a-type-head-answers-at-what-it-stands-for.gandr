@@ -1,9 +1,9 @@
-module NatAdd : *{ type M = Integer, zero : M } where {
+module NatAdd : *{type M = Integer, zero : M} where {
   type M = Integer;
   def zero = 0;
 }
 
-module MkCounter(S : *{ type T, zero : T }) :> *{ type T, seed : T } where {
+module MkCounter(S : *{type T, zero : T}) :> *{type T, seed : T} where {
   type T = S.T;
   def seed = S.zero;
 }

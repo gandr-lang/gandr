@@ -37,7 +37,7 @@ def oneStructure : Path(rising, falling) = *{
 };
 
 /// Reflexivity cannot carry the `rising` points to `falling`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def stayed : Path(rising, falling) = *{
   Path.here Bool,
   *{Path.here (+{.1 = *{}}), Path.here (+{.0 = *{}})}

@@ -53,10 +53,10 @@ pub module Package : Model(Gandr.Package) where
   def sources = ".";
 
 /// hello's greeting, which the alias reads through the lock.
-@[ runs("\"hello, world\"") ]
+@[runs("\"hello, world\"")]
 pub def relayed = hello.welcome;
 
 /// hello's `text.greet` greeting, which the module path under the alias
 /// reads.
-@[ runs("\"hello, world\"") ]
+@[runs("\"hello, world\"")]
 pub def greeted = greeting;

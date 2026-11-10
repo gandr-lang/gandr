@@ -3,6 +3,6 @@
 /// and the declaration is refused at its name.
 ///
 /// - see: #535
-@[ refuses("ShadowedBuiltin") ]
+@[refuses("ShadowedBuiltin")]
 data Unit : Type where
   | Pt : Unit

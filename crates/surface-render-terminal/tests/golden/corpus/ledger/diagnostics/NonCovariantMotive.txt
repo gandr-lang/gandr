@@ -1,9 +1,9 @@
 error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it would be produced
-   ╭▸ corpus/ledger/diagnostics/NonCovariantMotive.gandr:14:5
+   ╭▸ corpus/ledger/diagnostics/NonCovariantMotive.gandr:15:5
    │
-12 │ ┌   @[ refuses("NonCovariantMotive") ]
-13 │ │   def downgrade() -> -F Flow[.A = Type](New, Old) =
-14 │ │     Path.back upgrade
+13 │ ┌   @[refuses("NonCovariantMotive")]
+14 │ │   def downgrade() -> -F Flow[.A = Type](New, Old) =
+15 │ │     Path.back upgrade
    │ │     ┯━━━━━━━━━━━━━━━│
    │ └─────│───────────────┤
    │       │               checked against `() -> Flow[.A = Type](Integer * String, String * Integer)`; while checking the body of this thunk

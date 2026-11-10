@@ -1,6 +1,9 @@
 /// `confluence-certificate`: Confluence as a certificate.
-/// Implemented: the overlap enumeration as a convex pre-critical-pair criterion and the coincidence verdict as a replayable certificate, a path from a critical pair's peak to its join in the presented type.
-/// Not implemented: the enumerator as the criterion over every rule block and the verdict as a certificate wherever a coincidence is decided.
+/// Implemented: the overlap enumeration as a convex pre-critical-pair criterion
+/// and the coincidence verdict as a replayable certificate, a path from a
+/// critical pair's peak to its join in the presented type.
+/// Not implemented: the enumerator as the criterion over every rule block and
+/// the verdict as a certificate wherever a coincidence is decided.
 ///
 /// - owes: #525
 /// - see: #654 — `Semigroup`
@@ -18,7 +21,7 @@
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
 /// The naturals with addition, zero stated a unit on both sides.
-@[ normalizes("add(Zero, Zero) ~> Zero") ]
+@[normalizes("add(Zero, Zero) ~> Zero")]
 data NatUnits : Type where {
   | Zero : NatUnits
   | Succ : (n : NatUnits) --> NatUnits
@@ -29,22 +32,22 @@ data NatUnits : Type where {
 }
 
 /// Zero plus zero, where the two unit rules overlap.
-@[ runs("Zero") ]
+@[runs("Zero")]
 def zero_plus_zero() -> NatUnits { add Zero Zero }
 
 /// One plus zero, where the right unit overlaps the recursion.
-@[ runs("Succ Zero") ]
+@[runs("Succ Zero")]
 def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
 
 /// Two plus one, by the recursion alone.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
 
 /// A semigroup's one law: associativity overlaps itself at
 /// `mul(mul(mul(a, b), c), d)`, and both ways round reach `mul(a, mul(b,
 /// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
 /// subterm holding the peak's own `z`, which stays the peak's.
-@[ checks ]
+@[checks]
 theory Semigroup where
   sort S : Type;
 

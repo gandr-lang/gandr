@@ -1,5 +1,5 @@
-module Outer : *{ before : Integer, inner : *{answer : Integer}, after : Integer } where {
+module Outer : *{before : Integer, inner : *{answer : Integer}, after : Integer} where {
   def before = 0;
-  module inner : *{ answer : Integer } where { def answer = 42; }
+  module inner : *{answer : Integer} where { def answer = 42; }
   def after = inner.answer;
 }

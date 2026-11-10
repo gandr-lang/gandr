@@ -1,4 +1,4 @@
 /// `binary_expression.mul.times`: multiplication.
-@[ checks ]
+@[checks]
 def product() -> -F Integer =
   return 2 * 3

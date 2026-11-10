@@ -1,5 +1,5 @@
 theory Named where {
-  @[ inert ]
+  @[inert]
   oper name : String;
   oper greeting : String;
 }
@@ -7,17 +7,17 @@ module Hello : Model(Named) where {
   def name = "hello";
   def greeting = "hi";
 }
-@[ inert ]
+@[inert]
 def nameOf(n : Model(Named)) -> String { n.name }
-@[ inert ]
+@[inert]
 def helloName = Hello.name;
-@[ inert ]
+@[inert]
 def echoed = helloName;
-@[ inert ]
+@[inert]
 def renamed(n : Model(Named)) -> String { nameOf (n) }
 def shown = helloName;
 def called(n : Model(Named)) -> String { nameOf (n) }
 module Marked where {
-  @[ inert ]
+  @[inert]
   def kept = "kept";
 }

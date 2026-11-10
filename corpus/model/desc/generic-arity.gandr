@@ -30,11 +30,11 @@ pub def arity(presented : Theory) -> Integer =
     | _ => 0
 
 /// This generic program counts `mul` and `one` in `Monoid`.
-@[ runs("2") ]
+@[runs("2")]
 def counted() -> Integer { arity Monoid }
 
 /// `sign` is an ordinary source name that runs the generic program.
-@[ runs("2") ]
+@[runs("2")]
 def sign() -> Integer { arity Monoid }
 
 /// This match returns `Integer` or `Unit` as a type quote.
@@ -44,7 +44,7 @@ def counted_at(presented : Theory) -> Type =
     | _ => return Unit
 
 /// `counted_at(Monoid)` reduces to `Integer`, which holds the operation count.
-@[ runs("2") ]
+@[runs("2")]
 def typed() -> counted_at(Monoid) { arity Monoid }
 
 /// A binder keeps `counted_at(presented)` rigid, so its occurrences
@@ -53,5 +53,5 @@ def kept(presented : Theory, n : counted_at(presented)) -> counted_at(presented)
   n
 
 /// Text does not inhabit `counted_at(Monoid)`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def text : counted_at(Monoid) = "two";

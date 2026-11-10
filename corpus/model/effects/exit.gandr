@@ -13,7 +13,7 @@ import std.io;
 import std.process;
 
 /// `resumed` resumes the exit continuation.
-@[ runs("101") ]
+@[runs("101")]
 def resumed() -> Integer =
   handle c : std.process.Exit.Eff {
     c.exit 5;
@@ -24,7 +24,7 @@ def resumed() -> Integer =
   }
 
 /// `answered` returns nine.
-@[ runs("9") ]
+@[runs("9")]
 def answered() -> Integer =
   handle c : std.process.Exit.Eff {
     c.exit 5;
@@ -35,7 +35,7 @@ def answered() -> Integer =
   }
 
 /// `coded` returns the exit payload.
-@[ runs("5") ]
+@[runs("5")]
 def coded() -> Integer =
   handle c : std.process.Exit.Eff {
     c.exit 5;
@@ -46,7 +46,7 @@ def coded() -> Integer =
   }
 
 /// `summed` adds codes from nested exits.
-@[ runs("108") ]
+@[runs("108")]
 def summed() -> Integer =
   handle c : std.process.Exit.Eff {
     c.exit 3;
@@ -61,7 +61,7 @@ def summed() -> Integer =
   }
 
 /// `printed` counts console prints.
-@[ runs("2") ]
+@[runs("2")]
 def printed() -> Integer =
   handle out : std.io.Console.Eff {
     out.print "one";

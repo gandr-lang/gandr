@@ -1,3 +1,4 @@
-/// `OutOfFragment.EmptyList`: a form out of the fragment: the form is the empty parentheses `()` standing as a value or a type.
-@[ refuses("OutOfFragment.EmptyList") ]
-def nothing = () ;
+/// `OutOfFragment.EmptyList`: a form out of the fragment: the form is the empty
+/// parentheses `()` standing as a value or a type.
+@[refuses("OutOfFragment.EmptyList")]
+def nothing = ();

@@ -1,10 +1,10 @@
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
-  ╭▸ corpus/ledger/diagnostics/HeldLent.gandr:5:26
+  ╭▸ corpus/ledger/diagnostics/HeldLent.gandr:6:26
   │
-3 │ ┌ def frozen() -> -F Unit =
-4 │ │   var c = 0
+4 │ ┌ def frozen() -> -F Unit =
+5 │ │   var c = 0
   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-5 │ │   access shared c as w { access c as v { resume v w } }
+6 │ │   access shared c as w { access c as v { resume v w } }
   │ │   ┬──────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━─│
   │ └───│──────────────────────│────────────────────────────┤
   │     │                      │                            checked against `() -> Unit`; while checking the body of this thunk

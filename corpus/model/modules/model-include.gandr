@@ -22,13 +22,13 @@ def atMost[g : Model Graded](a : g.Carrier, b : g.Carrier) -> Bool =
   if g.below a b { true } else { g.eq a b }
 
 /// `reflexive` compares a grade with itself.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def reflexive() -> Bool { atMost 3 3 }
 
 /// `descending` rejects a descending order.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def descending() -> Bool { atMost 4 3 }
 
 /// `gradesEqual` resolves one integer equality model.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def gradesEqual() -> Bool { 3 == 3 }

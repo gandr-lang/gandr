@@ -17,7 +17,7 @@ import std.process;
 /// The pending completion opened before the operation and reaped after it,
 /// in a body the operation's clause resumes twice: the clause owes that body
 /// one end, and the second resumption is refused.
-@[ refuses("ContinuationUsedTwice") ]
+@[refuses("ContinuationUsedTwice")]
 def resumedTwice() -> Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {

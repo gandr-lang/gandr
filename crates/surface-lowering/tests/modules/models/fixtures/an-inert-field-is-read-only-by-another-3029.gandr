@@ -1,10 +1,10 @@
 theory Released where {
-  @[ inert ]
+  @[inert]
   oper version : String;
 }
 theory Named where {
   include Released;
-  @[ inert ]
+  @[inert]
   oper name : String;
   oper greeting : String;
 }

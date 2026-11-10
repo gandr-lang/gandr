@@ -51,11 +51,11 @@ def swaps : Path(
 ) = Path.here (*{*{}, +{.3 = *{}}});
 
 /// `crossed` refuses a relabelling that does not commute with corolla symmetry.
-@[ refuses("NotNatural") ]
+@[refuses("NotNatural")]
 def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
 
 /// `twice` refuses tables with a corolla on only one side.
-@[ refuses("CorollaTables") ]
+@[refuses("CorollaTables")]
 def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = rename});
 
 /// `widen` maps booleans into four corolla elements.
@@ -73,5 +73,5 @@ def narrow(e : Unit + Unit + Unit + Unit) -> Bool =
     | +{.3 = u} => +{.1 = u}
 
 /// `uneven` refuses two corollas with different element counts.
-@[ refuses("CorollaCardinality") ]
+@[refuses("CorollaCardinality")]
 def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow});

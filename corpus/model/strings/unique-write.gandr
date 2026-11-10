@@ -35,11 +35,11 @@ def holders(s : Repr) -> Integer =
     | Shared(n, bs) => n
 
 /// `aloneCopies` writes an unshared long string without copying.
-@[ runs("0") ]
+@[runs("0")]
 def aloneCopies() -> [Partial] Integer { let s = force long; copies (pushInPlace s 33) }
 
 /// `aloneHolders` reports one holder after an unshared write.
-@[ runs("1") ]
+@[runs("1")]
 def aloneHolders() -> [Partial] Integer =
   let s = force long
   let w = pushInPlace s 33
@@ -47,7 +47,7 @@ def aloneHolders() -> [Partial] Integer =
 
 /// `sharedHolders` writes a copied string without a holder count.
 /// The original string reads the changed buffer.
-@[ runs("2") ]
+@[runs("2")]
 def sharedHolders() -> [Partial] Integer =
   let s = force long
   let c = copy s
@@ -56,14 +56,14 @@ def sharedHolders() -> [Partial] Integer =
 
 /// `heldOnce` writes a grade-one string without a holder count.
 /// The exclusive access copies no buffer.
-@[ runs("0") ]
+@[runs("0")]
 def heldOnce() -> [Partial] Integer =
   let bs = repeatOnto 97 24 (Nil : List Integer)
   var[1] s = Shared 1 bs
   access s as v { let w = pushInPlace v 33; let t = written w; resume v t; copies w }
 
 /// `heldOnceHolders` reports one holder after the grade-one write.
-@[ runs("1") ]
+@[runs("1")]
 def heldOnceHolders() -> [Partial] Integer =
   let bs = repeatOnto 97 24 (Nil : List Integer)
   var[1] s = Shared 1 bs

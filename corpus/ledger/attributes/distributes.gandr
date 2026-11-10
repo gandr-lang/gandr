@@ -1,6 +1,6 @@
 /// `distributes`: states the exact distribution of a declaration's runs, one
 /// run for each sequence of answers to its draws, as texts `weight outcome`.
 /// A declaration that draws nothing runs once, with weight 1.
-@[ distributes("1 42") ]
+@[distributes("1 42")]
 def answer() -> -F Integer =
   return 42

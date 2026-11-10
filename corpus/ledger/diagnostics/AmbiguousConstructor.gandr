@@ -1,16 +1,17 @@
-/// `AmbiguousConstructor`: a bare constructor name more than one data family declares.
+/// `AmbiguousConstructor`: a bare constructor name more than one
+/// data family declares.
 ///
 /// A colour.
-@[ checks ]
+@[checks]
 data Color : Type where
   | Red : Color
   | Green : Color
 
 /// A traffic light's lamp.
-@[ checks ]
+@[checks]
 data Light : Type where
   | Red : Light
   | Amber : Light
 
-@[ refuses("AmbiguousConstructor") ]
+@[refuses("AmbiguousConstructor")]
 def lamp : Light = Red;

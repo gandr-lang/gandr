@@ -13,7 +13,7 @@
 
 /// The naturals with addition and an operation whose two rules part at a
 /// call.
-@[ normalizes("swap(Zero, Succ(Zero)) ~> Succ(Zero)") ]
+@[normalizes("swap(Zero, Succ(Zero)) ~> Succ(Zero)")]
 data NatSwap : Type where {
   | Zero : NatSwap
   | Succ : (n : NatSwap) --> NatSwap
@@ -26,5 +26,5 @@ data NatSwap : Type where {
 }
 
 /// At zero and one, the two rules for `swap` overlap.
-@[ runs("Succ Zero") ]
+@[runs("Succ Zero")]
 def zero_swap_one() -> NatSwap { swap Zero (Succ Zero) }

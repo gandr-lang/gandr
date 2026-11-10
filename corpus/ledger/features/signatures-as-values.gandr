@@ -1,25 +1,26 @@
-/// `signatures-as-values`: a `theory` block presents a sort and its operations as one value of `Theory`, which an ordinary function reads by `case`.
-@[ checks ]
+/// `signatures-as-values`: a `theory` block presents a sort and its operations
+/// as one value of `Theory`, which an ordinary function reads by `case`.
+@[checks]
 theory Monoid where
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 
 /// One per operation of a presentation's chain, zero at its end.
-@[ checks ]
+@[checks]
 def rec operations(chain : Theory) -> -F Integer =
   match chain where
     | Oper(name, inputs, outputs, rest) => { let r = operations[<] rest; return r + 1 }
     | _ => return 0
 
 /// The number of operations a presentation declares.
-@[ checks ]
+@[checks]
 def arity(presented : Theory) -> -F Integer =
   match presented where
     | Presents(sorts, opers, rules) => operations opers
     | _ => return 0
 
 /// `Monoid` declares two operations.
-@[ runs("2") ]
-def counted : () -> Integer ;
-def counted = thunk { arity Monoid } ;
+@[runs("2")]
+def counted : () -> Integer;
+def counted = thunk { arity Monoid };

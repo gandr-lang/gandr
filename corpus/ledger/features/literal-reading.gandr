@@ -1,5 +1,14 @@
-/// `literal-reading`: at a type a model of the prelude's `FromNat`, `FromNeg` or `FromDecimal` carries, the checker reads a natural literal through its `fromNat`, a negative literal through its `fromNeg` at the magnitude and a decimal through its `fromDecimal` at its digits and exponent; a literal at `Integer` stays the literal, and a decimal at `f64` stays the float it rounds to.
-/// Implemented: the checker reads a natural, a negative or a decimal literal at a type a top-level model of `FromNat`, `FromNeg` or `FromDecimal` carries, reads a decimal at `f64` as its float, and refuses a literal `LiteralAmbiguous` where two such models answer. A literal written as a definition's own value stands as what the reader's call returns.
+/// `literal-reading`: at a type a model of the prelude's `FromNat`, `FromNeg`
+/// or `FromDecimal` carries, the checker reads a natural literal through its
+/// `fromNat`, a negative literal through its `fromNeg` at the magnitude and a
+/// decimal through its `fromDecimal` at its digits and exponent; a literal at
+/// `Integer` stays the literal, and a decimal at `f64` stays the float
+/// it rounds to.
+/// Implemented: the checker reads a natural, a negative or a decimal literal at
+/// a type a top-level model of `FromNat`, `FromNeg` or `FromDecimal` carries,
+/// reads a decimal at `f64` as its float, and refuses a literal
+/// `LiteralAmbiguous` where two such models answer. A literal written as a
+/// definition's own value stands as what the reader's call returns.
 /// Not implemented: a reader carrying a constraint, so `Fin(3)` refuses `5`.
 ///
 /// - owes: #4733 — a reader carrying a constraint
@@ -15,46 +24,52 @@ module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
   def fromNat(n : Integer) -> Expr { Lit n }
 
 /// Each literal is read as a leaf where an expression is asked.
-@[ runs("Add (Lit 1) (Lit 2)") ]
+@[runs("Add (Lit 1) (Lit 2)")]
 def sum() -> Expr { Add 1 2 }
 
 /// An expression doubled.
 def twice(e : Expr) -> Expr { Add e e }
 
 /// An argument is read at its parameter's type.
-@[ runs("Add (Lit 3) (Lit 3)") ]
+@[runs("Add (Lit 3) (Lit 3)")]
 def doubled() -> Expr { twice 3 }
 
 /// A literal at `Integer` is the literal itself, with no reader applied.
-@[ runs("4") ]
+@[runs("4")]
 def plain() -> Integer { 4 }
 
-/// A literal as a definition's own value stands as what the reader's call returns.
-@[ runs("Add (Lit 1) (Lit 2)") ]
+/// A literal as a definition's own value stands as what the
+/// reader's call returns.
+@[runs("Add (Lit 1) (Lit 2)")]
 def summed : Expr = Add 1 2;
 
-/// An expression reads a negative literal as the negation of its magnitude's leaf.
+/// An expression reads a negative literal as the negation of
+/// its magnitude's leaf.
 module ExprFromNeg : Model(FromNeg) with sort Carrier = Expr where
   /// The leaf, below zero.
   def fromNeg(n : Integer) -> Expr { Lit (0 - n) }
 
 /// `- 2` is one negative literal, read through `fromNeg` at its magnitude.
-@[ runs("Add (Lit 1) (Lit (- 2))") ]
+@[runs("Add (Lit 1) (Lit (- 2))")]
 def difference() -> Expr { Add 1 (- 2) }
 
-/// A negative literal at `Integer` stays the literal, even in a value definition.
-@[ runs("- 5") ]
+/// A negative literal at `Integer` stays the literal, even in
+/// a value definition.
+@[runs("- 5")]
 def below : Integer = - 5;
 
-/// An expression reads a decimal as a leaf holding its digits beside a leaf holding its exponent.
+/// An expression reads a decimal as a leaf holding its digits beside a leaf
+/// holding its exponent.
 module ExprFromDecimal : Model(FromDecimal) with sort Carrier = Expr where
   /// The digits' leaf, then the exponent's leaf.
-  def fromDecimal(mantissa : Integer, exponent : Integer) -> Expr { Add (Lit mantissa) (Lit exponent) }
+  def fromDecimal(mantissa : Integer, exponent : Integer) -> Expr {
+    Add (Lit mantissa) (Lit exponent)
+  }
 
 /// `fromDecimal` reads `1.25` at its exact digits and exponent.
-@[ runs("Add (Lit 1) (Add (Lit 125) (Lit (- 2)))") ]
+@[runs("Add (Lit 1) (Add (Lit 125) (Lit (- 2)))")]
 def scaled() -> Expr { Add 1 1.25 }
 
 /// A decimal at `f64` stays the float it rounds to, with no reader applied.
-@[ runs("-0.5f64") ]
+@[runs("-0.5f64")]
 def half() -> f64 { - 0.5 }

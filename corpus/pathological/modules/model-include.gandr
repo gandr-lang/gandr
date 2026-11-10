@@ -15,11 +15,11 @@ module EqLoose : Model(Eq) with sort Carrier = Integer where
   def sym(a : Integer, b : Integer) -> Path(eq a b, eq b a) { Path.here true }
 
 /// `EqInteger` and `EqLoose` both answer, and their `eq` differ.
-@[ refuses("ModelAmbiguous") ]
+@[refuses("ModelAmbiguous")]
 def looselyEqual() -> Bool { 3 == 3 }
 
 /// No module is named `Nowhere`.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 module Stray where
   include Nowhere;
   /// A member beside the include.
@@ -31,7 +31,7 @@ module Zero where
   def least() -> Integer { 0 }
 
 /// `least` written beside an include that lends it.
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 module Shadowing where
   include Zero;
   /// A second `least`.

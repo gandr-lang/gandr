@@ -49,7 +49,7 @@ def oneToggle : Path(
 ) = *{negation, *{Path.here (+{.1 = *{}}), *{stepped, reread}}};
 
 /// Negation does not carry the reading to itself.
-@[ refuses("PointwiseDistinct") ]
+@[refuses("PointwiseDistinct")]
 def unread : Path(
   Path.walk (fun (t) { t -> Bool }) negation same,
   same

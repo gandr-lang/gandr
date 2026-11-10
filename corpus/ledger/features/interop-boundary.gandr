@@ -1,9 +1,20 @@
-/// `interop-boundary` is the boundary with Rust: a gandr definition called from Rust, and a Rust function called from gandr.
+/// `interop-boundary` is the boundary with Rust: a gandr definition called from
+/// Rust, and a Rust function called from gandr.
 ///
-/// Implemented: a Rust caller holding a composed program calls a definition by name on values it builds and reads the answer back into its own arena; the call applies the arguments in order and leaves an answered function unforced, and a refused definition never reaches a run. An `extern "rust"` block of fixed-width members declares an interface that its source's definitions perform and the Rust caller's host answers, and the checker admits a block carrying `boundary` against the rows it names where the block stands. A value crosses by its layout as words the Rust caller lends: a list Rust holds tagged or packed answers the `length` Rust counts, and `Option<&u32>` reads by its null niche.
+/// Implemented: a Rust caller holding a composed program calls a definition by
+/// name on values it builds and reads the answer back into its own arena; the
+/// call applies the arguments in order and leaves an answered function
+/// unforced, and a refused definition never reaches a run. An `extern "rust"`
+/// block of fixed-width members declares an interface that its source's
+/// definitions perform and the Rust caller's host answers, and the checker
+/// admits a block carrying `boundary` against the rows it names where the block
+/// stands. A value crosses by its layout as words the Rust caller lends: a list
+/// Rust holds tagged or packed answers the `length` Rust counts, and
+/// `Option<&u32>` reads by its null niche.
 /// Not implemented: a source that imports a block does not see its interface.
 ///
-/// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call below is one it makes.
+/// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call
+/// below is one it makes.
 ///
 /// - see: corpus/model/interop/boundary/round-trip.gandr
 /// - see: corpus/model/interop/boundary/by-layout.gandr
@@ -13,9 +24,9 @@
 import "../../model/interop/boundary/round-trip.gandr";
 
 /// `double` at 21, the call the Rust caller makes first.
-@[ runs("42") ]
+@[runs("42")]
 def answer() -> Integer { double 21 }
 
 /// `less` at 7 and 19: the order the Rust caller passes decides the sign.
-@[ runs("- 12") ]
+@[runs("- 12")]
 def reversed() -> Integer { less 7 19 }

@@ -1,4 +1,4 @@
 def one = 1;
 
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def bad = nowhere;

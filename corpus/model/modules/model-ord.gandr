@@ -7,39 +7,39 @@
 // - see: #2333
 
 /// `alphabetical` compares the first distinct byte.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def alphabetical() -> Bool { "alpha" < "beta" }
 
 /// `reversed` rejects reverse alphabetical order.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def reversed() -> Bool { "beta" < "alpha" }
 
 /// `prefix` orders a prefix before its longer name.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def prefix() -> Bool { "alp" < "alpha" }
 
 /// `capital` compares byte values.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def capital() -> Bool { "Zeta" < "alpha" }
 
 /// `nameAtMost` compares equal names.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def nameAtMost() -> Bool { "alpha" <= "alpha" }
 
 /// `above` reverses a comparison.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def above() -> Bool { "beta" > "alpha" }
 
 /// `atLeast` rejects a lower name.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def atLeast() -> Bool { "alpha" >= "beta" }
 
 /// `integerOrder` uses the integer `Ord` model.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def integerOrder() -> Bool { - 4 < 9 }
 
 /// `sameName` resolves one string equality model.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def sameName() -> Bool { "alpha" == "alpha" }
 
 /// `least` selects the lower value through `Ord`.
@@ -47,17 +47,17 @@ def least[o : Model Ord](a : o.Carrier, b : o.Carrier) -> o.Carrier =
   if o.lt b a { b } else { a }
 
 /// `leastName` selects the lower string.
-@[ runs("\"alpha\"") ]
+@[runs("\"alpha\"")]
 def leastName() -> String { least "beta" "alpha" }
 
 /// `leastNumber` selects the lower integer.
-@[ runs("3") ]
+@[runs("3")]
 def leastNumber() -> Integer { least 3 4 }
 
 /// `across` rejects operands with different carriers.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def across() -> Bool { "three" < 3 }
 
 /// `flagOrder` rejects a carrier with no `Ord` model.
-@[ refuses("ModelUnanswered") ]
+@[refuses("ModelUnanswered")]
 def flagOrder() -> Bool { (true : Bool) < false }

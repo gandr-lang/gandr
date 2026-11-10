@@ -13,7 +13,7 @@ import "../../model/strings/unique-write.gandr";
 
 /// A copy held at grade one: the copy shares its buffer with the string it was
 /// copied from, so the hold would hold a string another string holds.
-@[ refuses("HeldShared") ]
+@[refuses("HeldShared")]
 def heldCopy() -> [Partial] Integer =
   let s = force long
   let c = copy s

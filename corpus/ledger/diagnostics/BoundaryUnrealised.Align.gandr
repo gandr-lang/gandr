@@ -1,4 +1,5 @@
-/// `BoundaryUnrealised.Align`: an `extern "rust"` block whose member declares a type of its row's size at another alignment.
+/// `BoundaryUnrealised.Align`: an `extern "rust"` block whose member declares a
+/// type of its row's size at another alignment.
 // The boundary check reads `admitBlock` here, whatever the listing names.
 import std.boundary (Arg, Code, NoCode, Plain, Row, Sum);
 import std.layout (Done, Field, NoVariant, U32, Variant);
@@ -9,7 +10,7 @@ def optU32 : Code = Sum (Variant "Some" (Field "0" U32 Done) (Variant "None" Don
 /// A `u32` and an `Option<u32>` to a `u32`.
 def optionalRow : Row = Row (Arg (Plain U32) (Arg optU32 NoCode)) (Plain U32);
 
-@[ boundary(optionalRow), refuses("BoundaryUnrealised.Align") ]
+@[boundary(optionalRow), refuses("BoundaryUnrealised.Align")]
 extern "rust" from "aligned" as Aligned {
   def add(x : u32, n : u64) -> u32;
 }

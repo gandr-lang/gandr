@@ -18,7 +18,7 @@ import "ir-codes.gandr";
 import "fresh-lists.gandr";
 
 /// The codes: the naturals and the pairs of two coded types.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 data UProd : Type where
   /// The naturals.
   | NatX : UProd
@@ -26,7 +26,7 @@ data UProd : Type where
   | ProdX : (a : UProd, b : UProd) --> UProd
 
 /// The decoder, with a pair code's two decodes as calls.
-@[ checks ]
+@[checks]
 def rec elProd(u : UProd) -> -F Type =
   match u where
     | NatX => return Nat
@@ -35,7 +35,7 @@ def rec elProd(u : UProd) -> -F Type =
 /// The dependent pair code and its decoder, in one block.
 rec {
   /// The codes: the naturals, and the dependent pairs over a coded type.
-  @[ checks ]
+  @[checks]
   data USig : Type where {
     /// The naturals.
     | NatS : USig
@@ -47,7 +47,7 @@ rec {
   /// The decoder: a pair code decodes to the pairs over its first decode.
   /// The quoted first decode converts with the decode the second field's
   /// binder takes.
-  @[ checks ]
+  @[checks]
   def rec elSig(u : USig) -> -F Type =
     match u where
       | NatS => return Nat
@@ -58,7 +58,7 @@ rec {
 rec {
   /// The codes: the naturals, and the paths between two values of a coded
   /// type.
-  @[ checks ]
+  @[checks]
   data UPath : Type where {
     /// The naturals.
     | NatP : UPath
@@ -68,7 +68,7 @@ rec {
 
   /// The decoder: a path code decodes to the path type over its carrier.
   /// The carrier is the decoder's own marked call, read as a type.
-  @[ checks ]
+  @[checks]
   def rec elPath(u : UPath) -> -F Type =
     match u where
       | NatP => return Nat

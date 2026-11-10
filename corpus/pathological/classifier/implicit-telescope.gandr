@@ -20,75 +20,75 @@ import "../../classifier/implicit-telescope.gandr";
 
 /// `twice` with its implicits omitted: the argument determines `m`, and
 /// nothing determines the combination.
-@[ refuses("ImplicitUnsolved") ]
+@[refuses("ImplicitUnsolved")]
 def undetermined() -> Integer { twice 3 }
 
 /// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
 /// determines which.
-@[ refuses("ImplicitUnsolved") ]
+@[refuses("ImplicitUnsolved")]
 def unchosen() -> Integer { chosen Integer }
 
 /// `konst` with its implicit omitted where the lambda returns its own
 /// argument: the only solution for `b` is the lambda's binder `t`, which the
 /// call does not stand under.
-@[ refuses("ImplicitUnsolved") ]
+@[refuses("ImplicitUnsolved")]
 def escaping() -> Integer { konst (fun (t) { fun (y) { y } }) }
 
 /// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
 /// and the returned type then disagrees with `Unit`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def disagreeing() -> Unit { same 3 }
 
 /// The implicit written among the parentheses, as for `sameExplicit`.
-@[ refuses("ImplicitInParentheses") ]
+@[refuses("ImplicitInParentheses")]
 def inParentheses : () -> Integer;
 def inParentheses = thunk { same Integer 3 };
 
 /// A resident naming no implicit of `same`.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def strayResident : () -> Integer;
 def strayResident = thunk { same[.b = Integer] 3 };
 
 /// A positional resident after a named one: the positions come first.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 def positionAfterName : () -> Integer;
 def positionAfterName = thunk { same[.a = Integer, Integer] 3 };
 
 /// A second positional resident, where `same`'s block writes one implicit.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 def positionPastBlock : () -> Integer;
 def positionPastBlock = thunk { same[Integer, Integer] 3 };
 
 /// A position supplies `a`, and a name supplies it again.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 def suppliedTwice : () -> Integer;
 def suppliedTwice = thunk { same[Integer, .a = Integer] 3 };
 
 /// A compound value by position: it goes by name, `chosen[.x = 3 + 4]`.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 def compoundPosition : () -> Integer;
 def compoundPosition = thunk { chosen[3 + 4] Integer };
 
 /// `same` named as a value, its implicit unsupplied.
-@[ refuses("ImplicitUnsupplied") ]
+@[refuses("ImplicitUnsupplied")]
 def sameNamed : +U (Integer -> -F Integer);
 def sameNamed = same;
 
 /// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, so the
 /// supply is `λ t. chosen(t)[.x = 7]`, and `7` is no value of every `t`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def chosenStanding : Type -> Integer = chosen[.x = 7];
 
 /// Two implicits each typed by the other: no order binds either first.
-@[ refuses("TelescopeCycle") ]
+@[refuses("TelescopeCycle")]
 def tangled[a : b, b : a](x : a) -> -F a { return x }
 
 /// `chosen` with its implicit omitted in a declared type with no body: no
 /// body poses a comparison, so nothing determines `x`.
-@[ refuses("ImplicitUnsolved") ]
+@[refuses("ImplicitUnsolved")]
 def unchosenSigned : Path(chosen Integer, 0);
 
 /// `same(unit)` in a declared type: the argument solves `a` as `Unit`, and
 /// the path's integer carrier then disagrees with it.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def disagreeingSigned : Path(same (*{}), 3) = Path.here 3;

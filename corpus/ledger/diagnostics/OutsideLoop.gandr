@@ -1,9 +1,9 @@
 /// `OutsideLoop`: a `break` or a `continue` on no path through a loop's body.
-@[ checks ]
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("OutsideLoop") ]
+@[refuses("OutsideLoop")]
 def stray(n : Nat) -> -F Nat =
   break(n)

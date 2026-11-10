@@ -1,6 +1,12 @@
-/// `exact-reals`: exact real arithmetic beside the kernel, which a program reaches through `std.reals.Eff`.
-/// Implemented: the host interface holds seven operations under a profile of quotas. `admit` and `enclose` read a plan, and `decide`, `step`, `checkpoint`, `restore` and `report` decide its open root by a machine. The checker replays each certificate before a reply, and only such a certificate makes a machine hold or fail.
-/// Not implemented: a source spells each plan only as its bytes, and two of the nine counters of `report` stay zero.
+/// `exact-reals`: exact real arithmetic beside the kernel, which a program
+/// reaches through `std.reals.Eff`.
+/// Implemented: the host interface holds seven operations under a profile of
+/// quotas. `admit` and `enclose` read a plan, and `decide`, `step`,
+/// `checkpoint`, `restore` and `report` decide its open root by a machine. The
+/// checker replays each certificate before a reply, and only such a certificate
+/// makes a machine hold or fail.
+/// Not implemented: a source spells each plan only as its bytes, and two of the
+/// nine counters of `report` stay zero.
 ///
 /// - owes: #5801 — plan terms in a source
 /// - owes: #5851 — one cache for the machines of a run
@@ -26,7 +32,7 @@ pub def lower(plan : String, k : Integer) -> [std.reals.Eff] String =
 
 /// `lower` under a handler of this source, a second model of `std.reals.Eff`.
 /// The handler holds one plan and answers each enclosure with `1` and `3/2`.
-@[ runs("\"1p0\"") ]
+@[runs("\"1p0\"")]
 def lowerModelled() -> String =
   handle r : std.reals.Eff {
     lower "" 1
@@ -49,7 +55,7 @@ pub def verdict(plan : String, quanta : Integer) -> [std.reals.Eff] String =
 
 /// `verdict` under a handler of this source, a second model of
 /// `std.reals.Eff` whose each budget ends `exhausted`.
-@[ runs("\"exhausted\"") ]
+@[runs("\"exhausted\"")]
 def verdictModelled() -> String =
   handle r : std.reals.Eff {
     verdict "" 1

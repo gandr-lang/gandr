@@ -10,17 +10,17 @@
 /// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 /// The `double` computation adds an integer to itself.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 def double(x : Integer) -> -F Integer =
   become x + x
 
 /// The `delay` function returns a suspended doubling.
-@[ checks ]
+@[checks]
 def delay(x : Integer) -> -F (+U (-F Integer)) =
   return thunk { become double x }
 
 /// The `delayed` proof states reflexivity at a suspended doubling.
-@[ checks ]
+@[checks]
 def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
   thunk { become double a },
   thunk { become double a }
@@ -29,7 +29,7 @@ def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
 
 /// The `cong_delay` proof carries an integer path through
 /// the suspended doubling.
-@[ checks ]
+@[checks]
 def cong_delay(a : Integer, b : Integer, p : Path(a, b)) -> -F Path(
   delay a,
   delay b
@@ -40,6 +40,6 @@ def cong_delay(a : Integer, b : Integer, p : Path(a, b)) -> -F Path(
     (Path.here (delay a))
 
 /// The run carries reflexivity at four through the suspended doubling.
-@[ checks ]
+@[checks]
 def delayed_four() -> -F Path(delay 4, delay 4) =
   become cong_delay 4 4 (Path.here 4)

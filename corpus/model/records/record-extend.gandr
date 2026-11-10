@@ -13,5 +13,5 @@ def single = *{a = 1};
 def pair : *{a : Integer, b : Integer} = *{single | b = 2};
 
 /// `grown` returns a record that adds `b`.
-@[ runs("*{.a = 1, .b = 2}") ]
+@[runs("*{.a = 1, .b = 2}")]
 def grown() -> *{a : Integer, b : Integer} { *{single | b = 2} }

@@ -43,7 +43,7 @@ def letterFirst(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle
   Path.here (loop ∷ p)
 
 /// The loop before `p` differs from `p`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def letterKept(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   comp (loop ∷ Path.here Base) p,
   p
@@ -88,7 +88,7 @@ def letterThroughNames(
 
 /// The transports along `p` and along `q` are not one: the swapped composite
 /// is another path.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def swapped(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)

@@ -1,9 +1,11 @@
-/// `host-effects`: `Console.print` performed by its name under a row naming `std.io.Console.Eff`; a `runs` expectation keeps the line it prints, as `gandr run` writes it.
+/// `host-effects`: `Console.print` performed by its name under a row naming
+/// `std.io.Console.Eff`; a `runs` expectation keeps the line it prints, as
+/// `gandr run` writes it.
 
 // The console's host interface.
 import std.io;
 
 /// A greeting printed through the console by its operation's name.
-@[ runs("hello, world!\n*{}") ]
+@[runs("hello, world!\n*{}")]
 def greet() -> [std.io.Console.Eff] Unit =
   std.io.Console.print "hello, world!"

@@ -15,25 +15,25 @@
 pub def idAt(a : Type, y : a) -> a { y }
 
 /// The argument `3` forces `_` to `Integer`.
-@[ runs("3") ]
+@[runs("3")]
 def forced() -> Integer { idAt _ 3 }
 
 /// This function returns the first value at explicit types.
 def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 
 /// Each argument forces its own wildcard type.
-@[ runs("5") ]
+@[runs("5")]
 def bothForced() -> Integer { firstAt _ _ 5 (*{}) }
 
 /// This function is the identity at a named implicit type.
 def same[a : Type](y : a) -> a { y }
 
 /// This wildcard supplies a named implicit slot.
-@[ runs("3") ]
+@[runs("3")]
 def slotForced() -> Integer { same[.a = _] 3 }
 
 /// This ascription forces the path's right end to `3`.
-@[ runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}") ]
+@[runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}")]
 def endForced() -> Path(3, 3) { (Path.here 3 : Path(3, _)) }
 
 /// This annotation forces the right end from the point.

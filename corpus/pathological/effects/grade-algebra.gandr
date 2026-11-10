@@ -17,11 +17,11 @@
 import std.grade (Grade, Once, Many, Usage, Count);
 
 /// Many is not under once: usage keeps them apart.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def manyUnderOnce : Path(Usage.le Many Once, true) = Path.here true;
 
 /// Eight gibibytes are not under two.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def eightUnderTwoGiB : Path(
   Count.le (8589934592 : Nat) (2147483648 : Nat),
   true
@@ -43,5 +43,5 @@ module Bytes : Model(Grade) where
   def le(a : Integer, b : Integer) -> Bool { a <= b }
 
 /// Two is under four, but over the native integers no conversion shows it.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def twoUnderFourBytes : Path(Bytes.le 2 4, true) = Path.here true;

@@ -8,6 +8,6 @@ module Evolution where {
     handoff : !String. end,
     pause : !String. turn
   };
-  @[ refuses("SessionNotEquivalent") ]
+  @[refuses("SessionNotEquivalent")]
   def same : Path[.A = Type](SeatEnd, SeatEnd′) = Path.bisim SeatEnd SeatEnd′;
 }

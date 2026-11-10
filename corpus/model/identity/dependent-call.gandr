@@ -27,7 +27,7 @@ def toLoopThroughImage(f : Circle -> Int) -> *{
   *{f Base, loopImage f}
 
 /// The checker refuses the loop image of another map.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def toOtherLoop(f : Circle -> Int, g : Circle -> Int) -> *{
   point : Int,
   around : Path[.A = Int](point, point)

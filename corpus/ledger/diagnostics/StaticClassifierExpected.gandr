@@ -1,5 +1,6 @@
-/// `StaticClassifierExpected`: a static Pi over a type that classifies no codes.
-module Indexed : *{ type Hom : Integer -> Integer } where {
-  @[ refuses("StaticClassifierExpected") ]
+/// `StaticClassifierExpected`: a static Pi over a type that
+/// classifies no codes.
+module Indexed : *{type Hom : Integer -> Integer} where {
+  @[refuses("StaticClassifierExpected")]
   type Hom(n : Integer) = Integer;
 }

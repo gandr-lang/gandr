@@ -20,21 +20,29 @@ error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along 
   ╰ help: start each cell at the point where the cell before it ends
 
 error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end to end
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:16:3
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:35:3
    │
-15 │   def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Pa…
-   │   │               ┬         ┬      ┬      ┬               ┬               ┬               ┬               ┬                                        ─ checked against `Path[.A = Path[.A = A](x, y)](h, k) -> -F Path[.A = Path[.A = A](x, y)](f, k)`; while checking the body of this function; binds b : Path[.A = Path[.A = A](x, y)](h, k)
-   │   │               │         │      │      │               │               │               │               │
-   │   │               │         │      │      │               │               │               │               checked; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
-   │   │               │         │      │      │               │               │               checked; while checking the body of this function; binds k : Path[.A = A](x, y)
-   │   │               │         │      │      │               │               checked; while checking the body of this function; binds h : Path[.A = A](x, y)
-   │   │               │         │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
-   │   │               │         │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
-   │   │               │         │      checked; while checking the body of this function; binds y : A
-   │   │               │         checked; while checking the body of this function; binds x : A
-   │ ┌─┘               checked; while checking the body of this function; binds A : Type
-   │ │
-16 │ │   compose[4, 9] (chain 1 2) (a, b)
+24 │ ┌ def columnApart(
+25 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+26 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+27 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+28 │ │   f : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+29 │ │   g : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+30 │ │   h : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds h : Path[.A = A](x, y)
+31 │ │   k : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds k : Path[.A = A](x, y)
+32 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+   │ │   ─ checked; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+33 │ │   b : Path[.A = Path[.A = A](x, y)](h, k)
+   │ │   ─ checked against `Path[.A = Path[.A = A](x, y)](h, k) -> -F Path[.A = Path[.A = A](x, y)](f, k)`; while checking the body of this function; binds b : Path[.A = Path[.A = A](x, y)](h, k)
+34 │ │ ) -> Path[.A = Path[.A = A](x, y)](f, k) =
+35 │ │   compose[4, 9] (chain 1 2) (a, b)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│──────────────────────────────┤
    │     │                              checked; while checking the body of this thunk
@@ -44,20 +52,27 @@ error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end t
    ╰ help: start each 2-cell of a column at the 1-cell where the 2-cell before it ends
 
 error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column of 2-cells
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:24:3
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:52:3
    │
-23 │   def columnFlat(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), h : Path(y, z…
-   │   │              ┬         ┬      ┬      ┬      ┬               ┬               ┬                                        ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
-   │   │              │         │      │      │      │               │               │
-   │   │              │         │      │      │      │               │               checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
-   │   │              │         │      │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
-   │   │              │         │      │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
-   │   │              │         │      │      checked; while checking the body of this function; binds z : A
-   │   │              │         │      checked; while checking the body of this function; binds y : A
-   │   │              │         checked; while checking the body of this function; binds x : A
-   │ ┌─┘              checked; while checking the body of this function; binds A : Type
-   │ │
-24 │ │   compose[5, 11] (chain 2 (1, 1)) (a, h)
+42 │ ┌ def columnFlat(
+43 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+44 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+45 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+46 │ │   z : A,
+   │ │   ─ checked; while checking the body of this function; binds z : A
+47 │ │   f : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+48 │ │   g : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+49 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+   │ │   ─ checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+50 │ │   h : Path(y, z)
+   │ │   ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
+51 │ │ ) -> Path[.A = A](x, z) =
+52 │ │   compose[5, 11] (chain 2 (1, 1)) (a, h)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│────────────────────────────────────┤
    │     │                                    checked; while checking the body of this thunk
@@ -67,20 +82,27 @@ error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column 
    ╰ help: write a 2-cell at this place, or give its column the height 0 to hold one 1-cell
 
 error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column of 2-cells
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:32:3
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:69:3
    │
-31 │   def emptyThenFlat(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), h : Path(y…
-   │   │                 ┬         ┬      ┬      ┬      ┬               ┬               ┬                                        ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
-   │   │                 │         │      │      │      │               │               │
-   │   │                 │         │      │      │      │               │               checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
-   │   │                 │         │      │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
-   │   │                 │         │      │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
-   │   │                 │         │      │      checked; while checking the body of this function; binds z : A
-   │   │                 │         │      checked; while checking the body of this function; binds y : A
-   │   │                 │         checked; while checking the body of this function; binds x : A
-   │ ┌─┘                 checked; while checking the body of this function; binds A : Type
-   │ │
-32 │ │   compose[4, 9] (chain 2 (0, 1)) (a, h)
+59 │ ┌ def emptyThenFlat(
+60 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+61 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+62 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+63 │ │   z : A,
+   │ │   ─ checked; while checking the body of this function; binds z : A
+64 │ │   f : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+65 │ │   g : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+66 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+   │ │   ─ checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+67 │ │   h : Path(y, z)
+   │ │   ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
+68 │ │ ) -> Path[.A = A](x, z) =
+69 │ │   compose[4, 9] (chain 2 (0, 1)) (a, h)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────────────────────┤
    │     │                                   checked; while checking the body of this thunk

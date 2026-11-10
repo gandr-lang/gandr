@@ -1,7 +1,7 @@
 /// `PhaseDependence`: a type member reads a value member of its own module.
 module Counted where {
-  @[ runs("3") ]
+  @[runs("3")]
   def count = 3;
-  @[ refuses("PhaseDependence") ]
+  @[refuses("PhaseDependence")]
   type Q = Path(count, 3);
 }

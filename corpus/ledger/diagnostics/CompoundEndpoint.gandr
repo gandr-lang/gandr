@@ -1,9 +1,10 @@
-/// `CompoundEndpoint`: a compound endpoint whose computation returns no pure value.
-@[ checks, form(explicit) ]
+/// `CompoundEndpoint`: a compound endpoint whose computation returns
+/// no pure value.
+@[checks, form(explicit)]
 data Two : Type where
   | L : Two
   | R : Two
 
-@[ refuses("CompoundEndpoint") ]
+@[refuses("CompoundEndpoint")]
 def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two =
   return L

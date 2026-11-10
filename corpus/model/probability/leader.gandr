@@ -45,7 +45,7 @@ def leader(first : Integer, second : Integer, third : Integer) -> Integer =
   }
 
 /// The leader of one election: each world draws two bits at its own place.
-@[ entry(*{desk, east, south, west}), distributes(("11/32 0", "7/32 1", "7/32 2", "7/32 3")) ]
+@[entry(*{desk, east, south, west}), distributes(("11/32 0", "7/32 1", "7/32 2", "7/32 3"))]
 pub def elected() -> [std.rand.Eff] Integer =
   let first = migrate [east] { std.rand.draw 2 };
   let second = migrate [south] { std.rand.draw 2 };

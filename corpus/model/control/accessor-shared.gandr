@@ -14,14 +14,14 @@
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 /// A shared view and its hold access the same value.
-@[ runs("6") ]
+@[runs("6")]
 def read_beside() -> Integer =
   var c = 3
   access shared c as w { pure w + c }
 
 /// Two shared views of one held value, nested: each reads the value the other
 /// reads.
-@[ runs("9") ]
+@[runs("9")]
 def shared_nested() -> Integer =
   var c = 3
   access shared c as v { access shared c as w { pure v + w + c } }
@@ -32,7 +32,7 @@ def twice(n : Integer) -> Integer =
 
 /// A shared access ends with its body, so an exclusive access follows it and
 /// writes back what the shared view read.
-@[ runs("8") ]
+@[runs("8")]
 def in_turn() -> Integer =
   var c = 4
   let n = access shared c as w { twice w };
@@ -40,7 +40,7 @@ def in_turn() -> Integer =
   pure c
 
 /// `exclusive` spells the mode an access takes when it names none.
-@[ runs("2") ]
+@[runs("2")]
 def spelled() -> Integer =
   var c = 1
   access exclusive c as v { resume v (v + 1) } unwind { pure *{} };

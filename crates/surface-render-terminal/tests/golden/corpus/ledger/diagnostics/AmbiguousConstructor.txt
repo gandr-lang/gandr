@@ -1,7 +1,7 @@
 error[AmbiguousConstructor]: `Red` is a constructor of both `Color` and `Light`; a bare name selects exactly one
-   ╭▸ corpus/ledger/diagnostics/AmbiguousConstructor.gandr:16:20
+   ╭▸ corpus/ledger/diagnostics/AmbiguousConstructor.gandr:17:20
    │
-16 │ def lamp : Light = Red;
+17 │ def lamp : Light = Red;
    │                    ━━━ a constructor of several families
    │
    ├ note: `lamp` is refused with AmbiguousConstructor, as its expectation states

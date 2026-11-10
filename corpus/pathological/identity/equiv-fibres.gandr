@@ -30,7 +30,7 @@ pub def single(u : One) -> Path[.A = One](collapse (pick u), u) =
 /// The collapse ascribed an equivalence, refused at the left inverse's round
 /// trip: `pick(collapse(x))` is `Yes` at every `x`, so reflexivity at `x`
 /// does not reach it.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def collapsed : Two ≃ One = *{
   collapse,
   *{*{pick, thunk { fun (x) { Path.here x } }}, *{pick, single}}

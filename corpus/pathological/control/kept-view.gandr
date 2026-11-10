@@ -13,7 +13,7 @@ import std.process;
 
 /// The model's thunk at a type kept in no region: the view would outlive the
 /// access that lent it.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def unkept() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -26,7 +26,7 @@ def unkept() -> Integer =
 
 /// An exclusive view is kept in no region: its write-back runs when its access
 /// resumes, so nothing may read through it afterwards.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def keptExclusive() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -42,7 +42,7 @@ def keptExclusive() -> Integer =
 
 /// An exclusive access inside the region that keeps a view of the held value:
 /// the kept thunk would read the value while it is written.
-@[ refuses("HeldKept") ]
+@[refuses("HeldKept")]
 def written() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -56,7 +56,7 @@ def written() -> Integer =
 
 /// A thunk kept in no region that forces the kept one: the kept thunk would
 /// leave its region inside it.
-@[ refuses("KeptEscaped") ]
+@[refuses("KeptEscaped")]
 def rewrapped() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -70,7 +70,7 @@ def rewrapped() -> Integer =
 
 /// The kept thunk answered where a thunk kept in no region is promised: a value
 /// kept in a region never stands outside it.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def answered() -> () -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {
@@ -83,7 +83,7 @@ def answered() -> () -> Integer =
 
 /// An exclusive access while the hold's own region keeps a view of its value:
 /// the kept thunk would read the value while it is written.
-@[ refuses("HeldKept") ]
+@[refuses("HeldKept")]
 def writtenInHold() -> Integer =
   var s = 3
   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
@@ -92,7 +92,7 @@ def writtenInHold() -> Integer =
 
 /// A thunk kept in no region that forces the one kept in the hold's region:
 /// the kept thunk would leave the hold's region inside it.
-@[ refuses("KeptEscaped") ]
+@[refuses("KeptEscaped")]
 def leftHold() -> Integer =
   var s = 3
   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };

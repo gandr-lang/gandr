@@ -1,9 +1,12 @@
-/// `UndescribedMember.RewrittenIndex`: a law whose carried index applies an operation that a law at an earlier sort rewrites.
+/// `UndescribedMember.RewrittenIndex`: a law whose carried index applies an
+/// operation that a law at an earlier sort rewrites.
 ///
-/// A term substituted twice stands at its type substituted twice. The composite law on types rewrites that type index, so a step inside the index meets a peak that the decision does not join yet.
+/// A term substituted twice stands at its type substituted twice. The composite
+/// law on types rewrites that type index, so a step inside the index meets a
+/// peak that the decision does not join yet.
 ///
 /// - owes: #5117
-@[ refuses("UndescribedMember.RewrittenIndex") ]
+@[refuses("UndescribedMember.RewrittenIndex")]
 theory TermComposite where
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;

@@ -2,5 +2,5 @@
 /// The checker does not reach this form yet.
 ///
 /// - owes: #1057
-@[ refuses("OutOfFragment.shell_block") ]
-def built = #!{ CC=clang make; } ;
+@[refuses("OutOfFragment.shell_block")]
+def built = #!{ CC=clang make; };

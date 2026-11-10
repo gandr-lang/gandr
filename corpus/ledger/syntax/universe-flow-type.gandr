@@ -1,15 +1,16 @@
-/// `universe_flow_type`: a flow between universe codes, written with its glyph and in ASCII.
+/// `universe_flow_type`: a flow between universe codes, written with its glyph
+/// and in ASCII.
 module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
-  @[ checks ]
+  @[checks]
   def toNew(old : Old) -> -F New =
     match old where
       | *{name, age} => *{age, name}
 }
-@[ checks ]
-def shift : Schema.Old ⇝ Schema.New ;
-def shift = Flow.into Schema.toNew ;
-@[ checks ]
-def shiftAscii : Schema.Old ~~> Schema.New ;
-def shiftAscii = Flow.into Schema.toNew ;
+@[checks]
+def shift : Schema.Old ⇝ Schema.New;
+def shift = Flow.into Schema.toNew;
+@[checks]
+def shiftAscii : Schema.Old ~~> Schema.New;
+def shiftAscii = Flow.into Schema.toNew;

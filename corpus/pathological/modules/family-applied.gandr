@@ -18,17 +18,17 @@ module Shapes where
   type Count = Integer;
 
 /// The family at two arguments.
-@[ refuses("OutOfFragment.Arity") ]
+@[refuses("OutOfFragment.Arity")]
 def twice(x : Shapes.Same(Integer, Bool)) -> Integer { 0 }
 
 /// The plain type takes an argument it does not bind.
-@[ refuses("OutOfFragment.Arity") ]
+@[refuses("OutOfFragment.Arity")]
 def flat(x : Shapes.Count(Integer)) -> Integer { 0 }
 
 /// A selection reads past the family's application.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def selected(x : Shapes.Same(Integer).Count) -> Integer { 0 }
 
 /// The family at a type another than its definition's.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def other(x : Shapes.Same(Integer)) -> Bool { x }

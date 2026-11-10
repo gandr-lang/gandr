@@ -8,6 +8,6 @@
 import "./import-cycle-b.gandr";
 
 /// A declaration of the first member, refused with the cycle.
-@[ refuses("ImportCycle") ]
+@[refuses("ImportCycle")]
 data Left : Type where
   | L : Left

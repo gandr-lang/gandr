@@ -28,7 +28,7 @@ import std.process;
 /// The outer region keeps a slot; the inner scope holds `l` and lends a view of
 /// it; keeping that view in the outer slot is refused at the write — the view
 /// would outlive the access that lent it.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def bypassed() -> Integer =
   handle outer : std.process.Exit.Eff {
     let q : (() -> Integer) at outer = thunk { pure 0 };

@@ -1,7 +1,7 @@
 error[OutOfFragment.BareArms]: a match in layout form writes `where` after its scrutinee, `match e where`, and its arms on the lines after it
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.BareArms.gandr:4:10
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.BareArms.gandr:5:10
   │
-4 │   match b
+5 │   match b
   │          ━ arms with no `where` before them
   │
   ├ note: `bare` is refused with OutOfFragment.BareArms, as its expectation states

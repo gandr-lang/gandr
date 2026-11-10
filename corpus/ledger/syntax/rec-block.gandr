@@ -1,16 +1,16 @@
 /// `rec_block`: a recursive group: definitions that may name each other.
-@[ checks ]
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 rec {
-  @[ checks ]
+  @[checks]
   def rec even(n : Nat) -> -F Integer {
     match n where
       | Zero => return 1
       | Succ(p) => odd[<] p
   }
-  @[ checks ]
+  @[checks]
   def rec odd(n : Nat) -> -F Integer =
     match n where
       | Zero => return 0

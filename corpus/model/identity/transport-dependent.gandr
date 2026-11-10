@@ -63,11 +63,11 @@ def reversed(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a)
     (Path.here a)
 
 /// A lift whose path is not over `q` is refused.
-@[ refuses("NotOver") ]
+@[refuses("NotOver")]
 def astray(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat =
   Path.walk ((y : Nat, Path[.A = Nat](a, y)) -> Nat) q (Path.here a) (Path.here (Path.here a)) v
 
 /// A family that reads no path is the wrong shape for a dependent transport.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat =
   Path.walk (Nat -> Nat) q v v v

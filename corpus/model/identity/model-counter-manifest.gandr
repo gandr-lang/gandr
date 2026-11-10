@@ -27,11 +27,11 @@ pub def upManifest : Model Counter with sort C = Unit + (Unit + Unit) = *{
 };
 
 /// The checker forgets the manifest carrier when `observe` requests a counter.
-@[ runs("1") ]
+@[runs("1")]
 def observedManifest() -> Integer { observe upManifest }
 
 /// An ascription makes the checker forget the manifest carrier.
-@[ runs("1") ]
+@[runs("1")]
 def observedAscribed() -> Integer { observe (upManifest : Model Counter) }
 
 /// The manifest counter follows negation.
@@ -40,7 +40,7 @@ pub def negatedManifest : Model Counter with sort C = Unit + (Unit + Unit) = Pat
 }) countsNegated upManifest;
 
 /// After negation, the forgetting map reads the same count.
-@[ runs("1") ]
+@[runs("1")]
 def observedCarried() -> Integer { observe negatedManifest }
 
 /// The `ReadCounter` theory gives counter readings their own sort.
@@ -69,7 +69,7 @@ pub def upReadings : Model ReadCounter with sort R = Integer = *{
 
 /// The checker forgets manifest readings when `observeShown`
 /// requests a `ReadCounter`.
-@[ runs("1") ]
+@[runs("1")]
 def observedReadings() -> Integer { observeShown upReadings }
 
 /// The `upBoth` record fixes both sorts.
@@ -81,7 +81,7 @@ pub def upBoth : Model ReadCounter with sort C = Unit + (Unit + Unit) with sort 
 };
 
 /// The checker uses a different map when it forgets both fixed sorts.
-@[ runs("1") ]
+@[runs("1")]
 def observedBoth() -> Integer { observeShown upBoth }
 
 /// The counter uses its fixed reading sort through count negation.
@@ -93,7 +93,7 @@ def negatedBoth : Model ReadCounter with sort C = Unit + (Unit + Unit) with sort
   upBoth;
 
 /// The forgetting map reads the carried counter as an up counter.
-@[ runs("1") ]
+@[runs("1")]
 def observedNegatedBoth() -> Integer { observeShown negatedBoth }
 
 /// The `stepShared` function steps and reads a value through a counter that
@@ -103,7 +103,7 @@ def stepShared(a : Model Counter, b : Model Counter with sort C = a.C, c : a.C) 
     | *{.zero = z, .incr = i, .read = r} => r (i c)
 
 /// The manifest counter shares the up counter's carrier.
-@[ runs("1") ]
+@[runs("1")]
 def sharedUp() -> Integer { stepShared upModel upManifest Up.zero }
 
 /// The checker resolves the shared carrier from `a` when `observeShared`
@@ -112,7 +112,7 @@ pub def observeShared(a : Model Counter, b : Model Counter with sort C = a.C) ->
   observe b
 
 /// The checker resolves `upManifest`'s carrier from the up counter.
-@[ runs("1") ]
+@[runs("1")]
 def observedSharedUp() -> Integer { observeShared upModel upManifest }
 
 /// The `stepOwn` function reads a stepped value through operations of `a`.
@@ -122,7 +122,7 @@ def stepOwn(a : Model Counter, c : a.C) -> Integer =
   r (i c)
 
 /// The up counter runs `stepOwn` from its zero.
-@[ runs("1") ]
+@[runs("1")]
 def ownUp() -> Integer { stepOwn upModel Up.zero }
 
 /// The `stepZero` function reads a counter after one step from zero.
@@ -145,7 +145,7 @@ def stepManifest(a : Model Counter with sort C = Unit + (Unit + Unit)) -> Intege
   r (i z)
 
 /// The manifest up counter runs one step from zero.
-@[ runs("1") ]
+@[runs("1")]
 def manifestUp() -> Integer { stepManifest upManifest }
 
 /// A count at the integer carrier has the type `Integer`.
@@ -178,7 +178,7 @@ pub def leftBeside(m : Model Pairing with sort A = Integer, b : m.B) -> Integer 
     | *{.left = l, .right = r} => l
 
 /// The `leftOfOne` run pairs one with the unit value.
-@[ runs("1") ]
+@[runs("1")]
 def leftOfOne() -> Integer { leftBeside firstManifest (*{}) }
 
 /// The `rightBeside` function reads a shared second-carrier value.
@@ -190,5 +190,5 @@ def rightBeside(
     | *{.left = l, .right = r} => leftBeside m r
 
 /// The two manifest pairings share the unit second carrier.
-@[ runs("1") ]
+@[runs("1")]
 def rightOfOne() -> Integer { rightBeside firstManifest bothManifest }

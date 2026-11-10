@@ -4,7 +4,7 @@ module Seat :> *{
   mobile type Report,
   type Handoff,
   type SeatEnd = ?Dispatch. mu turn. +{
-    report : !Report. &{ next : turn, retire : end },
+    report : !Report. &{next : turn, retire : end},
     handoff : !Handoff. end
   },
   task : Dispatch,
@@ -15,28 +15,28 @@ module Seat :> *{
   type Report = String;
   type Handoff = String;
   /// The dispatch a seat receives.
-  @[ checks ]
+  @[checks]
   def task = "task";
   /// A report it sends.
-  @[ checks ]
+  @[checks]
   def progress = "progress";
   /// The notes it hands off.
-  @[ checks ]
+  @[checks]
   def notes = "notes";
 }
 
-@[ checks ]
-world operator ;
+@[checks]
+world operator;
 
-@[ checks ]
-world seat ;
+@[checks]
+world seat;
 
-@[ checks ]
-@[ entry(*{operator, seat}) ]
+@[checks]
+@[entry(*{operator, seat})]
 def collect() -> -F Seat.Report =
   migrate [seat] { pure Seat.progress }
 
-@[ refuses("EntryNamed") ]
-@[ entry(*{operator, seat}) ]
+@[refuses("EntryNamed")]
+@[entry(*{operator, seat})]
 def relayed() -> -F Seat.Report =
   collect ()

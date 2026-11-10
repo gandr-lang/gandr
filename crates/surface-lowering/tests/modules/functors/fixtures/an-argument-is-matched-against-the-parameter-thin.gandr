@@ -1,2 +1,2 @@
-module Thin :> *{ type T, seed : T } where { type T = Integer; def seed = 0; }
+module Thin :> *{type T, seed : T} where { type T = Integer; def seed = 0; }
 module A = MkCounter(Thin);

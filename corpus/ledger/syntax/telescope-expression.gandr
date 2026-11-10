@@ -1,10 +1,10 @@
 /// `telescope_expression`: a telescope with labelled fields. A field written
 /// alone takes the variable of its name: `.x` is `.x = x`.
-@[ checks ]
-def moved(x : Integer) -> *{x : Integer, y : Integer} { *{ .x, .y = x + 1 } }
+@[checks]
+def moved(x : Integer) -> *{x : Integer, y : Integer} { *{.x, .y = x + 1} }
 
 /// The punned field holds the argument.
-@[ runs("3") ]
+@[runs("3")]
 def movedX() -> Integer =
   match moved 3 where
-    | *{ .x, .y } => x
+    | *{.x, .y} => x

@@ -1,9 +1,10 @@
-/// `cons_pattern`: a path cons pattern: a step and the rest of the path, written with its glyph and in ASCII.
-@[ checks ]
+/// `cons_pattern`: a path cons pattern: a step and the rest of the path,
+/// written with its glyph and in ASCII.
+@[checks]
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-@[ checks ]
+@[checks]
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
@@ -11,13 +12,13 @@ data Int : Type where {
   rule : S (P x) <=> x;
   rule : P (S x) <=> x;
 }
-@[ checks ]
+@[checks]
 def rec wind(p : Path(Base, Base)) -> -F Int =
   match p where
     | here => Z
     | loop ∷ q => S (wind[<] q)
     | back(loop) ∷ q => P (wind[<] q)
-@[ checks ]
+@[checks]
 def rec windAscii(p : Path(Base, Base)) -> -F Int =
   match p where
     | here => Z

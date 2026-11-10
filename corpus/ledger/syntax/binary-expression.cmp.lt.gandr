@@ -1,4 +1,4 @@
 /// `binary_expression.cmp.lt`: a less-than comparison.
-@[ checks ]
+@[checks]
 def smaller() -> -F Bool =
   return 1 < 2

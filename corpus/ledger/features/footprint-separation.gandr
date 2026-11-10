@@ -1,11 +1,17 @@
-/// `footprint-separation` checks two forks whose halves share no host interface that either may change.
+/// `footprint-separation` checks two forks whose halves share no host interface
+/// that either may change.
 ///
-/// Implemented: the checker refuses `FootprintsOverlap` at a fork whose halves share a host interface that one of them may change.
-/// Not implemented: a face naming each half's footprint, and a row read per operation.
+/// Implemented: the checker refuses `FootprintsOverlap` at a fork whose halves
+/// share a host interface that one of them may change.
+/// Not implemented: a face naming each half's footprint, and a row
+/// read per operation.
 ///
-/// A half's footprint holds the host operations that the names it mentions let it perform.
-/// The checker reads it off their types: a held capability at its authority, a returner's row and an operation called by name.
-/// Two halves share an interface only when every operation either half holds on it only reads.
+/// A half's footprint holds the host operations that the names it mentions
+/// let it perform.
+/// The checker reads it off their types: a held capability at its authority, a
+/// returner's row and an operation called by name.
+/// Two halves share an interface only when every operation either half holds on
+/// it only reads.
 ///
 /// - owes: #2879 — a face naming each half's footprint
 /// - owes: #2878 — a row read per operation
@@ -23,7 +29,8 @@ import std.fs;
 // Early exit's host interface.
 import std.process;
 
-/// Both halves hold the capability attenuated to reading, so they share the file system only to read it.
+/// Both halves hold the capability attenuated to reading, so they share the
+/// file system only to read it.
 def reading(c : Cap { read }) -> [std.fs.Eff] Unit =
   let found = fork (task : Task.Join) {
     let text = c.read Task.notes;
@@ -34,8 +41,12 @@ def reading(c : Cap { read }) -> [std.fs.Eff] Unit =
   let text = recv found
   close found
 
-/// A writer beside an exiter reaches two interfaces, so its halves share nothing.
-def apart(files : Cap { write }, process : Cap { exit }) -> [std.fs.Eff, std.process.Exit.Eff] Unit =
+/// A writer beside an exiter reaches two interfaces, so its
+/// halves share nothing.
+def apart(files : Cap { write }, process : Cap { exit }) -> [
+  std.fs.Eff,
+  std.process.Exit.Eff
+] Unit =
   let found = fork (task : Task.Join) {
     files.write Task.notes "task";
     send task Task.notes;

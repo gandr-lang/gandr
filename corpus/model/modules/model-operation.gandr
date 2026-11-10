@@ -19,7 +19,7 @@ theory Counting where
 module Counted : Model(Counting) where {
   type T = Integer;
   /// `zero` gives the counter start.
-  @[ runs("0") ]
+  @[runs("0")]
   def zero = 0;
   /// `next` adds one.
   def next(n : Integer) -> Integer { n + 1 }
@@ -28,7 +28,7 @@ module Counted : Model(Counting) where {
 }
 
 /// `counted_two` reads two counter steps.
-@[ runs("2") ]
+@[runs("2")]
 def counted_two() -> Integer =
   let one = Counted.next Counted.zero
   Counted.read (Counted.next one)
@@ -43,7 +43,7 @@ theory Summing where
 module Summed : Model(Summing) where {
   type M = Integer;
   /// `zero` gives the additive unit.
-  @[ runs("0") ]
+  @[runs("0")]
   def zero = 0;
   /// `add` adds two integers.
   def add(x : Integer, y : Integer) -> Integer { x + y }

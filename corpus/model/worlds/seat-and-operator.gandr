@@ -15,20 +15,20 @@ pub world operator;
 
 pub world seat;
 
-@[ entry(*{operator, seat}), runs("\"progress\"") ]
+@[entry(*{operator, seat}), runs("\"progress\"")]
 pub def collect() -> Seat.Report =
   migrate [seat] { pure Seat.progress }
 
-@[ entry(*{operator, seat}), runs("\"progress\"") ]
+@[entry(*{operator, seat}), runs("\"progress\"")]
 def dispatch() -> -F (Seat.Report at seat) =
   migrate [seat] { (hold Seat.progress) }
 
-@[ entry(seat) ]
+@[entry(seat)]
 def opened(report : Seat.Report at seat) -> Seat.Report =
   let written at seat = report
   pure written
 
-@[ entry(*{operator, seat, seat}), runs("\"progress\"") ]
+@[entry(*{operator, seat, seat}), runs("\"progress\"")]
 def review() -> Seat.Report =
   let held : Seat.Report at seat = migrate [seat] { (hold Seat.progress) };
   let report at seat = held

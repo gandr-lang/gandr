@@ -26,14 +26,14 @@ def natOr(n : Nat) -> Type =
     | Succ(_m) => return Two
 
 /// The body is a lambda with no `return`.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def lambda_body() -> Two -> Two =
   fun (u) {
     u
   }
 
 /// The lambda comes after a `let`.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def lambda_after_let() -> Two -> Two =
   let kept = pure Left
   fun (u) {
@@ -41,7 +41,7 @@ def lambda_after_let() -> Two -> Two =
   }
 
 /// The lambda ends a block.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def lambda_block_tail() -> Two -> Two =
   {
     fun (u) {
@@ -50,7 +50,7 @@ def lambda_block_tail() -> Two -> Two =
   }
 
 /// The left arm ends in a lambda with no `return`.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
   match choice where
     | Left => fun (u) {
@@ -61,7 +61,7 @@ def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
     }
 
 /// The right arm ends in a lambda with no `return`.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
   match choice where
     | Left => return fun (u) {
@@ -73,7 +73,7 @@ def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
 
 /// The arm at `Zero` ends in a lambda with no `return`, under a refined
 /// parameter.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def lambda_refined_arm(n : Nat, x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
   match n where
     | Zero => fun (u) {

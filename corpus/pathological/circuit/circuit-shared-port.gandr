@@ -1,4 +1,4 @@
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Shared where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);

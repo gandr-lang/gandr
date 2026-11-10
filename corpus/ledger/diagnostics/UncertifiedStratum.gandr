@@ -1,50 +1,51 @@
-/// `UncertifiedStratum`: a universe equivalence whose round trip at a list cell does not return it with the tail unread.
+/// `UncertifiedStratum`: a universe equivalence whose round trip at a list cell
+/// does not return it with the tail unread.
 
 // The native finite lists.
 import std.list (List);
 
 /// The negation of a flag.
-@[ checks ]
+@[checks]
 def not(b : Unit + Unit) -> -F (Unit + Unit) =
   match b where
     | +{.0 = u} => +{.1 = u}
     | +{.1 = u} => +{.0 = u}
 
-@[ checks ]
+@[checks]
 def not_not(b : Unit + Unit) -> -F (Unit + Unit) =
   not (not b)
 
-@[ checks ]
+@[checks]
 def same(b : Unit + Unit) -> -F (Unit + Unit) =
   b
 
-@[ checks ]
-def negation : Path[.A = Type](Bool, Bool) ;
+@[checks]
+def negation : Path[.A = Type](Bool, Bool);
 
-def negation = equiv not not ;
+def negation = equiv not not;
 
-@[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
-def both : List Bool ;
+@[runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)")]
+def both : List Bool;
 
-def both = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil) ;
+def both = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil);
 
-@[ checks ]
+@[checks]
 def keep(xs : List Bool) -> -F List Bool =
   xs
 
-@[ checks ]
+@[checks]
 def flip_flag(entry : Bool * List Bool) -> -F (Bool * List Bool) =
   match entry where
     | *{b, xs} => { let c = not b; *{c, xs} }
 
-@[ checks ]
-def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool) ;
+@[checks]
+def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool);
 
-def flagged = equiv flip_flag flip_flag ;
+def flagged = equiv flip_flag flip_flag;
 
-@[ checks ]
+@[checks]
 def emptied(xs : List Bool) -> -F List Bool =
   nil
 
-@[ refuses("UncertifiedStratum") ]
-def collapsed = equiv emptied keep ;
+@[refuses("UncertifiedStratum")]
+def collapsed = equiv emptied keep;

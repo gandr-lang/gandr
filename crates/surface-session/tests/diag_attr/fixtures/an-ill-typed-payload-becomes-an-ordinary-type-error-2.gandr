@@ -1,2 +1,2 @@
-@[ owes(thunk { return 1 }) ]
+@[owes(thunk { return 1 })]
 def f : Integer;

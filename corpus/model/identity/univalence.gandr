@@ -132,7 +132,7 @@ def uaBeta(
   Path.here (t x)
 
 /// The `uaBetaRun` run applies the `winding` map to the loop.
-@[ runs("S Z") ]
+@[runs("S Z")]
 def uaBetaRun() -> Int { Path.walk (fun (X) { X }) (ua winding) (loop) }
 
 /// Transport to the integers converts each loop to its winding number.
@@ -143,11 +143,11 @@ def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
   Path.here (wind x)
 
 /// The loop run returns its winding number.
-@[ runs("S Z") ]
+@[runs("S Z")]
 def windingRun() -> Int { Path.walk (fun (X) { X }) loopsAreIntegers (loop) }
 
 /// No conversion proves `ua` after `idtoequiv`, so `uaEta` owes a law.
-@[ owes(1) ]
+@[owes(1)]
 def uaEta : (a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = Path[.A = Type](a, b)](
   ua (idtoequiv a b p),
   p
@@ -155,7 +155,7 @@ def uaEta : (a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = Path[.A
 
 /// The model owes `idtoequivUa` because this corpus does not prove
 /// bi-invertibility is a proposition.
-@[ owes(1) ]
+@[owes(1)]
 def idtoequivUa : (a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b](idtoequiv a b (ua e), e);
 
 /// The `idtoequiv` and `ua` maps form a quasi-inverse with two

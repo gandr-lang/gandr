@@ -1,10 +1,10 @@
 error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
    ╭▸ corpus/pathological/effects/rows.gandr:21:3
    │
-20 │   rule dropped : flush (mark k) <=> k where { | under [Sink | r] };
-   │   ──────────────────────────────────────────────────────────────── the rule it overlaps
-21 │   rule kept : flush (mark k) <=> mark k where { | under [State.Eff | r] };
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+20 │   rule dropped : flush (mark k) <=> k where {| under [Sink | r]};
+   │   ────────────────────────────────────────────────────────────── the rule it overlaps
+21 │   rule kept : flush (mark k) <=> mark k where {| under [State.Eff | r]};
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
    │
    ├ note: `Unerased` is refused with RulesOverlapCondition, as its expectation states
    ╰ help: add a rule that joins the overlap under its condition
@@ -12,30 +12,30 @@ error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping t
 error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping terms, one of them fires only under a row or where its instance names no atom it may not, and under the condition the overlap composes it rewrites to two different normal forms, so the block's rules are refused
    ╭▸ corpus/pathological/effects/rows.gandr:32:3
    │
-31 │   rule dropped : flush (mark k) <=> k where { | under [Sink | r] };
-   │   ──────────────────────────────────────────────────────────────── the rule it overlaps
-32 │   rule kept : flush (mark k) <=> mark k where { | under [State.Eff | r] };
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+31 │   rule dropped : flush (mark k) <=> k where {| under [Sink | r]};
+   │   ────────────────────────────────────────────────────────────── the rule it overlaps
+32 │   rule kept : flush (mark k) <=> mark k where {| under [State.Eff | r]};
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
    │
    ├ note: `Overreaching` is refused with RulesOverlapCondition, as its expectation states
    ╰ help: add a rule that joins the overlap under its condition
 
 error[UnresolvedTypeHead]: no type named `Missing` is written bare
-   ╭▸ corpus/pathological/effects/rows.gandr:41:48
+   ╭▸ corpus/pathological/effects/rows.gandr:41:47
    │
-41 │   rule dropped : mark k <=> k where { | under [Missing | r] };
-   │                                                ━━━━━━━ no type head of this name and arity
+41 │   rule dropped : mark k <=> k where {| under [Missing | r]};
+   │                                               ━━━━━━━ no type head of this name and arity
    │
    ├ note: `Unseen` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: declare a type named `Missing`, or import the module that exports it
 
 error[DuplicateDefinition]: `Sink` is defined twice
-   ╭▸ corpus/pathological/effects/rows.gandr:48:65
+   ╭▸ corpus/pathological/effects/rows.gandr:48:64
    │
-48 │   rule dropped : mark k <=> k where { | under [Sink, State.Eff, Sink] };
-   │                                                ┬───             ━━━━ written again here
-   │                                                │
-   │                                                first written here
+48 │   rule dropped : mark k <=> k where {| under [Sink, State.Eff, Sink]};
+   │                                               ┬───             ━━━━ written again here
+   │                                               │
+   │                                               first written here
    │
    ├ note: `Twice` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `Sink` its own name, or delete one of them

@@ -1,4 +1,4 @@
-@[ refuses("BareFeedback") ]
+@[refuses("BareFeedback")]
 theory Wheel where {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);

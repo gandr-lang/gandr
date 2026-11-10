@@ -42,11 +42,11 @@ def rec vcount(n : Nat, v : Vec Integer n) -> Nat =
     | VCons(m, h, t) => Succ (vcount[<] m t)
 
 /// `pairRead` returns the length from the vector index.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def pairRead() -> Nat { vlength (Succ (Succ Zero)) (pair ()) }
 
 /// `pairCount` calculates the length by recursion.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def pairCount() -> Nat { vcount (Succ (Succ Zero)) (pair ()) }
 
 /// One vector after another, at the length `plus(m, n)`. Each `VCons` arm
@@ -60,7 +60,7 @@ def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec a n, ys : Vec a m) -> Vec(
     | VCons(k, x, xt) => VCons (plus m k) x (vappend[<] a k m xt ys)
 
 /// `pairsRead` returns the length of a vector appended to itself.
-@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
 def pairsRead() -> Nat =
   vlength
     (plus (Succ (Succ Zero)) (Succ (Succ Zero)))

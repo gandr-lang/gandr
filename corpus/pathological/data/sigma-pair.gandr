@@ -2,7 +2,7 @@ data Ix(n : Integer) : Type where
   | MkIx : Ix n
 
 /// The second component lies over another first.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def skewed : *{n : Integer, w : Ix n} = *{2, (MkIx : Ix 3)};
 
 /// A pair with no type to check against synthesises the product of its
@@ -12,5 +12,5 @@ def loose = *{2, (MkIx : Ix 2)};
 def tag_of(p : *{n : Integer, w : Ix n}) -> Integer =
   p.n
 
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def unpaired() -> Integer { tag_of loose }

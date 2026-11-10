@@ -7,7 +7,7 @@
 // - see: ./data-either.gandr
 /// `pick` uses a left injection and the left arm.
 /// `Inl` and `Inr` are not names that this surface defines.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def pick() -> -F Integer =
   match (Inl 42 : Integer + String) where
     | Inl(x) => return (x + 1)
@@ -15,5 +15,5 @@ def pick() -> -F Integer =
 
 /// `picked` calls the refused `pick` declaration.
 /// Its result type is unknown.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def picked() -> Integer { pick () }

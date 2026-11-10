@@ -10,7 +10,7 @@
 //! - see: #1183 — `writtenWhileKept`
 
 /// `writtenWhileKept` writes its hold while a thunk retains its view.
-@[ refuses("HeldKept") ]
+@[refuses("HeldKept")]
 def writtenWhileKept() -> Integer =
   var s = 3
   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };

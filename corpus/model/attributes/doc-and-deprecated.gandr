@@ -11,8 +11,8 @@
 //! - see: https://doc.rust-lang.org/reference/
 
 // Squaring, documented by its attribute and marked deprecated.
-@[ doc("Squares its argument.") ]
-@[ deprecated(*{since = "0.2", note = "use square_checked"}) ]
+@[doc("Squares its argument.")]
+@[deprecated(*{since = "0.2", note = "use square_checked"})]
 def square(x : Integer) -> Integer =
   x * x
 
@@ -22,7 +22,7 @@ def fourth(x : Integer) -> Integer =
   square (square x)
 
 // A value marked bare, stating neither the version nor the note.
-@[ deprecated ]
+@[deprecated]
 def legacy = 1;
 
 // A use of the bare-marked value: it checks, and the use is reported.
@@ -31,8 +31,8 @@ def current = legacy;
 // A module whose member is marked.
 module Shapes where {
   // The side, marked with a note alone.
-  @[ checks ]
-  @[ deprecated(*{note = "use area"}) ]
+  @[checks]
+  @[deprecated(*{note = "use area"})]
   def side = 2;
 }
 

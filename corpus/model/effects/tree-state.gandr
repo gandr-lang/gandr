@@ -28,7 +28,7 @@ def rec answeringFour(p : Prog (Either StateOp Void) Integer) -> Integer =
       | Right(none) => match none {}
 
 /// `constantByFold` runs `answeringFour`.
-@[ runs("9") ]
+@[runs("9")]
 def constantByFold() -> Integer { answeringFour constantTree }
 
 /// `passingTree` stores four and reads state twice.
@@ -50,7 +50,7 @@ def rec passingState(p : Prog (Either StateOp Void) Integer, s : Integer) -> Int
       | Right(none) => match none {}
 
 /// `passingByFold` runs `passingState` from zero.
-@[ runs("44") ]
+@[runs("44")]
 def passingByFold() -> Integer { passingState passingTree 0 }
 
 /// `StateModel` holds a result, read or write continuation.
@@ -74,5 +74,5 @@ def rec constantFold(p : StateModel Integer) -> Integer =
     | Write(_s, k) => constantFold[<] (k *{})
 
 /// `constantByModel` runs `constantFold`.
-@[ runs("9") ]
+@[runs("9")]
 def constantByModel() -> Integer { constantFold constantProgram }

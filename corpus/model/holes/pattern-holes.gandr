@@ -15,7 +15,7 @@ data Shade : Type where
   | Navy : Shade
 
 /// This function has a hole between two arms.
-@[ refuses("UndecidedCoverage") ]
+@[refuses("UndecidedCoverage")]
 def rank(c : Shade) -> Integer =
   match c where
     | Crimson => 0
@@ -28,7 +28,7 @@ data Option : Type where
   | Value : (x : Integer) --> Option
 
 /// This function has a hole in a constructor payload.
-@[ refuses("UndecidedCoverage") ]
+@[refuses("UndecidedCoverage")]
 def weigh(m : Option) -> Integer =
   match m where
     | Value(?) => 100

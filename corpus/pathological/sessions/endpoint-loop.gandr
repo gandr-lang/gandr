@@ -13,7 +13,7 @@
 // - see: corpus/model/sessions/endpoint-loop.gandr
 
 /// A desk that runs its next pass before it receives the report.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def hasty(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
@@ -26,7 +26,7 @@ def hasty(operator : mu open. &{
   }
 
 /// A desk that leaves the loop with the endpoint open.
-@[ refuses("ArmsDisagree") ]
+@[refuses("ArmsDisagree")]
 def abandoned(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
@@ -40,7 +40,7 @@ def abandoned(operator : mu open. &{
 
 /// A desk that runs its next pass without acting on the endpoint when told
 /// to wait.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def idle(waiting : Bool, operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end

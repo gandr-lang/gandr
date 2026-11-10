@@ -2,5 +2,5 @@
 /// The checker does not reach this form yet.
 ///
 /// - owes: #1503
-@[ refuses("OutOfFragment.unknown_type") ]
-def anything : ? ;
+@[refuses("OutOfFragment.unknown_type")]
+def anything : ?;

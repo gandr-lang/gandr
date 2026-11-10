@@ -1,15 +1,16 @@
-/// `NonCovariantMotive`: a ride whose motive uses the moving endpoint other than covariantly.
+/// `NonCovariantMotive`: a ride whose motive uses the moving endpoint
+/// other than covariantly.
 module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
-  @[ checks ]
+  @[checks]
   def toNew(old : Old) -> -F New =
     match old where
       | *{name, age} => *{age, name}
-  @[ checks ]
-  def upgrade : Flow[.A = Type](Old, New) ;
-  def upgrade = Flow.into toNew ;
-  @[ refuses("NonCovariantMotive") ]
+  @[checks]
+  def upgrade : Flow[.A = Type](Old, New);
+  def upgrade = Flow.into toNew;
+  @[refuses("NonCovariantMotive")]
   def downgrade() -> -F Flow[.A = Type](New, Old) =
     Path.back upgrade
 }

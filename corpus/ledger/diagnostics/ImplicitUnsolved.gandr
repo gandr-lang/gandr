@@ -1,9 +1,10 @@
-/// `ImplicitUnsolved`: a call omitting an implicit that neither its arguments nor the type it is checked against determine.
+/// `ImplicitUnsolved`: a call omitting an implicit that neither its arguments
+/// nor the type it is checked against determine.
 ///
 /// A value combined with itself, the combination implicit.
-@[ checks ]
+@[checks]
 def twice[m : Type, combine : (m, m) -> m](x : m) -> -F m { combine x x }
 
-@[ refuses("ImplicitUnsolved") ]
-def undetermined : () -> Integer ;
-def undetermined = thunk { twice 3 } ;
+@[refuses("ImplicitUnsolved")]
+def undetermined : () -> Integer;
+def undetermined = thunk { twice 3 };

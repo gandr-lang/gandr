@@ -1,7 +1,7 @@
 error[UnfixedParameter]: no field of `Full` fixes the parameter `a`, and the `let` states no type
-  ╭▸ corpus/ledger/diagnostics/UnfixedParameter.gandr:8:11
+  ╭▸ corpus/ledger/diagnostics/UnfixedParameter.gandr:9:11
   │
-8 │   let b = Full 3
+9 │   let b = Full 3
   │           ━━━━━━ a parameter no field fixes
   │
   ├ note: `full` is refused with UnfixedParameter, as its expectation states

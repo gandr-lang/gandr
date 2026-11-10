@@ -1,6 +1,7 @@
-/// `builtin`: its word names the role that the core formers read from the declaration.
-@[ builtin(irSignature) ]
-@[ checks ]
+/// `builtin`: its word names the role that the core formers read
+/// from the declaration.
+@[builtin(irSignature)]
+@[checks]
 data Codes(d : Type) : Type[+, 1] where
   | Stop : (e : d) --> Codes d
   | Ask : (a : Type, f : a -> Codes d) --> Codes d

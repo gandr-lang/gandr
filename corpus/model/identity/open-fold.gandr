@@ -54,6 +54,6 @@ def rec parity(n : Nat) -> Nat =
     }
 
 /// The `parity_stuck` endpoint keeps a bind over a variable call.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def parity_stuck(n : Nat) -> Path[.A = Nat](parity (Succ n), Succ (parity n)) =
   Path.here (Succ (parity n))

@@ -4,6 +4,6 @@
 import std.list (List);
 
 /// One integer in a list.
-@[ checks ]
-def numbers : List Integer ;
-def numbers = cons 1 nil ;
+@[checks]
+def numbers : List Integer;
+def numbers = cons 1 nil;

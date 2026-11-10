@@ -1,12 +1,16 @@
 /// `circuit-spiders`: Spiders on a marked sort.
-/// Implemented: a theory sort carries the attribute `@[ frobenius ]`. A circuit rule that merges or splits its wires on that sort reads as a diagram, modulo the Frobenius laws.
-/// Not implemented: no rule rewrites with the spiders, and a model of a theory with such a rule is refused.
+/// Implemented: a theory sort carries the attribute `@[ frobenius ]`. A circuit
+/// rule that merges or splits its wires on that sort reads as a diagram, modulo
+/// the Frobenius laws.
+/// Not implemented: no rule rewrites with the spiders, and a model of a theory
+/// with such a rule is refused.
 ///
 /// - owes: #5741
 //! A sort that carries a special commutative Frobenius algebra, and a circuit
 //! rule whose wires merge on it. The rule writes no node for the merge: its
 //! wire map repeats the name `z`. The merge is a spider, as in Coecke and
-//! Kissinger's picture calculus [Coecke-Kissinger-2017-picturing_quantum_processes].
+//! Kissinger's picture calculus
+//! [Coecke-Kissinger-2017-picturing_quantum_processes].
 //!
 //! - cites: [Coecke-Kissinger-2017-picturing_quantum_processes]
 //!
@@ -15,7 +19,7 @@
 /// `Qubit` marks its sort, so a circuit rule may merge and split its wires.
 theory Qubit where
   /// A wire that merges and splits.
-  @[ frobenius ]
+  @[frobenius]
   sort Q : Type;
   /// A node with one input and one output.
   oper f : (a : Q) --> (b : Q);

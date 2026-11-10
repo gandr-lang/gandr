@@ -23,7 +23,7 @@ pub def touch[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r)
   pure k
 
 /// `passNatural` compares `pass` across an outer-to-inner widening.
-@[ runs("5") ]
+@[runs("5")]
 def passNatural() -> Integer =
   var s = 5
   handle outer : std.process.Exit.Eff {
@@ -45,7 +45,7 @@ def passNatural() -> Integer =
 
 /// `touchNatural` compares `touch` across the widening. Conversion reassociates
 /// the binds.
-@[ runs("5") ]
+@[runs("5")]
 def touchNatural() -> Integer =
   var s = 5
   handle outer : std.process.Exit.Eff {

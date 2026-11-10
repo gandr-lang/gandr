@@ -55,39 +55,39 @@ def rec grow(t : Bush) -> Bush =
     | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
 
 /// The check expects three nodes in `shrub`.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def shrub_nodes : () -> Nat = nodes shrub;
 
 /// The check counts `shrub` after it grows to six nodes.
 /// Its root and each child gain a childless node.
-@[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
+@[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
 def grown_nodes : () -> Nat = nodes (grow shrub);
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.
 rec {
   /// A node over its forest of children.
-  @[ checks ]
+  @[checks]
   data Rose : Type where {
     | Node : (kids : Forest) --> Rose
   }
 
   /// The children of a node, in order.
-  @[ checks ]
+  @[checks]
   data Forest : Type where {
     | Empty : Forest
     | More : (head : Rose, tail : Forest) --> Forest
   }
 
   /// The nodes of a tree: its own and its children's.
-  @[ checks ]
+  @[checks]
   def rec treeSize(t : Rose) -> Nat {
     match t where
       | Node(kids) => { let s = forestSize[<] kids; Succ s }
   }
 
   /// The nodes of a forest: each tree's, summed.
-  @[ checks ]
+  @[checks]
   def rec forestSize(ts : Forest) -> Nat =
     match ts where
       | Empty => Zero
@@ -101,25 +101,25 @@ def leaf : Rose = Node Empty;
 def sapling : Rose = Node (More leaf (More leaf Empty));
 
 /// The sapling's three nodes.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def sapling_nodes : () -> Nat = treeSize sapling;
 
 /// A forest of a sapling and a leaf: four nodes.
-@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
 def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
 
 /// These measures keep the weight `k` through mutual calls.
 /// Each measure descends on its first parameter.
 rec {
   /// The nodes of a tree, each weighing `k`.
-  @[ checks ]
+  @[checks]
   def rec treeWeight(t : Rose, k : Nat) -> Nat {
     match t where
       | Node(kids) => plus k (forestWeight[<] kids k)
   }
 
   /// The nodes of a forest, each weighing `k`.
-  @[ checks ]
+  @[checks]
   def rec forestWeight(ts : Forest, k : Nat) -> Nat =
     match ts where
       | Empty => Zero
@@ -127,7 +127,7 @@ rec {
 }
 
 /// The check weighs the three sapling nodes by two.
-@[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
+@[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
 def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
 
 /// Two members that rebuild a tree and its forest, one block. Each member
@@ -137,14 +137,14 @@ def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
 /// - see: #3880
 rec {
   /// A copy of the tree, one node at a time.
-  @[ checks ]
+  @[checks]
   def rec bumpTree(t : Rose) -> Rose {
     match t where
       | Node(kids) => Node (bumpForest[<] kids)
   }
 
   /// A copy of the forest, one tree at a time.
-  @[ checks ]
+  @[checks]
   def rec bumpForest(ts : Forest) -> Forest =
     match ts where
       | Empty => Empty
@@ -152,9 +152,9 @@ rec {
 }
 
 /// The sapling's copy keeps its three nodes.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def rebuilt_nodes : () -> Nat = treeSize (bumpTree sapling);
 
 /// The copy of a forest of a sapling and a leaf keeps its four nodes.
-@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
 def rebuilt_forest : () -> Nat = forestSize (bumpForest (More sapling (More leaf Empty)));

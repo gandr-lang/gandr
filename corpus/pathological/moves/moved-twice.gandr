@@ -12,7 +12,7 @@
 import "../../model/moves/file-base.gandr";
 
 /// `movedTwice` sends a handle after its first send consumed it.
-@[ refuses("UsedAfterClose") ]
+@[refuses("UsedAfterClose")]
 def movedTwice() -> Unit =
   let file = fork (owner : File.Handle) { close owner };
   let one = fork (first : File.Closer) {

@@ -1,13 +1,17 @@
 error[NoFiller]: `fill` needs a generator whose sides compose its cells, a cell that is a path between two cells, and the square that generator makes
-   ╭▸ corpus/ledger/diagnostics/NoFiller.gandr:21:3
+   ╭▸ corpus/ledger/diagnostics/NoFiller.gandr:31:3
    │
-20 │   def unmade(a : Path[.A = Path[.A = Circle](Base, Base)](loop, loop)) -> Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base) =
-   │   │          ┬                                                                                                     ┬───  ────────────── a side the generator's square does not make
-   │   │          │                                                                                                     │
-   │   │          │                                                                                                     a side the generator's square does not make
-   │ ┌─┘          checked; while checking the body of this function; binds a : Path[.A = Path[.A = Circle](Base, Base)](loop, loop)
+27 │   def unmade(a : Path[.A = Path[.A = Circle](Base, Base)](loop, loop)) -> Path[.A = Path[.A = Circle](
+   │   │          ─ checked; while checking the body of this function; binds a : Path[.A = Path[.A = Circle](Base, Base)](loop, loop)
+   │ ┌─┘
    │ │
-21 │ │   fill[1, 3] (chain 1) (selfLoop Circle Base Base) a
+28 │ │   Base,
+29 │ │   Base
+30 │ │ )](loop, Path.here Base) =
+   │ │    ┬───  ────────────── a side the generator's square does not make
+   │ │    │
+   │ │    a side the generator's square does not make
+31 │ │   fill[1, 3] (chain 1) (selfLoop Circle Base Base) a
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│────────────────────────────────────────────────┤
    │     │                                                checked; while checking the body of this thunk

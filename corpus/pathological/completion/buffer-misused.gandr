@@ -17,7 +17,7 @@ import std.buffer (Buf);
 import std.io;
 
 /// A buffer allocated and never freed.
-@[ refuses("BufferUnreturned") ]
+@[refuses("BufferUnreturned")]
 def neverFreed() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
@@ -29,7 +29,7 @@ def neverFreed() -> Unit =
   }
 
 /// A buffer freed twice.
-@[ refuses("BufferReturnedTwice") ]
+@[refuses("BufferReturnedTwice")]
 def freedTwice() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
@@ -42,7 +42,7 @@ def freedTwice() -> Unit =
   }
 
 /// A buffer read as a value while it is held.
-@[ refuses("BufferRead") ]
+@[refuses("BufferRead")]
 def readWhileHeld() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
@@ -56,7 +56,7 @@ def readWhileHeld() -> Unit =
 
 /// An `alloc` clause that drops the buffer its scope minted rather than
 /// resuming with it.
-@[ refuses("BufferUnreturned") ]
+@[refuses("BufferUnreturned")]
 def mintDropped() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
@@ -69,7 +69,7 @@ def mintDropped() -> Unit =
 
 /// A mock kernel that receives a buffer and never hands it back: the receive
 /// placed it live, and the kernel's body ends holding it.
-@[ refuses("BufferUnreturned") ]
+@[refuses("BufferUnreturned")]
 def receivedKept() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
@@ -88,7 +88,7 @@ def receivedKept() -> Unit =
   }
 
 /// A mock kernel that hands the buffer it received back twice.
-@[ refuses("BufferReturnedTwice") ]
+@[refuses("BufferReturnedTwice")]
 def receivedReturnedTwice() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
@@ -113,7 +113,7 @@ def receivedReturnedTwice() -> Unit =
 
 /// A buffer freed in one arm of a case and kept in the other, refused at the
 /// arm that keeps it.
-@[ refuses("BufferUnreturned") ]
+@[refuses("BufferUnreturned")]
 def freedInOneArm(flag : Bool) -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;

@@ -50,7 +50,7 @@ def peak_is_here(x : Int) -> Path[.A = Path[.A = Int](S (P (S x)), S x)](
   Path.here (refl_peak x)
 
 /// A path parameter does not unfold to `Path.here(2)`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def apart(q : Path[.A = Integer](2, 2)) -> Path[.A = Path[.A = Integer](2, 2)](q, Path.here 2) =
   Path.here q
 
@@ -62,7 +62,7 @@ def held_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), x
   Path.here (x + y)
 
 /// The exchanged sum is a different unresolved call.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def exchanged_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), y + x) =
   Path.here (x + y)
 
@@ -71,7 +71,7 @@ def compared_alike(x : Integer, y : Integer) -> Path[.A = Bool](x == y, x == y) 
   Path.here (x == y)
 
 /// The exchanged comparison is another resolved call.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def compared_turned(x : Integer, y : Integer) -> Path[.A = Bool](x == y, y == x) =
   Path.here (x == y)
 
@@ -83,7 +83,7 @@ def passed_on(x : Integer, y : Integer, p : Path[.A = Bool](x == y, x == y)) -> 
   p
 
 /// The exchanged comparison gives a different path type.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def passed_turned(x : Integer, y : Integer, p : Path[.A = Bool](x == y, x == y)) -> Path[.A = Bool](
   y == x,
   y == x

@@ -6,13 +6,13 @@
 // - see: #1057 — `joined`
 
 /// A parameter and an escape inside single quotes, kept verbatim, a stray.
-@[ refuses("OutOfFragment.TopLevel") ]
+@[refuses("OutOfFragment.TopLevel")]
 #!{ printf 'literal $x and \n stay verbatim'; }
 
 /// One parameter, bare and braced, a stray.
-@[ refuses("OutOfFragment.TopLevel") ]
+@[refuses("OutOfFragment.TopLevel")]
 #!{ echo $HOME ${HOME}; }
 
 /// Braced parameters joined to a word and to each other, in a definition.
-@[ refuses("OutOfFragment.shell_block") ]
+@[refuses("OutOfFragment.shell_block")]
 def joined() -> -F Unit { #!{ echo ${prefix}_suffix ${x}${y}; } }

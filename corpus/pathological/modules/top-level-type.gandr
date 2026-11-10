@@ -2,7 +2,7 @@
 // the declarations written after it.
 
 /// A declaration written before the member does not see it.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def early : Band;
 def early = *{low = 200000, high = 800000};
 
@@ -10,5 +10,5 @@ def early = *{low = 200000, high = 800000};
 type Band = *{low : Integer, high : Integer};
 
 /// A record without the high bound is no band.
-@[ refuses("MissingRecordField") ]
+@[refuses("MissingRecordField")]
 def partial : Band = *{low = 200000};

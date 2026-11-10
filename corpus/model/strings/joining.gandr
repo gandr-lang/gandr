@@ -14,17 +14,17 @@
 import std.string (empty, concat, isEmpty);
 
 /// `greeted` joins a greeting and a name.
-@[ runs("\"hello, ada\"") ]
+@[runs("\"hello, ada\"")]
 def greeted() -> String { concat "hello, " "ada" }
 
 /// `paddedLeft` joins the empty string before a word, which leaves the word.
-@[ runs("\"ada\"") ]
+@[runs("\"ada\"")]
 def paddedLeft() -> String { concat empty "ada" }
 
 /// `blank` asks whether the empty string joined to itself is empty.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def blank() -> Bool { isEmpty (concat empty empty) }
 
 /// `worded` asks whether a word is empty.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def worded() -> Bool { isEmpty "ada" }

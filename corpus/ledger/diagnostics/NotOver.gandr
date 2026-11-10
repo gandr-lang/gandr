@@ -1,10 +1,11 @@
-/// `NotOver`: a telescope transport's second identity that does not lie over its path.
-@[ checks ]
+/// `NotOver`: a telescope transport's second identity that does not lie
+/// over its path.
+@[checks]
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
 
-@[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
+@[normalizes("S(S(P(P(S(Z))))) ~> S(Z)")]
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
@@ -13,11 +14,16 @@ data Int : Type where {
   rule : P (S x) <=> x;
 }
 
-@[ checks ]
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("NotOver") ]
+@[refuses("NotOver")]
 def astray(a : Nat, b : Nat, q : Path(a, b), v : Nat) -> -F Nat =
-  Path.walk (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Nat)) q (Path.here a) (Path.here (Path.here a)) v
+  Path.walk
+    (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Nat))
+    q
+    (Path.here a)
+    (Path.here (Path.here a))
+    v

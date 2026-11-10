@@ -7,11 +7,11 @@
 // - see: #2917
 
 /// `Metrics` exposes a type and three values.
-module Metrics : *{ type Ratio = Integer, base : Integer, double : Integer, scale : Ratio } where {
+module Metrics : *{type Ratio = Integer, base : Integer, double : Integer, scale : Ratio} where {
   /// `scratch` stays outside the signature.
   def scratch = 2;
   /// `double` tests an unsynthesised operator result.
-  @[ checks ]
+  @[checks]
   def double = scratch * 3;
   /// `base` gives seven.
   def base = 7;
@@ -20,9 +20,9 @@ module Metrics : *{ type Ratio = Integer, base : Integer, double : Integer, scal
 }
 
 /// `visible` tests an unsynthesised exported sum.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def visible = Metrics.base + Metrics.double + Metrics.scale;
 
 /// `wrapped` tests a record that names refused `visible`.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def wrapped = *{visible = visible};

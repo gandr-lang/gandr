@@ -1,5 +1,5 @@
 def once(x : Integer) -> [Partial] Integer =
   let y = loop { break(x) };
   y
-@[ refuses("UnenclosedRun") ]
+@[refuses("UnenclosedRun")]
 def a : Integer = once 1;

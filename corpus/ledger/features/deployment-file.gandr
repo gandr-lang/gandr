@@ -1,9 +1,18 @@
-/// `deployment-file` reads a deployment's site and manifold as the flags they desugar to.
+/// `deployment-file` reads a deployment's site and manifold as the flags
+/// they desugar to.
 ///
-/// Implemented: a site names the key its place proves, the sockets a dialer reaches it at and the name of the key's secret, and exports its model packed; `gandr host --site` binds them under the secret that name reads; a manifold names the program it deploys by its path and places each world at a site's model, and `gandr run --manifold` and `gandr host --manifold` take its world bindings; a flag beside the file it desugars from is refused.
-/// Not implemented: a manifold that names its program by its address, and a world that runs as more than one process.
+/// Implemented: a site names the key its place proves, the sockets a dialer
+/// reaches it at and the name of the key's secret, and exports its model
+/// packed; `gandr host --site` binds them under the secret that name reads; a
+/// manifold names the program it deploys by its path and places each world at a
+/// site's model, and `gandr run --manifold` and `gandr host --manifold` take
+/// its world bindings; a flag beside the file it desugars from is refused.
+/// Not implemented: a manifold that names its program by its address, and a
+/// world that runs as more than one process.
 ///
-/// A deployment's files hold no entry: they settle as models do, and the driver runs each field to its string. One file may hold both the site and the manifold placing a world at it.
+/// A deployment's files hold no entry: they settle as models do, and the driver
+/// runs each field to its string. One file may hold both the site and the
+/// manifold placing a world at it.
 ///
 /// - owes: #3381 — a manifold that names its program by its address
 /// - see: corpus/model/worlds/two-processes.site.gandr

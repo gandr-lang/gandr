@@ -67,7 +67,7 @@ module Successor : Model(PointedMonoid) where
     Path.here f
 
 /// `pointed` applies the chosen element, then doubles it.
-@[ runs("8") ]
+@[runs("8")]
 def pointed() -> Integer =
   let p = Successor.point ()
   let h = Successor.mul p (fun (n) { n * 2 })

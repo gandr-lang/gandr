@@ -6,7 +6,7 @@
 import "../../model/completion/ring-base.gandr";
 
 /// A read submitted and its pending completion left unreaped.
-@[ refuses("LinearResidue") ]
+@[refuses("LinearResidue")]
 def pendingDropped() -> Unit =
   let ring = fork (kernel : Ring.Submission) {
     let sqe = recv kernel;

@@ -33,7 +33,7 @@ data Tree(s : Type, p : +U (s -> -F Type), x : Type) : Type where
 
 /// Function extensionality as a bare signature. gandr postulates nothing, so
 /// the signature leaves one obligation.
-@[ owes(1) ]
+@[owes(1)]
 def funextAxiom : (
   a : Type,
   b : a -> Type,
@@ -44,7 +44,7 @@ def funextAxiom : (
 
 /// Function extensionality at two open functions. `Path.funext` decides two
 /// closed functions only.
-@[ refuses("FunextUnsupported") ]
+@[refuses("FunextUnsupported")]
 def openFunext(
   f : Two -> Two,
   g : Two -> Two,
@@ -54,7 +54,7 @@ def openFunext(
 
 /// A modality at `Type`. Its operations quantify over `Type`, a field above
 /// the universe of the type.
-@[ refuses("DataFieldLevel") ]
+@[refuses("DataFieldLevel")]
 data SmallModality : Type where
   /// The family and its return.
   | MkSmall : (mode : Type -> Type, ret : (q : Type, q) -> mode(q)) --> SmallModality
@@ -64,7 +64,7 @@ def decides(q : Type) -> Type = return (type(q + (q -> Empty)))
 
 /// A tree of the excluded-middle oracle. Its queries name types, one universe
 /// above the shape parameter of `Tree`.
-@[ refuses("LevelMismatch") ]
+@[refuses("LevelMismatch")]
 def lemTree : Tree Type decides Two = Leaf L;
 
 /// A family of types, the one field of a modality that the next three fill.
@@ -74,12 +74,12 @@ data Mode : Type[+, 1] where
 
 /// The trees of an open container as a lambda that returns a type. The field
 /// does not check it.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s p q) });
 
 /// The trees of an open container as a static lambda. The lowering reads its
 /// body as a computation, which a type is not.
-@[ refuses("OutOfFragment.WrongSort") ]
+@[refuses("OutOfFragment.WrongSort")]
 def staticOpenMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { type(Tree s p q) });
 
 /// Each query has two answers.
@@ -89,11 +89,11 @@ def branches(a : Two) -> Type { return Two }
 def treesNamed(q : Type) -> Type = return (Tree Two branches q)
 
 /// A named function into types has a thunk type, not the static family type.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def namedMode : Mode = MkMode treesNamed;
 
 /// Sheafification at a fixed container, its first equation a cell.
-@[ refuses("OutOfFragment.cell_member") ]
+@[refuses("OutOfFragment.cell_member")]
 data CellShfy : Type where
   /// The tree that returns `v`.
   | CellRet : (v : Two) --> CellShfy

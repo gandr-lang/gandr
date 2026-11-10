@@ -2,5 +2,5 @@
 // where it runs: the machine's native division refuses a zero divisor.
 
 /// One divided by zero.
-@[ runs("stuck: native operation: native integer division by zero") ]
+@[runs("stuck: native operation: native integer division by zero")]
 def quotient() -> Integer { int.div 1 0 }

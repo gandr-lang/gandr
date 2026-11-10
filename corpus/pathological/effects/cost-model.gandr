@@ -31,7 +31,7 @@ module Doubled : Model(Cost.Eff) with sort N = Nat -> Nat where
   def chargeZero(k : (Nat -> Nat) -> Nat) -> Path[.A = (Nat -> Nat) -> Nat](charge zero k, k) =
     Path.here k
   /// The two sides apply the costs in different orders.
-  @[ refuses("EndpointMismatch") ]
+  @[refuses("EndpointMismatch")]
   def chargeTwice(
     a : Nat -> Nat,
     b : Nat -> Nat,

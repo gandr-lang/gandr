@@ -1,7 +1,8 @@
-/// `isomorphism_type`: an isomorphism type, written with its glyph and as the call of `Iso`.
-@[ checks ]
+/// `isomorphism_type`: an isomorphism type, written with its glyph and as the
+/// call of `Iso`.
+@[checks]
 def turned(i : Integer ≅ Integer) -> -F Unit =
   pure *{}
-@[ checks ]
+@[checks]
 def turnedAscii(i : Iso Integer Integer) -> -F Unit =
   pure *{}

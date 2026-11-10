@@ -13,7 +13,7 @@ def lower_bound(span : *{lower : Integer, upper : Integer}) -> Integer =
     | *{.upper = stop, .lower = start} => start
 
 /// The span from three to nine starts at three.
-@[ runs("3") ]
+@[runs("3")]
 def span_start : () -> Integer = lower_bound (*{lower = 3, upper = 9});
 
 /// The same bound with both fields bound by position, the second unread.
@@ -22,5 +22,5 @@ def first_bound(span : *{lower : Integer, upper : Integer}) -> Integer =
     | *{start, stop} => start
 
 /// The span from four to six starts at four.
-@[ runs("4") ]
+@[runs("4")]
 def span_first : () -> Integer = first_bound (*{lower = 4, upper = 6});

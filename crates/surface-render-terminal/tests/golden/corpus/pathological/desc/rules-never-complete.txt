@@ -24,8 +24,8 @@ error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two 
 29 │ ┃   oper nil : () --> Proc;
    ┆ ┇
 32 │ ┃   rule gc : nu (bind a. (nil ())) ==> nil ();
-33 │ ┃   rule scope : par (nu (bind a. p)) q ==> nu (bind a. (par p q)) where { | a # q };
-   │ ┗━━━┬───────────────────────────────────────────────────────────────────────────────┛ rules whose completion never ends
+33 │ ┃   rule scope : par (nu (bind a. p)) q ==> nu (bind a. (par p q)) where {| a # q};
+   │ ┗━━━┬─────────────────────────────────────────────────────────────────────────────┛ rules whose completion never ends
    │     │
    │     the rule it overlaps
    │

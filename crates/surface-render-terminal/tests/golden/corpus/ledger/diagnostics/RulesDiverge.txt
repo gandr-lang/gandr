@@ -1,11 +1,11 @@
 error[RulesDiverge]: this rule and an earlier one rewrite `Loop(Loop(Unloop(x')))` to two different constructor terms, `Loop(x')` and `Unloop(x')`, so the block's rules are refused
-  ╭▸ corpus/ledger/diagnostics/RulesDiverge.gandr:9:3
-  │
-7 │   rule : Loop (Unloop x) ==> x;
-  │   ──────────────────────────── the rule it overlaps
-8 │   rule : Unloop (Loop x) ==> x;
-9 │   rule : Loop (Loop x) ==> x;
-  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term to another constructor term
-  │
-  ├ note: `Circle` is refused with RulesDiverge, as its expectation states
-  ╰ help: change the overlapping rules so that they rewrite to the same constructor term
+   ╭▸ corpus/ledger/diagnostics/RulesDiverge.gandr:10:3
+   │
+ 8 │   rule : Loop (Unloop x) ==> x;
+   │   ──────────────────────────── the rule it overlaps
+ 9 │   rule : Unloop (Loop x) ==> x;
+10 │   rule : Loop (Loop x) ==> x;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term to another constructor term
+   │
+   ├ note: `Circle` is refused with RulesDiverge, as its expectation states
+   ╰ help: change the overlapping rules so that they rewrite to the same constructor term

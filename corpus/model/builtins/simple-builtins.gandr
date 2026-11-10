@@ -11,15 +11,15 @@
 
 /// `not_small` negates a comparison. An unstated computation has no inferred
 /// type.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def not_small = bool.not (1 < 2);
 
 /// `quotient` divides integers through an unstated computation.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def quotient = int.div 7 2;
 
 /// `remainder` takes the remainder of a negative integer.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def remainder = int.mod (- 7) 2;
 
 /// `quotientOf` divides an integer at a stated type. `int` qualifies its
@@ -29,36 +29,36 @@ def quotientOf(c : Integer) -> Integer =
   lead
 
 /// `size` reads a list length.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def size = list.length (#[1, 2, 3]);
 
 /// `second` reads a list element at position one.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def second = list.get (#[10, 20, 30]) 1;
 
 /// `phrase` appends two strings through an unstated computation.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def phrase = string.append "types are " "machines";
 
 /// `stated` appends two strings at a stated type. It keeps their characters
 /// in order.
-@[ runs("\"types are machines\"") ]
+@[runs("\"types are machines\"")]
 def stated() -> String =
   let joined = string.append "types are " "machines"
   joined
 
 /// `compared` compares two strings at a stated type. Their bytes differ.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def compared() -> Bool =
   let equal = string.eq "types are " "machines"
   equal
 
 /// `letters` asks for a string length. The native namespace has no `length`
 /// member.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def letters = string.length stated;
 
 /// `exclaimed` appends an exclamation to a rejected phrase. Its type is
 /// unknown.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def exclaimed() -> String { string.append phrase "!" }

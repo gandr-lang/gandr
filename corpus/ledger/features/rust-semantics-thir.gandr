@@ -1,26 +1,37 @@
-/// `rust-semantics-thir` derives the postconditions of Corten's `example` and its buddy allocator's `pop` from THIR written as data.
+/// `rust-semantics-thir` derives the postconditions of Corten's `example` and
+/// its buddy allocator's `pop` from THIR written as data.
 ///
-/// Implemented: THIR's literal, parameter, conditional, return and call as data and as a theory's operations, the weakest-precondition axioms as its rules, fired by an inspected call, and `example` meeting its specification given `identity`'s.
-/// Implemented: THIR's place reads, writes and option match as data, and the allocator's `pop` meeting its free-list specification.
-/// Not implemented: a `rustc` driver that stages THIR, and the allocator's other functions.
+/// Implemented: THIR's literal, parameter, conditional, return and call as data
+/// and as a theory's operations, the weakest-precondition axioms as its rules,
+/// fired by an inspected call, and `example` meeting its
+/// specification given `identity`'s.
+/// Implemented: THIR's place reads, writes and option match as data, and the
+/// allocator's `pop` meeting its free-list specification.
+/// Not implemented: a `rustc` driver that stages THIR, and the
+/// allocator's other functions.
 ///
-/// The calculus is the specification monad of THIR's control effect, one postcondition for a value and one for a `return`.
-/// A function's guard is the effect's handler, so a `return` inside a call's argument skips the call.
+/// The calculus is the specification monad of THIR's control effect, one
+/// postcondition for a value and one for a `return`.
+/// A function's guard is the effect's handler, so a `return` inside a call's
+/// argument skips the call.
 ///
 /// - owes: #327 — a `rustc` driver that stages THIR
 /// - see: corpus/model/interop/thir/example.gandr
 /// - see: corpus/model/interop/thir/buddy-pop.gandr
 
-// `Value`, `Item`, `Expr`, `wpFn`, `exampleBody`, `exampleSpec`, `exampleMeets`, `exampleReturnsPast` and `identitySpec`.
+// `Value`, `Item`, `Expr`, `wpFn`, `exampleBody`, `exampleSpec`,
+// `exampleMeets`, `exampleReturnsPast` and `identitySpec`.
 import "../../model/interop/thir/example.gandr";
 
 // `Nat`.
 import "../../model/data/data-base.gandr";
 
-// `Vals`, `Ixs`, `freeAt`, `wpMemFn`, `popBody`, `popEnv`, `popPost`, `Own`, `Whole`, `buddy` and `popMeets`.
+// `Vals`, `Ixs`, `freeAt`, `wpMemFn`, `popBody`, `popEnv`, `popPost`, `Own`,
+// `Whole`, `buddy` and `popMeets`.
 import "../../model/interop/thir/buddy-pop.gandr";
 
-/// `example`'s body paired with evidence that its transformer is below its specification at every value and postcondition.
+/// `example`'s body paired with evidence that its transformer is below its
+/// specification at every value and postcondition.
 def exampleSpecified : *{
   m : Expr,
   meets : (b : Value, post : Value -> Type, exampleSpec(b, post)) -> wpFn(identitySpec, m, b, post)
@@ -29,14 +40,16 @@ def exampleSpecified : *{
   meets h
 } } }};
 
-/// At false the return inside `identity`'s argument answers zero, whatever a call of `identity` needs.
+/// At false the return inside `identity`'s argument answers zero, whatever a
+/// call of `identity` needs.
 def returnsPast(
   spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
 ) -> post(Int 0) -> wpFn(spec, exampleBody, False, post) =
   exampleReturnsPast spec post
 
-/// From the free list of `order`, `pop` answers its head and leaves the rest free.
+/// From the free list of `order`, `pop` answers its head and leaves
+/// the rest free.
 def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt(
   blocks,
   heads,

@@ -1,5 +1,5 @@
 /// `DirectedCell`: a directed cell `-->` between two terms of a `data` block.
-@[ refuses("DirectedCell") ]
+@[refuses("DirectedCell")]
 data Circle : Type where
   | Base : Circle
   | loop : Base --> Base

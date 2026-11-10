@@ -13,7 +13,7 @@ import "./top-level-type.gandr";
 def innerBand : Band = *{low = 400000, high = 600000};
 
 /// `innerWidth` reads the imported width.
-@[ runs("200000") ]
+@[runs("200000")]
 def innerWidth() -> Integer { width innerBand }
 
 /// `innerBounds` applies imported family `Twice`.

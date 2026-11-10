@@ -1,3 +1,4 @@
-/// `OutOfFragment.Misplaced`: the universe of representable sorts written as a declaration's type, outside the theory sort member it classifies.
-@[ refuses("OutOfFragment.Misplaced") ]
-def universeOutside : Type+ ;
+/// `OutOfFragment.Misplaced`: the universe of representable sorts written as a
+/// declaration's type, outside the theory sort member it classifies.
+@[refuses("OutOfFragment.Misplaced")]
+def universeOutside : Type+;

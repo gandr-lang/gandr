@@ -1,18 +1,19 @@
-/// `OutOfFragment.Arity`: a form out of the fragment: the form is a former of this sort, offered a number of operands it does not take.
+/// `OutOfFragment.Arity`: a form out of the fragment: the form is a former of
+/// this sort, offered a number of operands it does not take.
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ checks ]
+@[checks]
 data U : Type where
   | NatC : U
   | Arrow : (a : U, b : U) --> U
 
-@[ checks ]
+@[checks]
 def rec el(u : U) -> -F Type =
   match u where
     | NatC => return Nat
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 
-@[ refuses("OutOfFragment.Arity") ]
+@[refuses("OutOfFragment.Arity")]
 def unapplied(c : U) -> -F el { return c }

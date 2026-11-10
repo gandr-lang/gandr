@@ -19,7 +19,7 @@ module Facts : *{
   total : Integer
 } where
   def base = 40;
-  module inner : *{ answer : Integer } where
+  module inner : *{answer : Integer} where
     def answer = base + 1;
 
   def total = inner.answer + 1;

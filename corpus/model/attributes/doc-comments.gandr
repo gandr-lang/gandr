@@ -14,7 +14,7 @@ def identity(x : Integer) -> Integer =
   x
 
 // Documented by the attribute, linking back to `identity`.
-@[ checks, doc("Returns its argument, as [identity] does.") ]
+@[checks, doc("Returns its argument, as [identity] does.")]
 def echo(x : Integer) -> Integer =
   x
 
@@ -25,5 +25,5 @@ def cited(x : Integer) -> Integer =
   x
 
 /// Points at [missing], which nothing declares.
-@[ refuses("UnresolvedDocLink") ]
+@[refuses("UnresolvedDocLink")]
 def stale = 1;

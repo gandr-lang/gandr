@@ -232,7 +232,7 @@ module Tally15 : Model(Count) where
   def read(c : Tag15) -> Integer { 15 }
 
 /// Each mark forces its own tally: the readings add up to 0 + 1 + … + 15.
-@[ runs("120") ]
+@[runs("120")]
 def summed() -> Integer =
   advanced Mark0
     + advanced Mark1

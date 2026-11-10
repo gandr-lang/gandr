@@ -17,5 +17,5 @@ def sum_first() -> Integer =
   7
 
 /// A call of `sum_first`.
-@[ runs("7") ]
+@[runs("7")]
 def first_summed() -> Integer { sum_first () }

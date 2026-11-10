@@ -53,14 +53,14 @@ def decoded_flag : decoded(ofFlag("a" == "a")) = "x";
 def decoded_unequal : decoded(ofFlag(7 != 8)) = "x";
 
 /// The wrong answer is refused.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def texts_wrong : Path[.A = Bool]("a" == "a", false) = Path.here false;
 
 /// A test over a parameter stays a call.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def held(s : String) -> Path[.A = Bool](s == "a", false) =
   Path.here false
 
 /// An ordering of literals stays opaque.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def literals_ordered : Path[.A = Bool](1 < 2, true) = Path.here true;

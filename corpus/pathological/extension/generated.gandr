@@ -9,9 +9,9 @@
 
 /// `outCellp(inCell(yq))` reads `zero` by the boundary and `yq` by the
 /// written rule.
-@[ refuses("RulesUncompleted") ]
+@[refuses("RulesUncompleted")]
 theory Leaked where
-  boundary Two { p, q };
+  boundary Two {p, q};
   face left = {p};
   sort Val : Type;
 

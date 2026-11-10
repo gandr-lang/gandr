@@ -15,7 +15,7 @@ data Two : Type where
 
 /// A node consuming its family at another argument than its parameter:
 /// `Lop(Two)` stands left of the arrow where no stage reaches.
-@[ refuses("NegativeOccurrence") ]
+@[refuses("NegativeOccurrence")]
 data Lop(a : Type) : Type where
   | MkLop : (f : Lop Two -> Two) --> Lop a
 
@@ -24,12 +24,12 @@ data Lop(a : Type) : Type where
 /// the arrow, and the block is refused whole.
 rec {
   /// A node consuming its own family through `hidden`.
-  @[ refuses("NegativeOccurrence") ]
+  @[refuses("NegativeOccurrence")]
   data Hidden : Type where {
     | MkH : (f : hidden -> Two) --> Hidden
   }
 
   /// The family, named by a definition of its block, refused with it.
-  @[ refuses("NegativeOccurrence") ]
+  @[refuses("NegativeOccurrence")]
   def hidden : Type = Hidden;
 }

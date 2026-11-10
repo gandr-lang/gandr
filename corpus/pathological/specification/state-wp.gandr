@@ -7,7 +7,7 @@ import "../../model/effects/state.gandr";
 /// A store observed as keeping the state it replaces: a read after the store
 /// sees the old state through these clauses and the stored value by put-get,
 /// so the scope is no model of the laws.
-@[ refuses("HandlerUnlawful") ]
+@[refuses("HandlerUnlawful")]
 def incrForgetful() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
     let n = st.get ();

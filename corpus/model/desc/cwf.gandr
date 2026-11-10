@@ -131,13 +131,13 @@ pub module Standard : Model(CwF) where
 def flags(_n : Integer) -> Type { return Bool }
 
 /// The newest variable reads the second point of a pair.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def newest() -> Bool =
   let read = Standard.q Integer flags
   read (3, true)
 
 /// Weakening reads the first point of a pair.
-@[ runs("3") ]
+@[runs("3")]
 def weakened() -> Integer =
   let read = Standard.p Integer flags
   read (3, false)
@@ -158,9 +158,9 @@ def rec lastIndices(chain : Theory) -> Integer =
     | _ => 0
 
 /// The CwF declares four sorts.
-@[ runs("4") ]
+@[runs("4")]
 def sorts() -> Integer { match CwF { | Presents(s, _o, _r) => links s | _ => 0 } }
 
 /// `Tm` has two index ports: a context and a type in it.
-@[ runs("2") ]
+@[runs("2")]
 def termIndices() -> Integer { match CwF { | Presents(s, _o, _r) => lastIndices s | _ => 0 } }

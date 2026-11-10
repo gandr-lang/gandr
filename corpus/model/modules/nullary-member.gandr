@@ -14,9 +14,9 @@ module Origin where
   def zero() -> Integer { 0 }
 
 /// `started` calls `Origin.zero`.
-@[ runs("0") ]
+@[runs("0")]
 def started() -> Integer { Origin.zero () }
 
 /// `restarted` calls `started`.
-@[ runs("0") ]
+@[runs("0")]
 def restarted() -> Integer { started () }

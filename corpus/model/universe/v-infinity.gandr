@@ -13,56 +13,56 @@ import "../data/empty.gandr";
 import "../data/data-base.gandr";
 
 /// A set has a member type and a member function.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 data Vinf : Type[+, 1] where
   | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
 
 /// An ordinal has a family of smaller ordinals.
-@[ checks ]
+@[checks]
 data Ord : Type[+, 1] where
   | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
 
 /// The rank function folds ranks over set members.
-@[ checks ]
+@[checks]
 def rec rank(v : Vinf) -> -F Ord =
   match v where
     | Sup(a, f) => Lim a (thunk { fun (x) { rank[<] (f x) } })
 
 /// The members function returns a set's member type.
-@[ checks ]
+@[checks]
 def members(v : Vinf) -> -F Type =
   match v where
     | Sup(a, f) => return a
 
 /// The `Lone` type has one element.
-@[ checks ]
+@[checks]
 data Lone : Type where
   | Pt : Lone
 
 /// An empty value defines a set.
-@[ checks ]
+@[checks]
 def absurdSet(e : Empty) -> -F Vinf =
   match e {}
 
 /// The `none` function has no member to select.
-@[ checks ]
+@[checks]
 def none(x : Empty) -> -F Vinf { absurdSet x }
 
 /// The `zero` definition is the empty set.
-@[ checks ]
+@[checks]
 def zero : Vinf;
 def zero = Sup Empty none;
 
 /// The `single` function defines a one-member set.
-@[ checks ]
+@[checks]
 def single(v : Vinf) -> -F Vinf =
   Sup Lone (thunk { fun (x) { v } })
 
 /// The `pair` function defines a two-member set.
-@[ checks ]
+@[checks]
 def pair(v : Vinf, w : Vinf) -> -F Vinf =
   Sup Two (thunk { fun (x) { match x -> -F Vinf { | L => v | R => w } } })
 
 /// The `ranked` function ranks the singleton empty set.
-@[ checks ]
+@[checks]
 def ranked() -> -F Ord { let v = single zero; rank v }

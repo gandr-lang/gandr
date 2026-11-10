@@ -26,7 +26,7 @@ pub def rec double(n : Nat) -> Nat =
     | Succ(m) => plusTwo (double[<] m)
 
 /// Two doubled.
-@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
 def doubledTwo : () -> Nat = double two;
 
 /// `doubleStep` states `double` with the `plusTwo` call.

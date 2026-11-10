@@ -1,8 +1,8 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:34:3
    │
-34 │   boundary Line { a, b };
-   │   ━━━━━━━━━━━━━━━━━━━━━━ out of place
+34 │   boundary Line {a, b};
+   │   ━━━━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `TwoBoundaries` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
@@ -10,8 +10,8 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
 error[MalformedForm]: this keyword is retired here, and `boundary` replaces it
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:41:3
    │
-41 │   shape Square : 4 { left = {0, 2}; };
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a retired keyword
+41 │   shape Square : 4 {left = {0, 2};};
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a retired keyword
    │
    ├ note: `Retired` is refused with MalformedForm, as its expectation states
    ╰ help: write `boundary` in place of the retired keyword
@@ -29,7 +29,7 @@ error[IllFormedDescription]: the boundary `Square` names the face `left` twice
    ╭▸ corpus/pathological/desc/shaped-signature.gandr:17:1
    │
 17 │ ┏ theory Twice where
-18 │ ┃   boundary Square { a, b, c, d };
+18 │ ┃   boundary Square {a, b, c, d};
 19 │ ┃   face left = {a, c};
 20 │ ┃   face left = {b, d};
 21 │ ┃   sort Cell : Type;
@@ -39,12 +39,12 @@ error[IllFormedDescription]: the boundary `Square` names the face `left` twice
    ╰ help: give each face of the boundary its own name
 
 error[DuplicateDefinition]: `b` is defined twice
-   ╭▸ corpus/pathological/desc/shaped-signature.gandr:27:25
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:27:24
    │
-27 │   boundary Line { a, b, b };
-   │                      ┬  ━ written again here
-   │                      │
-   │                      first written here
+27 │   boundary Line {a, b, b};
+   │                     ┬  ━ written again here
+   │                     │
+   │                     first written here
    │
    ├ note: `Repeated` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `b` its own name, or delete one of them

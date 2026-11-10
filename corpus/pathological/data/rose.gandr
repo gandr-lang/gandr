@@ -22,7 +22,7 @@ data Test(a : Type) : Type where
 
 /// A node over a test of nodes: `Rose` nested under `Test`, whose parameter
 /// places nothing below the node.
-@[ refuses("NestedOccurrence") ]
+@[refuses("NestedOccurrence")]
 data Rose : Type where
   | Node : (kids : Test Rose) --> Rose
 
@@ -63,7 +63,7 @@ def rec sum(xs : List Nat) -> Nat =
 /// its own. The list holds the node at no stage below its own, so `map`'s
 /// element is the node's plain type, and `forged[<]` takes only nodes below
 /// the node's stage.
-@[ refuses("StageNotBelow") ]
+@[refuses("StageNotBelow")]
 def rec forged(t : Bush) -> Nat =
   match t where
     | Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List Bush) : List Bush)))

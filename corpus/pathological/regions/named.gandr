@@ -8,5 +8,5 @@
 //! - see: corpus/model/regions/lent.gandr — a region parameter in a kept type
 
 /// `named` returns its region parameter as though it were a value.
-@[ refuses("RegionAsValue") ]
+@[refuses("RegionAsValue")]
 def named[r : Region](k : (() -> Integer) at r) -> -F Integer { pure r }

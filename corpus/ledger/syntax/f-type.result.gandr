@@ -1,5 +1,5 @@
 /// `f_type.result`: a definition's result written as the row of the returner
 /// the lowering inserts and the value type after it, `-F [Partial] Unit`.
-@[ checks ]
+@[checks]
 def idle() -> [Partial] Unit =
   pure *{}

@@ -19,7 +19,7 @@ pub data Circle : Type where
   | loop : Base <-> Base
 
 /// The integer rules cancel each successor with a predecessor.
-@[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
+@[normalizes("S(S(P(P(S(Z))))) ~> S(Z)")]
 pub data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int

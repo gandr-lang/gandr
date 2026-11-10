@@ -1,5 +1,7 @@
 /// `termination-certificates`: Replayable termination certificates.
-/// Implemented: one termination evidence form, a path order's derivation over the precedence as data, replayed by the kernel for an operation's and a theory's rules and read by the front end and the cell layer.
+/// Implemented: one termination evidence form, a path order's derivation over
+/// the precedence as data, replayed by the kernel for an operation's and a
+/// theory's rules and read by the front end and the cell layer.
 /// Not implemented: a size measure for a fixpoint.
 ///
 /// - owes: #392
@@ -14,7 +16,7 @@
 //! [Huet-1980-confluent_reductions]: https://doi.org/10.1145/322217.322230 "Huet, Confluent reductions"
 
 /// The integers with their first rule written smaller side first.
-@[ normalizes("S(P(Z)) ~> Z") ]
+@[normalizes("S(P(Z)) ~> Z")]
 data IntEq : Type where {
   | Z : IntEq
   | S : (x : IntEq) --> IntEq

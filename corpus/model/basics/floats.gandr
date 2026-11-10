@@ -18,27 +18,27 @@ def low = (0.2 : f64);
 def trio = (3 : f64);
 
 /// The exponential of a half, the same double on every host.
-@[ runs("1.6487212707001282f64") ]
+@[runs("1.6487212707001282f64")]
 def grown() -> f64 =
   let e = float64.exp 0.5f64
   e
 
 /// A sum rounded to an integer: a tie goes to the even neighbour.
-@[ runs("2") ]
+@[runs("2")]
 def rounded() -> Integer =
   let sum = float64.add 1.25f64 (1.25 : f64)
   let whole = float64.round sum
   whole
 
 /// A third is less than a half.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def lesser() -> Bool =
   let third = float64.div 1f64 3f64
   let less = float64.lt third 0.5f64
   less
 
 /// An integer read as a float, scaled by a power of ten.
-@[ runs("12.5f64") ]
+@[runs("12.5f64")]
 def scaled() -> f64 =
   let whole = float64.from_integer 125
   let tenth = float64.mul whole 1e-1f64
@@ -46,17 +46,17 @@ def scaled() -> f64 =
 
 /// A negative float, written as the printers write one: the log-probability
 /// of a half, whose exponential is the half again.
-@[ runs("0.5f64") ]
+@[runs("0.5f64")]
 def restored() -> f64 =
   let logprob = - 0.6931471805599453f64
   let half = float64.exp logprob
   half
 
 /// The negation runs to the literal the printers write.
-@[ runs("-0.6931471805599453f64") ]
+@[runs("-0.6931471805599453f64")]
 def negative() -> f64 =
   - 0.6931471805599453f64
 
 /// `exponential` returns the exponential above.
-@[ runs("1.6487212707001282f64") ]
+@[runs("1.6487212707001282f64")]
 def exponential() -> f64 { grown () }

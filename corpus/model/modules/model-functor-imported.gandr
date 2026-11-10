@@ -11,5 +11,5 @@ import "./model-functor.gandr";
 module ImportedSquared = Squaring(Times);
 
 /// `sixteen` squares four through `ImportedSquared`.
-@[ runs("16") ]
+@[runs("16")]
 def sixteen() -> Integer { ImportedSquared.square 4 }

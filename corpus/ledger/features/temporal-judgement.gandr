@@ -1,6 +1,9 @@
 /// `temporal-judgement`: The temporal judgement (logical time as a web).
-/// Implemented: a binary session's logical time as a two-colour causal web, a recorded dialogue admitted exactly when its order linearizes the web, and `dialogue(left(…), right(…), …) : Dialogue(S)`.
-/// Not implemented: the deep-inference wing beyond the binary web: the subatomic rule scheme, the graphical layer and sharing policy.
+/// Implemented: a binary session's logical time as a two-colour causal web, a
+/// recorded dialogue admitted exactly when its order linearizes the web, and
+/// `dialogue(left(…), right(…), …) : Dialogue(S)`.
+/// Not implemented: the deep-inference wing beyond the binary web: the
+/// subatomic rule scheme, the graphical layer and sharing policy.
 ///
 /// - owes: #316
 //! A seat's dialogue with its operator: both endpoints' moves in the one order
@@ -18,10 +21,10 @@
 //! [Gallai-1967-transitiv_orientierbare_graphen]: https://doi.org/10.1007/BF02020961 "Gallai, Transitiv orientierbare Graphen"
 
 // The native session formers.
-import std.session (Dialogue) ;
+import std.session (Dialogue);
 
 // The seat's protocol and its messages.
-import "../../model/sessions/seat-base.gandr" ;
+import "../../model/sessions/seat-base.gandr";
 // The modular decomposition of a dialogue's web.
 import std.buffer (Web);
 
@@ -29,34 +32,74 @@ import std.buffer (Web);
 /// logged before the operator takes the choice. Its web is series-parallel:
 /// the seat's report beside the operator's choice, then the seat's tail
 /// beside the operator's close.
-@[ decomposes(
-  series (event right 0) (event left 0) (event left 1) (parallel (event left 2) (event right 1)) (event right 2) (event right 3) (parallel (series (event left 3) (event left 4)) (event right 4))
-) ]
-def retiring : Dialogue Seat.SeatEnd = dialogue (right (sent Seat.task)) (left (received Seat.task)) (left (selected report)) (left (sent Seat.progress)) (right (offered report)) (right (received Seat.progress)) (right (selected retire)) (left (offered retire)) (left closed) (right closed) ;
+@[decomposes(
+  series
+    (event right 0)
+    (event left 0)
+    (event left 1)
+    (parallel (event left 2) (event right 1))
+    (event right 2)
+    (event right 3)
+    (parallel (series (event left 3) (event left 4)) (event right 4))
+)]
+def retiring : Dialogue Seat.SeatEnd = dialogue
+  (right (sent Seat.task))
+  (left (received Seat.task))
+  (left (selected report))
+  (left (sent Seat.progress))
+  (right (offered report))
+  (right (received Seat.progress))
+  (right (selected retire))
+  (left (offered retire))
+  (left closed)
+  (right closed);
 
 /// The same play, the operator taking the choice before the seat's report is
 /// logged: the two moves are independent, so the log reads back the web
 /// `retiring` does, stated here by its prime count alone: series-parallel, it
 /// has no prime node.
-@[ decomposes(primes = 0) ]
-def retiringLater : Dialogue Seat.SeatEnd = dialogue (right (sent Seat.task)) (left (received Seat.task)) (left (selected report)) (right (offered report)) (left (sent Seat.progress)) (right (received Seat.progress)) (right (selected retire)) (left (offered retire)) (right closed) (left closed) ;
+@[decomposes(primes = 0)]
+def retiringLater : Dialogue Seat.SeatEnd = dialogue
+  (right (sent Seat.task))
+  (left (received Seat.task))
+  (left (selected report))
+  (right (offered report))
+  (left (sent Seat.progress))
+  (right (received Seat.progress))
+  (right (selected retire))
+  (left (offered retire))
+  (right closed)
+  (left closed);
 
 /// The two logs are one dialogue: they share every endpoint's moves and
 /// every send's receipt, so the path is reflexivity.
-@[ checks ]
-def commuted : Path[.A = Dialogue Seat.SeatEnd](retiring, retiringLater) = Path.here retiring ;
+@[checks]
+def commuted : Path[.A = Dialogue Seat.SeatEnd](retiring, retiringLater) = Path.here retiring;
 
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
-@[ checks ]
-def sameWeb : Path[.A = Web](decompose retiring, decompose retiringLater) = Path.here (decompose retiring) ;
+@[checks]
+def sameWeb : Path[.A = Web](decompose retiring, decompose retiringLater) = Path.here
+  (decompose retiring);
 
 /// A dialogue that hands off: the seat's notes sent before the operator takes
 /// the choice. Its web leaves a prime node: the seat's notes precede its
 /// close and the operator's receipt, the operator's choice precedes only the
 /// receipt, and no module of the four joins them — the N-shape, the
 /// operator's receipt and close one factor.
-@[ decomposes(
-  series (event right 0) (event left 0) (event left 1) (prime (event left 2) (event left 3) (event right 1) (series (event right 2) (event right 3)))
-) ]
-def handedOff : Dialogue Seat.SeatEnd = dialogue (right (sent Seat.task)) (left (received Seat.task)) (left (selected handoff)) (left (sent Seat.notes)) (left closed) (right (offered handoff)) (right (received Seat.notes)) (right closed) ;
+@[decomposes(
+  series
+    (event right 0)
+    (event left 0)
+    (event left 1)
+    (prime (event left 2) (event left 3) (event right 1) (series (event right 2) (event right 3)))
+)]
+def handedOff : Dialogue Seat.SeatEnd = dialogue
+  (right (sent Seat.task))
+  (left (received Seat.task))
+  (left (selected handoff))
+  (left (sent Seat.notes))
+  (left closed)
+  (right (offered handoff))
+  (right (received Seat.notes))
+  (right closed);

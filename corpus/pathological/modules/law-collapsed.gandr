@@ -27,12 +27,12 @@ theory Collapsed where
 /// Two integers differ, so no proof exists and no host asserts one.
 module CollapsedInteger : Model(Collapsed) with sort Loop = Integer where {
   /// The admission names a law the host does not assert.
-  @[ refuses("UnprovenLaw.Admitted") ]
+  @[refuses("UnprovenLaw.Admitted")]
   law one = ~admitted;
 }
 
 /// A rule from a variable would identify every loop with the trivial one.
-@[ refuses("UndescribedMember.LhsNotOperation") ]
+@[refuses("UndescribedMember.LhsNotOperation")]
 theory RuledK where
   /// The carrier.
   sort Carrier : Type;
@@ -42,7 +42,7 @@ theory RuledK where
   rule k : p ==> loop p;
 
 /// K for the native identity at the carrier, as a law.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory WithK where
   /// The carrier.
   sort Carrier : Type;

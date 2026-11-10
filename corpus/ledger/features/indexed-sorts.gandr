@@ -1,6 +1,10 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
-/// Implemented: a `theory` block and `Model(S)` index a sort by earlier sorts or by the host's types. A model states each such sort as a family into a universe, and a member reads an earlier member applied. A client reaches a model's family through the model's name.
-/// Not implemented: rules over dependent sorts, and a model's law whose sides sort only modulo an earlier law.
+/// Implemented: a `theory` block and `Model(S)` index a sort by earlier sorts
+/// or by the host's types. A model states each such sort as a family into a
+/// universe, and a member reads an earlier member applied. A client reaches a
+/// model's family through the model's name.
+/// Not implemented: rules over dependent sorts, and a model's law whose sides
+/// sort only modulo an earlier law.
 ///
 /// - owes: #5016
 /// - owes: #5017
@@ -11,7 +15,7 @@ import std.list (List);
 
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
-@[ checks ]
+@[checks]
 theory CatShape where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
@@ -26,11 +30,11 @@ module SetoidCat : Model(CatShape) where {
   type Hom(a : Ob, b : Ob) = a -> b;
 
   /// The identity function at a type.
-  @[ runs("fun (a) { fun (b) { b } }") ]
+  @[runs("fun (a) { fun (b) { b } }")]
   def ident(t : Type, x : t) -> t { x }
 
   /// Composition of two functions, applied.
-  @[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }") ]
+  @[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
   def compose(
     t : Type,
     u : Type,
@@ -43,11 +47,11 @@ module SetoidCat : Model(CatShape) where {
 
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
-  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)") ]
+  @[runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)")]
   def id(t : Type) -> t -> t { thunk { ident t } }
 
   /// Composition likewise runs through the hidden `compose`.
-  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)") ]
+  @[runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)")]
   def comp(
     t : Type,
     u : Type,
@@ -76,7 +80,7 @@ module Lists : Model(Carrier) where
 
 /// A client reaches the model's family through the model's name: `Lists.T`
 /// at `Integer` is the list of integers.
-@[ checks ]
+@[checks]
 def kept(xs : Lists.T(Integer)) -> List Integer { xs }
 
 /// A carrier into the computation types: `Type[-]` classifies the sort, so a

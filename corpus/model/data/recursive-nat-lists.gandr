@@ -69,60 +69,60 @@ def rec map_nat_run(f : Nat -> Nat, xs : List Nat) -> List Nat =
     | Cons(x, rest) => (Cons (run f x) (run map_nat_run[<] f rest) : List Nat)
 
 /// Two, then zero.
-@[ runs("Cons (Succ (Succ Zero)) (Cons Zero Nil)") ]
+@[runs("Cons (Succ (Succ Zero)) (Cons Zero Nil)")]
 def small : List Nat = (Cons two (Cons Zero (Nil : List Nat) : List Nat) : List Nat);
 
 /// This definition returns the successor.
-@[ runs("fun (a) { Succ a }") ]
+@[runs("fun (a) { Succ a }")]
 def bump(n : Nat) -> Nat { Succ n }
 
 /// The successor, the `return` elided.
-@[ runs("fun (a) { Succ a }") ]
+@[runs("fun (a) { Succ a }")]
 def bump_elided(n : Nat) -> Nat { Succ n }
 
 /// The length of `small`.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def counted() -> Nat { length_nat small }
 
 /// The length of `small`, the `return`s elided.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def counted_elided : () -> Nat = length_nat_elided small;
 
 /// The length of `small`, through the fold whose element type is implicit:
 /// the call omits `a`, and `small` determines it.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def counted_implicit() -> Nat { length_implicit small }
 
 /// `small` with three appended at its head.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))")]
 def joined() -> List Nat =
   append_nat small (Cons three (Nil : List Nat) : List Nat)
 
 /// The same append, the `return`s elided.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))")]
 def joined_elided : () -> List Nat = append_nat_elided
   small
   (Cons three (Nil : List Nat) : List Nat);
 
 /// The same append, through the fold whose element type is implicit.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))")]
 def joined_implicit() -> List Nat =
   append_implicit small (Cons three (Nil : List Nat) : List Nat)
 
 /// Each element of `small` bumped.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)")]
 def bumped() -> List Nat { map_nat bump small }
 
 /// The same map, the `return`s elided.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)")]
 def bumped_elided : () -> List Nat = map_nat_elided bump_elided small;
 
 /// The same map, the calls nested.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)")]
 def bumped_nested : () -> List Nat = map_nat_nested bump small;
 
 /// The same map, the calls run in the fields.
-@[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)") ]
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)")]
 def bumped_run : () -> List Nat = map_nat_run bump small;
 
 /// This definition returns the length of `small` at its element type.

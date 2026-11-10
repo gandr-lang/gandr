@@ -1,4 +1,4 @@
-module Two :> *{ type U, type T, seed : T, next : T -> T } where {
+module Two :> *{type U, type T, seed : T, next : T -> T} where {
   type U = String;
   type T = Integer;
   def seed = 0;

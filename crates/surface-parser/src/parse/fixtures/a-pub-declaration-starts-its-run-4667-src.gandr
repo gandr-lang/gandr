@@ -7,7 +7,7 @@ pub def rec two(n : Nat) -> Nat =
     | Zero => Zero
     | Succ(m) => two[<] m
 
-@[ checks ]
+@[checks]
 pub data Bit : Type where
   | Off : Bit
   | On : Bit

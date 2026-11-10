@@ -14,7 +14,7 @@ import std.process;
 def one() -> Integer =
   1
 
-@[ refuses("AcrossHandler") ]
+@[refuses("AcrossHandler")]
 def became() -> -F Integer =
   handle c : std.process.Exit.Eff {
     become one ()

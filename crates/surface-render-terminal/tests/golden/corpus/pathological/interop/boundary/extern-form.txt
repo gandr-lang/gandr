@@ -8,10 +8,10 @@ error[OutOfFragment.extern_block]: the extern block is not supported yet
    ╰ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
 
 error[BoundaryUnrealised.Size]: a type a member of the block declares differs in size from its row's
-   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:36:4
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:36:3
    │
-36 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
-   │    ━━━━━━━━━━━━━━━━ a row the block's members do not realise
+36 │ @[boundary(addRow), refuses("BoundaryUnrealised.Size")]
+   │   ━━━━━━━━━━━━━━━━ a row the block's members do not realise
    │
    ├ note: `Counted` is refused with BoundaryUnrealised.Size, as its expectation states
    ╰ help: make each member type have the size its boundary row states

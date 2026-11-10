@@ -20,27 +20,27 @@
 pub def same[a : Type](y : a) -> a { y }
 
 /// `same` at the integers, supplied by name.
-@[ runs("3") ]
+@[runs("3")]
 def sameRun() -> Integer { same[.a = Integer] 3 }
 
 /// `same` with its implicit omitted: the argument `3` determines `a`.
-@[ runs("3") ]
+@[runs("3")]
 def sameInferred() -> Integer { same 3 }
 
 /// The first of two values of two types, both implicit.
 def first[a : Type, b : Type](x : a, y : b) -> a { x }
 
 /// `first` supplied with its implicits in the written order.
-@[ runs("5") ]
+@[runs("5")]
 def firstRun() -> Integer { first[.a = Integer, .b = Unit] 5 (*{}) }
 
 /// `first` supplied with its implicits the other way round: a resident names
 /// its implicit, so the order the slot writes them in is free.
-@[ runs("5") ]
+@[runs("5")]
 def firstSwapped() -> Integer { first[.b = Unit, .a = Integer] 5 (*{}) }
 
 /// `first` with both implicits omitted, each determined by its own argument.
-@[ runs("5") ]
+@[runs("5")]
 def firstInferred() -> Integer { first 5 (*{}) }
 
 /// An implicit whose type names an explicit parameter written after it: the
@@ -48,7 +48,7 @@ def firstInferred() -> Integer { first 5 (*{}) }
 pub def chosen[x : t](t : Type) -> t { x }
 
 /// `chosen` at the integers, its implicit supplied by name.
-@[ runs("7") ]
+@[runs("7")]
 def chosenRun() -> Integer { chosen[.x = 7] Integer }
 
 /// A stage and an implicit in one telescope: the stage quantifies the
@@ -56,12 +56,12 @@ def chosenRun() -> Integer { chosen[.x = 7] Integer }
 def kept[i : Size, a : Type](n : Integer, y : a) -> a { y }
 
 /// `kept` with its implicit supplied by name.
-@[ runs("4") ]
+@[runs("4")]
 def keptRun() -> Integer { kept[.a = Integer] 0 4 }
 
 /// `kept` with its implicit omitted: the stage binds no value, and the second
 /// argument determines `a`.
-@[ runs("4") ]
+@[runs("4")]
 def keptInferred() -> Integer { kept 0 4 }
 
 /// `same` called at a type the definition binds: the solution for `a` is the
@@ -78,7 +78,7 @@ pub def konst[b : Type](f : (t : Type, t) -> b) -> Integer { 1 }
 
 /// `konst` with its implicit omitted: the lambda returns an integer under its
 /// own binders, and `b` is solved as `Integer`, which names none of them.
-@[ runs("1") ]
+@[runs("1")]
 def konstInferred() -> Integer { konst (fun (t) { fun (y) { 0 } }) }
 
 /// A function applied to the integer it is passed.
@@ -86,7 +86,7 @@ def apply(f : Integer -> Integer, x : Integer) -> Integer { f x }
 
 /// `same` passed as a value, its implicit supplied where it is taken: the
 /// function applied to its implicits alone is a function of the rest.
-@[ runs("3") ]
+@[runs("3")]
 def passedRun() -> Integer { apply same[.a = Integer] 3 }
 
 /// A function applied to a value of the type it is passed, the function
@@ -99,13 +99,13 @@ def applyAt[g : t -> t](t : Type, v : t) -> t { g v }
 def identityAt : (t : Type, t) -> t = applyAt[.g = fun (y) { y }];
 
 /// `identityAt` at the integers.
-@[ runs("5") ]
+@[runs("5")]
 def identityRun() -> Integer { identityAt Integer 5 }
 
 /// The integers' addition, a member of a module.
 module Adding where {
   /// The sum of two integers.
-  @[ checks ]
+  @[checks]
   def plus(x : Integer, y : Integer) -> Integer { x + y }
 }
 
@@ -114,10 +114,10 @@ pub def twice[m : Type, combine : (m, m) -> m](x : m) -> m { combine x x }
 
 /// `twice` with its combination supplied by a module path: a resident's value
 /// runs to the slot's next `,` or its `]`.
-@[ runs("6") ]
+@[runs("6")]
 def twiceRun() -> Integer { twice[.m = Integer, .combine = Adding.plus] 3 }
 
 /// The explicit twin of `same`: the function `same`'s implicit makes explicit
 /// runs as the same curried function.
-@[ runs("fun (a) { fun (b) { b } }") ]
+@[runs("fun (a) { fun (b) { b } }")]
 def sameExplicit(a : Type, y : a) -> a { y }

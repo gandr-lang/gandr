@@ -10,7 +10,7 @@ import "../../model/desc/function-field.gandr";
 
 /// The number of stores a program makes, its reads answered with zero: two
 /// stores and one tell the law's sides apart.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec stores(p : Program) -> Integer =
   match p where
     | Done(_x) => 0

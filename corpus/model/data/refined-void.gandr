@@ -30,7 +30,7 @@ pub def absurdArm(n : Nat) -> (isVoid(n)) -> Nat =
     | Succ(_m) => return fun (_u) { return Zero }
 
 /// Past zero, the family is `Unit`, and the arm answers zero.
-@[ runs("Zero") ]
+@[runs("Zero")]
 def absurdPast() -> Nat =
   let arm = absurdArm (Succ Zero)
   arm *{}

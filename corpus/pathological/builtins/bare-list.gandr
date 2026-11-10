@@ -9,5 +9,5 @@
 // - see: #4520
 
 /// Two numbers in a list, the list type unimported.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def xs : List Integer = #[1, 2];

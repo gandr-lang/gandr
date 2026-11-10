@@ -15,7 +15,7 @@
 
 /// A held value returned to a statement that binds it: the binder states no
 /// type, and the read synthesises the slot's.
-@[ runs("3") ]
+@[runs("3")]
 def bound() -> Integer =
   var i = 3
   let k = i

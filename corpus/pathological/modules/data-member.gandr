@@ -18,13 +18,13 @@ module M where
     | B : (x : Integer) --> Box
 
 /// A constructor the module does not hold.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def nope : M.Box = M.Nope 1;
 
 /// A constructor the module's family does not declare.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def under : M.Box = M.Box.Nope 1;
 
 /// The module's constructor, which a client writes bare outside the module.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def bare : M.Box = B 3;

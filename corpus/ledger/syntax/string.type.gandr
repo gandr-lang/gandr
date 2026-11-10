@@ -4,5 +4,5 @@
 type Address = *{host : String, port : Integer};
 
 /// The port of an address whose host the bracket fixes.
-@[ checks ]
+@[checks]
 def port_of(a : Address[.host = "localhost"]) -> Integer { a.port }

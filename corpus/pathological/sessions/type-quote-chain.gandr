@@ -5,5 +5,5 @@
 // - see: #1127
 
 /// The stationary flow at a product, its argument written bare.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def bare_product : Flow[.A = Type](Unit * Integer, Unit * Integer) = Flow.stay (Unit * Integer);

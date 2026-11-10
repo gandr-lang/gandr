@@ -1,5 +1,6 @@
 /// `universe-families`: Value and computation universe families.
-/// Implemented: two universe families indexed by polarity and level over one level algebra, with an erased static core beneath the surface.
+/// Implemented: two universe families indexed by polarity and level over one
+/// level algebra, with an erased static core beneath the surface.
 /// Not implemented: the rest of the classifier arc.
 ///
 /// - owes: #315
@@ -12,30 +13,30 @@
 // `implicit-telescope.gandr`'s.
 
 /// Apply a type operator to a type.
-@[ checks ]
-def apply : (Type -> Type) -> Type -> Type = fun (F) { fun (X) { F X } } ;
+@[checks]
+def apply : (Type -> Type) -> Type -> Type = fun (F) { fun (X) { F X } };
 
 /// The type of pairs of one type.
-@[ checks ]
-def twice : Type -> Type = fun (Y) { type(Y * Y) } ;
+@[checks]
+def twice : Type -> Type = fun (Y) { type(Y * Y) };
 
 /// The sum of a pair whose type is an operator applied twice over. Both
 /// binders are used: an unused one has no type entry under a static
 /// application.
-@[ checks ]
+@[checks]
 def sum(p : apply(twice, Integer)) -> Integer =
   match p where
     | *{a, b} => a + b
 
 /// `sum` at a pair of integers runs as at `Integer * Integer`.
-@[ runs("3") ]
+@[runs("3")]
 def sumRun() -> Integer { sum (1, 2) }
 
 /// A pair returned at an operator's type.
-@[ checks ]
+@[checks]
 def doubled(n : Integer) -> twice(Integer) =
   *{n, n}
 
 /// `doubled` runs to the pair the operator's reduct types.
-@[ runs("*{4, 4}") ]
+@[runs("*{4, 4}")]
 def doubledRun() -> twice(Integer) { doubled 4 }

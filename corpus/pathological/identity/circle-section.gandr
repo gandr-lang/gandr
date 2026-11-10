@@ -44,7 +44,7 @@ def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base)
 /// typed at the motive at `q`, where the arm owes the motive at `loop ∷ q`:
 /// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The two path types do
 /// not convert, and the arm is refused.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   spin (wind p),
   p
@@ -60,7 +60,7 @@ def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle]
 /// q)`, which is
 /// not the path at `q` the cancellation's right side reads. Read as a set,
 /// the loops would identify the two; the words are not read as one.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   p,
   p

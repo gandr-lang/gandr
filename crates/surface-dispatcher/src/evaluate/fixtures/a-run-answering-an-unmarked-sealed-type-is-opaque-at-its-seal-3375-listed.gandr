@@ -1,13 +1,13 @@
 import std.list (List);
-pub module Secret :> *{ type T, seal : String -> T } where {
+pub module Secret :> *{type T, seal : String -> T} where {
   type T = String;
   def seal(text : String) -> String { text }
 }
-pub module Counter :> *{ type T, zero : T } where {
+pub module Counter :> *{type T, zero : T} where {
   type T = Integer;
   def zero = 0;
 }
-pub module Seat :> *{ mobile type Report, progress : Report } where {
+pub module Seat :> *{mobile type Report, progress : Report} where {
   type Report = String;
   def progress = "progress";
 }

@@ -12,7 +12,7 @@
 /// - see: corpus/model/identity/loop-space.gandr
 
 /// The `Words` type has loop letters and two cancellation rules.
-@[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)") ]
+@[normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)")]
 pub data Words : Type where {
   | Nil : Words
   | Loop : (x : Words) --> Words
@@ -26,7 +26,7 @@ pub def around(c : Words) -> Words =
   Loop c
 
 /// The run returns the constructed word.
-@[ runs("Loop (Loop Nil)") ]
+@[runs("Loop (Loop Nil)")]
 def built() -> Words { around (Loop Nil) }
 
 /// Conversion reduces a cancelled loop word.
@@ -39,11 +39,11 @@ def respelled : Path[.A = Words](Loop Nil, Loop Nil) = cancelled_word;
 def both_cancel : Path[.A = Words](Unloop (Loop Nil), Loop (Unloop Nil)) = Path.here Nil;
 
 /// No rule identifies a loop with the empty word.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def loop_not_nil : Path[.A = Words](Loop Nil, Nil) = Path.here Nil;
 
 /// The `tell_words` function refuses the cancellation rule.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def tell_words(c : Words) -> Integer =
   match c where
     | Nil => 0
@@ -52,7 +52,7 @@ def tell_words(c : Words) -> Integer =
 
 /// The refused fold cannot carry the cancellation path to a path from
 /// two to one.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def two_is_one() -> Path[.A = Integer](2, 1) =
   Path.ap tell_words both_cancel
 
@@ -66,7 +66,7 @@ def rec mirror(c : Words) -> Words =
     | Unloop(x) => Loop (mirror[<] x)
 
 /// The mirror of a loop is one inverse loop.
-@[ runs("Unloop Nil") ]
+@[runs("Unloop Nil")]
 def mirrored() -> Words { mirror (Loop Nil) }
 
 /// Conversion gives the same mirror result for the cancelled word.

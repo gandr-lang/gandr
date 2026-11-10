@@ -1,13 +1,13 @@
 error[UndescribedMember.ParallelRedexes]: this member is a circuit rule rewriting two redexes at once, which has no single whiskered composite yet
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.ParallelRedexes.gandr:7:3
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.ParallelRedexes.gandr:8:3
    │
- 7 │ ┏   rule cong2 : (
- 8 │ ┃     rule p : Nat ==> Nat,
- 9 │ ┃     rule q : Nat ==> Nat,
-10 │ ┃     data x : Nat,
+ 8 │ ┏   rule cong2 : (
+ 9 │ ┃     rule p : Nat ==> Nat,
+10 │ ┃     rule q : Nat ==> Nat,
+11 │ ┃     data x : Nat,
    ┆ ┇
-15 │ ┃     node : add(x′, y′) --> (z);
-16 │ ┃   };
+16 │ ┃     node : add(x′, y′) --> (z);
+17 │ ┃   };
    │ ┗━━━┛ a member the description does not read
    │
    ├ note: `Nat` is refused with UndescribedMember.ParallelRedexes, as its expectation states

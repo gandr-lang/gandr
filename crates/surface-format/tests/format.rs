@@ -170,6 +170,12 @@ fn attributes_and_documentation_keep_their_lines()
 }
 
 #[test]
+fn bracketed_field_member_and_binder_lists_hug_their_contents()
+{
+    golden(Path::new("brackets"));
+}
+
+#[test]
 fn a_block_members_documentation_stays_before_its_member()
 {
     golden(Path::new("members"));
