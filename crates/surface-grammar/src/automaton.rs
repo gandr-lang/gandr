@@ -100,7 +100,7 @@ use crate::mold::MoldTable;
 use crate::mold::StepSym;
 
 /// How many sorts a hole can hold: the [`Sort`] tags run below it.
-const SORTS: usize = 7;
+const SORTS: usize = 8;
 
 /// How many tile sets the table holds: a fill and an absorb set per sort,
 /// and four more.
@@ -115,6 +115,7 @@ const SETS: [TileSet; SET_COUNT] = [
     TileSet::Fills(Sort::Instantiation),
     TileSet::Fills(Sort::ModuleMember),
     TileSet::Fills(Sort::Block),
+    TileSet::Fills(Sort::TheoryMember),
     TileSet::Absorbs(Sort::Item),
     TileSet::Absorbs(Sort::Pattern),
     TileSet::Absorbs(Sort::Expression),
@@ -122,6 +123,7 @@ const SETS: [TileSet; SET_COUNT] = [
     TileSet::Absorbs(Sort::Instantiation),
     TileSet::Absorbs(Sort::ModuleMember),
     TileSet::Absorbs(Sort::Block),
+    TileSet::Absorbs(Sort::TheoryMember),
     TileSet::Prefixes,
     TileSet::LeftOperators,
     TileSet::FirstMids,
@@ -220,17 +222,19 @@ impl TileSet
             Self::Fills(Sort::Instantiation) => 4,
             Self::Fills(Sort::ModuleMember) => 5,
             Self::Fills(Sort::Block) => 6,
-            Self::Absorbs(Sort::Item) => 7,
-            Self::Absorbs(Sort::Pattern) => 8,
-            Self::Absorbs(Sort::Expression) => 9,
-            Self::Absorbs(Sort::Type) => 10,
-            Self::Absorbs(Sort::Instantiation) => 11,
-            Self::Absorbs(Sort::ModuleMember) => 12,
-            Self::Absorbs(Sort::Block) => 13,
-            Self::Prefixes => 14,
-            Self::LeftOperators => 15,
-            Self::FirstMids => 16,
-            Self::Continuations => 17,
+            Self::Fills(Sort::TheoryMember) => 7,
+            Self::Absorbs(Sort::Item) => 8,
+            Self::Absorbs(Sort::Pattern) => 9,
+            Self::Absorbs(Sort::Expression) => 10,
+            Self::Absorbs(Sort::Type) => 11,
+            Self::Absorbs(Sort::Instantiation) => 12,
+            Self::Absorbs(Sort::ModuleMember) => 13,
+            Self::Absorbs(Sort::Block) => 14,
+            Self::Absorbs(Sort::TheoryMember) => 15,
+            Self::Prefixes => 16,
+            Self::LeftOperators => 17,
+            Self::FirstMids => 18,
+            Self::Continuations => 19,
         })
     }
 }

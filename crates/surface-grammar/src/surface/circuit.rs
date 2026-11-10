@@ -63,6 +63,7 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
+use crate::Retirement;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -100,12 +101,13 @@ use crate::surface::term::inner_attr_block_inline;
 /// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 3 && rules.iter().zip(["theory_declaration", "circuit_declaration", "derived_rule_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && Some(rule.prec()) == precs.get(PrecName("item.singleton"))))) ]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 4 && rules.iter().zip(["theory_declaration", "shape_member", "circuit_declaration", "derived_rule_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && Some(rule.prec()) == precs.get(PrecName("item.singleton"))) && rules.get(1).is_some_and(|rule| rule.sort() == Sort::TheoryMember) && rules.iter().enumerate().all(|(index, rule)| index == 1 || rule.sort() == Sort::Item))) ]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
     let mut out = Vec::new();
     theory_declaration(&mut out, item);
+    shape_member(&mut out, item);
     circuit_declarations(&mut out, item);
     derived_rule_declaration(&mut out, item);
     Ok(out)
@@ -663,7 +665,7 @@ fn top_level_judgment() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 9 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include")))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "ext")))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law")))) && parts.get(7).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "boundary")))) && parts.get(8).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "face"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 9 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(Sort::TheoryMember)))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include")))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "ext")))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law")))) && parts.get(7).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "boundary")))) && parts.get(8).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "face"))))))]
 fn theory_member() -> Regex
 {
     alt([
@@ -688,27 +690,7 @@ fn theory_member() -> Regex
             signature(),
         ]),
         circuit_judgment(),
-        // `shape Square : 4 { left = {0, 2}; }` — the retired spelling of
-        // the shape parameter, read so the description refuses it by name.
-        seq([
-            t(TileLabel("shape")),
-            t(TileLabel("type_identifier")),
-            t(TileLabel(":")),
-            t(TileLabel("number")),
-            t(TileLabel("{")),
-            repeat(seq([
-                t(TileLabel("identifier")),
-                t(TileLabel("=")),
-                t(TileLabel("{")),
-                opt(seq([
-                    t(TileLabel("number")),
-                    repeat(seq([t(TileLabel(",")), t(TileLabel("number"))])),
-                ])),
-                t(TileLabel("}")),
-                t(TileLabel(";")),
-            ])),
-            t(TileLabel("}")),
-        ]),
+        h(Sort::TheoryMember),
         // `include Semigroup` — the members of a theory written before this
         // block, extended by the members after it.
         seq([t(TileLabel("include")), t(TileLabel("type_identifier"))]),
@@ -753,6 +735,51 @@ fn theory_member() -> Regex
             names(),
             t(TileLabel("}")),
         ]),
+    ])
+}
+fn shape_member(
+    out: &mut Vec<Rule>,
+    p: Prec,
+)
+{
+    out.push(
+        r(
+            RuleName("shape_member"),
+            Provenance("shape_member"),
+            Sort::TheoryMember,
+            p,
+            shape_member_form(),
+        )
+        .retired(Retirement::new(
+            "pathological/desc/shaped-signature.gandr",
+            "shape",
+            &["boundary", "face"],
+        )),
+    );
+}
+
+fn shape_member_form() -> Regex
+{
+    // `shape Square : 4 { left = {0, 2}; }` — the retired spelling of
+    // the shape parameter, read so the description refuses it by name.
+    seq([
+        t(TileLabel("shape")),
+        t(TileLabel("type_identifier")),
+        t(TileLabel(":")),
+        t(TileLabel("number")),
+        t(TileLabel("{")),
+        repeat(seq([
+            t(TileLabel("identifier")),
+            t(TileLabel("=")),
+            t(TileLabel("{")),
+            opt(seq([
+                t(TileLabel("number")),
+                repeat(seq([t(TileLabel(",")), t(TileLabel("number"))])),
+            ])),
+            t(TileLabel("}")),
+            t(TileLabel(";")),
+        ])),
+        t(TileLabel("}")),
     ])
 }
 

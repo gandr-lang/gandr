@@ -1137,7 +1137,9 @@ mod tests
         let committed_rules = ledger
             .rules
             .iter()
-            .filter(|row| row.standing == crate::ledger::Standing::Committed)
+            .filter(|row| {
+                row.standing == crate::ledger::Standing::Committed && row.retirement.is_none()
+            })
             .count();
         assert_eq!(
             report.verified,

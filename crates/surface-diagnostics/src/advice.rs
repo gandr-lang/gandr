@@ -61,6 +61,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::TileName;
 use gandr_surface_lowering::WfKind;
 use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::head_home;
@@ -647,6 +648,9 @@ fn malformed(
                 "write the operator `{}` in place of this run",
                 operator.as_ref()
             )
+        },
+        FormFault::Retired(TileName::BOUNDARY) => {
+            String::from("write a `boundary` and its `face` declarations in place of `shape`")
         },
         FormFault::Retired(keyword) => {
             format!(

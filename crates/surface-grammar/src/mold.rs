@@ -405,6 +405,7 @@ impl HoleSorts
             Sort::Instantiation => 0b1_0000,
             Sort::ModuleMember => 0b10_0000,
             Sort::Block => 0b100_0000,
+            Sort::TheoryMember => 0b1000_0000,
         })
     }
 
@@ -451,7 +452,8 @@ impl HoleSorts
             | Sort::Type
             | Sort::Instantiation
             | Sort::ModuleMember
-            | Sort::Block => self.0 & Self::of(sort).0 != 0,
+            | Sort::Block
+            | Sort::TheoryMember => self.0 & Self::of(sort).0 != 0,
         })
     }
 }

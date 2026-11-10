@@ -156,6 +156,7 @@ pub use crate::model::Provenance;
 pub use crate::model::Regex;
 pub use crate::model::RegexShape;
 pub use crate::model::RegexView;
+pub use crate::model::Retirement;
 pub use crate::model::Rule;
 pub use crate::model::RuleName;
 pub use crate::model::Sort;

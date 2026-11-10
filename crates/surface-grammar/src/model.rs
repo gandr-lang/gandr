@@ -237,6 +237,8 @@ pub enum Sort
     /// alternative is molded once for the block rather than once per form
     /// that opens one.
     Block,
+    /// A member of a theory declaration.
+    TheoryMember,
 }
 
 impl Sort
@@ -254,7 +256,7 @@ impl Sort
     ///   reordered, aliased or shifted discriminants; decoding rejection beyond
     ///   the closed set is checked separately.
     /// - witness: `tests::surface::sort_decode_contract`
-    #[spec(ensures: |ret| u16::from(ret) == match self { Self::Item => 0, Self::Pattern => 1, Self::Expression => 2, Self::Type => 3, Self::Instantiation => 4, Self::ModuleMember => 5, Self::Block => 6 })]
+    #[spec(ensures: |ret| u16::from(ret) == match self { Self::Item => 0, Self::Pattern => 1, Self::Expression => 2, Self::Type => 3, Self::Instantiation => 4, Self::ModuleMember => 5, Self::Block => 6, Self::TheoryMember => 7 })]
     #[inline]
     #[must_use]
     pub fn grout_sort(self) -> GroutSort
@@ -267,6 +269,7 @@ impl Sort
             Self::Instantiation => 4,
             Self::ModuleMember => 5,
             Self::Block => 6,
+            Self::TheoryMember => 7,
         })
     }
 
@@ -286,6 +289,7 @@ impl Sort
             Self::Instantiation => SortName("instantiation"),
             Self::ModuleMember => SortName("module_member"),
             Self::Block => SortName("block"),
+            Self::TheoryMember => SortName("theory_member"),
         }
     }
 
@@ -320,6 +324,7 @@ impl Sort
             4 => Ok(Self::Instantiation),
             5 => Ok(Self::ModuleMember),
             6 => Ok(Self::Block),
+            7 => Ok(Self::TheoryMember),
             _ => Err(PbgError::InvalidSort { sort }),
         }
     }
@@ -846,6 +851,36 @@ impl Adaptation
         }
     }
 }
+/// The replacement grammar forms for a retired rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Retirement
+{
+    /// The exemplar's path below `corpus/`.
+    pub exemplar: &'static str,
+    /// The retired form's former keyword.
+    pub former: &'static str,
+    /// The replacement form keywords.
+    pub replacements: &'static [&'static str],
+}
+
+impl Retirement
+{
+    /// Declares a retired rule's exemplar and replacements.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        exemplar: &'static str,
+        former: &'static str,
+        replacements: &'static [&'static str],
+    ) -> Self
+    {
+        Self {
+            exemplar,
+            former,
+            replacements,
+        }
+    }
+}
 
 /// One grammar rule: a named form of one sort at one precedence.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -863,6 +898,8 @@ pub struct Rule
     pub provenance: &'static str,
     /// Adaptation records, audit data only.
     pub adaptations: Vec<Adaptation>,
+    /// Retirement data when the rule remains parseable for its advice.
+    pub retirement: Option<Retirement>,
 }
 
 impl Rule
@@ -897,6 +934,7 @@ impl Rule
             prec,
             regex,
             adaptations: Vec::new(),
+            retirement: None,
         }
     }
 
@@ -921,7 +959,20 @@ impl Rule
             regex,
             provenance: provenance.0,
             adaptations: Vec::new(),
+            retirement: None,
         }
+    }
+
+    /// Associates a parseable retired rule with its replacement forms.
+    #[inline]
+    #[must_use]
+    pub fn retired(
+        mut self,
+        retirement: Retirement,
+    ) -> Self
+    {
+        self.retirement = Some(retirement);
+        self
     }
 
     /// Declares a rule, provenance its name, with one adaptation record.
@@ -2066,9 +2117,12 @@ impl Pbg
         match sort {
             Sort::Expression => self.application,
             Sort::Type => self.type_application,
-            Sort::Item | Sort::Pattern | Sort::Instantiation | Sort::ModuleMember | Sort::Block => {
-                None
-            },
+            Sort::Item
+            | Sort::Pattern
+            | Sort::Instantiation
+            | Sort::ModuleMember
+            | Sort::Block
+            | Sort::TheoryMember => None,
         }
     }
 

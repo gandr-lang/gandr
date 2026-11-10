@@ -960,6 +960,8 @@ pub enum RefusalName
     NoUniverseAbove,
     /// A form whose pieces fall short of its rule.
     MalformedForm,
+    /// A syntax form remains parseable only to report its replacement.
+    Retired(Qualifier),
     /// An attribute name the registry does not hold.
     UnknownAttribute,
     /// One attribute written twice for one name.
@@ -1620,6 +1622,7 @@ impl RefusalName
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
             .chain([
+                Self::Retired(Qualifier::Named(RETIRED_SHAPE)),
                 Self::UnprovenLaw,
                 Self::NoFiller(FillerAsk::Omitted),
                 Self::GenericUncovered(GenericCoverage::Dependent),
@@ -1661,7 +1664,7 @@ impl RefusalName
         b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
-        (Self::BareFeedback, b"BareFeedback") |
+        (Self::Retired(_), b"Retired") | (Self::BareFeedback, b"BareFeedback") |
         (Self::IllFormedDescription, b"IllFormedDescription") |
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
         b"MalformedLiteral") | (Self::NoUniverseAbove, b"NoUniverseAbove") |
@@ -1885,7 +1888,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::Retired(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -2055,6 +2058,7 @@ impl RefusalName
             Self::Boundary => "Boundary",
             Self::ShadowedBuiltin => "ShadowedBuiltin",
             Self::OutOfFragment(_) => "OutOfFragment",
+            Self::Retired(_) => "Retired",
             Self::BareFeedback => "BareFeedback",
             Self::IllFormedDescription => "IllFormedDescription",
             Self::GradedBridge => "GradedBridge",
@@ -2151,7 +2155,7 @@ impl RefusalName
             Self::ExpectationOutsideFixtureRoot => "ExpectationOutsideFixtureRoot",
             Self::BoundaryUnrealised(_) => "BoundaryUnrealised",
         };
-        let qualifier = if let Self::OutOfFragment(qualifier) = self {
+        let qualifier = if let Self::OutOfFragment(qualifier) | Self::Retired(qualifier) = self {
             Some(qualifier)
         }
         else if let Self::UnstatedComponent(fault)
@@ -2243,6 +2247,8 @@ impl RefusalName
                             .map(Qualifier::Unbuilt)
                     })
                     .map(Self::OutOfFragment),
+                "Retired" => (rest == RETIRED_SHAPE.0)
+                    .then_some(Self::Retired(Qualifier::Named(RETIRED_SHAPE))),
                 "UnstatedComponent" => {
                     tagged(&MODEL_FAULTS.map(model_tag)).map(Self::UnstatedComponent)
                 },
@@ -2274,6 +2280,7 @@ impl RefusalName
 /// declaration is read that is no expression: an expression there crosses
 /// [`FragmentBoundary::TopLevel`].
 const STRAY: Tag = Tag("WrongSort.declaration");
+const RETIRED_SHAPE: Tag = Tag("shape");
 
 /// The tag a law admitted where a proof was owed is qualified by: the
 /// carrier is not the host's, so the admission is the author's.
@@ -2833,8 +2840,14 @@ impl Refusal<'_>
                 | gandr_surface_lowering::WfKind::SplitCircuitOutputs
                 | gandr_surface_lowering::WfKind::SharedCircuitPort,
             ..
-        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm) | (
-        LoweringRefusal::IllFormedDescription { .. }, RefusalName::IllFormedDescription) | (
+        }, RefusalName::MalformedForm) | (LoweringRefusal::MalformedForm {
+            fault: gandr_surface_lowering::FormFault::Retired(
+                gandr_surface_lowering::TileName::BOUNDARY,
+            ),
+            ..
+        }, RefusalName::Retired(_)) | (LoweringRefusal::MalformedForm { .. },
+        RefusalName::MalformedForm) | (LoweringRefusal::IllFormedDescription { .. },
+        RefusalName::IllFormedDescription) | (
         LoweringRefusal::GradedBridge { .. }, RefusalName::GradedBridge) | (
         LoweringRefusal::MalformedLiteral { .. }, RefusalName::MalformedLiteral) | (
         LoweringRefusal::NoUniverseAbove { .. }, RefusalName::NoUniverseAbove) | (
@@ -2950,8 +2963,13 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
                 | gandr_surface_lowering::WfKind::SplitCircuitOutputs
                 | gandr_surface_lowering::WfKind::SharedCircuitPort,
             ..
-        }
-        | LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
+        } => RefusalName::MalformedForm,
+        LoweringRefusal::MalformedForm {
+            fault:
+                gandr_surface_lowering::FormFault::Retired(gandr_surface_lowering::TileName::BOUNDARY),
+            ..
+        } => RefusalName::Retired(Qualifier::Named(RETIRED_SHAPE)),
+        LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         LoweringRefusal::IllFormedDescription { .. } => RefusalName::IllFormedDescription,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,

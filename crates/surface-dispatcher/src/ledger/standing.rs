@@ -786,6 +786,7 @@ fn slot(
         Sort::Type => format!("def probe : {text} ;"),
         Sort::Instantiation => format!("def probe = f[{text}] 1 ;"),
         Sort::Block => format!("def probe = thunk {text} ;"),
+        Sort::TheoryMember => format!("theory Probe where {{ {text} ; }}"),
     }
 }
 
@@ -836,6 +837,7 @@ fn reading(
                         Sort::Type => "T",
                         Sort::Instantiation => "<",
                         Sort::Block => "{ }",
+                        Sort::TheoryMember => "boundary Probe { a }",
                     }
                     .to_owned(),
                     holds: Holds::Nothing,

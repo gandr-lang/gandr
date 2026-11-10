@@ -36,7 +36,7 @@ theory TwoBoundaries where
 
 /// `shape` is the retired spelling of the shape parameter, refused naming
 /// `boundary`, so the word is the site's alone.
-@[ refuses("MalformedForm") ]
+@[ refuses("Retired.shape") ]
 theory Retired where
-  shape Square : 4 { left = {0, 2}; };
+  shape Square : 4 { left = { 0, 2 }; };
   sort Cell : Type;

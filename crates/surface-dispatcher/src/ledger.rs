@@ -142,6 +142,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
+use gandr_surface_grammar::Retirement;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::SPELLED;
@@ -494,12 +495,12 @@ impl LedgerTask
                 Ok(LedgerRun::Written(vec![markdown, json]))
             },
             Self::Exemplars { ref directory } => {
-                let ledger = SyntaxLedger::build()?;
+                let ledger = SyntaxLedger::build()?.admitted(directory)?;
                 let pbg = built_in().map_err(LedgerFault::Grammar)?;
                 let rules: Vec<RuleName> = ledger
                     .rules
                     .iter()
-                    .filter(|row| row.standing == Standing::Committed)
+                    .filter(|row| row.standing == Standing::Committed && row.retirement.is_none())
                     .map(|row| RuleName(row.name))
                     .collect();
                 exemplars::verify(&pbg, &rules, directory).map(LedgerRun::Verified)
@@ -593,6 +594,10 @@ struct RuleRow
     /// [`SyntaxLedger::admitted`] for a committed rule, none before or for an
     /// internal one.
     admission: Option<Admission>,
+    /// Retirement data when the row remains parseable for its advice.
+    pub(super) retirement: Option<Retirement>,
+    /// The source below `corpus/` that exemplifies the row.
+    exemplar: String,
     /// The form, spelled for reading.
     form: String,
     /// The form in its ASCII spelling, for a rule holding a glyph tile.
@@ -744,6 +749,11 @@ impl SyntaxLedger
                 tree: tree.value,
                 roles: tree.roles,
                 admission: None,
+                retirement: rule.retirement,
+                exemplar: rule.retirement.map_or_else(
+                    || format!("ledger/syntax/{}.gandr", rule.name.replace('_', "-")),
+                    |retirement| String::from(retirement.exemplar),
+                ),
                 standing: standing::standing(&pbg, rule)?,
                 decision: decided
                     .next()
@@ -804,10 +814,9 @@ impl SyntaxLedger
     ) -> Result<Self, LedgerFault>
     {
         let pbg = built_in().map_err(LedgerFault::Grammar)?;
-        let folder = exemplars.join("syntax");
         for row in &mut self.rules {
             if row.standing == Standing::Committed {
-                row.admission = Some(admission(&pbg, &folder, row)?);
+                row.admission = Some(admission(&pbg, exemplars, row)?);
             }
         }
         Ok(self)
@@ -929,13 +938,13 @@ impl SyntaxLedger
                 };
                 writeln!(
                     out,
-                    "| [`{name}`](../corpus/ledger/syntax/{file}.gandr) | {} | `{}` | `{}`{marker} | {} | {roles} |",
+                    "| [`{name}`](../corpus/{exemplar}) | {} | `{}` | `{}`{marker} | {} | {roles} |",
                     Forms(row),
                     row.group,
                     row.kind,
                     Shown(row.admission),
                     name = row.name,
-                    file = row.name.replace('_', "-"),
+                    exemplar = row.exemplar,
                 )?;
             }
         }
@@ -1220,10 +1229,7 @@ fn rule_json(row: &RuleRow) -> Value
             fields.insert("standing".to_owned(), Value::from("committed"));
             fields.insert(
                 "exemplar".to_owned(),
-                Value::from(format!(
-                    "../corpus/ledger/syntax/{}.gandr",
-                    row.name.replace('_', "-")
-                )),
+                Value::from(format!("../corpus/{}", row.exemplar)),
             );
         },
         Standing::Internal(reason) => {
@@ -1856,6 +1862,8 @@ enum Admission
     /// The exemplar's lowering refuses a form of the rule's kind as reserved,
     /// naming the issue that builds it.
     Reserved(TrackingIssue),
+    /// The exemplar's lowering refuses the form as retired.
+    Retired(Retirement),
 }
 
 impl Admission
@@ -1867,7 +1875,7 @@ impl Admission
     const fn issue(self) -> Option<TrackingIssue>
     {
         match self {
-            Self::Admitted => None,
+            Self::Admitted | Self::Retired(_) => None,
             Self::Unadmitted(issue) => issue,
             Self::Reserved(issue) => Some(issue),
         }
@@ -1895,6 +1903,7 @@ impl core::fmt::Display for RuleStatus
             Admission::Admitted => "implemented",
             Admission::Unadmitted(Some(_)) | Admission::Reserved(_) => "reserved",
             Admission::Unadmitted(None) => "declined",
+            Admission::Retired(_) => "retired",
         })
     }
 }
@@ -1932,7 +1941,19 @@ fn admission(
     row: &RuleRow,
 ) -> Result<Admission, LedgerFault>
 {
-    let path = folder.join(format!("{}.gandr", row.name.replace('_', "-")));
+    let path = row.retirement.map_or_else(
+        || {
+            folder
+                .join("syntax")
+                .join(format!("{}.gandr", row.name.replace('_', "-")))
+        },
+        |retirement| {
+            folder.parent().map_or_else(
+                || folder.join(retirement.exemplar),
+                |corpus| corpus.join(retirement.exemplar),
+            )
+        },
+    );
     let unshown = |error: String| LedgerFault::Unshown {
         path: path.clone(),
         error,
@@ -1962,6 +1983,16 @@ fn admission(
             .collect(),
         Err(refusal) => vec![refusal],
     };
+    if let Some(retirement) = row.retirement {
+        let expected = format!("Retired.{}", retirement.former);
+        if refusals
+            .into_iter()
+            .any(|refusal| Refusal::Lowering(refusal).name().spelling().to_string() == expected)
+        {
+            return Ok(Admission::Retired(retirement));
+        }
+        return Err(unshown(format!("does not refuse `{expected}`")));
+    }
     let own = format!("OutOfFragment.{}", row.kind);
     let names_the_kind = |refusal: LoweringRefusal<'_>| {
         let spelled = Refusal::Lowering(refusal).name().spelling().to_string();
@@ -2000,11 +2031,21 @@ impl core::fmt::Display for Admission
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        f.write_str(match *self {
-            Self::Admitted => "admitted",
-            Self::Unadmitted(_) => "unadmitted",
-            Self::Reserved(_) => "reserved",
-        })
+        match *self {
+            Self::Admitted => f.write_str("admitted"),
+            Self::Unadmitted(_) => f.write_str("unadmitted"),
+            Self::Reserved(_) => f.write_str("reserved"),
+            Self::Retired(retirement) => {
+                f.write_str("retired → ")?;
+                for (index, replacement) in retirement.replacements.iter().enumerate() {
+                    if index != 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(replacement)?;
+                }
+                Ok(())
+            },
+        }
     }
 }
 
@@ -2675,16 +2716,24 @@ mod tests
             }
             let text = std::fs::read_to_string(
                 committed()
-                    .join("syntax")
-                    .join(format!("{}.gandr", row.name.replace('_', "-"))),
+                    .parent()
+                    .expect("the corpus holds the ledger")
+                    .join(&row.exemplar),
             )
             .expect("a committed rule's exemplar reads");
-            let stated = [
-                format!("refuses(\"OutOfFragment.{}\")", row.kind),
-                format!("refuses(\"OutOfFragment.{}.", row.kind),
-            ]
-            .iter()
-            .any(|spelling| text.contains(spelling.as_str()));
+            let stated = row.retirement.map_or_else(
+                || {
+                    [
+                        format!("refuses(\"OutOfFragment.{}\")", row.kind),
+                        format!("refuses(\"OutOfFragment.{}.", row.kind),
+                    ]
+                    .iter()
+                    .any(|spelling| text.contains(spelling.as_str()))
+                },
+                |retirement| {
+                    text.contains(format!("refuses(\"Retired.{}\")", retirement.former).as_str())
+                },
+            );
             let admission = json_row["admission"]
                 .as_str()
                 .expect("a committed rule's admission is written");
@@ -2714,11 +2763,14 @@ mod tests
                     row.name
                 );
             }
+            if admission == "retired" {
+                assert_eq!(status, "retired", "`{}` is retired", row.name);
+            }
             let _fresh = seen.insert(admission.to_owned());
         }
         assert!(
-            seen.contains("admitted") && seen.contains("unadmitted"),
-            "the committed exemplars show an admitted and an unadmitted form: {seen:?}"
+            seen.contains("admitted") && seen.contains("unadmitted") && seen.contains("retired"),
+            "the committed exemplars show admitted, unadmitted and retired forms: {seen:?}"
         );
     }
 

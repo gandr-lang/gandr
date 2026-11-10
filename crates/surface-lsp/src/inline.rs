@@ -292,6 +292,8 @@ pub enum Category
     Item,
     /// A member of a module body.
     Member,
+    /// A member of a theory declaration.
+    TheoryMember,
     /// A resident of an instantiation slot.
     Instantiation,
     /// A braced block of statements after a form's tile.
@@ -334,6 +336,7 @@ impl Category
             Sort::Type => Self::Type,
             Sort::Item => Self::Item,
             Sort::ModuleMember => Self::Member,
+            Sort::TheoryMember => Self::TheoryMember,
             Sort::Instantiation => Self::Instantiation,
             Sort::Block => Self::Block,
         }
@@ -371,6 +374,7 @@ impl Category
             (Sort::Type, _) => Self::Type,
             (Sort::Item, _) => Self::Item,
             (Sort::ModuleMember, _) => Self::Member,
+            (Sort::TheoryMember, _) => Self::TheoryMember,
             (Sort::Instantiation, _) => Self::Instantiation,
             (Sort::Block, _) => Self::Block,
         }
@@ -388,6 +392,7 @@ impl Category
             Self::Pattern => Sort::Pattern,
             Self::Item => Sort::Item,
             Self::Member => Sort::ModuleMember,
+            Self::TheoryMember => Sort::TheoryMember,
             Self::Instantiation => Sort::Instantiation,
             Self::Block => Sort::Block,
         }
@@ -406,6 +411,7 @@ impl Category
             Self::Pattern => "pattern",
             Self::Item => "item",
             Self::Member => "member",
+            Self::TheoryMember => "theory member",
             Self::Instantiation => "instantiation",
             Self::Block => "block",
         })
