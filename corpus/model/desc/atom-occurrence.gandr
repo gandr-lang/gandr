@@ -1,7 +1,7 @@
 //! An occurrence names an atom inside its binding abstraction.
 //!
 //! The occurrence has a depth below its binder. Admission re-mints each atom
-//! with its binder.
+//! with its binder. A rule variable ranges over the atoms that it may name.
 //!
 //! A rule that names its restricted channel is independent of atom spelling.
 //! A freshness condition limits a rule to permitted instances. The kernel

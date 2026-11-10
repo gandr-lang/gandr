@@ -1,8 +1,11 @@
 //! A second-order rule can apply a bound variable.
 //!
-//! `t(u)` instantiates the variable `t` with argument `u`.
+//! `t(u)` instantiates the variable `t` with argument `u`. It substitutes one
+//! argument for each variable that the port of `t` binds.
 //!
-//! The higher-order recursive path order proves termination.
+//! The higher-order recursive path order proves termination. It puts the
+//! instantiation below an application that holds the variable and every
+//! argument directly.
 //! Pattern unification finds each critical pair. The second-order reader joins
 //! each pair.
 //!
@@ -21,7 +24,7 @@ theory Let where
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let u t <=> t u;
 
-/// `LetPair` instantiates its body with two arguments.
+/// `LetPair` instantiates its body with two arguments, outermost binder first.
 theory LetPair where
   sort Tm : Type+;
   oper let2 : (u : Tm, v : Tm, t : pi+ (x : Tm). pi+ (y : Tm). Tm) --> Tm;

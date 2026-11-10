@@ -46,7 +46,9 @@ def rec derived(chain : Theory) -> Integer =
     }
     | _ => 0
 
-/// Completion derives two rules for the alpha-equivalent overlap in `Alpha`.
+/// Completion derives two rules for the alpha-equivalent overlap in `Alpha`,
+/// as many as for the block with `nu(nil())` on both left sides. A comparison
+/// of atoms by name finds no overlap and derives no rule.
 @[runs("2")]
 def derivations() -> Integer { match Alpha {
   | Presents(sorts, opers, rules) => derived rules

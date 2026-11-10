@@ -3,8 +3,11 @@
 //! The derivation fixes the order of fields. The fields include contexts,
 //! substitutions, terms, operations and laws.
 //!
-//! Component indices use the order of their source sorts. The syntax model
-//! packs into this record. Beta reduction uses one substitution.
+//! Component indices use the order of their source sorts. So `liftTm` and law
+//! 2 take `d` before `g`, because their first binder is `s : Sub(d, g)`. The
+//! syntax model packs into this record as `SyntaxNat` packs into the record
+//! of `Nat`'s models in `model-in-source.gandr`. Beta reduction uses one
+//! substitution.
 //!
 //! - see: #640
 
@@ -92,7 +95,9 @@ def lcSyntax : *{
   }
 };
 
-/// `lcModel` contains the packed syntax model.
+/// `lcModel` contains the packed syntax model at the type `Model(LC)` that the
+/// derivation states. It applies each family over contexts and reads a term in
+/// an extended context after its extension runs.
 def lcModel : Model LC = lcSyntax;
 
 /// The identity application reduces to the identity.

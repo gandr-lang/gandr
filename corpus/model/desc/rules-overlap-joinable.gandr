@@ -35,7 +35,9 @@ def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
 @[runs("Succ (Succ (Succ Zero))")]
 def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
 
-/// Associativity overlaps with itself at the nested product.
+/// Associativity overlaps with itself at `mul(mul(mul(a, b), c), d)`, and both
+/// ways round reach `mul(a, mul(b, mul(c, d)))`. The rewrite at the peak
+/// matches the rule's `z` against a subterm that holds the peak's own `z`.
 theory Semigroup where
   sort S : Type;
 

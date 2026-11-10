@@ -22,7 +22,9 @@ pub def shiftAdds(n : N, k : N) -> Path(rlook n (RShift k), plus n k) =
 pub def ixShiftAdds(x : N, k : N) -> Path(Ix (rlook x (RShift k)), Ix (plus x k)) =
   ixCong (rlook x (RShift k)) (plus x k) (shiftAdds x k)
 
-/// This path applies `ixShiftAdds` to `plus(Z, k)`.
+/// This path applies `ixShiftAdds` to `plus(Z, k)`, with its endpoints as the
+/// arguments of `ixCong`, two calls deep. Each argument answers its path type
+/// as written.
 def ixShiftAddsAtSum(k : N) -> Path(
   Ix (rlook (plus Z k) (RShift (S Z))),
   Ix (plus (plus Z k) (S Z))

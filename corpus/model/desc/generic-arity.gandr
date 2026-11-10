@@ -37,7 +37,8 @@ def counted() -> Integer { arity Monoid }
 @[runs("2")]
 def sign() -> Integer { arity Monoid }
 
-/// This match returns `Integer` or `Unit` as a type quote.
+/// This match returns `Integer` or `Unit` as a type quote. The type language
+/// has no `case`, so a term match chooses the type.
 def counted_at(presented : Theory) -> Type =
   match presented where
     | Presents(sorts, opers, rules) => return Integer

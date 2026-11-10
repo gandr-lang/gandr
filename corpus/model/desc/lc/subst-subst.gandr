@@ -1,6 +1,8 @@
 //! Two substitution composites act alike under index agreement.
 //!
-//! An abstraction unfolds both composites by conversion.
+//! An abstraction unfolds both composites by conversion. `substTwiceUnderLam`
+//! states that step. `lift-as-definition.gandr` states it with lifting as a
+//! definition.
 //!
 //! A lifted lookup is a weakened lookup. `substWeaken` moves a weak term
 //! through a lifted substitution. The proof weakens the index hypothesis.
