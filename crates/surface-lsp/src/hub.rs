@@ -415,12 +415,13 @@ pub fn bind(socket: &Path) -> Result<Maybe<UnixListener, bind::Absent>, io::Erro
 pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 
 /// A face that serves a listener of its own over the workspace every
-/// connection shares, for the hub's whole life.
+/// connection shares, for the hub's whole life, as the peer it is given.
 ///
 /// The Reactive Agent Protocol's toolset is one: it answers HTTP on the port
 /// `gandr serve` names. The hub runs it on a thread of its own and counts it as
-/// an open connection until it returns.
-pub type Beside = Box<dyn FnOnce(Arc<Mutex<Workspace>>) + Send>;
+/// an open connection until it returns. Its peer is [`Peer::BESIDE`], which no
+/// connection takes, so the face can watch the workspace as a connection does.
+pub type Beside = Box<dyn FnOnce(Arc<Mutex<Workspace>>, Peer) + Send>;
 
 /// Serve every connection `listener`, bound to `socket`, accepts over one
 /// workspace, until none has been open for `linger`.
@@ -430,23 +431,23 @@ pub type Beside = Box<dyn FnOnce(Arc<Mutex<Workspace>>) + Send>;
 /// - ensures: a connection whose first byte is `{` is handed to `lines` when
 ///   one is given, and one whose first byte is `r` to the render-bus face,
 ///   [`crate::bus::serve`]. `beside`, when given, runs on a thread of its own
-///   over the shared workspace, and counts as an open connection until it
-///   returns. Every other accepted connection is served as [`Server::handle`],
-///   [`Server::admit`] and [`Server::admitted`] state, over the documents every
-///   connection shares, `workspace` holding what the user's configuration
-///   names, its sessions, judgements and kernel admissions running on its pool,
-///   each connection answered from its own copy: its answers and publications
-///   reach it in the order its handling made them, and each synchronisation's
-///   timing line goes to `log`. For a connection whose client watches no file,
-///   the hub watches the files its copies' closures name, as
-///   [`Server::followed`] reads them, and a change to one on disk is handled as
-///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
-///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
-///   the end of its stream, or at a stream fault; it then holds nothing and its
-///   socket is shut. A connection whose thread unwinds also ends, so it never
-///   keeps the hub open. The hub returns once no connection has been open for
-///   `linger`, its socket file removed first so a late client starts a fresh
-///   hub.
+///   over the shared workspace as the peer [`Peer::BESIDE`], and counts as an
+///   open connection until it returns. Every other accepted connection is
+///   served as [`Server::handle`], [`Server::admit`] and [`Server::admitted`]
+///   state, over the documents every connection shares, `workspace` holding
+///   what the user's configuration names, its sessions, judgements and kernel
+///   admissions running on its pool, each connection answered from its own
+///   copy: its answers and publications reach it in the order its handling made
+///   them, and each synchronisation's timing line goes to `log`. For a
+///   connection whose client watches no file, the hub watches the files its
+///   copies' closures name, as [`Server::followed`] reads them, and a change to
+///   one on disk is handled as [`Server::changed_on_disk`] states; a watch that
+///   cannot start is said once in `log` and the hub serves on unwatched. A
+///   connection ends at `exit`, at the end of its stream, or at a stream fault;
+///   it then holds nothing and its socket is shut. A connection whose thread
+///   unwinds also ends, so it never keeps the hub open. The hub returns once no
+///   connection has been open for `linger`, its socket file removed first so a
+///   late client starts a fresh hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -510,7 +511,7 @@ where
             // As a connection's, the count goes back when the face returns or
             // unwinds.
             let _opened = opened;
-            beside(workspace);
+            beside(workspace, Peer::BESIDE);
         }));
     }
     let mut peers = 0_u64;
@@ -1886,7 +1887,8 @@ mod tests
                 io::sink(),
                 Some(echo),
                 Some(Box::new(
-                    move |workspace: Arc<std::sync::Mutex<super::Workspace>>| {
+                    move |workspace: Arc<std::sync::Mutex<super::Workspace>>, peer: super::Peer| {
+                        assert_eq!(peer, super::Peer::BESIDE, "the face has its own peer");
                         let held = super::lock(&workspace).held().count();
                         started.send(held).expect("the test hears the face");
                         let _released = released.recv();

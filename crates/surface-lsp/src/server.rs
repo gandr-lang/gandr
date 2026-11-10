@@ -1417,6 +1417,13 @@ impl From<u64> for Peer
     }
 }
 
+impl Peer
+{
+    /// The peer of the face beside the hub's socket. The hub numbers its
+    /// connections from one, so no connection takes it.
+    pub const BESIDE: Self = Self(0);
+}
+
 /// What every connection to one server shares.
 ///
 /// The open documents, each with every holding connection's own copy, and

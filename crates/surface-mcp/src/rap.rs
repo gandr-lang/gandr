@@ -1,6 +1,6 @@
 //! The hub's Reactive Agent Protocol face: the toolset that an agent runtime
 //! discovers over HTTP, the invoke endpoint that acknowledges each call, and
-//! the callback that answers the call later.
+//! the callbacks that carry each result and each new state of a subscription.
 //!
 //! `gandr serve --port <port>` gives the hub a [`Toolset`] beside its socket.
 //! The toolset listens on the loopback interface. A `GET` of
@@ -13,50 +13,77 @@
 //! `400`, because no result can reach its caller.
 //!
 //! One worker runs each queued call over the workspace that the editors share,
-//! as `tools/call` runs it. The worker posts a `tool_result` to the callback
-//! URL, then appends the settlement of the row. The text of the result is the
-//! answer of the tool as JSON. A refusal, an unknown operation and arguments
-//! that the tool cannot read give a text that starts with `Error: `.
+//! as `tools/call` runs it, and owes a `tool_result` to the callback URL. The
+//! text of the result is the answer of the tool as JSON. A refusal, an unknown
+//! operation and arguments that the tool cannot read give a text that starts
+//! with `Error: `.
+//!
+//! # Frames
+//!
+//! The result of `diagnostics` is a frame of the render bus. Its text holds
+//! the URI of the document, its version, and its diagnostic and goal cards.
+//! Its `display_as` is one `text` segment with the lines that `gandr view`
+//! prints for the same report, and its `version` is the version of the
+//! document.
+//!
+//! A subscription follows the frame of one document. After each publication
+//! that changes the frame, the toolset owes a `subscription_event` to the
+//! callback URL of the subscription. The text of the event is the whole frame,
+//! as the result of `diagnostics` holds it, and never a change to an earlier
+//! frame. A publication that leaves the frame as it was sends nothing.
+//!
+//! Each callback carries an `Idempotency-Key` header: the `id` of a result,
+//! and `<tool_call_id>@<version>` for an event. Each event also carries its
+//! version in its JSON. A runtime that receives one key twice keeps one copy.
 //!
 //! # Boundaries
 //!
 //! A caller that wants a bearer sends its own token on the invocation, as
-//! `Authorization: Bearer <token>`. The row keeps the token, and the callback
+//! `Authorization: Bearer <token>`. The row keeps the token, and each callback
 //! for that row sends it back in the same header. The hub mints no token. A
 //! caller matches a result to its pending call by `group_id` and `id`, as RAP
 //! states.
 //!
 //! The store is one file of JSON lines per workspace, and only its owner can
-//! read it. The toolset writes the row of a call before it sends the `200`, so
-//! a crash of the hub loses no call that it acknowledged. When the toolset
-//! opens its store, each row that no settlement follows is a call that a crash
-//! lost. The worker answers each such call with an error and settles it. The
-//! toolset empties the file each time no call is pending.
+//! read it. The toolset writes the row of a call before it sends the `200`,
+//! and the answer of the call before its first delivery. Thus a crash of the
+//! hub loses no call that it acknowledged. When the toolset opens its store,
+//! it delivers again each answer that no settlement follows. The worker
+//! answers each row with no answer with an error. The toolset empties the file
+//! each time no call is pending.
 //!
 //! The toolset accepts connections on one thread for each hardware thread of
 //! the host, and on two at least. A client that stalls holds its own thread for
 //! one second at most, and the other threads answer the other calls.
 //!
-//! The worker tries each delivery once. A delivery that fails is told on the
-//! log of the hub, and its row is settled.
+//! The deliveries go on as many threads again, which belong to the toolset and
+//! never to the pool of the engine. They retry as the [`Policy`] states. A
+//! delivery that a runtime takes or refuses settles its call. A refusal also
+//! drops a subscription. A subscription whose retries are spent stays, and it
+//! is unreachable until a later state reaches it.
+//!
+//! The toolset keeps its subscriptions in memory, and no operation of the
+//! manifest opens one.
 //!
 //! # Dependencies
 //!
 //! `httparse` reads the head of each request and of each callback's answer in
 //! place. The rest of HTTP/1.1 that the toolset speaks, one request for each
-//! connection, is written here.
+//! connection, is written here. `gandr_surface_tui` prints the lines of a
+//! report as `gandr view` prints them.
 //!
 //! # References
 //!
 //! - The Hydro project. "Reactive Agent Protocol specification." 2026. <https://reactiveagentprotocol.dev/docs/rap/spec/overview>
 //!   — the manifest, the invocation, the acknowledgement, the callback and its
-//!   `Error: ` text.
+//!   `Error: ` text, the `subscription_event` and its fields, the `display_as`
+//!   segments, and the retry of a `5xx` and never of a `4xx`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::fmt::Write as _;
 use core::net::SocketAddr;
 use core::ops::Range;
 use core::time::Duration;
@@ -68,7 +95,6 @@ use std::io::Read as _;
 use std::io::Write;
 use std::net::TcpListener;
 use std::net::TcpStream;
-use std::net::ToSocketAddrs as _;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
@@ -79,14 +105,36 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::SystemTime;
 
+use anodized::spec;
+use gandr_surface_lsp::DocumentUri;
+use gandr_surface_lsp::Peer;
 use gandr_surface_lsp::Workspace;
+use gandr_surface_render_remote::DiagCard;
+use gandr_surface_render_remote::DocId;
+use gandr_surface_render_remote::FrameBody;
+use gandr_surface_render_remote::FrameScope;
+use gandr_surface_render_remote::GoalCard;
+use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_render_remote::ReportView;
+use gandr_surface_tui::report_lines;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
 
+use self::deliver::Deliveries;
+use self::deliver::Fate;
+pub use self::deliver::Policy;
+use self::deliver::Post;
+pub use self::deliver::Retries;
+use self::deliver::Row;
 use crate::face::lock;
 use crate::tools;
+
+mod deliver;
+
+/// The name of the tool whose result is a frame of the render bus.
+const DIAGNOSTICS: &str = "diagnostics";
 
 /// The path of the manifest under the base URL of the toolset, as RAP names
 /// it.
@@ -135,13 +183,6 @@ const BODY_LIMIT: usize = 16 * 1024 * 1024;
 /// holds its own acceptor no longer than this, and the other acceptors answer
 /// the other calls.
 const REQUEST_WAIT: Duration = Duration::from_secs(1);
-
-/// How long the worker waits on a callback, to connect, to send and to hear
-/// the status: five seconds. A runtime acknowledges a result at once, and one
-/// that does not holds the next delivery no longer than this.
-// economy: one worker posts the results in order, so a slow callback holds the
-// next one. #6340 moves each delivery to a task of its own, with retries.
-const CALLBACK_WAIT: Duration = Duration::from_secs(5);
 
 /// An invocation, as a RAP runtime posts it to the invoke endpoint. The fields
 /// that the hub does not read, such as `user_id`, are ignored.
@@ -198,8 +239,18 @@ struct Opened<'row>
     opened: &'row Pending,
 }
 
-/// The line of the store that records an answered call, by its `group_id` and
-/// `id`.
+/// The line of the store that records the answer of a call, written before
+/// its first delivery.
+#[repr(transparent)]
+#[derive(Serialize)]
+struct Answered<'row>
+{
+    /// The answer.
+    answered: &'row Answer,
+}
+
+/// The line of the store that records a call that a runtime took or refused,
+/// by its `group_id` and `id`.
 #[repr(transparent)]
 #[derive(Serialize)]
 struct Settled<'row>
@@ -215,25 +266,41 @@ enum Entry
 {
     /// A call acknowledged.
     Opened(Pending),
-    /// A call answered, by its `group_id` and `id`.
+    /// A call answered, before its first delivery.
+    Answered(Answer),
+    /// A call that a runtime took or refused, by its `group_id` and `id`.
     Settled((String, String)),
 }
 
-/// The result of a call, as the callback receives it.
-#[derive(Serialize)]
-struct ToolResult<'call>
+/// The answer of a call, as the store keeps it until a runtime takes it.
+#[derive(Deserialize, Serialize)]
+struct Answer
 {
-    /// Always `tool_result`.
-    #[serde(rename = "type")]
-    kind: &'static str,
     /// The conversation that the call belongs to.
-    group_id: &'call String,
+    group_id: String,
     /// The identifier of the call.
-    id: &'call String,
-    /// The identifier of the model's tool call, or null.
-    call_id: Option<&'call String>,
+    id: String,
     /// The answer of the tool, or the reason it gave none.
-    text: &'call String,
+    text: String,
+    /// The lines that display the answer, when the tool has a display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    display: Option<String>,
+    /// The version of the document whose frame the answer is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    version: Option<i32>,
+}
+
+/// The cards of a frame, as the text of a result or of an event holds them.
+#[derive(Serialize)]
+struct Cards<'frame>
+{
+    /// The document and its version.
+    #[serde(flatten)]
+    document: &'frame DocId,
+    /// The diagnostic cards.
+    diagnostics: &'frame [DiagCard],
+    /// The goal cards, in source order.
+    goals: &'frame [GoalCard],
 }
 
 /// Bytes the toolset reads or writes, kept to be used again.
@@ -287,23 +354,137 @@ impl Store
         Ok(())
     }
 
-    /// Record that the worker answered `pending`, and empty the file when no
-    /// other row is open.
+    /// Record the answer of a call, before its first delivery.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answered(
+        &mut self,
+        answer: &Answer,
+    ) -> io::Result<()>
+    {
+        self.append(&Answered { answered: answer })
+    }
+
+    /// Record that a runtime took or refused the result of `row`, and empty
+    /// the file when no other row is open. A row that is not a call changes
+    /// nothing.
     ///
     /// # Specification
     /// trivial.
     fn settled(
         &mut self,
-        pending: &Pending,
+        row: &Row,
     ) -> io::Result<()>
     {
+        let Row::Call(ref group_id, ref id) = *row
+        else {
+            return Ok(());
+        };
         self.open = self.open.saturating_sub(1);
         if self.open == 0 {
             return self.file.set_len(0);
         }
         self.append(&Settled {
-            settled: (&pending.group_id, &pending.id),
+            settled: (group_id, id),
         })
+    }
+}
+
+/// A subscription of a runtime to the frames of one document.
+struct Subscription
+{
+    /// Where its events go.
+    callback_url: Arc<str>,
+    /// The bearer that the runtime sent, sent back on each event.
+    token: Option<Arc<str>>,
+    /// The routing of each event up to its version, encoded once.
+    routing: String,
+    /// The document whose frames it follows.
+    scope: DocumentUri,
+    /// The text of the last state owed to it.
+    last: Option<Arc<str>>,
+    /// Whether the retries of its last delivery were spent.
+    unreachable: bool,
+}
+
+/// One state of the frame of a document, as each subscription receives it.
+struct State
+{
+    /// The version of the document.
+    version: i32,
+    /// The frame as a JSON string, quoted once for all subscriptions.
+    text: Arc<str>,
+}
+
+/// The subscriptions, by row, and the rows of each document.
+#[derive(Default)]
+struct Subscriptions
+{
+    /// Each subscription.
+    rows: BTreeMap<Row, Subscription>,
+    /// The rows that follow each document.
+    scopes: BTreeMap<DocumentUri, BTreeSet<Row>>,
+}
+
+impl Subscriptions
+{
+    /// Drop the subscription `row`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cancel(
+        &mut self,
+        row: &Row,
+    )
+    {
+        let Some(subscription) = self.rows.remove(row)
+        else {
+            return;
+        };
+        if let Some(rows) = self.scopes.get_mut(&subscription.scope) {
+            let _removed = rows.remove(row);
+            if rows.is_empty() {
+                drop(self.scopes.remove(&subscription.scope));
+            }
+        }
+    }
+
+    /// Owe `state`, a state of `scope`, to each subscription that follows
+    /// `scope` and was last owed another state.
+    ///
+    /// # Specification
+    /// trivial.
+    fn publish(
+        &mut self,
+        scope: &DocumentUri,
+        state: &State,
+        deliveries: &Deliveries,
+    )
+    {
+        let Some(rows) = self.scopes.get(scope)
+        else {
+            return;
+        };
+        for row in rows {
+            let (Some(subscription), &Row::Subscription(_, ref tool_call_id)) =
+                (self.rows.get_mut(row), row)
+            else {
+                continue;
+            };
+            if subscription.last.as_ref() == Some(&state.text) {
+                continue;
+            }
+            subscription.last = Some(Arc::clone(&state.text));
+            let version = state.version;
+            deliveries.owe(row.clone(), Post {
+                callback_url: Arc::clone(&subscription.callback_url),
+                token: subscription.token.clone(),
+                key: alloc::format!("{tool_call_id}@{version}"),
+                head: alloc::format!("{}{version},\"text\":", subscription.routing),
+                text: Arc::clone(&state.text),
+            });
+        }
     }
 }
 
@@ -343,29 +524,35 @@ struct Request
 }
 
 /// The hub's Reactive Agent Protocol face: a listener, the store of the calls
-/// it acknowledged, and the calls that a crash lost.
+/// it acknowledged, the calls that a crash cut short, and the subscriptions.
 pub struct Toolset
 {
     /// The listener, bound on the loopback interface.
     listener: TcpListener,
     /// The store of rows.
     store: Store,
-    /// The calls that a crash lost, answered first.
-    lost: Vec<Pending>,
+    /// The calls that a crash cut short, each with its answer when the store
+    /// kept one, answered first.
+    lost: Vec<(Pending, Option<Answer>)>,
+    /// The subscriptions.
+    subscriptions: Subscriptions,
+    /// When to retry a delivery, and how often.
+    policy: Policy,
 }
 
 impl Toolset
 {
-    /// A toolset that answers on `listener` and keeps its rows in the file
-    /// `calls`.
+    /// A toolset that answers on `listener`, keeps its rows in the file
+    /// `calls`, and retries its deliveries as `policy` states.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the directory of `calls` exists, made readable by its owner
     ///   alone when this call made it, and `calls` is open to append, made
     ///   readable by its owner alone when this call made it. Each row of
-    ///   `calls` that no settlement follows is kept, to be answered with an
-    ///   error once the toolset serves.
+    ///   `calls` that no settlement follows is kept with its answer, when the
+    ///   store holds one, to be delivered again once the toolset serves. A row
+    ///   with no answer is answered with an error.
     /// - provides: `gandr serve --port`'s face, opened before the hub runs, so
     ///   a store that cannot open stops the command.
     /// - fails: when the directory cannot be made, or the file opened or read.
@@ -376,14 +563,15 @@ impl Toolset
     /// The error making the directory, or opening or reading the file.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a store that holds an open row and a settled one
-    ///   opens, and only the open row is answered, with an error, after which
-    ///   the store is empty.
+    /// - hypothesis: L3 — a store that holds an open row, an answered row and a
+    ///   settled one opens. The open row is answered with an error, the
+    ///   answered row with its answer, and the store is then empty.
     /// - witness: `rap::tests::a_call_a_crash_lost_is_answered_with_an_error`
     #[inline]
     pub fn open(
         listener: TcpListener,
         calls: &Path,
+        policy: Policy,
     ) -> io::Result<Self>
     {
         if let Some(directory) = calls.parent() {
@@ -402,18 +590,26 @@ impl Toolset
             .create(true)
             .mode(0o600)
             .open(calls)?;
-        let mut open = BTreeMap::new();
+        let mut open: BTreeMap<(String, String), (Pending, Option<Answer>)> = BTreeMap::new();
         for line in written.split(|&byte| byte == b'\n') {
             // A line that does not parse is one that a crash cut short.
             match serde_json::from_slice::<Entry>(line) {
                 Ok(Entry::Opened(pending)) => {
-                    drop(open.insert((pending.group_id.clone(), pending.id.clone()), pending));
+                    drop(open.insert(
+                        (pending.group_id.clone(), pending.id.clone()),
+                        (pending, None),
+                    ));
+                },
+                Ok(Entry::Answered(answer)) => {
+                    if let Some(row) = open.get_mut(&(answer.group_id.clone(), answer.id.clone())) {
+                        row.1 = Some(answer);
+                    }
                 },
                 Ok(Entry::Settled(key)) => drop(open.remove(&key)),
                 Err(_) => {},
             }
         }
-        let lost: Vec<Pending> = open.into_values().collect();
+        let lost: Vec<(Pending, Option<Answer>)> = open.into_values().collect();
         if lost.is_empty() {
             file.set_len(0)?;
         }
@@ -425,7 +621,75 @@ impl Toolset
                 line: Buffer::default(),
             },
             lost,
+            subscriptions: Subscriptions::default(),
+            policy,
         })
+    }
+
+    /// Subscribe the runtime at `callback_url` to the frames of the document
+    /// at `scope`, as the row `group_id` and `tool_call_id`, with the bearer
+    /// `token` when it sent one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: once the toolset serves, each publication that changes the
+    ///   frame of `scope` owes one `subscription_event` to `callback_url`. A
+    ///   subscription that has the same row is replaced.
+    /// - provides: the table that the subscription operations of the toolset
+    ///   fill.
+    /// - fails: when `callback_url` is not an `http` URL.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`io::ErrorKind::InvalidInput`] for a callback URL that is not `http`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through a running hub, two edits that change the
+    ///   diagnostics of a document reach a subscribed listener as two events
+    ///   with their cards and versions.
+    /// - witness: `rap::tests::a_subscription_hears_each_new_frame`
+    #[spec(
+        captures: [http = callback_url.starts_with("http://")],
+        ensures: |ref ret| ret.is_ok() == http,
+    )]
+    #[inline]
+    pub fn subscribe(
+        &mut self,
+        group_id: String,
+        tool_call_id: String,
+        callback_url: String,
+        token: Option<String>,
+        scope: DocumentUri,
+    ) -> io::Result<()>
+    {
+        if !callback_url.starts_with("http://") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the callback URL is not an `http` URL",
+            ));
+        }
+        let routing = alloc::format!(
+            "{{\"type\":\"subscription_event\",\"group_id\":{},\"tool_call_id\":{},\"associative\":true,\"final\":false,\"version\":",
+            quoted(&group_id),
+            quoted(&tool_call_id)
+        );
+        let row = Row::Subscription(group_id, tool_call_id);
+        self.subscriptions.cancel(&row);
+        let _fresh = self
+            .subscriptions
+            .scopes
+            .entry(scope.clone())
+            .or_default()
+            .insert(row.clone());
+        drop(self.subscriptions.rows.insert(row, Subscription {
+            callback_url: Arc::from(callback_url),
+            token: token.map(Arc::from),
+            routing,
+            scope,
+            last: None,
+            unreachable: false,
+        }));
+        Ok(())
     }
 
     /// The address the toolset listens on.
@@ -441,8 +705,9 @@ impl Toolset
         self.listener.local_addr()
     }
 
-    /// Serve the toolset over `workspace`, telling `log` of each delivery that
-    /// fails, until accepting fails on every acceptor.
+    /// Serve the toolset over `workspace` as `peer`, telling `log` of each
+    /// delivery that does not end taken, until accepting fails on every
+    /// acceptor.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -453,11 +718,16 @@ impl Toolset
     ///   callback URL in `http` is answered `200` with no body once its row is
     ///   in the store, `503` when the row cannot be written. Another body is
     ///   answered `400`, a body past the limit `413`, and another path `404`.
-    ///   Each acknowledged call, and each call that a crash lost, is answered
-    ///   once, in the order queued, by a `tool_result` posted to its callback
-    ///   URL with the caller's bearer when it sent one, and its row is then
-    ///   settled. The text is the answer of the tool as JSON, or a text that
-    ///   starts with `Error: `.
+    ///   Each acknowledged call, and each call that a crash cut short, is
+    ///   answered once by a `tool_result` owed to its callback URL with the
+    ///   caller's bearer when it sent one. Its row is settled once a runtime
+    ///   takes or refuses it. The text is the answer of the tool as JSON, or a
+    ///   text that starts with `Error: `. The result of `diagnostics` carries
+    ///   the cards of the document's frame, its version, and the lines that
+    ///   `gandr view` prints as its `display_as`. Each publication that changes
+    ///   the frame of a document owes one `subscription_event` to each
+    ///   subscription that follows the document. Each delivery is retried as
+    ///   the policy states.
     /// - provides: `gandr serve --port`, the face beside the hub's socket.
     /// - fails: when accepting a connection fails on every acceptor for a
     ///   reason other than an interruption or an aborted connection.
@@ -474,21 +744,28 @@ impl Toolset
     ///   `type_of` on a document an editor holds reaches a test listener with
     ///   the hover's type and the caller's bearer; an unknown operation reaches
     ///   it with an error and no bearer; a body that is not JSON is answered
-    ///   `400`; a client that stalls holds no other call.
+    ///   `400`; a client that stalls holds no other call. `diagnostics` reaches
+    ///   the listener with the cards and the printed lines. A subscription
+    ///   hears one event for each edit that changes the frame. A listener that
+    ///   answers `503` once hears the event again after the first wait, and one
+    ///   that answers `404` hears nothing more.
     /// - witness: `rap::tests::the_toolset_answers_a_call_by_its_callback`
     /// - witness: `rap::tests::a_call_a_crash_lost_is_answered_with_an_error`
     /// - witness: `rap::tests::a_stalled_client_holds_no_other_call`
+    /// - witness: `rap::tests::a_subscription_hears_each_new_frame`
+    /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             pool_only_threads,
-            reason = "io: the worker blocks on the workspace lock and on each callback's socket, and each acceptor on its client's socket, for the toolset's life"
+            reason = "io: the worker and the fan-out block on the workspace lock, each delivery on its callback's socket, and each acceptor on its client's socket, for the toolset's life"
         )
     )]
     #[inline]
     pub fn serve<Log>(
         self,
         workspace: &Mutex<Workspace>,
+        peer: Peer,
         log: Log,
     ) -> io::Result<()>
     where
@@ -498,6 +775,8 @@ impl Toolset
             listener,
             store,
             lost,
+            subscriptions,
+            policy,
         } = self;
         let tools = tools::list();
         let names: BTreeSet<String> = tools
@@ -506,21 +785,50 @@ impl Toolset
             .map(String::from)
             .collect();
         let manifest = manifest(listener.local_addr()?, tools);
-        let store = Mutex::new(store);
+        let deliveries = Deliveries::new(policy);
         let (queue, queued) = channel();
-        for pending in lost {
-            drop(queue.send(Call {
-                pending,
-                arguments: None,
-            }));
+        for (pending, answer) in lost {
+            match answer {
+                Some(answer) => deliveries.owe(
+                    Row::Call(pending.group_id.clone(), pending.id.clone()),
+                    result(&pending, &answer),
+                ),
+                None => drop(queue.send(Call {
+                    pending,
+                    arguments: None,
+                })),
+            }
         }
+        let (changed, changes) = channel();
+        lock(workspace).watch(peer, changed);
         // An acknowledgement takes the store's lock for one line alone, so
         // acceptors at the host's width answer in parallel. Two at least keep a
-        // client that stalls from holding every other call.
+        // client that stalls from holding every other call. The deliveries
+        // take as many threads again, so a callback that stalls holds its own
+        // row alone.
         let width = thread::available_parallelism().map_or(2, |width| width.get().max(2));
-        let (listener, manifest, store, names) = (&listener, &manifest, &store, &names);
+        let (store, subscriptions, log) = (
+            Mutex::new(store),
+            Mutex::new(subscriptions),
+            Mutex::new(log),
+        );
+        let (listener, manifest, store, names, subscriptions, log, deliveries) = (
+            &listener,
+            &manifest,
+            &store,
+            &names,
+            &subscriptions,
+            &log,
+            &deliveries,
+        );
         thread::scope(|scope| {
-            drop(scope.spawn(move || work(queued, workspace, store, names, log)));
+            drop(scope.spawn(move || work(queued, workspace, store, names, deliveries, log)));
+            drop(scope.spawn(move || fan_out(changes, workspace, subscriptions, deliveries)));
+            for _delivery in 0 .. width {
+                drop(scope.spawn(move || {
+                    deliveries.run(|row, fate| told(row, &fate, store, subscriptions, log));
+                }));
+            }
             // Every acceptor starts before the first join.
             let mut acceptors = Vec::with_capacity(width);
             for _acceptor in 0 .. width {
@@ -530,14 +838,20 @@ impl Toolset
             // The worker ends once every acceptor has ended and it has answered
             // every queued call.
             drop(queue);
-            acceptors
+            let accepted = acceptors
                 .into_iter()
                 .map(|acceptor| {
                     acceptor
                         .join()
                         .unwrap_or_else(|_panic| Err(io::Error::other("an acceptor panicked")))
                 })
-                .fold(Ok(()), Result::and)
+                .fold(Ok(()), Result::and);
+            // The fan-out ends with its watch, and each delivery thread once
+            // its attempt in flight ends. The store keeps each answer that no
+            // runtime took.
+            lock(workspace).depart(peer);
+            deliveries.close();
+            accepted
         })
     }
 }
@@ -769,8 +1083,9 @@ fn read_request(
     })
 }
 
-/// Answer each call `queued` holds over `workspace`, post its result, and
-/// settle its row in `store`, telling `log` of each delivery that fails.
+/// Answer each call `queued` holds over `workspace`, keep its answer in
+/// `store`, and owe its result to `deliveries`, telling `log` of each answer
+/// that the store does not keep.
 ///
 /// # Specification
 /// trivial.
@@ -779,143 +1094,247 @@ fn work<Log>(
     workspace: &Mutex<Workspace>,
     store: &Mutex<Store>,
     names: &BTreeSet<String>,
-    mut log: Log,
+    deliveries: &Deliveries,
+    log: &Mutex<Log>,
 ) where
     Log: Write,
 {
-    let (mut text, mut result, mut exchange) =
-        (String::new(), Buffer::default(), Buffer::default());
-    for Call {
-        mut pending,
-        arguments,
-    } in queued
-    {
-        text.clear();
-        let written = match arguments {
-            None => text.write_str(LOST),
-            Some(_) if !names.contains(&pending.operation) => {
-                write!(text, "Error: no tool is named `{}`", pending.operation)
-            },
-            Some(arguments) => {
-                let name = Value::String(core::mem::take(&mut pending.operation));
-                let called = tools::call(&mut lock(workspace), Some(&name), &arguments);
-                match called {
-                    Ok(answer) => write!(text, "{answer}"),
-                    Err(refusal) => write!(text, "Error: {refusal}"),
-                }
-            },
-        };
-        result.0.clear();
-        let delivered = written
-            .map_err(io::Error::other)
-            .and_then(|()| {
-                serde_json::to_writer(&mut result.0, &ToolResult {
-                    kind: "tool_result",
-                    group_id: &pending.group_id,
-                    id: &pending.id,
-                    call_id: pending.call_id.as_ref(),
-                    text: &text,
-                })
-                .map_err(io::Error::other)
-            })
-            .and_then(|()| deliver(&pending, &result, &mut exchange));
-        if let Err(error) = delivered {
+    for Call { pending, arguments } in queued {
+        let answer = answered(&pending, arguments, workspace, names);
+        let kept = lock(store).answered(&answer);
+        if let Err(error) = kept {
             drop(writeln!(
-                log,
-                "the toolset did not deliver the call {} of {}: {error}",
-                pending.id, pending.group_id
+                lock(log),
+                "the toolset did not keep the answer of the call {} of {}: {error}",
+                pending.id,
+                pending.group_id
             ));
         }
-        let settled = lock(store).settled(&pending);
-        if let Err(error) = settled {
-            drop(writeln!(
-                log,
-                "the toolset did not settle the call {}: {error}",
-                pending.id
-            ));
-        }
+        deliveries.owe(
+            Row::Call(pending.group_id.clone(), pending.id.clone()),
+            result(&pending, &answer),
+        );
     }
 }
 
-/// Post `result`, an encoded `tool_result`, to the callback URL of `pending`,
-/// with the caller's bearer when it sent one, and read the status, the request
-/// and the answer written in `exchange`.
+/// The answer of the call `pending` with `arguments` over `workspace`, absent
+/// arguments meaning a call that a crash cut short.
 ///
 /// # Specification
 /// trivial.
-///
-/// # Errors
-/// The error resolving, connecting, writing or reading, or a status other than
-/// `2xx`.
-fn deliver(
+fn answered(
     pending: &Pending,
-    result: &Buffer,
-    exchange: &mut Buffer,
-) -> io::Result<()>
+    arguments: Option<Value>,
+    workspace: &Mutex<Workspace>,
+    names: &BTreeSet<String>,
+) -> Answer
 {
-    let rest = pending
-        .callback_url
-        .strip_prefix("http://")
-        .ok_or_else(|| io::Error::other("the callback URL is not an `http` URL"))?;
-    let (authority, path) = rest
-        .find('/')
-        .map_or((rest, "/"), |slash| rest.split_at(slash));
-    let mut addresses = if authority.ends_with(']') || !authority.contains(':') {
-        (
-            authority.trim_start_matches('[').trim_end_matches(']'),
-            80_u16,
-        )
-            .to_socket_addrs()?
-    }
-    else {
-        authority.to_socket_addrs()?
+    let mut answer = Answer {
+        group_id: pending.group_id.clone(),
+        id: pending.id.clone(),
+        text: String::new(),
+        display: None,
+        version: None,
     };
-    let address = addresses
-        .next()
-        .ok_or_else(|| io::Error::other("the callback URL names no address"))?;
-    let mut stream = TcpStream::connect_timeout(&address, CALLBACK_WAIT)?;
-    stream.set_read_timeout(Some(CALLBACK_WAIT))?;
-    stream.set_write_timeout(Some(CALLBACK_WAIT))?;
-    stream.set_nodelay(true)?;
-    exchange.0.clear();
-    write!(
-        exchange.0,
-        "POST {path} HTTP/1.1\r\nhost: {authority}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n",
-        result.0.len()
-    )?;
-    if let Some(ref token) = pending.token {
-        write!(exchange.0, "authorization: Bearer {token}\r\n")?;
+    answer.text = match arguments {
+        None => String::from(LOST),
+        Some(_) if !names.contains(&pending.operation) => {
+            alloc::format!("Error: no tool is named `{}`", pending.operation)
+        },
+        Some(arguments) if pending.operation == DIAGNOSTICS => {
+            let workspace = lock(workspace);
+            let frame =
+                tools::held(&workspace, &arguments).map(|(uri, _version)| workspace.rendered(&uri));
+            drop(workspace);
+            match frame {
+                Err(refusal) => alloc::format!("Error: {refusal}"),
+                Ok(frame) => match frame.as_ref().and_then(carded) {
+                    None => String::from("Error: the document closed"),
+                    Some((document, report)) => {
+                        answer.display = Some(report_lines(document, report).join("\n"));
+                        answer.version = Some(i32::from(document.version));
+                        cards(document, report)
+                    },
+                },
+            }
+        },
+        Some(arguments) => {
+            let name = Value::String(pending.operation.clone());
+            let called = tools::call(&mut lock(workspace), Some(&name), &arguments);
+            match called {
+                Ok(answer) => answer.to_string(),
+                Err(refusal) => alloc::format!("Error: {refusal}"),
+            }
+        },
+    };
+    answer
+}
+
+/// The document of `frame` and its report, when `frame` is the report of a
+/// document.
+///
+/// # Specification
+/// trivial.
+fn carded(frame: &RenderFrame) -> Option<(&DocId, &ReportView)>
+{
+    match (frame.scope(), frame.body()) {
+        (&FrameScope::Document(ref document), &FrameBody::Frame { ref report }) => {
+            Some((document, report))
+        },
+        (
+            &(FrameScope::Connection | FrameScope::Document(_)),
+            &(FrameBody::Hello { .. }
+            | FrameBody::Frame { .. }
+            | FrameBody::Resync
+            | FrameBody::Detach),
+        ) => None,
     }
-    exchange.0.extend_from_slice(b"connection: close\r\n\r\n");
-    exchange.0.extend_from_slice(&result.0);
-    stream.write_all(&exchange.0)?;
-    exchange.0.clear();
-    let mut chunk = [0_u8; 1024];
-    loop {
-        let read = stream.read(&mut chunk)?;
-        if read == 0 {
-            return Err(io::ErrorKind::UnexpectedEof.into());
+}
+
+/// The text of the frame of `document`: its URI, its version, and the cards
+/// of `report`, as JSON.
+///
+/// # Specification
+/// trivial.
+fn cards(
+    document: &DocId,
+    report: &ReportView,
+) -> String
+{
+    serde_json::to_string(&Cards {
+        document,
+        diagnostics: &report.diagnostics,
+        goals: &report.goals,
+    })
+    .unwrap_or_default()
+}
+
+/// `value` as JSON: a text as a JSON string, with its quotes.
+///
+/// # Specification
+/// trivial.
+fn quoted<Encoded>(value: &Encoded) -> String
+where
+    Encoded: Serialize + ?Sized,
+{
+    serde_json::to_string(value).unwrap_or_default()
+}
+
+/// The `tool_result` that carries `answer`, the answer of `pending`, keyed by
+/// its `id`.
+///
+/// # Specification
+/// trivial.
+fn result(
+    pending: &Pending,
+    answer: &Answer,
+) -> Post
+{
+    let mut head = alloc::format!(
+        "{{\"type\":\"tool_result\",\"group_id\":{},\"id\":{},\"call_id\":{},",
+        quoted(&pending.group_id),
+        quoted(&pending.id),
+        quoted(&pending.call_id)
+    );
+    if let Some(ref display) = answer.display {
+        head.push_str("\"display_as\":[{\"type\":\"text\",\"content\":");
+        head.push_str(&quoted(display));
+        head.push_str("}],");
+    }
+    if let Some(version) = answer.version {
+        head.push_str("\"version\":");
+        head.push_str(&version.to_string());
+        head.push(',');
+    }
+    head.push_str("\"text\":");
+    Post {
+        callback_url: Arc::from(pending.callback_url.as_str()),
+        token: pending.token.as_deref().map(Arc::from),
+        key: pending.id.clone(),
+        head,
+        text: Arc::from(quoted(&answer.text)),
+    }
+}
+
+/// Owe each subscription the new frame of each document that `changes` names,
+/// until the workspace ends the watch. A document that no subscription follows
+/// costs a lookup.
+///
+/// # Specification
+/// trivial.
+fn fan_out(
+    changes: Receiver<DocumentUri>,
+    workspace: &Mutex<Workspace>,
+    subscriptions: &Mutex<Subscriptions>,
+    deliveries: &Deliveries,
+)
+{
+    for uri in changes {
+        let followed = lock(subscriptions).scopes.contains_key(&uri);
+        if !followed {
+            continue;
         }
-        exchange
-            .0
-            .extend_from_slice(chunk.get(.. read).unwrap_or_default());
-        let mut headers = [httparse::EMPTY_HEADER; HEADERS];
-        let mut answer = httparse::Response::new(&mut headers);
-        match answer.parse(&exchange.0).map_err(io::Error::other)? {
-            httparse::Status::Complete(_head) => {
-                return match answer.code {
-                    Some(200 ..= 299) => Ok(()),
-                    code => Err(io::Error::other(alloc::format!(
-                        "the callback answered {}",
-                        code.unwrap_or_default()
-                    ))),
-                };
-            },
-            httparse::Status::Partial if exchange.0.len() > HEAD_LIMIT => {
-                return Err(io::ErrorKind::InvalidData.into());
-            },
-            httparse::Status::Partial => {},
-        }
+        let Some(frame) = lock(workspace).rendered(&uri)
+        else {
+            continue;
+        };
+        let Some((document, report)) = carded(&frame)
+        else {
+            continue;
+        };
+        let state = State {
+            version: i32::from(document.version),
+            text: Arc::from(quoted(&cards(document, report))),
+        };
+        lock(subscriptions).publish(&uri, &state, deliveries);
+    }
+}
+
+/// Act on `fate`, how the deliveries of `row` ended: settle a call that a
+/// runtime took or refused, drop a subscription that a runtime refused, and
+/// mark one whose retries are spent. Tell `log` of each fate but a delivery
+/// taken, and of a subscription that is reachable again.
+///
+/// # Specification
+/// trivial.
+fn told<Log>(
+    row: &Row,
+    fate: &Fate,
+    store: &Mutex<Store>,
+    subscriptions: &Mutex<Subscriptions>,
+    log: &Mutex<Log>,
+) where
+    Log: Write,
+{
+    match (row, fate) {
+        (&Row::Call(..), &Fate::Spent(..)) => {},
+        (&Row::Call(..), &(Fate::Taken | Fate::Refused(_))) => {
+            let settled = lock(store).settled(row);
+            if let Err(error) = settled {
+                drop(writeln!(
+                    lock(log),
+                    "the toolset did not settle {row}: {error}"
+                ));
+            }
+        },
+        (&Row::Subscription(..), &Fate::Taken) => {
+            let recovered = lock(subscriptions)
+                .rows
+                .get_mut(row)
+                .is_some_and(|subscription| core::mem::take(&mut subscription.unreachable));
+            if recovered {
+                drop(writeln!(lock(log), "{row} is reachable again"));
+            }
+        },
+        (&Row::Subscription(..), &Fate::Refused(_)) => lock(subscriptions).cancel(row),
+        (&Row::Subscription(..), &Fate::Spent(..)) => {
+            if let Some(subscription) = lock(subscriptions).rows.get_mut(row) {
+                subscription.unreachable = true;
+            }
+        },
+    }
+    if !matches!(*fate, Fate::Taken) {
+        drop(writeln!(lock(log), "the delivery to {row} was {fate}"));
     }
 }
 
@@ -934,6 +1353,8 @@ mod tests
     use std::path::PathBuf;
     use std::thread;
 
+    use gandr_surface_lsp::DocumentUri;
+    use gandr_surface_lsp::Peer;
     use gandr_surface_lsp::Workspace;
     use gandr_surface_lsp::bind;
     use gandr_surface_lsp::run_hub;
@@ -943,6 +1364,7 @@ mod tests
 
     use super::Buffer;
     use super::LOST;
+    use super::Policy;
     use super::REQUEST_WAIT;
     use super::Toolset;
     use crate::face::tests::Editor;
@@ -1033,9 +1455,9 @@ mod tests
                 std::io::sink(),
                 Some(crate::serve),
                 Some(Box::new(
-                    move |workspace: alloc::sync::Arc<std::sync::Mutex<Workspace>>| {
+                    move |workspace: alloc::sync::Arc<std::sync::Mutex<Workspace>>, peer: Peer| {
                         toolset
-                            .serve(&workspace, std::io::sink())
+                            .serve(&workspace, peer, std::io::sink())
                             .expect("the toolset serves");
                     },
                 )),
@@ -1116,6 +1538,19 @@ mod tests
     /// trivial.
     fn received(callback: &TcpListener) -> Message
     {
+        heard(callback, &json!("200 OK"))
+    }
+
+    /// The next request `callback` takes, read whole and answered with the
+    /// status line `status`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn heard(
+        callback: &TcpListener,
+        status: &Value,
+    ) -> Message
+    {
         let (mut stream, _peer) = callback.accept().expect("the toolset calls back");
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -1140,16 +1575,60 @@ mod tests
             }
         };
         stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+            .write_all(
+                alloc::format!(
+                    "HTTP/1.1 {}\r\ncontent-length: 0\r\n\r\n",
+                    status.as_str().unwrap_or_default()
+                )
+                .as_bytes(),
+            )
             .expect("the toolset reads the answer");
         message
+    }
+
+    /// Whether `callback` takes no request for `wait`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn quiet(
+        callback: &TcpListener,
+        wait: Duration,
+    ) -> Answer
+    {
+        callback
+            .set_nonblocking(true)
+            .expect("the listener stops blocking");
+        let started = std::time::Instant::now();
+        while started.elapsed() < wait {
+            if callback.accept().is_ok() {
+                return Answer(false);
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        Answer(true)
+    }
+
+    /// The frame that the text of `message`, a result or an event, holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn framed(message: &Value) -> Value
+    {
+        serde_json::from_str(
+            message
+                .get("text")
+                .and_then(Value::as_str)
+                .expect("the message is a text"),
+        )
+        .expect("the text is a frame as JSON")
     }
 
     #[test]
     fn the_toolset_answers_a_call_by_its_callback()
     {
         let scratch = Scratch::new(&json!("rap"));
-        let toolset = Toolset::open(loopback(), &calls(&scratch)).expect("the store opens");
+        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
+            .expect("the store opens");
         let address = toolset.address().expect("the toolset listens");
         hub(&scratch, toolset);
         let mut editor = Editor::new(&scratch);
@@ -1278,6 +1757,43 @@ mod tests
             "{refused}"
         );
 
+        let diagnosed = invoke(
+            address,
+            &json!({ "operation": "diagnostics", "arguments": { "uri": uri }, "id": "call-3",
+                "callback_url": callback_url, "group_id": "thread-1" }),
+            None,
+        );
+        assert!(
+            diagnosed.head.starts_with("HTTP/1.1 200 "),
+            "{}",
+            diagnosed.head
+        );
+        let diagnosed = received(&callback);
+        assert_eq!(
+            diagnosed.carries(&json!("idempotency-key: call-3")),
+            Answer(true),
+            "a result is keyed by its call"
+        );
+        let diagnosed = diagnosed.json();
+        assert_eq!(
+            framed(&diagnosed),
+            json!({ "uri": uri, "version": 1_i32, "diagnostics": [], "goals": [] }),
+            "the result is the frame's cards"
+        );
+        assert_eq!(diagnosed.get("version"), Some(&json!(1_i32)));
+        assert_eq!(
+            diagnosed.pointer("/display_as/0/type"),
+            Some(&json!("text"))
+        );
+        assert_eq!(
+            diagnosed
+                .pointer("/display_as/0/content")
+                .and_then(Value::as_str)
+                .and_then(|content| content.lines().next()),
+            Some("uri file:///tmp/rap.gandr version 1 diagnostics 0 holes 0"),
+            "the display is the lines `gandr view` prints"
+        );
+
         let malformed = exchange(address, &Message {
             head: alloc::format!("POST /invoke HTTP/1.1\r\nhost: {address}\r\ncontent-length: 1"),
             body: Vec::from(*b"{"),
@@ -1305,6 +1821,8 @@ mod tests
         };
         let written = [
             row(&json!("lost")),
+            row(&json!("kept")),
+            json!({ "answered": { "group_id": "thread-1", "id": "kept", "text": "{\"documents\":[]}" } }),
             row(&json!("answered")),
             json!({ "settled": ["thread-1", "answered"] }),
         ];
@@ -1320,18 +1838,28 @@ mod tests
                 .collect::<String>(),
         )
         .expect("the store is written");
-        let toolset = Toolset::open(loopback(), &calls).expect("the store opens");
+        let toolset =
+            Toolset::open(loopback(), &calls, Policy::default()).expect("the store opens");
         hub(&scratch, toolset);
-        let lost = received(&callback);
+        let mut delivered = Vec::new();
+        for _row in 0_i32 .. 2_i32 {
+            let message = received(&callback);
+            assert_eq!(
+                message.carries(&json!("authorization: Bearer abc")),
+                Answer(true)
+            );
+            let message = message.json();
+            delivered.push((message.get("id").cloned(), message.get("text").cloned()));
+        }
+        delivered.sort_by_key(|&(ref id, _)| id.as_ref().and_then(Value::as_str).map(String::from));
         assert_eq!(
-            lost.carries(&json!("authorization: Bearer abc")),
-            Answer(true)
-        );
-        let lost = lost.json();
-        assert_eq!(
-            (lost.get("id"), lost.get("text")),
-            (Some(&json!("lost")), Some(&json!(LOST))),
-            "only the row no settlement follows is answered, with an error"
+            delivered,
+            [
+                (Some(json!("kept")), Some(json!("{\"documents\":[]}"))),
+                (Some(json!("lost")), Some(json!(LOST)))
+            ],
+            "a kept answer is delivered again, a row with no answer is answered with an error, \
+             and a settled row is not answered"
         );
         let deadline = std::time::Instant::now()
             .checked_add(Duration::from_secs(10))
@@ -1352,7 +1880,8 @@ mod tests
     fn a_stalled_client_holds_no_other_call()
     {
         let scratch = Scratch::new(&json!("rap-stalled"));
-        let toolset = Toolset::open(loopback(), &calls(&scratch)).expect("the store opens");
+        let toolset = Toolset::open(loopback(), &calls(&scratch), Policy::default())
+            .expect("the store opens");
         let address = toolset.address().expect("the toolset listens");
         hub(&scratch, toolset);
         let mut stalled = TcpStream::connect(address).expect("the toolset accepts");
@@ -1374,5 +1903,140 @@ mod tests
             "another acceptor answers while the stalled client holds its own"
         );
         drop(stalled);
+    }
+
+    /// A toolset whose store is in `scratch`, with the runtime at `callback`
+    /// subscribed to the frames of `uri` as `watch-1` of `thread-1`, and the
+    /// bearer `abc`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn subscribed(
+        scratch: &Scratch,
+        callback: &TcpListener,
+        uri: &Value,
+    ) -> Toolset
+    {
+        let mut toolset =
+            Toolset::open(loopback(), &calls(scratch), Policy::default()).expect("the store opens");
+        toolset
+            .subscribe(
+                String::from("thread-1"),
+                String::from("watch-1"),
+                alloc::format!(
+                    "http://{}/events",
+                    callback.local_addr().expect("the callback listens")
+                ),
+                Some(String::from("abc")),
+                DocumentUri::from(uri.as_str().unwrap_or_default()),
+            )
+            .expect("the runtime subscribes");
+        toolset
+    }
+
+    #[test]
+    fn a_subscription_hears_each_new_frame()
+    {
+        let scratch = Scratch::new(&json!("rap-subscribed"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/subscribed.gandr");
+        hub(&scratch, subscribed(&scratch, &callback, &uri));
+        let mut editor = Editor::new(&scratch);
+        let mut other = json!("file:///tmp/other.gandr");
+        for (version, text, count) in [
+            (1_i32, "def f = 42 ;\n", 0_usize),
+            (2_i32, "def f = missing ;\n", 1_usize),
+            (3_i32, "def f = 42 ;\n", 0_usize),
+        ] {
+            editor.edit(&uri, &json!(version), &json!(text));
+            let event = received(&callback);
+            assert!(
+                event.head.starts_with("POST /events HTTP/1.1"),
+                "{}",
+                event.head
+            );
+            assert_eq!(
+                (
+                    event.carries(&json!(alloc::format!("idempotency-key: watch-1@{version}"))),
+                    event.carries(&json!("authorization: Bearer abc"))
+                ),
+                (Answer(true), Answer(true)),
+                "an event is keyed by its frame's version and carries the bearer back"
+            );
+            let event = event.json();
+            assert_eq!(
+                (
+                    event.get("type"),
+                    event.get("group_id"),
+                    event.get("tool_call_id"),
+                    event.get("version")
+                ),
+                (
+                    Some(&json!("subscription_event")),
+                    Some(&json!("thread-1")),
+                    Some(&json!("watch-1")),
+                    Some(&json!(version))
+                )
+            );
+            let frame = framed(&event);
+            assert_eq!(
+                (
+                    frame.get("uri"),
+                    frame.get("version"),
+                    frame
+                        .get("diagnostics")
+                        .and_then(Value::as_array)
+                        .map(Vec::len)
+                ),
+                (Some(&uri), Some(&json!(version)), Some(count)),
+                "each event holds the whole frame at its version"
+            );
+            // A document that no subscription follows sends nothing.
+            editor.edit(&other, &json!(1_i32), &json!("def g = 1 ;\n"));
+            other = json!(alloc::format!("file:///tmp/other-{version}.gandr"));
+        }
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(300)),
+            Answer(true),
+            "no other event follows"
+        );
+        drop(editor);
+    }
+
+    #[test]
+    fn a_server_error_is_retried_and_a_refusal_is_not()
+    {
+        let scratch = Scratch::new(&json!("rap-retried"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/retried.gandr");
+        hub(&scratch, subscribed(&scratch, &callback, &uri));
+        let mut editor = Editor::new(&scratch);
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let failed = heard(&callback, &json!("503 Service Unavailable"));
+        let answered = std::time::Instant::now();
+        let retried = received(&callback);
+        let waited = answered.elapsed();
+        assert!(
+            waited >= Policy::default().first && waited < Duration::from_secs(5),
+            "the retry follows the first wait of the policy, not {waited:?}"
+        );
+        assert_eq!(
+            (
+                failed.json(),
+                retried.carries(&json!("idempotency-key: watch-1@1"))
+            ),
+            (retried.json(), Answer(true)),
+            "the retry is the same frame under the same key"
+        );
+        editor.edit(&uri, &json!(2_i32), &json!("def f = missing ;\n"));
+        let refused = heard(&callback, &json!("404 Not Found"));
+        assert_eq!(refused.json().get("version"), Some(&json!(2_i32)));
+        editor.edit(&uri, &json!(3_i32), &json!("def f = 42 ;\n"));
+        assert_eq!(
+            quiet(&callback, Duration::from_secs(1)),
+            Answer(true),
+            "a listener that refused an event hears nothing more"
+        );
+        drop(editor);
     }
 }

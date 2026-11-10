@@ -2121,13 +2121,29 @@ fn main() -> ExitCode
             linger_ms,
             port,
         }) => {
+            let toolset = match port
+                .map(|port| {
+                    configuration.deliveries().map(|policy| {
+                        (
+                            core::net::SocketAddr::from((core::net::Ipv4Addr::LOCALHOST, port)),
+                            policy,
+                        )
+                    })
+                })
+                .transpose()
+            {
+                Ok(toolset) => toolset,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
             return hub(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
-                port.map(|port| {
-                    core::net::SocketAddr::from((core::net::Ipv4Addr::LOCALHOST, port))
-                }),
+                toolset,
             );
         },
         #[cfg(unix)]
@@ -2868,8 +2884,8 @@ fn reach_hub(
 
 /// Run the engine hub on `socket`, lingering `linger` once its last client
 /// leaves, its workspace configured with `spelling`, its kernel admissions on
-/// a pool at the host's width, with the toolset at `toolset` when one is
-/// named, and choose the exit code.
+/// a pool at the host's width, with the toolset at the address of `toolset`
+/// and its delivery policy when one is named, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2899,14 +2915,17 @@ fn hub(
     socket: Option<PathBuf>,
     linger: Duration,
     spelling: Spelling,
-    toolset: Option<core::net::SocketAddr>,
+    toolset: Option<(core::net::SocketAddr, gandr_surface_mcp::Policy)>,
 ) -> ExitCode
 {
     let socket = match hub_socket(socket) {
         Ok(socket) => socket,
         Err(error) => return hub_fault(&error),
     };
-    let toolset = match toolset.map(self::toolset).transpose() {
+    let toolset = match toolset
+        .map(|(address, policy)| self::toolset(address, policy))
+        .transpose()
+    {
         Ok(toolset) => toolset,
         Err(error) => return hub_fault(&error),
     };
@@ -2922,8 +2941,11 @@ fn hub(
                         let beside: gandr_surface_lsp::Beside = Box::new(
                             move |workspace: alloc::sync::Arc<
                                 std::sync::Mutex<gandr_surface_lsp::Workspace>,
-                            >| {
-                                if let Err(error) = toolset.serve(&workspace, std::io::stderr()) {
+                            >,
+                                  peer: gandr_surface_lsp::Peer| {
+                                if let Err(error) =
+                                    toolset.serve(&workspace, peer, std::io::stderr())
+                                {
                                     drop(writeln!(
                                         std::io::stderr(),
                                         "gandr: the toolset stopped: {error}"
@@ -2967,7 +2989,8 @@ fn hub(
 }
 
 /// The toolset of the current directory's workspace, listening at `address`,
-/// its calls kept under the user's state directory.
+/// its calls kept under the user's state directory, its deliveries retried as
+/// `policy` states.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2989,14 +3012,21 @@ fn hub(
 /// - hypothesis: L3 — as [`hub`].
 /// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
 #[cfg(unix)]
-fn toolset(address: core::net::SocketAddr) -> std::io::Result<gandr_surface_mcp::Toolset>
+fn toolset(
+    address: core::net::SocketAddr,
+    policy: gandr_surface_mcp::Policy,
+) -> std::io::Result<gandr_surface_mcp::Toolset>
 {
     let listener = std::net::TcpListener::bind(address)?;
     let calls = config::calls().ok_or_else(|| {
         std::io::Error::other("no directory names the state: set `XDG_STATE_HOME` or `HOME`")
     })?;
     let workspace = gandr_surface_lsp::workspace_name(&std::env::current_dir()?)?;
-    gandr_surface_mcp::Toolset::open(listener, &calls.join(workspace).with_extension("jsonl"))
+    gandr_surface_mcp::Toolset::open(
+        listener,
+        &calls.join(workspace).with_extension("jsonl"),
+        policy,
+    )
 }
 
 /// Run the read-evaluate loop on the standard streams, its session on
