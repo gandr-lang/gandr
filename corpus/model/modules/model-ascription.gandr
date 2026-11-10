@@ -13,7 +13,8 @@
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics"
 //! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
-/// `Counter` states a carrier, a start and a step.
+/// `Counter` states a carrier, a start and a step. It has no laws, so it is an
+/// ML signature.
 pub theory Counter where
   sort C : Type;
   oper start : () --> C;

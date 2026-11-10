@@ -1,7 +1,9 @@
 // This source shows prelude model resolution.
 //
 // The prelude provides `Eq` and `Ord` models for integers and strings.
-// `EqPoint` derives equality for a point.
+// `EqPoint` derives equality for a point, through `Eq.generic` and its laws.
+// The hotpath series checks this source as its `prelude resolve` workload. So
+// the series measures each resolution here.
 //
 // The checker resolves each comparison from its operand carrier.
 //

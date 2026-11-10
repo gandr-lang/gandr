@@ -2,7 +2,8 @@
 //
 // A model gives each constant with a value definition.
 //
-// The checker reads a constant value when a law applies it.
+// The checker reads a constant value when a law applies it. An operation of no
+// inputs, such as `oper zero : () --> M`, stays a function of none.
 //
 // - see: #2917
 

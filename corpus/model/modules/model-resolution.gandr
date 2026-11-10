@@ -2,8 +2,10 @@
 //
 // `Up` and `Flips` both provide a model of `Count`.
 //
-// The checker selects the candidate that the argument carrier requires.
-// It ignores the order that imports introduce candidates.
+// The checker selects the candidate that the argument carrier requires. No
+// module carries an instance mark. Each model of `Count`, or of a theory that
+// includes `Count`, is a candidate. The checker ignores the order that imports
+// introduce candidates.
 //
 // - see: #739
 import "./model-resolution-tally.gandr";

@@ -1,7 +1,9 @@
 //! This source shows manifest model types.
 //!
-//! A manifest model type fixes one sort in a theory model.
-//! Equivalent sort types give equivalent manifest model types.
+//! A manifest model type fixes one sort in a theory model. The type is a
+//! family in the fixed sort. So equivalent sort types give equivalent manifest
+//! model types. This is the structure identity principle at a fixed sort, after
+//! § 2.14 of the HoTT book and the manifest types of Leroy.
 //!
 //! The checker applies each fixed sort to the other model components.
 //! Transport moves the model fields along an equivalent sort.
@@ -27,7 +29,8 @@ def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) =
     | +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}}
     | +{.1 = u} => +{.1 = +{.1 = u}}
 
-/// `nestings` proves that the two sum types are equivalent.
+/// `nestings` proves that the two sum types are equivalent. The two maps are
+/// inverse by computation.
 def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv toLeft toRight;
 
 /// `countersOn` fixes a counter carrier.
@@ -51,7 +54,8 @@ def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
 def first() -> Unit + (Unit + Unit) =
   +{.0 = *{}}
 
-/// `rightward` packages a counter with the right nesting.
+/// `rightward` packages a counter with the right nesting. The carrier is no
+/// field, so the record holds the start and the step.
 def rightward : Model Counter with sort C = Unit + (Unit + Unit) = *{
   .start = first,
   .step = onward
@@ -96,7 +100,8 @@ module Thirds : Model(Counter) where
   /// `step` advances the state.
   def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { onward c }
 
-/// `secondThirds` passes `Thirds` at its manifest carrier.
+/// `secondThirds` passes `Thirds` at its manifest carrier. `Thirds` omits the
+/// carrier that the parameter fixes.
 @[runs("+{.1 = +{.0 = *{}}}")]
 def secondThirds() -> Unit + (Unit + Unit) { stepOnce Thirds }
 

@@ -1,12 +1,14 @@
 // This source shows an importer through a flow.
 //
-// A flow presents a newer package at an older signature.
-// This source also defines a flow that adds scaling.
-// A renaming presents the newer package at the older signature too.
+// A package moves on while its importers stay. A flow presents a newer package
+// at an older signature. This source also defines a flow that adds scaling. A
+// renaming presents the newer package at the older signature too.
 //
-// The checker reads a flow as a functor between theory models.
-// It resolves each imported member through the selected flow.
-// It reads a renamed member as the source member that the renaming names.
+// The checker reads a flow as a functor between theory models. It resolves
+// each imported member through the selected flow. It reads a renamed member as
+// the source member that the renaming names. A flow member that is the name of
+// a domain member alone binds the declaration of the source. Any other flow
+// member is the code of this importer.
 //
 // - see: #3378
 // - see: #3461

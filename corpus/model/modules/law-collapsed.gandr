@@ -1,8 +1,16 @@
 // This source shows a model law that collapses one sort.
 //
-// `CollapsedDot` proves that every `Dot` loop is the same.
+// `CollapsedDot` proves that every `Dot` loop is the same. The law has the
+// shape of axiom K. It is sound where K on the native identity is not. A law
+// is a hypothesis, not a rule. A cell of the theory is a path in its models,
+// not a path in `Type`.
 //
 // The checker requires each model to prove the law at its carrier.
+//
+// Limits: the native `Path` admits no such law. `here` is not a pattern, and a
+// law over a path of paths has no form today. So K reaches the sort of a
+// theory only as an obligation on its models. It is never a fact about `Path`
+// or `Flow`.
 //
 // - see: pathological/modules/law-collapsed.gandr
 // - see: pathological/identity/k-derivation.gandr

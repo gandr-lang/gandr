@@ -3,7 +3,8 @@
 // `Newer` renames the old answer as `reply` and adds `count`.
 //
 // A flow presents the newer package at the older signature.
-// The checker resolves an importer through that flow.
+// The checker resolves an importer through that flow. An importer names the
+// flow after `via`, and the body of the flow reads `reply`.
 //
 // - see: #3378
 // - see: model/modules/translated.gandr

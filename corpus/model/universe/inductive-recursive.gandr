@@ -1,8 +1,14 @@
 //! This fixture defines an inductive-recursive universe.
 //!
-//! The codes and decoder share one recursive block.
+//! The universe follows Dybjer and Setzer. The codes and decoder share one
+//! recursive block. Induction-recursion adds nothing new to the kernel. The
+//! decoder is a function into the universe. A decode is the type that its
+//! returned code quotes.
 //!
-//! A function code selects a decoded codomain.
+//! A function code selects a decoded codomain. The block is one admission. The
+//! codes form with the declared type of the decoder in scope. Then the decoder
+//! is checked against the codes. A universe indexed by a level takes the same
+//! admission.
 //!
 //! - see: #577 — `idNat`
 

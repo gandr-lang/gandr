@@ -1,8 +1,12 @@
 // This source shows the prelude `Ord` model.
 //
-// The integer and string models order values of their carrier.
+// The integer and string models order values of their carrier. `OrdInteger`
+// answers with the integer primitives, so its verdicts are theirs. `OrdString`
+// orders strings byte by byte, as a Rust `BTreeMap<String, _>` does.
 //
-// The checker resolves each comparison from the operand type.
+// The checker resolves each comparison from the operand type. The operators
+// `<`, `<=`, `>` and `>=` call the prelude functions `lt`, `le`, `gt` and `ge`.
+// Each `Ord` model includes its `Eq` model. So `==` still resolves at both.
 //
 // - see: #2333
 
@@ -38,7 +42,8 @@ def atLeast() -> Bool { "alpha" >= "beta" }
 @[runs("+{.0 = *{}}")]
 def integerOrder() -> Bool { - 4 < 9 }
 
-/// `sameName` resolves one string equality model.
+/// `sameName` resolves one string equality model. `EqString` and the `Eq`
+/// reduct of `OrdString` are one elaboration.
 @[runs("+{.0 = *{}}")]
 def sameName() -> Bool { "alpha" == "alpha" }
 

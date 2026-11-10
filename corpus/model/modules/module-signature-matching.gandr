@@ -2,7 +2,8 @@
 //
 // `Metrics` exposes the members that its signature states.
 //
-// The checker matches type and value members by name.
+// The checker matches type and value members by name. A definition gives a type
+// member. A member that the signature omits stays inside the module.
 //
 // - see: #2917
 
@@ -10,7 +11,8 @@
 module Metrics : *{type Ratio = Integer, base : Integer, double : Integer, scale : Ratio} where {
   /// `scratch` stays outside the signature.
   def scratch = 2;
-  /// `double` tests an unsynthesised operator result.
+  /// `double` tests an unsynthesised operator result. The call of the operator
+  /// is pure, so the value stands as what the call returns.
   @[checks]
   def double = scratch * 3;
   /// `base` gives seven.

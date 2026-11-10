@@ -2,7 +2,12 @@
 //!
 //! Each code has a decoded value type.
 //!
-//! Recursive functions descend through codes and values.
+//! Recursive functions descend through codes and values. A fixpoint over a
+//! universe stages the code. A list tail stands at the list code itself. So the
+//! descent of a tail is the descent of the list, not of the code.
+//!
+//! Limits: a direct tail call at the same code is refused in the twin. The
+//! stage that a decode needs to carry is refused there too.
 //!
 //! - see: `pathological/universe/decoded-descent.gandr`
 

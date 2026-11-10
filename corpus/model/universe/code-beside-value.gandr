@@ -2,7 +2,9 @@
 //!
 //! Each code decodes to one type.
 //!
-//! A case reads each value at its decoded type.
+//! A case reads each value at its decoded type. The case generalises its motive
+//! over the value. The kernel checks the case at that motive. The machine runs
+//! the case as written.
 //!
 //! - cites: [McBride-2002-elimination_motive]
 //!

@@ -1,6 +1,8 @@
 /// This source shows recursive module members.
 ///
-/// `Counting` and `Iterating` each contain a recursive definition.
+/// `Counting` and `Iterating` each contain a recursive definition. A module
+/// groups a recursive definition with the definitions beside it. A fold over
+/// the terms of a model is a functor member that calls itself.
 ///
 /// The checker resolves a recursive member one stage below its definition.
 /// A client resolves every member through its module path.

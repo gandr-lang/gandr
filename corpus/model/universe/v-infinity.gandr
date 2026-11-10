@@ -1,8 +1,15 @@
 //! This fixture defines a cumulative hierarchy.
 //!
-//! A set has a member type and a member function.
+//! A set has a member type and a member function. The hierarchy is a W-type
+//! over the universe, after the sets of Aczel as well-founded trees and § 10.5
+//! of the HoTT book.
 //!
-//! The checker admits recursive rank calculation.
+//! The checker admits recursive rank calculation. The family occurs only to the
+//! right of the arrow of the function. So it is strictly positive. It lives one
+//! universe above the member types.
+//!
+//! Limits: the codes that these sets carry have no machine image. So every item
+//! checks and none runs.
 //!
 //! - see: Aczel's hierarchy
 

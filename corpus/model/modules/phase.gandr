@@ -1,9 +1,11 @@
 //! This source shows the phase distinction in a module.
 //!
 //! Type members are static and value members are dynamic.
-//! A member can read only members at its phase or below it.
+//! A member can read only members at its phase or below it. So a type reads
+//! types and static data. A value reads both.
 //!
-//! The checker rejects a type member that reads a module value.
+//! A type member that reads the value of a module or a parameter is refused by
+//! name at the value, as `PhaseDependence`.
 //! The lowering keeps static and dynamic members in phase order.
 //!
 //! - see: pathological/modules/phase.gandr
@@ -11,7 +13,7 @@
 //!
 //! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]: https://doi.org/10.1145/3474834 "Sterling and Harper, Logical relations as types: proof-relevant parametricity for program modules"
 
-/// `Sign` has static constructors.
+/// `Sign` is closed data. Its constructors are static.
 data Sign : Type where
   | Plus : Sign
   | Minus : Sign
@@ -24,7 +26,8 @@ module Point :> *{type T, z : T} where {
   def z = 0;
 }
 
-/// `Square` reads only its argument type in its static member.
+/// `Square` reads only its argument type in its static member. So the static
+/// part of its result is a function of the static part of its argument.
 module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
   type U = S.T * S.T;
   /// `w` pairs the argument point with itself.

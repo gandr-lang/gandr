@@ -1,10 +1,14 @@
 // This source shows laws in a theory model.
 //
-// Each model proves every stated law at its carrier.
-// A host primitive can admit a law that the host provides.
+// Each model proves every stated law at its carrier. A law is an equation that
+// a model proves. A rule is a rewrite that the theory orients. No rule can
+// state reflexivity, symmetry or transitivity. Symmetry has no orientation,
+// and the left side of reflexivity reads its variable twice.
 //
-// The checker fills an omitted law when its sides convert.
-// An included theory carries its laws into each model.
+// The checker fills an omitted law when its sides convert. A host primitive
+// can admit a law that the host provides. The audit of the report lists an
+// admitted law in place of an obligation. An included theory carries its laws
+// into each model.
 //
 // - see: #2356
 // - see: #4112
