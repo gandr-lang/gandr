@@ -92,7 +92,7 @@ def two() -> Integer =
 /// Code polymorphic in the carrier: a computation of any family of
 /// computation types, run again.
 @[checks]
-def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }
+def again(T : Type -> Type[-], m : +U T Integer) -> T Integer { force m }
 
 /// The carrier as a theory's sort: a family from the host's types into the
 /// computation types, the shape `T` above takes.

@@ -4108,9 +4108,14 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// Whether `incoming` continues the tail of the required-tail form whose
-    /// frontier is at `frontier`. In a tail of another sort than its form, a
-    /// juxtaposed operand continues it through the application tile the melder
-    /// pushes before it: `pack M at Model T` packs at the type `Model T`.
+    /// frontier is at `frontier`. A juxtaposed operand continues it through the
+    /// application tile the melder pushes before it, where that tile continues
+    /// the tail. In a tail of another sort than its form, `pack M at Model T`
+    /// packs at the type `Model T`. A tail of the form's own sort joins the
+    /// application where the application's band is tighter than the form's
+    /// band, whatever tile precedes the tail (the ruling on #6130). So `+U T
+    /// Integer` thunks `T Integer`, and `-F [Partial] Maybe Integer` returns
+    /// `Maybe Integer`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -4118,22 +4123,23 @@ impl<'pbg> MeldState<'pbg>
     ///   `incoming` — the tile, or any mold a label of the token may take — is
     ///   an infix or postfix operator or a left-absorbing form start of that
     ///   sort whose group the form's group yields to, or an operand or a
-    ///   non-absorbing form start of that sort while the form is of another
-    ///   sort and the slope's top takes the application tile of that sort as
-    ///   such an operator.
+    ///   non-absorbing form start of that sort while the slope's top takes the
+    ///   application tile of that sort as such an operator.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — through
     ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
     ///   operator tighter than the form and one looser separate the answer
-    ///   through committed type trees, and a type operand after a packed
-    ///   model's type applies that type. Prefix-only shapes, wrong sorts and
-    ///   absent frontiers cannot extend a completed operand; token menus use
+    ///   through committed type trees, a type operand after a packed model's
+    ///   type applies that type, and a type operand after the operand of `+U`
+    ///   applies that operand. Prefix-only shapes, wrong sorts and absent
+    ///   frontiers cannot extend a completed operand; token menus use
     ///   existential rather than universal candidate choice.
     /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
     /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
     /// - witness: `tests::grammar::a_packed_model_s_type_applies_by_juxtaposition_6093`
+    /// - witness: `tests::grammar::a_type_form_s_last_hole_takes_a_juxtaposed_application_6130`
     ///
     /// # Termination
     /// One step per mold a label of the token may take.
@@ -4156,7 +4162,7 @@ impl<'pbg> MeldState<'pbg>
                     && matches!(self.classify(tile), Kind::Operator(OpShape::Infix | OpShape::Postfix) | Kind::FormStart { absorb_left: true })
                     && (bool::from(self.pbg.dag().lt(form, definition.prec, Assoc::Right)) || (sort != hole && Some(tile) == application))
             });
-            let juxtaposed = |tile| sort != hole && self.applies_next_in(hole).is_some_and(&qualifying)
+            let juxtaposed = |tile| self.applies_next_in(hole).is_some_and(&qualifying)
                 && self.pbg.mold(tile).is_ok_and(|definition| definition.sort == hole)
                 && matches!(self.classify(tile), Kind::Operand | Kind::FormStart { absorb_left: false });
             match incoming {
@@ -4204,11 +4210,11 @@ impl<'pbg> MeldState<'pbg>
                         || (sort != hole && Some(tile) == application))
             })
         };
-        // In a tail of another sort than its form, a juxtaposed operand joins
-        // the tail's head through the application tile the melder pushes
-        // before it, so it extends the tail when that tile does, as
-        // `juxtaposed` reads the slope's top.
-        let joined = sort != hole && self.applies_next_in(hole).is_some_and(&continues);
+        // A juxtaposed operand joins the tail's head through the application
+        // tile the melder pushes before it, so it extends the tail when that
+        // tile does, as `juxtaposed` reads the slope's top. In a tail of the
+        // form's sort, the band of that tile must be tighter than the form's.
+        let joined = self.applies_next_in(hole).is_some_and(&continues);
         let joins = |tile: MoldId| {
             joined
                 && self.pbg.mold(tile).is_ok_and(|def| def.sort == hole)
