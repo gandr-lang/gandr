@@ -8046,8 +8046,8 @@ impl<'pbg> MeldState<'pbg>
     /// - requires: `text` is the trivia's exact surface bytes, in source order.
     /// - ensures: appends a space token to the emission log; the slope,
     ///   obligations, and digest are unchanged.
-    /// - provides: the losslessness seam for the labeler's
-    ///   [`Lexeme::Space`](crate::Lexeme::Space) tokens.
+    /// - provides: the losslessness seam for the labeler's [`Lexeme::Space`]
+    ///   tokens.
     /// - fails: never.
     /// - panics: none.
     ///
