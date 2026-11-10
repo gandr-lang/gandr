@@ -164,6 +164,8 @@ pub enum Label
     /// The value a patched type fixes at a label, which a record literal's
     /// field at that label does not convert with.
     Fixed,
+    /// The head of a form the lowering refused, inside the form it marks.
+    Head,
 }
 
 impl fmt::Display for Label
@@ -227,6 +229,7 @@ impl fmt::Display for Label
             Self::Derivation => f.write_str("the derivation that fills it"),
             Self::Deprecated => f.write_str("names a deprecated declaration"),
             Self::Fixed => f.write_str("the value the type fixes"),
+            Self::Head => f.write_str("the head no type answers"),
         }
     }
 }
@@ -532,8 +535,10 @@ impl Annotations
     ///   or attribute marks its first occurrence as context, a member named
     ///   before its declaration marks that declaration, a pair of rules that
     ///   part, or whose joining went undecided, marks the earlier rule, a
-    ///   component a derivation fills marks the derived rule declaration, and
-    ///   an import's unmatched signature marks the theory it names.
+    ///   component a derivation fills marks the derived rule declaration, an
+    ///   import's unmatched signature marks the theory it names, and an
+    ///   unresolved type head that its form does not span alone marks the head
+    ///   inside the form.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
     /// - fails: never.
@@ -580,6 +585,8 @@ impl Annotations
                     ret.context[0_usize] == Maybe::Present(Annotation { span: derivation, label: Label::Derivation }),
                 LoweringRefusal::MismatchedPattern { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::FirstArm }),
+                LoweringRefusal::UnresolvedTypeHead { span, head, .. } if head != span =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: head, label: Label::Head }),
                 LoweringRefusal::UndescribedMember { .. } |
                 LoweringRefusal::EntryType { .. } |
                 LoweringRefusal::UnderivedRule { .. } |
@@ -658,6 +665,12 @@ impl Annotations
                 span: derivation,
                 label: Label::Derivation,
             }),
+            LoweringRefusal::UnresolvedTypeHead { span, head, .. } if head != span => {
+                Maybe::Present(Annotation {
+                    span: head,
+                    label: Label::Head,
+                })
+            },
             LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::IllFormedDescription { .. }
             | LoweringRefusal::UnresolvedDocLink { .. }
@@ -4972,6 +4985,7 @@ mod tests
             Label::Unlifted.to_string(),
             Label::Placed.to_string(),
             Label::Fixed.to_string(),
+            Label::Head.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {
