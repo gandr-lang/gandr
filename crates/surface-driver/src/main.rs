@@ -622,9 +622,16 @@ enum Command
     /// of one workspace, and the Model Context Protocol to every model, over
     /// one Unix socket, all of them sharing the documents the editors open.
     ///
+    /// With `--port`, the hub also serves the Reactive Agent Protocol's
+    /// toolset over HTTP on the loopback interface, and runs until it is
+    /// stopped. It keeps each call it acknowledged under the user's state
+    /// directory until the call is answered.
+    ///
     /// `gandr lsp` and `gandr mcp` start one when none runs. Exits 0 when the
     /// hub has had no client for its linger or another hub already serves the
-    /// socket, and 2 when the socket cannot be bound or served.
+    /// socket, and 2 when the socket cannot be bound or served. With `--port`,
+    /// it also exits 2 when the port cannot be bound, the store of calls cannot
+    /// be opened, or another hub already serves the socket.
     #[cfg(unix)]
     Serve
     {
@@ -636,6 +643,11 @@ enum Command
         /// exiting. Defaults to a minute.
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
+        /// Serve the Reactive Agent Protocol's toolset on this port of the
+        /// loopback interface. Port 0 takes a free port, which the hub names
+        /// on standard error.
+        #[arg(long, value_name = "PORT")]
+        port: Option<u16>,
     },
     /// Serve the Model Context Protocol over standard input and output: tools
     /// and resources reading the documents the workspace's editors hold open.
@@ -2104,11 +2116,18 @@ fn main() -> ExitCode
         },
         Some(Command::Lsp { .. }) => return lsp(spelling),
         #[cfg(unix)]
-        Some(Command::Serve { socket, linger_ms }) => {
+        Some(Command::Serve {
+            socket,
+            linger_ms,
+            port,
+        }) => {
             return hub(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
+                port.map(|port| {
+                    core::net::SocketAddr::from((core::net::Ipv4Addr::LOCALHOST, port))
+                }),
             );
         },
         #[cfg(unix)]
@@ -2849,7 +2868,8 @@ fn reach_hub(
 
 /// Run the engine hub on `socket`, lingering `linger` once its last client
 /// leaves, its workspace configured with `spelling`, its kernel admissions on
-/// a pool at the host's width, and choose the exit code.
+/// a pool at the host's width, with the toolset at `toolset` when one is
+/// named, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2858,35 +2878,72 @@ fn reach_hub(
 ///   Protocol face (`gandr_surface_mcp::serve`) for connections speaking lines,
 ///   its timing lines on standard error, and exits `0` when it lingers out; a
 ///   socket another hub serves exits `0` at once, noted on standard error. A
-///   socket that cannot be bound or served is noted and exits `2`.
+///   socket that cannot be bound or served is noted and exits `2`. With
+///   `toolset`, the hub also serves [`toolset`]'s face beside its socket, says
+///   the manifest's URL on standard error, and runs until it is stopped; a
+///   toolset that cannot open, or a socket another hub serves, is noted and
+///   exits `2`.
 /// - provides: `gandr serve`.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a hub serving a client exits `0` after its linger and
-///   removes its socket.
+///   removes its socket; a hub given a port says where its manifest is and
+///   serves it.
 /// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn hub(
     socket: Option<PathBuf>,
     linger: Duration,
     spelling: Spelling,
+    toolset: Option<core::net::SocketAddr>,
 ) -> ExitCode
 {
     let socket = match hub_socket(socket) {
         Ok(socket) => socket,
         Err(error) => return hub_fault(&error),
     };
+    let toolset = match toolset.map(self::toolset).transpose() {
+        Ok(toolset) => toolset,
+        Err(error) => return hub_fault(&error),
+    };
     match gandr_surface_lsp::bind(&socket) {
         Ok(Maybe::Present(listener)) => {
+            let beside = match toolset {
+                Some(toolset) => match toolset.address() {
+                    Ok(address) => {
+                        drop(writeln!(
+                            std::io::stderr(),
+                            "gandr: the toolset is at http://{address}/.well-known/rap-toolset"
+                        ));
+                        let beside: gandr_surface_lsp::Beside = Box::new(
+                            move |workspace: alloc::sync::Arc<
+                                std::sync::Mutex<gandr_surface_lsp::Workspace>,
+                            >| {
+                                if let Err(error) = toolset.serve(&workspace, std::io::stderr()) {
+                                    drop(writeln!(
+                                        std::io::stderr(),
+                                        "gandr: the toolset stopped: {error}"
+                                    ));
+                                }
+                            },
+                        );
+                        Some(beside)
+                    },
+                    Err(error) => return hub_fault(&error),
+                },
+                None => None,
+            };
             match gandr_surface_lsp::run_hub(
                 &listener,
                 &socket,
                 linger,
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
+                beside,
                 workspace(spelling),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -2894,16 +2951,52 @@ fn hub(
             }
         },
         Ok(Maybe::Absent(gandr_surface_lsp::bind::Absent::Served)) => {
-            match writeln!(
+            let served = writeln!(
                 std::io::stderr(),
                 "gandr: a hub already serves {}",
                 socket.display()
-            ) {
-                Ok(()) | Err(_) => ExitCode::SUCCESS,
+            );
+            match (served, toolset) {
+                (Ok(()) | Err(_), None) => ExitCode::SUCCESS,
+                // The hub that serves the socket has no toolset to give.
+                (Ok(()) | Err(_), Some(_)) => ExitCode::from(FAULTED),
             }
         },
         Err(error) => hub_fault(&error),
     }
+}
+
+/// The toolset of the current directory's workspace, listening at `address`,
+/// its calls kept under the user's state directory.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the listener is bound at `address`, and the store of calls is
+///   `<calls>/<workspace>.jsonl`, where `<calls>` is [`config::calls`] and
+///   `<workspace>` is `gandr_surface_lsp::workspace_name` of the current
+///   directory, so every build of the driver reads one store per workspace.
+/// - provides: `gandr serve --port`'s face.
+/// - fails: when the address cannot be bound, no directory names the state, the
+///   current directory cannot be read, or the store cannot open.
+/// - panics: none.
+/// - executable: none — the effects are a listener and a file.
+///
+/// # Errors
+/// The error binding, reading the directory, or opening the store, or one that
+/// says no directory names the state.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`hub`].
+/// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
+#[cfg(unix)]
+fn toolset(address: core::net::SocketAddr) -> std::io::Result<gandr_surface_mcp::Toolset>
+{
+    let listener = std::net::TcpListener::bind(address)?;
+    let calls = config::calls().ok_or_else(|| {
+        std::io::Error::other("no directory names the state: set `XDG_STATE_HOME` or `HOME`")
+    })?;
+    let workspace = gandr_surface_lsp::workspace_name(&std::env::current_dir()?)?;
+    gandr_surface_mcp::Toolset::open(listener, &calls.join(workspace).with_extension("jsonl"))
 }
 
 /// Run the read-evaluate loop on the standard streams, its session on
