@@ -1998,6 +1998,7 @@ pub mod tests
             LoweringRefusal::BareFeedback { span, rule: span },
             LoweringRefusal::IllFormedDescription {
                 span,
+                fault: span,
                 kind: gandr_surface_lowering::WfKind::DuplicateSortName,
                 subjects: [
                     quenchant_shape::shape::Maybe::Present(name),
