@@ -41,7 +41,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Imports read an editor's copy before the disk: an edit, or a `.gandr` file or folder changed, created, deleted or renamed, rechecks each open document importing it.
 - Semantic tokens for the whole document, as edits of the last answer, and for a range, each use typed by its referent; `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
-- Cancellation: a request withdrawn by a `$/cancelRequest`, or by a change of the document it reads, before it is handled is answered without being run ([`quiet`](src/quiet.rs)); one about a document being judged waits for its publication.
+- Cancellation: a request withdrawn before it is handled is answered without being run ([`quiet`](src/quiet.rs)).
 - Progress and trace: an open and a recheck of changed files reported to a client showing progress; each log line sent as `$/logTrace` at the client's level; a session's messages traced to the file `sessionTrace` names, which `replay` holds a fresh server to.
 - Signature help: the head the called name was written with, its documentation, and the argument at the cursor.
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a named tab stop.
@@ -110,6 +110,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming in a `flow` body is free.
 - `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
+- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — anchor: a shadow is a diagnostic, off by default.
 
 ## License
 

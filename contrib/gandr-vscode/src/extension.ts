@@ -69,9 +69,10 @@ async function toggleForm(languageClient: GandrLanguageClient): Promise<void> {
   }
 }
 
-// Show the uses a references lens counted, from the lens's command: the
-// server sends the document's URI, the name's position and the locations in
-// protocol shape, and the editor's references view takes them converted.
+// Show the uses a references lens or a shadowing lens counted, from the
+// lens's command: the server sends the document's URI, the name's position
+// and the locations in protocol shape, and the editor's references view takes
+// them converted.
 async function showReferences(
   languageClient: GandrLanguageClient,
   uri: string,

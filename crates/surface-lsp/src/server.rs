@@ -96,6 +96,7 @@ use gandr_surface_dispatcher::read_presentation;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
@@ -172,6 +173,7 @@ use crate::protocol::ContentChange;
 use crate::protocol::ContentParams;
 use crate::protocol::ContentResult;
 use crate::protocol::CopiedSourcesParams;
+use crate::protocol::Counted;
 use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
 use crate::protocol::DiagnosticParams;
@@ -237,6 +239,7 @@ use crate::protocol::SemanticTokensDelta;
 use crate::protocol::SetTraceParams;
 use crate::protocol::Settings;
 use crate::protocol::Severity;
+use crate::protocol::ShadowingSetting;
 use crate::protocol::ShowDocumentParams;
 use crate::protocol::ShowsDocuments;
 use crate::protocol::ShowsProgress;
@@ -333,6 +336,7 @@ use crate::search::Declared;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
 use crate::session_trace::SessionTrace;
+use crate::shadowed;
 use crate::signature::Signatures;
 use crate::signature::help;
 use crate::sweep::Seen;
@@ -2086,6 +2090,7 @@ impl Workspace
             peer: Peer(u64::MAX),
             verbosity: Verbosity::User,
             quiet: QUIET,
+            shadowing: ShadowingSetting::Off,
             style: Style {
                 spelling: self.spelling,
                 ..STYLE
@@ -2324,6 +2329,11 @@ pub struct Server
     /// The interval its editor's `gandr.diagnostics.quiet` setting names, read
     /// as the verbosity is; zero holds nothing.
     quiet: Duration,
+    /// The severity its editor's `gandr.diagnostics.shadowing` setting names
+    /// for each binder that hides another binding, read as the verbosity is:
+    /// [`ShadowingSetting::Off`] publishes none, and any other keeps the type
+    /// table and the reading of each judgement, which the diagnostics read.
+    shadowing: ShadowingSetting,
     /// The form and spelling its editor's `gandr.presentation` settings name,
     /// read as the verbosity is; the spelling the manifest of the package its
     /// folders open names when the editor names none, and its workspace's
@@ -2486,6 +2496,7 @@ impl Server
             peer,
             verbosity: Verbosity::User,
             quiet: QUIET,
+            shadowing: ShadowingSetting::Off,
             style: STYLE,
             linked: Linked(false),
             offsets: LabelOffsets(false),
@@ -3706,7 +3717,12 @@ impl Server
                                 &uri,
                                 document,
                                 &shadows,
-                                (self.verbosity, self.style.spelling, self.quiet),
+                                (
+                                    self.verbosity,
+                                    self.style.spelling,
+                                    self.quiet,
+                                    self.shadowing,
+                                ),
                             ),
                             document.version,
                         )),
@@ -3754,19 +3770,21 @@ impl Server
     ///   by [`Server::admit`] of this connection over `workspace`.
     /// - ensures: each delivered judgement whose copy this connection still
     ///   holds at the version it judged, its judgement still running, is
-    ///   published as [`publication`] states, recorded as the copy's
-    ///   publication, its line among the judged; each request the copy held is
-    ///   then answered in the order read, as [`Server::handle`] answers it.
-    ///   When the copy's session then holds an admission, the admission is
-    ///   started on the pool, polling its retirement before each declaration,
-    ///   and the line waits for it; otherwise the line is logged, its timing
-    ///   saying why nothing was admitted. Once a delivery published a copy made
-    ///   due by its closure, a client that refreshes its semantic tokens or its
-    ///   inlay hints is asked for them again, once. A progress end is written
-    ///   once no judgement it waits for runs. Then each delivered admission
-    ///   whose document this connection still holds at its line's version
-    ///   settles into the copy's session, as [`settle`] states, its line
-    ///   carrying its wall. The copy's kernel tiers take the admission's, as
+    ///   published as [`publication`] states at the connection's shadowing
+    ///   setting, recorded as the copy's publication, its line among the
+    ///   judged; each request the copy held is then answered in the order read,
+    ///   as [`Server::handle`] answers it. When the copy's session then holds
+    ///   an admission, the admission is started on the pool, polling its
+    ///   retirement before each declaration, and the line waits for it;
+    ///   otherwise the line is logged, its timing saying why nothing was
+    ///   admitted, and a client that refreshes its lenses is asked for them
+    ///   again, once. Once a delivery published a copy made due by its closure,
+    ///   a client that refreshes its semantic tokens or its inlay hints is
+    ///   asked for them again, once. A progress end is written once no
+    ///   judgement it waits for runs. Then each delivered admission whose
+    ///   document this connection still holds at its line's version settles
+    ///   into the copy's session, as [`settle`] states, its line carrying its
+    ///   wall. The copy's kernel tiers take the admission's, as
     ///   [`Tiers::settle`] states. Then a client that refreshes its lenses is
     ///   asked for them again, and a client that draws the tiers is sent
     ///   `gandr/kernelTiers` at the line's URI and version. A kernel
@@ -3825,6 +3843,9 @@ impl Server
         // A publication a pulling client was not sent and no pull of its
         // waited for: the client is asked to pull again.
         let mut unpulled = false;
+        // A publication no admission follows: a client that refreshes its
+        // lenses is asked for them again here, not when an admission ends.
+        let mut unadmitted = false;
         loop {
             // The sweep judges its next source while no copy is judged.
             if admissions.judging.is_empty() {
@@ -3899,7 +3920,7 @@ impl Server
             else {
                 continue;
             };
-            let (message, mut line) = publication(&uri, document, rechecked);
+            let (message, mut line) = publication(&uri, document, rechecked, self.shadowing);
             settled.judged.push(line.clone());
             let asked = core::mem::take(&mut document.asked);
             let taken = admission(&mut locked(&document.session), line.timing);
@@ -3928,6 +3949,7 @@ impl Server
                 Taken::Unrun(timing) => {
                     line.timing = timing;
                     settled.log.push(line);
+                    unadmitted = true;
                 },
                 Taken::Running(admitting) => {
                     let submission = admissions.next();
@@ -3957,6 +3979,9 @@ impl Server
         }
         if unpulled && self.refreshing.diagnostics.0 && self.phase == Phase::Running {
             settled.messages.push(self.asked(Refreshed::Diagnostics));
+        }
+        if unadmitted && self.refreshing.lenses.0 && self.phase == Phase::Running {
+            settled.messages.push(self.asked(Refreshed::Lenses));
         }
         let (ended, waiting): (Vec<_>, Vec<_>) = core::mem::take(&mut admissions.ending)
             .into_iter()
@@ -4096,7 +4121,12 @@ impl Server
                 uri,
                 document,
                 &shadows,
-                (self.verbosity, self.style.spelling, self.quiet),
+                (
+                    self.verbosity,
+                    self.style.spelling,
+                    self.quiet,
+                    self.shadowing,
+                ),
             )),
             Maybe::Absent(_) => None,
         }
@@ -4778,6 +4808,7 @@ impl Server
                 let roots = initial_roots(&params);
                 self.verbosity = settings.verbosity().unwrap_or_default();
                 self.quiet = settings.quiet().unwrap_or(QUIET);
+                self.shadowing = settings.shadowing().unwrap_or_default();
                 self.style = Style {
                     form: settings.form().unwrap_or(Form::Sugared),
                     spelling: settings
@@ -5952,15 +5983,15 @@ impl Server
 
     /// Apply the `gandr` `settings` this connection's client gave, pushed or
     /// pulled: the quiet interval, the inline completion trigger and the form
-    /// at once, and the verbosity and spelling by making every copy it holds
-    /// due when either changed.
+    /// at once, and the verbosity, the spelling and the shadowing severity by
+    /// making every copy it holds due when one changed.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each setting `settings` names is this connection's; the
-    ///   copies are made due when the verbosity or the spelling changed, and
-    ///   released of what they hold back when the quiet interval is zero;
-    ///   nothing is written otherwise.
+    ///   copies are made due when the verbosity, the spelling or the shadowing
+    ///   severity changed, and released of what they hold back when the quiet
+    ///   interval is zero; nothing is written otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -5969,7 +6000,8 @@ impl Server
     ///   section applied as a pushed one.
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     /// - witness: `server::tests::a_pulled_setting_applies_as_a_pushed_one`
-    #[spec(ensures: |_| settings.verbosity().is_none_or(|verbosity| self.verbosity == verbosity))]
+    #[spec(ensures: |_| settings.verbosity().is_none_or(|verbosity| self.verbosity == verbosity)
+        && settings.shadowing().is_none_or(|shadowing| self.shadowing == shadowing))]
     fn configured(
         &mut self,
         workspace: &mut Workspace,
@@ -5992,7 +6024,10 @@ impl Server
         let spelling = settings
             .spelling()
             .filter(|&spelling| spelling != self.style.spelling);
-        if verbosity.is_none() && spelling.is_none() {
+        let shadowing = settings
+            .shadowing()
+            .filter(|&shadowing| shadowing != self.shadowing);
+        if verbosity.is_none() && spelling.is_none() && shadowing.is_none() {
             if settings.quiet().is_some_and(|quiet| quiet.is_zero()) {
                 let uris: Vec<DocumentUri> = workspace.documents.keys().cloned().collect();
                 for uri in &uris {
@@ -6003,6 +6038,7 @@ impl Server
         }
         self.verbosity = verbosity.unwrap_or(self.verbosity);
         self.style.spelling = spelling.unwrap_or(self.style.spelling);
+        self.shadowing = shadowing.unwrap_or(self.shadowing);
         self.resynchronise(workspace, Picks::Every);
         outcome
     }
@@ -7657,9 +7693,10 @@ impl Workspace
     /// What a code-lens request for the copy of the document at `uri` that
     /// `peer` is answered from answers: the lens over each range a model's
     /// kept proposals fill, a kernel tier lens over each marked declaration, a
-    /// references lens, unresolved, over each name the document declares, and
-    /// a run lens over each name of a declaration that runs applied to
-    /// nothing.
+    /// references lens, unresolved, over each name the document declares, a
+    /// run lens over each name of a declaration that runs applied to nothing,
+    /// and a shadowing lens, unresolved, over each binder that hides another
+    /// binding.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI is admitted.
@@ -7667,11 +7704,13 @@ impl Workspace
     ///   [`lenses`] answers for its proposals, given whether the client
     ///   `applies` edits, the lenses [`Tiers::lenses`] answers for the copy's
     ///   kernel tiers, one lens per range [`declared`] answers, carrying the
-    ///   URI and the range's start as its data and no command, and one lens per
-    ///   range [`runs`] answers, titled `Run` and running [`RUN`] with the URI
-    ///   and the range's start, carrying no data; in range order, over the same
-    ///   range a fill lens, then a tier lens, then a references lens, then a
-    ///   run lens. A document whose session holds no grammar declares nothing.
+    ///   URI, the range's start and [`Counted::References`] as its data and no
+    ///   command, one lens per range [`runs`] answers, titled `Run` and running
+    ///   [`RUN`] with the URI and the range's start, carrying no data, and the
+    ///   lenses [`shadowed::lenses`] answers for the copy's type table; in
+    ///   range order, over the same range a fill lens, then a tier lens, then a
+    ///   references lens, then a run lens, then a shadowing lens. A document
+    ///   whose session holds no grammar declares nothing.
     /// - provides: the answer to `textDocument/codeLens`.
     /// - fails: never.
     /// - panics: none.
@@ -7686,6 +7725,7 @@ impl Workspace
     /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
+    /// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
         || matches!(ret, Answer::Lenses(ref lenses) if lenses.is_sorted_by(|earlier, later| earlier.range <= later.range)
             && lenses.iter().all(|lens| lens.data.as_ref().is_none_or(|data|
@@ -7714,6 +7754,7 @@ impl Workspace
                 data: Some(LensData {
                     uri: uri.clone(),
                     position: range.start,
+                    counts: Counted::References,
                 }),
             }));
             found.extend(runs(text, hovering).into_iter().map(|range| CodeLens {
@@ -7728,32 +7769,44 @@ impl Workspace
                 }),
                 data: None,
             }));
+            if !hovering.table().shadows().is_empty() {
+                let index = LineIndex::new(<&str>::from(text).into());
+                found.extend(shadowed::lenses(uri, hovering.table(), &index));
+            }
         }
         found.sort_by_key(|lens| lens.range);
         Answer::Lenses(found)
     }
 
-    /// What a code-lens resolution of the references lens over `range`,
-    /// counting the name `data` places, answers for `peer`: the lens titled
-    /// with the number of uses a reference request finds, running the client's
-    /// [`SHOW_REFERENCES`] with the URI, the position and those uses.
+    /// What a code-lens resolution of the lens over `range` that `data`
+    /// places answers for `peer`: a references lens titled with the number of
+    /// uses a reference request finds, and a shadowing lens titled with what
+    /// its binder hides and the number of uses the binder takes, each running
+    /// the client's [`SHOW_REFERENCES`] with the URI, the position and those
+    /// uses.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI is admitted.
-    /// - ensures: the lens over `range` carrying `data`; its command titled `1
-    ///   reference` or `N references` with the count of what
-    ///   [`Self::referring`] answers at the position, the declaring name left
-    ///   out, running [`SHOW_REFERENCES`] with the URI, the position and those
-    ///   locations; no command when the document is not open.
-    /// - provides: the answer to `codeLens/resolve` for a references lens.
+    /// - ensures: the lens over `range` carrying `data`. For
+    ///   [`Counted::References`], its command titled `1 reference` or `N
+    ///   references` with the count of what [`Self::referring`] answers at the
+    ///   position, the declaring name left out, running [`SHOW_REFERENCES`]
+    ///   with the URI, the position and those locations. For
+    ///   [`Counted::Shadowed`], the command [`shadowed::resolved`] answers for
+    ///   the binder starting at the position, read off the copy's type table.
+    ///   No command when the document is not open.
+    /// - provides: the answer to `codeLens/resolve` for a references lens and a
+    ///   shadowing lens.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name used in its own document and in an open
     ///   importer counts both, a name used once is singular, and a lens whose
-    ///   document was closed resolves to no command.
+    ///   document was closed resolves to no command; a shadowing binder names
+    ///   what it hides and counts its own uses.
     /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    /// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
     #[spec(ensures: |ret| matches!(ret, Answer::Lens(ref lens) if lens.range == range
         && lens.command.as_ref().is_none_or(|command| command.name == SHOW_REFERENCES
             && command.arguments.len() == 3_usize)))]
@@ -7764,29 +7817,81 @@ impl Workspace
         peer: Peer,
     ) -> Answer
     {
-        let command = self
-            .referring(&data.uri, peer, data.position, ReferenceContext {
-                include_declaration: false,
-            })
-            .map(|found| Command {
-                title: if found.len() == 1_usize {
-                    String::from("1 reference")
-                }
-                else {
-                    format!("{} references", found.len())
-                },
-                name: SHOW_REFERENCES,
-                arguments: Vec::from([
-                    serde_json::to_value(&data.uri).unwrap_or(Value::Null),
-                    serde_json::to_value(data.position).unwrap_or(Value::Null),
-                    serde_json::to_value(&found).unwrap_or(Value::Null),
-                ]),
-            });
+        let command = match data.counts {
+            Counted::References => self.counted_references(&data, peer),
+            Counted::Shadowed => self.counted_shadowed(&data, peer),
+        };
         Answer::Lens(CodeLens {
             range,
             command,
             data: Some(data),
         })
+    }
+
+    /// The command of a references lens placed by `data`, for `peer`: titled
+    /// with the number of uses a reference request finds there, the declaring
+    /// name left out, running [`SHOW_REFERENCES`] with the URI, the position
+    /// and those uses; none when the document is not open.
+    ///
+    /// # Specification
+    /// trivial.
+    fn counted_references(
+        &self,
+        data: &LensData,
+        peer: Peer,
+    ) -> Option<Command>
+    {
+        self.referring(&data.uri, peer, data.position, ReferenceContext {
+            include_declaration: false,
+        })
+        .map(|found| Command {
+            title: if found.len() == 1_usize {
+                String::from("1 reference")
+            }
+            else {
+                format!("{} references", found.len())
+            },
+            name: SHOW_REFERENCES,
+            arguments: Vec::from([
+                serde_json::to_value(&data.uri).unwrap_or(Value::Null),
+                serde_json::to_value(data.position).unwrap_or(Value::Null),
+                serde_json::to_value(&found).unwrap_or(Value::Null),
+            ]),
+        })
+    }
+
+    /// The command of a shadowing lens placed by `data`, for `peer`: the one
+    /// [`shadowed::resolved`] answers for the binder starting at the position,
+    /// read off the copy's type table and reading; none when the document is
+    /// not open or no shadowing binder starts there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn counted_shadowed(
+        &self,
+        data: &LensData,
+        peer: Peer,
+    ) -> Option<Command>
+    {
+        let shadows = self.shadowing(peer);
+        let Maybe::Present(document) = self.view(&data.uri, peer)
+        else {
+            return None;
+        };
+        let hovering = document.hovering(&data.uri, &shadows).ok()?;
+        let text = document.text.source();
+        let index = LineIndex::new(<&str>::from(text).into());
+        let seen = shadowed::Seen {
+            uri: &data.uri,
+            text,
+            index: &index,
+            table: hovering.table(),
+            opened: hovering.opened_paths(),
+            targets: hovering.targets(),
+            reading: document.text.reading(),
+        };
+        let offset = ByteOffset::from(usize::from(data.position.byte(&index)));
+        shadowed::resolved(&seen, offset)
     }
 
     /// Visit each document that may write the name `written` places, as
@@ -8938,7 +9043,9 @@ impl Judging
     /// The judgement of `document`, open at `uri`, each import read as
     /// `shadows` holds it and its own path imports as its last judgement read
     /// them, at `verbosity` and in `spelling`, the form under its caret held
-    /// back while `quiet` is not zero.
+    /// back while `quiet` is not zero; it keeps its type table and reads the
+    /// copy's reading when a request read them since the last judgement, or
+    /// when `shadowing` names a severity, whose diagnostics read both.
     ///
     /// # Specification
     /// trivial.
@@ -8946,7 +9053,7 @@ impl Judging
         uri: &DocumentUri,
         document: &Document,
         shadows: &dyn Shadows,
-        (verbosity, spelling, quiet): (Verbosity, Spelling, Duration),
+        (verbosity, spelling, quiet, shadowing): (Verbosity, Spelling, Duration, ShadowingSetting),
     ) -> Self
     {
         let started = Instant::now();
@@ -8958,13 +9065,20 @@ impl Judging
             Maybe::Present(ref written) => Maybe::Present(written.as_slice()),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
+        let (wanted, reads) = match shadowing {
+            ShadowingSetting::Off => (document.text.wanted.get(), document.text.reads.get()),
+            ShadowingSetting::Hint
+            | ShadowingSetting::Information
+            | ShadowingSetting::Warning
+            | ShadowingSetting::Error => (Tables::Kept, Readings::Kept),
+        };
         Self {
             uri: uri.clone(),
             session: Arc::clone(&document.session),
             text: String::from(<&str>::from(document.text.source())),
             laid: lay(uri, document.text.source(), shadows, written),
-            wanted: document.text.wanted.get(),
-            reads: document.text.reads.get(),
+            wanted,
+            reads,
             rendering: (verbosity, spelling, caret),
             started,
         }
@@ -9076,12 +9190,14 @@ fn reported(
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the judgement rendered, followed by the
 ///   hints [`unused`] answers off its unused binders and those [`unreached`]
-///   answers off its imports no lookup reached, less those [`publishable`]
-///   holds for the form under the document's caret; the copy records every
-///   judged diagnostic and hint as checked, the imports the judgement read as
-///   those its next revision is laid out over ([`written::Absent::Unread`] when
-///   it read none), and its judgement as settled. One log line names the same
-///   URI and version, its admission pending when the judgement left one, and
+///   answers off its imports no lookup reached, then, when `shadowing` names a
+///   severity and the judgement kept its type table, the diagnostics
+///   [`shadowed::diagnostics`] answers at it, less those [`publishable`] holds
+///   for the form under the document's caret; the copy records every judged
+///   diagnostic and hint as checked, the imports the judgement read as those
+///   its next revision is laid out over ([`written::Absent::Unread`] when it
+///   read none), and its judgement as settled. One log line names the same URI
+///   and version, its admission pending when the judgement left one, and
 ///   whether the publication held any.
 /// - provides: the publication shared by open, change, closure and
 ///   configuration synchronisations.
@@ -9098,6 +9214,7 @@ fn reported(
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
 /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+/// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
 #[spec(ensures: |ret| document.judgement == Judgement::Settled
     && matches!(ret.0, Outgoing::Notification { method: "textDocument/publishDiagnostics",
         params: Notified::Published(ref params), .. }
@@ -9108,6 +9225,7 @@ fn publication(
     uri: &DocumentUri,
     document: &mut Document,
     mut rechecked: Rechecked,
+    shadowing: ShadowingSetting,
 ) -> (Outgoing, Logged)
 {
     let index = LineIndex::new(<&str>::from(document.text.source()).into());
@@ -9119,6 +9237,36 @@ fn publication(
         document.text.source(),
         &index,
     ));
+    if let (Some(severity), &Maybe::Present((ref table, _))) =
+        (shadowing.severity(), &rechecked.table)
+    {
+        let (opened, targets): (&[PathBuf], &[ImportTarget]) = match rechecked.laid {
+            Maybe::Present(ref laid) => (
+                &laid.opened,
+                laid.unit
+                    .sources()
+                    .last()
+                    .map_or(&[][..], |importer| importer.imports()),
+            ),
+            Maybe::Absent(_) => (&[], &[]),
+        };
+        let reading = match rechecked.reading {
+            Some(ref reading) => reading,
+            None => document.text.reading(),
+        };
+        let seen = shadowed::Seen {
+            uri,
+            text: document.text.source(),
+            index: &index,
+            table,
+            opened,
+            targets,
+            reading,
+        };
+        rechecked
+            .diagnostics
+            .extend(shadowed::diagnostics(&seen, severity));
+    }
     let form = caret_range(document, rechecked.form);
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
@@ -11540,12 +11688,242 @@ mod tests
         );
         let closed = serde_json::json!({"range": {"start": at(Line::from(0_u32), Character::from(0_u32)),
             "end": at(Line::from(0_u32), Character::from(3_u32))},
-            "data": {"uri": uri("closed.gandr"), "position": at(Line::from(0_u32), Character::from(0_u32))}});
+            "data": {"uri": uri("closed.gandr"), "position": at(Line::from(0_u32), Character::from(0_u32)),
+                "counts": "references"}});
         assert_eq!(
             resolve(&closed),
             closed,
             "a lens whose document is not open resolves to no command"
         );
+    }
+
+    /// #6251: a binder that hides another binding shows a lens naming what it
+    /// hides and counting the uses it takes, resolved off the shadow index: a
+    /// pattern binder hiding a parameter, a parameter hiding an earlier
+    /// declaration, a `let` hiding an opened member, a parameter hiding a
+    /// builtin, and an importer's parameter hiding a sibling's declaration
+    /// read bare. With `gandr.diagnostics.shadowing` set, each binder is
+    /// published at that severity and points at what it hides; `off`
+    /// publishes none.
+    #[test]
+    fn a_shadowing_binder_shows_what_it_hides_6251()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-shadowing-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let files = [
+            (
+                "shadows.gandr",
+                include_str!("server/fixtures/a-shadowing-binder-shows-what-it-hides-6251.gandr"),
+            ),
+            (
+                "sibling.gandr",
+                include_str!(
+                    "server/fixtures/a-shadowing-binder-shows-what-it-hides-6251-sibling.gandr"
+                ),
+            ),
+            (
+                "importer.gandr",
+                include_str!(
+                    "server/fixtures/a-shadowing-binder-shows-what-it-hides-6251-importer.gandr"
+                ),
+            ),
+        ];
+        for (file, text) in files {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = initialized();
+        for (file, text) in files {
+            if file == "sibling.gandr" {
+                continue;
+            }
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        // Each shadowing lens, resolved: its line counted from one, its
+        // title, and how many uses its command shows.
+        let mut request = String::new();
+        let mut shown = |file: &str| -> Vec<(Option<u64>, String, Option<usize>)> {
+            let listed = send(
+                &mut server,
+                Json(
+                    &serde_json::json!({"jsonrpc": "2.0", "id": 10_i32, "method": "textDocument/codeLens",
+                        "params": {"textDocument": {"uri": uri(file)}}})
+                    .to_string(),
+                ),
+            )
+            .pointer("/0/result")
+            .cloned()
+            .unwrap_or(Value::Null);
+            listed
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|lens| {
+                    lens.pointer("/data/counts").and_then(Value::as_str) == Some("shadowed")
+                })
+                .map(|lens| {
+                    assert!(
+                        lens.get("command").is_none(),
+                        "a shadowing lens is listed unresolved"
+                    );
+                    request.clear();
+                    core::fmt::Write::write_fmt(
+                        &mut request,
+                        format_args!(
+                            r#"{{"jsonrpc": "2.0", "id": 11, "method": "codeLens/resolve", "params": {lens}}}"#
+                        ),
+                    )
+                    .expect("the request is written");
+                    let resolved = send(&mut server, Json(&request))
+                        .pointer("/0/result")
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    (
+                        lens.pointer("/range/start/line")
+                            .and_then(Value::as_u64)
+                            .map(|line| line.saturating_add(1)),
+                        String::from(
+                            resolved
+                                .pointer("/command/title")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default(),
+                        ),
+                        resolved
+                            .pointer("/command/arguments/2")
+                            .and_then(Value::as_array)
+                            .map(Vec::len),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            shown("shadows.gandr"),
+            [
+                (
+                    Some(12_u64),
+                    String::from("shadows n (line 9) · 1 use"),
+                    Some(1_usize)
+                ),
+                (
+                    Some(15_u64),
+                    String::from("shadows answer (declared line 5) · 1 use"),
+                    Some(1_usize)
+                ),
+                (
+                    Some(16_u64),
+                    String::from("shadows two (Counting.two) · 1 use"),
+                    Some(1_usize)
+                ),
+                (
+                    Some(17_u64),
+                    String::from("shadows builtin add · 1 use"),
+                    Some(1_usize)
+                ),
+            ],
+            "a pattern binder names the parameter's line, a parameter the declaration's, a \
+             `let` the opened member's path and a parameter the builtin, each with its own uses"
+        );
+        assert_eq!(
+            shown("importer.gandr"),
+            [
+                (
+                    Some(2_u64),
+                    String::from("shadows here (./sibling.gandr line 1) · 0 uses"),
+                    Some(0_usize)
+                ),
+                (
+                    Some(2_u64),
+                    String::from("shadows here (line 2) · 1 use"),
+                    Some(1_usize)
+                ),
+            ],
+            "the parameter names the sibling's path as written and its line, and the `let` \
+             that hides it takes its one use"
+        );
+        let configure = |shadowing: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeConfiguration",
+                "params": {"settings": {"gandr": {"diagnostics": {"shadowing": shadowing}}}}})
+            .to_string()
+        };
+        // Each shadowing diagnostic the importer is published: its line, its
+        // severity, its message, and the file and line of its related
+        // location.
+        let marked = |published: &Value| {
+            published
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|message| {
+                    message.pointer("/params/uri").and_then(Value::as_str)
+                        == Some(uri("importer.gandr").as_str())
+                })
+                .flat_map(|message| {
+                    message
+                        .pointer("/params/diagnostics")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .filter(|diagnostic| {
+                    diagnostic.get("code").and_then(Value::as_str) == Some("ShadowingBinder")
+                })
+                .map(|diagnostic| {
+                    let text = |pointer: &str| {
+                        diagnostic
+                            .pointer(pointer)
+                            .and_then(Value::as_str)
+                            .map(String::from)
+                    };
+                    (
+                        diagnostic
+                            .pointer("/range/start/line")
+                            .and_then(Value::as_u64),
+                        diagnostic.get("severity").and_then(Value::as_u64),
+                        text("/message"),
+                        text("/relatedInformation/0/location/uri"),
+                        diagnostic
+                            .pointer("/relatedInformation/0/location/range/start/line")
+                            .and_then(Value::as_u64),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let warned = send(&mut server, Json(&configure("warning")));
+        assert_eq!(
+            marked(&warned),
+            [
+                (
+                    Some(1_u64),
+                    Some(2_u64),
+                    Some(String::from("shadows here (./sibling.gandr line 1)")),
+                    Some(uri("sibling.gandr")),
+                    Some(0_u64)
+                ),
+                (
+                    Some(1_u64),
+                    Some(2_u64),
+                    Some(String::from("shadows here (line 2)")),
+                    Some(uri("importer.gandr")),
+                    Some(1_u64)
+                ),
+            ],
+            "with the setting at `warning`, each binder is a warning whose related location \
+             is the sibling's declaration and the parameter: {warned}"
+        );
+        let quiet = send(&mut server, Json(&configure("off")));
+        assert_eq!(
+            (marked(&quiet), quiet.as_array().map(Vec::is_empty)),
+            (Vec::new(), Some(false)),
+            "with the setting `off`, the documents publish again and carry no shadowing \
+             diagnostic"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
     }
 
     /// The kernel tier lenses of the document at `uri` that `server` holds,

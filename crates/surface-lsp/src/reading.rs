@@ -569,6 +569,26 @@ impl Reading
         })
     }
 
+    /// The bytes of each address the import closure reads, as written between
+    /// its quotes, in the order the text writes them: the path imports and
+    /// the coordinates, an address with a scheme left out, so the position of
+    /// one is its import's ordinal ([`ImportAt::ordinal`]); none when the
+    /// imports do not read or the text was not read.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn addresses(&self) -> impl Iterator<Item = ByteSpan> + '_
+    {
+        let written = match self.0 {
+            Maybe::Present(ref readout) => readout.written.as_slice(),
+            Maybe::Absent(_) => &[],
+        };
+        written
+            .iter()
+            .filter(|import| import.address != Address::Scheme)
+            .map(|import| import.addressed)
+    }
+
     /// The declarations of the text, or why it was not read.
     ///
     /// # Specification

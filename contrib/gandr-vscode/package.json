@@ -65,6 +65,25 @@
           "default": 1.5,
           "markdownDescription": "Seconds a file goes without a change before a diagnostic of the form being typed shows. A diagnostic elsewhere shows at once; `0` shows every diagnostic at once."
         },
+        "gandr.diagnostics.shadowing": {
+          "type": "string",
+          "enum": [
+            "off",
+            "hint",
+            "information",
+            "warning",
+            "error"
+          ],
+          "enumDescriptions": [
+            "No diagnostic at a binder that hides another binding.",
+            "A hint at each binder that hides another binding.",
+            "Information at each binder that hides another binding.",
+            "A warning at each binder that hides another binding.",
+            "An error at each binder that hides another binding."
+          ],
+          "default": "off",
+          "markdownDescription": "The severity of the diagnostic at each binder that hides another binding. The diagnostic names the hidden binding and points at it."
+        },
         "gandr.inlineCompletion.trigger": {
           "type": "string",
           "enum": [

@@ -49,11 +49,12 @@ export class GandrLanguageClient extends LanguageClient {
       debug: server,
     };
     // The server reads `gandr.diagnostics.verbosity`,
-    // `gandr.diagnostics.quiet`, `gandr.presentation.form`,
-    // `gandr.presentation.spelling` and `gandr.inlineCompletion.trigger` from
-    // the initialization options at startup, and from the `gandr` section each
+    // `gandr.diagnostics.quiet`, `gandr.diagnostics.shadowing`,
+    // `gandr.presentation.form`, `gandr.presentation.spelling` and
+    // `gandr.inlineCompletion.trigger` from the initialization options at
+    // startup, and from the `gandr` section each
     // `workspace/didChangeConfiguration` pushes, republishing open documents
-    // at a new verbosity or spelling. With `supportHtml` the client announces the `span`,
+    // at a new verbosity, spelling or shadowing severity. With `supportHtml` the client announces the `span`,
     // `pre` and `code` tags, and the server colours each hover by the roles
     // its semantic tokens carry, through the `gandr.hover.*` colours.
     const clientOptions: LanguageClientOptions = {
@@ -96,7 +97,7 @@ export class GandrLanguageClient extends LanguageClient {
 
 // The `gandr` settings the server reads, as the `gandr` section carries them.
 function settings(): {
-  diagnostics: { verbosity: string; quiet: number };
+  diagnostics: { verbosity: string; quiet: number; shadowing: string };
   presentation: { form: string; spelling: string | null };
   inlineCompletion: { trigger: string };
 } {
@@ -105,6 +106,7 @@ function settings(): {
     diagnostics: {
       verbosity: gandr.get<string>("diagnostics.verbosity", "user"),
       quiet: gandr.get<number>("diagnostics.quiet", 1.5),
+      shadowing: gandr.get<string>("diagnostics.shadowing", "off"),
     },
     presentation: {
       form: gandr.get<string>("presentation.form", "sugared"),
