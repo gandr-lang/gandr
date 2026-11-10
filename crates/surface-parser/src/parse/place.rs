@@ -357,19 +357,22 @@ impl Target
 ///   the obligations are that repair and the copy's others, shifted back over
 ///   the tile. A declaration's keyword left out at the head of a top-level form
 ///   is placed first ([`headed`]), and the search above runs over that parse.
-///   Where the search places no tile, the gap before each line places the
-///   separators and closers it shows ([`super::gap::gapped`]). Where the gap
-///   places none either, the search runs again over the first [`BRACKETS`]
-///   targets whose tile is a `)` or a `]` and the same two others. Each copy
-///   then starts at the keyword of the target's declaration that the melder
-///   leaves as a top-level tile before its top-level form ([`keyword`]). A
-///   target the first search tried is not copied again without that keyword,
-///   and a later bracket's form without one is copied alone. This search keeps
-///   a copy only where its parse owes fewer obligations than `parsed`. Last, an
-///   opener left out of a declaration that holds a closer too many is placed
-///   over the parse [`headed`] gives ([`opened`]). Its parse is kept only where
-///   it owes fewer obligations than the melder's reading and than the parse of
-///   the searches before it.
+///   Where the search places a tile, the gap before each line places the
+///   separators and closers it shows in its place ([`super::gap::gapped`]) when
+///   it keeps a place before a line inside the top-level form that holds the
+///   target placed ([`holding`]) and its parse owes nothing but its minted
+///   tiles. Where the search places no tile, the gap places them with no such
+///   condition. Where the gap places none either, the search runs again over
+///   the first [`BRACKETS`] targets whose tile is a `)` or a `]` and the same
+///   two others. Each copy then starts at the keyword of the target's
+///   declaration that the melder leaves as a top-level tile before its
+///   top-level form ([`keyword`]). A target the first search tried is not
+///   copied again without that keyword, and a later bracket's form without one
+///   is copied alone. This search keeps a copy only where its parse owes fewer
+///   obligations than `parsed`. Last, an opener left out of a declaration that
+///   holds a closer too many is placed over the parse [`headed`] gives
+///   ([`opened`]). Its parse is kept only where it owes fewer obligations than
+///   the melder's reading and than the parse of the searches before it.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -388,8 +391,10 @@ impl Target
 ///   type; a type's `)` left out of a declaration that the melder breaks apart,
 ///   before its `=`, and the inner `)` of a result type that the outer bracket
 ///   takes at no place; a definition's last `;` left out at the end of the
-///   source is never minted inside its body; and a `(` left out before a
-///   juxtaposed operand is minted where its declaration parses.
+///   source is never minted inside its body; a `(` left out before a juxtaposed
+///   operand is minted where its declaration parses; and a `)` left out after a
+///   line that ends in a `,` keeps the first search's reading when the gap's
+///   copy owes more than its minted tiles.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
@@ -397,15 +402,22 @@ impl Target
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
 /// - witness: `parse::place::tests::an_opener_left_out_is_minted_where_its_declaration_parses_6028`
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+/// - witness: `parse::place::tests::a_gap_parse_that_owes_more_than_its_tiles_keeps_the_first_placement_6029`
 pub(super) fn placed<'source>(
     pbg: &Pbg,
     parsed: ParseResult<'source>,
 ) -> ParseResult<'source>
 {
     let parsed = headed(pbg, &parsed).unwrap_or(parsed);
-    let searched = earlier(pbg, &parsed, Pass::First)
-        .or_else(|| super::gap::gapped(pbg, &parsed))
-        .or_else(|| earlier(pbg, &parsed, Pass::Last));
+    // The gap search wins over the first target where it keeps a place
+    // before a line inside the target's top-level form and owes nothing but
+    // the tiles it mints: the line tells where the repair stands, and the
+    // whole form's reading tells only that it parses.
+    let searched = match earlier(pbg, &parsed, Pass::First) {
+        Some((found, form)) => super::gap::gapped(pbg, &parsed, Some(form)).or(Some(found)),
+        None => super::gap::gapped(pbg, &parsed, None)
+            .or_else(|| earlier(pbg, &parsed, Pass::Last).map(|(found, _)| found)),
+    };
     // An opener left out wins only where it owes fewer obligations than the
     // melder's reading and than the search that places a closer or a
     // separator.
@@ -416,11 +428,13 @@ pub(super) fn placed<'source>(
 }
 
 /// `parsed` with a placeable repair placed, if a place parses, over the targets
-/// and with the copies `pass` names.
+/// and with the copies `pass` names, beside the span of the top-level form that
+/// holds the target placed.
 ///
 /// # Specification
 /// - requires: as [`placed`].
-/// - ensures: as [`placed`], `None` where it returns `parsed`.
+/// - ensures: as [`placed`], `None` where it returns `parsed`; the span is
+///   [`holding`]'s for the end of the target whose copy is the parse.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -434,7 +448,7 @@ fn earlier<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
     pass: Pass,
-) -> Option<ParseResult<'source>>
+) -> Option<(ParseResult<'source>, ByteSpan)>
 {
     let tree = &parsed.tree;
     let mut repairs: Vec<ObligationInstance> = parsed
@@ -477,10 +491,12 @@ fn earlier<'source>(
         )
         .chain(first.map(|&target| (target, tried)))
         .find_map(|(target, reach)| {
-            settled(pbg, tree, target, reach).filter(|placed| match pass {
+            let placed = settled(pbg, tree, target, reach).filter(|placed| match pass {
                 Pass::First => true,
                 Pass::Last => placed.obligations.len() < parsed.obligations.len(),
-            })
+            })?;
+            let (_, form) = holding(tree, target.end)?;
+            Some((placed, form))
         })
 }
 
@@ -490,12 +506,15 @@ fn earlier<'source>(
 /// A form whose keyword is left out or misspelled, as `def1 f(x : T) -> …`,
 /// reads as an expression. The root holds declarations alone, so the melder
 /// reads its words as strays side by side and its brackets as expressions of
-/// their own, with no repair. Of the runs of top-level forms that read as no
-/// declaration, each form whose first tile a declaration keyword takes next is
-/// tried run by run in source order, and within a run from its last form back,
-/// with each such keyword written before that tile, a space after it, in mold
-/// order, the first [`COPIES`] copies in all. Each copy spans the form and the
-/// rest of its run. A run that holds no repair takes `def` alone.
+/// their own, with no repair. A declaration's block whose first tile owes its
+/// own [`Oblig::MissingTile`], as the `rec` block that the melder closes when
+/// the `def` before it is left out, reads as no declaration too. Of the runs
+/// of top-level forms that read as no declaration, each form whose first tile
+/// a declaration keyword takes next is tried run by run in source order, and
+/// within a run from its last form back, with each such keyword written before
+/// that tile, a space after it, in mold order, the first [`COPIES`] copies in
+/// all. Each copy spans the form and the rest of its run. A run that holds no
+/// repair takes `def` alone.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
@@ -512,10 +531,12 @@ fn earlier<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — a definition whose `def` is misspelled, or left out at
 ///   the start of the source, reads as one declaration owing its keyword alone,
-///   minted at its name and never at the misspelled word; a call at the top
-///   level with a repair of its own that no keyword makes a declaration keeps
-///   its reading.
+///   minted at its name and never at the misspelled word; a `def` left out
+///   before `rec`, alone or after `pub`, is minted before the `rec`; a call at
+///   the top level with a repair of its own that no keyword makes a declaration
+///   keeps its reading.
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+/// - witness: `parse::place::tests::a_def_left_out_before_rec_is_minted_at_rec_6029`
 fn headed<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
@@ -529,12 +550,20 @@ fn headed<'source>(
     )
     .ok()?;
     // A top-level form, with whether it reads as a declaration. A grout or a
-    // minted close there ends a run as a declaration does.
+    // minted close there ends a run as a declaration does. A declaration's
+    // block whose first tile owes its own repair heads a run.
+    let owes_first = |position: NodeIndex| {
+        first_tile(tree, position).is_some_and(|(_, first)| {
+            parsed.obligations.iter().any(|obligation| {
+                obligation.class == Oblig::MissingTile && obligation.span == first
+            })
+        })
+    };
     let read = |position: NodeIndex| {
         let node = tree.node(position)?;
         let declaration = match node.label() {
             NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
-                bool::from(declaration_head(pbg, mold))
+                bool::from(declaration_head(pbg, mold)) && !owes_first(position)
             },
             NodeLabel::Space | NodeLabel::Doc => return None,
             NodeLabel::Wald | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => true,
@@ -1276,6 +1305,30 @@ fn keyword(
         .then_some(span.start())
 }
 
+/// The top-level form of `tree` that holds `end`, with its span.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the first child of the root whose span starts before `end` and
+///   ends at or after it; `None` where no child does.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`placed`].
+/// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+fn holding(
+    tree: &SyntaxTree<'_>,
+    end: ByteOffset,
+) -> Option<(NodeIndex, ByteSpan)>
+{
+    tree.children(tree.root())
+        .filter_map(|position| tree.node(position).map(|node| (position, node.span())))
+        .find(|&(_, span)| span.start() < end && end <= span.end())
+}
+
 /// The parse with `target`'s tile minted where the rest of its top-level form
 /// parses, the copy reaching as far back as `reach` says, if a place tried
 /// does: for a closer, the melder's close and the first [`PLACES`] tile ends;
@@ -1303,10 +1356,7 @@ fn settled<'source>(
     reach: Reach,
 ) -> Option<ParseResult<'source>>
 {
-    let (form, held) = tree
-        .children(tree.root())
-        .filter_map(|position| tree.node(position).map(|node| (position, node.span())))
-        .find(|&(_, span)| span.start() < target.end && target.end <= span.end())?;
+    let (form, held) = holding(tree, target.end)?;
     let top = match reach {
         Reach::Form => held,
         Reach::Declaration => ByteSpan::new(keyword(pbg, tree, form)?, held.end()).ok()?,
@@ -2308,6 +2358,87 @@ mod tests
                 ),
             "a call left open at the top level, which no keyword makes a declaration, keeps its \
              reading: {:?}",
+            parsed.obligations()
+        );
+    }
+
+    /// #6029: a `def` left out before `rec` leaves a `rec` block that owes
+    /// its own first tile. The block reads as no declaration, and the `def`
+    /// is minted before the `rec`, alone or after `pub`.
+    #[test]
+    fn a_def_left_out_before_rec_is_minted_at_rec_6029()
+    {
+        let pbg = built_in().unwrap();
+        let alone = include_str!(
+            "place/unformatted/a-def-left-out-before-rec-is-minted-at-rec-6029-alone.gandr"
+        );
+        let public = include_str!(
+            "place/unformatted/a-def-left-out-before-rec-is-minted-at-rec-6029-public.gandr"
+        );
+        for (source, why) in [
+            (alone, "a `rec` block with no keyword before it"),
+            (public, "a `rec` block after `pub`"),
+        ] {
+            let head = source.find("rec plus").unwrap();
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "{why}: the tree reconstructs the source"
+            );
+            assert!(
+                matches!(
+                    parsed.obligations(),
+                    [repair] if repair.class == Oblig::MissingTile
+                        && usize::from(repair.span.start()) == head
+                        && usize::from(repair.span.end()) == head.saturating_add(3)
+                ),
+                "{why}: one repair stands, over the `rec`: {:?}",
+                parsed.obligations()
+            );
+            let ghosts: Vec<ByteOffset> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Prefix,
+                        ..
+                    }) && node.span().start() == node.span().end()
+                })
+                .map(|node| node.span().start())
+                .collect();
+            assert_eq!(
+                ghosts,
+                [ByteOffset::from(head)],
+                "{why}: the `def` is minted, empty, at the `rec`"
+            );
+        }
+    }
+
+    /// #6029: a `)` left out inside a declaration whose line before ends in a
+    /// `,`. The gap search keeps a place at that `,`, but its parse owes four
+    /// repairs besides it. The parse keeps the first search's reading, which
+    /// owes one repair.
+    #[test]
+    fn a_gap_parse_that_owes_more_than_its_tiles_keeps_the_first_placement_6029()
+    {
+        let pbg = built_in().unwrap();
+        let source = include_str!(
+            "place/unformatted/a-gap-parse-that-owes-more-than-its-tiles-keeps-the-first-placement-6029.gandr"
+        );
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        assert_eq!(
+            reconstruct(parsed.tree()),
+            source,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+            ),
+            "one repair stands, and the gap's four others do not: {:?}",
             parsed.obligations()
         );
     }

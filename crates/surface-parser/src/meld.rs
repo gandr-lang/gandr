@@ -3303,13 +3303,6 @@ impl<'pbg> MeldState<'pbg>
     ///   nested damaged value syntax, exposes the repair floor. Looking only at
     ///   the current tile instead of its form start absorbs following siblings.
     /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body resolves the form start of every frontier down to the one it returns"
-        )
-    )]
     #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.binary_search(&index.0).is_ok() && self.form_start_index(StackIndex::from(index)).and_then(|start| self.stack.get(start.0)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold))))))]
     fn open_declaration_frontier(&self) -> Option<FrontierIndex>
     {
@@ -5081,6 +5074,10 @@ impl<'pbg> MeldState<'pbg>
     ///   supplied end, or none.
     /// - panics: none.
     ///
+    /// # Clause cost
+    /// - bound: reads the barrier cache from `end_index` down to the nearest
+    ///   form start, the entries the body walks.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — nested form starts, the base boundary and a closed
     ///   inner form expose the repair floor and final sibling ownership.
@@ -5479,43 +5476,112 @@ impl<'pbg> MeldState<'pbg>
         );
     }
 
-    /// Reduce every operator and force-close every open form at or above
-    /// `floor`, leaving only operand cells there.
+    /// Reduce every operator, force-close every open form and close every
+    /// fragment at or above `floor`, leaving only operand cells there.
     ///
-    /// Each step removes one operator or open frontier, the highest first, so a
-    /// form's content is reduced before the form is force-closed and the loop
-    /// ends.
+    /// Each step removes one operator, open frontier or fragment, the highest
+    /// first, so a form's content is reduced before the form is force-closed
+    /// and the loop ends. A fragment is a form whose start stands above every
+    /// operator and open frontier: no frontier carries it, so it can take no
+    /// tile, and its run ends at the top of the slope
+    /// ([`fragment_above`](Self::fragment_above)). A mid that no frontier
+    /// takes opens one ([`continue_form`](Self::continue_form)). It closes
+    /// before the step below it, so the end that the step pushes or mints
+    /// pairs with the start of its own form. In `[.A = Rung]` read as an
+    /// effect row, the `=` opens a fragment. The `]` then closes the row, and
+    /// the fragment `= Rung` is one operand of it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: no operator and no open form frontier remains at or above
-    ///   `floor`.
+    /// - ensures: no operator, no open form frontier and no form start remains
+    ///   at or above `floor`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested operators and open forms above a floor, plus
     ///   an already-complete region, expose exact final child order and repair
     ///   material. Reducing below the floor, skipping a head or adding written
-    ///   bytes changes the committed tree.
+    ///   bytes changes the committed tree. A fragment above a group that its
+    ///   closer dropped keeps the group's ghost end in the group, so the
+    ///   placement finds the group's closer.
     /// - witness: `meld::tests::infix_reduces_after_precedence`
     /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
-    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before && self.highest_reducible(floor).is_none())]
+    /// - witness: `tests::acceptance::a_torn_group_stays_the_operand_of_its_juxtaposition_6029`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before && self.highest_reducible(floor).is_none() && self.fragment_above(floor, None).is_none())]
     fn collapse(
         &mut self,
         floor: StackFloor,
     )
     {
-        // Each iteration removes one operator or open form frontier. The
-        // highest-index selector makes nested form content reduce before the
-        // enclosing frontier is force-closed, so no recursive caller-input path
-        // is needed.
-        while let Some(step) = self.highest_reducible(floor) {
+        // Each iteration removes one operator, open form frontier or fragment.
+        // The highest-index selector makes nested form content reduce before
+        // the enclosing frontier is force-closed, so no recursive caller-input
+        // path is needed.
+        loop {
+            let step = self.highest_reducible(floor);
+            if let Some(top) = self.fragment_above(floor, step)
+                && self.close_form(top).is_some()
+            {
+                continue;
+            }
             match step {
-                CollapseStep::ForceCloseForm(frontier) => self.force_close_form(frontier),
-                CollapseStep::ReduceOperator(operator) => self.reduce_operator(operator),
+                Some(CollapseStep::ForceCloseForm(frontier)) => self.force_close_form(frontier),
+                Some(CollapseStep::ReduceOperator(operator)) => self.reduce_operator(operator),
+                None => break,
             }
         }
+    }
+
+    /// Return the top of the slope when the form start nearest below it is
+    /// a fragment above `step` and at or above `floor`.
+    ///
+    /// `step` is the highest operator or open frontier at or above `floor`
+    /// ([`highest_reducible`](Self::highest_reducible)). A form start above it
+    /// has no open frontier in its run, since every frontier lies at or below
+    /// `step`. The start and every cell above it are then one form whose run
+    /// ends at the top.
+    ///
+    /// O(1) while the top barrier is a form start: the scan walks the
+    /// `barriers` cache down to the nearest start, as
+    /// [`form_start_index`](Self::form_start_index) does.
+    ///
+    /// # Specification
+    /// - ensures: returns the top index exactly when the nearest form start at
+    ///   or below it lies at or above `floor` and above the index `step` names.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: one [`form_start_index`](Self::form_start_index) walk from the
+    ///   top of the slope down to the nearest form start.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fragment above a group, a fragment above an
+    ///   operator and a form start below an open frontier expose the selected
+    ///   top. Selecting a start below the step or below the floor changes the
+    ///   committed tree.
+    /// - witness: `tests::acceptance::a_torn_group_stays_the_operand_of_its_juxtaposition_6029`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(ensures: |ret| {
+        let lowest = step.map_or(floor.0, |step| match step { CollapseStep::ForceCloseForm(index) => usize::from(index).saturating_add(1), CollapseStep::ReduceOperator(index) => usize::from(index).saturating_add(1) }).max(floor.0);
+        let top = self.stack.len().checked_sub(1);
+        ret == top.filter(|&top| self.form_start_index(StackIndex::from(top)).is_some_and(|start| start.0 >= lowest)).map(StackIndex::from)
+    })]
+    fn fragment_above(
+        &self,
+        floor: StackFloor,
+        step: Option<CollapseStep>,
+    ) -> Option<StackIndex>
+    {
+        let lowest = step
+            .map_or(floor.0, |step| match step {
+                CollapseStep::ForceCloseForm(index) => usize::from(index).saturating_add(1),
+                CollapseStep::ReduceOperator(index) => usize::from(index).saturating_add(1),
+            })
+            .max(floor.0);
+        let top = StackIndex::from(self.stack.len().checked_sub(1)?);
+        let start = self.form_start_index(top)?;
+        (usize::from(start) >= lowest).then_some(top)
     }
 
     /// Return the highest index at or above `floor` holding an operator or an
