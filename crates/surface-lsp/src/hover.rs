@@ -332,6 +332,26 @@ impl Hovering
         self.paths.get(usize::from(source)).map(PathBuf::as_path)
     }
 
+    /// The path each source of the table's unit was opened at, in the unit's
+    /// order, no symbolic link resolved; empty for a text typed alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn opened_paths(&self) -> &[PathBuf]
+    {
+        &self.opened
+    }
+
+    /// What each of the document's path imports resolved to, in the order
+    /// the document writes them; empty for a text typed alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn targets(&self) -> &[ImportTarget]
+    {
+        &self.targets
+    }
+
     /// The unit's source whose canonical path is `path`, none when the closure
     /// reads no such source or the text was typed alone.
     ///

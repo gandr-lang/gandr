@@ -22,10 +22,12 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_dispatcher::DeclaredHalf;
 use gandr_surface_dispatcher::Referent;
+use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::LineIndex;
@@ -93,8 +95,11 @@ pub struct Placed
 /// text indexed once however many referents it declares.
 pub struct Locator<'held, 'text>
 {
-    /// What the document's copy keeps for its hovers.
-    hovering: &'held Hovering,
+    /// The document's type table.
+    table: &'held TypeTable,
+    /// The path each source of the table's unit was opened at, in the unit's
+    /// order.
+    opened: &'held [PathBuf],
     /// The document.
     uri: &'held DocumentUri,
     /// The document's text, indexed.
@@ -112,14 +117,30 @@ impl<'held, 'text> Locator<'held, 'text>
     /// # Specification
     /// trivial.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         hovering: &'held Hovering,
         uri: &'held DocumentUri,
         index: &'held LineIndex<'text>,
     ) -> Self
     {
+        Self::laid((hovering.table(), hovering.opened_paths()), uri, index)
+    }
+
+    /// A locator over the document at `uri`, whose text `index` indexes, typed
+    /// as `table` in a unit whose sources were opened at `opened`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn laid(
+        (table, opened): (&'held TypeTable, &'held [PathBuf]),
+        uri: &'held DocumentUri,
+        index: &'held LineIndex<'text>,
+    ) -> Self
+    {
         Self {
-            hovering,
+            table,
+            opened,
             uri,
             index,
             siblings: BTreeMap::new(),
@@ -202,16 +223,17 @@ impl<'held, 'text> Locator<'held, 'text>
     where
         'text: 'held,
     {
-        if referent.source() == self.hovering.table().own_source() {
+        if referent.source() == self.table.own_source() {
             return Some((self.uri, self.index));
         }
-        let hovering = self.hovering;
+        let (table, opened) = (self.table, self.opened);
         let sibling = self
             .siblings
             .entry(referent.source())
             .or_insert_with(|| {
-                let uri = hovering.opened(referent).and_then(DocumentUri::of_path)?;
-                let text = hovering.table().source_text(referent.source())?;
+                let path = opened.get(usize::from(referent.source()))?;
+                let uri = DocumentUri::of_path(path)?;
+                let text = table.source_text(referent.source())?;
                 Some((uri, LineIndex::new(<&str>::from(text).into())))
             })
             .as_ref()?;

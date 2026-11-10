@@ -2005,6 +2005,49 @@ pub struct DiagnosticSettings
     /// publishes; `0` holds nothing.
     #[serde(default)]
     pub quiet: Option<QuietSetting>,
+    /// `gandr.diagnostics.shadowing`: the severity of a diagnostic at each
+    /// binder that hides another binding, or `off` for none.
+    #[serde(default)]
+    pub shadowing: Option<ShadowingSetting>,
+}
+
+/// A `gandr.diagnostics.shadowing` value: the severity of each shadowing
+/// binder's diagnostic, or none. A client that sends no value gets none.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ShadowingSetting
+{
+    /// No diagnostic.
+    #[default]
+    Off,
+    /// [`Severity::HINT`].
+    Hint,
+    /// [`Severity::INFORMATION`].
+    Information,
+    /// [`Severity::WARNING`].
+    Warning,
+    /// [`Severity::ERROR`].
+    Error,
+}
+
+impl ShadowingSetting
+{
+    /// The severity this setting names, none for [`Self::Off`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn severity(self) -> Option<Severity>
+    {
+        match self {
+            Self::Off => None,
+            Self::Hint => Some(Severity::HINT),
+            Self::Information => Some(Severity::INFORMATION),
+            Self::Warning => Some(Severity::WARNING),
+            Self::Error => Some(Severity::ERROR),
+        }
+    }
 }
 
 /// A `gandr.diagnostics.quiet` value: a nonnegative, finite number of
@@ -2104,6 +2147,18 @@ impl Settings
         self.diagnostics
             .and_then(|diagnostics| diagnostics.quiet)
             .map(|QuietSetting(quiet)| quiet)
+    }
+
+    /// The shadowing diagnostics' setting these settings name, when they name
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shadowing(self) -> Option<ShadowingSetting>
+    {
+        self.diagnostics?.shadowing
     }
 
     /// The presentation form these settings name, when they name one.
@@ -2728,9 +2783,10 @@ pub const APPLY_FILL: &str = "gandr.applyFill";
 /// answering that line.
 pub const RUN: &str = "gandr.run";
 
-/// The command a references lens names: its arguments are the document's
-/// URI, the name's position and the locations of its uses. The client runs
-/// it, showing those uses; the server runs nothing for it.
+/// The command a references lens and a shadowing lens name: its arguments
+/// are the document's URI, the name's position and the locations of the uses
+/// the lens counts. The client runs it, showing those uses; the server runs
+/// nothing for it.
 pub const SHOW_REFERENCES: &str = "gandr.showReferences";
 
 /// Every command the server runs.
@@ -3921,12 +3977,13 @@ pub struct CodeLens
     /// What it shows; none until the lens is resolved.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<Command>,
-    /// The name a resolution counts the references of.
+    /// The name a resolution counts the uses of.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<LensData>,
 }
 
-/// The name a references lens counts: where it is written.
+/// The name a lens counts the uses of: where it is written, and which uses
+/// it counts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct LensData
 {
@@ -3934,6 +3991,23 @@ pub struct LensData
     pub uri: DocumentUri,
     /// Where in that document.
     pub position: Position,
+    /// Which uses a resolution counts; a references lens's when the client
+    /// sends none.
+    #[serde(default)]
+    pub counts: Counted,
+}
+
+/// Which uses a lens counts.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Counted
+{
+    /// Every use of the declared name, in every open document: a references
+    /// lens.
+    #[default]
+    References,
+    /// The uses a shadowing binder takes from the binding it hides.
+    Shadowed,
 }
 
 /// A code lens a client asks to resolve: its range, and the name it counts

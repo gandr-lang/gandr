@@ -341,6 +341,19 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why the table writes no name for a declaration.
+    pub mod printed {
+        /// The reason no name is written.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The unit admits no declaration at the position, or the printer
+            /// keeps an empty name for it.
+            Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a spelling has no reprint.
     pub mod reprinted {
         /// The reason the spelling was not printed again.
@@ -3705,6 +3718,78 @@ impl TypeTable
             .and_then(|at| self.shadows.get(at))
             .map_or(Maybe::Absent(shadowing::Absent::Unshadowing), |shadow| {
                 Maybe::Present(shadow.hidden)
+            })
+    }
+
+    /// Where the unit writes the binding `hidden` names, for a hidden binding
+    /// that [`Self::shadows`] keeps.
+    ///
+    /// # Specification
+    /// - requires: `hidden` is the hidden binding of an entry of
+    ///   [`Self::shadows`].
+    /// - ensures: a binder at its span of the table's own text, a declaration
+    ///   where [`Self::declared_at`] writes it, and a constructor at its name
+    ///   tile, in the source of its family's form, which is its extent; absent
+    ///   as [`referred::Absent::Unreferred`] for a builtin, and for a
+    ///   declaration or a family that the unit admits nowhere.
+    /// - provides: the site a view points at for what a binder hides.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder that hides a parameter, one that hides an
+    ///   earlier declaration and one that hides a builtin answer the
+    ///   parameter's name, the declaration's name and nothing.
+    /// - witness: `typed::tests::each_hidden_binding_is_written_where_its_shadow_points_6251`
+    #[spec(ensures: |ret| match hidden {
+        Resolution::Binder(named) => matches!(ret, Maybe::Present(site) if site.named() == named),
+        Resolution::Builtin => matches!(ret, Maybe::Absent(_)),
+        Resolution::Declaration(_) | Resolution::Constructor { .. } => true,
+    })]
+    #[inline]
+    pub fn hidden_site(
+        &self,
+        hidden: Resolution,
+    ) -> Maybe<Referent, referred::Absent>
+    {
+        self.referents
+            .hidden(&self.unit, self.own_source(), hidden)
+            .map_or(Maybe::Absent(referred::Absent::Unreferred), Maybe::Present)
+    }
+
+    /// The name the printer writes for the declaration admitted at
+    /// `constant`, outside every module: a member of a module its path, a
+    /// name an import reads unqualified bare.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the printer's name of `constant`; absent as
+    ///   [`printed::Absent::Unnamed`] when the table keeps none or an empty
+    ///   one.
+    /// - provides: the name a view writes for a declaration that a binder
+    ///   hides.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an earlier declaration is named bare and a member of
+    ///   an opened module by its module's path.
+    /// - witness: `typed::tests::each_hidden_binding_is_written_where_its_shadow_points_6251`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(name) => !name.as_ref().is_empty(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn printer_name(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<SourceText<'_>, printed::Absent>
+    {
+        self.names
+            .get(usize::from(constant))
+            .filter(|name| !name.is_empty())
+            .map_or(Maybe::Absent(printed::Absent::Unnamed), |name| {
+                Maybe::Present(SourceText::from(name.as_str()))
             })
     }
 
@@ -8006,6 +8091,80 @@ mod tests
             table.hidden_at(ending("fresh", 5_usize)),
             Maybe::Absent(super::shadowing::Absent::Unshadowing),
             "a parameter that hides nothing answers absent"
+        );
+    }
+
+    /// #6251: each hidden binding is written where its shadow points: a
+    /// parameter at its name, an earlier declaration at its name under its
+    /// bare name, a member of an opened module at its name under its module's
+    /// path, and a builtin nowhere.
+    #[test]
+    fn each_hidden_binding_is_written_where_its_shadow_points_6251()
+    {
+        use gandr_surface_lowering::Resolution;
+
+        let source = include_str!(
+            "typed/fixtures/each-hidden-binding-is-written-where-its-shadow-points-6251.gandr"
+        );
+        let table = table(SourceText::from(source));
+        let spelled =
+            |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
+        let line = |span: ByteSpan| {
+            source
+                .get(.. usize::from(span.start()))
+                .map(|before| before.matches('\n').count())
+        };
+        let read: Vec<_> = table
+            .shadows()
+            .iter()
+            .map(|shadow| {
+                let site = match table.hidden_site(shadow.hidden) {
+                    Maybe::Present(site) => {
+                        assert_eq!(
+                            site.source(),
+                            table.own_source(),
+                            "each site is the source's own"
+                        );
+                        Some((spelled(site.named()), line(site.named())))
+                    },
+                    Maybe::Absent(_) => None,
+                };
+                let name = match shadow.hidden {
+                    Resolution::Declaration(constant) => match table.printer_name(constant) {
+                        Maybe::Present(name) => Some(<&str>::from(name)),
+                        Maybe::Absent(_) => None,
+                    },
+                    Resolution::Binder(_)
+                    | Resolution::Constructor { .. }
+                    | Resolution::Builtin => None,
+                };
+                (spelled(shadow.binder), line(shadow.binder), site, name)
+            })
+            .collect();
+        assert_eq!(
+            read,
+            [
+                (
+                    Some("n"),
+                    Some(11_usize),
+                    Some((Some("n"), Some(8_usize))),
+                    None
+                ),
+                (
+                    Some("answer"),
+                    Some(14_usize),
+                    Some((Some("answer"), Some(4_usize))),
+                    Some("answer")
+                ),
+                (
+                    Some("two"),
+                    Some(15_usize),
+                    Some((Some("two"), Some(6_usize))),
+                    Some("Counting.two")
+                ),
+                (Some("add"), Some(16_usize), None, None),
+            ],
+            "each binder, its line, the hidden site with its line, and the printer's name"
         );
     }
 

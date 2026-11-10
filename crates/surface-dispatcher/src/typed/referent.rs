@@ -834,6 +834,38 @@ impl Referents
             .map(|&(_, referent)| referent)
     }
 
+    /// Where the unit writes the binding `hidden` names, as a shadow of the
+    /// source `own`'s text keeps it: a binder at its span of that text, a
+    /// declaration at its referent, a constructor at its name tile in its
+    /// family's form; none for a builtin.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn hidden(
+        &self,
+        unit: &Unit,
+        own: SourceIndex,
+        hidden: Resolution,
+    ) -> Option<Referent>
+    {
+        match hidden {
+            Resolution::Binder(named) => Some(Referent {
+                source: own,
+                named,
+                extent: named,
+            }),
+            Resolution::Declaration(constant) => self.declared(constant),
+            Resolution::Constructor { named, family } => placed(unit, named)
+                .zip(self.declared(family))
+                .map(|((source, named), family)| Referent {
+                    source,
+                    named,
+                    extent: family.extent,
+                }),
+            Resolution::Builtin => None,
+        }
+    }
+
     /// The site of the `half` of the declaration `referent` names: its own
     /// name tile and form; `referent` itself when it names no declaration or
     /// one with no such half.

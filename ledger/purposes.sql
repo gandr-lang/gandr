@@ -2964,6 +2964,7 @@ INSERT INTO purpose VALUES('surface-lsp','protocol::ContentChange','struct','One
 INSERT INTO purpose VALUES('surface-lsp','protocol::ContentOptions','struct','The virtual documents whose text the server serves, as advertised.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::ContentParams','struct','The parameters of `workspace/textDocumentContent` and of its refresh: the virtual document whose text is asked for, or asked for again.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::ContentResult','struct','What `workspace/textDocumentContent` answers: the virtual document''s text.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','protocol::Counted','enum','Which uses a lens counts: every use of a declared name, or the uses a shadowing binder takes from the binding it hides.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::CreateProgressParams','struct','The parameters of `window/workDoneProgress/create`: the token the client is asked to show progress under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::Diagnostic','struct','One diagnostic, as the editor shows it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::DiagnosticData','struct','The repair a diagnostic''s help names, kept on the diagnostic for the code action that offers it once a trial checks it.',NULL,'fits','sound',NULL);
@@ -3000,7 +3001,7 @@ INSERT INTO purpose VALUES('surface-lsp','protocol::InlineCompletionList','struc
 INSERT INTO purpose VALUES('surface-lsp','protocol::InsertTextFormat','struct','How a completion''s text reads, as the protocol numbers it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::LabelDetails','struct','What a client shows beside a completion''s label: the rest of its head, right after the label, or what it is, apart from it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::Legend','struct','The token legend.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lsp','protocol::LensData','struct','The name a references lens counts: where it is written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','protocol::LensData','struct','The name a lens counts the uses of: where it is written, and which uses it counts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::LinkedEditingRanges','struct','The ranges of a document that an edit of one applies to, each spelling the same name, and the words an edit may leave there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::Location','struct','A range in a document.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::LocationLink','struct','A link from the name a request was made at to where what it names is written.',NULL,'fits','sound',NULL);
