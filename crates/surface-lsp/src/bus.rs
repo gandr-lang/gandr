@@ -1,6 +1,6 @@
 //! The hub's render-bus face: a renderer in another process attaches, hears
-//! the documents the hub holds, and receives each document's report every
-//! time a synchronisation publishes it.
+//! the documents the hub holds, and receives each document's report and
+//! account every time a synchronisation publishes it.
 //!
 //! # The hub serves the render bus
 //!
@@ -22,6 +22,14 @@
 //! in, where the Model Context Protocol face is a parameter, because its frames
 //! are this crate's own diagnostics and the seam is already a dependency.
 //!
+//! Before a report, the face sends the document's account: one card per
+//! declaration with a content key, as the hub's tiers hold it
+//! (`Workspace::accounted`). The attach and a resync get the whole account.
+//! After that, the face sends the edits from the cards it sent last, and
+//! nothing when they did not change, so an edit to a comment sends no account
+//! frame. An admission that settles the document's kernel tiers sends the
+//! edits alone, because the report did not change.
+//!
 //! **Alternatives.** A report built from the judgement's reports rather than
 //! the published diagnostics would carry the typed arguments a card has room
 //! for, at the cost of keeping each document's reports beside its diagnostics,
@@ -38,6 +46,7 @@
 //! body announces a forgotten document; a report measured as too large for a
 //! document's every edit sends only what changed.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use std::io;
@@ -47,12 +56,16 @@ use std::io::Write as _;
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::sync::Mutex;
+use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
 use std::thread;
 
+use gandr_surface_render_remote::AccountCard;
+use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::FrameBody;
 use gandr_surface_render_remote::FrameScope;
 use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_render_remote::account_edits;
 
 use crate::hub::lock;
 use crate::protocol::DocumentUri;
@@ -70,8 +83,59 @@ enum Event
     Sent(RenderFrame),
     /// A document a synchronisation published or the hub forgot.
     Changed(DocumentUri),
+    /// A document whose kernel tiers an admission settled.
+    Settled(DocumentUri),
     /// The client's stream ended, or sent a line that is not a frame.
     Closed,
+}
+
+/// A channel of documents the workspace names, with the event the face's loop
+/// hears for each.
+type Forwarded = (Receiver<DocumentUri>, fn(DocumentUri) -> Event);
+
+/// The account frame that takes a renderer from the cards it was sent of the
+/// document at `uri`, which `sent` holds, to `account`, the document's
+/// account now: the whole account when `whole` asks for it, the patch
+/// otherwise, and none for an unchanged account or a forgotten document.
+/// `sent` then holds the cards that the renderer holds.
+///
+/// # Specification
+/// trivial.
+fn patched(
+    account: Option<(DocId, Vec<AccountCard>)>,
+    uri: &DocumentUri,
+    sent: &mut BTreeMap<DocumentUri, Vec<AccountCard>>,
+    whole: Whole,
+) -> Option<RenderFrame>
+{
+    let Some((document, cards)) = account
+    else {
+        drop(sent.remove(uri));
+        return None;
+    };
+    let held = sent.entry(uri.clone()).or_default();
+    let frame = match whole {
+        Whole::Asked => RenderFrame::accounts(document, cards.clone()),
+        Whole::Owed => {
+            let edits = account_edits(held, &cards);
+            if edits.is_empty() {
+                return None;
+            }
+            RenderFrame::account_patch(document, edits)
+        },
+    };
+    *held = cards;
+    Some(frame)
+}
+
+/// Whether a renderer asks for a whole account or is owed the patch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Whole
+{
+    /// The renderer attached or fell behind: it holds no cards to patch.
+    Asked,
+    /// The renderer holds the cards it was sent last.
+    Owed,
 }
 
 /// Write `frames`, one line each, to `writing`.
@@ -99,11 +163,14 @@ fn send(
 ///   `r`.
 /// - ensures: a connection whose first line is not [`RENDER_BUS_PREFACE`] is
 ///   answered with a detach and nothing else. Otherwise the face sends the
-///   greeting naming every document the hub holds, then each one's report;
-///   then, for every document a synchronisation publishes, its report at the
-///   version published. A resync from the client is answered with the named
-///   document's report at its current version, nothing for a document the hub
-///   does not hold; a detach is answered with a detach and ends the face.
+///   greeting naming every document the hub holds, then each one's whole
+///   account and its report. Then, for every document a synchronisation
+///   publishes, it sends the patch of its account when the account changed, and
+///   its report at the version published. For every document whose kernel tiers
+///   an admission settled, it sends the patch alone, when the account changed.
+///   A resync from the client is answered with the named document's whole
+///   account and its report at its current version, nothing for a document the
+///   hub does not hold; a detach is answered with a detach and ends the face.
 ///   Frames are written one line each, in the order the face made them. The
 ///   face returns when the client's stream ends, a line is not a frame, or a
 ///   write fails.
@@ -117,13 +184,16 @@ fn send(
 /// - hypothesis: L3 — through a running hub, a view attached beside an editor
 ///   receives the greeting and the held document's report, the next version's
 ///   report after the editor's edit, a resync's answer and the detach; a
-///   connection with another preface is detached at once.
+///   connection with another preface is detached at once. The view receives the
+///   document's whole account, a patch once the admission settles it, and no
+///   patch after an edit to a comment.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
+/// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
         pool_only_threads,
-        reason = "io: the change forwarder and the view's line reader each block on their channel or socket for the attachment's life"
+        reason = "io: the change and settlement forwarders and the view's line reader each block on their channel or socket for the attachment's life"
     )
 )]
 #[inline]
@@ -144,26 +214,36 @@ pub fn serve(
     }
     let (events, inbox) = channel();
     let (watcher, changes) = channel::<DocumentUri>();
+    let (accountant, settlements) = channel::<DocumentUri>();
+    // The cards each document's last account frame left the renderer with.
+    let mut sent: BTreeMap<DocumentUri, Vec<AccountCard>> = BTreeMap::new();
     let opening = {
         let mut held = lock(workspace);
         held.watch(peer, watcher);
+        held.watch_accounts(peer, accountant);
         let mut opening = Vec::from([held.greeting()]);
         let uris: Vec<DocumentUri> = held.held().map(|(uri, _version)| uri.clone()).collect();
-        opening.extend(uris.iter().filter_map(|uri| held.rendered(uri)));
+        for uri in &uris {
+            opening.extend(patched(held.accounted(uri), uri, &mut sent, Whole::Asked));
+            opening.extend(held.rendered(uri));
+        }
         drop(held);
         opening
     };
     if send(&mut writing, &opening).is_err() {
         return;
     }
-    let forward = events.clone();
-    drop(thread::spawn(move || {
-        for uri in changes {
-            if forward.send(Event::Changed(uri)).is_err() {
-                break;
+    let forwarded: [Forwarded; 2] = [(changes, Event::Changed), (settlements, Event::Settled)];
+    for (heard, event) in forwarded {
+        let forward = events.clone();
+        drop(thread::spawn(move || {
+            for uri in heard {
+                if forward.send(event(uri)).is_err() {
+                    break;
+                }
             }
-        }
-    }));
+        }));
+    }
     thread::scope(|scope| {
         drop(scope.spawn(move || {
             let mut line = String::new();
@@ -182,20 +262,39 @@ pub fn serve(
         for event in &inbox {
             let (frames, ending) = match event {
                 Event::Closed => break,
-                Event::Changed(uri) => (lock(workspace).rendered(&uri), false),
+                Event::Changed(uri) => {
+                    let held = lock(workspace);
+                    let (account, report) = (held.accounted(&uri), held.rendered(&uri));
+                    drop(held);
+                    let patch = patched(account, &uri, &mut sent, Whole::Owed);
+                    (patch.into_iter().chain(report).collect(), false)
+                },
+                Event::Settled(uri) => {
+                    let account = lock(workspace).accounted(&uri);
+                    let patch = patched(account, &uri, &mut sent, Whole::Owed);
+                    (patch.into_iter().collect(), false)
+                },
                 Event::Sent(frame) => match (frame.scope(), frame.body()) {
-                    (&FrameScope::Document(ref document), &FrameBody::Resync) => (
-                        lock(workspace).rendered(&DocumentUri::from(&document.uri)),
-                        false,
-                    ),
-                    (_, &FrameBody::Detach) => (Some(RenderFrame::detach()), true),
+                    (&FrameScope::Document(ref document), &FrameBody::Resync) => {
+                        let uri = DocumentUri::from(&document.uri);
+                        let held = lock(workspace);
+                        let (account, report) = (held.accounted(&uri), held.rendered(&uri));
+                        drop(held);
+                        let whole = patched(account, &uri, &mut sent, Whole::Asked);
+                        (whole.into_iter().chain(report).collect(), false)
+                    },
+                    (_, &FrameBody::Detach) => (Vec::from([RenderFrame::detach()]), true),
                     (
                         _,
-                        &(FrameBody::Hello { .. } | FrameBody::Frame { .. } | FrameBody::Resync),
-                    ) => (None, false),
+                        &(FrameBody::Hello { .. }
+                        | FrameBody::Frame { .. }
+                        | FrameBody::Resync
+                        | FrameBody::Accounts { .. }
+                        | FrameBody::AccountPatch { .. }),
+                    ) => (Vec::new(), false),
                 },
             };
-            if send(&mut writing, frames.as_slice()).is_err() || ending {
+            if send(&mut writing, &frames).is_err() || ending {
                 // The reader is woken by the shutdown and ends the loop.
                 drop(writing.shutdown(Shutdown::Both));
                 break;

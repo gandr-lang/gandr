@@ -157,6 +157,7 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
 use gandr_kernel_term::ConstantIndex;
@@ -636,10 +637,10 @@ pub struct Declared
     pub span: ByteSpan,
     /// Whether the checker refused it.
     pub checked: Checked,
-    /// Its row in the session's account, by its content key: the kernel tier
+    /// Its content key and its row in the session's account: the kernel tier
     /// an earlier admission settled for the same content and verdict, or
     /// pending; none when it has no content key.
-    pub row: Maybe<AccountRow, unrowed::Absent>,
+    pub row: Maybe<(ContentKey, AccountRow), unrowed::Absent>,
 }
 
 /// What one recheck produced: the diagnostics to publish, the binders left

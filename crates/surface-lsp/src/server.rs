@@ -100,6 +100,7 @@ use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
+use gandr_surface_render_remote::AccountCard;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
@@ -1492,6 +1493,9 @@ pub struct Workspace
     editors: BTreeMap<Peer, Changes>,
     /// Where each watching connection hears which document changed.
     watchers: BTreeMap<Peer, Sender<DocumentUri>>,
+    /// Where each render-bus connection hears which document's kernel tiers
+    /// an admission settled.
+    accountants: BTreeMap<Peer, Sender<DocumentUri>>,
     /// The spelling its user's configuration names: what a connection writes
     /// types in until its project's manifest or its editor's
     /// `gandr.presentation.spelling` says otherwise, and what a query writes
@@ -1677,6 +1681,22 @@ impl Workspace
     )
     {
         let _prior = self.watchers.insert(peer, watcher);
+    }
+
+    /// Admit `peer` as an accountant: the URI of each document whose kernel
+    /// tiers an admission settled goes to `accountant`. A publication goes to
+    /// the watchers alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn watch_accounts(
+        &mut self,
+        peer: Peer,
+        accountant: Sender<DocumentUri>,
+    )
+    {
+        let _prior = self.accountants.insert(peer, accountant);
     }
 
     /// Admit `peer`, a hub connection, as an editor: the paths of the held
@@ -1939,6 +1959,43 @@ impl Workspace
         })
     }
 
+    /// The render bus's account of the document at `uri`: its latest copy's
+    /// version, with one card per declaration of the copy's own text that has
+    /// a content key.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` for a document no connection holds; otherwise the
+    ///   document at its latest copy's version, with the [`Tiers::cards`] of
+    ///   that copy's tiers.
+    /// - provides: what the render-bus face diffs against the cards it sent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view attached to a hub receives the held document's
+    ///   cards, a patch once the admission settles them, and no patch after an
+    ///   edit to a comment.
+    /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
+    #[spec(ensures: |ret| ret.is_some() == self.documents.contains_key(uri))]
+    #[inline]
+    #[must_use]
+    pub fn accounted(
+        &self,
+        uri: &DocumentUri,
+    ) -> Option<(DocId, Vec<AccountCard>)>
+    {
+        self.documents.get(uri).map(|held| {
+            let document = &held.document;
+            (
+                DocId {
+                    uri: uri.into(),
+                    version: document.version.into(),
+                },
+                document.tiers.cards(),
+            )
+        })
+    }
+
     /// Judge each of `changes`, applied alone to the latest copy of the
     /// document at `uri` as it stands, without submitting any: that copy's
     /// version and each candidate's result, best first.
@@ -2172,7 +2229,8 @@ impl Workspace
             reason = "parity: the body lets go of every document once; the check reads each document once"
         )
     )]
-    #[spec(ensures: !self.watchers.contains_key(&peer) && !self.editors.contains_key(&peer)
+    #[spec(ensures: !self.watchers.contains_key(&peer) && !self.accountants.contains_key(&peer)
+        && !self.editors.contains_key(&peer)
         && self.documents.values().all(|held| matches!(held.own(peer), Maybe::Absent(_))))]
     #[inline]
     pub fn depart(
@@ -2181,6 +2239,7 @@ impl Workspace
     )
     {
         let _watcher = self.watchers.remove(&peer);
+        let _accountant = self.accountants.remove(&peer);
         let _editor = self.editors.remove(&peer);
         let _reporting = self.reporting.remove(&peer);
         self.files.get_mut().depart(peer);
@@ -4042,6 +4101,9 @@ impl Server
             let admitted = settle(&mut locked(&document.session), finished);
             logged.timing = admitted.timing;
             document.tiers.settle(admitted.tiers);
+            for accountant in workspace.accountants.values() {
+                let _gone = accountant.send(uri.clone());
+            }
             if self.phase == Phase::Running {
                 if self.refreshing.lenses.0 {
                     settled.messages.push(self.asked(Refreshed::Lenses));

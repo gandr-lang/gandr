@@ -400,14 +400,16 @@ impl Account
         }
     }
 
-    /// The row of the latest judged revision's declaration at `constant`.
+    /// The content key and the row of the latest judged revision's
+    /// declaration at `constant`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the row of the key the latest judgement listed at `constant`,
-    ///   or [`unrowed::Absent::Unkeyed`] when it listed none there.
+    /// - ensures: the key the latest judgement listed at `constant`, with its
+    ///   row, or [`unrowed::Absent::Unkeyed`] when it listed none there.
     /// - provides: what a face reads for one declaration, by one search of the
-    ///   positions and one lookup of the key, with no computation of its own.
+    ///   positions and one lookup of the key, with no computation of its own;
+    ///   the key names the declaration's card across revisions.
     /// - fails: [`unrowed::Absent::Unkeyed`].
     /// - panics: none.
     ///
@@ -422,16 +424,14 @@ impl Account
     pub fn row_at(
         &self,
         constant: ConstantIndex,
-    ) -> Maybe<AccountRow, unrowed::Absent>
+    ) -> Maybe<(ContentKey, AccountRow), unrowed::Absent>
     {
         self.declared
             .binary_search_by_key(&constant, |&(at, _)| at)
             .ok()
             .and_then(|found| self.declared.get(found))
-            .and_then(|&(_, key)| self.rows.get(&key))
-            .map_or(Maybe::Absent(unrowed::Absent::Unkeyed), |&(_, row)| {
-                Maybe::Present(row)
-            })
+            .and_then(|&(_, key)| self.rows.get(&key).map(|&(_, row)| (key, row)))
+            .map_or(Maybe::Absent(unrowed::Absent::Unkeyed), Maybe::Present)
     }
 
     /// Each row of the latest judged revision with its declaration's position

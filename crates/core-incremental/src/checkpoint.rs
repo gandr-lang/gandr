@@ -1905,6 +1905,28 @@ impl ContentKey
     }
 }
 
+impl fmt::Display for ContentKey
+{
+    /// Write the key as 32 lowercase hexadecimal digits: the digest's high
+    /// word, then its low word, so two keys that differ write two texts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{:016x}{:016x}",
+            u64::from(self.0.high()),
+            u64::from(self.0.low())
+        )
+    }
+}
+
 /// The content key of `content`: its digest, unless it is opaque.
 ///
 /// # Specification

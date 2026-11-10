@@ -261,7 +261,7 @@ fn a_comment_edit_keeps_every_row_and_an_edit_moves_one()
         session
             .account()
             .row_at(ConstantIndex::from(0_usize))
-            .map(|row| row.kernel()),
+            .map(|(_, row)| row.kernel()),
         Maybe::Present(KernelState::Pending),
         "the inserted declaration waits on its admission"
     );

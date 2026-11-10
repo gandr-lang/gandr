@@ -3,7 +3,7 @@
 //!
 //! The crate parses, lowers, types and marks nothing, and names no other
 //! crate of the workspace, so a language server, a terminal face or an agent
-//! links it without linking the checker. Four modules:
+//! links it without linking the checker. Five modules:
 //!
 //! - `present`: highlight and mark spans over validated byte ranges, diagnostic
 //!   and goal cards, transcript blocks, and the projection from a byte offset
@@ -11,13 +11,16 @@
 //!   UTF-16 column over a line index for a language server.
 //! - `diagnostic`: the registry of stable diagnostic codes, each with its
 //!   localizable message template, and the typed message arguments.
+//! - `account`: the [`AccountCard`] of each declaration, keyed by its content,
+//!   and the [`AccountEdit`]s that take a renderer's cards from one state to
+//!   the next.
 //! - `wire`: the render-bus [`RenderFrame`] — a document-scoped or
 //!   connection-scoped [`FrameBody`] under the wire schema version
 //!   [`WIRE_SCHEMA_VERSION`].
 //! - `visual`: the visual language: the five [`Warrant`]s with their glyphs and
 //!   colour names, the [`Rendering`] a renderer emits for a [`Frame`] of named
-//!   fields, and the twenty [`RULES`] that [`conform`] checks it against.
-//!
+//!   fields, the [`Samples`] ring of a sparkline field, and the twenty
+//!   [`RULES`] that [`conform`] checks it against.
 //! # `serde`
 //!
 //! The default-off `serde` feature derives the serde wire image of every type
@@ -108,6 +111,7 @@
 //! | `MarkSpan`, `RenderFrame`, `ReportView` | the engine hub's render-bus face in `gandr-surface-lsp`, which writes a report per publication, and the side view in `gandr-surface-tui`, which reads it |
 //! | `GoalCard` | a renderer in another process, once goals carry spelled types |
 //! | `Warrant`, `Glyph`, `Frame`, `Rendering`, `RULES`, `conform` | the language server's tier lenses, which mark each declaration with its warrant, and the side view in `gandr-surface-tui`, whose rendering every rule checks |
+//! | `AccountCard`, `AccountEdit`, `account_edits`, `Samples`, `Sparkline::of` | the engine hub's render-bus face, which sends each document's account and its patches, and the side view, which shows one row per declaration |
 //!
 //! # A leaf beside the pipeline
 //!
@@ -134,7 +138,7 @@
 //!
 //! | Form | Arrives with |
 //! | ---- | ------------ |
-//! | a node-keyed delta body, its patch form and the capability that advertises it | an incremental delta engine that produces patches, together with a renderer that applies them; until then every report is a whole `Frame` |
+//! | a node-keyed delta body for every block kind, and the capability that advertises it | an incremental delta engine that produces patches, together with a renderer that applies them; until then a report is a whole `Frame`, and the account alone has its own patch, `AccountPatch` |
 //! | obligation cards and their severity-ordered classes, and the capability that advertises them | the same delta engine's reader; until then a parser's recovery obligation can reach a renderer as a `DiagCard` under `W0012` |
 //! | a capability advertisement on `Hello` | the first capability a server can back; a flag with no machinery behind it would advertise a channel no server fills |
 //! | the typing machine's projection: the derivation forest, the control register, the frame-stack summary and the machine digest | an inspection face that paints the typing machine; the forest arrives as an arena of nodes addressed by id, never as nodes that own their children |
@@ -178,11 +182,21 @@
 
 extern crate alloc;
 
+mod account;
 mod diagnostic;
 mod present;
 mod visual;
 mod wire;
 
+pub use crate::account::AccountCard;
+pub use crate::account::AccountCounts;
+pub use crate::account::AccountEdit;
+pub use crate::account::AccountKey;
+pub use crate::account::CheckerVerdict;
+pub use crate::account::CompileTier;
+pub use crate::account::KernelMark;
+pub use crate::account::account_edits;
+pub use crate::account::apply_account_edits;
 pub use crate::diagnostic::DIAGNOSTIC_CODES;
 pub use crate::diagnostic::DiagnosticCode;
 pub use crate::diagnostic::DiagnosticMessage;
@@ -235,10 +249,13 @@ pub use crate::visual::Role;
 pub use crate::visual::Row;
 pub use crate::visual::Rule;
 pub use crate::visual::SAMPLES;
+pub use crate::visual::SampleUnit;
+pub use crate::visual::Samples;
 pub use crate::visual::Shown;
 pub use crate::visual::Slug;
 pub use crate::visual::Sparkline;
 pub use crate::visual::Spot;
+pub use crate::visual::TooManySamples;
 pub use crate::visual::Unit;
 pub use crate::visual::WARRANTS;
 pub use crate::visual::Warrant;

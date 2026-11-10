@@ -49,17 +49,26 @@
 //!   each declaration's kernel tier, computed off the keystroke path.
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_incremental::ContentKey;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_dispatcher::KernelTier;
 use gandr_surface_dispatcher::Unruled;
+use gandr_surface_render_remote::AccountCard;
+use gandr_surface_render_remote::AccountKey;
 use gandr_surface_render_remote::Glyph;
+use gandr_surface_render_remote::KernelMark;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::Warrant;
+use gandr_surface_session::AccountRow;
+use gandr_surface_session::CheckerVerdict;
+use gandr_surface_session::CompileTier;
 use gandr_surface_session::KernelState;
+use gandr_surface_session::unrowed;
 use quenchant_shape::shape::Maybe;
 use serde::Serialize;
 
@@ -154,6 +163,10 @@ pub struct Tiered
     range: Range,
     /// Its tier.
     tier: Tier,
+    /// Its content key and its row in the session's account at its
+    /// judgement, for its verdict and its compile tier, while `tier` is where
+    /// the kernel stands now; none when it has no content key.
+    row: Maybe<(ContentKey, AccountRow), unrowed::Absent>,
 }
 
 /// The kernel tiers of an open document's declarations, in admission order:
@@ -210,6 +223,7 @@ impl Tiers
                         range: ranged(index, declared.span)?,
                         tier: Self::held(&declared),
                         name: declared.name,
+                        row: declared.row,
                     })
                 })
                 .collect(),
@@ -226,7 +240,7 @@ impl Tiers
     {
         match (declared.checked, declared.row) {
             (Checked::Refused, _) => Tier::Settled(KernelTier::Unoffered),
-            (Checked::Accepted, Maybe::Present(row)) => match row.kernel() {
+            (Checked::Accepted, Maybe::Present((_, row))) => match row.kernel() {
                 KernelState::Settled(tier) => Tier::Settled(tier),
                 KernelState::Pending => Tier::Pending,
             },
@@ -451,6 +465,101 @@ impl Tiers
                 })
                 .collect(),
         }
+    }
+
+    /// One account card per declaration with a content key, in order: its
+    /// key, its name, the checker's verdict, the kernel's warrant and title,
+    /// and its compile tier. The counts and the timing stay absent.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one card per declaration with a key, in order. A card's key
+    ///   is the content key's 32 hexadecimal digits, with `#n` after the n-th
+    ///   repeat of one key, so no two cards share a key. Its kernel mark is the
+    ///   tier's warrant and lens title, absent for an unoffered tier.
+    /// - provides: the account that the render bus sends a renderer.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one card per declaration and one lookup per key. The tiers
+    ///   list each declaration of the document's own text, and #4369 bounds the
+    ///   list by the edit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's cards read pending before its admission
+    ///   ends and each declaration's tier after it, and an edit to a comment
+    ///   leaves every card as it was.
+    /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
+    #[spec(ensures: |ref ret| ret.len() <= self.each.len()
+        && ret.iter().enumerate().all(|(at, card)| ret.iter().skip(at.saturating_add(1))
+            .all(|later| later.key != card.key)))]
+    #[must_use]
+    pub fn cards(&self) -> Vec<AccountCard>
+    {
+        let mut repeats: BTreeMap<ContentKey, usize> = BTreeMap::new();
+        self.each
+            .iter()
+            .filter_map(|tiered| {
+                let Maybe::Present((key, row)) = tiered.row
+                else {
+                    return None;
+                };
+                let seen = repeats.entry(key).or_default();
+                let spelled = match *seen {
+                    0 => alloc::format!("{key}"),
+                    repeat => alloc::format!("{key}#{repeat}"),
+                };
+                *seen = seen.saturating_add(1);
+                let kernel = match (tiered.tier.warrant(), self.title(&tiered.tier)) {
+                    (Maybe::Present(warrant), Maybe::Present(title)) => {
+                        Some(KernelMark { warrant, title })
+                    },
+                    (Maybe::Present(_) | Maybe::Absent(_), _) => None,
+                };
+                Some(AccountCard {
+                    key: AccountKey::from(spelled),
+                    name: String::from(&*tiered.name),
+                    verdict: shown_verdict(row.verdict()),
+                    kernel,
+                    compile: match row.compile() {
+                        Maybe::Present(tier) => Some(shown_compile(tier)),
+                        Maybe::Absent(_) => None,
+                    },
+                    counts: None,
+                    timing: None,
+                })
+            })
+            .collect()
+    }
+}
+
+/// The wire's spelling of the checker's verdict `verdict`.
+///
+/// # Specification
+/// trivial.
+const fn shown_verdict(verdict: CheckerVerdict) -> gandr_surface_render_remote::CheckerVerdict
+{
+    use gandr_surface_render_remote::CheckerVerdict as Shown;
+    match verdict {
+        CheckerVerdict::Data => Shown::Data,
+        CheckerVerdict::Checked => Shown::Checked,
+        CheckerVerdict::Synthesised => Shown::Synthesised,
+        CheckerVerdict::Owed => Shown::Owed,
+        CheckerVerdict::Suspended => Shown::Suspended,
+        CheckerVerdict::Refused => Shown::Refused,
+    }
+}
+
+/// The wire's spelling of the compile tier `tier`.
+///
+/// # Specification
+/// trivial.
+const fn shown_compile(tier: CompileTier) -> gandr_surface_render_remote::CompileTier
+{
+    use gandr_surface_render_remote::CompileTier as Shown;
+    match tier {
+        CompileTier::Interpreted => Shown::Interpreted,
+        CompileTier::Stencil => Shown::Stencil,
+        CompileTier::Optimised => Shown::Optimised,
     }
 }
 

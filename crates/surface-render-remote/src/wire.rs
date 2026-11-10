@@ -52,6 +52,8 @@ use core::fmt;
 
 use anodized::spec;
 
+use crate::account::AccountCard;
+use crate::account::AccountEdit;
 use crate::present::DiagCard;
 use crate::present::GoalCard;
 use crate::present::HlSpan;
@@ -263,8 +265,23 @@ pub enum FrameBody
         report: ReportView,
     },
     /// Client to server: the client fell behind and asks for a whole
-    /// [`Self::Frame`] at the frame's document version. Document-scoped.
+    /// [`Self::Frame`] at the frame's document version, with the whole
+    /// [`Self::Accounts`]. Document-scoped.
     Resync,
+    /// The whole account of one document version: one card per declaration,
+    /// in document order. Document-scoped.
+    Accounts
+    {
+        /// The cards.
+        cards: Vec<AccountCard>,
+    },
+    /// The edits that take the account a renderer holds for the document to
+    /// the account at the frame's version. Document-scoped.
+    AccountPatch
+    {
+        /// The edits, to be applied in order.
+        edits: Vec<AccountEdit>,
+    },
     /// Either direction: close the stream. Connection-scoped.
     Detach,
 }
@@ -272,10 +289,10 @@ pub enum FrameBody
 /// One render-bus message: a body and the scope it is routed by.
 ///
 /// # Specification
-/// - ensures: a [`FrameBody::Frame`] or [`FrameBody::Resync`] is
-///   document-scoped and a [`FrameBody::Hello`] or [`FrameBody::Detach`] is
-///   connection-scoped, in every frame built by the four constructors or
-///   decoded.
+/// - ensures: a [`FrameBody::Frame`], [`FrameBody::Resync`],
+///   [`FrameBody::Accounts`] or [`FrameBody::AccountPatch`] is document-scoped
+///   and a [`FrameBody::Hello`] or [`FrameBody::Detach`] is connection-scoped,
+///   in every frame built by the six constructors or decoded.
 /// - provides: under the `serde` feature, the wire image `{"schema_version",
 ///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
 ///   connection-scoped frame; the decode refuses another schema version, keys
@@ -382,6 +399,68 @@ impl RenderFrame
         Self {
             scope: FrameScope::Document(document),
             body: FrameBody::Resync,
+        }
+    }
+
+    /// The whole account of `document`: `cards`, in document order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Accounts`] carrying `cards` unchanged.
+    /// - provides: the snapshot a renderer starts its account from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the document routing and the cards survive a round
+    ///   trip through JSON, and the decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_account_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Accounts { .. }),
+    ))]
+    pub const fn accounts(
+        document: DocId,
+        cards: Vec<AccountCard>,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Accounts { cards },
+        }
+    }
+
+    /// The edits that take a renderer's account of `document` to its account
+    /// at `document`'s version.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::AccountPatch`] carrying `edits` unchanged.
+    /// - provides: the patch a renderer applies after a change.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RenderFrame::accounts`].
+    /// - witness: `wire::tests::the_account_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::AccountPatch { .. }),
+    ))]
+    pub const fn account_patch(
+        document: DocId,
+        edits: Vec<AccountEdit>,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::AccountPatch { edits },
         }
     }
 
@@ -535,6 +614,10 @@ enum DocumentBody
     Frame,
     /// [`FrameBody::Resync`].
     Resync,
+    /// [`FrameBody::Accounts`].
+    Accounts,
+    /// [`FrameBody::AccountPatch`].
+    AccountPatch,
 }
 
 /// Why a decoded image is not a frame.
@@ -613,6 +696,8 @@ impl fmt::Display for FrameDecodeError
                 let name = match body {
                     DocumentBody::Frame => "frame",
                     DocumentBody::Resync => "resync",
+                    DocumentBody::Accounts => "accounts",
+                    DocumentBody::AccountPatch => "account_patch",
                 };
                 write!(f, "{name} render frames require document routing keys")
             },
@@ -659,7 +744,13 @@ impl RenderFrame
             kind = core::mem::discriminant(&wire.body),
             connection = matches!(wire.body, FrameBody::Hello { .. } | FrameBody::Detach),
             hello = matches!(wire.body, FrameBody::Hello { .. }),
-            resync = matches!(wire.body, FrameBody::Resync),
+            unrouted = match wire.body {
+                FrameBody::Frame { .. } => Some(DocumentBody::Frame),
+                FrameBody::Resync => Some(DocumentBody::Resync),
+                FrameBody::Accounts { .. } => Some(DocumentBody::Accounts),
+                FrameBody::AccountPatch { .. } => Some(DocumentBody::AccountPatch),
+                FrameBody::Hello { .. } | FrameBody::Detach => None,
+            },
         ],
         ensures: |ref ret| match *ret {
             Err(FrameDecodeError::SchemaVersion { found }) =>
@@ -674,10 +765,7 @@ impl RenderFrame
                     },
             Err(FrameDecodeError::DocumentScopedUnrouted { body }) =>
                 schema == WIRE_SCHEMA_VERSION && !has_uri && version.is_none()
-                    && !connection && match body {
-                        DocumentBody::Frame => !resync,
-                        DocumentBody::Resync => resync,
-                    },
+                    && !connection && unrouted == Some(body),
             Ok(ref frame) => schema == WIRE_SCHEMA_VERSION
                 && has_uri == version.is_some() && has_uri != connection
                 && core::mem::discriminant(&frame.body) == kind
@@ -699,9 +787,15 @@ impl RenderFrame
             (None, None) => FrameScope::Connection,
             (Some(_), None) | (None, Some(_)) => return Err(FrameDecodeError::RoutingLockstep),
         };
-        match (&wire.body, &scope) {
+        let unrouted = match (&wire.body, &scope) {
             (&(FrameBody::Hello { .. } | FrameBody::Detach), &FrameScope::Connection)
-            | (&(FrameBody::Frame { .. } | FrameBody::Resync), &FrameScope::Document(_)) => {},
+            | (
+                &(FrameBody::Frame { .. }
+                | FrameBody::Resync
+                | FrameBody::Accounts { .. }
+                | FrameBody::AccountPatch { .. }),
+                &FrameScope::Document(_),
+            ) => None,
             (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
                 return Err(FrameDecodeError::ConnectionScopedRouted {
                     body: ConnectionBody::Hello,
@@ -712,16 +806,15 @@ impl RenderFrame
                     body: ConnectionBody::Detach,
                 });
             },
-            (&FrameBody::Frame { .. }, &FrameScope::Connection) => {
-                return Err(FrameDecodeError::DocumentScopedUnrouted {
-                    body: DocumentBody::Frame,
-                });
+            (&FrameBody::Frame { .. }, &FrameScope::Connection) => Some(DocumentBody::Frame),
+            (&FrameBody::Resync, &FrameScope::Connection) => Some(DocumentBody::Resync),
+            (&FrameBody::Accounts { .. }, &FrameScope::Connection) => Some(DocumentBody::Accounts),
+            (&FrameBody::AccountPatch { .. }, &FrameScope::Connection) => {
+                Some(DocumentBody::AccountPatch)
             },
-            (&FrameBody::Resync, &FrameScope::Connection) => {
-                return Err(FrameDecodeError::DocumentScopedUnrouted {
-                    body: DocumentBody::Resync,
-                });
-            },
+        };
+        if let Some(body) = unrouted {
+            return Err(FrameDecodeError::DocumentScopedUnrouted { body });
         }
 
         Ok(Self {
@@ -763,7 +856,10 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |frame| matches!(
         (&frame.scope, &frame.body),
         (&FrameScope::Connection, &(FrameBody::Hello { .. } | FrameBody::Detach))
-            | (&FrameScope::Document(_), &(FrameBody::Frame { .. } | FrameBody::Resync)),
+            | (&FrameScope::Document(_), &(FrameBody::Frame { .. }
+                | FrameBody::Resync
+                | FrameBody::Accounts { .. }
+                | FrameBody::AccountPatch { .. })),
     )))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -790,6 +886,10 @@ mod tests
     use super::RenderFrame;
     use super::ReportView;
     use super::WIRE_SCHEMA_VERSION;
+    use crate::account::AccountCard;
+    use crate::account::AccountEdit;
+    use crate::account::AccountKey;
+    use crate::account::CheckerVerdict;
     use crate::present::ByteOffset;
     use crate::present::ByteRange;
     use crate::present::GoalCard;
@@ -1042,6 +1142,50 @@ mod tests
                 serde_json::from_value::<RenderFrame>(image)
                     .expect_err("the body disagrees with its routing")
                     .is_data()
+            );
+        }
+    }
+
+    #[test]
+    fn the_account_bodies_are_document_scoped()
+    {
+        let card = AccountCard {
+            key: AccountKey::from(alloc::string::String::from("k")),
+            name: alloc::string::String::from("x"),
+            verdict: CheckerVerdict::Checked,
+            kernel: None,
+            compile: None,
+            counts: None,
+            timing: None,
+        };
+        let frames = [
+            (
+                RenderFrame::accounts(document(Version(4)), vec![card.clone()]),
+                super::DocumentBody::Accounts,
+            ),
+            (
+                RenderFrame::account_patch(document(Version(4)), vec![
+                    AccountEdit::Put {
+                        at: 0,
+                        card: card.clone(),
+                    },
+                    AccountEdit::Drop { key: card.key },
+                ]),
+                super::DocumentBody::AccountPatch,
+            ),
+        ];
+        for (frame, body) in frames {
+            let decoded: RenderFrame =
+                serde_json::from_value(image(&frame)).expect("an account frame decodes");
+            assert_eq!(decoded, frame);
+            assert_eq!(decoded.scope, FrameScope::Document(document(Version(4))));
+            let mut unrouted = image(&frame);
+            unrouted["doc_uri"] = serde_json::Value::Null;
+            unrouted["doc_version"] = serde_json::Value::Null;
+            let wire = serde_json::from_value(unrouted).expect("well-typed wire fields");
+            assert_eq!(
+                RenderFrame::from_wire(wire),
+                Err(super::FrameDecodeError::DocumentScopedUnrouted { body })
             );
         }
     }
