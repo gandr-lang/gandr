@@ -235,6 +235,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_grammar::LabelId;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
@@ -266,8 +267,11 @@ use crate::closing::ClosingLimit;
 use crate::closing::LeadingSlot;
 use crate::closing::Step;
 use crate::closing::push_closing;
+use crate::label::Lexeme;
 use crate::label::Token;
 use crate::mold::TokenRun;
+use crate::mold::TokenText;
+use crate::mold::candidate_labels;
 use crate::oblig::Delta;
 use crate::oblig::Oblig;
 use crate::oblig::ObligationInstance;
@@ -1246,6 +1250,11 @@ primitive_copy_wrapper!(
 primitive_copy_wrapper!(
     /// Whether a grammar sort is an item position.
     struct ItemPosition(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a token opens a value and no type: a keyword that heads a
+    /// term form, a literal or a brace with no type sigil.
+    struct ValueOpener(bool);
 );
 primitive_copy_wrapper!(
     /// Whether a mold can open an item-position declaration at a fresh slot.
@@ -2285,6 +2294,15 @@ impl<'pbg> MeldState<'pbg>
             sort: def.sort,
             role: Role::Operand,
         };
+        // A value opener ends a juxtaposed type before it, as a `)` ends the
+        // call it replaces (#6101). So `-> Prog e a match` closes `Prog e a`
+        // at `match`, and the type stays closed under the body.
+        if def.sort != Sort::Type
+            && self.applies_next_in(Sort::Type).is_some()
+            && bool::from(self.opens_value_only(mold, text))
+        {
+            self.end_type_application();
+        }
 
         match self.classify(mold) {
             Kind::FormStart { absorb_left } => {
@@ -2437,6 +2455,115 @@ impl<'pbg> MeldState<'pbg>
         }
 
         Some(application)
+    }
+
+    /// Whether a tile of `mold` over `text` opens a value and no type: the
+    /// tile is a word, a literal or a `{`, it opens an operand of a term sort,
+    /// and no label of its token opens a type operand (#6101).
+    ///
+    /// A keyword that heads a term form, a literal and a brace with no type
+    /// sigil open values only. A name is no value opener, since its token is
+    /// also a type variable or a type name. A declaration keyword is no value
+    /// opener, since the type before it ends as the item ends. A separator or
+    /// an operator is no value opener either, since the melder already weighs
+    /// the type it ends. The test reads one menu of at most eight labels, each
+    /// with one table read, and allocates nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold` is a mold of `pbg`, `text` starts
+    ///   with a letter, an `_`, a digit, a `'` or a `"`, or is `{`, the sort of
+    ///   `mold` is [`Sort::Expression`], [`Sort::Pattern`] or [`Sort::Block`],
+    ///   it opens an operand, and no candidate label of the token `text` spells
+    ///   has a type mold that opens an operand. A word's labels are its menu,
+    ///   [`candidate_labels`]. Any other token's label is the label of `mold`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `match` after a juxtaposed result type opens a value,
+    ///   and a name there stays a type variable.
+    /// - witness: `tests::acceptance::a_value_opener_ends_a_juxtaposed_type_6101`
+    #[spec(ensures: |ret| !bool::from(ret) || self.pbg.mold(mold).is_ok_and(|def| def.sort != Sort::Type))]
+    fn opens_value_only(
+        &self,
+        mold: MoldId,
+        text: TileText<'_>,
+    ) -> ValueOpener
+    {
+        let opens = |candidate: MoldId| {
+            matches!(
+                self.classify(candidate),
+                Kind::Operand
+                    | Kind::FormStart { absorb_left: false }
+                    | Kind::Operator(OpShape::Prefix)
+            )
+        };
+        let Ok(def) = self.pbg.mold(mold)
+        else {
+            return ValueOpener(false);
+        };
+        if !matches!(def.sort, Sort::Expression | Sort::Pattern | Sort::Block) || !opens(mold) {
+            return ValueOpener(false);
+        }
+        let opens_type = |label: &str| {
+            self.pbg.label_id(LabelText(label)).is_some_and(|id| {
+                self.pbg.label_candidates(id).iter().any(|&candidate| {
+                    self.pbg
+                        .mold(candidate)
+                        .is_ok_and(|found| found.sort == Sort::Type)
+                        && opens(candidate)
+                })
+            })
+        };
+        let text = <&str>::from(text);
+        let lexeme = match text.chars().next() {
+            Some(lead) if lead.is_uppercase() => Some(Lexeme::UpperWord),
+            Some(lead) if lead.is_alphabetic() || lead == '_' => Some(Lexeme::LowerWord),
+            Some(lead) if lead.is_ascii_digit() || lead == '\'' || lead == '"' || text == "{" => {
+                None
+            },
+            Some(_) | None => return ValueOpener(false),
+        };
+        let typed = lexeme.map_or_else(
+            || opens_type(def.label),
+            |lexeme| {
+                candidate_labels(lexeme, TokenText::from(text))
+                    .iter()
+                    .any(|&label| opens_type(<&str>::from(label)))
+            },
+        );
+        ValueOpener(!typed)
+    }
+
+    /// Reduce each juxtaposed type application at the slope's head, so the
+    /// type it spells closes before a value opener (#6101). Each reduction
+    /// lowers the operator count.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no operator above the nearest barrier is the type application
+    ///   at the slope's head; source is unchanged, and no obligation is
+    ///   flagged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::opens_value_only`].
+    /// - witness: `tests::acceptance::a_value_opener_ends_a_juxtaposed_type_6101`
+    #[spec(captures: before = (self.source.len(), self.obligations.len()), ensures: |()| self.source.len() == before.0 && self.obligations.len() == before.1)]
+    fn end_type_application(&mut self)
+    {
+        let Some(application) = self.pbg.application_in(Sort::Type)
+        else {
+            return;
+        };
+        // Bounded by the operator count, which each reduction lowers.
+        while let Some(head) = self.topmost_operator_index()
+            && self
+                .operator_at(head)
+                .is_some_and(|(found, _prec, _sort)| found == application)
+        {
+            self.reduce_operator(head);
+        }
     }
 
     /// Reduce the slope's top application when its argument is a group

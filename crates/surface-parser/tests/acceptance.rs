@@ -1489,6 +1489,48 @@ fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Bo
     Ok(())
 }
 
+/// A `def rec` that lost its `=` after a juxtaposed result type, whose body is
+/// a `match`, recovers with its `=` alone, whatever declaration follows it.
+///
+/// The `match` opens a value and no type. So the result type `Prog e a` closes
+/// before it, as the call `Prog(e, a)` closes at its `)`. Open under the body,
+/// the type met the head of the next declaration in a window from the last
+/// arm. That cost turned the ascription `Prog e a` of the arm into a call
+/// form. The source then owed 6 obligations where the call form owes 1
+/// (#6101).
+#[test]
+fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Box<dyn Error>>
+{
+    let documented = include_str!("acceptance/unformatted/a-documented-follower-5747.gandr");
+    let damaged = |follower: &str| {
+        format!(
+            include_str!("acceptance/unformatted/a-value-opener-ends-a-juxtaposed-type-6101.gandr"),
+            follower = follower
+        )
+    };
+    for follower in [
+        "",
+        "pub def g() -> A = b;",
+        "def g() -> A = b;",
+        documented,
+        "data G where { }",
+    ] {
+        let source = damaged(follower);
+        let result = parse(built(), SourceText::from(source.as_str()))?;
+        let owed: Vec<Oblig> = result
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.class)
+            .collect();
+        assert_eq!(
+            vec![Oblig::MissingTile],
+            owed,
+            "the damaged declaration before {follower:?} owes only its `=`"
+        );
+    }
+    Ok(())
+}
+
 /// A group pattern whose first label has no dot recovers with the one
 /// missing tile, and the declaration around it stays one form.
 ///
