@@ -75,6 +75,10 @@ client = []
 # A document's recheck timed and its allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
 hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# The instrument's layers: each recheck runs at the sink its client chose,
+# and the session compiles its recording sinks. Off, every recheck runs at
+# the silent sink, which records nothing.
+instrument = ["gandr-surface-session/instrument"]
 
 [lints]
 workspace = true

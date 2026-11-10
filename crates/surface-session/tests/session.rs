@@ -1517,13 +1517,19 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     // Each retirement, then the whole admission after it: what it counted and
     // the artifact it exported.
     let mut retire_then_admit = |wanted: usize| {
-        let retired = judge(&mut session).run(&After(core::cell::Cell::new(wanted)));
+        let retired = judge(&mut session).run(
+            &After(core::cell::Cell::new(wanted)),
+            &mut gandr_surface_session::Silent,
+        );
         assert!(
             matches!(retired, Polled::Retired((), ())),
             "the admission is retired after {wanted} crossings"
         );
         let ran = judge(&mut session)
-            .run(&gandr_core_checker::Unretired)
+            .run(
+                &gandr_core_checker::Unretired,
+                &mut gandr_surface_session::Silent,
+            )
             .whole();
         let Ok(Maybe::Present(admitted)) = session.settle(ran)
         else {
@@ -1590,7 +1596,10 @@ fn a_retired_judgement_leaves_the_next_its_resume_1547()
             retiring.judge_reading_retiring(
                 gandr_surface_syntax::SourceText::from(second),
                 |_| (),
-                &After(core::cell::Cell::new(0_usize)),
+                (
+                    &After(core::cell::Cell::new(0_usize)),
+                    &mut gandr_surface_session::Silent
+                ),
             ),
             Ok(Polled::Retired((), ()))
         ),
@@ -1631,7 +1640,7 @@ fn a_judgement_polls_before_each_declaration_it_checks_1663()
     let Ok(Polled::Whole(judged)) = session.judge_reading_retiring(
         gandr_surface_syntax::SourceText::from(second),
         |_| (),
-        &poll,
+        (&poll, &mut gandr_surface_session::Silent),
     )
     else {
         panic!("a judgement never polled retired is judged whole");
