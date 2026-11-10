@@ -1174,6 +1174,7 @@ dependencies = [
  "allocation-counter",
  "crossbeam-queue",
  "gandr-core-fork",
+ "quenchant-shape",
 ]
 
 [[package]]
@@ -1564,6 +1565,7 @@ dependencies = [
  "gandr-storage-values",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
+ "gandr-surface-dispatcher",
  "gandr-surface-format",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
@@ -1830,6 +1832,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-render-terminal",
+ "gandr-surface-session",
  "gandr-surface-syntax",
  "gandr-workflow-sweep",
  "proptest",

@@ -407,8 +407,13 @@ pub use crate::package::toolchain::Unconstrained;
 pub use crate::package::toolchain::Unmet;
 pub use crate::package::toolchain::Version;
 pub use crate::package::toolchain::asking;
+pub use crate::pool::ItemIndex;
 pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;
+#[cfg(feature = "instrument")]
+pub use crate::pool::recording::ActivityFork;
+#[cfg(feature = "instrument")]
+pub use crate::pool::recording::clock as activity_clock;
 pub use crate::presentation::Presentation;
 pub use crate::presentation::PresentationFault;
 pub use crate::presentation::presented;

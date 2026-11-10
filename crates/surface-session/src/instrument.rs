@@ -19,6 +19,12 @@
 //! | forms molded | [`Instrument::molded`] | counts | once for each parse, with the forms it molded |
 //! | items judged | [`Instrument::judged`] | counts | once for each incremental pass that ran whole, with the items it judged |
 //! | declarations crossed | [`Instrument::crossed`] | counts | once for each admission that ran whole, with the declarations it offered the kernel again |
+//! | a fork job starts or ends | `Instrument::activity` | activity | at each fork site of the judgement: with the rings it answers, the site forks through the pool's recording fork, whose jobs mark the rings |
+//!
+//! `Instrument::activity` takes `&self` and answers a shared handle: the
+//! rings are per thread and lock-free, and the pool's threads write them
+//! while the session's thread holds the sink. The method exists with the
+//! `instrument` feature alone.
 //!
 //! **Alternatives.** A trait object costs one indirect call for each event,
 //! and the compiler cannot remove a call on the silent sink. A flag that each
@@ -34,10 +40,12 @@
 //!
 //! # What it does not cover
 //!
-//! The memo's hits and misses, the nodes named, each judgement step, each
-//! replay step and each schedule event have their sites inside the checker,
-//! the kernel and the pool, so no method here names them yet. The hub does
-//! not compile a declaration, so no phase names a compile step yet.
+//! The memo's hits and misses, the nodes named, each judgement step and each
+//! replay step have their sites inside the checker and the kernel, so no
+//! method here names them yet. A fork job deeper than the session's fork
+//! sites, such as a kernel replay inside a judgement, is marked with the kind
+//! of its site. The hub does not compile a declaration, so no phase names a
+//! compile step yet.
 //!
 //! # References
 //!
@@ -45,10 +53,27 @@
 //!   engine-surface-layers decides the one sink, the silent sink, the
 //!   `instrument` feature and the choice of sink for each recheck.
 
+#[cfg(feature = "instrument")]
+use gandr_core_fork::activity::Activity;
 use gandr_core_incremental::ItemCount;
 use gandr_surface_lowering::DeclarationCount;
+#[cfg(feature = "instrument")]
+use quenchant_shape::shape::Maybe;
 
 use crate::forms::FormCount;
+
+#[cfg(feature = "instrument")]
+quenchant_shape::reason_enum! {
+    /// Why a sink answers no rings.
+    pub mod unrecorded {
+        /// The reason a sink answers no rings.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The sink's layer is not the activity.
+            Unselected,
+        }
+    }
+}
 
 /// A phase of a judgement or an admission, as the timings layer reads its
 /// boundaries.
@@ -154,6 +179,26 @@ pub trait Instrument
         _declarations: DeclarationCount,
     )
     {
+    }
+
+    /// The rings that the fork jobs of the judgement write, when this sink
+    /// records the activity.
+    ///
+    /// # Specification
+    /// - ensures: the default answers [`unrecorded::Absent::Unselected`], so a
+    ///   fork site forks through the pool as it stands and writes no mark.
+    /// - panics: none.
+    /// - executable: none — a handle the sink holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sink that answers rings sees a mark for each fork
+    ///   job of a parse, and a silent sink sees none.
+    /// - witness: `tests::instrument::a_sink_with_rings_sees_each_fork_job_of_its_parse`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn activity(&self) -> Maybe<&Activity, unrecorded::Absent>
+    {
+        Maybe::Absent(unrecorded::Absent::Unselected)
     }
 }
 

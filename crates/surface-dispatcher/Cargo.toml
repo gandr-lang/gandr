@@ -114,9 +114,12 @@ tracing = { workspace = true, optional = true }
 # the allocations of each operation through allocation-counter. The test of
 # the one-time pad reads a joint distribution into a `Distribution` of
 # theory-probability, over the rationals of the sheaf crate. The corpus tests
-# of one nextest run share a walk's digest through serde (#5256).
+# of one nextest run share a walk's digest through serde (#5256). The tests
+# read the pool's recording fork, so the crate's own targets turn its
+# `instrument` feature on.
 [dev-dependencies]
 allocation-counter.workspace = true
+gandr-surface-dispatcher = { workspace = true, features = ["instrument"] }
 gandr-theory-cellular-sheaves.workspace = true
 gandr-theory-circuit-algebras.workspace = true
 gandr-theory-levitation.workspace = true
@@ -140,6 +143,9 @@ hotpath = [
   "gandr-surface-lowering/hotpath",
   "hotpath/hotpath",
 ]
+# The pool's recording fork: each job it runs writes a start and an end into
+# the activity ring of the thread that runs it. Off, no fork records.
+instrument = ["gandr-core-fork/instrument"]
 # Invocation boundary diagnostics through the caller-owned subscriber.
 tracing = ["dep:tracing"]
 unfolding-probe = [

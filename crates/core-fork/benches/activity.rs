@@ -33,6 +33,7 @@ use gandr_core_fork::activity::Activity;
 use gandr_core_fork::activity::Core;
 use gandr_core_fork::activity::Cores;
 use gandr_core_fork::activity::Declaration;
+use gandr_core_fork::activity::Declared;
 use gandr_core_fork::activity::Edge;
 use gandr_core_fork::activity::Event;
 use gandr_core_fork::activity::Fold;
@@ -63,7 +64,7 @@ fn mark(clock: Nanos) -> Mark
     Mark {
         task: Task::Fork,
         edge: Edge::Start,
-        declaration: Declaration::from(0),
+        declaration: Declared::from(Declaration::from(0)),
         world: World::from(0),
         clock,
     }

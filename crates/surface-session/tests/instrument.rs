@@ -181,3 +181,69 @@ fn an_admission_tells_its_sink_what_it_crossed()
         "the admission entered then left, then its crossed declarations"
     );
 }
+
+/// A sink that answers the rings of a pool of four threads.
+#[repr(transparent)]
+struct Rings<'activity>(&'activity gandr_core_fork::activity::Activity);
+
+impl Instrument for Rings<'_>
+{
+    /// The rings this sink holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn activity(
+        &self
+    ) -> Maybe<&gandr_core_fork::activity::Activity, gandr_surface_session::unrecorded::Absent>
+    {
+        Maybe::Present(self.0)
+    }
+}
+
+/// A judgement whose sink answers rings forks its parse through the pool's
+/// recording fork: each form the parse molds is one job, marked once at its
+/// start and once at its end. A parse that forked through the pool as it
+/// stands, or a mark per form taken up from the store, changes the count.
+#[test]
+fn a_sink_with_rings_sees_each_fork_job_of_its_parse()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_fork::activity::Edge;
+    use gandr_core_fork::activity::Fold;
+    use gandr_core_fork::activity::Slots;
+    use gandr_surface_dispatcher::Pool;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Width;
+
+    let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
+        core::num::NonZeroUsize::new(4_usize).unwrap(),
+    ))));
+    let activity = pool.activity(Slots::from(
+        core::num::NonZeroUsize::new(4_096_usize).unwrap(),
+    ));
+    let mut session = session(SourceRoot::Strict).with_pool(Arc::clone(&pool));
+    let Ok(Polled::Whole(judged)) = session.judge_reading_retiring(
+        SourceText::from("def a = 1 ; def b = 2 ; def c = 3 ; def d = 4 ;"),
+        |_| (),
+        (&Unretired, &mut Rings(&activity)),
+    )
+    else {
+        panic!("the revision is judged whole");
+    };
+    let molded = usize::from(judged.forms().molded());
+    assert!(molded > 1, "the parse molds several forms: {molded}");
+    let mut fold = Fold::new(&activity);
+    let card = fold.tick(&activity, gandr_surface_dispatcher::activity_clock());
+    let marked = |edge| {
+        card.events
+            .iter()
+            .filter(|event| event.edge == edge)
+            .count()
+    };
+    assert_eq!(
+        (marked(Edge::Start), marked(Edge::End)),
+        (molded, molded),
+        "each molded form is one job, marked at its start and at its end"
+    );
+}

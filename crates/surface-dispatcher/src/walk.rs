@@ -128,6 +128,7 @@ use crate::compose::lower_closure;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
+use crate::pool::Helped;
 use crate::pool::Pool;
 use crate::reader::Reader;
 use crate::report::RunReport;
@@ -772,6 +773,37 @@ impl Walk
         self.visiting(pool, Keeping::Admission, visitor)
     }
 
+    /// [`Self::visit`], with each lowering job marked by `recording`: the
+    /// helpers' jobs on the rings of the pool's threads, and the calling
+    /// thread's on the last ring.
+    ///
+    /// # Specification
+    /// - requires: as [`Pool::recording`].
+    /// - ensures: the steps [`Self::visit`] hands over, in its order; each
+    ///   lowering of a component runs between a start mark and an end mark on
+    ///   the ring of the thread that lowers it.
+    /// - fails: never; as [`Self::visit`].
+    /// - panics: as [`Self::visit`].
+    /// - executable: none — as [`Self::visit`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recorded walk hands over the steps of an unrecorded
+    ///   one, and marks each lowering once.
+    /// - witness: `walk::tests::a_recorded_walk_marks_each_lowering_and_hands_over_the_same_steps`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn visit_recording<Stop, Visitor, Declares>(
+        self,
+        recording: &crate::ActivityFork<'_, Declares>,
+        mut visitor: Visitor,
+    ) -> ControlFlow<Stop, RunReport>
+    where
+        Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
+        Declares: Sync,
+    {
+        self.visiting(recording, Keeping::Composed, |step, _unkept| visitor(step))
+    }
+
     /// [`Self::visit`], each step handed beside its component's admission
     /// when `keeping` asks for one.
     ///
@@ -788,14 +820,15 @@ impl Walk
     /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
     /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
     /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
-    fn visiting<Stop, Visitor>(
+    fn visiting<Stop, Visitor, Jobs>(
         mut self,
-        pool: &Pool,
+        pool: &Jobs,
         keeping: Keeping,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
         Visitor: FnMut(Step<'_>, Maybe<&Admission, kept::Absent>) -> ControlFlow<Stop>,
+        Jobs: Helped,
     {
         let unkept = match keeping {
             Keeping::Composed => kept::Absent::Unasked,
@@ -881,10 +914,8 @@ impl Walk
         // The largest component no thread has taken, lowered.
         let take = || {
             let &(_, position) = order.get(cursor.fetch_add(1, Ordering::Relaxed))?;
-            Some((
-                position,
-                lower(grammar, prelude, grouped.components.get(position)?),
-            ))
+            let component = grouped.components.get(position)?;
+            Some((position, pool.job(|| lower(grammar, prelude, component))))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
         // The calling thread's share: judge each component in walk order as
@@ -930,7 +961,7 @@ impl Walk
                         if let btree_map::Entry::Vacant(unjudged) = judged.entry(placed.component) {
                             let job = loop {
                                 if helpers == 0 {
-                                    break lower(grammar, prelude, component);
+                                    break pool.job(|| lower(grammar, prelude, component));
                                 }
                                 if let Some(job) = early.remove(&placed.component) {
                                     break job;
@@ -953,7 +984,9 @@ impl Walk
                                     // Every pool thread has stopped without
                                     // it: one panicked, and the scope will say
                                     // so.
-                                    Err(_) => break lower(grammar, prelude, component),
+                                    Err(_) => {
+                                        break pool.job(|| lower(grammar, prelude, component));
+                                    },
                                 }
                             };
                             self.report.lowerings_mut().absorb(job.lowerings);
@@ -1052,7 +1085,7 @@ impl Walk
             }
             ControlFlow::Continue(())
         };
-        match pool.helpers(&order) {
+        match pool.pool().helpers(&order) {
             Maybe::Present((threads, helpers)) => threads.in_place_scope(|scope| {
                 let helpers = NonZeroUsize::from(helpers).get();
                 for _ in 0 .. helpers {
@@ -2307,6 +2340,63 @@ pub mod tests
                 "a visit at {width:?} hands over the serial visit's steps and counts"
             );
         }
+    }
+
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn a_recorded_walk_marks_each_lowering_and_hands_over_the_same_steps()
+    {
+        use gandr_core_fork::activity::Declared;
+        use gandr_core_fork::activity::Edge;
+        use gandr_core_fork::activity::Fold;
+        use gandr_core_fork::activity::Slots;
+        use gandr_core_fork::activity::Task;
+        use gandr_core_fork::activity::World;
+
+        let scratch = Scratch::new(Path::new("recorded"));
+        for name in ["a", "b", "c", "d"] {
+            scratch.file(
+                &Path::new("tree").join(format!("{name}.gandr")),
+                SourceText::from("def x = 1 ;"),
+            );
+        }
+        let paths = vec![scratch.0.join("tree")];
+        let width = Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(2)));
+        let (unrecorded, unrecorded_report) = visited(&scratch.0, paths.clone(), width);
+        let pool = Pool::new(width);
+        let activity = pool.activity(Slots::from(NonZeroUsize::new(256_usize).unwrap()));
+        let recording = pool.recording(&activity, (Task::Fork, World::from(0)), |_| Declared::NONE);
+        let mut seen = Vec::new();
+        let ControlFlow::Continue(report) =
+            Walk::new(paths).visit_recording(&recording, |step| -> ControlFlow<Infallible> {
+                let kind = Seen::from(&step);
+                let path = match step {
+                    Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                };
+                seen.push((
+                    path.strip_prefix(&scratch.0).unwrap_or(path).to_path_buf(),
+                    kind,
+                ));
+                ControlFlow::Continue(())
+            });
+        assert_eq!(
+            (seen, report),
+            (unrecorded, unrecorded_report),
+            "a recorded walk hands over the steps and the counts of an unrecorded one"
+        );
+        let mut fold = Fold::new(&activity);
+        let card = fold.tick(&activity, crate::activity_clock());
+        let marked = |edge| {
+            card.events
+                .iter()
+                .filter(|event| event.edge == edge)
+                .count()
+        };
+        assert_eq!(
+            (marked(Edge::Start), marked(Edge::End)),
+            (4, 4),
+            "each component's lowering is marked once at its start and once at its end"
+        );
     }
 
     #[test]

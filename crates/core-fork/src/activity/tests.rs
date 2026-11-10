@@ -25,7 +25,7 @@ fn mark(
     Mark {
         task: Task::Fork,
         edge,
-        declaration,
+        declaration: Declared::from(declaration),
         world: World(0),
         clock,
     }
@@ -103,7 +103,7 @@ fn one_producer_s_events_reach_the_card_in_order()
             (
                 u64::from(event.sequence),
                 event.edge,
-                u32::from(event.declaration),
+                event.declaration.0,
                 u64::from(event.clock),
                 usize::from(event.core),
             )
@@ -295,6 +295,11 @@ fn time_older_than_the_window_leaves_the_row()
         0,
         "the window moved past the task's cell"
     );
+    assert_eq!(
+        u64::from(past.rows.first().unwrap().total()),
+        CELL,
+        "the total keeps the time that the window left"
+    );
 }
 
 #[test]
@@ -359,6 +364,57 @@ fn a_late_event_takes_the_next_number_is_counted_and_lands_in_its_own_cell()
         [20, 28],
         "the late end takes back the time the tick counted past it, and the cells hold each task's own time"
     );
+    let totals: Vec<u64> = after
+        .rows
+        .iter()
+        .map(|row| u64::from(row.total()))
+        .collect();
+    assert_eq!(
+        totals,
+        [20, 28],
+        "the total takes back the late end's time too"
+    );
+}
+
+#[test]
+fn a_worker_writes_its_core_s_ring_without_a_claim()
+{
+    let activity = Activity::new(Cores(NonZeroU16::new(2).unwrap()), EIGHT);
+    let mut fold = Fold::new(&activity);
+    let held = activity.producer(Core(0)).unwrap();
+    let worker = activity.worker(Core(0)).unwrap();
+    held.record(mark(Edge::Start, Declaration(4), Nanos(1)));
+    worker.record(Mark {
+        task: Task::Fetch,
+        edge: Edge::Start,
+        declaration: Declared::NONE,
+        world: World(0),
+        clock: Nanos(2),
+    });
+    let card = fold.tick(&activity, Nanos(3));
+    let read: Vec<(Task, Maybe<Declaration, unnamed::Absent>)> = card
+        .events
+        .iter()
+        .map(|event| (event.task, event.declaration.declaration()))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            (Task::Fork, Maybe::Present(Declaration(4))),
+            (Task::Fetch, Maybe::Absent(unnamed::Absent::Unnamed)),
+        ],
+        "a worker writes the ring that a producer holds, and a mark of no declaration reads as unnamed"
+    );
+    assert_eq!(
+        activity.worker(Core(2)).err(),
+        Some(Unclaimable::Absent),
+        "a core past the count has no ring"
+    );
+    assert_eq!(
+        activity.cores(),
+        Cores(NonZeroU16::new(2).unwrap()),
+        "the activity holds a ring for each core"
+    );
 }
 
 #[test]
@@ -416,7 +472,7 @@ fn producers_on_their_threads_reach_the_fold_once_each_in_order()
         let written: Vec<(u32, Edge)> = seen
             .iter()
             .filter(|event| event.core == Core(index))
-            .map(|event| (u32::from(event.declaration), event.edge))
+            .map(|event| (event.declaration.0, event.edge))
             .collect();
         let expected: Vec<(u32, Edge)> = (0 .. PAIRS)
             .flat_map(|pair| [(pair, Edge::Start), (pair, Edge::End)])

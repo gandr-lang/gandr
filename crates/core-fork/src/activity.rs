@@ -44,6 +44,7 @@ use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
 use crossbeam_queue::ArrayQueue;
+use quenchant_shape::shape::Maybe;
 
 /// How many cells hold the occupancy of one core.
 const CELLS: usize = 120;
@@ -161,6 +162,64 @@ impl From<Declaration> for u32
     fn from(declaration: Declaration) -> Self
     {
         declaration.0
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an event names no declaration.
+    pub mod unnamed {
+        /// The reason an event names no declaration.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The task works on no one declaration: a chunk fetch, or a fork
+            /// job over a whole component.
+            Unnamed,
+        }
+    }
+}
+
+/// The declaration that a task works on, or none, in four bytes.
+///
+/// The ordinal `u32::MAX` stands for none, so a mark stays 24 bytes and an
+/// event 32. A declaration at that ordinal reads as none.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Declared(u32);
+
+impl Declared
+{
+    /// No declaration.
+    pub const NONE: Self = Self(u32::MAX);
+
+    /// The declaration that the task works on, or why it names none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn declaration(self) -> Maybe<Declaration, unnamed::Absent>
+    {
+        if self.0 == u32::MAX {
+            Maybe::Absent(unnamed::Absent::Unnamed)
+        }
+        else {
+            Maybe::Present(Declaration(self.0))
+        }
+    }
+}
+
+impl From<Declaration> for Declared
+{
+    /// The task works on `declaration`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(declaration: Declaration) -> Self
+    {
+        Self(declaration.0)
     }
 }
 
@@ -365,7 +424,7 @@ pub struct Mark
     /// The end of the task.
     pub edge: Edge,
     /// The declaration that the task works on.
-    pub declaration: Declaration,
+    pub declaration: Declared,
     /// The world that the task runs in.
     pub world: World,
     /// The hub's clock when the task starts or ends.
@@ -385,7 +444,7 @@ pub struct Event
     /// The hub's clock when the task starts or ends.
     pub clock: Nanos,
     /// The declaration that the task works on.
-    pub declaration: Declaration,
+    pub declaration: Declared,
     /// The world that the task runs in.
     pub world: World,
     /// The core that runs the task.
@@ -421,6 +480,19 @@ impl From<NonZeroU16> for Cores
     fn from(count: NonZeroU16) -> Self
     {
         Self(count)
+    }
+}
+
+impl From<Cores> for NonZeroU16
+{
+    /// The count of `cores`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(cores: Cores) -> Self
+    {
+        cores.0
     }
 }
 
@@ -553,6 +625,109 @@ impl Activity
             unshared: PhantomData,
         })
     }
+
+    /// The writer of the ring of `core` for a thread of a pool, which takes
+    /// no claim.
+    ///
+    /// A pool's index names one thread, and a worker that runs a nested job
+    /// while it waits writes from that thread, so the ring keeps one writer
+    /// without a claim. A claim would refuse the nested job's writer.
+    ///
+    /// # Specification
+    /// - requires: one thread at a time writes through the workers and the
+    ///   producer of `core`.
+    /// - fails: [`Unclaimable::Absent`] for a core past the count.
+    /// - panics: none.
+    /// - executable: none — a borrow of one ring.
+    ///
+    /// # Errors
+    /// - [`Unclaimable::Absent`]: the activity holds no ring for `core`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a worker's marks reach the fold beside a producer's,
+    ///   and a core past the count is refused.
+    /// - witness: `activity::tests::a_worker_writes_its_core_s_ring_without_a_claim`
+    #[inline]
+    pub fn worker(
+        &self,
+        core: Core,
+    ) -> Result<Worker<'_>, Unclaimable>
+    {
+        self.rings
+            .get(usize::from(core))
+            .map(|ring| Worker { ring })
+            .ok_or(Unclaimable::Absent)
+    }
+
+    /// How many rings the activity holds: the cores it was made for.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cores(&self) -> Cores
+    {
+        let count = u16::try_from(self.rings.len()).unwrap_or(u16::MAX);
+        Cores(NonZeroU16::new(count).unwrap_or(NonZeroU16::MIN))
+    }
+}
+
+/// Push `mark` into `ring`, and count the oldest mark that a full ring drops.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn push(
+    ring: &Ring,
+    mark: Mark,
+)
+{
+    if ring.events.force_push(mark).is_some() {
+        ring.dropped.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// The writer of one ring for a thread of a pool: [`Activity::worker`].
+///
+/// # Specification
+/// - provides: [`Worker::record`], the write of one mark.
+/// - panics: none.
+/// - executable: none — a borrow of one ring.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Activity::worker`].
+/// - witness: `activity::tests::a_worker_writes_its_core_s_ring_without_a_claim`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Worker<'activity>
+{
+    /// The ring that this worker writes.
+    ring: &'activity Ring,
+}
+
+impl Worker<'_>
+{
+    /// Write `mark` into the ring, as [`Producer::record`] does.
+    ///
+    /// # Specification
+    /// - requires: as [`Producer::record`], and the requirement of
+    ///   [`Activity::worker`].
+    /// - ensures: as [`Producer::record`].
+    /// - panics: none.
+    /// - intension: one push into the ring; no lock and no allocation.
+    /// - executable: none — the ring is a queue of atomics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Activity::worker`].
+    /// - witness: `activity::tests::a_worker_writes_its_core_s_ring_without_a_claim`
+    #[inline]
+    pub fn record(
+        &self,
+        mark: Mark,
+    )
+    {
+        push(self.ring, mark);
+    }
 }
 
 /// Why [`Activity::producer`] gives no producer.
@@ -615,9 +790,7 @@ impl Producer<'_>
         mark: Mark,
     )
     {
-        if self.ring.events.force_push(mark).is_some() {
-            self.ring.dropped.fetch_add(1, Ordering::Relaxed);
-        }
+        push(self.ring, mark);
     }
 }
 
@@ -668,6 +841,9 @@ pub struct Row
     dropped: Dropped,
     /// The core's events that reached the fold late.
     late: Late,
+    /// The busy time of the core since the fold began, net of the time a
+    /// late end took back.
+    total: Nanos,
 }
 
 impl Row
@@ -685,6 +861,7 @@ impl Row
             since: Nanos(0),
             dropped: Dropped(0),
             late: Late(0),
+            total: Nanos(0),
         }
     }
 
@@ -731,6 +908,19 @@ impl Row
     pub const fn late(&self) -> Late
     {
         self.late
+    }
+
+    /// The busy time of the core since the fold began, beyond the window of
+    /// the cells: the time each closed task held the core, and each open task
+    /// up to the latest tick.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn total(&self) -> Nanos
+    {
+        self.total
     }
 
     /// Open a task at `clock`.
@@ -806,6 +996,11 @@ impl Row
         if to <= from {
             return;
         }
+        let spent = to.0.saturating_sub(from.0);
+        self.total = Nanos(match change {
+            Change::Add => self.total.0.saturating_add(spent),
+            Change::TakeBack => self.total.0.saturating_sub(spent),
+        });
         let last = CellNumber::of(Nanos(to.0.saturating_sub(1)));
         self.advance(last);
         let oldest = self

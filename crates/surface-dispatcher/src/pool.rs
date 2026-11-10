@@ -54,6 +54,8 @@
 //! pool's threads keep the host's default. The choice reverses on a
 //! measurement that shows a class pays on a verb.
 
+#[cfg(feature = "instrument")]
+pub mod recording;
 mod spawning;
 
 use alloc::sync::Arc;
@@ -320,6 +322,58 @@ impl Default for Pool
     }
 }
 
+/// Where the walk's lowering jobs run: the pool itself, or a recording fork
+/// over it that marks each job.
+///
+/// # Specification
+/// - provides: the pool that the jobs run on, and the run of one job, which the
+///   pool runs as it stands and a recording runs between two marks.
+/// - panics: none of its own.
+/// - executable: none — a seam between the walk and the pool.
+pub trait Helped: Sync
+{
+    /// The pool that the jobs run on.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pool(&self) -> &Pool;
+
+    /// Run `work` as one job that names no declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    fn job<Out>(
+        &self,
+        work: impl FnOnce() -> Out,
+    ) -> Out;
+}
+
+impl Helped for Pool
+{
+    /// The pool itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn pool(&self) -> &Pool
+    {
+        self
+    }
+
+    /// Run `work` as it stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn job<Out>(
+        &self,
+        work: impl FnOnce() -> Out,
+    ) -> Out
+    {
+        work()
+    }
+}
+
 /// The pool as a fork that any consumer is handed: the items run on the pool's
 /// own threads, or on the calling thread when the fork cannot use them.
 impl Fork for Pool
@@ -485,13 +539,6 @@ impl Fork for Pooled
     ///   skipped or repeated item and a state made per item or per idle worker.
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
     /// - witness: `pool::tests::one_item_runs_on_the_caller_and_many_on_the_workers`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            pool_only_threads,
-            reason = "pool: `Fork::each` on the driver's pool, which its caller installs before it forks"
-        )
-    )]
     #[inline]
     fn each<Item, State, Start, Job>(
         &self,
@@ -503,32 +550,7 @@ impl Fork for Pooled
         Start: Fn() -> State + Sync,
         Job: Fn(&mut State, &mut Item) + Sync,
     {
-        let workers = NonZeroUsize::from(self.0).get().min(items.len());
-        if workers <= 1 {
-            Serial.each(items, start, job);
-            return;
-        }
-        let cursor = Mutex::new(items.iter_mut());
-        rayon::scope(|scope| {
-            for _ in 0 .. workers {
-                scope.spawn(|_| {
-                    let mut state = None;
-                    loop {
-                        // A poisoned cursor only means another task's job
-                        // panicked; the panic resumes when the scope ends.
-                        let next = match cursor.lock() {
-                            Ok(mut items) => items.next(),
-                            Err(poisoned) => poisoned.into_inner().next(),
-                        };
-                        let Some(item) = next
-                        else {
-                            break;
-                        };
-                        job(state.get_or_insert_with(&start), item);
-                    }
-                });
-            }
-        });
+        each_indexed(self.0, items, start, |state, _index, item| job(state, item));
     }
 
     /// Run both halves through `rayon::join`, which runs the left half on the
@@ -589,6 +611,89 @@ impl Fork for Pooled
     {
         rayon::in_place_scope(|scope| body.run(&Spawning::new(scope)))
     }
+}
+
+/// The place of an item in the slice that a fork runs a job on.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ItemIndex(usize);
+
+impl From<ItemIndex> for usize
+{
+    /// The place of `index` in its slice.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: ItemIndex) -> Self
+    {
+        index.0
+    }
+}
+
+/// Run `job` on every item and its index from one task per worker, at most
+/// `workers` and one per item, each taking items from a shared cursor. At one
+/// worker the items run on the calling thread in slice order, from one state.
+///
+/// # Specification
+/// - ensures: `job` runs once per item with the item's place in `items`; each
+///   task makes its state on its first item and keeps it for the rest.
+/// - panics: a job's panic, at the end of the scope.
+/// - executable: none — the schedule is the pool's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Pooled`]'s `each`.
+/// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
+/// - witness: `pool::tests::one_item_runs_on_the_caller_and_many_on_the_workers`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "pool: `Fork::each` on the driver's pool, which its caller installs before it forks"
+    )
+)]
+fn each_indexed<Item, State, Start, Job>(
+    workers: Threads,
+    items: &mut [Item],
+    start: Start,
+    job: Job,
+) where
+    Item: Send,
+    Start: Fn() -> State + Sync,
+    Job: Fn(&mut State, ItemIndex, &mut Item) + Sync,
+{
+    let workers = NonZeroUsize::from(workers).get().min(items.len());
+    if workers <= 1 {
+        let mut state = None;
+        for (index, item) in items.iter_mut().enumerate() {
+            job(state.get_or_insert_with(&start), ItemIndex(index), item);
+        }
+        return;
+    }
+    let cursor = Mutex::new(items.iter_mut().enumerate());
+    rayon::scope(|scope| {
+        for _ in 0 .. workers {
+            scope.spawn(|_| {
+                let mut state = None;
+                loop {
+                    // A poisoned cursor only means another task's job
+                    // panicked; the panic resumes when the scope ends.
+                    let next = match cursor.lock() {
+                        Ok(mut items) => items.next(),
+                        Err(poisoned) => poisoned.into_inner().next(),
+                    };
+                    let Some((index, item)) = next
+                    else {
+                        break;
+                    };
+                    job(state.get_or_insert_with(&start), ItemIndex(index), item);
+                }
+            });
+        }
+    });
 }
 
 /// Why the driver's pool could not start.

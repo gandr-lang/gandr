@@ -26,8 +26,8 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Width` and `Threads`: how many threads a walk lowers its sources on, the host's physical performance cores by default.
 - `compose`, `compose_on`, `Scheduling`, `Composed`, `ComposeFault`, `LoweringCount` and `ParsedBytes`: the composition, on either schedule.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
-- `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure. `lower_closure`, `lower_resumed_unit`, `Unheld`, `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: a closure lowered and judged once for every document laid after it. `Recorded` and `Recording`: a revision that moves no lowered node takes the verdicts of the one before ([`compose`](src/compose.rs)).
-- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`; `Admission::admit_resuming` and `Resumption` resume its leading declarations from an earlier readmission's record; `install_verdict_cache` keeps kernel verdicts in `StoredVerdicts` ([`verdicts`](src/verdicts.rs), [`receipts`](src/receipts.rs)). `install_admission_policy` and `admitted_tally`: the admission policy ([`tier`](src/tier.rs)).
+- `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure. `lower_closure`, `lower_resumed_unit`, `Unheld`, `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: a closure lowered and judged once. `Recorded` and `Recording`: verdicts taken from the revision before ([`compose`](src/compose.rs)).
+- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`; `Admission::admit_resuming` and `Resumption` resume from an earlier readmission; `install_verdict_cache` keeps kernel verdicts in `StoredVerdicts` ([`verdicts`](src/verdicts.rs), [`receipts`](src/receipts.rs)). `install_admission_policy` and `admitted_tally`: the admission policy ([`tier`](src/tier.rs)).
 - `spellings` and `failures` on `Composed::Settled`: the `TypeSpellings` and the `Failures` that a face reads each checker refusal through ([`compose`](src/compose.rs)).
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds ([`entry`](src/entry.rs)).
 - `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables and where each reaches ([`report`](src/report.rs)). `inferred` and `runs` on `Composed::Settled` hold what `explicit-exits` and `explicit-runs` report ([`compose`](src/compose.rs)).
@@ -52,7 +52,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again.
 - **A file system.** `Walk::visit` lists directories and reads sources, `Formatting::step` reads them and writes a changed layout back, and `Census::step` reads them; every failure to do so is a fault step, never a panic.
-- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs).
+- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs). `Pool::recording` marks its jobs.
 
 ## Examples
 
@@ -121,6 +121,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — only a cache a driver installs recalls; the rest recheck.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the stored strata.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's worlds.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-activity.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run is a local artifact.
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: a source its flow refuses answers at no site.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a failed translation refuses its importer.

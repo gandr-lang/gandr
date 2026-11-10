@@ -2309,6 +2309,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Toolchain',
 INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Unconstrained','struct','Why a model''s `gandr`, or the version in it, states no constraint the check can read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Unmet','enum','A constraint the running toolchain leaves unmet, named by the clause it is refused by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::toolchain::Version','struct','A language version, `major.minor.patch`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','pool::ItemIndex','struct','The place of an item in the slice that a fork runs a job on.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','The driver''s worker threads: one pool at one width, started on the first fork that has two items or more and reused by every later fork.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','pool::PoolFault','struct','Why the driver''s pool could not start.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','presentation::Presentation','struct','How a reader asks sources to be shown: the `[presentation]` table of the user''s configuration file or of a package''s manifest.',NULL,'fits','sound',NULL);

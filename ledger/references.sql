@@ -31,7 +31,7 @@ CREATE TABLE reference(
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-dispatcher','cells::fusion','newest','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
-INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-driver','','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','ac8eb7332069b7a14b305c1cb8560db64e423b31');
+INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-driver','','newest','41e7653c2cfd14be3e7090ddfd3577daebc7b277','2026-11-10','35a7e9b318536185d6c4750371d64e76cd5527d3');
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','theory-ordered-algebras','','dependency','6ac5e25f30e5d98caed7a3aa40a0e9716b3595c5','2026-11-07','f3a5c644a24d2aa271da3450ba19bc89e4317451');
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','basis','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
@@ -571,7 +571,7 @@ INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runti
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-net','chunks','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-net','worlds','lineage','daeb019c78602ef2ece79a9d2b4eddc95b845090','2026-10-28','d4e403dc44a1660c699c0eeccee846f3425d6c63');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-dispatcher','evaluate::worlds','lineage','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','0cbd81d6bac8dbfd0e75506fa1358690e005e035');
-INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-driver','','background','1beb8933fdf9b82f81686925d393801de681d161','2026-10-30','6c3dec6d4b3878b227ab7070e7f2fa1b4828d47a');
+INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','surface-driver','','background','41e7653c2cfd14be3e7090ddfd3577daebc7b277','2026-11-10','35a7e9b318536185d6c4750371d64e76cd5527d3');
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-corpus','refusal','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-diagnostics','advice','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-dispatcher','manifold','lineage',NULL,NULL,NULL);
@@ -672,6 +672,8 @@ INSERT INTO reference VALUES('vault:01a1b32b-755c-7b73-85f1-3055991c2bee','theor
 INSERT INTO reference VALUES('vault:01a1b53e-d768-7e62-8825-088be647563b','theory-exact-reals','recurrence','exemplar','1c8ce077c60d346ee2ad18982b90b168809e8526','2026-11-07','9d0ddffe5990a84e450a607a284c76457bf5ff76');
 INSERT INTO reference VALUES('vault:01a1b567-b34b-77a2-9ace-075796f0eb3e','core-checker','divergence','exemplar','4a92e372fd0ce78fd4e257276266d7c97b0d8c38','2026-11-07','5e292eca6ae863067b2f03cb2d34ab7d50ebf993');
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','core-fork','activity','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-dispatcher','pool::recording','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-driver','occupancy','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','tier','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-render-remote','visual','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','account','anchor',NULL,NULL,NULL);

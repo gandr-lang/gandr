@@ -2819,10 +2819,9 @@ impl<Store, Blocks> Session<Store, Blocks>
                     .get(usize::from(base) ..)
                     .unwrap_or_default(),
             );
-            let (own, forms) = within(sink, Phase::Parse, || {
-                self.forms.parse(&self.grammar, document, &*self.pool)
-            })
-            .map_err(parse_fault)?;
+            let (own, forms) =
+                parse_within(&mut self.forms, &self.grammar, document, &self.pool, sink)
+                    .map_err(parse_fault)?;
             sink.molded(forms.molded());
             let written = Maybe::Present(path_imports(&self.grammar, own.tree()));
             let parsed = own
@@ -2874,10 +2873,9 @@ impl<Store, Blocks> Session<Store, Blocks>
             (lowering, checking, led, forms, written)
         }
         else {
-            let (parsed, forms) = within(sink, Phase::Parse, || {
-                self.forms.parse(&self.grammar, revision, &*self.pool)
-            })
-            .map_err(parse_fault)?;
+            let (parsed, forms) =
+                parse_within(&mut self.forms, &self.grammar, revision, &self.pool, sink)
+                    .map_err(parse_fault)?;
             sink.molded(forms.molded());
             let written = if usize::from(base) == 0 {
                 Maybe::Present(path_imports(&self.grammar, parsed.tree()))
@@ -4219,6 +4217,59 @@ fn closure_of<'revision, 'unit>(
     }
     let text = <&str>::from(revision).get(.. usize::from(base))?;
     Some((SourceText::from(text), sources))
+}
+
+/// `revision` parsed through `forms` inside [`Phase::Parse`], its molding
+/// forked on `pool`. When `sink` answers rings, the molding forks through the
+/// pool's recording fork, and each molding job marks the ring of its thread.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the parse [`FormStore::parse`] answers, of `revision`'s own text,
+///   between `sink`'s entry to [`Phase::Parse`] and its exit; with rings, a
+///   start mark and an end mark for each molding job.
+/// - fails: the parse's [`MeldError`].
+/// - panics: only by propagating a molding job's panic.
+///
+/// # Errors
+/// As the specification's fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sink with rings sees a mark for each molding job, and
+///   the parse is the parse of a silent sink.
+/// - witness: `tests::instrument::a_sink_with_rings_sees_each_fork_job_of_its_parse`
+/// - witness: `tests::instrument::a_judgement_tells_its_sink_each_phase_and_count`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, _)| parsed.tree().source() == revision))]
+fn parse_within<'text, Sink>(
+    forms: &mut FormStore,
+    grammar: &Pbg,
+    revision: SourceText<'text>,
+    pool: &Pool,
+    sink: &mut Sink,
+) -> Result<(ParseResult<'text>, FormCensus), MeldError>
+where
+    Sink: Instrument,
+{
+    #[cfg(feature = "instrument")]
+    {
+        use gandr_core_fork::activity::Declared;
+        use gandr_core_fork::activity::Task;
+        use gandr_core_fork::activity::World;
+
+        sink.entered(Phase::Parse);
+        let parsed = match sink.activity() {
+            Maybe::Present(activity) => forms.parse(
+                grammar,
+                revision,
+                &pool.recording(activity, (Task::Fork, World::from(0)), |_| Declared::NONE),
+            ),
+            Maybe::Absent(_) => forms.parse(grammar, revision, pool),
+        };
+        sink.left(Phase::Parse);
+        parsed
+    }
+    #[cfg(not(feature = "instrument"))]
+    within(sink, Phase::Parse, || forms.parse(grammar, revision, pool))
 }
 
 /// Parse `revision` through `forms` without changing it, as the judgement of
