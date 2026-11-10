@@ -2799,3 +2799,35 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
     }
     Ok(())
 }
+
+#[test]
+fn each_literate_monoid_block_parses_or_matches_its_refusal_6305() -> Result<(), Box<dyn Error>>
+{
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/sketch/literate/monoid.gandr.md");
+    let source = read_source(&path)?;
+    let mut count = 0_usize;
+    for fenced in source.split("```gandr").skip(1) {
+        let (claim, block) = fenced
+            .split_once('\n')
+            .ok_or("each gandr fence has a newline")?;
+        let (block, _) = block.split_once("```").ok_or("each gandr fence closes")?;
+        let parsed = parse(built(), SourceText::from(block))?;
+        match claim.trim() {
+            "" => assert!(
+                bool::from(parsed.is_clean()),
+                "the unclaimed block parses: {:?}",
+                parsed.obligations()
+            ),
+            "refuses(\"MalformedForm\")" => assert!(
+                !parsed.obligations().is_empty(),
+                "the claimed block only refuses as `MalformedForm`: {:?}",
+                parsed.obligations()
+            ),
+            claim => return Err(format!("unknown fence claim: {claim}").into()),
+        }
+        count = count.saturating_add(1);
+    }
+    assert_eq!(count, 3_usize, "the source holds three gandr blocks");
+    Ok(())
+}
