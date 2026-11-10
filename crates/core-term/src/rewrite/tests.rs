@@ -37,6 +37,7 @@ use super::Node;
 use super::Renaming;
 use super::Solutions;
 use super::Unenclosed;
+use super::comp_type_holes;
 use super::constructor_classifier;
 use super::constructor_classifier_at;
 use super::cross_reducts;
@@ -62,6 +63,7 @@ use super::substitute_environment_copied_traced;
 use super::substitute_environment_traced;
 use super::substitute_environment_value_type;
 use super::value_holes;
+use super::value_type_holes;
 use super::wrap_marks;
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -2873,6 +2875,38 @@ fn a_hole_survey_names_each_value_hole_once_6181()
     assert!(
         value_holes(&mut arena, unit).is_empty(),
         "a hole-free value names no hole"
+    );
+}
+
+#[test]
+fn a_type_s_hole_survey_names_its_value_holes_6195()
+{
+    // A refusal compares types. The survey of a value type reaches a hole
+    // inside its element, the survey of a computation type reaches one inside
+    // the value type it returns, and a hole-free type names none.
+    let mut arena = CoreArena::new();
+    let [element, apart] = [0_u32, 1]
+        .map(|index| HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"));
+    let standing = arena.value_hole(element);
+    let _apart = arena.value_hole(apart);
+    let decoded = arena.value_type_element(standing, Level::zero());
+    let returned = arena.comp_type_returner(decoded);
+    let mark = arena.watermark();
+    assert_eq!(
+        value_type_holes(&mut arena, decoded),
+        alloc::collections::BTreeSet::from([element]),
+        "the hole inside the element, and no hole the type does not hold"
+    );
+    assert_eq!(
+        comp_type_holes(&mut arena, returned),
+        alloc::collections::BTreeSet::from([element]),
+        "the hole inside the returned type"
+    );
+    assert_eq!(mark, arena.watermark(), "a survey mints nothing");
+    let unit = arena.value_type_unit();
+    assert!(
+        value_type_holes(&mut arena, unit).is_empty(),
+        "a hole-free type names no hole"
     );
 }
 

@@ -125,6 +125,13 @@
 //! [`crate::recursion::families`] states. Witnesses:
 //! `tests::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`,
 //! `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the ∃! rule of the
+//!   implicit layer. With no candidate, the refusal names the slot. With two or
+//!   more, it names every candidate. So a declared type that meets an undecided
+//!   slot is refused as the slot's resolution refuses it.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -2195,10 +2202,14 @@ fn judge(
 /// - requires: `first` is the run over `body` in `direction` that left the
 ///   collector as it stands; `models` are the slots the declaration's calls
 ///   omit.
-/// - ensures: `body`, `direction`, `first` and no solution when the run refused
-///   or met no nominated hole; the resolution's refusal,
+/// - ensures: `body`, `direction`, `first` and no solution when the run met no
+///   nominated hole, or refused with no type it compares holding a hole of a
+///   slot of `models`; the resolution's refusal,
 ///   [`CheckRefusal::ModelUnanswered`] or [`CheckRefusal::ModelAmbiguous`], at
-///   the first hole of the first slot it refuses; the run's failure as
+///   the first hole of the first slot it refuses, when the run checked or when
+///   it refused at a compared type holding such a hole; with `body`,
+///   `direction` and no solution in the second case; the refusal of the run
+///   that refused otherwise; the run's failure as
 ///   [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver left
 ///   unbound; otherwise the filled body, minted after `body`, the direction
 ///   with its declared type filled and formed again ([`formed_filled`]), a
@@ -2212,10 +2223,13 @@ fn judge(
 /// - hypothesis: L3 — a call whose argument determines its implicit, one whose
 ///   two arguments disagree on it and one whose arguments determine none
 ///   separate the filled run, the refuted run and the unsolved refusal; a call
-///   omitting a model slot one module answers runs as that module supplied.
+///   omitting a model slot one module answers runs as that module supplied. A
+///   declared type that decodes through a slot two modules answer, or none, is
+///   refused as the slot's resolution refuses it.
 /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
 /// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
 /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+/// - witness: `bridge::tests::a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195`
 #[spec(
     captures: refused = first.is_err(),
     ensures: |ret| ret.0 >= body && (!refused || (ret.0 == body && ret.3.is_empty())),
@@ -2236,7 +2250,38 @@ fn implicits(
     Solutions,
 )
 {
-    if first.is_err() {
+    if let &Err(ref failure) = &first {
+        // A refusal that compares a type holding a hole of an omitted model
+        // slot met the slot unresolved: the declared type decodes through it,
+        // and the signature left it to the body. The slots resolve now, so the
+        // refusal names the modules that answer, or the slot no module
+        // answers. Any other refusal stands.
+        let compared = failure.refusal().compared();
+        let meets = !models.is_empty()
+            && [compared.expected, compared.found, compared.unfolded]
+                .into_iter()
+                .any(|side| {
+                    let holes = match side {
+                        Maybe::Present(TypeNode::Value(ty)) => {
+                            gandr_core_term::value_type_holes(context.arena_mut(), ty)
+                        },
+                        Maybe::Present(TypeNode::Computation(ty)) => {
+                            gandr_core_term::comp_type_holes(context.arena_mut(), ty)
+                        },
+                        Maybe::Absent(_) => BTreeSet::new(),
+                    };
+                    models
+                        .iter()
+                        .any(|slot| slot.holes.iter().any(|hole| holes.contains(hole)))
+                });
+        if meets && let Err((at, refusal)) = context.resolve_models(models, Signing::Body) {
+            return (
+                body,
+                direction,
+                Err(call_failure(refusal, at)),
+                Solutions::new(),
+            );
+        }
         return (body, direction, first, Solutions::new());
     }
     if let Err((at, refusal)) = context.resolve_models(models, Signing::Body) {
