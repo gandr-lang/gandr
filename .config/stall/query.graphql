@@ -1,4 +1,4 @@
-query($owner: String!, $name: String!) {
+query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
       nodes {
@@ -39,7 +39,8 @@ query($owner: String!, $name: String!) {
     merged: pullRequests(states: MERGED, last: 30, orderBy: {field: UPDATED_AT, direction: ASC}) {
       nodes { number headRefName mergedAt body }
     }
-    refactors: issues(labels: ["kind:refactor"], last: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+    refactors: issues(labels: ["kind:refactor"], first: 100, after: $endCursor, orderBy: {field: CREATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
       nodes { body }
     }
     claimed: issues(states: OPEN, labels: ["status:claimed"], first: 100) {
