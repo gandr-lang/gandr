@@ -398,6 +398,7 @@ mod hover;
 mod hub;
 mod inlay;
 mod inline;
+mod instrument;
 mod markup;
 mod missing;
 mod notebook;

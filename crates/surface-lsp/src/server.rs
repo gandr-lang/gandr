@@ -104,6 +104,7 @@ use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_session::CandidateIndex;
+use gandr_surface_session::Instrument;
 use gandr_surface_session::Session;
 use gandr_surface_session::Tables;
 use gandr_surface_syntax::ByteOffset;
@@ -138,6 +139,8 @@ use crate::hover::hovering_laid;
 use crate::inlay::hint_at;
 use crate::inlay::hints;
 use crate::inline::ghost;
+use crate::instrument::Job;
+use crate::instrument::Subscription;
 use crate::markup::Markup;
 use crate::missing::UNRESOLVED_NAME;
 use crate::missing::additions;
@@ -2091,6 +2094,7 @@ impl Workspace
             verbosity: Verbosity::User,
             quiet: QUIET,
             shadowing: ShadowingSetting::Off,
+            subscription: Subscription::SILENT,
             style: Style {
                 spelling: self.spelling,
                 ..STYLE
@@ -2314,9 +2318,9 @@ impl Workspace
 /// the caret waits, how its hovers spell types and are written, whether its
 /// client takes a definition as links, whether it takes a signature's
 /// parameters as their places in the label, whether it watches files,
-/// whether it shows progress, with how many pieces of work it was shown, and
+/// whether it shows progress, with how many pieces of work it was shown,
 /// whether it requests its code lenses again when asked, with how many times
-/// it was asked.
+/// it was asked, and the instrument layer its client subscribed to.
 pub struct Server
 {
     /// Where the connection stands in the lifecycle.
@@ -2334,6 +2338,9 @@ pub struct Server
     /// [`ShadowingSetting::Off`] publishes none, and any other keeps the type
     /// table and the reading of each judgement, which the diagnostics read.
     shadowing: ShadowingSetting,
+    /// The instrument layer its client subscribed to, which chooses the sink
+    /// of each job of its rechecks.
+    subscription: Subscription,
     /// The form and spelling its editor's `gandr.presentation` settings name,
     /// read as the verbosity is; the spelling the manifest of the package its
     /// folders open names when the editor names none, and its workspace's
@@ -2497,6 +2504,7 @@ impl Server
             verbosity: Verbosity::User,
             quiet: QUIET,
             shadowing: ShadowingSetting::Off,
+            subscription: Subscription::SILENT,
             style: STYLE,
             linked: Linked(false),
             offsets: LabelOffsets(false),
@@ -3537,6 +3545,7 @@ impl Server
                 Maybe::Absent(formless::Absent::Uncareted),
             ),
             started,
+            subscription: self.subscription,
         };
         let submission = admissions.next();
         let _started = admissions
@@ -3723,6 +3732,7 @@ impl Server
                                     self.quiet,
                                     self.shadowing,
                                 ),
+                                self.subscription,
                             ),
                             document.version,
                         )),
@@ -3953,11 +3963,12 @@ impl Server
                 },
                 Taken::Running(admitting) => {
                     let submission = admissions.next();
+                    let subscription = self.subscription;
                     let _started =
                         admissions
                             .generations
                             .submit(uri.clone(), submission, move |watch| {
-                                match admitting.run(watch) {
+                                match subscription.run((admitting, watch)) {
                                     Polled::Whole(finished) => Ok(finished),
                                     Polled::Retired(retired, ()) => Err(retired),
                                 }
@@ -4127,6 +4138,7 @@ impl Server
                     self.quiet,
                     self.shadowing,
                 ),
+                self.subscription,
             )),
             Maybe::Absent(_) => None,
         }
@@ -9036,6 +9048,8 @@ struct Judging
     rendering: (Verbosity, Spelling, Maybe<ByteOffset, formless::Absent>),
     /// When the synchronisation began, laying the text out.
     started: Instant,
+    /// The connection's subscription, which chooses the judgement's sink.
+    subscription: Subscription,
 }
 
 impl Judging
@@ -9045,7 +9059,8 @@ impl Judging
     /// them, at `verbosity` and in `spelling`, the form under its caret held
     /// back while `quiet` is not zero; it keeps its type table and reads the
     /// copy's reading when a request read them since the last judgement, or
-    /// when `shadowing` names a severity, whose diagnostics read both.
+    /// when `shadowing` names a severity, whose diagnostics read both. It runs
+    /// at the sink that `subscription` chooses.
     ///
     /// # Specification
     /// trivial.
@@ -9054,6 +9069,7 @@ impl Judging
         document: &Document,
         shadows: &dyn Shadows,
         (verbosity, spelling, quiet, shadowing): (Verbosity, Spelling, Duration, ShadowingSetting),
+        subscription: Subscription,
     ) -> Self
     {
         let started = Instant::now();
@@ -9081,6 +9097,7 @@ impl Judging
             reads,
             rendering: (verbosity, spelling, caret),
             started,
+            subscription,
         }
     }
 
@@ -9114,13 +9131,15 @@ impl Judging
     }
 
     /// Judge the text in the session, polling `retirement` before taking the
-    /// session, once it holds it, and before each declaration and item.
+    /// session, once it holds it, and before each declaration and item, at the
+    /// sink the judgement's subscription chooses.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: retired at the first two polls, [`Polled::Retired`] and the
     ///   session untouched; otherwise the session keeps a type table exactly
-    ///   when the copy wanted one, and the answer is [`judge_laid`]'s.
+    ///   when the copy wanted one, and the answer is [`judge_laid`]'s at the
+    ///   sink [`Subscription::run`] chooses.
     /// - provides: the half of a synchronisation that runs on the pool: a
     ///   judgement retired before it takes the session never holds it, and one
     ///   that takes it after its successor was submitted lets it go unjudged.
@@ -9140,22 +9159,47 @@ impl Judging
     where
         Poll: Retirement,
     {
+        let subscription = self.subscription;
+        subscription.run((self, retirement))
+    }
+}
+
+impl<Poll> Job for (Judging, &Poll)
+where
+    Poll: Retirement,
+{
+    type Out = Polled<Rechecked, Poll::Retired, ()>;
+
+    /// [`Judging::run`], telling `sink` what the judgement does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run<Sink>(
+        self,
+        sink: &mut Sink,
+    ) -> Self::Out
+    where
+        Sink: Instrument,
+    {
+        let (judging, retirement) = self;
         if let Demand::Retired(retired) = retirement.demand() {
             return Polled::Retired(retired, ());
         }
-        let mut session = locked(&self.session);
+        let mut session = locked(&judging.session);
         if let Demand::Retired(retired) = retirement.demand() {
             return Polled::Retired(retired, ());
         }
-        if let Ok(ref mut judging) = *session {
-            judging.keep(self.wanted);
+        if let Ok(ref mut held) = *session {
+            held.keep(judging.wanted);
         }
         let judged = judge_laid(
-            &self.uri,
+            &judging.uri,
             &mut session,
-            (SourceText::from(self.text.as_str()), self.laid),
-            self.rendering,
-            (self.started, retirement, self.reads),
+            (SourceText::from(judging.text.as_str()), judging.laid),
+            judging.rendering,
+            (judging.started, retirement, judging.reads),
+            sink,
         );
         drop(session);
         judged

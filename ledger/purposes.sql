@@ -3386,6 +3386,9 @@ INSERT INTO purpose VALUES('surface-session','edit::diff','function','Aligns two
 INSERT INTO purpose VALUES('surface-session','forms::FormCensus','struct','Holds a form''s census, so the form''s count is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','forms::FormCount','struct','Names the count of a revision''s forms, so the count is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','forms::FormStore','struct','Holds the latest revision''s labeling and its forms parked by identity, so the next revision relabels around its edit and takes up every unchanged form.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','instrument::Instrument','trait','Names each event of the engine''s own work that the session observes, so a sink records the events of its layer.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','instrument::Phase','enum','Names a phase of a judgement or an admission, so a sink reads the boundaries of each phase.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','instrument::Silent','struct','Records nothing, so a judgement made generic over it has no call left to make.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::Revision','struct','Holds a revision''s items, so the items'' declarations are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::RevisionFault','enum','Names why a revision''s item source faults, so the fault''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::SurfaceItems','struct','Holds the same lowering behind the incremental checker''s item source, so the items'' declarations are read.',NULL,'fits','sound',NULL);
