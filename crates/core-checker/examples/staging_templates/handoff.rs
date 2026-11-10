@@ -1204,6 +1204,7 @@ mod tests
     use super::super::analyze;
     use super::super::fixture;
     use super::super::harvest;
+    use super::super::kernel_rows;
     use super::super::produce;
     use super::super::replay_measure;
     use super::*;
@@ -1246,7 +1247,7 @@ mod tests
                         .unwrap(),
                     proposal: admission.proposal,
                     members: family.members.clone(),
-                    rows: admission.rows,
+                    rows: kernel_rows(&admission.rows),
                     schema_time: Duration::ZERO,
                     binding_time: Duration::ZERO,
                     largest: Duration::ZERO,

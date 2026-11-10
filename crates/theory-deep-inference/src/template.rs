@@ -699,6 +699,20 @@ impl From<Vec<GuardId>> for TemplateRow
     }
 }
 
+impl From<TemplateRow> for Vec<GuardId>
+{
+    /// The guards of `row`, in entry order. A caller that builds many rows
+    /// gets each buffer back, so the next row needs no new allocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(row: TemplateRow) -> Self
+    {
+        row.0
+    }
+}
+
 /// What producing one template cost: the inheritance checks its run spent
 /// and the lookups the cache answered.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]

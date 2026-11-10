@@ -92,12 +92,12 @@ use alloc::borrow::Cow;
 use core::time::Duration;
 
 use gandr_core_fork::Fork;
-use gandr_kernel_core::admission::Choice;
 use gandr_kernel_core::admission::Proposal;
 use gandr_kernel_core::admission::Refusal;
 use gandr_kernel_core::admission::Row;
 use gandr_kernel_core::admission::Schema;
 use gandr_kernel_core::admission::Work;
+use gandr_theory_deep_inference::TemplateRow;
 
 use super::Analysis;
 use super::Arena;
@@ -105,7 +105,6 @@ use super::Budget;
 use super::Family;
 use super::InheritanceCache;
 use super::Maybe;
-use super::MemberCount;
 use super::MemberIndex;
 use super::NodeCount;
 use super::PriceGate;
@@ -115,6 +114,7 @@ use super::Step;
 use super::Template;
 use super::TemplateRefusal;
 use super::Vec;
+use super::admission::kernel_choices;
 use super::analyze;
 use super::draft::ArmCount;
 use super::draft::Coverage;
@@ -122,7 +122,6 @@ use super::draft::DraftKind;
 use super::draft::Drafter;
 use super::draft::Finished;
 use super::draft::Miss;
-use super::draft::PointCount;
 use super::draft::Rebasing;
 use super::draft::Revision;
 use super::draft::Unfit;
@@ -908,14 +907,20 @@ where
 
 /// Offer a proposal and its rows to the kernel.
 ///
+/// The kernel reads the choices of every member while it replays the family,
+/// so one buffer holds the choices of all rows, member after member.
+///
 /// # Specification
 /// - requires: one row per member, in order.
 /// - ensures: `Admitted` exactly when the kernel checks the schema, binds the
 ///   members' arena and admits every member under its row; otherwise the first
 ///   refusal.
 /// - fails: caller-budget exhaustion; Unbalanced for a row count that differs
-///   from the member count.
+///   from the member count, or a row whose guard count differs from the
+///   proposal's point count.
 /// - panics: none.
+/// - intension: linear in the guards of the rows; one allocation holds the
+///   kernel's choices.
 ///
 /// # Errors
 /// Returns `StageError::Exhausted` or `StageError::Unbalanced`.
@@ -926,18 +931,21 @@ where
 ///   refused.
 /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
 /// - witness: `template::tests::a_kernel_refused_draft_falls_back_to_the_producer`
-#[spec(captures: [available = budget.0], ensures: |output| budget.0 <= available
-    && (output.is_ok() || rows.len() != members.len() || budget.0 == 0))]
+#[spec(captures: [available = budget.0, points = proposal.arms.len()], ensures: |output|
+    budget.0 <= available
+    && (output.is_ok() || rows.len() != members.len() || budget.0 == 0
+        || rows.iter().any(|member| member.guards().len() != points)))]
 fn judge(
     arena: &Arena,
     members: &[Step],
     proposal: Proposal,
-    rows: &[&[Choice]],
+    rows: &[TemplateRow],
     row: &mut Row,
     budget: &mut Budget,
 ) -> Result<Judged, StageError>
 {
-    if rows.len() != members.len() {
+    let points = proposal.arms.len();
+    if rows.len() != members.len() || rows.iter().any(|member| member.guards().len() != points) {
         return Err(StageError::Unbalanced);
     }
     let refused = |refusal| match refusal {
@@ -953,44 +961,24 @@ fn judge(
         | Refusal::ClassifierMismatch
         | Refusal::SidesMismatch) => Ok(Judged::Refused(refusal)),
     };
-    let positions = members.iter().copied().zip(rows.iter().copied());
+    let mut written = Vec::with_capacity(points.saturating_mul(rows.len()));
+    for member in rows {
+        kernel_choices(member, &mut written);
+    }
+    let positions = members.iter().copied().enumerate().map(|(at, step)| {
+        let start = at.saturating_mul(points);
+        (
+            step,
+            written
+                .get(start .. start.saturating_add(points))
+                .unwrap_or_default(),
+        )
+    });
     let family = &mut gandr_kernel_core::admission::Family::new(arena, row, budget);
     match gandr_kernel_core::descent::replay(family, proposal, positions) {
         Ok(schema) => Ok(Judged::Admitted(schema)),
         Err(refusal) => refused(refusal),
     }
-}
-
-/// Split flat choices into one row per member.
-///
-/// # Specification
-/// - ensures: `members` rows of `points` choices each, in order; empty rows for
-///   a family without points.
-/// - fails: Unbalanced when the choices do not divide so.
-/// - panics: none.
-///
-/// # Errors
-/// Returns `StageError::Unbalanced`.
-///
-/// # Adequacy
-/// - hypothesis: L2 — drafts with points and without split into the rows the
-///   kernel admits member by member.
-/// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
-#[spec(ensures: |output| output.as_ref().ok().is_none_or(|rows| rows.len() == usize::from(members)))]
-fn rows(
-    choices: &[Choice],
-    points: PointCount,
-    members: MemberCount,
-) -> Result<Vec<&[Choice]>, StageError>
-{
-    let (points, members) = (points.0, usize::from(members));
-    if choices.len() != points.saturating_mul(members) {
-        return Err(StageError::Unbalanced);
-    }
-    if points == 0 {
-        return Ok(alloc::vec![&[][..]; members]);
-    }
-    Ok(choices.chunks(points).collect())
 }
 
 impl Template
@@ -1469,12 +1457,8 @@ where
                     Attempt::Withdrawn(withdrawn) => withdrawn,
                     Attempt::Ready(draft, kind) => {
                         let begun = clock.now();
-                        let choices = rows(
-                            &draft.choices,
-                            PointCount(memo.entries.len()),
-                            MemberCount::from(members.len()),
-                        )?;
-                        let judged = judge(arena, members, draft.proposal, &choices, row, budget)?;
+                        let judged =
+                            judge(arena, members, draft.proposal, drafter.rows(), row, budget)?;
                         spent.admitting = since(clock, begun);
                         let allowance = usize::from(draft.cost.template_size);
                         match judged {
@@ -1548,8 +1532,14 @@ where
     let refusal = match production {
         Production::Go(template) => {
             let begun = clock.now();
-            let choices: Vec<&[Choice]> = admission.rows.iter().map(Vec::as_slice).collect();
-            let judged = judge(arena, members, admission.proposal, &choices, row, budget)?;
+            let judged = judge(
+                arena,
+                members,
+                admission.proposal,
+                &admission.rows,
+                row,
+                budget,
+            )?;
             spent.admitting = spent.admitting.saturating_add(since(clock, begun));
             match judged {
                 Judged::Admitted(schema) => {
@@ -1623,12 +1613,14 @@ where
         .iter()
         .filter_map(|member| members.get(usize::from(*member)).copied())
         .collect();
-    let choices = rows(
-        &draft.choices,
-        PointCount(old.entries.len()),
-        MemberCount::from(subfamily.len()),
+    let judged = judge(
+        arena,
+        &subfamily,
+        draft.proposal,
+        drafter.rows(),
+        row,
+        budget,
     )?;
-    let judged = judge(arena, &subfamily, draft.proposal, &choices, row, budget)?;
     spent.admitting = spent.admitting.saturating_add(since(clock, begun));
     let Judged::Admitted(schema) = judged
     else {

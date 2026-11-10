@@ -225,6 +225,7 @@ INSERT INTO purpose VALUES('core-checker','template::ProgramId','struct','Produc
 INSERT INTO purpose VALUES('core-checker','template::Substitution','struct','The member''s choices, selected only by matching its own source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::Template','struct','A priced and inheritance-checked equation family, retaining no members.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::admission::AdmissionCandidate','struct','A kernel proposal and independent point-ordered rows for harvested members.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','template::admission::kernel_choices','function','Writes the kernel''s choices for one member''s row: the guard of each entry at the point of that entry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::analyze','function','Anti-unifies and prices a uniform family without replay or admission authority.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::draft::ArmCount','struct','How many arms a draft added to its template''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::draft::DraftKind','enum','How a draft departs from its template.',NULL,'fits','sound',NULL);
