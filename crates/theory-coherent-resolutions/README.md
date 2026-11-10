@@ -39,7 +39,7 @@ Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces the
 - `enumerate_overlaps`, `overlaps_between`, `Overlap`, `OverlapKind`, `OverlapRefusal`, `peak_legs`, `PeakLegs`: the multi-sum family with its seam data, complete up to the root diagonal.
 - `interior_overlaps_between`, `root_overlaps_between`: the confluence family below the root of a left-hand side, a cell paired with itself included, and the root entry alone, which the joinability check reads over a first-order presentation.
 - `OverlapSupport`: the memoized overlap relation on cells and certificates, and independent batches.
-- `Tracelet`, `replay_equivalent`, `confluence_tracelet`, `derive_fused`, `record_path`, `ReplayTrace`, `ReplayPath`, `ReplayStep`, `ReplayPathOutcome`, `StuckStep`, `confluence_join`: certificates checked by replay, their identity, and the observable replay.
+- `Tracelet`, `Tracelet::new`, `replay_equivalent`, `confluence_tracelet`, `derive_fused`, `record_path`, `ReplayTrace`, `ReplayPath`, `ReplayStep`, `ReplayPathOutcome`, `StuckStep`, `confluence_join`: certificates checked by replay, each built with its paths recorded where replay fires them, their identity, and the observable replay.
 - `replay_from_peak`: the replay of two recorded paths from a supplied peak to a supplied join; `Tracelet::replay` is this replay on its overlap's peak.
 - `complete`, `CompletionBudget`, `CompletionOutcome`, `DeclineReason`, `scheduled_confluence_batches`: budgeted completion, its decline and its resume.
 - `complete_with_overlap_source`, `Overlap::from_supplied_confluence`, `SuppliedOverlapError`: the supplied-overlap seam and its typed declines.

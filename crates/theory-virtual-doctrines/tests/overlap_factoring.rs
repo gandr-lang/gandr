@@ -397,16 +397,21 @@ mod tests
     ) -> FactoringVerdict
     {
         let mut verdict = FactoringVerdict::Admits;
+        let Some(first) = members.first()
+        else {
+            return verdict;
+        };
+        // One copy serves each pair: it takes each left member in turn, and
+        // only its join changes from seam to seam.
+        let mut reseated = first.clone();
         for (index, left) in members.iter().enumerate() {
+            reseated.clone_from(left);
             for (offset, right) in members.iter().enumerate().skip(index.saturating_add(1)) {
                 let Some(seam) = members.get(offset.saturating_sub(1))
                 else {
                     continue;
                 };
-                let reseated = Tracelet {
-                    joins_at: seam.joins_at.clone(),
-                    ..left.clone()
-                };
+                reseated.joins_at.clone_from(&seam.joins_at);
                 if matches!(
                     consult(ledger, &reseated, right, store),
                     Consultation::Declined
@@ -825,15 +830,13 @@ mod tests
         };
         let mut overlap = template.clone();
         overlap.peak = peak.clone();
-        Maybe::Present(
-            Tracelet {
-                overlap,
-                path_a: vec![step.clone()],
-                path_b: vec![step.clone()],
-                joins_at: stepped.normal,
-            }
-            .recorded(store),
-        )
+        Maybe::Present(Tracelet::new(
+            overlap,
+            vec![step.clone()],
+            vec![step.clone()],
+            stepped.normal,
+            store,
+        ))
     }
 
     /// The distinct metavariable **names** of a command pattern — the seam

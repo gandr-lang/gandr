@@ -163,7 +163,7 @@ where
 /// The right certificate recorded its steps on its own peak skolemized. Its
 /// join metavariables that the left peak does not hold stay metavariables
 /// when the composite replays, so the composite records its paths again on
-/// the left peak ([`Tracelet::recorded`]).
+/// the left peak ([`Tracelet::new`]).
 ///
 /// # Specification
 /// - ensures: retains the left overlap and right join, with both paths
@@ -187,13 +187,7 @@ where
 {
     let path_a = a.path_a.iter().chain(&b.path_a).cloned().collect();
     let path_b = a.path_b.iter().chain(&b.path_b).cloned().collect();
-    Tracelet {
-        overlap: a.overlap.clone(),
-        path_a,
-        path_b,
-        joins_at: b.joins_at.clone(),
-    }
-    .recorded(store)
+    Tracelet::new(a.overlap.clone(), path_a, path_b, b.joins_at.clone(), store)
 }
 
 /// Dense seam-flow graph, addressed by interned endpoint identifiers.
