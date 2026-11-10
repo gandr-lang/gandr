@@ -1,10 +1,13 @@
 //! The check of a scheme as an acyclic matching: the critical cells it keeps,
 //! each fault it counts, its budget, and the scheme's own fault.
 
+use alloc::collections::BTreeMap;
+
 use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Count;
 use gandr_theory_discrete_morse::Faults;
+use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::MorseError;
 use gandr_theory_discrete_morse::collapse;
 
@@ -16,6 +19,7 @@ use crate::simplices::B;
 use crate::simplices::BC;
 use crate::simplices::C;
 use crate::simplices::FILLED;
+use crate::simplices::Forged;
 use crate::simplices::HOLLOW;
 use crate::simplices::Refused;
 use crate::simplices::Simplex;
@@ -37,21 +41,23 @@ where
     faults
 }
 
-/// The filled triangle matched onto its vertex `a`: `b` with the edge `ab`,
-/// `c` with the edge `ac`, and the edge `bc` with the whole triangle.
+/// The matching of the filled triangle onto its vertex `a`: `b` with the edge
+/// `ab`, `c` with the edge `ac`, and the edge `bc` with the whole triangle.
 ///
 /// # Specification
 /// trivial.
-fn contracted() -> Triangle
+fn contracted() -> Matching<Simplex>
 {
-    Triangle::matched(&[(B, AB), (C, AC), (BC, ABC)])
+    Matching::stated([(B, AB), (C, AC), (BC, ABC)])
 }
 
 #[test]
 fn the_matching_of_a_triangle_collapses_onto_one_vertex()
 {
-    let mut scheme = contracted();
-    let done = collapse(&mut scheme, &FILLED, Budget::from(ROOM)).expect("the triangle reads");
+    let matching = contracted();
+    let mut triangle = Triangle::default();
+    let done = collapse(&mut matching.on(&mut triangle), &FILLED, Budget::from(ROOM))
+        .expect("the triangle reads");
     assert_eq!(done.critical(), [A]);
     assert_eq!(done.faults(), Faults::default());
     // The walk reaches the three redundant cells and no other.
@@ -63,8 +69,10 @@ fn a_partner_that_names_another_cell_is_unpaired()
 {
     // `b` names `ab`, but `ab` names `a` back, and `a` names nothing. The
     // walk from `b` and the read of `ab` each count one.
-    let mut scheme = Triangle::matched(&[(B, AB)]);
-    let _was = scheme.classes.insert(AB, Class::Collapsible(A));
+    let mut scheme = Forged {
+        classes: BTreeMap::from([(B, Class::Redundant(AB)), (AB, Class::Collapsible(A))]),
+        ..Forged::default()
+    };
     let done = collapse(&mut scheme, &FILLED, Budget::from(ROOM)).expect("the triangle reads");
     assert_eq!(
         done.faults(),
@@ -78,8 +86,10 @@ fn a_partner_outside_the_complex_is_counted()
     // `b` names a cell over a fourth vertex, which the triangle does not
     // hold. That cell names nothing back either.
     let outside = Simplex(0b1010);
-    let mut scheme = Triangle::matched(&[]);
-    let _was = scheme.classes.insert(B, Class::Redundant(outside));
+    let mut scheme = Forged {
+        classes: BTreeMap::from([(B, Class::Redundant(outside))]),
+        ..Forged::default()
+    };
     let done = collapse(&mut scheme, &FILLED, Budget::from(ROOM)).expect("the triangle reads");
     assert_eq!(
         done.faults(),
@@ -93,9 +103,10 @@ fn a_partner_outside_the_complex_is_counted()
 #[test]
 fn an_incidence_of_two_pairs_no_cells()
 {
-    let mut scheme = Triangle::matched(&[(B, AB)]);
-    scheme.weight = 2;
-    let done = collapse(&mut scheme, &FILLED, Budget::from(ROOM)).expect("the triangle reads");
+    let matching = Matching::stated([(B, AB)]);
+    let mut broken = Triangle { weight: 2 };
+    let done = collapse(&mut matching.on(&mut broken), &FILLED, Budget::from(ROOM))
+        .expect("the triangle reads");
     assert_eq!(
         done.faults(),
         only(|faults| faults.uninvertible = Count::from(1))
@@ -107,13 +118,16 @@ fn a_scheme_whose_gradient_turns_back_closes_a_cycle()
 {
     // Each vertex pairs with the edge that leaves it, so the gradient runs
     // from `a` to `b` to `c` and back to `a`.
-    let mut scheme = Triangle::matched(&[(A, AB), (B, BC), (C, AC)]);
-    let done = collapse(&mut scheme, &HOLLOW, Budget::from(ROOM)).expect("the triangle reads");
+    let mut triangle = Triangle::default();
+    let cycle = Matching::stated([(A, AB), (B, BC), (C, AC)]);
+    let done = collapse(&mut cycle.on(&mut triangle), &HOLLOW, Budget::from(ROOM))
+        .expect("the triangle reads");
     assert!(done.critical().is_empty(), "{done:?}");
     assert_eq!(done.faults(), only(|faults| faults.cycles = Count::from(1)));
     // The same pairs less one close no cycle.
-    let mut opened = Triangle::matched(&[(A, AB), (B, BC)]);
-    let done = collapse(&mut opened, &HOLLOW, Budget::from(ROOM)).expect("the triangle reads");
+    let opened = Matching::stated([(A, AB), (B, BC)]);
+    let done = collapse(&mut opened.on(&mut triangle), &HOLLOW, Budget::from(ROOM))
+        .expect("the triangle reads");
     assert_eq!(done.critical(), [C, AC]);
     assert_eq!(done.faults(), Faults::default());
 }
@@ -121,7 +135,9 @@ fn a_scheme_whose_gradient_turns_back_closes_a_cycle()
 #[test]
 fn a_walk_past_its_budget_is_refused()
 {
-    let mut scheme = contracted();
+    let matching = contracted();
+    let mut triangle = Triangle::default();
+    let mut scheme = matching.on(&mut triangle);
     assert_eq!(
         collapse(&mut scheme, &FILLED, Budget::from(2)),
         Err(MorseError::PastBudget(Budget::from(2)))
@@ -135,8 +151,10 @@ fn the_walk_goes_past_the_given_cells()
 {
     // Given only `b`, the walk goes up to `ab`. Its other face `a` is
     // redundant here, so the walk reaches it too.
-    let mut scheme = Triangle::matched(&[(B, AB), (A, AC)]);
-    let done = collapse(&mut scheme, &[B], Budget::from(ROOM)).expect("the triangle reads");
+    let matching = Matching::stated([(B, AB), (A, AC)]);
+    let mut triangle = Triangle::default();
+    let done = collapse(&mut matching.on(&mut triangle), &[B], Budget::from(ROOM))
+        .expect("the triangle reads");
     assert_eq!(done.visited(), Count::from(2));
     assert_eq!(done.faults(), Faults::default());
 }
@@ -144,8 +162,10 @@ fn the_walk_goes_past_the_given_cells()
 #[test]
 fn a_fault_of_the_scheme_is_given_back_as_its_own()
 {
-    let mut scheme = contracted();
-    scheme.refuses.push(C);
+    let mut scheme = Forged {
+        refuses: [C].to_vec(),
+        ..Forged::default()
+    };
     assert_eq!(
         collapse(&mut scheme, &FILLED, Budget::from(ROOM)),
         Err(MorseError::Complex(Refused(C)))

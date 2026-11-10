@@ -45,6 +45,7 @@ mod engine;
 mod sphere;
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -53,7 +54,6 @@ use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::SequentAlphabet;
-use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Composites;
@@ -61,7 +61,7 @@ use gandr_theory_discrete_morse::Definition;
 use gandr_theory_discrete_morse::Images;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Invertibility;
-use gandr_theory_discrete_morse::Scheme;
+use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::Standing;
 use quenchant_shape::shape::Maybe;
 
@@ -466,7 +466,7 @@ where
 }
 
 /// The homotopy basis of a convergent cell system: its confluences and its
-/// critical triples as a complex, with the reduction as its scheme.
+/// critical triples as a complex, with the matching of its reduction.
 ///
 /// # Specification
 /// - ensures: each built boundary closes, and each cut's replacement runs from
@@ -492,8 +492,6 @@ pub struct Basis<'basis, A: CellAlphabet = SequentAlphabet>
     cuts: Vec<Vec<Cut<A>>>,
     /// The triples whose boundary passes the budget.
     unbuilt: Vec<TripleIndex>,
-    /// The class of each paired cell.
-    classes: BTreeMap<BasisCell, Class<BasisCell>>,
 }
 
 /// The metavariables of `term`, ascending, when each occurs once as a lone
@@ -625,30 +623,6 @@ where
     Some(out)
 }
 
-/// The matching that pairs each triple, in order, with its first cut whose
-/// confluence no earlier triple pairs.
-///
-/// # Specification
-/// trivial.
-fn matching<A>(cuts: &[Vec<Cut<A>>]) -> BTreeMap<BasisCell, Class<BasisCell>>
-where
-    A: CellAlphabet,
-{
-    let mut classes = BTreeMap::new();
-    for (place, held) in cuts.iter().enumerate() {
-        let partner = BasisCell::Triple(TripleIndex::from(place));
-        let free = held
-            .iter()
-            .map(|each| BasisCell::Confluence(each.certificate))
-            .find(|redundant| !classes.contains_key(redundant));
-        if let Some(redundant) = free {
-            let _ = classes.insert(redundant, Class::Redundant(partner));
-            let _ = classes.insert(partner, Class::Collapsible(redundant));
-        }
-    }
-    classes
-}
-
 impl<'basis, A: CellAlphabet> Basis<'basis, A>
 {
     /// The basis of `store` with its confluences `certificates`: the boundary
@@ -734,7 +708,6 @@ impl<'basis, A: CellAlphabet> Basis<'basis, A>
                 },
             }
         }
-        let classes = matching(&cuts);
         Ok(Self {
             store,
             certificates,
@@ -742,7 +715,6 @@ impl<'basis, A: CellAlphabet> Basis<'basis, A>
             spheres,
             cuts,
             unbuilt,
-            classes,
         })
     }
 
@@ -787,6 +759,42 @@ impl<'basis, A: CellAlphabet> Basis<'basis, A>
     pub fn unbuilt(&self) -> &[TripleIndex]
     {
         &self.unbuilt
+    }
+
+    /// The matching of the reduction: each triple, in order, with its first
+    /// cut whose confluence no earlier triple pairs. Every other cell is
+    /// critical. [`Matching::on`] reads it over the basis, so that a collapse
+    /// or an equivalence reads the basis through it.
+    ///
+    /// # Specification
+    /// - ensures: each confluence pairs with one triple at most, and a cut of
+    ///   its triple holds it.
+    /// - panics: none.
+    /// - executable: none — the collapse of the basis checks the matching, and
+    ///   the tests run it.
+    /// - intension: one pass over the cuts, and O(p log p) for `p` pairs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the presentation of B₃⁺ keeps A and B and removes C
+    ///   and D. A budget of one leaves each triple unbuilt and pairs nothing.
+    /// - witness: `tests::basis::the_braid_monoid_keeps_two_confluences`
+    /// - witness: `tests::basis::a_triple_past_the_budget_pairs_nothing`
+    #[inline]
+    #[must_use]
+    pub fn matching(&self) -> Matching<BasisCell>
+    {
+        let mut paired = BTreeSet::new();
+        Matching::stated(self.cuts.iter().enumerate().filter_map(|(place, held)| {
+            let certificate = held
+                .iter()
+                .map(|each| each.certificate)
+                .find(|certificate| !paired.contains(certificate))?;
+            let _fresh = paired.insert(certificate);
+            Some((
+                BasisCell::Confluence(certificate),
+                BasisCell::Triple(TripleIndex::from(place)),
+            ))
+        }))
     }
 
     /// The boundary of the 4-cell of `triple`, or nothing where it is not
@@ -1088,23 +1096,6 @@ impl<A: CellAlphabet> Complex for Basis<'_, A>
             },
             _ => Invertibility::NotInvertible,
         })
-    }
-}
-
-impl<A: CellAlphabet> Scheme for Basis<'_, A>
-{
-    /// The class that the reduction gives, critical for each cell it does not
-    /// pair.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn class(
-        &mut self,
-        cell: &BasisCell,
-    ) -> Result<Class<BasisCell>, BasisFault>
-    {
-        Ok(self.classes.get(cell).cloned().unwrap_or(Class::Critical))
     }
 }
 

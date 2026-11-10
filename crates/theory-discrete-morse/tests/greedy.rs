@@ -22,7 +22,7 @@ use crate::simplices::Triangle;
 #[test]
 fn the_triangle_matches_onto_one_vertex()
 {
-    let mut complex = Triangle::matched(&[]);
+    let mut complex = Triangle::default();
     let matching = greedy(&mut complex, &FILLED).expect("the triangle reads");
     // `a` pairs with `ab` and `b` with `bc`. The pair of `c` and `ac` would
     // close a cycle through `a` and `b`, so `ac` pairs with the triangle.
@@ -49,7 +49,7 @@ fn the_triangle_matches_onto_one_vertex()
 #[test]
 fn the_hollow_triangle_keeps_one_vertex_and_one_edge_critical()
 {
-    let mut complex = Triangle::matched(&[]);
+    let mut complex = Triangle::default();
     let matching = greedy(&mut complex, &HOLLOW).expect("the triangle reads");
     // The circle has one vertex and one edge that no acyclic matching pairs.
     assert_eq!(matching.critical().copied().collect::<Vec<_>>(), [C, AC]);
@@ -65,8 +65,7 @@ fn the_hollow_triangle_keeps_one_vertex_and_one_edge_critical()
 #[test]
 fn a_face_at_the_incidence_two_stays_unpaired()
 {
-    let mut complex = Triangle::matched(&[]);
-    complex.weight = 2;
+    let mut complex = Triangle { weight: 2 };
     let matching = greedy(&mut complex, &FILLED).expect("the triangle reads");
     assert_eq!(
         matching.critical().copied().collect::<Vec<_>>(),
@@ -77,7 +76,7 @@ fn a_face_at_the_incidence_two_stays_unpaired()
 #[test]
 fn a_cell_the_list_does_not_hold_is_critical()
 {
-    let mut complex = Triangle::matched(&[]);
+    let mut complex = Triangle::default();
     let matching = greedy(&mut complex, &HOLLOW).expect("the triangle reads");
     assert_eq!(matching.class(&A), Class::Redundant(AB));
     assert_eq!(matching.class(&AB), Class::Collapsible(A));
