@@ -159,8 +159,10 @@ use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
+use gandr_kernel_term::ConstantIndex;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::Declined;
+use gandr_surface_corpus::Produced;
 use gandr_surface_diagnostics::AnnotationKind;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
@@ -173,6 +175,7 @@ use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Polled;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Rejection;
 use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Shown;
@@ -229,6 +232,7 @@ use crate::quiet::caret_form;
 use crate::quiet::formless;
 use crate::reading::Reading;
 use crate::signature::Signatures;
+use crate::tier::Tier;
 
 /// The session one open document's revisions are submitted to, or the fault
 /// that kept the grammar it parses under from building. Its store keeps
@@ -604,6 +608,31 @@ pub enum Readings
     Unkept,
 }
 
+/// Whether the checker refused a declaration: an accepted one waits on the
+/// kernel until its document's admission settles its tier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Checked
+{
+    /// The checker judged it and did not refuse it.
+    Accepted,
+    /// The lowering, the checker or the corpus refused it.
+    Refused,
+}
+
+/// One declaration of a document's own text, as its recheck reports it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Declared
+{
+    /// Its admission position in the document's report.
+    pub constant: ConstantIndex,
+    /// Its name, as the text spells it.
+    pub name: Box<str>,
+    /// Its span in the document's own text.
+    pub span: ByteSpan,
+    /// Whether the checker refused it.
+    pub checked: Checked,
+}
+
 /// What one recheck produced: the diagnostics to publish, the binders left
 /// unused, the imports nothing reads, the form under the caret it was asked
 /// about, the paths its closure named, the lay-out it judged, the imports its
@@ -623,6 +652,11 @@ pub struct Rechecked
         )
     )]
     pub deferred: Vec<(usize, String)>,
+    /// Each declaration of the document's own text, by its admission position
+    /// and its span in that text, with whether the checker refused it, in
+    /// admission order: the declarations whose kernel tier the document's
+    /// admission settles.
+    pub declared: Vec<Declared>,
     /// Each binder the judgement's accepted declarations write in the
     /// document and never read, as the document's own text measures it,
     /// ascending.
@@ -793,6 +827,7 @@ where
         Polled::Whole(Rechecked {
             diagnostics: vec![diagnostic],
             deferred: Vec::new(),
+            declared: Vec::new(),
             unused: Vec::new(),
             unreached: Vec::new(),
             form: Maybe::Absent(formless::Absent::Unparsed),
@@ -951,10 +986,38 @@ where
         },
         Composed::Refused(_) => Vec::new(),
     };
+    // Each declaration of the document's own text, when an admission follows
+    // the judgement: those the checker did not refuse wait on the kernel until
+    // the admission settles their tier.
+    let declared = match *submission.composed() {
+        Composed::Settled { ref report, .. } if pending == admitted::Absent::Pending => report
+            .declarations()
+            .iter()
+            .filter_map(
+                |declaration| match own(declaration.span(), submission.base()) {
+                    Maybe::Present(span) => Some(Declared {
+                        constant: declaration.constant(),
+                        name: Box::from(declaration.name().as_ref()),
+                        span,
+                        checked: match (declaration.produced(), declaration.produced().refusal()) {
+                            (Produced::Judged(_), Maybe::Absent(_)) => Checked::Accepted,
+                            (
+                                Produced::Judged(_) | Produced::Unlowered(_) | Produced::Guarded(_),
+                                _,
+                            ) => Checked::Refused,
+                        },
+                    }),
+                    Maybe::Absent(_) => None,
+                },
+            )
+            .collect(),
+        Composed::Settled { .. } | Composed::Refused(_) => Vec::new(),
+    };
     let diagnostics = diagnostics_of(submission, (uri, placed), text, verbosity, spelling);
     Polled::Whole(Rechecked {
         diagnostics,
         deferred,
+        declared,
         unused,
         unreached,
         form,
@@ -1041,8 +1104,8 @@ pub fn recheck(
 }
 
 /// What admitting a rechecked document produced: the diagnostic replacing the
-/// published ones when the kernel disagreed, and the synchronisation's timing
-/// with the admission's wall.
+/// published ones when the kernel disagreed, the synchronisation's timing
+/// with the admission's wall, and each declaration's kernel tier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Admitted
 {
@@ -1060,6 +1123,10 @@ pub struct Admitted
         )
     )]
     pub declined: Vec<(usize, Declined)>,
+    /// Each declaration the admission judged with its kernel tier, by its
+    /// admission position, in admission order: none when the admission did
+    /// not run, and the one it stopped at when the kernel disagreed.
+    pub tiers: Vec<(ConstantIndex, Tier)>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1238,9 +1305,11 @@ impl Admitting
 ///   and no later recheck replaced the revision it judged.
 /// - ensures: the timing carries the admission's wall, the run's and the
 ///   settling's, and, when it exported, how many declarations it offered the
-///   kernel of those judged; a kernel disagreement is one error at the origin
+///   kernel of those judged; each judged declaration's kernel tier at its
+///   admission position; a kernel disagreement is one error at the origin
 ///   naming the fault `submit` would have reported, to publish in place of the
-///   recheck's diagnostics.
+///   recheck's diagnostics, and one tier at the declaration the kernel stopped
+///   at, with the rejection's reason.
 /// - provides: the second half of every synchronisation, run once its admission
 ///   ended.
 /// - fails: never; a disagreement is a diagnostic.
@@ -1269,10 +1338,11 @@ pub fn settle(
 {
     let Finished { ran, timing, wall } = finished;
     let started = Instant::now();
-    let (fault, crossed, declined) = session.as_mut().map_or(
+    let (fault, crossed, declined, tiers) = session.as_mut().map_or(
         (
             Maybe::Absent(agreed::Absent::Agreed),
             Maybe::Absent(admitted::Absent::Unadmitted),
+            Vec::new(),
             Vec::new(),
         ),
         |session| match session.settle(ran) {
@@ -1295,25 +1365,39 @@ pub fn settle(
                             )
                         })
                         .collect(),
+                    admitted
+                        .tiers
+                        .iter()
+                        .map(|&(constant, tier)| (constant, Tier::Settled(tier)))
+                        .collect(),
                 )
             },
             Ok(Maybe::Absent(_)) => (
                 Maybe::Absent(agreed::Absent::Agreed),
                 Maybe::Absent(admitted::Absent::Unadmitted),
                 Vec::new(),
-            ),
-            Err(disagreement) => (
-                Maybe::Present(Diagnostic::at_origin(
-                    SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
-                )),
-                Maybe::Absent(admitted::Absent::Disagreed),
                 Vec::new(),
             ),
+            Err(disagreement) => {
+                let stopped = Vec::from([(
+                    disagreement.constant(),
+                    Tier::Disagreed(Box::from(Rejection(&disagreement).to_string())),
+                )]);
+                (
+                    Maybe::Present(Diagnostic::at_origin(
+                        SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
+                    )),
+                    Maybe::Absent(admitted::Absent::Disagreed),
+                    Vec::new(),
+                    stopped,
+                )
+            },
         },
     );
     Admitted {
         fault,
         declined,
+        tiers,
         timing: Timing {
             admitted: Maybe::Present(wall.saturating_add(started.elapsed())),
             crossed,

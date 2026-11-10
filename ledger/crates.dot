@@ -275,6 +275,7 @@ digraph crates {
   "surface-lowering" -> "theory-spec-combinators";
   "surface-lowering" -> "theory-stone-duality";
   "surface-lsp" -> "core-incremental";
+  "surface-lsp" -> "kernel-term";
   "surface-lsp" -> "storage-records";
   "surface-lsp" -> "surface-corpus";
   "surface-lsp" -> "surface-diagnostics";

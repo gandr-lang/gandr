@@ -3,6 +3,8 @@ import type { Executable } from "vscode-languageclient/node";
 import * as vscode from "vscode";
 import { LanguageClient, LanguageClientOptions, ServerOptions } from "vscode-languageclient/node";
 
+import { KernelTiersFeature } from "../tiers";
+
 export class GandrLanguageClient extends LanguageClient {
   private readonly configurationListener: vscode.Disposable;
 
@@ -63,6 +65,7 @@ export class GandrLanguageClient extends LanguageClient {
     };
     const client = new this("gandr", "gandr language server", serverOptions, clientOptions);
     client.registerProposedFeatures();
+    client.registerFeature(new KernelTiersFeature());
     return client;
   }
 
