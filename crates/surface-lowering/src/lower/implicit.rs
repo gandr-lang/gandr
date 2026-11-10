@@ -498,7 +498,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
             };
-            self.note_binder(entry.binder, entry.name)?;
+            self.note_binder(entry.binder, frame, entry.name)?;
             let written = Maybe::Present(entry.binder.span);
             let bound = match declared {
                 Maybe::Present(declared) => self

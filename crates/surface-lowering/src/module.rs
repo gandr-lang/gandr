@@ -286,6 +286,7 @@ use crate::attribute::AttributeTable;
 use crate::attribute::DeprecatedUse;
 use crate::attribute::Deprecation;
 use crate::attribute::RegisteredAttribute;
+use crate::by_form::ByForm;
 use crate::coincide::Decisions;
 use crate::description::DescriptionFault;
 use crate::doc::Documentation;
@@ -334,6 +335,7 @@ use crate::origin::OriginToken;
 use crate::origin::Provenance;
 use crate::resolve::InScope;
 use crate::resolve::Resolution;
+use crate::resolve::Shadow;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
@@ -12174,6 +12176,9 @@ pub struct LoweredModule<'source>
     /// Each written name the lowering resolved, with what it names, ascending
     /// by span.
     resolutions: Vec<(ByteSpan, Resolution)>,
+    /// Each written binder whose name an outer scope binds, with the binding
+    /// it hides, kept in the form of the node that wrote the binder.
+    shadows: ByForm<Shadow>,
     /// The bytes of each import a name lookup was answered through,
     /// ascending.
     reached_imports: Vec<ByteSpan>,
@@ -12278,6 +12283,7 @@ impl<'source> LoweredModule<'source>
             nested: BTreeMap::new(),
             in_scope: InScope::default(),
             resolutions: Vec::new(),
+            shadows: ByForm::default(),
             reached_imports: Vec::new(),
             origins,
             imports,
@@ -12959,6 +12965,37 @@ impl<'source> LoweredModule<'source>
         &self.resolutions
     }
 
+    /// This module, carrying each written binder that hides a binding, with
+    /// the binding it hides.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn with_shadows(
+        mut self,
+        shadows: ByForm<Shadow>,
+    ) -> Self
+    {
+        self.shadows = shadows;
+        self
+    }
+
+    /// Each written binder whose name an outer scope binds, with the binding
+    /// it hides, in the order the lowering read the binders; a binder in a
+    /// declaration the lowering refused included, when it was read before the
+    /// refusal. Each form keeps its own binders, so an edit to one form
+    /// changes the entries of that form alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn shadows(&self) -> &[Shadow]
+    {
+        self.shadows.entries()
+    }
+
     /// Each written name the lowering resolved to a declaration whose
     /// `deprecated` attribute marks it, ascending by span, with what the
     /// attribute states, read off its payload in `arena`.
@@ -13013,7 +13050,9 @@ impl<'source> LoweredModule<'source>
                             deprecation: stated.clone(),
                         })
                 },
-                Resolution::Binder(_) | Resolution::Constructor { .. } => None,
+                Resolution::Binder(_) | Resolution::Constructor { .. } | Resolution::Builtin => {
+                    None
+                },
             })
             .collect()
     }

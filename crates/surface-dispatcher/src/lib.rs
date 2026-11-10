@@ -471,6 +471,7 @@ pub use crate::typed::checked_against;
 pub use crate::typed::crossed;
 pub use crate::typed::referred;
 pub use crate::typed::reprinted;
+pub use crate::typed::shadowing;
 pub use crate::typed::signed;
 pub use crate::typed::typing;
 pub use crate::typed::wholly;

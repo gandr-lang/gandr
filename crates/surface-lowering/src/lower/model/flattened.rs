@@ -701,7 +701,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
         self.read(declared.node, Reading::ValueType(frame));
-        self.note_binder(entry.binder, entry.name)?;
+        self.note_binder(entry.binder, frame, entry.name)?;
         let written = Maybe::Present(entry.binder.span);
         let mut frame = frame;
         let mut components = Vec::with_capacity(slot.components().len());

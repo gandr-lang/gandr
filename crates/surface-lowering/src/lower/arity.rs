@@ -3896,7 +3896,7 @@ impl<'source> Lowerer<'_, 'source>
                         });
                     }
                     let _first = seen.insert(bound, key);
-                    self.note_binder(key, bound)?;
+                    self.note_binder(key, inner, bound)?;
                     (key, bound, Maybe::Present(key.span))
                 },
                 Key::Positional | Key::Index(..) => (
@@ -4008,7 +4008,7 @@ impl<'source> Lowerer<'_, 'source>
                         });
                     }
                     let _first = seen.insert(bound, key);
-                    self.note_binder(key, bound)?;
+                    self.note_binder(key, inner, bound)?;
                     (key, bound, Maybe::Present(key.span))
                 },
                 Key::Positional | Key::Index(..) => (
@@ -4970,7 +4970,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         self.read(declared.node, Reading::ValueType(frame));
         self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
-        self.note_binder(key, bound)?;
+        self.note_binder(key, frame, bound)?;
         let extended =
             self.scope
                 .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
@@ -5099,7 +5099,7 @@ impl<'source> Lowerer<'_, 'source>
         let (binder, declared, extended) =
             if let Some((key, bound, declared)) = self.arrow_binder(frame, domain)? {
                 self.labelled(key.span, declared.node, LabelRead::ValueType(frame));
-                self.note_binder(key, bound)?;
+                self.note_binder(key, frame, bound)?;
                 let extended =
                     self.scope
                         .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));

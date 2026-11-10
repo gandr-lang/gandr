@@ -822,7 +822,7 @@ impl<'source> Lowerer<'_, 'source>
                             return Err(site.fault(block.here(), FormFault::MisplacedTile));
                         };
                         let name = self.name_at(viewer);
-                        self.note_binder(viewer, name)?;
+                        self.note_binder(viewer, frame, name)?;
                         let index = self.scope.extend(frame, SurfaceName::from(""), unwritten());
                         let binder = self.scope.extend_linear(
                             Frame::Inner(index),
