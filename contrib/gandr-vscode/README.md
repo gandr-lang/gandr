@@ -9,6 +9,7 @@ Language support for `.gandr` sources. The extension registers the `gandr` langu
 - [Install the extension](#install-the-extension)
 - [Check the connection](#check-the-connection)
 - [Hover colours](#hover-colours)
+- [Kernel tiers](#kernel-tiers)
 - [Drop to import](#drop-to-import)
 - [Paste with imports](#paste-with-imports)
 - [Unicode input](#unicode-input)
@@ -86,30 +87,46 @@ No setting selects the server's features. The client adopts what `initialize` ad
 
 The server colours a hover by the roles its semantic tokens carry: the extension's client announces that its hovers render HTML, and the server writes each type, name and checked fill as `<pre><code>` with every classified run in a `span` coloured by a theme colour the extension contributes. Each colour defaults, per theme kind, to what the built-in theme of that kind gives the role's semantic token, so a hover reads as the line it describes. Override any of them under `workbench.colorCustomizations`. A run the highlighter classifies as `other`, such as the `:` of a signature, is left in the hover's foreground, as the editor leaves it.
 
-| Role | Colour | Semantic token | Dark Modern | Light Modern | Dark High Contrast | Light High Contrast |
-| ---- | ------ | -------------- | ----------- | ------------ | ------------------ | ------------------- |
-| keyword | `gandr.hover.keyword` | `keyword` | `#C586C0` | `#AF00DB` | `#C586C0` | `#B5200D` |
-| boolean | `gandr.hover.boolean` | `keyword` | `#C586C0` | `#AF00DB` | `#C586C0` | `#B5200D` |
-| operator | `gandr.hover.operator` | `operator` | `#D4D4D4` | `#000000` | `#D4D4D4` | `#000000` |
-| functionDef | `gandr.hover.functionDef` | `function` | `#DCDCAA` | `#795E26` | `#DCDCAA` | `#5E2CBC` |
-| functionCall | `gandr.hover.functionCall` | `function` | `#DCDCAA` | `#795E26` | `#DCDCAA` | `#5E2CBC` |
-| variableDef | `gandr.hover.variableDef` | `variable` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
-| variable | `gandr.hover.variable` | `variable` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
-| variableParam | `gandr.hover.variableParam` | `parameter` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
-| member | `gandr.hover.member` | `property` | `#9CDCFE` | `#001080` | `#9CDCFE` | `#001080` |
-| constructor | `gandr.hover.constructor` | `enumMember` | `#4FC1FF` | `#0070C1` | `#9CDCFE` | `#02715D` |
-| type | `gandr.hover.type` | `type` | `#4EC9B0` | `#267F99` | `#4EC9B0` | `#185E73` |
-| typeBuiltin | `gandr.hover.typeBuiltin` | `type.defaultLibrary` | `#4EC9B0` | `#267F99` | `#4EC9B0` | `#185E73` |
-| typeVariable | `gandr.hover.typeVariable` | `typeParameter` | `#4EC9B0` | `#267F99` | `#4EC9B0` | `#185E73` |
-| number | `gandr.hover.number` | `number` | `#B5CEA8` | `#098658` | `#B5CEA8` | `#096D48` |
-| stringLit | `gandr.hover.stringLit` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
-| character | `gandr.hover.character` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
-| escape | `gandr.hover.escape` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
-| path | `gandr.hover.path` | `string` | `#CE9178` | `#A31515` | `#CE9178` | `#0F4A85` |
-| comment | `gandr.hover.comment` | `comment` | `#6A9955` | `#008000` | `#7CA668` | `#515151` |
-| hole | `gandr.hover.hole` | `macro` | `#569CD6` | `#0000FF` | `#DCDCAA` | `#0F4A85` |
-| directive | `gandr.hover.directive` | `macro` | `#569CD6` | `#0000FF` | `#DCDCAA` | `#0F4A85` |
-| label | `gandr.hover.label` | `label` | hover foreground | hover foreground | hover foreground | hover foreground |
+| Role | Colour | Semantic token |
+| ---- | ------ | -------------- |
+| keyword | `gandr.hover.keyword` | `keyword` |
+| boolean | `gandr.hover.boolean` | `keyword` |
+| operator | `gandr.hover.operator` | `operator` |
+| functionDef | `gandr.hover.functionDef` | `function` |
+| functionCall | `gandr.hover.functionCall` | `function` |
+| variableDef | `gandr.hover.variableDef` | `variable` |
+| variable | `gandr.hover.variable` | `variable` |
+| variableParam | `gandr.hover.variableParam` | `parameter` |
+| member | `gandr.hover.member` | `property` |
+| constructor | `gandr.hover.constructor` | `enumMember` |
+| type | `gandr.hover.type` | `type` |
+| typeBuiltin | `gandr.hover.typeBuiltin` | `type.defaultLibrary` |
+| typeVariable | `gandr.hover.typeVariable` | `typeParameter` |
+| number | `gandr.hover.number` | `number` |
+| stringLit | `gandr.hover.stringLit` | `string` |
+| character | `gandr.hover.character` | `string` |
+| escape | `gandr.hover.escape` | `string` |
+| path | `gandr.hover.path` | `string` |
+| comment | `gandr.hover.comment` | `comment` |
+| hole | `gandr.hover.hole` | `macro` |
+| directive | `gandr.hover.directive` | `macro` |
+| label | `gandr.hover.label` | `label` |
+
+`package.json` holds the default of each colour for each theme kind.
+
+## Kernel tiers
+
+A lens above each declaration states how far the kernel certifies it. A glyph before the declaration's first line shows the same tier in the colour of its warrant.
+
+| Glyph | Warrant | Colour | The kernel tier |
+| ----- | ------- | ------ | --------------- |
+| `·` | pending | `gandr.warrant.pending` | The kernel has not replayed this revision yet. |
+| `✓` | checked | `gandr.warrant.checked` | The kernel admitted the signature and owes the body. |
+| `✓✓` | replayed | `gandr.warrant.replayed` | The kernel replayed it. |
+| `✗` | refused | `gandr.warrant.refused` | The kernel refused it. |
+| `○` | withheld | `gandr.warrant.withheld` | It did not cross to the kernel, and the lens states why. |
+
+A declaration with no glyph did not reach the kernel, and its diagnostic states why. `package.json` holds the default of each colour.
 
 ## Drop to import
 

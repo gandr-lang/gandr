@@ -167,6 +167,16 @@
 //! parse it hands over equals `parse` of the same text, so the lowering is the
 //! one `compose` runs. The halves are public rather than duplicated there
 //! because a second composition is exactly what this section rules out.
+//!
+//! An admission keeps one [`KernelTier`] per declaration it judges, read off
+//! the bridge's outcome alone, so an editor shows how far the kernel took
+//! each declaration and computes nothing for one request.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel
+//!   re-assessment (§ kernel-reassessment-design, item 9) — the editor shows
+//!   each declaration's kernel tier, computed off the keystroke path.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -942,6 +952,7 @@ impl Admission
                     Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
                 },
                 declined: declined(&readmission),
+                tiers: tiers(&readmission),
                 artifact: Ok(readmission.export_resuming(self.names, crossed, &mut recorded)),
                 crossed: recorded,
             },
@@ -949,6 +960,7 @@ impl Admission
                 artifact: Err(fault),
                 positions: Maybe::Absent(positioned::Absent::Disagreed),
                 declined: Vec::new(),
+                tiers: Vec::new(),
                 resumed: bridge::LeadingCount::NONE,
                 judged,
                 crossed: recorded,
@@ -998,6 +1010,9 @@ pub struct Resumption
     /// image of, in admission order: empty when the kernel did not re-derive
     /// every declaration.
     pub declined: Vec<Declined>,
+    /// Each declaration's kernel tier, in admission order: one entry per
+    /// declaration judged, empty when the kernel did not re-derive every one.
+    pub tiers: Vec<(ConstantIndex, KernelTier)>,
     /// How many leading declarations the readmission resumed rather than
     /// crossed again.
     pub resumed: bridge::LeadingCount,
@@ -1064,6 +1079,170 @@ fn declined(readmission: &bridge::Readmission) -> Vec<Declined>
                 class: refusal.classify(),
             })
         })
+        .collect()
+}
+
+/// How far the kernel took one declaration that an admission offered it,
+/// read off the bridge's outcome alone.
+///
+/// # Specification
+/// - requires: built by [`KernelTier::of`].
+/// - ensures: one class per bridge outcome, as the corpus's kernel export
+///   classes them, less the reasons of the checker's own refusals, which its
+///   diagnostics carry.
+/// - provides: the tier an editor shows beside a declaration.
+/// - executable: none — a type-level block; [`KernelTier::of`] carries the
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`KernelTier::of`].
+/// - witness: `compose::tests::an_admission_keeps_each_declaration_s_kernel_tier_2517`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum KernelTier
+{
+    /// The kernel re-derived it: a definition, or a nominal declaration.
+    Replayed,
+    /// The kernel admitted its signature as an axiom, since its body is owed.
+    Assumed,
+    /// It is static: the kernel replays each instance where a later
+    /// declaration uses it.
+    Static,
+    /// It names a declaration of the module that did not cross.
+    Withheld
+    {
+        /// The module position of the declaration it names.
+        behind: ConstantIndex,
+    },
+    /// It holds a form that the kernel has no rule for, so its verdict stands
+    /// on the checker's side.
+    Outside
+    {
+        /// The form.
+        form: Unruled,
+        /// The class of the refusal, with the issue that owes the rule.
+        class: FailureClass,
+    },
+    /// The kernel did not re-derive what the checker accepted: the two
+    /// checkers disagree, in a fault of this class.
+    Refused(FailureClass),
+    /// The checker refused it, suspended it or left a hole in it, so the
+    /// kernel was offered nothing, and the checker's diagnostic says why.
+    Unoffered,
+}
+
+/// A form that the kernel has no rule for.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Unruled
+{
+    /// A former outside the fragment.
+    Former(UnadmittedFormer),
+    /// A session form.
+    Session,
+    /// A located form.
+    Located,
+}
+
+impl KernelTier
+{
+    /// The tier of a declaration whose readmission is `outcome`.
+    ///
+    /// # Specification
+    /// - requires: nothing; the function is total over the outcomes.
+    /// - ensures: a definition and a nominal declaration are replayed, an axiom
+    ///   assumed and a static declaration static; a reference to a declaration
+    ///   that did not cross is withheld behind the position it names; a former
+    ///   the kernel has no rule for, a session and a located form are outside;
+    ///   a rejection is refused as an engine fault, and a fault the bridge
+    ///   refuses is refused at its own class; a mark, a suspension, a hole and
+    ///   the unknown type are unoffered.
+    /// - provides: the one classification an admission keeps per declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition, an owed declaration, one the checker
+    ///   refused, a use of it and two endpoint loops each read as their exact
+    ///   tier, the withheld position and the loop's class included.
+    /// - witness: `compose::tests::an_admission_keeps_each_declaration_s_kernel_tier_2517`
+    #[spec(ensures: |ret| match *outcome {
+        | bridge::Outcome::Defined { .. } | bridge::Outcome::Data { .. } => ret == Self::Replayed,
+        | bridge::Outcome::Assumed { .. } => ret == Self::Assumed,
+        | bridge::Outcome::Static => ret == Self::Static,
+        | bridge::Outcome::Marked(_) | bridge::Outcome::Suspended => ret == Self::Unoffered,
+        | bridge::Outcome::Rejected(_) => ret == Self::Refused(FailureClass::EngineFault),
+        | bridge::Outcome::Refused(refusal) => match refusal {
+            | bridge::Refusal::Withheld { constant, .. } | bridge::Refusal::WithheldData { constant, .. } => ret == Self::Withheld { behind: constant },
+            | bridge::Refusal::OutOfFragment { former, .. } => ret == Self::Outside { form: Unruled::Former(former), class: refusal.classify() },
+            | bridge::Refusal::Session { .. } => ret == Self::Outside { form: Unruled::Session, class: refusal.classify() },
+            | bridge::Refusal::Located { .. } => ret == Self::Outside { form: Unruled::Located, class: refusal.classify() },
+            | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. } => ret == Self::Unoffered,
+            | bridge::Refusal::DanglingNode { .. } | bridge::Refusal::Cyclic { .. } | bridge::Refusal::CertificateDeclined { .. } | bridge::Refusal::MachineInvariant => ret == Self::Refused(refusal.classify()),
+        },
+    })]
+    #[inline]
+    #[must_use]
+    pub fn of(outcome: &bridge::Outcome) -> Self
+    {
+        match *outcome {
+            bridge::Outcome::Defined { .. } | bridge::Outcome::Data { .. } => Self::Replayed,
+            bridge::Outcome::Assumed { .. } => Self::Assumed,
+            bridge::Outcome::Static => Self::Static,
+            bridge::Outcome::Marked(_) | bridge::Outcome::Suspended => Self::Unoffered,
+            bridge::Outcome::Rejected(_) => Self::Refused(FailureClass::EngineFault),
+            bridge::Outcome::Refused(refusal) => match refusal {
+                bridge::Refusal::Withheld { constant, .. }
+                | bridge::Refusal::WithheldData { constant, .. } => {
+                    Self::Withheld { behind: constant }
+                },
+                bridge::Refusal::OutOfFragment { former, .. } => Self::Outside {
+                    form: Unruled::Former(former),
+                    class: refusal.classify(),
+                },
+                bridge::Refusal::Session { .. } => Self::Outside {
+                    form: Unruled::Session,
+                    class: refusal.classify(),
+                },
+                bridge::Refusal::Located { .. } => Self::Outside {
+                    form: Unruled::Located,
+                    class: refusal.classify(),
+                },
+                bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. } => Self::Unoffered,
+                bridge::Refusal::DanglingNode { .. }
+                | bridge::Refusal::Cyclic { .. }
+                | bridge::Refusal::CertificateDeclined { .. }
+                | bridge::Refusal::MachineInvariant => Self::Refused(refusal.classify()),
+            },
+        }
+    }
+}
+
+/// Each declaration of `readmission` with its kernel tier, in admission
+/// order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per readmitted declaration, in the readmission's order,
+///   each with [`KernelTier::of`] its outcome.
+/// - provides: what [`Resumption::tiers`] keeps.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module's admission keeps one tier per declaration at
+///   its exact position.
+/// - witness: `compose::tests::an_admission_keeps_each_declaration_s_kernel_tier_2517`
+#[spec(ensures: |ref ret| ret.len() == readmission.readmitted().len()
+    && ret.iter().zip(readmission.readmitted()).all(|(&(constant, tier), readmitted)|
+        constant == readmitted.constant() && tier == KernelTier::of(readmitted.outcome())))]
+fn tiers(readmission: &bridge::Readmission) -> Vec<(ConstantIndex, KernelTier)>
+{
+    readmission
+        .readmitted()
+        .iter()
+        .map(|readmitted| (readmitted.constant(), KernelTier::of(readmitted.outcome())))
         .collect()
 }
 
@@ -1290,31 +1469,56 @@ impl fmt::Display for ComposeFault<'_>
             Self::Readmission(ref readmitted) => {
                 write!(
                     f,
-                    "the kernel did not re-derive the declaration at position {} the checker accepted: ",
-                    usize::from(readmitted.constant())
-                )?;
-                match *readmitted.outcome() {
-                    bridge::Outcome::Rejected(ref error) => {
-                        write!(f, "the kernel rejected it: {error}")
-                    },
-                    bridge::Outcome::Refused(bridge::Refusal::CertificateDeclined {
-                        reason,
-                        ..
-                    }) => write!(
-                        f,
-                        "the kernel declined the certificate of a step it unfolded: {reason}"
-                    ),
-                    bridge::Outcome::Refused(refusal) => {
-                        write!(f, "the bridge refused to offer it ({})", refusal.classify())
-                    },
-                    bridge::Outcome::Data { .. }
-                    | bridge::Outcome::Defined { .. }
-                    | bridge::Outcome::Assumed { .. }
-                    | bridge::Outcome::Marked(_)
-                    | bridge::Outcome::Suspended
-                    | bridge::Outcome::Static => f.write_str("it crossed"),
-                }
+                    "the kernel did not re-derive the declaration at position {} the checker accepted: {}",
+                    usize::from(readmitted.constant()),
+                    Rejection(readmitted)
+                )
             },
+        }
+    }
+}
+
+/// Why the kernel did not re-derive a declaration the checker accepted.
+///
+/// It writes the kernel's error, the reason the kernel declined a
+/// certificate, or the class of the bridge's refusal. It names no subject, so
+/// a fault and a lens both read it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct Rejection<'fault>(pub &'fault bridge::Readmitted);
+
+impl fmt::Display for Rejection<'_>
+{
+    /// Writes the reason, one line.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self.0.outcome() {
+            bridge::Outcome::Rejected(ref error) => write!(f, "{error}"),
+            bridge::Outcome::Refused(bridge::Refusal::CertificateDeclined { reason, .. }) => {
+                write!(
+                    f,
+                    "it declined the certificate of a step it unfolded: {reason}"
+                )
+            },
+            bridge::Outcome::Refused(refusal) => {
+                write!(f, "the bridge did not offer it ({})", refusal.classify())
+            },
+            bridge::Outcome::Data { .. }
+            | bridge::Outcome::Defined { .. }
+            | bridge::Outcome::Assumed { .. }
+            | bridge::Outcome::Marked(_)
+            | bridge::Outcome::Suspended
+            | bridge::Outcome::Static => f.write_str("it crossed"),
         }
     }
 }
@@ -4976,6 +5180,7 @@ mod tests
     use gandr_core_term::Value;
     use gandr_core_term::equal_certificate_syntax;
     use gandr_core_term::equal_type_syntax;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::decode;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::KernelImage;
@@ -5009,8 +5214,10 @@ mod tests
 
     use super::ComposeFault;
     use super::Composed;
+    use super::KernelTier;
     use super::Lowered;
     use super::LoweringCount;
+    use super::Unruled;
     use super::adapt;
     use super::admitted;
     use super::compose;
@@ -6558,6 +6765,75 @@ mod tests
         assert_eq!(
             resumed.artifact, whole,
             "the resumed artifact is the whole one, byte for byte"
+        );
+    }
+
+    /// #2517: an admission keeps one kernel tier per declaration, at its
+    /// position: a definition replayed, an owed one assumed, one the checker
+    /// refused unoffered and a use of it withheld behind it; an endpoint loop
+    /// outside the fragment, with the issue that owes its rule.
+    #[test]
+    fn an_admission_keeps_each_declaration_s_kernel_tier_2517()
+    {
+        let grammar = grammar();
+        let tiers = |text: &str| -> Vec<(usize, KernelTier)> {
+            let Lowered::Module { module, arena } = lower_source(
+                &grammar,
+                SourceText::from(text),
+                &mut LoweringCount::default(),
+            )
+            .expect("the source lowers")
+            .into_lowered()
+            else {
+                panic!("the source is not refused whole");
+            };
+            judge(
+                CorpusRoot::Fixture,
+                (module, SourceText::from(text)),
+                arena,
+                &HostGrant::UNBOUNDED,
+            )
+            .into_parts()
+            .1
+            .admit_retiring(
+                bridge::LeadingCount::NONE,
+                Maybe::Absent(bridge::crossed::Absent::Unasked),
+                &Unretired,
+            )
+            .whole()
+            .tiers
+            .iter()
+            .map(|&(constant, tier)| (usize::from(constant), tier))
+            .collect()
+        };
+        assert_eq!(
+            tiers(
+                r#"def a : Integer ; def a = 1 ; @[ owes(1) ] def later : Integer ; def w : Integer ; def w = "text" ; def r = w ;"#
+            ),
+            vec![
+                (0_usize, KernelTier::Replayed),
+                (1_usize, KernelTier::Assumed),
+                (2_usize, KernelTier::Unoffered),
+                (3_usize, KernelTier::Withheld {
+                    behind: ConstantIndex::from(2_usize)
+                }),
+            ],
+            "each declaration keeps its tier at its own position"
+        );
+        let endpoint_loop = KernelTier::Outside {
+            form: Unruled::Former(UnadmittedFormer::EndpointLoop),
+            class: FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP),
+        };
+        assert_eq!(
+            tiers(include_str!(
+                "compose/fixtures/an-endpoint-loop-settles-with-no-kernel-image-6047.gandr"
+            )),
+            vec![
+                (0_usize, endpoint_loop),
+                (1_usize, endpoint_loop),
+                (2_usize, KernelTier::Replayed),
+            ],
+            "the two loops stand outside the fragment, and the definition beside them replays"
         );
     }
 

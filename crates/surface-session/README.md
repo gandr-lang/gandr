@@ -95,6 +95,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, Example 1.4 and § 6.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite keeps its node across an edit while its stratum, pasting and cell count hold.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel re-assessment (§ kernel-reassessment-design item 9), each declaration's kernel tier, which `Admitted::tiers` hands to the editor.
 
 ## License
 

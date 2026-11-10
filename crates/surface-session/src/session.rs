@@ -285,6 +285,10 @@
 //! - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing
 //!   ratio of iterated composites, which a row read at its kept position
 //!   measures for the declaration it names.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel
+//!   re-assessment (§ kernel-reassessment-design, item 9) — an admission hands
+//!   each declaration's kernel tier to the editor (`Admitted::tiers`), computed
+//!   off the keystroke path.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -347,6 +351,7 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::ImportPath;
+use gandr_surface_dispatcher::KernelTier;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Pool;
@@ -861,6 +866,9 @@ pub struct Admitted
     /// Each declaration the bridge declines for a former the kernel has no
     /// image of, in admission order.
     pub declined: Vec<Declined>,
+    /// Each declaration's kernel tier, in admission order, at its position in
+    /// the readmission: the resumed declarations of the import closure first.
+    pub tiers: Vec<(ConstantIndex, KernelTier)>,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
     /// How many declarations the readmission offered the kernel again; the
@@ -3323,6 +3331,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             kernel,
             positions: resumption.positions,
             declined: resumption.declined,
+            tiers: resumption.tiers,
             checkpoint,
             crossed: DeclarationCount::from(
                 usize::from(resumption.judged).saturating_sub(usize::from(resumption.resumed)),

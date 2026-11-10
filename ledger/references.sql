@@ -480,7 +480,10 @@ INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kerne
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','replay','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-term','support','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','compose','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','schedule','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-lsp','tier','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-session','session','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-checker','capability','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-incremental','typing','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-term','effect::host','lineage',NULL,NULL,NULL);
@@ -664,6 +667,7 @@ INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theor
 INSERT INTO reference VALUES('vault:01a1b32b-755c-7b73-85f1-3055991c2bee','theory-exact-reals','dyadic','exemplar','8f97dfc1113b4fc1febb9a04e053f6cdba9f6861','2026-11-07','efc1b3ca0f4e734dbbec66e0cb9e66048f3844e8');
 INSERT INTO reference VALUES('vault:01a1b53e-d768-7e62-8825-088be647563b','theory-exact-reals','recurrence','exemplar','1c8ce077c60d346ee2ad18982b90b168809e8526','2026-11-07','9d0ddffe5990a84e450a607a284c76457bf5ff76');
 INSERT INTO reference VALUES('vault:01a1b567-b34b-77a2-9ace-075796f0eb3e','core-checker','divergence','exemplar','4a92e372fd0ce78fd4e257276266d7c97b0d8c38','2026-11-07','5e292eca6ae863067b2f03cb2d34ab7d50ebf993');
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','tier','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or
