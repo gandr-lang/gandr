@@ -1704,6 +1704,63 @@ fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result
     Ok(())
 }
 
+/// A token left out before the group of a juxtaposed type in a binder owes
+/// what the call form owes, and the intact result type owes nothing.
+///
+/// A `?` left out of `Run (?(Seat.Dispatch). end)` leaves the `.` of a type
+/// path open in the binder. The slot below `Run` in the result type then
+/// reads as the slot of an expression, and the group of `Run` read as an
+/// expression. Three of its tiles each owed a repair (#6102). The call form
+/// `Run(` opens a form whose slot holds a type, so it owed none. The argument
+/// of a juxtaposition takes the sort of its head. Each row leaves out one
+/// token and writes both types each way.
+#[test]
+fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102()
+-> Result<(), Box<dyn Error>>
+{
+    let declaration = |binder: &str, result: &str| {
+        format!(
+            include_str!(
+                "acceptance/unformatted/a-token-left-out-before-a-juxtaposed-type-s-group-6102.gandr"
+            ),
+            binder = binder,
+            result = result
+        )
+    };
+    let owed = |source: &str| -> Result<Vec<(Oblig, usize)>, Box<dyn Error>> {
+        Ok(parse(built(), SourceText::from(source))?
+            .obligations()
+            .iter()
+            .map(|obligation| (obligation.class, usize::from(obligation.span.start())))
+            .collect())
+    };
+    for (juxtaposed, call) in [
+        (
+            declaration("Run ((Seat.Dispatch). end)", "Run (?(Seat.Dispatch). end)"),
+            declaration("Run((Seat.Dispatch). end)", "Run(?(Seat.Dispatch). end)"),
+        ),
+        (
+            declaration("Run (?(Seat.). end)", "Run (?(Seat.Dispatch). end)"),
+            declaration("Run(?(Seat.). end)", "Run(?(Seat.Dispatch). end)"),
+        ),
+    ] {
+        let called = owed(&call)?;
+        assert!(!called.is_empty(), "the binder owes its repair: {call:?}");
+        let applied = owed(&juxtaposed)?;
+        assert_eq!(
+            called.iter().map(|&(class, _)| class).collect::<Vec<_>>(),
+            applied.iter().map(|&(class, _)| class).collect::<Vec<_>>(),
+            "the juxtaposed type owes what its call owes: {juxtaposed:?}"
+        );
+        let arrow = juxtaposed.find("->").ok_or("the result type is written")?;
+        assert!(
+            applied.iter().all(|&(_, at)| at < arrow),
+            "the result type owes nothing: {juxtaposed:?} owes {applied:?}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {

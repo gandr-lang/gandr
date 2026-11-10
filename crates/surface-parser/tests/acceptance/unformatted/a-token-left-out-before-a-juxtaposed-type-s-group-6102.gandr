@@ -1,0 +1,2 @@
+def run_over_binder(served : {binder}) -> {result} =
+  served
