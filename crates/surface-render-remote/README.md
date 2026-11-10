@@ -1,6 +1,6 @@
 # gandr-surface-render-remote
 
-The renderer seam of the gandr surface: highlight and mark spans, diagnostic and goal cards, transcript blocks and the byte-to-position projections a renderer reads, and the versioned render-bus frame that carries them across a process boundary.
+The renderer seam of the gandr surface: highlight and mark spans, diagnostic and goal cards, transcript blocks and the byte-to-position projections a renderer reads, the versioned render-bus frame that carries them across a process boundary, and the visual language every renderer's output is checked against.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -8,12 +8,13 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
 ## Synopsis
 
-**What.** Three modules of owned data. `present` holds `HlSpan` and `MarkSpan` over a validated `ByteRange`, `DiagCard` and `GoalCard`, `TranscriptBlock` with its `OutKind` lines, `pos_of_byte` and `byte_of_pos`, the projection between a `ByteOffset` and a zero-based `Pos` of row and character column, and `LineIndex`, the projection between a `ByteOffset` and a zero-based `Utf16Pos` of row and UTF-16 column. `diagnostic` holds `DiagnosticCode`, the registry of stable codes with their localizable `DiagnosticTemplate`s, and `DiagnosticMessage`, a code's typed arguments. `wire` holds `RenderFrame`: a `FrameBody` — `Hello`, `Frame` carrying a `ReportView`, `Resync`, `Detach` — routed by a `FrameScope` to the connection or to one `DocId`, under `WIRE_SCHEMA_VERSION`. The crate is `no_std` over `core` and `alloc` and depends on no other workspace crate.
+**What.** Four modules of owned data. `present` holds `HlSpan` and `MarkSpan` over a validated `ByteRange`, `DiagCard` and `GoalCard`, `TranscriptBlock` with its `OutKind` lines, `pos_of_byte` and `byte_of_pos`, the projection between a `ByteOffset` and a zero-based `Pos` of row and character column, and `LineIndex`, the projection between a `ByteOffset` and a zero-based `Utf16Pos` of row and UTF-16 column. `diagnostic` holds `DiagnosticCode`, the registry of stable codes with their localizable `DiagnosticTemplate`s, and `DiagnosticMessage`, a code's typed arguments. `wire` holds `RenderFrame`: a `FrameBody` — `Hello`, `Frame` carrying a `ReportView`, `Resync`, `Detach` — routed by a `FrameScope` to the connection or to one `DocId`, under `WIRE_SCHEMA_VERSION`. `visual` holds the visual language: the five `Warrant`s with their glyphs and colour names, a `Frame` of named fields, the `Rendering` of panes, rows and cells a renderer emits for it, and the twenty `RULES` that `conform` checks the rendering against. The crate is `no_std` over `core` and `alloc` and depends on no other workspace crate.
 
 **Why.** A highlighter, a checker's report and a session loop each produce something a terminal, a language server or an agent paints, and each renderer must read the same vocabulary or the renderers fork. Putting that vocabulary in a crate that parses, lowers, types and marks nothing lets every renderer link it without linking the pipeline, and lets the pipeline project into it once. The frame is the same vocabulary for a renderer in another process.
 
@@ -31,6 +32,7 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 - `DiagnosticCode`, `DIAGNOSTIC_CODES`, `DiagnosticTemplate`, `UnknownDiagnosticCode` and `DiagnosticMessage`: the code registry and the typed arguments. Witnesses: `diagnostic::tests::registry_codes_are_dense_unique_and_round_trip`, `diagnostic::tests::one_message_kind_has_one_code_independent_of_arguments`, `diagnostic::tests::code_wire_image_is_its_stable_spelling`, `diagnostic::tests::message_templates_preserve_argument_roles`.
 - `RenderFrame`, `FrameScope`, `FrameBody`, `ReportView`, `DocId`, `DocumentUri`, `DocVersion`, `WireSchemaVersion` and `WIRE_SCHEMA_VERSION`: the frame. A report carries the document's text at its version, which its byte ranges address, so a renderer that holds no buffer of its own can place them; an image without the text decodes with it empty. Witnesses: `wire::tests::document_scoped_constructors_populate_routing_keys`, `wire::tests::connection_scoped_constructors_omit_routing_keys`, `wire::tests::every_body_variant_round_trips_through_json`, `wire::tests::a_report_written_without_its_source_still_decodes`, `wire::tests::a_frame_is_refused_at_another_schema_version`, `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`, `wire::tests::deserialize_rejects_body_routing_mismatches`, `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`, `wire::tests::decode_refusals_preserve_validation_precedence`, `wire::tests::decode_error_display_preserves_diagnostic_parameters`.
 - `serde`, off by default: the serde image of every type above, with the validating decode of `ByteRange` and `RenderFrame`.
+- `Warrant`, `WARRANTS`, `Glyph`, `Colour`, `DERIVATION_GLYPHS`, `BLOCKS`, `Unit`, `Count`, `Numeral`, `Sparkline`, the frame (`Frame`, `Record`, `Field`, `FieldName`, `Datum`, `Revision`), the rendering (`Rendering`, `Pane`, `Head`, `Row`, `Cell`, `Place`, `Role`, `Align`, `Attribute`) and the check (`RULES`, `Rule`, `Slug`, `conform`, `Shown`, `Breach`, `Spot`, `At`): the palette, the marks a renderer may emit, and the rules as checks over its rendering of a frame. Witnesses: `visual::tests::the_palette_is_the_blueprint_s`, `visual::tests::a_count_reads_as_three_significant_digits`, `visual::tests::a_numeral_matches_one_pattern_per_unit`, `visual::tests::a_rendering_that_keeps_the_language_breaks_no_rule`, `visual::tests::each_rule_refuses_the_rendering_that_breaks_it`, `visual::tests::a_rendering_that_paints_a_border_breaks_no_decoration`.
 
 ## Expected features
 
@@ -100,6 +102,11 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Validated byte ranges, two column units, plain data built by name | [`present`](src/present.rs) |
 | Stable diagnostic codes | [`diagnostic`](src/diagnostic.rs) |
 | The frame | [`wire`](src/wire.rs) |
+| The warrant palette, the rendering data and the twenty rules | [`visual`](src/visual.rs) |
+
+## References
+
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the visual language that `visual` checks.
 
 ## License
 

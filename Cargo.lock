@@ -1336,6 +1336,7 @@ dependencies = [
  "gandr-surface-lsp",
  "gandr-surface-mcp",
  "gandr-surface-parser",
+ "gandr-surface-render-remote",
  "gandr-surface-render-terminal",
  "gandr-surface-repl",
  "gandr-surface-session",

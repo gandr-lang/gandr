@@ -56,7 +56,9 @@ use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_dispatcher::KernelTier;
 use gandr_surface_dispatcher::Unruled;
+use gandr_surface_render_remote::Glyph;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_render_remote::Warrant;
 use quenchant_shape::shape::Maybe;
 use serde::Serialize;
 
@@ -68,53 +70,6 @@ use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
 use crate::recheck::Checked;
 use crate::recheck::Declared;
-
-/// How far a layer vouches for what a mark shows: the one variable that a
-/// mark's glyph and colour carry.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Warrant
-{
-    /// This revision has no verdict yet from the layer shown.
-    Pending,
-    /// The checker accepted it, and the kernel has not replayed the whole.
-    Checked,
-    /// The kernel replayed it.
-    Replayed,
-    /// The kernel refused it.
-    Refused,
-    /// It did not cross to the kernel, and the mark's text says why.
-    Withheld,
-}
-
-impl Warrant
-{
-    /// The warrant's glyph, the same in every face.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn glyph(self) -> Glyph
-    {
-        Glyph(match self {
-            Self::Pending => "·",
-            Self::Checked => "✓",
-            Self::Replayed => "✓✓",
-            Self::Refused => "✗",
-            Self::Withheld => "○",
-        })
-    }
-}
-
-/// The mark that a gutter draws for a warrant, serialised as its text.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
-#[repr(transparent)]
-pub struct Glyph(&'static str);
 
 /// Where the kernel stands on one declaration of an open document.
 #[derive(Clone, Debug, Eq, PartialEq)]
