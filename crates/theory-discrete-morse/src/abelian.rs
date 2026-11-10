@@ -1,4 +1,4 @@
-//! The abelianisation of a scheme: its composites read as integer chains.
+//! The abelianisation of a complex: its composites read as integer chains.
 //!
 //! A chain counts each cell with an integer. It forgets the order of the
 //! cells in a composite and the context of each occurrence, so it is the
@@ -106,34 +106,34 @@ fn chain<Cell>(sum: BTreeMap<Cell, Incidence>) -> Chain<Cell>
     )
 }
 
-/// A scheme read through integer chains: the abelianisation of its
-/// composites.
+/// A complex read through integer chains: the abelianisation of its
+/// composites. It is a scheme when the complex is one.
 #[derive(Debug)]
-pub struct Abelian<'scheme, S>
+pub struct Abelian<'complex, S>
 where
-    S: Scheme,
+    S: Complex,
 {
-    /// The scheme read.
-    scheme: &'scheme mut S,
+    /// The complex read.
+    complex: &'complex mut S,
     /// The faces of the last cell read, kept so that no read allocates once
     /// it has grown.
     faces: Vec<(S::Cell, Incidence)>,
 }
 
-impl<'scheme, S> Abelian<'scheme, S>
+impl<'complex, S> Abelian<'complex, S>
 where
-    S: Scheme,
+    S: Complex,
 {
-    /// `scheme` read through integer chains.
+    /// `complex` read through integer chains.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(scheme: &'scheme mut S) -> Self
+    pub const fn new(complex: &'complex mut S) -> Self
     {
         Self {
-            scheme,
+            complex,
             faces: Vec::new(),
         }
     }
@@ -144,7 +144,7 @@ where
     /// trivial.
     ///
     /// # Errors
-    /// - [`MorseError::Complex`]: the scheme cannot read the faces.
+    /// - [`MorseError::Complex`]: the complex cannot read the faces.
     /// - [`MorseError::Overflow`]: a sum passes the 64-bit integers.
     #[inline]
     pub fn boundary(
@@ -154,7 +154,7 @@ where
     {
         let mut sum = BTreeMap::new();
         self.faces.clear();
-        self.scheme
+        self.complex
             .faces(cell, &mut self.faces)
             .map_err(MorseError::Complex)?;
         add_scaled(&mut sum, &self.faces, Incidence::from(1_i64))?;
@@ -167,7 +167,7 @@ where
     /// trivial.
     ///
     /// # Errors
-    /// - [`MorseError::Complex`]: the scheme cannot read the faces.
+    /// - [`MorseError::Complex`]: the complex cannot read the faces.
     /// - [`MorseError::Overflow`]: a product or a sum passes the 64-bit
     ///   integers.
     fn boundary_of(
@@ -178,7 +178,7 @@ where
         let mut sum = BTreeMap::new();
         for &(ref cell, coefficient) in &of.0 {
             self.faces.clear();
-            self.scheme
+            self.complex
                 .faces(cell, &mut self.faces)
                 .map_err(MorseError::Complex)?;
             add_scaled(&mut sum, &self.faces, coefficient)?;
@@ -189,12 +189,12 @@ where
 
 impl<S> Complex for Abelian<'_, S>
 where
-    S: Scheme,
+    S: Complex,
 {
     type Cell = S::Cell;
     type Fault = MorseError<S::Fault>;
 
-    /// Whether `cell` lies in the scheme's complex.
+    /// Whether `cell` lies in the complex.
     ///
     /// # Specification
     /// trivial.
@@ -204,7 +204,7 @@ where
         cell: &Self::Cell,
     ) -> Result<Standing, Self::Fault>
     {
-        self.scheme.standing(cell).map_err(MorseError::Complex)
+        self.complex.standing(cell).map_err(MorseError::Complex)
     }
 
     /// Push each face of `cell` onto `faces`, with its incidence.
@@ -218,10 +218,10 @@ where
         faces: &mut Vec<(Self::Cell, Incidence)>,
     ) -> Result<(), Self::Fault>
     {
-        self.scheme.faces(cell, faces).map_err(MorseError::Complex)
+        self.complex.faces(cell, faces).map_err(MorseError::Complex)
     }
 
-    /// The scheme's own pairing condition.
+    /// The complex's own pairing condition.
     ///
     /// # Specification
     /// trivial.
@@ -233,7 +233,7 @@ where
         incidence: Incidence,
     ) -> Result<Invertibility, Self::Fault>
     {
-        self.scheme
+        self.complex
             .pairing(face, cell, incidence)
             .map_err(MorseError::Complex)
     }
@@ -253,13 +253,13 @@ where
         cell: &Self::Cell,
     ) -> Result<Class<Self::Cell>, Self::Fault>
     {
-        self.scheme.class(cell).map_err(MorseError::Complex)
+        self.complex.class(cell).map_err(MorseError::Complex)
     }
 }
 
 impl<S> Composites for Abelian<'_, S>
 where
-    S: Scheme,
+    S: Complex,
 {
     type Composite = Chain<S::Cell>;
     type Witness = Chain<S::Cell>;
@@ -341,7 +341,7 @@ where
     ) -> Result<Definition<Self::Composite, Self::Witness>, Self::Fault>
     {
         self.faces.clear();
-        self.scheme
+        self.complex
             .faces(partner, &mut self.faces)
             .map_err(MorseError::Complex)?;
         let mut incidence = Incidence::default();

@@ -34,6 +34,7 @@ use crate::simplices::C;
 use crate::simplices::D;
 use crate::simplices::FILLED;
 use crate::simplices::Facets;
+use crate::simplices::Forged;
 use crate::simplices::HOLLOW;
 use crate::simplices::Refused;
 use crate::simplices::Triangle;
@@ -265,11 +266,9 @@ fn each_complex_has_the_homology_of_its_reduct()
 {
     let (zero, one, two) = (Count::from(0), Count::from(1), Count::from(2));
     for weight in [1_i64, 2_i64] {
-        let mut hollow = Triangle::matched(&[]);
-        hollow.weight = weight;
+        let mut hollow = Triangle { weight };
         assert_eq!(kept(&mut hollow, &HOLLOW), Vec::from([one, one]));
-        let mut filled = Triangle::matched(&[]);
-        filled.weight = weight;
+        let mut filled = Triangle { weight };
         assert_eq!(kept(&mut filled, &FILLED), Vec::from([one, zero, zero]));
     }
     let mut sphere = Facets::sphere();
@@ -316,7 +315,7 @@ fn the_critical_cells_run_by_rank_and_then_by_place()
 #[test]
 fn the_walk_of_the_critical_edge_runs_around_the_circle()
 {
-    let mut complex = Triangle::matched(&[]);
+    let mut complex = Triangle::default();
     let matching = greedy(&mut complex, &HOLLOW).expect("the triangle reads");
     let reduced = reduct(
         &mut matching.on(&mut complex),
@@ -344,7 +343,7 @@ fn the_walk_of_the_critical_edge_runs_around_the_circle()
 fn a_walk_past_its_budget_is_refused()
 {
     // The walk from the edge `ac` reaches the two redundant vertices.
-    let mut complex = Triangle::matched(&[]);
+    let mut complex = Triangle::default();
     let matching = greedy(&mut complex, &HOLLOW).expect("the triangle reads");
     assert_eq!(
         reduct(&mut matching.on(&mut complex), &HOLLOW, Budget::from(1)).map(|_| ()),
@@ -438,8 +437,10 @@ fn a_sum_past_the_integers_is_refused()
 #[test]
 fn a_fault_of_the_scheme_is_given_back_as_its_own()
 {
-    let mut scheme = Triangle::matched(&[]);
-    scheme.refuses.push(C);
+    let mut scheme = Forged {
+        refuses: [C].to_vec(),
+        ..Forged::default()
+    };
     assert_eq!(
         reduct(&mut scheme, &FILLED, Budget::from(FILLED.len())).map(|_| ()),
         Err(MorseError::Complex(Refused(C)))

@@ -133,9 +133,12 @@ where
     }
 }
 
-/// A scheme whose cells compose: the free (n,1)-category on its cells, as the
-/// complex holds it, with the cells between composites one dimension up.
-pub trait Composites: Scheme
+/// A complex whose cells compose: the free (n,1)-category on its cells, as
+/// the complex holds it, with the cells between composites one dimension up.
+///
+/// A [`Scheme`] over the complex gives the class of each cell, as
+/// [`Matched`](crate::Matched) does for a matching that a caller states.
+pub trait Composites: Complex
 {
     /// A composite of cells: a path in a graph, or a whiskered term in a
     /// polygraph.
@@ -671,7 +674,7 @@ where
         budget: Budget,
     ) -> Result<Bound<'bound, S>, Refusal<Cell, S::Fault>>
     where
-        S: Composites<Cell = Cell, Composite = Composite, Witness = Witness>,
+        S: Composites<Cell = Cell, Composite = Composite, Witness = Witness> + Scheme,
     {
         let projection = self.projection(scheme)?;
         let sections = self.sections(scheme)?;
@@ -751,7 +754,7 @@ where
         budget: Budget,
     ) -> Result<(), Refusal<Cell, S::Fault>>
     where
-        S: Composites<Cell = Cell, Composite = Composite, Witness = Witness>,
+        S: Composites<Cell = Cell, Composite = Composite, Witness = Witness> + Scheme,
         Cell: 'cells,
         Cells: IntoIterator<Item = &'cells Cell>,
     {
@@ -893,7 +896,7 @@ where
 
 impl<S> Reduction for Bound<'_, S>
 where
-    S: Composites,
+    S: Composites + Scheme,
 {
     type Cell = S::Cell;
     type Composite = S::Composite;
@@ -1200,7 +1203,7 @@ pub fn equivalence<'cells, Cells, S>(
     budget: Budget,
 ) -> Result<EquivalenceOf<S>, Refusal<S::Cell, S::Fault>>
 where
-    S: Composites,
+    S: Composites + Scheme,
     S::Cell: 'cells,
     Cells: IntoIterator<Item = &'cells S::Cell>,
 {

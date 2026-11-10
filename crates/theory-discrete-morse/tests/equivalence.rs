@@ -8,7 +8,6 @@ use core::fmt::Debug;
 
 use gandr_theory_discrete_morse::Abelian;
 use gandr_theory_discrete_morse::Budget;
-use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Composites;
@@ -24,7 +23,6 @@ use gandr_theory_discrete_morse::PartIndex;
 use gandr_theory_discrete_morse::Place;
 use gandr_theory_discrete_morse::Reduction;
 use gandr_theory_discrete_morse::Refusal;
-use gandr_theory_discrete_morse::Scheme;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_discrete_morse::Sum;
 use gandr_theory_discrete_morse::SumFault;
@@ -209,7 +207,8 @@ enum Search
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Refused(Name);
 
-/// A test graph with the pairs a test states and the search it runs.
+/// A test graph and the search it runs. A test reads the pairs it states over
+/// the graph through `Matching::on`.
 #[derive(Debug)]
 struct Graph
 {
@@ -217,8 +216,6 @@ struct Graph
     vertices: Vec<Name>,
     /// Each edge with its source and its target.
     edges: Vec<(Name, Name, Name)>,
-    /// Each pair: a redundant vertex and its partner edge.
-    pairs: Vec<(Name, Name)>,
     /// How a redundant vertex is defined.
     search: Search,
 }
@@ -226,33 +223,30 @@ struct Graph
 impl Graph
 {
     /// Doré's graph `two`: the vertices `true` and `false`, and the edges
-    /// `there : true → false` and `back : false → true`, with `pairs` and the
-    /// honest search.
+    /// `there : true → false` and `back : false → true`, with the honest
+    /// search.
     ///
     /// # Specification
     /// trivial.
-    fn two(pairs: &[(Name, Name)]) -> Self
+    fn two() -> Self
     {
         Self {
             vertices: [TRUE, FALSE].to_vec(),
             edges: [(THERE, TRUE, FALSE), (BACK, FALSE, TRUE)].to_vec(),
-            pairs: pairs.to_vec(),
             search: Search::Honest,
         }
     }
 
     /// The triangle: the vertices `a`, `b` and `c`, and the edges
-    /// `p : a → b`, `q : b → c` and `r : c → a`, with `pairs` and the honest
-    /// search.
+    /// `p : a → b`, `q : b → c` and `r : c → a`, with the honest search.
     ///
     /// # Specification
     /// trivial.
-    fn triangle(pairs: &[(Name, Name)]) -> Self
+    fn triangle() -> Self
     {
         Self {
             vertices: [A, B, C].to_vec(),
             edges: [(P, A, B), (Q, B, C), (R, C, A)].to_vec(),
-            pairs: pairs.to_vec(),
             search: Search::Honest,
         }
     }
@@ -287,14 +281,11 @@ impl Graph
 }
 
 /// The graph of the target cells of `reduction`, each edge between the
-/// images of its ends, with `pairs` and the honest search.
+/// images of its ends, with the honest search.
 ///
 /// # Specification
 /// trivial.
-fn reduced<R>(
-    reduction: &mut R,
-    pairs: &[(Name, Name)],
-) -> Graph
+fn reduced<R>(reduction: &mut R) -> Graph
 where
     R: Reduction<Cell = Name, Composite = Path>,
     R::Fault: Debug,
@@ -302,7 +293,6 @@ where
     let mut graph = Graph {
         vertices: Vec::new(),
         edges: Vec::new(),
-        pairs: pairs.to_vec(),
         search: Search::Honest,
     };
     for cell in reduction.target().to_vec() {
@@ -372,29 +362,6 @@ impl Complex for Graph
             faces.push((source, Incidence::from(-1_i64)));
         }
         Ok(())
-    }
-}
-
-impl Scheme for Graph
-{
-    /// The class that the stated pairs give.
-    ///
-    /// # Specification
-    /// trivial.
-    fn class(
-        &mut self,
-        cell: &Name,
-    ) -> Result<Class<Name>, Refused>
-    {
-        for &(redundant, partner) in &self.pairs {
-            if redundant == *cell {
-                return Ok(Class::Redundant(partner));
-            }
-            if partner == *cell {
-                return Ok(Class::Collapsible(redundant));
-            }
-        }
-        Ok(Class::Critical)
     }
 }
 
@@ -636,12 +603,14 @@ impl Composites for Graph
 fn the_graph_two_collapses_onto_one_vertex_and_one_loop()
 {
     let room = Budget::from(ROOM);
-    let mut two = Graph::two(&[(FALSE, BACK)]);
+    let matching = Matching::stated([(FALSE, BACK)]);
+    let mut two = Graph::two();
     let cells = two.cells();
-    let built = equivalence(&mut two, &cells, room).expect("an acyclic matching");
+    let mut scheme = matching.on(&mut two);
+    let built = equivalence(&mut scheme, &cells, room).expect("an acyclic matching");
     assert_eq!(built.critical(), [TRUE, THERE]);
     let mut bound = built
-        .on(&mut two, &cells, room)
+        .on(&mut scheme, &cells, room)
         .expect("the equivalence reads");
     // `φ` sends `false` to its sink, the matched edge to the identity there,
     // and the edge `true → false` to the loop of the reduct.
@@ -669,12 +638,14 @@ fn the_graph_two_collapses_onto_one_vertex_and_one_loop()
 fn a_forged_witness_is_refused_by_name()
 {
     let room = Budget::from(ROOM);
-    let mut two = Graph::two(&[(FALSE, BACK)]);
+    let matching = Matching::stated([(FALSE, BACK)]);
+    let mut two = Graph::two();
     two.search = Search::Forged;
     let cells = two.cells();
-    let built = equivalence(&mut two, &cells, room).expect("the build trusts the search");
+    let mut scheme = matching.on(&mut two);
+    let built = equivalence(&mut scheme, &cells, room).expect("the build trusts the search");
     assert_eq!(
-        built.replay(&mut two, &cells, room),
+        built.replay(&mut scheme, &cells, room),
         Err(Refusal::Forged(FALSE))
     );
 }
@@ -684,10 +655,11 @@ fn a_matching_with_a_cycle_is_refused_by_name()
 {
     // Both vertices pair with the edge that leaves them, so the gradient runs
     // from `true` to `false` and back.
-    let mut two = Graph::two(&[(TRUE, THERE), (FALSE, BACK)]);
+    let matching = Matching::stated([(TRUE, THERE), (FALSE, BACK)]);
+    let mut two = Graph::two();
     let cells = two.cells();
     assert_eq!(
-        equivalence(&mut two, &cells, Budget::from(ROOM)),
+        equivalence(&mut matching.on(&mut two), &cells, Budget::from(ROOM)),
         Err(Refusal::Cycle(Count::from(1)))
     );
 }
@@ -695,11 +667,12 @@ fn a_matching_with_a_cycle_is_refused_by_name()
 #[test]
 fn a_definition_through_its_own_cell_is_circular()
 {
-    let mut two = Graph::two(&[(FALSE, BACK)]);
+    let matching = Matching::stated([(FALSE, BACK)]);
+    let mut two = Graph::two();
     two.search = Search::Circular;
     let cells = two.cells();
     assert_eq!(
-        equivalence(&mut two, &cells, Budget::from(ROOM)),
+        equivalence(&mut matching.on(&mut two), &cells, Budget::from(ROOM)),
         Err(Refusal::Circular(FALSE))
     );
 }
@@ -708,13 +681,15 @@ fn a_definition_through_its_own_cell_is_circular()
 fn a_matching_with_no_pair_gives_the_identity()
 {
     let room = Budget::from(ROOM);
-    let mut two = Graph::two(&[]);
+    let none = Matching::<Name>::stated([]);
+    let mut two = Graph::two();
     let cells = two.cells();
-    let built = equivalence(&mut two, &cells, room).expect("an acyclic matching");
+    let mut scheme = none.on(&mut two);
+    let built = equivalence(&mut scheme, &cells, room).expect("an acyclic matching");
     assert_eq!(built.critical(), cells.as_slice());
     assert!(built.removals().is_empty());
     let mut bound = built
-        .on(&mut two, &cells, room)
+        .on(&mut scheme, &cells, room)
         .expect("the equivalence reads");
     for &cell in &cells {
         let generator = bound.generator(&cell).expect("a cell of two");
@@ -729,23 +704,27 @@ fn a_matching_with_no_pair_gives_the_identity()
 fn two_collapses_compose_in_sequence()
 {
     let room = Budget::from(ROOM);
-    let mut triangle = Graph::triangle(&[(B, P)]);
+    let b_onto_a = Matching::stated([(B, P)]);
+    let c_onto_a = Matching::stated([(C, Q)]);
+    let mut triangle = Graph::triangle();
     let cells = triangle.cells();
-    let first = equivalence(&mut triangle, &cells, room).expect("an acyclic matching");
+    let mut base = b_onto_a.on(&mut triangle);
+    let first = equivalence(&mut base, &cells, room).expect("an acyclic matching");
     let mut lower = first
-        .on(&mut triangle, &cells, room)
+        .on(&mut base, &cells, room)
         .expect("the equivalence reads");
     // The first collapse sends `b` to `a`, so `q` runs from `a` to `c`.
-    let mut middle = reduced(&mut lower, &[(C, Q)]);
+    let mut middle = reduced(&mut lower);
     assert_eq!(middle.edges, [(Q, A, C), (R, C, A)]);
     let inner = middle.cells();
-    let second = equivalence(&mut middle, &inner, room).expect("an acyclic matching");
-    let last = reduct(&mut middle, &inner, room)
+    let mut next = c_onto_a.on(&mut middle);
+    let second = equivalence(&mut next, &inner, room).expect("an acyclic matching");
+    let last = reduct(&mut next, &inner, room)
         .expect("the reduct")
         .cells()
         .to_vec();
     let upper = second
-        .on(&mut middle, &inner, room)
+        .on(&mut next, &inner, room)
         .expect("the equivalence reads");
     let mut both = lower.then(upper);
     assert_eq!(both.target(), last.as_slice());
@@ -784,18 +763,22 @@ fn two_collapses_compose_in_sequence()
 fn a_composite_over_other_cells_is_unmatched()
 {
     let room = Budget::from(ROOM);
-    let mut triangle = Graph::triangle(&[(B, P)]);
+    let b_onto_a = Matching::stated([(B, P)]);
+    let none = Matching::<Name>::stated([]);
+    let mut triangle = Graph::triangle();
     let cells = triangle.cells();
-    let first = equivalence(&mut triangle, &cells, room).expect("an acyclic matching");
+    let mut base = b_onto_a.on(&mut triangle);
+    let first = equivalence(&mut base, &cells, room).expect("an acyclic matching");
     let lower = first
-        .on(&mut triangle, &cells, room)
+        .on(&mut base, &cells, room)
         .expect("the equivalence reads");
     // The second reduction reads the whole triangle, not the first target.
-    let mut whole = Graph::triangle(&[]);
+    let mut whole = Graph::triangle();
     let all = whole.cells();
-    let second = equivalence(&mut whole, &all, room).expect("an acyclic matching");
+    let mut bare = none.on(&mut whole);
+    let second = equivalence(&mut bare, &all, room).expect("an acyclic matching");
     let upper = second
-        .on(&mut whole, &all, room)
+        .on(&mut bare, &all, room)
         .expect("the equivalence reads");
     assert_eq!(lower.then(upper).replay(), Err(Refusal::Unmatched(Some(C))));
 }
@@ -804,16 +787,20 @@ fn a_composite_over_other_cells_is_unmatched()
 fn a_sum_reads_each_cell_in_its_own_part()
 {
     let room = Budget::from(ROOM);
-    let mut left = Graph::triangle(&[(B, P)]);
-    let mut right = Graph::triangle(&[(C, Q)]);
+    let b_onto_a = Matching::stated([(B, P)]);
+    let c_onto_b = Matching::stated([(C, Q)]);
+    let mut left = Graph::triangle();
+    let mut right = Graph::triangle();
     let cells = left.cells();
-    let first = equivalence(&mut left, &cells, room).expect("an acyclic matching");
-    let second = equivalence(&mut right, &cells, room).expect("an acyclic matching");
+    let mut left_scheme = b_onto_a.on(&mut left);
+    let mut right_scheme = c_onto_b.on(&mut right);
+    let first = equivalence(&mut left_scheme, &cells, room).expect("an acyclic matching");
+    let second = equivalence(&mut right_scheme, &cells, room).expect("an acyclic matching");
     let lower = first
-        .on(&mut left, &cells, room)
+        .on(&mut left_scheme, &cells, room)
         .expect("the equivalence reads");
     let upper = second
-        .on(&mut right, &cells, room)
+        .on(&mut right_scheme, &cells, room)
         .expect("the equivalence reads");
     let critical = [lower.target().to_vec(), upper.target().to_vec()];
     let mut sum = Sum::new(Vec::from([lower, upper]));
@@ -874,30 +861,37 @@ fn a_sum_reads_each_cell_in_its_own_part()
 fn a_part_that_does_not_replay_is_refused_with_its_part()
 {
     let room = Budget::from(ROOM);
-    let mut honest = Graph::triangle(&[(B, P)]);
+    let b_onto_a = Matching::stated([(B, P)]);
+    let c_onto_a = Matching::stated([(C, Q)]);
+    let none = Matching::<Name>::stated([]);
+    let mut honest = Graph::triangle();
     let cells = honest.cells();
-    let first = equivalence(&mut honest, &cells, room).expect("an acyclic matching");
+    let mut base = b_onto_a.on(&mut honest);
+    let first = equivalence(&mut base, &cells, room).expect("an acyclic matching");
     let mut lower = first
-        .on(&mut honest, &cells, room)
+        .on(&mut base, &cells, room)
         .expect("the equivalence reads");
-    let mut middle = reduced(&mut lower, &[(C, Q)]);
+    let mut middle = reduced(&mut lower);
     let inner = middle.cells();
-    let second = equivalence(&mut middle, &inner, room).expect("an acyclic matching");
+    let mut next = c_onto_a.on(&mut middle);
+    let second = equivalence(&mut next, &inner, room).expect("an acyclic matching");
     let upper = second
-        .on(&mut middle, &inner, room)
+        .on(&mut next, &inner, room)
         .expect("the equivalence reads");
     // The second part's second reduction reads the whole triangle, not the
     // first target.
-    let mut other = Graph::triangle(&[(B, P)]);
-    let again = equivalence(&mut other, &cells, room).expect("an acyclic matching");
+    let mut other = Graph::triangle();
+    let mut repeated = b_onto_a.on(&mut other);
+    let again = equivalence(&mut repeated, &cells, room).expect("an acyclic matching");
     let below = again
-        .on(&mut other, &cells, room)
+        .on(&mut repeated, &cells, room)
         .expect("the equivalence reads");
-    let mut whole = Graph::triangle(&[]);
+    let mut whole = Graph::triangle();
     let all = whole.cells();
-    let plain = equivalence(&mut whole, &all, room).expect("an acyclic matching");
+    let mut bare = none.on(&mut whole);
+    let plain = equivalence(&mut bare, &all, room).expect("an acyclic matching");
     let above = plain
-        .on(&mut whole, &all, room)
+        .on(&mut bare, &all, room)
         .expect("the equivalence reads");
     let mut sum = Sum::new(Vec::from([lower.then(upper), below.then(above)]));
     assert_eq!(
@@ -1094,11 +1088,9 @@ fn abelianises<C>(
 fn the_abelianisation_gives_the_morse_boundary_of_the_reduct()
 {
     for weight in [1_i64, 2_i64] {
-        let mut hollow = Triangle::matched(&[]);
-        hollow.weight = weight;
+        let mut hollow = Triangle { weight };
         abelianises(&mut hollow, &HOLLOW);
-        let mut filled = Triangle::matched(&[]);
-        filled.weight = weight;
+        let mut filled = Triangle { weight };
         abelianises(&mut filled, &FILLED);
     }
     for mut surface in [
