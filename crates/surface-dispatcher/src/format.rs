@@ -809,62 +809,6 @@ mod tests
     }
 
     #[test]
-    fn a_linear_run_is_written_away_beside_a_checker()
-    {
-        let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-        let source =
-            include_str!("format/unformatted/a-linear-run-is-written-away-beside-a-checker.gandr");
-        let sugared = include_str!(
-            "format/unformatted/a-linear-run-is-written-away-beside-a-checker-sugared.gandr"
-        );
-        let options = FormatOptions {
-            form: gandr_surface_format::Form::Sugared,
-            ..FormatOptions::default()
-        };
-        let format = |text: &str, checker: Option<&dyn gandr_surface_format::Elaborate>| {
-            let parsed = gandr_surface_parser::parse(&grammar, SourceText::from(text))
-                .expect("the source parses");
-            let formatted = gandr_surface_format::format_beside(
-                &grammar,
-                &parsed,
-                options,
-                (gandr_surface_format::Beside::Alone, checker),
-            )
-            .expect("the source formats");
-            let withdrawn: Vec<(String, gandr_surface_format::Withdrawn)> = formatted
-                .withdrawn()
-                .iter()
-                .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
-                .collect();
-            (formatted.into_text(), withdrawn)
-        };
-        let suspended = || {
-            vec![(
-                String::from("suspended"),
-                gandr_surface_format::Withdrawn::Lowered,
-            )]
-        };
-        assert_eq!(
-            format(source, Some(&crate::compose::Elaborating)),
-            (String::from(sugared), suspended()),
-            "beside the checker the runs ending a block whose binders its tail reads once each, \
-             first and in order, are written at their reads, a pair at once and a chain shedding \
-             its last link; one whose call the checker would suspend at a thunk-typed parameter \
-             rather than run elaborates otherwise, and keeps its spelling"
-        );
-        assert_eq!(
-            format(sugared, Some(&crate::compose::Elaborating)),
-            (String::from(sugared), suspended()),
-            "a second pass writes away nothing more"
-        );
-        assert_eq!(
-            format(source, None),
-            (String::from(source), Vec::new()),
-            "without a checker no `let` statement is written away"
-        );
-    }
-
-    #[test]
     fn a_thunk_the_checker_inserts_is_left_to_it_1327()
     {
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");

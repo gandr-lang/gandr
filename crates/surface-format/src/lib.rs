@@ -284,8 +284,6 @@ mod layout;
 
 mod leaf;
 
-mod linear;
-
 mod meaning;
 
 mod merge;
@@ -880,11 +878,10 @@ pub fn format_beside(
     let checker = chosen.and(lowered.as_ref()).and(checker);
     let mut elaborations: Elaborations = match (lowered.as_ref(), checker) {
         (Some(module), Some(checker))
-            if !module.linear_runs().is_empty()
-                || module
-                    .elidable_exits()
-                    .iter()
-                    .any(|exit| exit.returned == Returned::Run)
+            if module
+                .elidable_exits()
+                .iter()
+                .any(|exit| exit.returned == Returned::Run)
                 || !module.reducts().is_empty()
                 || !module.forgets().is_empty() =>
         {
@@ -907,10 +904,6 @@ pub fn format_beside(
             elaborations.as_ref().map(|_| unchecked.as_slice()),
         ),
         (Some(_) | None, _) => tail::Tails::default(),
-    };
-    let runs = match (lowered.as_ref(), elaborations.as_ref()) {
-        (Some(module), Some(_)) => linear::Runs::of(module, base, unchecked.clone()),
-        (Some(_) | None, _) => linear::Runs::default(),
     };
     let reducts = match (lowered.as_ref(), elaborations.as_ref()) {
         (Some(module), Some(elaboration))
@@ -954,7 +947,6 @@ pub fn format_beside(
         let every = tail::Tails::any();
         // A refused declaration has no lowering to list its linear runs from,
         // so none is reported for one.
-        let unlisted = linear::Runs::default();
         let unthunked = thunk::Thunks::default();
         let unapplied = Reducts::default();
         let whole: Vec<ByteSpan> = everywhere.into_iter().collect();
@@ -969,7 +961,6 @@ pub fn format_beside(
                         withdrawn: &[],
                         composites: &any,
                         tails: &every,
-                        runs: &unlisted,
                         thunks: &unthunked,
                         reducts: &unapplied,
                         unreduced: &[],
@@ -1018,7 +1009,6 @@ pub fn format_beside(
                 withdrawn: spans.as_slice(),
                 composites: &composites,
                 tails: &tails,
-                runs: &runs,
                 thunks: &thunks,
                 reducts: &reducts,
                 unreduced: unreduced.as_slice(),

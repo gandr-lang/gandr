@@ -1279,55 +1279,26 @@ impl Elaborate for Oracle
     }
 }
 
-/// A `let` statement the lowering lists as linear follows the checker: it is
-/// written at its read where the checker elaborates both spellings to one
-/// body, withdrawn and reported where it elaborates them otherwise, and kept
-/// with nothing reported where it refuses the source as written. The
-/// checker's own verdict on a real source is the dispatcher's to witness.
 #[test]
-fn a_linear_run_follows_the_checker_s_elaborations()
+fn a_let_of_a_call_stays_6209()
 {
     let grammar = grammar();
-    let source =
-        include_str!("rewrite/unformatted/a-linear-run-follows-the-checker-s-elaborations.gandr");
-    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Sugared,
-        ..FormatOptions::default()
-    };
-    let format = |answer: Answer| {
+    let format = |source: &str| {
+        let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
         let oracle = Oracle {
-            answer,
+            answer: Answer::Alike,
             asked: Cell::new(0),
         };
-        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, Some(&oracle)))
-            .expect("the source formats");
-        let withdrawn: Vec<(String, Withdrawn)> = formatted
-            .withdrawn()
-            .iter()
-            .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
-            .collect();
-        (formatted.into_text(), withdrawn)
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        format_beside(&grammar, &parsed, options, (Beside::Alone, Some(&oracle)))
+            .expect("the source formats")
+            .into_text()
     };
-    let written = source.replace("\n  let m = twice n;\n  Succ m\n", "\n  Succ (twice n)\n");
-    assert_eq!(
-        format(Answer::Alike),
-        (written, Vec::new()),
-        "elaborated alike, the run is written at its read"
-    );
-    assert_eq!(
-        format(Answer::Apart),
-        (
-            String::from(source),
-            Vec::from([(String::from("field"), Withdrawn::Lowered)])
-        ),
-        "elaborated otherwise, the declaration keeps its spelling, reported"
-    );
-    assert_eq!(
-        format(Answer::Refused),
-        (String::from(source), Vec::new()),
-        "refused as written, no run is written away and nothing is withdrawn"
-    );
+    let source = include_str!("rewrite/unformatted/a-let-of-a-call-stays.gandr");
+    assert_eq!(format(source), source);
 }
 
 /// #2255: a tail's `return` of a call follows the checker as a linear run
@@ -1556,7 +1527,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "tail-return",
             "inserted-returner",
             "short-alias",
-            "linear-run",
             "inserted-thunk",
             "inserted-reduct",
             "inserted-forget",
