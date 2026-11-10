@@ -185,12 +185,13 @@
     "output": ["check:claims", "check:landing", "check:typos"]
   },
   {
-    "name": "#5458: the landing's gate runs no corpus or extension check, and no Rust check for a corpus source",
+    "name": "#5458: the landing's gate runs no extension check and no Rust check for a corpus source, and of the corpus checks only the comment check (#6365)",
     "program": "select.jq",
     "input": {
       "tasks": [
         "check:claims",
         "check:corpus",
+        "check:corpus-comments",
         "check:extension",
         "check:landing",
         "check:typos",
@@ -199,7 +200,25 @@
       "changed": ["corpus/model/basics/definitions.gandr", "contrib/gandr-vscode/src/extension.ts"],
       "landing": true
     },
-    "output": ["check:claims", "check:typos"]
+    "output": ["check:claims", "check:corpus-comments", "check:typos"]
+  },
+  {
+    "name": "#6365: the landing's gate of a parser change keeps the comment check beside Clippy and the compiler policy",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:corpus-comments",
+        "check:doc",
+        "check:landing",
+        "check:tests-enforcing",
+        "check:typos"
+      ],
+      "changed": ["crates/surface-parser/src/meld.rs"],
+      "landing": true
+    },
+    "output": ["check:claims", "check:corpus-comments", "check:landing", "check:typos"]
   },
   {
     "name": "#4911: a check building the toolchain outside every group is a finding",

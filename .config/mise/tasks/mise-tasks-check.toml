@@ -1997,9 +1997,10 @@ run = ".config/mise/host-lock-cases.bash"
 # The checks a change selects (#4911): `.config/gate-scope/cases.json` holds
 # `select.jq` over the table, a workflow-only change selecting no Rust check, a
 # crate's source the whole wall and an unmapped path every check, and for the
-# landing's gate (#5458) a crate's source keeping the light checks and
-# `check:landing` and a corpus or extension source keeping the light checks
-# alone. It holds
+# landing's gate (#5458) a crate's source keeping the light checks,
+# `check:landing` and `check:corpus-comments`, a corpus source keeping the
+# light checks and `check:corpus-comments`, and an extension source keeping
+# the light checks alone (#6365). It holds
 # `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
 # change the whole workspace and a change growing by its dependents, and
 # `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a

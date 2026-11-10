@@ -62,5 +62,12 @@
     "own": ["corpus/uncommented.ledger"],
     "crates": [],
     "due": ["the comment ledger"]
+  },
+  {
+    "name": "#6365: the base moves the parser under a rewritten comment ledger, so the ledger is due",
+    "moved": ["crates/surface-parser/src/meld.rs"],
+    "own": ["corpus/uncommented.ledger"],
+    "crates": ["surface-parser"],
+    "due": ["the comment ledger"]
   }
 ]

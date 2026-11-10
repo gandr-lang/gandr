@@ -13,10 +13,13 @@
 # and always runs.
 #
 # Six lanes ran the full suite on their hosts before each pull request opened,
-# and the hosts could not carry that load (#5458). The merge group runs every
-# check, so the landing's gate (`mise run check`) keeps only the heavy checks
-# that the table's `landing` list names: Clippy and the compiler policy
-# (`check:landing`). The light checks stay, since each takes seconds.
+# and the hosts could not carry that load (#5458). The integration cycle runs
+# every check (#5438), so the landing's gate (`mise run check`) keeps only the
+# heavy checks that the table's `landing` list names. These are Clippy and the
+# compiler policy (`check:landing`), and the item comments of the corpus
+# (`check:corpus-comments`). A parser change can move the comment ledger. The
+# queue on `landing` does not run the comment check, so the gate runs it
+# (#6365). The light checks stay, since each takes seconds.
 #
 # Input:
 #   tasks    every `check:*` task's name

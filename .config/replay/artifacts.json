@@ -31,7 +31,13 @@
   {
     "name": "the comment ledger",
     "paths": ["corpus/uncommented.ledger"],
-    "inputs": ["corpus/", "crates/surface-corpus/tests/comments/"],
+    "inputs": [
+      "corpus/",
+      "crates/surface-corpus/tests/comments/",
+      "crates/surface-parser/",
+      "crates/surface-grammar/",
+      "crates/surface-syntax/"
+    ],
     "check": "mise run check:corpus-comments",
     "record": "CORPUS_COMMENTS_WRITE_LEDGER=1 mise run check:corpus-comments"
   },
