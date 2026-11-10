@@ -17,7 +17,6 @@
 //!   system, and on a ground block it joins exactly what completion joins.
 
 use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -28,7 +27,6 @@ use gandr_theory_coherent_resolutions::Operation;
 use gandr_theory_coherent_resolutions::TermHead;
 use gandr_theory_coherent_resolutions::TermNode;
 use gandr_theory_coherent_resolutions::TermPlace;
-use gandr_theory_coherent_resolutions::TermTable;
 use gandr_theory_e_graphs::Budget;
 use gandr_theory_e_graphs::Count;
 use gandr_theory_e_graphs::EGraph;
@@ -108,36 +106,6 @@ fn rules_kind(rules: &[(FreeTerm, FreeTerm)]) -> Rules
         }
     }
     Rules::Ground
-}
-
-/// The terms of `rules` with each of their arguments, in order of place.
-///
-/// # Specification
-/// trivial.
-fn subterms(
-    table: &TermTable,
-    rules: &[(TermPlace, TermPlace)],
-) -> Vec<TermPlace>
-{
-    let mut found = BTreeSet::new();
-    let mut pending: Vec<TermPlace> = rules
-        .iter()
-        .copied()
-        .flat_map(<[TermPlace; 2]>::from)
-        .collect();
-    while let Some(place) = pending.pop() {
-        if found.insert(place) {
-            pending.extend(
-                table
-                    .node(place)
-                    .expect("a rule term")
-                    .children
-                    .iter()
-                    .copied(),
-            );
-        }
-    }
-    found.into_iter().collect()
 }
 
 /// The ground terms of `theory`'s operations, by size up to [`SEED_SIZE`],
@@ -301,8 +269,10 @@ where
 #[test]
 fn each_ground_block_joins_exactly_what_completion_joins()
 {
+    // The table of a ground block holds the terms of its rules with each of
+    // their arguments, and no other term.
     let found = findings(|rules, theory| {
-        (rules_kind(rules) == Rules::Ground).then(|| subterms(theory.table(), theory.rules()))
+        (rules_kind(rules) == Rules::Ground).then(|| theory.table().issued().collect())
     });
     assert!(!found.is_empty(), "the corpus holds ground blocks");
     for finding in &found {

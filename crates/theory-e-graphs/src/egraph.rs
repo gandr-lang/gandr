@@ -803,7 +803,9 @@ where
         let mut roots = mem::take(&mut self.scratch.classes);
         let datum = self.make(at, &mut roots)?;
         let index = usize::from(at);
-        let len = index.saturating_add(1);
+        // The table holds `at`, so the count of its places is more than
+        // `index`. Each array gets one slot for each place of the table.
+        let len = self.table.issued().len();
         if self.leader.len() < len {
             self.leader.resize(len, ABSENT);
             self.members.resize(len, 0);
