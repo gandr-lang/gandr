@@ -1,12 +1,15 @@
-// A presentation wider than one round of the checker's unfolding fuel
-// computes the type of its entries.
+// This source holds two presentations wider than one round of the checker's
+// unfolding fuel. `Named` has 64 constants at `String`. `Flags` has 48
+// constants at `Bool`. The entries of each model check at the type that its
+// presentation computes.
 //
 // `std.build`'s `modelType` computes the type of a presentation's entries,
-// one entry for each constant. `Named` has 64 constants at `String`, and
-// `Flags` has 48 constants at `Bool`. The entries of each model check at
-// the type that its presentation computes. The checker reads a computed type
-// with one budget for the whole reading, so one round can unfold the whole
-// presentation.
+// one entry for each constant. A wide presentation unfolds in many steps. A
+// small budget for each round of the reading cannot unfold it.
+//
+// The checker reads a computed type with one budget for the whole reading.
+// It fills the solved holes of the type in one walk. So one round unfolds
+// the whole presentation.
 //
 // - see: #6046 — `modelType`
 // - see: #6181
