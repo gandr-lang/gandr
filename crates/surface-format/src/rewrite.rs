@@ -43,7 +43,6 @@ use crate::leaf::Material;
 use crate::leaf::Offside;
 use crate::leaf::Owner;
 use crate::leaf::copied;
-use crate::linear::Runs;
 use crate::merge::Joining;
 use crate::merge::Pairing;
 use crate::merge::Returning;
@@ -111,10 +110,6 @@ pub enum RewriteName
     /// The value-function alias at its shortest: `(A) => B` and `A => B`, a
     /// binder nothing later reads left out; only the sugared form moves it.
     ShortAlias,
-    /// A `let` statement that only sequences a call: `let x = c ; f(x)` and
-    /// `f(c)`, where the lowering finds the binder read once, first; only the
-    /// sugared form moves it, and only beside a checker that elaborates both.
-    LinearRun,
     /// A thunk the checker inserts: `thunk { e }` and `e`, where the checker
     /// checks `e` against a thunk type; only the sugared form moves it, and
     /// only beside a checker that elaborates both.
@@ -167,7 +162,6 @@ impl fmt::Display for RewriteName
             Self::TailReturn => "tail-return",
             Self::InsertedReturner => "inserted-returner",
             Self::ShortAlias => "short-alias",
-            Self::LinearRun => "linear-run",
             Self::InsertedThunk => "inserted-thunk",
             Self::InsertedReduct => "inserted-reduct",
             Self::InsertedForget => "inserted-forget",
@@ -218,7 +212,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 33] = [
+pub const REWRITES: [Rewrite; 32] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -389,14 +383,6 @@ pub const REWRITES: [Rewrite; 33] = [
         mold: MoldName("function_type"),
         from: Spelling("(x : A) -> B"),
         to: Spelling("A -> B"),
-        enabled: Enabled::On,
-    },
-    Rewrite {
-        name: RewriteName::LinearRun,
-        direction: Direction::Sugar,
-        mold: MoldName("block"),
-        from: Spelling("let x = c ; f x"),
-        to: Spelling("f c"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -785,16 +771,6 @@ enum Open
     No,
 }
 
-/// Where a part of a form begins among the leaves written for it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Start
-{
-    /// The index of the first leaf of the layout before the part.
-    layout: usize,
-    /// The index of the part's own first leaf.
-    own: usize,
-}
-
 /// What a respelled form is, as a form around it reads it.
 #[derive(Clone, Debug)]
 enum Shape<'source>
@@ -826,25 +802,6 @@ enum Shape<'source>
         /// The value type it returns.
         result: Child<'source>,
     },
-    /// A block whose statements are all written away: its one computation,
-    /// as the form around it may write it without the braces.
-    Braced
-    {
-        /// The computation's leaves.
-        entry: Vec<Leaf<'source>>,
-        /// How tightly the computation binds.
-        band: Band,
-    },
-}
-
-/// Whether writing a block's linear runs away left it no statement.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Emptied
-{
-    /// Every statement is written away, and no comment stands among them.
-    Yes,
-    /// A statement or a comment stays.
-    No,
 }
 
 /// Whether a parenthesised list binds a name.
@@ -959,8 +916,6 @@ struct Respelling<'run, 'source>
     composites: &'source Composites,
     /// The `return` forms written as their value.
     tails: &'source Tails,
-    /// The `let` statements written away, each call at its binder's read.
-    runs: &'source Runs,
     /// Where a thunk is left to the checker.
     thunks: &'source Thunks,
     /// The reducts the module mints and where the checker applies them.
@@ -1074,8 +1029,6 @@ pub struct Rewrites<'run, 'source>
     pub composites: &'source Composites,
     /// The `return` forms written as their value.
     pub tails: &'source Tails,
-    /// The `let` statements written away, each call at its binder's read.
-    pub runs: &'source Runs,
     /// Where a thunk is left to the checker.
     pub thunks: &'source Thunks,
     /// The reducts the module mints and where the checker applies them.
@@ -1131,7 +1084,6 @@ pub fn respell<'source>(
         refused: rewrites.withdrawn,
         composites: rewrites.composites,
         tails: rewrites.tails,
-        runs: rewrites.runs,
         thunks: rewrites.thunks,
         reducts: rewrites.reducts,
         unreduced: rewrites.unreduced,
@@ -1689,7 +1641,6 @@ impl<'source> Respelling<'_, 'source>
         // The last three of the form's own tiles since its last operand:
         // `sort x =` before an operand makes it a manifest sort's carrier.
         let mut tiles: [&str; 3] = [""; 3];
-        let mut starts = Vec::with_capacity(parts.len());
         let reducts = self.reducts;
         let writing = |rewrite: RewriteName| {
             open == Open::Yes
@@ -1703,12 +1654,7 @@ impl<'source> Respelling<'_, 'source>
             writing(RewriteName::InsertedForget),
         );
         for part in parts {
-            let before = out.leaves.len();
             out.leaves.extend(part.before.iter().copied());
-            starts.push(Start {
-                layout: before,
-                own: out.leaves.len(),
-            });
             let crossed = match part.role {
                 Role::Operand(child) if reduced || forgotten => self
                     .span_of(child)
@@ -1818,16 +1764,9 @@ impl<'source> Respelling<'_, 'source>
                         .get(&at)
                         .is_some_and(|spelled| spelled.rewritten == Changed::Yes) =>
                 {
-                    // Only a block's braces go here: a parenthesis goes
-                    // where its own form is read.
-                    let operand = self.operand(child);
-                    let braced = self
-                        .spelled
-                        .get(&at)
-                        .is_some_and(|spelled| matches!(spelled.shape, Shape::Braced { .. }));
                     let operand = Operand {
-                        inner: if braced { operand.inner } else { None },
-                        ..operand
+                        inner: None,
+                        ..self.operand(child)
                     };
                     let fits = if crossed.is_some() {
                         Band::Loose
@@ -1892,184 +1831,13 @@ impl<'source> Respelling<'_, 'source>
                 Role::Comment => {},
             }
         }
-        let mut shape = shape;
-        let mut rewritten = Changed::No;
-        if open == Open::Yes
-            && !self.runs.calls().is_empty()
-            && self
-                .chosen
-                .rewrites(MoldName("block"))
-                .any(|name| name == RewriteName::LinearRun)
-        {
-            let (changed, emptied) = self.linear(parts, &starts, &mut out);
-            if changed == Changed::Yes {
-                self.changed = Changed::Yes;
-            }
-            // A block, a form that is its braces, whose statements are all
-            // written away reads as its one computation where that
-            // computation fits, the braces dropped.
-            let own = |part: Option<&Part<'source>>, spelled: Spelling| {
-                part.is_some_and(
-                    |part| matches!(part.role, Role::Own(text) if <&str>::from(text) == spelled.0),
-                )
-            };
-            if emptied == Emptied::Yes
-                && own(parts.first(), OPEN_BRACE)
-                && own(parts.last(), CLOSE_BRACE)
-                && commented == Commented::No
-                && let Some(Role::Operand(tail)) = parts
-                    .iter()
-                    .rev()
-                    .map(|part| part.role)
-                    .find(|role| matches!(role, Role::Operand(_)))
-                && let Some(entry) = braced(&out.leaves)
-            {
-                shape = Shape::Braced {
-                    entry: entry.to_vec(),
-                    band: self.operand(tail).band,
-                };
-                rewritten = Changed::Yes;
-            }
-        }
         Spelled {
             leaves: out.leaves,
             band: self.band_over(rule, parts),
             shape,
             commented,
-            rewritten,
+            rewritten: Changed::No,
         }
-    }
-
-    /// Write away, in `leaves`, the leaves of a form whose parts are `parts`,
-    /// each `let x = c ;` statement among the parts whose call the lowering
-    /// lists as a linear run: the call's leaves written in place of the
-    /// binder's read, which stands in a later part, and the statement left
-    /// out. A call that is an application, written where an application
-    /// reads the binder as an operand, takes the parentheses its
-    /// juxtaposition needs: `let m = twice n ; Succ m` writes `Succ (twice
-    /// n)`. `starts` holds, for each part, where its layout and its own
-    /// leaves begin in `out`'s leaves.
-    ///
-    /// The lowering lists the statements ending a block whose binders the
-    /// tail reads in their order; they are taken last first, so each
-    /// statement's range is read before a later one moves. A statement with a
-    /// comment among its parts, or whose read stands in no later part, stays,
-    /// and so does every statement before it: written at its read past one
-    /// that stays, its call would run after that one's. The form is emptied
-    /// when every statement it holds is written away and no comment stands
-    /// among its parts.
-    ///
-    /// # Specification
-    /// trivial.
-    fn linear(
-        &self,
-        parts: &[Part<'source>],
-        starts: &[Start],
-        out: &mut Builder<'source>,
-    ) -> (Changed, Emptied)
-    {
-        let (open, close) = (
-            out.written(SourceFragment::from("("), Material::Token),
-            out.written(SourceFragment::from(")"), Material::Token),
-        );
-        let leaves = &mut out.leaves;
-        let total = leaves.len();
-        let end = |part: usize| {
-            starts
-                .get(part.saturating_add(1))
-                .map_or(total, |next| next.layout)
-        };
-        let own = |part: usize, spelled: &str| {
-            parts.get(part).is_some_and(
-                |part| matches!(part.role, Role::Own(text) if <&str>::from(text) == spelled),
-            )
-        };
-        let statements: Vec<(usize, ByteSpan)> = (0 .. parts.len())
-            .filter_map(|first| {
-                let Role::Operand(call) = parts.get(first.checked_add(3)?)?.role
-                else {
-                    return None;
-                };
-                let called = match call {
-                    Child::Node(at) => self.extents.get(&at).copied()?,
-                    Child::Leaf(leaf) => leaf.span,
-                };
-                (own(first, "let")
-                    // The binder is a tile of a rule the table reads no
-                    // rewrite of, so it may read as one of the form's own.
-                    && !matches!(parts.get(first.checked_add(1)?)?.role, Role::Comment)
-                    && own(first.checked_add(2)?, "=")
-                    && own(first.checked_add(4)?, ";")
-                    && self.runs.calls().binary_search(&called).is_ok())
-                .then_some((first, called))
-            })
-            .collect();
-        let mut changed = Changed::No;
-        let mut written_away = 0_usize;
-        // The first part of the statement last written away; none yet.
-        let mut following: Option<usize> = None;
-        for &(first, called) in statements.iter().rev() {
-            let after = first.saturating_add(5);
-            let adjacent = following.map_or_else(
-                || !(after .. parts.len()).any(|part| own(part, "let")),
-                |next| {
-                    parts.get(after .. next).is_some_and(|between| {
-                        between
-                            .iter()
-                            .all(|part| matches!(part.role, Role::Comment))
-                    })
-                },
-            );
-            if !adjacent {
-                break;
-            }
-            let (Some(&Start { layout: from, .. }), Some(&Start { own: call, .. })) =
-                (starts.get(first), starts.get(first.saturating_add(3)))
-            else {
-                break;
-            };
-            let (call_end, through) = (end(first.saturating_add(3)), end(first.saturating_add(4)));
-            let Some(read) = leaves
-                .get(through ..)
-                .and_then(|after| {
-                    after.iter().position(|leaf| {
-                        leaf.material == Material::Token
-                            && self.runs.read(leaf.span) == Some(called)
-                    })
-                })
-                .map(|offset| through.saturating_add(offset))
-            else {
-                break;
-            };
-            let called_leaves = leaves.get(call .. call_end).unwrap_or_default();
-            let grouped = juxtaposed(called_leaves) == Juxtaposition::Applied
-                && operand_at(
-                    leaves.get(.. read).unwrap_or_default(),
-                    leaves.get(read.saturating_add(1) ..).unwrap_or_default(),
-                ) == Juxtaposition::Applied;
-            let written: Vec<Leaf<'source>> = grouped
-                .then_some(open)
-                .into_iter()
-                .chain(called_leaves.iter().copied())
-                .chain(grouped.then_some(close))
-                .collect();
-            drop(leaves.splice(read ..= read, written));
-            drop(leaves.drain(from .. through));
-            changed = Changed::Yes;
-            written_away = written_away.saturating_add(1);
-            following = Some(first);
-        }
-        let stops = (0 .. parts.len()).filter(|&part| own(part, ";")).count();
-        let emptied = if written_away > 0
-            && written_away == stops
-            && !parts.iter().any(|part| matches!(part.role, Role::Comment))
-        {
-            Emptied::Yes
-        }
-        else {
-            Emptied::No
-        };
-        (changed, emptied)
     }
 
     /// The operand `child` as a new position reads it.
@@ -2096,24 +1864,10 @@ impl<'source> Respelling<'_, 'source>
                 inner: None,
             };
         };
-        let braced = match child {
-            Child::Node(at) => self
-                .spelled
-                .get(&at)
-                .and_then(|spelled| match spelled.shape {
-                    Shape::Braced { ref entry, band } => Some((entry.clone(), band)),
-                    Shape::Other
-                    | Shape::Parenthesized { .. }
-                    | Shape::Arrow { .. }
-                    | Shape::Returner { .. } => None,
-                }),
-            Child::Leaf(_) => None,
-        };
-        let inner = braced.or_else(|| self.unwrapped(child).and_then(spelled));
         Operand {
             leaves,
             band,
-            inner,
+            inner: self.unwrapped(child).and_then(spelled),
         }
     }
 
@@ -2460,7 +2214,7 @@ impl<'source> Respelling<'_, 'source>
                 Direction::Desugar,
             )
             | (
-                RewriteName::LinearRun | RewriteName::FunctionForm | RewriteName::JoinedDefinition,
+                RewriteName::FunctionForm | RewriteName::JoinedDefinition,
                 Direction::Sugar | Direction::Desugar,
             ) => return None,
         };
@@ -3614,23 +3368,7 @@ impl<'source> Respelling<'_, 'source>
         else {
             return (Band::Loose, None);
         };
-        let braced = match child {
-            Child::Node(at) => self
-                .spelled
-                .get(&at)
-                .and_then(|spelled| match spelled.shape {
-                    Shape::Braced { band, .. } => Some(band),
-                    Shape::Other
-                    | Shape::Parenthesized { .. }
-                    | Shape::Arrow { .. }
-                    | Shape::Returner { .. } => None,
-                }),
-            Child::Leaf(_) => None,
-        };
-        (
-            band,
-            braced.or_else(|| self.unwrapped(child).and_then(band_of)),
-        )
+        (band, self.unwrapped(child).and_then(band_of))
     }
 }
 
@@ -3794,9 +3532,6 @@ const OPEN_SUM: Spelling = Spelling("+{");
 /// `&{`, the lazy record's opener.
 const OPEN_LAZY: Spelling = Spelling("&{");
 
-/// `{`.
-const OPEN_BRACE: Spelling = Spelling("{");
-
 /// `}`.
 const CLOSE_BRACE: Spelling = Spelling("}");
 
@@ -3879,28 +3614,6 @@ fn shape<'source>(
     }
 }
 
-/// The leaves inside the braces `leaves` opens with and closes with, the
-/// layout beside either brace left out, when there are any.
-///
-/// # Specification
-/// trivial.
-fn braced<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Option<&'leaves [Leaf<'source>]>
-{
-    let token = |leaf: &Leaf<'_>, text: Spelling| {
-        leaf.material == Material::Token && <&str>::from(leaf.text) == text.0
-    };
-    let open = leaves.iter().position(|leaf| token(leaf, OPEN_BRACE))?;
-    let close = leaves.iter().rposition(|leaf| token(leaf, CLOSE_BRACE))?;
-    let inside = leaves.get(open.saturating_add(1) .. close)?;
-    let first = inside
-        .iter()
-        .position(|leaf| leaf.material != Material::Whitespace)?;
-    let last = inside
-        .iter()
-        .rposition(|leaf| leaf.material != Material::Whitespace)?;
-    inside.get(first ..= last)
-}
-
 /// The entries of the parenthesised list whose parts are `parts`, each `A`
 /// or `x : A`, or nothing when an entry is spelled otherwise.
 ///
@@ -3965,96 +3678,6 @@ enum Spelt
 }
 
 /// Whether a form writes an application by juxtaposition where it is read.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Juxtaposition
-{
-    /// It does: `f x`.
-    Applied,
-    /// It does not.
-    Apart,
-}
-
-/// Whether `leaf` is the empty tile an application writes between its head
-/// and its operand, `f x`: an empty token no layout block reads.
-///
-/// # Specification
-/// trivial.
-fn juxtaposes(leaf: &Leaf<'_>) -> Juxtaposition
-{
-    if leaf.material == Material::Token
-        && <&str>::from(leaf.text).is_empty()
-        && leaf.offside == Offside::Written
-    {
-        Juxtaposition::Applied
-    }
-    else {
-        Juxtaposition::Apart
-    }
-}
-
-/// Whether `leaves` write an application outside each bracket they open, so
-/// that written as an operand they need parentheses: `twice n` does, and
-/// `(twice n)` and `twice` do not.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: [`Juxtaposition::Applied`] exactly when a juxtaposing tile stands
-///   where every opened bracket among `leaves` is closed.
-/// - panics: none.
-/// - executable: none — a clause would restate the walk over the brackets.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the sweep formats every corpus source and reads its
-///   meaning back, so a call laid in as an operand without its parentheses
-///   would read as other operands.
-/// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
-fn juxtaposed(leaves: &[Leaf<'_>]) -> Juxtaposition
-{
-    let mut depth = 0_usize;
-    let applied = leaves.iter().any(|leaf| {
-        let text = <&str>::from(leaf.text);
-        if leaf.material != Material::Token {
-            return false;
-        }
-        if text.ends_with(['(', '[', '{']) {
-            depth = depth.saturating_add(1);
-        }
-        else if matches!(text, ")" | "]" | "}") {
-            depth = depth.saturating_sub(1);
-        }
-        depth == 0 && juxtaposes(leaf) == Juxtaposition::Applied
-    });
-    if applied {
-        Juxtaposition::Applied
-    }
-    else {
-        Juxtaposition::Apart
-    }
-}
-
-/// Whether a leaf between `before` and `after` is an operand of an
-/// application: the nearest leaf before it or after it that is no
-/// whitespace is a juxtaposing tile.
-///
-/// # Specification
-/// trivial.
-fn operand_at(
-    before: &[Leaf<'_>],
-    after: &[Leaf<'_>],
-) -> Juxtaposition
-{
-    let material = |leaf: &&Leaf<'_>| leaf.material != Material::Whitespace;
-    let juxtaposing = |leaf: &Leaf<'_>| juxtaposes(leaf) == Juxtaposition::Applied;
-    if before.iter().rev().find(material).is_some_and(juxtaposing)
-        || after.iter().find(material).is_some_and(juxtaposing)
-    {
-        Juxtaposition::Applied
-    }
-    else {
-        Juxtaposition::Apart
-    }
-}
-
 /// The own tiles and the operands of `parts`, in order.
 ///
 /// # Specification

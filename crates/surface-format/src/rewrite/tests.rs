@@ -27,7 +27,6 @@ use crate::layout;
 use crate::leaf;
 use crate::leaf::Material;
 use crate::leaf::Owner;
-use crate::linear::Runs;
 use crate::meaning;
 use crate::meaning::Agreement;
 use crate::meaning::Differing;
@@ -68,7 +67,6 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
         .unwrap_or_else(|| panic!("the sugared form runs rewrites"));
     let composites = Composites::default();
     let tails = Tails::default();
-    let runs = Runs::default();
     let thunks = Thunks::default();
     let reducts = Reducts::default();
     let rewrites = Rewrites {
@@ -76,7 +74,6 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
         withdrawn: &[],
         composites: &composites,
         tails: &tails,
-        runs: &runs,
         thunks: &thunks,
         reducts: &reducts,
         unreduced: &[],
