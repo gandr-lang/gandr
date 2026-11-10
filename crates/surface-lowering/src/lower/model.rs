@@ -1984,8 +1984,11 @@ impl<'source> Lowerer<'_, 'source>
             Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                 match crate::form::operand_entry(self.pbg, self.tree, named)? {
                     Some((path, fixed)) if fixed.is_empty() => path,
+                    // The refusal marks the model form it judged, from its
+                    // first tile, and not the operand alone: a deleted
+                    // `type(` leaves the form's own tiles as the mistake.
                     Some(_) | None => {
-                        return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
+                        return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
                     },
                 }
             },
@@ -1994,7 +1997,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut theories = self.bundled(written, (site.at.span.start(), &path))?;
         let Some(outermost) = theories.first_mut()
         else {
-            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
         let mut fixed = Vec::with_capacity(manifests.len());
         for (place, &(sort, defined)) in manifests.iter().enumerate() {
