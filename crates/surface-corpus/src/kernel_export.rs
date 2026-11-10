@@ -2490,10 +2490,7 @@ mod kernel_presented_readmission
         // admits it as a plain definition, so it crosses, and the kernel meets
         // its body once the role is forged back on.
         let unmarked = include_str!("../../../corpus/pathological/universe/ir-holders.gandr")
-            .replace(
-                "@[ builtin(irArgs), refuses(\"BuiltinNotCanonical\") ]\n",
-                "",
-            );
+            .replace("@[builtin(irArgs), refuses(\"BuiltinNotCanonical\")]\n", "");
         let path = std::env::temp_dir().join(alloc::format!(
             "gandr-ir-fields-5304-{}.gandr",
             std::process::id()
