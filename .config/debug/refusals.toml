@@ -94,3 +94,9 @@ sites = [
 sites = [
   { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*return Err\(unresolved\(HeadArity::' },
 ]
+
+[refusal.IllFormedDescription]
+sites = [
+  { file = "crates/surface-lowering/src/module/sealing.rs", pattern = '^\s*return Err\(LoweringRefusal::IllFormedDescription \{$' },
+  { file = "crates/surface-lowering/src/description.rs", pattern = 'LoweringRefusal::IllFormedDescription \{$' },
+]
