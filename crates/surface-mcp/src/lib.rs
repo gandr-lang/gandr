@@ -151,6 +151,8 @@ extern crate alloc;
 mod connection;
 #[cfg(unix)]
 mod face;
+#[cfg(unix)]
+mod rap;
 mod tools;
 
 pub use crate::connection::Connection;
@@ -163,4 +165,6 @@ pub use crate::face::Relayed;
 pub use crate::face::relay;
 #[cfg(unix)]
 pub use crate::face::serve;
+#[cfg(unix)]
+pub use crate::rap::Toolset;
 pub use crate::tools::ToolRefusal;

@@ -70,6 +70,14 @@
 //! judging the text again. The face is a parameter so this crate does not
 //! depend on the protocols served beside it.
 //!
+//! **A face beside the socket.** `run_hub` can also be given a `Beside`: a face
+//! that serves a listener of its own over the same locked workspace, on a
+//! thread of its own for the hub's life. The driver gives it the Reactive
+//! Agent Protocol's toolset when `gandr serve` names a port. The hub counts
+//! that face as an open connection, so a hub that serves a port does not
+//! linger out: an agent runtime opens no connection on the socket that would
+//! keep it alive.
+//!
 //! **Alternatives.** A hub per document would keep a judgement per process
 //! that a face beside the editors could not read; one workspace per hub
 //! holds every copy where every face reads it. A lock file beside the socket
@@ -286,6 +294,37 @@ pub fn socket_for(root: &Path) -> Result<PathBuf, Unnamed>
     Ok(directory.join(socket_name(build, &root)))
 }
 
+/// The name of the workspace rooted at `root`, the same for every build.
+///
+/// # Specification
+/// - requires: nothing; `root` is resolved through the file system.
+/// - ensures: the first sixteen hex digits of the BLAKE3 hash of the canonical
+///   root. Every spelling of one directory names one workspace, and the build
+///   does not change the name.
+/// - provides: the key of what a hub keeps for its workspace across builds: the
+///   calls its toolset acknowledged and did not answer.
+/// - fails: when `root` cannot be canonicalised.
+/// - panics: none.
+///
+/// # Errors
+/// The error canonicalising `root`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a directory named directly and through a `..` detour
+///   names one workspace; a sibling directory names another.
+/// - witness: `hub::tests::a_workspace_names_one_socket`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |name| name.len() == NAME_DIGITS))]
+#[inline]
+pub fn workspace_name(root: &Path) -> io::Result<String>
+{
+    let root = std::fs::canonicalize(root)?;
+    Ok(blake3::hash(root.as_os_str().as_encoded_bytes())
+        .to_hex()
+        .chars()
+        .take(NAME_DIGITS)
+        .collect())
+}
+
 /// The file name of the socket `build`'s hub serving the workspace at the
 /// canonical `root` listens on.
 ///
@@ -375,6 +414,14 @@ pub fn bind(socket: &Path) -> Result<Maybe<UnixListener, bind::Absent>, io::Erro
 /// returns.
 pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 
+/// A face that serves a listener of its own over the workspace every
+/// connection shares, for the hub's whole life.
+///
+/// The Reactive Agent Protocol's toolset is one: it answers HTTP on the port
+/// `gandr serve` names. The hub runs it on a thread of its own and counts it as
+/// an open connection until it returns.
+pub type Beside = Box<dyn FnOnce(Arc<Mutex<Workspace>>) + Send>;
+
 /// Serve every connection `listener`, bound to `socket`, accepts over one
 /// workspace, until none has been open for `linger`.
 ///
@@ -382,22 +429,24 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - requires: `listener` is bound to `socket`.
 /// - ensures: a connection whose first byte is `{` is handed to `lines` when
 ///   one is given, and one whose first byte is `r` to the render-bus face,
-///   [`crate::bus::serve`]. Every other accepted connection is served as
-///   [`Server::handle`], [`Server::admit`] and [`Server::admitted`] state, over
-///   the documents every connection shares, `workspace` holding what the user's
-///   configuration names, its sessions, judgements and kernel admissions
-///   running on its pool, each connection answered from its own copy: its
-///   answers and publications reach it in the order its handling made them, and
-///   each synchronisation's timing line goes to `log`. For a connection whose
-///   client watches no file, the hub watches the files its copies' closures
-///   name, as [`Server::followed`] reads them, and a change to one on disk is
-///   handled as [`Server::changed_on_disk`] states; a watch that cannot start
-///   is said once in `log` and the hub serves on unwatched. A connection ends
-///   at `exit`, at the end of its stream, or at a stream fault; it then holds
-///   nothing and its socket is shut. A connection whose thread unwinds also
-///   ends, so it never keeps the hub open. The hub returns once no connection
-///   has been open for `linger`, its socket file removed first so a late client
-///   starts a fresh hub.
+///   [`crate::bus::serve`]. `beside`, when given, runs on a thread of its own
+///   over the shared workspace, and counts as an open connection until it
+///   returns. Every other accepted connection is served as [`Server::handle`],
+///   [`Server::admit`] and [`Server::admitted`] state, over the documents every
+///   connection shares, `workspace` holding what the user's configuration
+///   names, its sessions, judgements and kernel admissions running on its pool,
+///   each connection answered from its own copy: its answers and publications
+///   reach it in the order its handling made them, and each synchronisation's
+///   timing line goes to `log`. For a connection whose client watches no file,
+///   the hub watches the files its copies' closures name, as
+///   [`Server::followed`] reads them, and a change to one on disk is handled as
+///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
+///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
+///   the end of its stream, or at a stream fault; it then holds nothing and its
+///   socket is shut. A connection whose thread unwinds also ends, so it never
+///   keeps the hub open. The hub returns once no connection has been open for
+///   `linger`, its socket file removed first so a late client starts a fresh
+///   hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -420,11 +469,12 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
 /// - witness: `hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497`
+/// - witness: `hub::tests::a_face_beside_keeps_the_hub_open`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
         pool_only_threads,
-        reason = "io: each connection is served on its own thread, which blocks on the client's socket for the connection's life"
+        reason = "io: each connection, and the face beside the socket, is served on its own thread, which blocks on its client's socket for the connection's life"
     )
 )]
 #[inline]
@@ -434,6 +484,7 @@ pub fn run_hub<Log>(
     linger: Duration,
     mut log: Log,
     lines: Option<Face>,
+    beside: Option<Beside>,
     workspace: Workspace,
 ) -> Result<(), io::Error>
 where
@@ -451,6 +502,17 @@ where
     let disk = Arc::new(Mutex::new(disk));
     let log = Arc::new(Mutex::new(log));
     let open = Arc::new(AtomicU64::new(0));
+    if let Some(beside) = beside {
+        let _opened = open.fetch_add(1, Ordering::SeqCst);
+        let opened = Opened(Arc::clone(&open));
+        let workspace = Arc::clone(&workspace);
+        drop(thread::spawn(move || {
+            // As a connection's, the count goes back when the face returns or
+            // unwinds.
+            let _opened = opened;
+            beside(workspace);
+        }));
+    }
     let mut peers = 0_u64;
     let mut quiet_since = Instant::now();
     let mut start = |stream: UnixStream| -> Result<(), io::Error> {
@@ -1055,6 +1117,7 @@ mod tests
     use super::run_hub;
     use super::socket_for;
     use super::socket_name;
+    use super::workspace_name;
     use crate::build::Build;
     use crate::bus::RENDER_BUS_PREFACE;
     use crate::handover::REPLAY;
@@ -1154,6 +1217,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(echo),
+                None,
                 super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
             )
             .expect("the hub serves");
@@ -1286,6 +1350,14 @@ mod tests
         );
         assert_ne!(socket_for(&second).expect("the sibling resolves"), named);
         assert!(socket_for(&scratch.0.join("absent")).is_err());
+        let name = workspace_name(&first).expect("the workspace resolves");
+        assert_eq!(
+            workspace_name(&second.join("..").join("first")).expect("the detour resolves"),
+            name,
+            "every spelling of one directory names one workspace"
+        );
+        assert_ne!(workspace_name(&second).expect("the sibling resolves"), name);
+        assert!(workspace_name(&scratch.0.join("absent")).is_err());
     }
 
     #[test]
@@ -1795,6 +1867,60 @@ mod tests
     }
 
     #[test]
+    fn a_face_beside_keeps_the_hub_open()
+    {
+        let scratch = Scratch::new(Json("beside"));
+        let socket = scratch.socket();
+        let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
+        else {
+            panic!("no other hub serves a fresh socket");
+        };
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let (started, starts) = std::sync::mpsc::channel::<usize>();
+        let serving = socket.clone();
+        let hub = thread::spawn(move || {
+            run_hub(
+                &listener,
+                &serving,
+                Duration::from_millis(10),
+                io::sink(),
+                Some(echo),
+                Some(Box::new(
+                    move |workspace: Arc<std::sync::Mutex<super::Workspace>>| {
+                        let held = super::lock(&workspace).held().count();
+                        started.send(held).expect("the test hears the face");
+                        let _released = released.recv();
+                    },
+                )),
+                super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
+            )
+        });
+        assert_eq!(
+            starts.recv_timeout(OWED),
+            Ok(0),
+            "the face beside reads the hub's workspace"
+        );
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            !hub.is_finished(),
+            "a hub whose face beside serves does not linger out"
+        );
+        release.send(()).expect("the face hears its release");
+        let deadline = std::time::Instant::now()
+            .checked_add(OWED)
+            .expect("the deadline is representable");
+        while !hub.is_finished() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            hub.is_finished(),
+            "a hub whose face beside returned lingers out"
+        );
+        assert!(hub.join().expect("the hub returns").is_ok());
+        assert!(!socket.exists(), "the hub removes its socket");
+    }
+
+    #[test]
     fn a_hub_whose_socket_is_already_gone_exits_cleanly()
     {
         let scratch = Scratch::new(Json("gone"));
@@ -1811,6 +1937,7 @@ mod tests
                 Duration::from_millis(10),
                 io::sink(),
                 Some(echo),
+                None,
                 super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
             )
             .is_ok(),
@@ -1851,6 +1978,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(faulting),
+                None,
                 super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
             )
         });

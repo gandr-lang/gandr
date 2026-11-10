@@ -97,6 +97,15 @@
 //! commits every identity again before it reads one, so removing the
 //! directory costs the next check those commits and leaves every lock as it
 //! stands.
+//!
+//! # Calls under the XDG state directory
+//!
+//! `gandr serve --port` keeps each call its toolset acknowledged, until the
+//! call is answered, in `gandr/calls` under the user's state directory:
+//! `$XDG_STATE_HOME` when it names an absolute path, and `$HOME/.local/state`
+//! otherwise, by the same rule. The file of a workspace holds only the calls
+//! still pending. Removing it loses those calls: a hub that restarts cannot
+//! answer them with an error, and their callers wait on them.
 
 use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
@@ -270,6 +279,37 @@ pub fn checkpoints() -> Option<PathBuf>
     checkpointed(
         std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
         std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+/// The directory the engine hub's toolset keeps its pending calls in,
+/// `gandr/calls` under the user's state directory.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<home>/gandr/calls` under `$XDG_STATE_HOME` and `$HOME` by
+///   [`directory`]'s rule, with `.local/state` the default; absent when neither
+///   names a directory.
+/// - provides: where `gandr serve --port` keeps the rows of its calls.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hub given a port under a scratch state home serves its
+///   toolset.
+/// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
+#[cfg(unix)]
+pub fn calls() -> Option<PathBuf>
+{
+    Some(
+        directory(
+            std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+            std::env::var_os("HOME").map(PathBuf::from),
+            Path::new(".local/state"),
+        )?
+        .join("gandr")
+        .join("calls"),
     )
 }
 
