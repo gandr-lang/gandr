@@ -1,7 +1,9 @@
 // A record face is a named set of record labels.
 //
 // A `where` block declares faces after a record type. A static bracket fixes
-// fields by label, by face or by a system of faces.
+// fields by label, by face or by a system of faces. In a system, the checker
+// converts the value of each later face with the value of the first face on
+// their meet.
 //
 // The checker checks each fixed value at its field type. A patched value keeps
 // its free fields. A selection returns a fixed value. A record type ends at

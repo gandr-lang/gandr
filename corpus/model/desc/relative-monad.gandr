@@ -49,7 +49,8 @@ pub theory RelativeMonad where
 /// `ret` returns a present option value.
 def ret(A : Type, a : A) -> Maybe A { Some a }
 
-/// `ext` passes a present value to its continuation and keeps an absent value.
+/// `ext` runs its computation once, first. It then passes a present value to
+/// its continuation and keeps an absent value.
 def ext(A : Type, B : Type, m : () -> Maybe A, k : A -> Maybe B) -> Maybe B =
   let r = force m
   match r where

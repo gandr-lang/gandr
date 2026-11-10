@@ -1,17 +1,20 @@
 //! A rule term can bind a variable in a field.
 //!
-//! A `pi+ (x : S) . T` port accepts `bind x . t`. Substitution instantiates
-//! the variable `x`.
+//! A `pi+ (x : S) . T` port accepts `bind x . t`. The variable `x` has the
+//! representable sort `S`. Substitution instantiates it.
 //!
 //! A `bind (a : N) . T` port abstracts atom `a`. A swap renames it.
-//! A `Theory` value stores fields as `Bind` nodes and abstractions as `Abs`
-//! nodes. A program distinguishes the nodes by `case`.
+//! A `Theory` value stores a field as a `Bind` node and its variable as a
+//! `Bvar` node. It stores an abstraction as an `Abs` node and its atom as an
+//! `Occ` node. A program distinguishes the two binders by `case`.
 //!
 //! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
-/// The `listen` port binds a received value under restricted channel `c`.
+/// No process outside the restriction can use the channel `c` of `listen`, so
+/// the restricted receive never fires. The checker orients the law, and the
+/// kernel replays its verdict.
 theory Deaf where
   sort Name : Atom;
   sort Val : Type+;

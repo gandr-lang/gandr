@@ -2,9 +2,9 @@
 //!
 //! An `A => T` field is the function former of the description code.
 //!
-//! The code decodes the field to the thunked arrow of the native reading.
-//! State programs form the free model of state. Put-put is a law for a state
-//! store.
+//! The code decodes the field to the thunked arrow of the native reading. The
+//! type keeps its rule. State programs form the free model of state. Put-put
+//! is a law for a state store.
 //!
 //! - see: #2511
 //! - cites: [Chapman-2010-gentle_art_levitation]
@@ -22,8 +22,9 @@ pub data Program : Type where {
   rule : Put s (Put u k) <=> Put u k;
 }
 
-/// This handler runs a read continuation at the current state. A store runs
-/// the remaining program at its stored state.
+/// This handler runs a read continuation at the current state, and a store
+/// runs the rest at its stored state. The fold reaches the rest of a read
+/// through its continuation, one stage below the read.
 def rec final(p : Program, s : Integer) -> Integer =
   match p where
     | Done(x) => x

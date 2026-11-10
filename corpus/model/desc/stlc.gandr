@@ -1,4 +1,5 @@
-// The simply typed lambda calculus is a theory.
+// The simply typed lambda calculus is a theory. This source is the first rung
+// of normalisation by evaluation as a model.
 //
 // Context and type indices classify its terms. Its syntax is a first-order
 // model of the signature.

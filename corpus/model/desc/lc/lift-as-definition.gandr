@@ -2,9 +2,10 @@
 //
 // `subst-subst` contains `substTwiceUnderLam`.
 //
-// Two substitutions under an abstraction unfold both definitions.
-// The recursive calls compare each part. The step converts as the constructor
-// form converts.
+// Two substitutions under an abstraction unfold both definitions. The outer
+// substitution unfolds at the stuck call of the inner one. The lifting call
+// unfolds to `Lift`. The recursive calls compare each part. The step converts
+// as the constructor form converts.
 //
 // - see: #879
 
