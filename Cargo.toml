@@ -1180,6 +1180,18 @@ default-features = false
 version = "0.30.3"
 default-features = false
 
+# HTTP/1.1 heads parsed in place, with no allocation: the engine hub's
+# toolset reads each invocation and the status of each callback through it.
+# Already in the build beneath iroh's relay; the decision is in the pull
+# request that adds the toolset.
+# features:
+# - none: a head parses without `std`
+# consumers:
+# - surface-mcp
+[workspace.dependencies.httparse]
+version = "1.10.1"
+default-features = false
+
 # QUIC endpoints dialed by public key: the host's `Net` interface, one
 # connection and one bidirectional stream per opened stream, TLS 1.3 binding
 # each to the key its dialer named. The version is the one domhringr pins.
