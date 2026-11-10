@@ -1,7 +1,9 @@
 //! This source asks for inferred forms and a selected formatter spelling.
 //!
 //! `explicit_exits` and `explicit_runs` report each inferred form. `form`
-//! selects the sugared spelling.
+//! selects the sugared spelling. A declaration asks for these lints, after the
+//! lint attributes of Rust (The Rust Reference, § Diagnostics attributes). None
+//! of them changes what checks.
 //!
 //! The checker writes each requested form under its declaration. The formatter
 //! renders the selected source spelling.

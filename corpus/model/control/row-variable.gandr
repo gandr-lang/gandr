@@ -5,6 +5,9 @@
 //!
 //! A handler removes the console interface.
 //! It forwards the remaining row.
+//! This follows rows and handlers
+//! [Hillerström-2016-liberating_effects_rows_handlers], § 2.5 and § 3.3,
+//! rule T-HANDLER.
 //!
 //! - see: #2270
 //! - see: ../../pathological/control/row-variable.gandr
@@ -16,7 +19,7 @@
 import std.io;
 
 /// `log` prints through the console interface.
-/// Its row leaves `r` open.
+/// Its row leaves open `r`, which lacks the console interface.
 pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Console.print s }
 
 /// `logAlone` solves `r` as the empty row.

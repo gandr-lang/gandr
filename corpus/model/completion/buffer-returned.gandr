@@ -4,11 +4,15 @@
 //! pathological twin refuses a buffer that a program does not return as
 //! `BufferUnreturned`.
 //!
-//! A `Ring.Eff` handler mints the buffer and handles its return. The mock
-//! kernel sends it back before the continuation resumes.
+//! The kernel owns the buffer while an operation is in flight
+//! [boats-2020-notes_on_io_uring]. A `Ring.Eff` handler mints the buffer and
+//! handles its return. The mock kernel sends it back before the continuation
+//! resumes.
 //!
 //! - see: corpus/pathological/completion/buffer-misused.gandr
-//! - see: https://without.boats/blog/io-uring/
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The native buffer a receive places live.
 import std.buffer (Buf);

@@ -5,6 +5,9 @@
 //!
 //! An exclusive view transfers the value once.
 //! `resume` writes the new value back.
+//! The write-back needs no count of the other holders of the value.
+//! The grades are those of graded modal types
+//! [Orchard-2019-quantitative_program_reasoning_graded_modal_types].
 //!
 //! - cites: [Orchard-2019-quantitative_program_reasoning_graded_modal_types]
 //!

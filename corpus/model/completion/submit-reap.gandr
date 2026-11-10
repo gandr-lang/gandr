@@ -4,7 +4,8 @@
 //! refuses a submitted read with a pending completion as `LinearResidue`.
 //!
 //! The checker gives the submitter a pending completion after its send. The
-//! mock kernel posts `done` and closes the ring.
+//! mock kernel posts `done` and closes the ring. The checker admits the program
+//! only when it reaps the completion and closes the ring.
 //!
 //! - see: corpus/pathological/completion/pending-dropped.gandr
 //! - see: https://man7.org/linux/man-pages/man7/io_uring.7.html

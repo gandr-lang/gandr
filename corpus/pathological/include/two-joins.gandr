@@ -1,7 +1,8 @@
 //! `two-joins` refuses two incomparable joins of the same theories.
 //!
 //! A block has one poorest join for each reachable pair. `MagmaWithUnit`
-//! repeats the `Pointed` and `Magma` join. The checker refuses the pair.
+//! repeats the `Pointed` and `Magma` join. The checker refuses the block and
+//! names the pair and both joins.
 //!
 //! - see: #1225
 

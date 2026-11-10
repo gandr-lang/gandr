@@ -1,7 +1,8 @@
 //! `reduct` refuses a model outside its included theories.
 //!
-//! A `Monoid` model does not supply `LeftZero`. The checker refuses `noZero`
-//! as `TypeMismatch`.
+//! A `Monoid` model does not supply `LeftZero`. No map restores the monoid
+//! carrier and restricts it to `LeftZero`. The checker refuses `noZero` as
+//! `TypeMismatch`.
 //!
 //! - see: #2136 — `noZero`
 // The source imports the included theories and their endomorphism models.

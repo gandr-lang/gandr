@@ -1,9 +1,9 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/include/two-joins.gandr:25:1
+   ╭▸ corpus/pathological/include/two-joins.gandr:26:1
    │
-25 │ ┏ theory MagmaWithUnit where
-26 │ ┃   include Pointed;
-27 │ ┃   include Magma;
+26 │ ┏ theory MagmaWithUnit where
+27 │ ┃   include Pointed;
+28 │ ┃   include Magma;
    │ ┗━━━━━━━━━━━━━━━━┛ out of place
    │
    ├ note: `MagmaWithUnit` is refused with MalformedForm, as its expectation states

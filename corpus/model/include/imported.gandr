@@ -1,7 +1,8 @@
 //! `imported` includes a theory from another source.
 //!
 //! `PointedMonoid` extends the imported `Monoid` with `point`. `Successor`
-//! models the extension with an integer successor.
+//! models the extension with an integer successor. `include` names a block of
+//! an imported source unqualified, as it names a block of its own source.
 //!
 //! `pointed` applies the chosen element, then doubles it.
 //!

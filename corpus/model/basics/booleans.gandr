@@ -7,7 +7,8 @@
 //
 // - see: #1831 — `banded`
 
-/// `banded` accepts low bounds below high with high at most one million.
+/// `banded` accepts bounds in millionths, low below high and high at most one
+/// million.
 /// It returns `false` when the test fails.
 def banded(low : Integer, high : Integer) -> Bool =
   let below = low < high

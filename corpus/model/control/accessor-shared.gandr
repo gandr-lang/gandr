@@ -4,7 +4,10 @@
 //! The body can read the view and the hold.
 //!
 //! The view ends with its body.
+//! It writes nothing back and takes no `resume`, `abort` or `unwind`.
 //! The checker blocks an exclusive access until shared views end.
+//! The loan follows a shared borrow of Rust [Rust-reference],
+//! § Borrow operators.
 //!
 //! - cites: [Rust-reference]
 //!
