@@ -25,7 +25,7 @@ fn a_cell_that_two_stated_pairs_name_keeps_the_last_class()
         Class::Collapsible(AB),
     ]);
     // `a` names `ab` as its partner, and `ab` does not name `a` back.
-    let mut complex = Triangle::matched(&[]);
+    let mut complex = Triangle::default();
     let checked = collapse(
         &mut matching.on(&mut complex),
         &FILLED,

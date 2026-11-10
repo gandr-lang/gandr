@@ -1,5 +1,5 @@
 //! The simplices of a triangle as a complex, the schemes over it that the
-//! tests state by hand, and the simplicial complexes of a few surfaces.
+//! tests forge, and the simplicial complexes of a few surfaces.
 
 use alloc::collections::BTreeMap;
 
@@ -44,40 +44,26 @@ pub const D: Simplex = Simplex(0b1000);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Refused(pub Simplex);
 
-/// The simplices of a triangle with the classes that a test states. Each
-/// face has the incidence of its sign times `weight`.
+/// The simplices of a triangle. Each face has the incidence of its sign times
+/// `weight`. A test reads a matching over it through `Matching::on`.
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Triangle
 {
     /// The factor of each incidence: one for the triangle, two for a broken
     /// complex.
     pub weight: i64,
-    /// The class of each cell that a test names. Every other cell is
-    /// critical.
-    pub classes: BTreeMap<Simplex, Class<Simplex>>,
-    /// The cells whose class the scheme refuses to give.
-    pub refuses: Vec<Simplex>,
 }
 
-impl Triangle
+impl Default for Triangle
 {
-    /// The triangle with the incidence one and the matching of `pairs`: each
-    /// pair of a redundant cell and its partner one dimension up.
+    /// The triangle with the incidence one.
     ///
     /// # Specification
     /// trivial.
-    pub fn matched(pairs: &[(Simplex, Simplex)]) -> Self
+    fn default() -> Self
     {
-        let mut classes = BTreeMap::new();
-        for &(redundant, partner) in pairs {
-            let _redundant = classes.insert(redundant, Class::Redundant(partner));
-            let _collapsible = classes.insert(partner, Class::Collapsible(redundant));
-        }
-        Self {
-            weight: 1,
-            classes,
-            refuses: Vec::new(),
-        }
+        Self { weight: 1 }
     }
 }
 
@@ -119,7 +105,52 @@ impl Complex for Triangle
     }
 }
 
-impl Scheme for Triangle
+/// A scheme that a test forges over the triangle: the class of each cell that
+/// the test names, which no matching need give, and the cells whose class the
+/// scheme refuses. Every other cell is critical.
+#[derive(Debug, Default)]
+pub struct Forged
+{
+    /// The triangle.
+    pub triangle: Triangle,
+    /// The class of each cell that the test names.
+    pub classes: BTreeMap<Simplex, Class<Simplex>>,
+    /// The cells whose class the scheme refuses to give.
+    pub refuses: Vec<Simplex>,
+}
+
+impl Complex for Forged
+{
+    type Cell = Simplex;
+    type Fault = Refused;
+
+    /// Whether the triangle holds `cell`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        &mut self,
+        cell: &Simplex,
+    ) -> Result<Standing, Refused>
+    {
+        self.triangle.standing(cell)
+    }
+
+    /// The faces of `cell` in the triangle.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faces(
+        &mut self,
+        cell: &Simplex,
+        faces: &mut Vec<(Simplex, Incidence)>,
+    ) -> Result<(), Refused>
+    {
+        self.triangle.faces(cell, faces)
+    }
+}
+
+impl Scheme for Forged
 {
     /// The class that the test names for `cell`, or critical.
     ///

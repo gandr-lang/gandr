@@ -3211,9 +3211,12 @@ impl<'pbg> Molder<'pbg>
     /// # Specification
     /// - ensures: returns the candidate's [`CandidateKey`] with its delta
     ///   replaced by the empty delta, so the returned key is at most the full
-    ///   key; the sort matches when it is the frontier's expected sort, or the
-    ///   candidate opens a declaration at the top level; reads `state` without
-    ///   changing it.
+    ///   key; the sort matches when it is the sort the candidate's place
+    ///   expects, or the candidate opens a declaration at the top level; reads
+    ///   `state` without changing it. Where no hole stands below the head, an
+    ///   operand that opens at the head, as its juxtaposed argument or as a
+    ///   call that continues it, expects the head's sort. Every other candidate
+    ///   expects the frontier's slot sort.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3222,8 +3225,12 @@ impl<'pbg> Molder<'pbg>
     ///   candidate's dry-run. A floor carrying a nonempty delta, or ranks that
     ///   differ from the key's, changes which candidates are kept; a `let`
     ///   statement whose lead is read as another form leaves its `=` stranded.
+    ///   A group after a type, past a binder that a left-out token breaks,
+    ///   reads as an expression when the expression default ranks it, and the
+    ///   damage then reaches the intact result type.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `tests::acceptance::value_statement_uses_let_keyword`
+    /// - witness: `tests::acceptance::a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102`
     #[spec(ensures: |ret| bool::from(ret.delta.is_empty()))]
     fn floor_key(
         &self,
@@ -3234,8 +3241,19 @@ impl<'pbg> Molder<'pbg>
     {
         let continuation = CandidateRank::from(!bool::from(state.would_continue_form(mold)));
         let mold_sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
+        // Where no hole stands below the head, an operand that opens at the
+        // head, as its juxtaposed argument or as a call or an instantiation
+        // that continues it, takes the head's sort, not the expression default.
+        let opens_operand = matches!(
+            self.pbg.tile_kind(mold),
+            Ok(TileKind::Operand | TileKind::Start | TileKind::AbsorbingStart | TileKind::Prefix)
+        );
+        let expected = frontier
+            .argument
+            .filter(|_| opens_operand)
+            .unwrap_or(frontier.expected);
         let sort_rank = CandidateRank::from(
-            mold_sort != frontier.expected
+            mold_sort != expected
                 && !(bool::from(frontier.boundary) && bool::from(declaration_head(self.pbg, mold))),
         );
         // Operand-continuation tiebreak: with the head an operand, a call `(` /

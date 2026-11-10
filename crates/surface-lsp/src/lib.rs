@@ -448,6 +448,8 @@ pub use crate::handover::Carried;
 pub use crate::handover::Handover;
 pub use crate::handover::REPLAY;
 #[cfg(unix)]
+pub use crate::hub::Beside;
+#[cfg(unix)]
 pub use crate::hub::Face;
 #[cfg(unix)]
 pub use crate::hub::LINGER;
@@ -463,6 +465,8 @@ pub use crate::hub::relay;
 pub use crate::hub::run_hub;
 #[cfg(unix)]
 pub use crate::hub::socket_for;
+#[cfg(unix)]
+pub use crate::hub::workspace_name;
 pub use crate::position::Character;
 pub use crate::position::Line;
 pub use crate::position::Position;
