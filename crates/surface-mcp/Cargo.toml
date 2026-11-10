@@ -17,13 +17,17 @@ publish.workspace = true
 # through serde_json's value tree; the relay reads only each line's envelope,
 # through a serde derive, so a line's payload is never built. The toolset
 # reads each HTTP head through httparse, in place, and writes each callback's
-# body through serde_json's writer into a buffer it keeps.
+# routing through serde_json. It sends the render bus's cards of a frame
+# through the renderer seam's serde image, and the lines `gandr view` prints
+# for a report through the terminal face.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-lsp.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-tui.workspace = true
 httparse.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["std"] }

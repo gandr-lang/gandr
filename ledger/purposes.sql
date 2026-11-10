@@ -3135,6 +3135,8 @@ INSERT INTO purpose VALUES('surface-mcp','face::Relayed','enum','Names how a rel
 INSERT INTO purpose VALUES('surface-mcp','face::relay','function','Carries a client''s standard streams to the hub a line at a time, so `gandr mcp` reaches the hub as `gandr lsp` does and follows a toolchain switch.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','face::serve','function','Serves the Model Context Protocol on a connection''s buffered stream, so the hub''s line face answers a model''s messages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','rap::Toolset','struct','Serves the Reactive Agent Protocol''s manifest and invoke endpoint beside the hub''s socket, so an agent runtime calls the hub''s tools and hears each answer by a callback.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','rap::deliver::Policy','struct','States when the toolset tries a failed callback again and how often, so a runtime that fails for a time still receives each result and each new state.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','rap::deliver::Retries','struct','Counts the attempts of a delivery after the first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','tools::ToolRefusal','struct','Names why a tool call produced no result, so the refusal''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::Closing','struct','One way to close an open form: the steps from its frontier to a tile that ends the form, in source order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::ClosingLimit','struct','How many closings closings keeps.',NULL,'fits','sound',NULL);
@@ -3479,6 +3481,7 @@ INSERT INTO purpose VALUES('surface-tui','follow::drive_following','function','D
 INSERT INTO purpose VALUES('surface-tui','follow::follow','function','Follows the document the hub checked last and paints its cards, so the document''s diagnostics are shown beside an editor.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::follow_plain','function','Prints the side view''s rows to a pipe after each report, so the document''s diagnostics are shown without a terminal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::rendering','function','Lays the side view''s frame out as the visual language''s cells, so the terminal and a pipe paint one rendering that the rules check.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-tui','follow::report_lines','function','Prints the lines `gandr view` prints for one report, so a face with no terminal shows the same text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','run::Input','enum','Names what one read of the face''s input answered, so the input''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','run::InputSource','trait','Names where the face''s input comes from, so the input''s source is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','run::SMOKE_NOTE','constant','Names the line the smoke face prints, so the smoke face''s readiness is read.',NULL,'fits','sound',NULL);

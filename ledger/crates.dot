@@ -290,6 +290,8 @@ digraph crates {
   "surface-lsp" -> "surface-syntax";
   "surface-mcp" -> "surface-dispatcher";
   "surface-mcp" -> "surface-lsp";
+  "surface-mcp" -> "surface-render-remote";
+  "surface-mcp" -> "surface-tui";
   "surface-parser" -> "surface-grammar";
   "surface-parser" -> "surface-syntax";
   "surface-parser" -> "theory-graphs";

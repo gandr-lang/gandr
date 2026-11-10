@@ -166,5 +166,9 @@ pub use crate::face::relay;
 #[cfg(unix)]
 pub use crate::face::serve;
 #[cfg(unix)]
+pub use crate::rap::Policy;
+#[cfg(unix)]
+pub use crate::rap::Retries;
+#[cfg(unix)]
 pub use crate::rap::Toolset;
 pub use crate::tools::ToolRefusal;

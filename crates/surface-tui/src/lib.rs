@@ -180,6 +180,7 @@ pub use crate::follow::drive_following;
 pub use crate::follow::follow;
 pub use crate::follow::follow_plain;
 pub use crate::follow::rendering;
+pub use crate::follow::report_lines;
 pub use crate::run::Input;
 pub use crate::run::InputSource;
 pub use crate::run::SMOKE_NOTE;

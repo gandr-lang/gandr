@@ -100,16 +100,37 @@
 //!
 //! # Calls under the XDG state directory
 //!
-//! `gandr serve --port` keeps each call its toolset acknowledged, until the
-//! call is answered, in `gandr/calls` under the user's state directory:
-//! `$XDG_STATE_HOME` when it names an absolute path, and `$HOME/.local/state`
-//! otherwise, by the same rule. The file of a workspace holds only the calls
-//! still pending. Removing it loses those calls: a hub that restarts cannot
-//! answer them with an error, and their callers wait on them.
+//! `gandr serve --port` keeps each call its toolset acknowledged, until a
+//! runtime takes or refuses its result, in `gandr/calls` under the user's state
+//! directory: `$XDG_STATE_HOME` when it names an absolute path, and
+//! `$HOME/.local/state` otherwise, by the same rule. The file of a workspace
+//! holds only the calls still pending. Removing it loses those calls: a hub
+//! that restarts cannot answer them, and their callers wait on them.
+//!
+//! # The retries of the toolset
+//!
+//! The toolset of `gandr serve --port` tries a callback that fails again, as
+//! the `[deliveries]` table names:
+//!
+//! ```toml
+//! [deliveries]
+//! first_ms = 250 # the wait before the first retry, the default
+//! longest_ms = 30000 # the longest wait between two attempts, the default
+//! retries = 8 # the attempts after the first, the default
+//! ```
+//!
+//! Each wait doubles the wait before it, up to `longest_ms`. A key that is
+//! absent takes its default. A value that is not a whole number in its range,
+//! or a `longest_ms` shorter than `first_ms`, is a fault, as a bad spelling
+//! is, and the hub does not start. The table is the user's file's alone: how
+//! long a host waits on its runtimes is a decision of an installation, never
+//! of a project.
 
 use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
 use core::fmt;
+#[cfg(unix)]
+use core::time::Duration;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -120,6 +141,10 @@ use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::PresentationFault;
 use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::presented;
+#[cfg(unix)]
+use gandr_surface_mcp::Policy;
+#[cfg(unix)]
+use gandr_surface_mcp::Retries;
 
 /// Whose recorded kernel verdicts a `check` believes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -145,8 +170,8 @@ impl Default for Kernel
     }
 }
 
-/// Why a table of the configuration file could not be read: its `[kernel]`
-/// or its `[reals]`.
+/// Why a table of the configuration file could not be read: its `[kernel]`,
+/// its `[reals]` or its `[deliveries]`.
 #[derive(Debug)]
 pub struct TableFault
 {
@@ -479,8 +504,8 @@ pub fn checkouts() -> Option<PathBuf>
 }
 
 /// The user's configuration file, read and parsed at most once a process: its
-/// `[presentation]`, its `[kernel]` and its `[reals]` are tables of the one
-/// file.
+/// `[presentation]`, its `[kernel]`, its `[reals]` and its `[deliveries]` are
+/// tables of the one file.
 ///
 /// # Specification
 /// trivial.
@@ -673,6 +698,46 @@ impl Configuration
             }),
         }
     }
+
+    /// The policy that retries the deliveries of the toolset, as the user's
+    /// configuration file names it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`deliveries_parsed`] reads the file's document; the
+    ///   default policy when no directory is named or no file is there.
+    /// - provides: the retries of `gandr serve --port`.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`deliveries_parsed`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system.
+    ///
+    /// # Errors
+    /// [`TableFault`], naming the file.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each key, each default, a value out of its range and
+    ///   a misshapen table are each read.
+    /// - witness: `config::tests::a_delivery_policy_is_read_and_a_bad_one_refused_6340`
+    #[cfg(unix)]
+    pub fn deliveries(&self) -> Result<Policy, TableFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(Policy::default()),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => deliveries_parsed(path, document.as_ref()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(TableFault {
+                path: path.clone(),
+                why: format!("cannot be read: {error}"),
+            }),
+        }
+    }
 }
 
 /// The kernel policy `read`, the contents of `path` parsed as TOML, names.
@@ -790,6 +855,96 @@ fn reals_parsed(
     })
 }
 
+/// The delivery policy that `read`, the contents of `path` parsed as TOML,
+/// names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `deliveries.first_ms`, `deliveries.longest_ms` and
+///   `deliveries.retries` read as the policy's first wait, longest wait and
+///   retries. A key that is absent, or a document without a `deliveries` table,
+///   takes the default. Text that is not TOML, a `deliveries` that is not a
+///   table, a wait that is not a whole number of one at least, retries that are
+///   not a whole number in the range of `u32`, and a longest wait shorter than
+///   the first are each a [`TableFault`].
+/// - provides: the reading of the table, apart from reading the file.
+/// - fails: the faults the ensures clause names.
+/// - panics: none.
+/// - executable: none — the clauses relate the document's text to the policy it
+///   names, which the result alone does not carry.
+///
+/// # Errors
+/// [`TableFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each key, each default, a wait of zero, retries that are
+///   no number, waits in the wrong order and a `deliveries` that is no table
+///   are each read.
+/// - witness: `config::tests::a_delivery_policy_is_read_and_a_bad_one_refused_6340`
+#[cfg(unix)]
+fn deliveries_parsed(
+    path: &Path,
+    read: Result<&toml::Table, &toml::de::Error>,
+) -> Result<Policy, TableFault>
+{
+    let fault = |why: String| TableFault {
+        path: path.to_path_buf(),
+        why,
+    };
+    let table = match read {
+        Ok(table) => table,
+        Err(error) => return Err(fault(format!("not TOML: {}", error.message()))),
+    };
+    let deliveries = match table.get("deliveries") {
+        None => return Ok(Policy::default()),
+        Some(&toml::Value::Table(ref deliveries)) => deliveries,
+        Some(other) => {
+            return Err(fault(format!(
+                "`deliveries` is of type {}, not a table",
+                other.type_str()
+            )));
+        },
+    };
+    let whole = |key: &str, least: u64| match deliveries.get(key) {
+        None => Ok(None),
+        Some(&toml::Value::Integer(number)) => u64::try_from(number)
+            .ok()
+            .filter(|&number| number >= least)
+            .map(Some)
+            .ok_or_else(|| {
+                fault(format!(
+                    "`deliveries.{key}` is {number}; it is a whole number of {least} at least"
+                ))
+            }),
+        Some(other) => Err(fault(format!(
+            "`deliveries.{key}` is {}; it is a whole number",
+            described(other)
+        ))),
+    };
+    let default = Policy::default();
+    let first = whole("first_ms", 1)?.map_or(default.first, Duration::from_millis);
+    let longest = whole("longest_ms", 1)?.map_or(default.longest, Duration::from_millis);
+    if longest < first {
+        return Err(fault(String::from(
+            "`deliveries.longest_ms` is shorter than `deliveries.first_ms`",
+        )));
+    }
+    let retries = match whole("retries", 0)? {
+        None => default.retries,
+        Some(retries) => Retries(u32::try_from(retries).map_err(|_overflow| {
+            fault(format!(
+                "`deliveries.retries` is {retries}; it is {} at most",
+                u32::MAX
+            ))
+        })?),
+    };
+    Ok(Policy {
+        first,
+        longest,
+        retries,
+    })
+}
+
 /// What a setting holds, in words: a string as itself, quoted; any other
 /// value by its type.
 ///
@@ -876,6 +1031,8 @@ mod tests
 
     use super::Kernel;
     use super::checkpointed;
+    #[cfg(unix)]
+    use super::deliveries_parsed;
     use super::kernel_parsed;
     use super::located;
     use super::reals_parsed;
@@ -1038,6 +1195,67 @@ mod tests
         assert_eq!(
             refused("reals = 1\n"),
             "/c/gandr/config.toml: `reals` is of type integer, not a table"
+        );
+    }
+
+    /// #6340: the retries of the toolset are a policy that the file names,
+    /// and a value out of its range is refused with the range.
+    #[cfg(unix)]
+    #[test]
+    fn a_delivery_policy_is_read_and_a_bad_one_refused_6340()
+    {
+        use core::time::Duration;
+
+        use gandr_surface_mcp::Policy;
+        use gandr_surface_mcp::Retries;
+
+        let read = |text: &str| {
+            deliveries_parsed(
+                Path::new("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+            )
+        };
+        let policy = |text: &str| match read(text) {
+            Ok(policy) => policy,
+            Err(fault) => panic!("{text:?} is read: {fault}"),
+        };
+        assert_eq!(policy(""), Policy::default());
+        assert_eq!(policy("[deliveries]\n"), Policy::default());
+        assert_eq!(
+            policy("[deliveries]\nfirst_ms = 100\nlongest_ms = 400\nretries = 2\n"),
+            Policy {
+                first: Duration::from_millis(100),
+                longest: Duration::from_millis(400),
+                retries: Retries(2),
+            }
+        );
+        assert_eq!(
+            policy("[deliveries]\nretries = 0\n"),
+            Policy {
+                retries: Retries(0),
+                ..Policy::default()
+            },
+            "a key that is absent takes its default"
+        );
+        let refused = |text: &str| match read(text) {
+            Err(fault) => fault.to_string(),
+            Ok(policy) => panic!("{text:?} is refused: {policy:?}"),
+        };
+        assert_eq!(
+            refused("[deliveries]\nfirst_ms = 0\n"),
+            "/c/gandr/config.toml: `deliveries.first_ms` is 0; it is a whole number of 1 at least"
+        );
+        assert_eq!(
+            refused("[deliveries]\nretries = \"many\"\n"),
+            "/c/gandr/config.toml: `deliveries.retries` is `many`; it is a whole number"
+        );
+        assert_eq!(
+            refused("[deliveries]\nfirst_ms = 500\nlongest_ms = 100\n"),
+            "/c/gandr/config.toml: `deliveries.longest_ms` is shorter than `deliveries.first_ms`"
+        );
+        assert_eq!(
+            refused("deliveries = 1\n"),
+            "/c/gandr/config.toml: `deliveries` is of type integer, not a table"
         );
     }
 

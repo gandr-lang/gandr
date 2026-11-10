@@ -1694,6 +1694,8 @@ version = "0.0.0"
 dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-lsp",
+ "gandr-surface-render-remote",
+ "gandr-surface-tui",
  "httparse",
  "quenchant-anodized",
  "quenchant-shape",

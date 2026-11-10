@@ -164,96 +164,109 @@ impl Following
     #[inline]
     pub fn frame(&self) -> Frame
     {
-        let Some(&(ref document, ref report)) =
-            self.latest.as_ref().and_then(|uri| self.reports.get(uri))
-        else {
-            return Frame::default();
-        };
-        let revision = Revision(i64::from(i32::from(document.version)));
-        let field = |name: &'static str, datum: Datum| Field {
-            name: FieldName::from(name),
-            datum,
-            revision,
-        };
-        let text = |line: &str| Datum::Text(String::from(line.trim()));
-        let rows = LineIndex::new(SourceText::from(report.source.as_str()));
-        let span = |start: ByteOffset| {
-            let row = rows.row_of_byte(start);
-            report
-                .source
-                .get(usize::from(rows.row_bytes(row).start()) .. usize::from(start))
-                .map_or(Datum::Absent, |before| {
-                    Datum::Text(spelled(format_args!(
-                        "{}:{}",
-                        usize::from(row).saturating_add(1),
-                        before.chars().count().saturating_add(1)
-                    )))
-                })
-        };
-        let count = |count: usize| Datum::Count(Count(u64::try_from(count).unwrap_or(u64::MAX)));
-        let holes = report
-            .marks
-            .iter()
-            .filter(|mark| mark.kind == MarkKind::EmptyHole);
-        let mut records = Vec::with_capacity(
-            report
-                .diagnostics
-                .len()
-                .saturating_add(report.marks.len())
-                .saturating_add(1),
-        );
-        records.push(Record {
-            fields: Vec::from([
-                field(
-                    "uri",
-                    Datum::Text(spelled(format_args!("{}", document.uri))),
-                ),
-                field(
-                    "version",
-                    Datum::Text(spelled(format_args!("{}", i32::from(document.version)))),
-                ),
-                field("diagnostics", count(report.diagnostics.len())),
-                field("holes", count(holes.clone().count())),
-            ]),
-        });
-        for card in &report.diagnostics {
-            let code = if card.code == DiagnosticCode::Other {
-                Datum::Absent
-            }
-            else {
-                Datum::Text(spelled(format_args!("{}", card.code)))
-            };
-            let mut fields = Vec::from([
-                field(
-                    "span",
-                    card.span
-                        .map_or(Datum::Absent, |placed| span(placed.start())),
-                ),
-                field("code", code),
-            ]);
-            fields.extend(
-                card.message
-                    .lines()
-                    .filter(|line| !line.trim().is_empty())
-                    .map(|line| field("message", text(line))),
-            );
-            fields.extend(
-                card.chain
-                    .iter()
-                    .filter(|step| !step.trim().is_empty())
-                    .map(|step| field("chain", text(step))),
-            );
-            records.push(Record { fields });
-        }
-        records.extend(holes.map(|hole| Record {
-            fields: Vec::from([
-                field("span", span(hole.range.start())),
-                field("code", Datum::Absent),
-                field("message", text(&hole.message)),
-            ]),
-        }));
-        Frame { revision, records }
+        self.latest
+            .as_ref()
+            .and_then(|uri| self.reports.get(uri))
+            .map_or_else(Frame::default, |&(ref document, ref report)| {
+                framed(document, report)
+            })
     }
+}
+
+/// The frame of `report`, the report of `document`: what [`Following::frame`]
+/// answers while `document` is the one followed.
+///
+/// # Specification
+/// trivial.
+fn framed(
+    document: &DocId,
+    report: &ReportView,
+) -> Frame
+{
+    let revision = Revision(i64::from(i32::from(document.version)));
+    let field = |name: &'static str, datum: Datum| Field {
+        name: FieldName::from(name),
+        datum,
+        revision,
+    };
+    let text = |line: &str| Datum::Text(String::from(line.trim()));
+    let rows = LineIndex::new(SourceText::from(report.source.as_str()));
+    let span = |start: ByteOffset| {
+        let row = rows.row_of_byte(start);
+        report
+            .source
+            .get(usize::from(rows.row_bytes(row).start()) .. usize::from(start))
+            .map_or(Datum::Absent, |before| {
+                Datum::Text(spelled(format_args!(
+                    "{}:{}",
+                    usize::from(row).saturating_add(1),
+                    before.chars().count().saturating_add(1)
+                )))
+            })
+    };
+    let count = |count: usize| Datum::Count(Count(u64::try_from(count).unwrap_or(u64::MAX)));
+    let holes = report
+        .marks
+        .iter()
+        .filter(|mark| mark.kind == MarkKind::EmptyHole);
+    let mut records = Vec::with_capacity(
+        report
+            .diagnostics
+            .len()
+            .saturating_add(report.marks.len())
+            .saturating_add(1),
+    );
+    records.push(Record {
+        fields: Vec::from([
+            field(
+                "uri",
+                Datum::Text(spelled(format_args!("{}", document.uri))),
+            ),
+            field(
+                "version",
+                Datum::Text(spelled(format_args!("{}", i32::from(document.version)))),
+            ),
+            field("diagnostics", count(report.diagnostics.len())),
+            field("holes", count(holes.clone().count())),
+        ]),
+    });
+    for card in &report.diagnostics {
+        let code = if card.code == DiagnosticCode::Other {
+            Datum::Absent
+        }
+        else {
+            Datum::Text(spelled(format_args!("{}", card.code)))
+        };
+        let mut fields = Vec::from([
+            field(
+                "span",
+                card.span
+                    .map_or(Datum::Absent, |placed| span(placed.start())),
+            ),
+            field("code", code),
+        ]);
+        fields.extend(
+            card.message
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| field("message", text(line))),
+        );
+        fields.extend(
+            card.chain
+                .iter()
+                .filter(|step| !step.trim().is_empty())
+                .map(|step| field("chain", text(step))),
+        );
+        records.push(Record { fields });
+    }
+    records.extend(holes.map(|hole| Record {
+        fields: Vec::from([
+            field("span", span(hole.range.start())),
+            field("code", Datum::Absent),
+            field("message", text(&hole.message)),
+        ]),
+    }));
+    Frame { revision, records }
 }
 
 /// The text `arguments` spell: each field of a frame owns its text.
@@ -544,6 +557,35 @@ fn printed(rendering: &Rendering) -> Vec<String>
             text
         })
         .collect()
+}
+
+/// The lines `gandr view` prints on a pipe for `report`, the report of
+/// `document`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the lines that [`follow_plain`] prints after a frame that carries
+///   `report` at `document`, without the blank line that parts two reports: the
+///   rendering of the report's frame, each line plain text with no space at its
+///   end.
+/// - provides: the text form of a report for a face with no terminal, such as
+///   the agent toolset's display of a result.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the lines of a report with two cards and a hole are the
+///   lines that a pipe prints for the same report.
+/// - witness: `follow::tests::a_piped_view_prints_each_report`
+#[spec(ensures: |ret| ret.iter().all(|line| line.trim_end().len() == line.len()))]
+#[must_use]
+#[inline]
+pub fn report_lines(
+    document: &DocId,
+    report: &ReportView,
+) -> Vec<String>
+{
+    printed(&rendering(&framed(document, report)))
 }
 
 /// What the side view's loop acts on next.
@@ -1197,6 +1239,18 @@ mod tests
                 ""
             ],
             "each report prints once, and nothing after the detach"
+        );
+        assert_eq!(
+            printed
+                .split("\n\n")
+                .next()
+                .map(str::lines)
+                .map(|lines| { lines.map(String::from).collect::<Vec<_>>() }),
+            Some(super::report_lines(
+                &document(&uri, DocVersion::from(1_i32)),
+                &refused()
+            )),
+            "the lines of a report are the lines a pipe prints for it"
         );
         let mut garbled = Vec::new();
         assert!(matches!(

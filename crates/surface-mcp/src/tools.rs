@@ -591,7 +591,7 @@ fn ledger_shown(arguments: &Value) -> Result<Value, ToolRefusal>
 ///
 /// # Specification
 /// trivial.
-fn held(
+pub fn held(
     workspace: &Workspace,
     arguments: &Value,
 ) -> Result<(DocumentUri, DocumentVersion), ToolRefusal>
