@@ -1069,28 +1069,33 @@ struct Form<'gap>
 }
 
 /// `parsed`, with each place a signal gives minted where the copy that writes
-/// it owes fewer obligations, if one does.
+/// it owes fewer obligations, if one does, and, where `inside` is given, if a
+/// place kept before a line stands inside it and the parse owes nothing but
+/// its minted tiles.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
 /// - ensures: `None` when `parsed` owes nothing, no place the search tries is
-///   kept, or the copy with every kept place written in owes no fewer
-///   obligations; otherwise the parse of that copy, with each kept line moved,
-///   read back over the source with each written tile minted at its place, its
-///   obligations those of the copy, shifted back over the tiles, one
-///   [`Oblig::MissingTile`] at each minted tile's place and at the start of
-///   each moved line, and one [`Oblig::IncompleteTile`] over each misspelt
-///   word. The scan reads only the top-level forms, [`form_around`], that hold
-///   an obligation. The search tries their places before each line in source
-///   order, each move of a line innermost block first, then their sibling,
-///   arrow and attribute opener places and the keywords [`misspelt`] gives for
-///   the [`COPIES`] words nearest an obligation, nearest first, [`COPIES`]
-///   places in all. Each place is judged in a copy of its form with the places
-///   kept there before it, a move in place of a move of its own line. A place
-///   is kept when that copy owes fewer obligations than the form alone, each
-///   minted tile and each moved line counting as one. A closer, a sibling
-///   separator, an arrow, an attribute opener, a keyword or a move is kept only
-///   when the copy owes nothing but its minted tiles and its moved lines.
+///   kept, `inside` is given and no place kept before a line stands inside it,
+///   ends included, `inside` is given and the parse owes an obligation besides
+///   one for each minted tile and each moved line, or the copy with every kept
+///   place written in owes no fewer obligations; otherwise the parse of that
+///   copy, with each kept line moved, read back over the source with each
+///   written tile minted at its place, its obligations those of the copy,
+///   shifted back over the tiles, one [`Oblig::MissingTile`] at each minted
+///   tile's place and at the start of each moved line, and one
+///   [`Oblig::IncompleteTile`] over each misspelt word. The scan reads only the
+///   top-level forms, [`form_around`], that hold an obligation. The search
+///   tries their places before each line in source order, each move of a line
+///   innermost block first, then their sibling, arrow and attribute opener
+///   places and the keywords [`misspelt`] gives for the [`COPIES`] words
+///   nearest an obligation, nearest first, [`COPIES`] places in all. Each place
+///   is judged in a copy of its form with the places kept there before it, a
+///   move in place of a move of its own line. A place is kept when that copy
+///   owes fewer obligations than the form alone, each minted tile and each
+///   moved line counting as one. A closer, a sibling separator, an arrow, an
+///   attribute opener, a keyword or a move is kept only when the copy owes
+///   nothing but its minted tiles and its moved lines.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -1116,6 +1121,7 @@ struct Form<'gap>
 pub(super) fn gapped<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
+    inside: Option<ByteSpan>,
 ) -> Option<ParseResult<'source>>
 {
     if parsed.obligations.is_empty() {
@@ -1232,9 +1238,34 @@ pub(super) fn gapped<'source>(
     if kept.is_empty() {
         return None;
     }
+    // A search held to a form keeps its places only where a line inside the
+    // form shows one of them, and only where its parse owes nothing but the
+    // tiles it mints: the condition the search puts on a closer, a separator,
+    // a keyword and a move.
+    let shown = |inside: ByteSpan| {
+        kept.iter().any(|&gap| {
+            inside.start() <= gap.at
+                && gap.at <= inside.end()
+                && lines
+                    .iter()
+                    .any(|line| core::ptr::eq(core::ptr::from_ref(line), core::ptr::from_ref(gap)))
+        })
+    };
+    if inside.is_some_and(|inside| !shown(inside)) {
+        return None;
+    }
     kept.sort_by_key(|gap| (gap.at, matches!(gap.act, Act::Writes { .. })));
-    minted(pbg, source, &kept)
-        .filter(|repaired| repaired.obligations.len() < parsed.obligations.len())
+    let tiles: usize = kept
+        .iter()
+        .map(|gap| match gap.act {
+            Act::Writes { ref tiles, over: 0 } => tiles.len(),
+            Act::Writes { .. } | Act::Moves { .. } => 1,
+        })
+        .sum();
+    minted(pbg, source, &kept).filter(|repaired| {
+        repaired.obligations.len() < parsed.obligations.len()
+            && (inside.is_none() || repaired.obligations.len() == tiles)
+    })
 }
 
 /// The top-level form `at` stands in: from the start of the last line at or

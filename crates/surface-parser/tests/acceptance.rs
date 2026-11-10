@@ -1545,6 +1545,63 @@ fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// A juxtaposed type whose group a dropped token tears keeps the group as
+/// the operand of its application, and the declaration stays one form.
+///
+/// A dropped `Path` leaves `[.A = Rung]`, whose `=` opens a form of its own
+/// and takes the `]`. The `)` of the group then ends the run that the `[`
+/// opens, and the `(` stays on the slope with no form around it. The
+/// application of `Dyad` took no operand there, so the parse owed a
+/// `MissingMeld` at `Dyad ⟦⟧(`, and the declaration fell apart (#6029). The
+/// call form `Dyad(` owed no such meld. A `?` dropped from a result type tears
+/// the group of `Run` in the same way.
+#[test]
+fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Box<dyn Error>>
+{
+    for (source, owed) in [
+        (
+            include_str!(
+                "acceptance/unformatted/a-torn-group-stays-the-operand-of-its-juxtaposition-6029-pair.gandr"
+            ),
+            1_usize,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-torn-group-stays-the-operand-of-its-juxtaposition-6029-run.gandr"
+            ),
+            4_usize,
+        ),
+    ] {
+        let result = parse(built(), SourceText::from(source))?;
+        assert!(
+            result
+                .obligations()
+                .iter()
+                .all(|obligation| obligation.class != Oblig::MissingMeld),
+            "no application of a torn group owes its operand in {source:?}: {:?}",
+            result.obligations()
+        );
+        assert_eq!(
+            owed,
+            result.obligations().len(),
+            "the drop owes no more than the call form owes in {source:?}: {:?}",
+            result.obligations()
+        );
+        let root = result.tree().root();
+        let declarations: Vec<String> = children(result.tree(), root)
+            .into_iter()
+            .filter(|&id| matches!(label_of(result.tree(), id), Some(NodeLabel::Meld(_))))
+            .map(|id| text(result.tree(), id))
+            .collect();
+        assert_eq!(
+            vec![source.trim_end()],
+            declarations,
+            "the declaration stays one form"
+        );
+    }
+    Ok(())
+}
+
 /// A `def rec` that lost the `)` of its parameters keeps its reading when a
 /// declaration follows it: one minted `)` before its `->`, and the declaration
 /// after it whole.
