@@ -5,6 +5,8 @@
 //!
 //! The checker records the slot type at the hold.
 //! A return synthesises the pure returner of its value.
+//! This is the mode-correct reading of an introduction whose premise
+//! synthesises [Dunfield-2019-bidirectional_typing].
 //!
 //! - see: #1142 — `bound`
 //! - cites: [Dunfield-2019-bidirectional_typing]

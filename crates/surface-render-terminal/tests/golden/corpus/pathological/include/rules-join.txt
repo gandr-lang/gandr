@@ -1,19 +1,19 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/include/rules-join.gandr:25:3
+   ╭▸ corpus/pathological/include/rules-join.gandr:27:3
    │
-25 │   include Unwritten;
+27 │   include Unwritten;
    │   ━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `Orphan` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
 error[RulesUncompleted]: this rule and an earlier one rewrite `pick(one, y')` to two normal forms, `plus(one, y')` and `plus(y', one)`, and no rule the order can orient joins them, so the block's rules are refused
-   ╭▸ corpus/pathological/include/rules-join.gandr:20:3
+   ╭▸ corpus/pathological/include/rules-join.gandr:22:3
    │
-18 │   include Choice;
+20 │   include Choice;
    │   ────────────── the rule it overlaps
-19 │   oper one : () --> M;
-20 │   rule flip : pick (one ()) y ==> plus y (one ());
+21 │   oper one : () --> M;
+22 │   rule flip : pick (one ()) y ==> plus y (one ());
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
    │
    ├ note: `Swapped` is refused with RulesUncompleted, as its expectation states

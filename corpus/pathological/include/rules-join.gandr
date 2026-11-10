@@ -1,7 +1,9 @@
 //! `rules-join` refuses an incomplete join of included rules.
 //!
 //! Each include adds rules to one completed block. `Swapped` leaves a critical
-//! pair with incomparable normal forms. The checker refuses the block by name.
+//! pair with incomparable normal forms. With the included rule `first`,
+//! `pick (one ()) y` reads `plus (one ()) y` and `plus y (one ())`. The path
+//! order orients neither call. The checker refuses the block by name.
 //!
 //! - see: #738
 

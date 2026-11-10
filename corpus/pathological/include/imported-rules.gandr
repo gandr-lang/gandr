@@ -1,7 +1,10 @@
 //! `imported-rules` refuses an incomplete join through an imported theory.
 //!
-//! The imported `Monoid` rules join the local block. `Swapping` leaves a
-//! critical pair with incomparable normal forms. The checker refuses it.
+//! The checker completes the imported `Monoid` rules and the local rules as
+//! one block, as for rules of one source. `Swapping` leaves a critical pair
+//! with incomparable normal forms. With the imported left unit rule,
+//! `mul (one ()) (pair x y)` reads `pair x y` and `pair y x`. The path order
+//! orients neither form. The checker refuses it.
 //!
 //! - see: #1224
 
