@@ -511,10 +511,12 @@ pub use crate::width::Threads;
 pub use crate::width::Width;
 pub use crate::workspace::Gathered;
 pub use crate::workspace::Unmembered;
+pub use crate::workspace::Unran;
 pub use crate::workspace::Unstated;
 pub use crate::workspace::WORKSPACE;
 pub use crate::workspace::WORKSPACE_MANIFEST;
 pub use crate::workspace::Workspace;
+pub use crate::workspace::stepped_alone;
 pub use crate::workspace::workspace_root;
 
 /// One understood driver invocation, ready to route.

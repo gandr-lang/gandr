@@ -25,8 +25,6 @@ use gandr_kernel_term::MarkedDeclaration;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
 use gandr_storage_values::ValueError;
-use gandr_surface_corpus::CorpusRoot;
-use gandr_surface_corpus::SettleReport;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Coordinate;
 use gandr_surface_dispatcher::Export;
@@ -42,7 +40,6 @@ use gandr_surface_dispatcher::Manifest;
 use gandr_surface_dispatcher::ManifestFault;
 use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Pool;
-use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Revisions;
 use gandr_surface_dispatcher::Shadows;
@@ -60,7 +57,6 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::Workspace;
 use gandr_surface_dispatcher::classify;
-use gandr_surface_dispatcher::compose;
 use gandr_surface_dispatcher::exported_source;
 use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::lay_out_shadowed;
@@ -71,6 +67,7 @@ use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
 use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
+use gandr_surface_dispatcher::stepped_alone;
 use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -579,63 +576,81 @@ fn a_workspace_walks_every_member_it_names_2687()
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 
-/// The program `source` composes to, and the report of its declarations.
+/// The manifest that `model` states as the package source at `source`, which
+/// imports `std.build` before the model, composed as `gandr check` composes
+/// a package source.
 ///
 /// # Specification
-/// - requires: `source` composes under the strict root and settles.
-/// - ensures: the program and the report of the settled composition.
+/// - requires: `source` is a path a `package.gandr` may be written at, and its
+///   directory roots a package once it is written.
+/// - ensures: [`Manifest::of`] the program and the report of the package
+///   source, laid out over the sources it imports and judged as `stepped_alone`
+///   judges it, for the package `source` roots.
 /// - fails: never on the admitted domain.
-/// - panics: a source that does not compose, or composes refused, violates the
-///   precondition.
-/// - executable: none — a program is opaque to a predicate; the cases observe
-///   it by running its declarations.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the manifest cases below compose real sources.
-/// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
-fn settled_of(source: SourceText<'static>) -> (Program<'static>, SettleReport<'static>)
-{
-    let grammar = built_in().expect("the built-in grammar builds");
-    let mut lowerings = LoweringCount::default();
-    match compose(&grammar, CorpusRoot::Strict, source, &mut lowerings)
-        .expect("the source composes")
-    {
-        Composed::Settled {
-            program, report, ..
-        } => (program, report),
-        refused @ Composed::Refused(_) => panic!("the source settles: {refused:?}"),
-    }
-}
-
-/// The manifest the `Package` model of `source` states, for a package of
-/// its package source alone.
-///
-/// # Specification
-/// - requires: as [`settled_of`].
-/// - ensures: [`Manifest::of`] the program `source` composes to and its report,
-///   for a scratch package whose root holds nothing but its `package.gandr`,
-///   `source` itself, so discovery reads the `sources` it states.
-/// - fails: never on the admitted domain.
-/// - panics: as [`settled_of`], and as [`scratch`].
+/// - panics: a source that does not write, roots no package, or does not settle
+///   violates the precondition.
 /// - executable: none — reading the manifest runs the program, which a
 ///   predicate could only check by running it again; the cases observe each
 ///   outcome.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the manifest cases below compose real sources.
+/// - hypothesis: L3 — the manifest cases below compose package sources as the
+///   checker reads them, each an ascribed `Model(Gandr.Package)`.
 /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
-fn manifest_of(source: SourceText<'static>) -> Result<Manifest, Unmanifested>
+/// - witness: `tests::package::a_manifest_lists_the_modules_its_sources_make_2687`
+fn manifest_at<'text>(
+    source: &Path,
+    model: impl Into<SourceText<'text>>,
+) -> Result<Manifest, Unmanifested>
 {
-    let directory = scratch(Path::new("alone"), &[Path::new("package.gandr")]);
-    if let Err(why) = std::fs::write(directory.join("package.gandr"), source.as_ref()) {
+    let text = format!("{STD_PACKAGE}{}", model.into());
+    if let Err(why) = std::fs::write(source, &text) {
         panic!("the package source is written: {why}");
     }
-    let Maybe::Present(package) = Package::discover(&directory)
+    let Some(Maybe::Present(package)) = source.parent().map(Package::discover)
     else {
-        panic!("the scratch package is found");
+        panic!("the package is found");
     };
-    let (mut program, report) = settled_of(source);
-    Manifest::of(&mut program, &report, &package)
+    let composed = stepped_alone(source, SourceText::from(text.as_str()), |step| match step {
+        Step::Source {
+            composed:
+                Composed::Settled {
+                    mut program,
+                    report,
+                    ..
+                },
+            ..
+        } => Manifest::of(&mut program, &report, &package),
+        Step::Source {
+            composed: Composed::Refused(refusal),
+            ..
+        } => panic!("the package source settles: {refusal}"),
+        Step::Fault { fault, .. } => panic!("the package source composes: {fault}"),
+    });
+    match composed {
+        Ok(manifest) => manifest,
+        Err(why) => panic!("the built-in grammar builds: {why:?}"),
+    }
+}
+
+/// The manifest that `model` states, for a package of its package source
+/// alone.
+///
+/// # Specification
+/// - requires: as [`manifest_at`].
+/// - ensures: [`manifest_at`] the `package.gandr` of a scratch package whose
+///   root holds nothing else, so discovery reads the `sources` it states.
+/// - fails: never on the admitted domain.
+/// - panics: as [`manifest_at`], and as [`scratch`].
+/// - executable: none — as [`manifest_at`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — the manifest cases below compose real sources.
+/// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
+fn manifest_of<'text>(model: impl Into<SourceText<'text>>) -> Result<Manifest, Unmanifested>
+{
+    let directory = scratch(Path::new("alone"), &[Path::new("package.gandr")]);
+    manifest_at(&directory.join("package.gandr"), model)
 }
 
 /// The model fields every case below states beside its `name` and its
@@ -660,22 +675,26 @@ const TOOLCHAIN: &str = "\n[toolchain]\ngandr = \">= 0.1\"\nfeatures = [\n  \"a\
 /// #2687, #3030: a manifest reads each field of the `Package` model, each run
 /// to its string and decoded; a model missing a field, and one whose field is
 /// not a string, whether the first or a later one, are refused at that field.
+/// The ascription refuses a missing field and a field that is no string, so
+/// the manifest finds that field unrunnable.
 #[test]
 fn a_manifest_reads_the_package_model_2687()
 {
-    let read = manifest_of(SourceText::from(concat!(
-        "module Package where { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
+    let read = manifest_of(concat!(
+        "pub module Package : Model(Gandr.Package) where { def name = \"a \\\"quoted\\\" name\" ; \
+         def version = \"0.1.0\" ; ",
         rest!(),
         " }"
-    )))
+    ))
     .expect("every field is what it states");
     assert_eq!(
         read.render(),
-        manifest_of(SourceText::from(concat!(
-            "module Package where { def name = \"a \\\"quoted\\\" name\" ; def version = \"0.1.0\" ; ",
+        manifest_of(concat!(
+            "pub module Package : Model(Gandr.Package) where { def name = \"a \\\"quoted\\\" name\" \
+             ; def version = \"0.1.0\" ; ",
             rest!(),
             " }"
-        )))
+        ))
         .expect("the same model")
         .render()
     );
@@ -687,43 +706,54 @@ fn a_manifest_reads_the_package_model_2687()
         "the decoded name, quoted again for TOML: {}",
         read.render()
     );
-    assert_eq!(
-        manifest_of(SourceText::from(concat!(
-            "module Package where { def name = \"hello\" ; ",
-            rest!(),
-            " }"
-        ))),
-        Err(Unmanifested::Undeclared(Field::Version)),
+    assert!(
+        matches!(
+            manifest_of(concat!(
+                "pub module Package : Model(Gandr.Package) where { def name = \"hello\" ; ",
+                rest!(),
+                " }"
+            )),
+            Err(Unmanifested::Unstrung {
+                field: Field::Version,
+                ..
+            })
+        ),
         "a missing version"
     );
-    assert_eq!(
-        manifest_of(SourceText::from(concat!(
-            "module Package where { def name = 3 ; def version = \"0.1.0\" ; ",
-            rest!(),
-            " }"
-        ))),
-        Err(Unmanifested::Unstrung {
-            field: Field::Name,
-            came: String::from("3"),
-        }),
+    assert!(
+        matches!(
+            manifest_of(concat!(
+                "pub module Package : Model(Gandr.Package) where { def name = 3 ; def version = \
+                 \"0.1.0\" ; ",
+                rest!(),
+                " }"
+            )),
+            Err(Unmanifested::Unstrung {
+                field: Field::Name,
+                ..
+            })
+        ),
         "a name that is no string"
     );
-    assert_eq!(
-        manifest_of(SourceText::from(
-            "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; def authors = 3 ; \
-             def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" ; }"
-        )),
-        Err(Unmanifested::Unstrung {
-            field: Field::Authors,
-            came: String::from("3"),
-        }),
+    assert!(
+        matches!(
+            manifest_of(
+                "pub module Package : Model(Gandr.Package) where { def name = \"hello\" ; def \
+                 version = \"0.1.0\" ; def authors = 3 ; def licence = \"MIT\" ; def documentation \
+                 = \"d\" ; def endpoint = \"e\" ; }"
+            ),
+            Err(Unmanifested::Unstrung {
+                field: Field::Authors,
+                ..
+            })
+        ),
         "authors that are no string"
     );
     assert_eq!(
-        manifest_of(SourceText::from(concat!(
+        manifest_of(concat!(
             "def name = \"hello\" ; def version = \"0.1.0\" ; ",
             rest!()
-        ))),
+        )),
         Err(Unmanifested::Undeclared(Field::Name)),
         "top-level fields are not the package's"
     );
@@ -740,16 +770,13 @@ fn a_model_s_sources_is_the_literal_discovery_reads_4916()
 {
     let model = |sources: &str| {
         format!(
-            "module Package where {{ def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
-             \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" ; \
-             def gandr = \">= 0.1\" ; def features = \"\" ; def systems = \"\" ; def spelling = \
-             \"\" ; {sources} }}"
+            "pub module Package : Model(Gandr.Package) where {{ def name = \"p\" ; def version = \
+             \"0.1.0\" ; def authors = \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; \
+             def endpoint = \"e\" ; def gandr = \">= 0.1\" ; def features = \"\" ; def systems = \
+             \"\" ; def spelling = \"\" ; {sources} }}"
         )
     };
-    let manifest = |sources: &str| {
-        let text: &'static str = String::leak(model(sources));
-        manifest_of(SourceText::from(text))
-    };
+    let manifest = |sources: &str| manifest_of(model(sources).as_str());
     assert!(
         manifest("def sources = \"src\" ;").is_ok(),
         "a literal reads"
@@ -768,9 +795,14 @@ fn a_model_s_sources_is_the_literal_discovery_reads_4916()
         }),
         "a `sources` above the root"
     );
-    assert_eq!(
-        manifest(""),
-        Err(Unmanifested::Undeclared(Field::Sources)),
+    assert!(
+        matches!(
+            manifest(""),
+            Err(Unmanifested::Unstrung {
+                field: Field::Sources,
+                ..
+            })
+        ),
         "a missing `sources`"
     );
     let directory = scratch(Path::new("stated"), &[Path::new("package.gandr")]);
@@ -800,7 +832,9 @@ fn a_model_s_sources_is_the_literal_discovery_reads_4916()
     let laid_out = |sources: &str| {
         std::fs::write(
             directory.join("package.gandr"),
-            format!("module Package where\n  def name = \"p\";\n  {sources}\n"),
+            format!(
+                "pub module Package : Model(Gandr.Package) where\n  def name = \"p\";\n  {sources}\n"
+            ),
         )
         .expect("the package source is written");
         match Package::discover(&directory) {
@@ -828,11 +862,12 @@ fn a_model_s_sources_is_the_literal_discovery_reads_4916()
 #[test]
 fn a_manifest_renders_its_digest_and_its_table_2687()
 {
-    let rendered = manifest_of(SourceText::from(concat!(
-        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+    let rendered = manifest_of(concat!(
+        "pub module Package : Model(Gandr.Package) where { def name = \"hello\" ; def version = \
+         \"0.1.0\" ; ",
         rest!(),
         " }"
-    )))
+    ))
     .expect("the model reads")
     .render();
     let body = format!(
@@ -846,11 +881,12 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
             blake3::hash(body.as_bytes()).to_hex()
         )
     );
-    let escaped = manifest_of(SourceText::from(concat!(
-        "module Package where { def name = \"back\\\\slash\\nline\\ttab\" ; def version = \"1\" ; ",
+    let escaped = manifest_of(concat!(
+        "pub module Package : Model(Gandr.Package) where { def name = \
+         \"back\\\\slash\\nline\\ttab\" ; def version = \"1\" ; ",
         rest!(),
         " }"
-    )))
+    ))
     .expect("the model reads")
     .render();
     assert!(
@@ -869,13 +905,13 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
     /// The model of a package `p` stating `$toolchain` beside its other fields.
     macro_rules! model {
         ($toolchain:literal) => {
-            manifest_of(SourceText::from(concat!(
-                "module Package where { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
-                 \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
-                 ; def spelling = \"\" ; def sources = \".\" ; ",
+            manifest_of(concat!(
+                "pub module Package : Model(Gandr.Package) where { def name = \"p\" ; def version \
+                 = \"0.1.0\" ; def authors = \"A\" ; def licence = \"MIT\" ; def documentation = \
+                 \"d\" ; def endpoint = \"e\" ; def spelling = \"\" ; def sources = \".\" ; ",
                 $toolchain,
                 " }"
-            )))
+            ))
         };
     }
     let read = model!(
@@ -898,9 +934,14 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
         }),
         "a version with no `>=`"
     );
-    assert_eq!(
-        model!("def gandr = \"\" ; def systems = \"\" ;"),
-        Err(Unmanifested::Undeclared(Field::Features)),
+    assert!(
+        matches!(
+            model!("def gandr = \"\" ; def systems = \"\" ;"),
+            Err(Unmanifested::Unstrung {
+                field: Field::Features,
+                ..
+            })
+        ),
         "a missing `features`"
     );
 }
@@ -914,14 +955,14 @@ fn a_manifest_renders_the_presentation_its_model_names_3135()
     /// The model of a package `p` stating `$spelling` beside its other fields.
     macro_rules! model {
         ($spelling:literal) => {
-            manifest_of(SourceText::from(concat!(
-                "module Package where { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
-                 \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
-                 ; def gandr = \">= 0.1\" ; def features = \"a, b\" ; def systems = \"\" ; def \
-                 spelling = ",
+            manifest_of(concat!(
+                "pub module Package : Model(Gandr.Package) where { def name = \"p\" ; def version \
+                 = \"0.1.0\" ; def authors = \"A\" ; def licence = \"MIT\" ; def documentation = \
+                 \"d\" ; def endpoint = \"e\" ; def gandr = \">= 0.1\" ; def features = \"a, b\" ; \
+                 def systems = \"\" ; def spelling = ",
                 $spelling,
                 " ; def sources = \".\" ; }"
-            )))
+            ))
         };
     }
     let ascii = model!("\"ascii\"").expect("the spelling reads").render();
@@ -959,21 +1000,17 @@ fn a_manifest_lists_the_modules_its_sources_make_2687()
         Path::new("hello/vendored/package.gandr"),
         Path::new("hello/vendored/inner.gandr"),
     ]);
-    let model = concat!(
-        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
-        rest!(),
-        " }"
-    );
-    std::fs::write(directory.join("hello/package.gandr"), model)
-        .expect("the package source is written");
-    let Maybe::Present(package) = Package::discover(&directory.join("hello"))
-    else {
-        panic!("the package is found");
-    };
-    let (mut program, report) = settled_of(SourceText::from(model));
-    let rendered = Manifest::of(&mut program, &report, &package)
-        .expect("the model reads")
-        .render();
+    let rendered = manifest_at(
+        &directory.join("hello/package.gandr"),
+        concat!(
+            "pub module Package : Model(Gandr.Package) where { def name = \"hello\" ; def version \
+             = \"0.1.0\" ; ",
+            rest!(),
+            " }"
+        ),
+    )
+    .expect("the model reads")
+    .render();
     assert!(
         rendered.ends_with(&format!(
             "\nmodules = [\n  \"text.greet\",\n  \"util\",\n]\n{TOOLCHAIN}"
@@ -991,17 +1028,19 @@ fn a_manifest_is_written_rewritten_and_refused_as_drift_2687()
 {
     let directory = scratch(Path::new("reconciled"), &[]);
     let path = directory.join("package.gandr.toml");
-    let first = manifest_of(SourceText::from(concat!(
-        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+    let first = manifest_of(concat!(
+        "pub module Package : Model(Gandr.Package) where { def name = \"hello\" ; def version = \
+         \"0.1.0\" ; ",
         rest!(),
         " }"
-    )))
+    ))
     .expect("the model reads");
-    let second = manifest_of(SourceText::from(concat!(
-        "module Package where { def name = \"hello\" ; def version = \"0.2.0\" ; ",
+    let second = manifest_of(concat!(
+        "pub module Package : Model(Gandr.Package) where { def name = \"hello\" ; def version = \
+         \"0.2.0\" ; ",
         rest!(),
         " }"
-    )))
+    ))
     .expect("the model reads");
     let outcome = |manifest: &Manifest| match reconcile(&path, manifest) {
         Ok(reconciled) => Ok(reconciled),

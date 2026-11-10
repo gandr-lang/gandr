@@ -2389,10 +2389,12 @@ INSERT INTO purpose VALUES('surface-dispatcher','width::Threads','struct','A num
 INSERT INTO purpose VALUES('surface-dispatcher','width::Width','enum','How many threads a walk lowers its sources on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::Gathered','struct','A workspace a verb works on, with the manifest its model states or why it states none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::Unmembered','enum','Why a workspace names no packages: its source unread or refused, its `members` undeclared or no list of strings, or a member rooting no package.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','workspace::Unran','enum','Why a source checked alone ran nothing: it cannot be read, or it does not compose.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::Unstated','enum','Why a workspace''s model states no manifest: a field undeclared or run to no string, or a `gandr` stating no constraint.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE','constant','The file name of a workspace''s source, at the workspace''s root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::WORKSPACE_MANIFEST','constant','The file name of the manifest the checker writes beside a workspace''s source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','workspace::Workspace','struct','A workspace: the directory holding `workspace.gandr`, whose `members` names its packages.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','workspace::stepped_alone','function','What a reader makes of the step a source''s text takes through the pipeline, laid out at its path and judged as `gandr check` judges a source alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Beside','enum','What a source''s rewrites are checked beside: the source alone, or the sources its imports reach, laid out before it as one unit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Change','enum','What formatting would have changed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','Form','enum','The spelling a source is laid out in.',NULL,'fits','sound',NULL);
