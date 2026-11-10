@@ -4,7 +4,8 @@
 // as-pattern binding for the whole value.
 //
 // The compiler turns each pattern into a list case over the empty list and a
-// cell. A recursive rest match descends structurally.
+// cell. A list's tail stands one stage below the list. So a recursive rest
+// match descends structurally.
 //
 // - see: `pathological/builtins/list-patterns.gandr` — unmatched and mixed patterns
 

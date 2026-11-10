@@ -4,6 +4,8 @@
 //! It proves that captured cleanup runs from the inner access to the outer
 //! access.
 //! It shows a blame when cleanup calls an owed declaration.
+//! The cleanup replaces the write-back that the abandoned stack never reaches.
+//! The other frames of that stack never run.
 //!
 //! The examples abandon continuations through an exit handler.
 //! They observe a cleanup call and a list that survives the cleanup.
@@ -23,6 +25,7 @@ import std.process;
 def later : Integer -> Unit;
 
 /// Cleanup calls `later` after a handler abandons an open access.
+/// The blame shows that the abandonment runs the cleanup.
 @[ runs("blame: `later` is owed its body") ]
 def unwound() -> Integer =
   var x = 1

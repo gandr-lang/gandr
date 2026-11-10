@@ -1,10 +1,15 @@
 // This source defines effect rows as free-model trees.
 //
 // A program holds a result or a row operation with its continuation.
+// The row is a sum of signatures, after Swierstra, "Data types à la carte"
+// (2008). A handler is a fold of the free model, after Plotkin and Pretnar.
 //
 // The row type prevents operations outside the row.
 //
 // - see: `tree-rows.gandr` — row handlers
+// - cites: [Plotkin-2013-handling_algebraic_effects]
+//
+// [Plotkin-2013-handling_algebraic_effects]: https://doi.org/10.2168/LMCS-9(4:23)2013 "Plotkin and Pretnar, Handling Algebraic Effects"
 
 /// `Either` chooses the first operation or the remaining row.
 pub data Either(l : Type, r : Type) : Type where

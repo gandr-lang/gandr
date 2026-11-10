@@ -4,6 +4,7 @@
 //! Cancellation does not reach an ended peer.
 //! The handler returns `7`.
 //!
+//! The scheduler starts the child of a fork when the root first waits.
 //! The peer sends two payloads, then it ends before the root exits.
 //! The root receives the first payload before it abandons its continuation.
 //!

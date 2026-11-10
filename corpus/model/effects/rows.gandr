@@ -14,6 +14,8 @@ pub theory Sink where
   sort C : Type;
 
 /// `Marks` defines rules that flush and erase marks.
+/// Where a row holds `Sink` and the state theory, the rules `dropped` and
+/// `kept` overlap, and both reducts reach `k`.
 pub theory Marks where
   sort C : Type;
   oper mark : (k : C) --> C;
@@ -24,6 +26,7 @@ pub theory Marks where
   rule flushed : flush k <=> k where { | under [Sink, State.Eff | r] };
 
 /// `ExactMarks` defines the rules under closed rows.
+/// No row holds both rules, so their overlap owes no join and no rule erases.
 theory ExactMarks where
   sort C : Type;
   oper mark : (k : C) --> C;

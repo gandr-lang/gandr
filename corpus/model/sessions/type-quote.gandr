@@ -36,5 +36,6 @@ def protocol : Flow[.A = Type](Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
 
 /// `run_over_binder` reads a motive binder in a run protocol.
 /// The checker carries the run without payload codes.
+/// Limits: a quote may not read that binder.
 def run_over_binder(served : Run (?(Seat.Dispatch). end)) -> Run (?(Seat.Dispatch). end) =
   Path.walk (fun (X) { Run (type(?X. end)) }) (Path.here Seat.Dispatch) served

@@ -8,6 +8,7 @@
 //! The checker runs each tactic, checks its answer against the goal, and
 //! fills the splice.
 //! The kernel replays the filled declaration.
+//! So the kernel trusts no tactic.
 //!
 //! - see: #2762
 /// `pick` uses `assumption` to select the innermost integer binder.
@@ -25,6 +26,8 @@ def id : Integer -> Integer = ~intro assumption;
 def identity() -> Integer { id 5 }
 
 /// `poly` is the polymorphic identity that two introductions produce.
+/// Each introduction states its goal under the earlier binders, so the second
+/// binder and its goal read the type that the first binds.
 def poly : (a : Type, a) -> a = ~intro (intro assumption);
 
 /// `polyApplied` applies `poly` to an integer.

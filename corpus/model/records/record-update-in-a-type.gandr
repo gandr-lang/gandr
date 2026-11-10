@@ -1,4 +1,5 @@
 // This source tests record updates inside path types.
+// A record update in a type denotes the record that it builds.
 //
 // Updates at distinct labels commute. An update with the existing value
 // equals its base record.

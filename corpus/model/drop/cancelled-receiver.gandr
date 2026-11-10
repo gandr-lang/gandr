@@ -1,7 +1,10 @@
 //! `cancelled-receiver` models a peer that waits after a handler abandons its
 //! continuation.
 //!
+//! The abandoned rest holds an end whose protocol is still open.
+//! So the rest owes its peer a cancellation.
 //! It proves that a waiting peer observes cancellation at its next action.
+//! The peer then abandons its own continuation.
 //! An abandoned end also cancels each queued end.
 //!
 //! Each program exits from its root continuation.

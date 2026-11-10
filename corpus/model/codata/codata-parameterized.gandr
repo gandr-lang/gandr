@@ -18,5 +18,7 @@ def rec scaled(n : Integer) -> Scaled =
   .doubled => n + n
 
 /// `observed` is the doubled projection of the rejected scaled call.
+/// The result of `scaled` names no codata to observe, so the projection stays
+/// unadmitted.
 @[ refuses("OutOfFragment.projection_expression") ]
 def observed = (scaled 21).doubled;

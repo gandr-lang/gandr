@@ -3,6 +3,8 @@
 // The tree is the free model of `std.process.Exit.Eff`.
 //
 // Each fold implements one handler clause.
+// A deep handler reinstalls itself in the continuation. So a clause resumes
+// by a fold of what the continuation answers.
 //
 // - see: `exit.gandr` — native handlers
 
