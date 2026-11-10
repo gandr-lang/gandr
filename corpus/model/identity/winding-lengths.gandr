@@ -1,0 +1,30 @@
+/// This source winds a loop word at three lengths of cctt's
+/// `tests/bench/s1.cctt`. There the winding transports zero along a word of
+/// loops in the helix, and `forceℤ` forces the result.
+///
+/// gandr presents the loop space of the circle by its words. The winding of a
+/// word is `wind`, which counts its letters. Each run writes the word, winds
+/// it and forces the integer to `Tt`.
+///
+/// The run machine runs each length that this source states. At 10⁶ letters
+/// the run passes the heap region's bound. The machine does not run a word
+/// that `Path.step` composes, because it does not lower that transport.
+///
+/// - see: #6309
+/// - see: #6324 — the heap region's bound at 10⁶ letters
+// The circle, its words and `wind`.
+import "./circle-base.gandr";
+// The numerals, `forceInt` and the loop words.
+import "./ladder-base.gandr";
+
+/// A word of a hundred loops winds a hundred times.
+@[runs("Tt")]
+def wound100() -> Top { forceInt (wind (loops n100)) }
+
+/// A word of a thousand loops winds a thousand times.
+@[runs("Tt")]
+def wound1000() -> Top { forceInt (wind (loops n1k)) }
+
+/// A word of a hundred thousand loops winds a hundred thousand times.
+@[runs("Tt")]
+def wound100000() -> Top { forceInt (wind (loops n100k)) }

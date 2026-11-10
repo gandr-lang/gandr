@@ -39,7 +39,7 @@ def rec boolPathN(n : Nat) -> Path[.A = Type](Bool, Bool) =
     | Succ(k) => Path.step (boolPathN[<] k) negPath
 
 /// The `negVal` function is cctt's `val`, the transport of `true`.
-def negVal(n : Nat) -> Bool = Path.walk (fun (X) { X }) (boolPathN n) true
+pub def negVal(n : Nat) -> Bool = Path.walk (fun (X) { X }) (boolPathN n) true
 
 /// One negation moves `true` to `false`.
 def negOnce : Path[.A = Bool](negVal Zero, false) = Path.here false;
