@@ -2769,6 +2769,68 @@ impl<'pbg> MeldState<'pbg>
         SlopeHeight(self.stack.len())
     }
 
+    /// How the slope ends, as a form-boundary unit's seam asks of the state it
+    /// joins: settled when no operator and no form tile is on the slope and
+    /// the top cell has [`BOUNDARY_SORT`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`UnitEnding::Settled`] exactly when the operator and barrier
+    ///   caches are empty and the top cell has the boundary sort;
+    ///   [`UnitEnding::Open`] on an empty slope.
+    /// - provides: the condition under which a unit joined after this state
+    ///   keeps its own molding, and a collapse of this state does nothing.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the three reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parked unit of a closed declaration ends settled
+    ///   and one of a declaration left open does not; a store that took up an
+    ///   unsettled unit as a block changes a committed tree.
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    #[inline]
+    pub(crate) fn ending(&self) -> UnitEnding
+    {
+        if self.operators.is_empty()
+            && self.barriers.is_empty()
+            && self
+                .stack
+                .last()
+                .is_some_and(|top| top.sort == BOUNDARY_SORT)
+        {
+            UnitEnding::Settled
+        }
+        else {
+            UnitEnding::Open
+        }
+    }
+
+    /// The lowest slope position a splice or a frontier flip touched since
+    /// the last reading, which this reading forgets.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position the low-water mark held, `usize::MAX` when
+    ///   nothing was touched; the mark then holds `usize::MAX`.
+    /// - provides: how far down a join or a commit reached, so a caller knows
+    ///   which cells kept the molding they had.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a laid join reads each unit's reach and takes up as a
+    ///   block only forms no later fold touched; a reading that kept the mark
+    ///   or lost it changes a committed tree.
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    #[inline]
+    #[spec(captures: before = self.low_water, ensures: |ret| usize::from(ret) == before && self.low_water == usize::MAX)]
+    pub(crate) fn take_low_water(&mut self) -> SlopeHeight
+    {
+        SlopeHeight(core::mem::replace(&mut self.low_water, usize::MAX))
+    }
+
     /// Whether a push that continues none of the open frontiers it meets can
     /// reach, below the nearest, an open frontier at or above `floor`.
     ///
@@ -6874,6 +6936,47 @@ impl<'pbg> MeldState<'pbg>
         Ok((tree, obligations))
     }
 
+    /// Commit as [`commit_with_obligations`](Self::commit_with_obligations)
+    /// does, and say how far down the slope the closing collapse reached.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the tree and the obligations
+    ///   [`commit_with_obligations`](Self::commit_with_obligations) answers,
+    ///   beside the lowest slope position the collapse touched, or `usize::MAX`
+    ///   when it touched none.
+    /// - provides: the reach a laid join reads to know which forms kept the
+    ///   molding their own units gave them.
+    /// - fails: as [`commit`](MeldState::commit).
+    /// - panics: none.
+    /// - executable: none — the clause restates the commit.
+    ///
+    /// # Errors
+    /// As [`commit`](MeldState::commit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and the hostile sources commit
+    ///   through a laid join to the whole parse; a commit whose collapse closed
+    ///   a form taken up as a block changes the tree.
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    pub(crate) fn commit_reached(
+        mut self,
+        source: SourceText<'_>,
+    ) -> Result<(SyntaxTree<'_>, Vec<ObligationInstance>, SlopeHeight), MeldError>
+    {
+        if <&str>::from(source) != self.source.as_str() {
+            return Err(MeldError::SourceMismatch);
+        }
+        let _before = self.take_low_water();
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        let reached = self.take_low_water();
+        let obligations = core::mem::take(&mut self.obligations);
+        let root = self.wrap_root();
+        self.attach_comments(root);
+        let tree = self.build_tree(source, root, Splices::NONE)?;
+        Ok((tree, obligations, reached))
+    }
+
     /// Commit a state molded over a copy of `source` with tiles written in,
     /// as `source`'s tree: each written tile read back as the minted tile its
     /// splice names, every other span shifted back over the tiles.
@@ -8282,7 +8385,8 @@ impl<'pbg> FormUnit<'pbg>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the parked unit holds the unit's base, the checkpoint of its
-    ///   melder, and whether its fold touched its stand-in.
+    ///   melder, whether its fold touched its stand-in, and whether its slope
+    ///   ends settled.
     /// - provides: the store side of reusing a form's molding across revisions.
     /// - panics: none.
     ///
@@ -8290,10 +8394,12 @@ impl<'pbg> FormUnit<'pbg>
     /// - hypothesis: L3 — every corpus source's units, parked and taken up
     ///   again, join to the whole parse with the seams the fresh units met; a
     ///   unit whose fold touched its stand-in still breaks its seam once taken
-    ///   up. Dropping the reach, the base or a checkpoint buffer changes a seam
+    ///   up, and a unit that ends open is never taken up as a block. Dropping
+    ///   the reach, the ending, the base or a checkpoint buffer changes a seam
     ///   or the joined tree.
     /// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
     /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
     #[inline]
     #[must_use]
     #[cfg_attr(
@@ -8304,7 +8410,8 @@ impl<'pbg> FormUnit<'pbg>
         )
     )]
     #[spec(ensures: |ret| ret.base == self.base && ret.checkpoint == self.state.checkpoint()
-        && (ret.reach == StandInReach::Reached) == (self.state.low_water == 0))]
+        && (ret.reach == StandInReach::Reached) == (self.state.low_water == 0)
+        && ret.ending == self.state.ending())]
     pub fn park(&self) -> ParkedUnit
     {
         ParkedUnit {
@@ -8315,6 +8422,7 @@ impl<'pbg> FormUnit<'pbg>
             else {
                 StandInReach::Untouched
             },
+            ending: self.state.ending(),
             checkpoint: self.state.checkpoint(),
         }
     }
@@ -8374,8 +8482,31 @@ enum StandInReach
     Reached,
 }
 
+/// How a [`FormUnit`]'s slope ends ([`MeldState::ending`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitEnding
+{
+    /// No operator and no form tile on the slope, and a top cell of
+    /// [`BOUNDARY_SORT`]: the next unit's seam holds against it.
+    Settled,
+    /// The slope ends otherwise: the next unit's seam breaks.
+    Open,
+}
+
+/// Whether a [`ParkedUnit`] is clean ([`ParkedUnit::cleanness`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitCleanness
+{
+    /// The unit starts the source or never touched its stand-in, and ends
+    /// settled: a laid join may take it up as a block.
+    Clean,
+    /// The unit's fold touched its stand-in, or its slope ends open.
+    Unclean,
+}
+
 /// A [`FormUnit`] set aside between revisions: its base, its melder's
-/// checkpoint, and whether its fold touched its stand-in.
+/// checkpoint, whether its fold touched its stand-in, and whether it ends
+/// settled.
 ///
 /// A parked unit borrows no grammar and names no token position, so it
 /// outlives the revision it was molded in. [`FormUnit::resume`] takes it up
@@ -8394,6 +8525,7 @@ enum StandInReach
 ///   the joined tree.
 /// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
 /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+/// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParkedUnit
 {
@@ -8401,6 +8533,8 @@ pub struct ParkedUnit
     base: UnitBase,
     /// Whether the unit's fold touched its stand-in.
     reach: StandInReach,
+    /// Whether the unit's slope ends settled.
+    ending: UnitEnding,
     /// The unit's melder.
     checkpoint: Checkpoint,
 }
@@ -8427,6 +8561,51 @@ impl ParkedUnit
     pub const fn fingerprint(&self) -> GrammarFingerprint
     {
         self.checkpoint.fingerprint
+    }
+
+    /// Whether the unit is clean: its fold never touched its stand-in, or it
+    /// starts the source and has none, and its slope ends settled. A clean
+    /// unit's seam holds against a settled state, and a collapse after it
+    /// leaves its forms as they are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`UnitCleanness::Clean`] exactly when the unit starts the
+    ///   source or never touched its stand-in, and ends settled.
+    /// - provides: the condition a laid join asks of a unit before it takes the
+    ///   unit's forms up as a block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed declaration's parked unit is clean and an
+    ///   open one's is not; a join that took up an unclean unit as a block
+    ///   changes a committed tree.
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_ends_settled`
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| (ret == UnitCleanness::Clean) == ((self.base == UnitBase::SourceStart || self.reach == StandInReach::Untouched) && self.ending == UnitEnding::Settled))]
+    pub(crate) fn cleanness(&self) -> UnitCleanness
+    {
+        if (self.base == UnitBase::SourceStart || self.reach == StandInReach::Untouched)
+            && self.ending == UnitEnding::Settled
+        {
+            UnitCleanness::Clean
+        }
+        else {
+            UnitCleanness::Unclean
+        }
+    }
+
+    /// The unit's melder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn checkpoint(&self) -> &Checkpoint
+    {
+        &self.checkpoint
     }
 }
 
@@ -10088,6 +10267,8 @@ mod tests
     use super::StandInReach;
     use super::TileText;
     use super::UnitBase;
+    use super::UnitCleanness;
+    use super::UnitEnding;
     use super::UnitSeam;
     use crate::label::Lexeme;
     use crate::oblig::Delta;
@@ -11950,6 +12131,41 @@ mod tests
         }
         Ok(())
     }
+
+    #[test]
+    fn a_parked_unit_keeps_whether_it_ends_settled() -> Result<(), Box<dyn Error>>
+    {
+        // A closed declaration's unit ends settled and is clean, so a laid join
+        // may take its forms up as a block; a declaration left open ends open,
+        // and the next unit's seam breaks against it.
+        let pbg = built_in()?;
+        let source = SourceText::from(include_str!(
+            "meld/fixtures/a-parked-unit-keeps-whether-it-ends-settled.gandr"
+        ));
+        let mut molder = crate::Molder::new(&pbg);
+        let split = crate::FormSplit::new(&molder, source);
+        let &[first, second] = split.runs()
+        else {
+            return Err("the source splits into two runs".into());
+        };
+        let closed = split.mold(&mut molder, first).park();
+        let open = split.mold(&mut molder, second).park();
+        assert_eq!(
+            (closed.ending, closed.cleanness()),
+            (UnitEnding::Settled, UnitCleanness::Clean)
+        );
+        assert_eq!(
+            (open.ending, open.cleanness()),
+            (UnitEnding::Open, UnitCleanness::Unclean)
+        );
+        assert_eq!(
+            FormUnit::resume(&pbg, second, &open).park(),
+            open,
+            "the ending survives a resume"
+        );
+        Ok(())
+    }
+
     #[test]
     fn mark_rollback_restores_state_exactly() -> Result<(), Box<dyn Error>>
     {

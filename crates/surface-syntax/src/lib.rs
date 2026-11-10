@@ -125,6 +125,7 @@ pub use crate::tree::NodeIndex;
 pub use crate::tree::NodeIndices;
 pub use crate::tree::Positions;
 pub use crate::tree::SyntaxTree;
+pub use crate::tree::TreeSlice;
 
 /// Equality observed without invoking a non-const trait method.
 ///

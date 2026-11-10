@@ -18,7 +18,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 **Why.** An editor, a REPL and a batch checker all meet partial programs. A parser that stops at the first error gives each of them less than it has: no tree past the error, and one diagnostic where several independent gaps exist. A parser that completes every input with explicit, located, ranked material gives every consumer a whole tree and the full list of what the source still owes, and the batch checker reads "no obligations" as "well-formed".
 
-**How.** The labeler is a hand-written total scanner. The molder enumerates a token's candidate molds from the grammar's per-label menus, discards those the slope head cannot admit — one union of the grammar's tile-set words and a bit test per candidate — and dry-runs the survivors inside a mark/rollback transaction, one per push class, keeping the least obligation delta with a deterministic tie-break; a tie it breaks by the window of tokens after it, one window per window class. The melder is the paper's first-order push machine: Shift, Reduce and Degrout over one slope of cells, with grout at the bottom of the precedence order so every push concludes, and every emission appended to a log that `commit` replays into an arena laid out by form.
+**How.** The labeler is a hand-written total scanner. The molder enumerates a token's candidate molds from the grammar's per-label menus, discards those the slope head cannot admit — one union of the grammar's tile-set words and a bit test per candidate — and dry-runs the survivors inside a mark/rollback transaction, keeping the least obligation delta with a deterministic tie-break; a tie it breaks by the window of tokens after it (`tables`). The melder is the paper's first-order push machine: Shift, Reduce and Degrout over one slope of cells, with grout at the bottom of the precedence order so every push concludes, and every emission appended to a log that `commit` replays into an arena laid out by form.
 
 ## Provided features
 
@@ -40,6 +40,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - `ParseResult::after`, `ParseResult::layable` and `Unlayable`: a parse laid after an earlier text's tree, and whether a text ends where another can be laid after it. Witnesses: `parse::tests::a_parse_laid_after_a_tree_reads_as_the_whole_texts`, `parse::tests::a_closure_that_repairs_or_ends_inside_a_token_is_not_layable`.
 - `parse_by_form`, `FormSplit`, `FormJoin`, `FormUnit`, `UnitBase`, `UnitSeam` and `SeamBreak`: one source parsed by its top-level forms, each form molded apart from a form-boundary checkpoint and joined into the whole parse. Witnesses: `parse::tests::form_split_parses_as_the_whole_source`, `parse::tests::a_source_splits_before_each_declaration_head`, `parse::tests::arbitrary_source_parses_by_form_as_whole`.
 - `FormUnit::park`, `FormUnit::resume`, `ParkedUnit`, `FormSplit::identity` and `FormIdentity`: a molded form kept apart from the source it was molded in, and taken up into another revision whose run spells the same identity. Witnesses: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`, `parse::tests::an_equal_identity_molds_an_equal_unit`, `parse::tests::hostile_edits_reuse_only_equal_units`, `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`, `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`.
+- `FormSplit::join_laid`, `JoinPiece`, `LaidUnit`, `LaidJoin` and `RunCount`: a join that takes a run up whole from its laid region. Witnesses: `parse::tests::a_laid_join_parses_as_the_whole_source`, `parse::tests::hostile_edits_join_laid_as_whole`.
 
 ## Expected features
 
@@ -47,7 +48,6 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - **The source outlives the tree.** A committed tree borrows the text it spans; the caller keeps the `SourceText` alive for as long as it reads the tree.
 - **A checkpoint resumes under its own grammar and revision.** `Checkpoint::fingerprint` names the grammar a snapshot was taken under; pairing it with the right grammar is the caller's, and the byte stream carries no version, so a stream written by one revision of this crate is read by that revision only.
 - **`alloc`.** The crate is `no_std` with `alloc`; its tests link `std` for files and timing.
-- **Timing.** The corpus cold-parse p99 budget fails a slow parse only under `GANDR_WALL_CLOCK_GATES=1`, which CI sets; without it the test prints the measurement and passes.
 
 ## Examples
 

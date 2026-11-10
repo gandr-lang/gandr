@@ -10,6 +10,7 @@ use core::convert::Infallible;
 use core::ops::ControlFlow;
 
 use anodized::spec;
+use gandr_core_fork::Serial;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::Composed;
@@ -26,6 +27,7 @@ use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::FormCount;
+use gandr_surface_session::FormStore;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -154,6 +156,42 @@ fn agree(
     census
 }
 
+/// Parse `text` through `store` and assert it commits the whole parse of
+/// `text`: the same tree, node for node and block for block, and the same
+/// repairs.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: answers the store's form census.
+/// - panics: when the store's parse differs from the whole parse, naming
+///   `context`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every generated and scripted revision is parsed through
+///   it; a form taken up as a block where an edit reached it, a comment a
+///   stretch moved, or a region laid after a fold reached it changes a node.
+/// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+/// - witness: `tests::forms::a_one_form_edit_molds_only_the_forms_that_read_it`
+/// - witness: `tests::forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it`
+#[spec(ensures: |ret| ret.kept() <= ret.forms() && ret.molded() <= ret.forms())]
+fn commits_whole(
+    store: &mut FormStore,
+    text: Text<'_>,
+    context: &dyn core::fmt::Display,
+) -> FormCensus
+{
+    let source = SourceText::from(text.0);
+    let (parsed, census) = store
+        .parse(&GRAMMAR, source, &Serial)
+        .expect("the store's parse commits");
+    assert_eq!(
+        parsed,
+        parse(&GRAMMAR, source).expect("the whole parse commits"),
+        "{context}: the tree committed from blocks is the whole parse's"
+    );
+    census
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
 
@@ -168,10 +206,13 @@ proptest! {
         let pool = if wide { three() } else { Arc::default() };
         let mut module = module(FormCount::from(forms), root);
         let mut incremental = session(root).with_pool(pool);
+        let mut store = FormStore::default();
         let _first = agree(&mut incremental, root, Text::from(&module.text()), &"the generated module");
+        let _whole = commits_whole(&mut store, Text::from(&module.text()), &"the generated module");
         for edit in &chain {
             module.edit(edit);
             let _census = agree(&mut incremental, root, Text::from(&module.text()), &format_args!("{edit:?}"));
+            let _kept = commits_whole(&mut store, Text::from(&module.text()), &format_args!("{edit:?}"));
         }
     }
 }
@@ -205,12 +246,12 @@ fn a_generated_module_parses_with_no_repair_4444()
 }
 
 /// A generated module of `LARGE` forms under `root`, then every class of edit
-/// at `three` threads: each revision agrees, the first molds every form, and
-/// each edit after it molds a handful.
+/// at `three` threads: each revision agrees and commits the whole parse, the
+/// first molds every form, and each edit after it molds a handful.
 ///
 /// # Specification
-/// - ensures: every revision agreed, the first molded every form, and no edit
-///   after it molded more than eight.
+/// - ensures: every revision agreed and committed the whole parse's tree, the
+///   first molded every form, and no edit after it molded more than eight.
 /// - panics: when a revision disagrees or molds more than that.
 /// - executable: none — the outcome is the test's panic or its return; the
 ///   function returns nothing a predicate could read.
@@ -225,6 +266,12 @@ fn large_edit_script(root: SourceRoot)
     let forms = FormCount::from(LARGE);
     let mut module = module(forms, root);
     let mut incremental = session(root).with_pool(three());
+    let mut store = FormStore::default();
+    let _whole = commits_whole(
+        &mut store,
+        Text::from(&module.text()),
+        &format_args!("{root:?}"),
+    );
     let first = agree(
         &mut incremental,
         root,
@@ -245,6 +292,11 @@ fn large_edit_script(root: SourceRoot)
             Text::from(&module.text()),
             &format_args!("{root:?} {edit}"),
         );
+        let _kept = commits_whole(
+            &mut store,
+            Text::from(&module.text()),
+            &format_args!("{root:?} {edit}"),
+        );
         assert!(
             usize::from(census.molded()) <= 8,
             "{root:?} {edit}: molds {} of {} forms",
@@ -258,9 +310,11 @@ fn large_edit_script(root: SourceRoot)
 fn a_one_form_edit_molds_only_the_forms_that_read_it()
 {
     // Twelve forms of twenty-one significant tokens each. Unchanged, none is
-    // molded; a change past a form's eighth significant token molds that form
-    // alone; a change within its first eight molds it and the form before,
-    // whose lookahead reads them.
+    // molded and the commit takes every form up whole; a change past a form's
+    // eighth significant token molds that form alone, and the commit lays it
+    // and the form after it out again; a change within its first eight molds
+    // it and the form before, whose lookahead reads them, and the commit lays
+    // those and the form after out again.
     let form = |i: usize, name: &str, returned: &str| {
         format!("def {name}{i} = thunk {{ fun (x) {{ fun (y) {{ pure {returned} }} }} }} ;\n")
     };
@@ -274,16 +328,24 @@ fn a_one_form_edit_molds_only_the_forms_that_read_it()
     };
     let root = SourceRoot::Strict;
     let mut incremental = session(root);
-    for (revision, molded) in [
-        (text("p", "x"), 12_usize),
-        (text("p", "x"), 0),
-        (text("p", "y"), 1),
-        (text("q", "y"), 2),
-        (text("q", "y"), 0),
+    let mut store = FormStore::default();
+    for (revision, molded, kept) in [
+        (text("p", "x"), 12_usize, 0_usize),
+        (text("p", "x"), 0, 12),
+        (text("p", "y"), 1, 10),
+        (text("q", "y"), 2, 9),
+        (text("q", "y"), 0, 12),
     ] {
         let census = agree(&mut incremental, root, Text::from(&revision), &revision);
         assert_eq!(usize::from(census.forms()), 12);
         assert_eq!(usize::from(census.molded()), molded, "{revision}");
+        assert_eq!(usize::from(census.kept()), kept, "{revision}");
+        let alone = commits_whole(&mut store, Text::from(&revision), &revision);
+        assert_eq!(
+            (alone.molded(), alone.kept()),
+            (census.molded(), census.kept()),
+            "{revision}: a store alone counts what the session's store counts"
+        );
     }
 }
 
@@ -518,6 +580,7 @@ mod sweeps
             last = last
         );
         let mut incremental = session(root).with_pool(three());
+        let mut store = FormStore::default();
         for (revision, name) in [
             (&original, "the source"),
             (&inserted, "an insertion"),
@@ -525,12 +588,9 @@ mod sweeps
             (&moved, "a move"),
             (&original, "the source again"),
         ] {
-            let _census = agree(
-                &mut incremental,
-                root,
-                Text::from(revision),
-                &format_args!("{}: {name}", path.display()),
-            );
+            let context = format!("{}: {name}", path.display());
+            let _census = agree(&mut incremental, root, Text::from(revision), &context);
+            let _kept = commits_whole(&mut store, Text::from(revision), &context);
         }
     }
 }

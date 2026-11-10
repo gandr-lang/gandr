@@ -159,6 +159,21 @@
 //! - Reversal: a molder whose lookahead grows past eight significant tokens
 //!   widens the window with it; a store persisted across processes keys by a
 //!   digest of the identity.
+//!
+//! ### An unchanged form is taken up whole
+//!
+//! A join that resumes every parked unit lays out the whole tree again.
+//! `FormSplit::join_laid` (the `laid` module) keeps, beside each unit, the
+//! slice of the tree its region holds, and takes a clean run up as that slice.
+//! Only the runs an edit reached, and the run after them, join onto a melder.
+//!
+//! - Alternatives: a commit that stages every node again costs a pass over the
+//!   module at each keystroke; a tree that holds its forms' blocks by reference
+//!   removes the copy the assembly still makes, at the cost of an indirection
+//!   for each reader of the tree.
+//! - Reversal: a grammar whose folds cross a top-level seam makes every slice
+//!   stale; the checks then fall back to the whole join, and the slices stop
+//!   paying.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -194,11 +209,16 @@ use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
 
 mod gap;
+mod laid;
 mod place;
 
 pub use self::gap::Juxtaposition;
 pub use self::gap::Separation;
 pub use self::gap::juxtaposed;
+pub use self::laid::JoinPiece;
+pub use self::laid::LaidJoin;
+pub use self::laid::LaidUnit;
+pub use self::laid::RunCount;
 
 /// What a form run's molding depends on, spelled out.
 ///
@@ -1189,6 +1209,7 @@ mod tests
 
     use super::FormIdentity;
     use super::FormSplit;
+    use super::JoinPiece;
     use super::ParseResult;
     use super::parse;
     use super::parse_by_form;
@@ -1918,6 +1939,167 @@ mod tests
         Ok(())
     }
 
+    /// How many runs a laid join took up whole.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Kept(usize);
+
+    /// Parse `before` by a laid join of fresh units, then join `after` from
+    /// what that join left: each run of `after` takes up the unit of its
+    /// identity, and the region laid for that unit where the run before it
+    /// has the identity the run before the unit had; the other runs mold.
+    ///
+    /// # Specification
+    /// - requires: `before` and `after` split under `molder`'s grammar.
+    /// - ensures: `before`'s parse, `after`'s parse, and how many runs the
+    ///   second join took up whole; the first join takes none up.
+    /// - fails: a join's [`MeldError`](crate::MeldError).
+    /// - panics: when the first join takes a run up whole.
+    ///
+    /// # Errors
+    /// A join's [`MeldError`](crate::MeldError).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus and hostile laid-join witnesses call it on
+    ///   every source and edit they build.
+    /// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+    /// - witness: `parse::tests::hostile_edits_join_laid_as_whole`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(_, _, Kept(kept))| kept <= after.runs().len()))]
+    fn laid_rejoin<'first, 'second>(
+        molder: &mut Molder<'_>,
+        before: &FormSplit<'first>,
+        after: &FormSplit<'second>,
+    ) -> Result<(ParseResult<'first>, ParseResult<'second>, Kept), Box<dyn Error>>
+    {
+        let units: Vec<FormUnit<'_>> = before
+            .runs()
+            .iter()
+            .map(|&run| before.mold(molder, run))
+            .collect();
+        let parked: Vec<ParkedUnit> = units.iter().map(FormUnit::park).collect();
+        let pieces = units
+            .into_iter()
+            .zip(&parked)
+            .map(|(unit, held)| JoinPiece::new(held, Some(unit), None))
+            .collect();
+        let first = before.join_laid(molder, pieces)?;
+        assert_eq!(
+            usize::from(first.kept()),
+            0,
+            "a join given no region takes nothing up"
+        );
+        let (first, laid) = first.into_parts();
+        let identities: Vec<FormIdentity> = before
+            .runs()
+            .iter()
+            .map(|&run| before.identity(run))
+            .collect();
+        let positions: BTreeMap<&FormIdentity, usize> = identities
+            .iter()
+            .enumerate()
+            .map(|(at, identity)| (identity, at))
+            .collect();
+        let edited: Vec<FormIdentity> = after
+            .runs()
+            .iter()
+            .map(|&run| after.identity(run))
+            .collect();
+        let fresh: Vec<Option<ParkedUnit>> = after
+            .runs()
+            .iter()
+            .zip(&edited)
+            .map(|(&run, identity)| {
+                (!positions.contains_key(identity)).then(|| after.mold(molder, run).park())
+            })
+            .collect();
+        let mut pieces = Vec::with_capacity(edited.len());
+        for (at, (identity, molded)) in edited.iter().zip(&fresh).enumerate() {
+            let piece = match (positions.get(identity), molded.as_ref()) {
+                (Some(&held), _) => {
+                    let follows = match (at.checked_sub(1), held.checked_sub(1)) {
+                        (None, None) => true,
+                        (Some(previous), Some(earlier)) => {
+                            edited.get(previous) == identities.get(earlier)
+                        },
+                        (None, Some(_)) | (Some(_), None) => false,
+                    };
+                    let unit = parked.get(held).ok_or("each held identity has a unit")?;
+                    let region = laid.get(held).and_then(Option::as_ref).filter(|_| follows);
+                    JoinPiece::new(unit, None, region)
+                },
+                (None, Some(unit)) => JoinPiece::new(unit, None, None),
+                (None, None) => return Err("each new identity is molded".into()),
+            };
+            pieces.push(piece);
+        }
+        let second = after.join_laid(molder, pieces)?;
+        let kept = Kept(usize::from(second.kept()));
+        Ok((
+            first.into_result(),
+            second.into_parts().0.into_result(),
+            kept,
+        ))
+    }
+
+    #[test]
+    fn a_laid_join_parses_as_the_whole_source() -> Result<(), Box<dyn Error>>
+    {
+        // Every corpus source, joined from fresh units and joined again from
+        // the regions that join laid, parses whole both times; so does each
+        // source of three forms or more with a declaration inserted at its
+        // middle boundary, joined from the original's units and regions. The
+        // second joins take runs up whole.
+        let pbg = built_in()?;
+        let mut molder = Molder::new(&pbg);
+        let mut kept = 0_usize;
+        let mut kept_edited = 0_usize;
+        let mut edited = String::new();
+        for path in gandr_files(&corpus_root()) {
+            let src = read_source(&path)?;
+            let source = SourceText::from(src.as_str());
+            let whole = parse(&pbg, source)?;
+            let split = FormSplit::new(&molder, source);
+            let (first, again, Kept(taken)) = laid_rejoin(&mut molder, &split, &split)?;
+            assert_eq!(first, whole, "{} joins laid as whole", path.display());
+            assert_eq!(
+                again,
+                whole,
+                "{} joins from its own regions as whole",
+                path.display()
+            );
+            kept = kept.saturating_add(taken);
+            let middle = split.runs().len().div_euclid(2);
+            let Some(&run) = split.runs().get(middle).filter(|_| middle > 0)
+            else {
+                continue;
+            };
+            let tokens = label(SourceFragment::from(src.as_str()));
+            let at = tokens
+                .get(usize::from(run.start()))
+                .and_then(|token| usize::try_from(token.start).ok())
+                .ok_or("the middle run starts at a token")?;
+            let (head, tail) = src
+                .split_at_checked(at)
+                .ok_or("a token starts at a character")?;
+            edited.clear();
+            for part in [head, "def inserted = 1;\n", tail] {
+                edited.push_str(part);
+            }
+            let after = FormSplit::new(&molder, SourceText::from(edited.as_str()));
+            let (_, joined, Kept(taken)) = laid_rejoin(&mut molder, &split, &after)?;
+            assert_eq!(
+                joined,
+                parse(&pbg, SourceText::from(edited.as_str()))?,
+                "{} edited at its middle boundary joins laid as whole",
+                path.display()
+            );
+            kept_edited = kept_edited.saturating_add(taken);
+        }
+        assert!(kept > 0, "the corpus joins take runs up whole");
+        assert!(kept_edited > 0, "and so do the edited sources' joins");
+        Ok(())
+    }
+
     #[test]
     fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
     {
@@ -2057,6 +2239,34 @@ mod tests
             let parked = parked_by_identity(&mut molder, &unedited);
             let after = FormSplit::new(&molder, SourceText::from(edited.as_str()));
             let (joined, _reused) = rejoin(&mut molder, &after, &parked).expect("equal identities mold equal units");
+            prop_assert_eq!(joined, parse(pbg, SourceText::from(edited.as_str())).expect("commit is total"));
+        }
+
+        #[test]
+        fn hostile_edits_join_laid_as_whole(
+            parts in prop::collection::vec(hostile_source(), 2 .. 6),
+            replacement in hostile_source(),
+            slot in any::<prop::sample::Index>(),
+        ) {
+            use std::sync::OnceLock;
+            static PBG: OnceLock<Pbg> = OnceLock::new();
+            let pbg = PBG.get_or_init(|| built_in().expect("built-in grammar"));
+
+            // One hostile fragment of several replaced by another: the
+            // original joined laid parses whole, and the edited source joined
+            // from its units and regions does too.
+            let before = parts.join("\n");
+            let mut edited_parts = parts;
+            let at = slot.index(edited_parts.len());
+            if let Some(part) = edited_parts.get_mut(at) {
+                *part = replacement;
+            }
+            let edited = edited_parts.join("\n");
+            let mut molder = Molder::new(pbg);
+            let unedited = FormSplit::new(&molder, SourceText::from(before.as_str()));
+            let after = FormSplit::new(&molder, SourceText::from(edited.as_str()));
+            let (first, joined, _kept) = laid_rejoin(&mut molder, &unedited, &after).expect("the joins commit");
+            prop_assert_eq!(first, parse(pbg, SourceText::from(before.as_str())).expect("commit is total"));
             prop_assert_eq!(joined, parse(pbg, SourceText::from(edited.as_str())).expect("commit is total"));
         }
     }
