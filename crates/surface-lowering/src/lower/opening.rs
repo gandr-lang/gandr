@@ -277,7 +277,7 @@ impl<'source> Lowerer<'_, 'source>
                     .slots
                     .get(usize::from(slot))
                     .is_some_and(|held| held.name == name)
-                    .then(|| structure.exported_as.get(&slot).copied().unwrap_or(slot)),
+                    .then(|| self.collected.exported_read(opened.module, slot)),
                 Member::Module(_) => None,
             });
             match (exported, found) {
