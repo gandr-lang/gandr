@@ -5184,7 +5184,8 @@ if [[ -f $watch_lock ]] && kill -0 "$(< "$watch_lock")" 2> /dev/null; then
   exit 2
 fi
 echo $$ > "$watch_lock"
-trap 'drop_scratch; rm -f "$watch_mark" "$watch_lock"' EXIT
+members_file=
+trap 'drop_scratch; rm -f "$watch_mark" "$watch_lock" "$members_file"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
@@ -5200,22 +5201,26 @@ required=$(required_contexts)
 # (`restack_past`), and it waits alone for its seat.
 waited=
 heal() {
-  local stack member red queued members=() decision at=0 cut=
+  local stack member red queued decision at=0 cut=
   stack=$(server_stack "$number")
   queued=$(queued_of "$stack")
+  members_file=$(mktemp)
   # The branches each member's paths are read from.
   # shellcheck disable=SC2046
   git fetch --quiet origin "$trunk" $(jq -r '.[].head' <<< "$stack")
   for member in $(jq -r '.[].number' <<< "$stack"); do
-    red=$(red_check "$member") || return 1
+    red=$(red_check "$member") || { rm -f "$members_file"; members_file=; return 1; }
     [[ -n $red || $(queue_removal "$member") != failed_checks ]] || red=failed_checks
-    members+=("$(jq -cn --argjson number "$member" --argjson red "$([[ -n $red ]] && echo true || echo false)" \
-      --argjson queued "$queued" --argjson paths "$(member_paths "$stack" "$at")" \
-      '{number: $number, red: $red, queued: ($number | IN($queued[])), paths: $paths}')")
+    member_paths "$stack" "$at" \
+      | jq -c --argjson number "$member" --argjson red "$([[ -n $red ]] && echo true || echo false)" \
+        --argjson queued "$queued" \
+        '{number: $number, red: $red, queued: ($number | IN($queued[])), paths: .}' >> "$members_file"
     at=$((at + 1))
   done
-  decision=$(jq -cn --argjson heals "$heals" --argjson own "$number" '{heals: $heals, own: $own, members: ($ARGS.positional | map(fromjson))}' --args "${members[@]}" \
-    | jq -c -f "$pr_stack_dir/heal.jq")
+  decision=$(jq -cn --argjson heals "$heals" --argjson own "$number" --slurpfile members "$members_file" \
+    '{heals: $heals, own: $own, members: $members}' | jq -c -f "$pr_stack_dir/heal.jq")
+  rm -f "$members_file"
+  members_file=
   case $(jq -r .act <<< "$decision") in
     stop) return 1 ;;
     wait)
