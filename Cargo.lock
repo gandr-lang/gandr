@@ -589,6 +589,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-queue"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03e8bd762f7479489c70ed6c768ddca99d7296857de437a68dcb2a94365b3fae"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1161,6 +1170,11 @@ dependencies = [
 [[package]]
 name = "gandr-core-fork"
 version = "0.0.0"
+dependencies = [
+ "allocation-counter",
+ "crossbeam-queue",
+ "gandr-core-fork",
+]
 
 [[package]]
 name = "gandr-core-incremental"

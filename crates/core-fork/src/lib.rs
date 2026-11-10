@@ -20,6 +20,11 @@
 //! starts a thread or a pool outside the driver's pool is refused. A site that
 //! owns its thread states why in an expectation at the site.
 //!
+//! With the `instrument` feature, the `activity` module records which task
+//! each worker runs, and when. Each worker writes into a lock-free ring of its
+//! own, and the hub folds the rings. Without the feature, the crate carries
+//! none of the module's bytes.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design
@@ -29,8 +34,11 @@
 
 #![no_std]
 
-#[cfg(test)]
+#[cfg(any(test, feature = "instrument"))]
 extern crate alloc;
+
+#[cfg(feature = "instrument")]
+pub mod activity;
 
 /// Runs independent jobs on the workers the driver provides.
 ///

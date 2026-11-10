@@ -99,6 +99,7 @@ publish = false
 # - none: the allocator counter has no optional features.
 # consumers:
 # - core-checker (dev)
+# - core-fork (dev)
 # - surface-session (dev)
 # - theory-exact-reals (dev)
 # - theory-probability (dev)
@@ -274,6 +275,19 @@ features = ["std"]
 version = "0.8.8"
 default-features = false
 features = ["std"]
+
+# The activity ring: each worker of the pool writes its events into a bounded
+# lock-free queue, and a full queue drops its oldest event. Chosen over
+# `ringbuf` and `rtrb`, whose single-producer rings drop no oldest event while
+# a consumer reads, and over a ring of our own.
+# features:
+# - alloc: `ArrayQueue` in the `no_std` fork crate
+# consumers:
+# - core-fork
+[workspace.dependencies.crossbeam-queue]
+version = "0.3.14"
+default-features = false
+features = ["alloc"]
 
 # Ed25519 receipts over the kernel's recorded verdicts: the installation's
 # kernel signs what it checked, and a run recalls a verdict only on a
