@@ -17,10 +17,14 @@
 //! `offers [ … ] ;` takes no slot: it is a site's answer to the rows of the
 //! worlds placed at it, filed by its source ([`super::Collected::offers`]),
 //! each host interface by its name and each label with the module answering
-//! it. A name no host declares, a label or an interface written twice and a
-//! second offer in one source are refused as it is read; a module its source
-//! does not declare, once the source is collected. Each is the offer's own
-//! refusal, filed as a stray.
+//! it. A label's module may be read through a translation: `via f` names a
+//! flow, which resolves as an import's `via` does, and `renaming { a as b }`
+//! names a renaming of the module's members. A name no host declares, a label
+//! or an interface written twice, a name a renaming gives twice and a second
+//! offer in one source are refused as it is read; a module its source does not
+//! declare, a flow that does not resolve and a renaming its module refuses,
+//! once the source is collected. Each is the offer's own refusal, filed as a
+//! stray.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -37,11 +41,14 @@ use quenchant_shape::shape::Maybe;
 
 use super::Collector;
 use super::Container;
+use super::Member;
 use super::Stray;
 use super::Tail;
 use super::labelled;
 use super::misplaced_in;
+use super::read_translation;
 use super::strayed;
+use super::written_translation;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
 use crate::form::FormName;
@@ -52,8 +59,13 @@ use crate::form::TileName;
 use crate::form::WrittenPath;
 use crate::form::entry_path;
 use crate::form::read_pieces;
+use crate::import::ImportResolution;
+use crate::import::RenamingFault;
+use crate::import::WrittenTranslation;
+use crate::import::direct;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
+use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 
 /// One entry of a world's requirement row as it is written, `store : Store
@@ -80,12 +92,28 @@ pub struct SiteOffer
     pub declaration: Placed,
     /// Each host interface the site grants, by its path.
     pub granted: Vec<WrittenPath>,
-    /// Each label the site answers, beside the name of the module answering
-    /// it.
-    pub answered: Vec<(Placed, Placed)>,
+    /// Each label the site answers, in written order.
+    pub answered: Vec<AnsweredEntry>,
     /// The attribute blocks standing before the declaration, which state what
     /// a refusal of it is expected to be.
     pub decorations: Vec<Placed>,
+}
+
+/// One label a site's offer answers, as it is written, `store = Echo`,
+/// `store = Echo via downgrade` or `store = Echo renaming { fetch as get }`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnsweredEntry
+{
+    /// The label's tile.
+    pub label: Placed,
+    /// The name tile of the module answering it.
+    pub module: Placed,
+    /// The translation the module is read through, as its tiles spell it.
+    pub translation: Maybe<WrittenTranslation, direct::Absent>,
+    /// The name tiles of the members of the flow `via` names that do more
+    /// than rename one member, once the source is collected; empty for an
+    /// entry with no flow.
+    pub rewritten: Vec<Placed>,
 }
 
 impl<'source> Collector<'_, 'source>
@@ -229,11 +257,12 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `declaration` is an offers form; `pieces` is its reading.
     /// - ensures: when every entry reads, the offer filed under its source, its
-    ///   host interfaces and its labels with their modules in written order;
-    ///   nothing filed otherwise.
+    ///   host interfaces and its labels with their modules in written order,
+    ///   each label with the translation written after its module, as
+    ///   [`read_translation`] reads it; nothing filed otherwise.
     /// - fails: the form's repair; a misplaced tile; a host interface no host
-    ///   declares; a label or an interface written twice; a second offer in the
-    ///   source.
+    ///   declares; a label or an interface written twice; a member a renaming
+    ///   reads twice or a name it gives twice; a second offer in the source.
     /// - panics: none.
     ///
     /// # Errors
@@ -246,8 +275,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an offer of a host interface and a label settles; a
     ///   name no host declares, a label written twice and a second offer are
-    ///   each refused by name.
+    ///   each refused by name; a label read via a flow and one read through a
+    ///   renaming keep their translations.
     /// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.collected.offers.get(&self.collected.unit.source_at(declaration.span.start())), Some(offer) if offer.declaration == declaration))]
     fn read_offers(
         &mut self,
@@ -308,7 +339,25 @@ impl<'source> Collector<'_, 'source>
                 else {
                     return Err(misplaced_in(FormName::OFFERS_DECLARATION, cursor.here()));
                 };
-                answered.push((label, module));
+                let translation = match read_translation(&mut cursor) {
+                    Maybe::Present(WrittenTranslation::Renaming(pairs)) => {
+                        let _named = self.renaming_of(&pairs)?;
+                        Maybe::Present(WrittenTranslation::Renaming(pairs))
+                    },
+                    Maybe::Present(via) => Maybe::Present(via),
+                    Maybe::Absent(written_translation::Absent::Unwritten) => {
+                        Maybe::Absent(direct::Absent::Unwritten)
+                    },
+                    Maybe::Absent(written_translation::Absent::Misplaced) => {
+                        return Err(misplaced_in(FormName::OFFERS_DECLARATION, cursor.here()));
+                    },
+                };
+                answered.push(AnsweredEntry {
+                    label,
+                    module,
+                    translation,
+                    rewritten: Vec::new(),
+                });
                 (label.span, self.name_of(label))
             };
             let (span, name) = named;
@@ -345,21 +394,24 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Withdraw the offer of the source `source` when it grants a host
-    /// interface whose module the source does not import, or a label names a
-    /// module the source does not declare at its top level, filing its
-    /// refusal as a stray onto `strays`.
+    /// interface whose module the source does not import, a label names a
+    /// module the source does not declare at its top level, or a label's
+    /// translation does not hold, filing its refusal as a stray onto
+    /// `strays`.
     ///
     /// # Specification
     /// - requires: every module and import of `source` is collected.
     /// - ensures: the offer kept, when the source reaches each host interface
-    ///   it grants and each module it names is one `source` declares at its top
-    ///   level, and the first attribute block before it filed as a stray
-    ///   decorating nothing; otherwise the offer withdrawn and a stray filed at
-    ///   it, refused [`LoweringRefusal::UnresolvedTypeHead`] at the first
-    ///   interface the source does not reach, or else
-    ///   [`LoweringRefusal::UnresolvedName`] at the first module the source
-    ///   does not declare, and decorated by the offer's attribute blocks, which
-    ///   state what it is expected to be.
+    ///   it grants, each module it names is one `source` declares at its top
+    ///   level and each translation holds as [`Self::translated`] reads it,
+    ///   each flow's rewritten members filed with its label, and the first
+    ///   attribute block before it filed as a stray decorating nothing;
+    ///   otherwise the offer withdrawn and a stray filed at it, refused
+    ///   [`LoweringRefusal::UnresolvedTypeHead`] at the first interface the
+    ///   source does not reach, or else [`LoweringRefusal::UnresolvedName`] at
+    ///   the first module the source does not declare, or else the first
+    ///   refusal of a translation, and decorated by the offer's attribute
+    ///   blocks, which state what it is expected to be.
     /// - fails: a fault reading an attribute block that is no stray's own.
     /// - panics: none.
     ///
@@ -370,8 +422,11 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a label answered by a module of the source settles,
     ///   and one answered by a name the source declares no module under is
     ///   refused at the name; an interface whose module the source imports
-    ///   after the offer settles, and one it does not import is refused.
+    ///   after the offer settles, and one it does not import is refused; a
+    ///   label read via a flow and through a renaming settle, and a flow that
+    ///   does not resolve is refused at its name.
     /// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
+    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
     #[spec(
         captures: before = strays.len(),
         ensures: |ret| ret.is_err() || strays.len() <= before.saturating_add(1),
@@ -402,14 +457,14 @@ impl<'source> Collector<'_, 'source>
                 })
         });
         let unanswered = || {
-            offer.answered.iter().find_map(|&(_, module)| {
-                let name = self.name_of(module);
+            offer.answered.iter().find_map(|entry| {
+                let name = self.name_of(entry.module);
                 (!self
                     .collected
                     .modules
                     .contains_key(&(Container::TopLevel(source), name)))
                 .then_some(LoweringRefusal::UnresolvedName {
-                    span: module.span,
+                    span: entry.module.span,
                     name,
                 })
             })
@@ -425,15 +480,33 @@ impl<'source> Collector<'_, 'source>
                 )
             })
             .collect();
-        if let Some(refusal) = unreached.or_else(unanswered) {
-            if let Some(withdrawn) = self.collected.offers.remove(&source) {
-                strays.push(Stray::of(
-                    withdrawn.declaration,
-                    refusal,
-                    withdrawn.decorations,
-                ));
+        let refused = unreached.or_else(unanswered).map_or_else(
+            || {
+                offer
+                    .answered
+                    .iter()
+                    .map(|entry| self.translated(source, offer.declaration, entry))
+                    .collect::<Result<Vec<_>, _>>()
+            },
+            Err,
+        );
+        let rewritten = match refused {
+            Ok(rewritten) => rewritten,
+            Err(refusal) => {
+                if let Some(withdrawn) = self.collected.offers.remove(&source) {
+                    strays.push(Stray::of(
+                        withdrawn.declaration,
+                        refusal,
+                        withdrawn.decorations,
+                    ));
+                }
+                return Ok(());
+            },
+        };
+        if let Some(offer) = self.collected.offers.get_mut(&source) {
+            for (entry, members) in offer.answered.iter_mut().zip(rewritten) {
+                entry.rewritten = members;
             }
-            return Ok(());
         }
         for (at, named) in granted {
             self.collected.reach_host(at, &named);
@@ -445,6 +518,128 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// The name tiles of the members of the flow the label `entry` of the
+    /// offer `declaration`, in `source`, is read through, when its
+    /// translation holds.
+    ///
+    /// # Specification
+    /// - requires: every module and import of `source` is collected, and
+    ///   `entry`'s module is one `source` declares at its top level.
+    /// - ensures: for `via f`, the members of the flow `f` resolves to that do
+    ///   more than rename one member ([`Self::rewritten`]), `f` resolving as
+    ///   [`super::Collected::translation_flow`] resolves it before the offer, a
+    ///   source `source` imports publishing it; none for a renaming that holds
+    ///   or an entry with no translation.
+    /// - fails: a flow that does not resolve; a renaming the module refuses.
+    /// - panics: none.
+    /// - executable: none — the clause restates the flow's resolution and the
+    ///   walk over the module's exports.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnresolvedName`] at a flow's name that resolves to
+    /// no flow; [`LoweringRefusal::UnknownMember`] at a renaming's member the
+    /// module does not export; [`LoweringRefusal::DuplicateDefinition`] at a
+    /// renaming's name the module keeps for a member of its own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::answered`].
+    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    fn translated(
+        &self,
+        source: SourceIndex,
+        declaration: Placed,
+        entry: &AnsweredEntry,
+    ) -> Result<Vec<Placed>, LoweringRefusal<'source>>
+    {
+        let pairs = match entry.translation {
+            Maybe::Present(WrittenTranslation::Via(flow)) => {
+                let name = self.name_of(flow);
+                let imports = &self.collected.imports;
+                let published = |at: SourceIndex| {
+                    imports.of(source).any(|import| {
+                        import.resolution() == ImportResolution::Path(ImportTarget::Source(at))
+                    })
+                };
+                return match self.collected.translation_flow(
+                    source,
+                    declaration.span.start(),
+                    name,
+                    published,
+                ) {
+                    Maybe::Present(index) => Ok(self.rewritten(index)),
+                    Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
+                        span: flow.span,
+                        name,
+                    }),
+                };
+            },
+            Maybe::Present(WrittenTranslation::Renaming(ref pairs)) => pairs,
+            Maybe::Absent(_) => return Ok(Vec::new()),
+        };
+        let module = self.name_of(entry.module);
+        let Some(structure) = self
+            .collected
+            .modules
+            .get(&(Container::TopLevel(source), module))
+            .and_then(|&index| self.collected.structures.get(usize::from(index)))
+        else {
+            return Ok(Vec::new());
+        };
+        // Each member the module exports, by name, beside the bytes of its
+        // first declaration.
+        let mut exported: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
+        for &export in &structure.exports {
+            let member = match export {
+                Member::Slot(slot) => self
+                    .collected
+                    .slots
+                    .get(usize::from(slot))
+                    .map(|member| (member.name, member.named.span)),
+                Member::Module(nested) => self
+                    .collected
+                    .structures
+                    .get(usize::from(nested))
+                    .map(|member| (member.name, member.declared_by.span)),
+            };
+            if let Some((name, span)) = member {
+                exported.entry(name).or_insert(span);
+            }
+        }
+        for component in structure.exported_types() {
+            exported
+                .entry(component.name)
+                .or_insert(structure.declared_by.span);
+        }
+        let members: Vec<SurfaceName<'source>> = exported.keys().copied().collect();
+        let renaming = self.renaming_of(pairs)?;
+        let Maybe::Present((at, fault)) = renaming.unrenamable(&members)
+        else {
+            return Ok(Vec::new());
+        };
+        let (Some(&(read, given)), Some(&(member, named))) = (
+            pairs.get(usize::from(at)),
+            renaming.pairs().get(usize::from(at)),
+        )
+        else {
+            return Ok(Vec::new());
+        };
+        Err(match fault {
+            RenamingFault::Missing => LoweringRefusal::UnknownMember {
+                span: read.span,
+                module,
+                member,
+            },
+            RenamingFault::Clash => LoweringRefusal::DuplicateDefinition {
+                span: given.span,
+                name: named,
+                first: exported
+                    .get(&named)
+                    .copied()
+                    .unwrap_or(structure.declared_by.span),
+            },
+        })
     }
 }
 

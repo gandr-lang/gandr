@@ -627,9 +627,12 @@ impl TileName
     pub const MINUS: Self = Self("-");
     /// The module keyword `module`.
     pub const MODULE: Self = Self("module");
-    /// The keyword `via` of an import, before the flow it reads its source
-    /// through.
+    /// The keyword `via` of an import or of an offer, before the flow it
+    /// reads its source or its module through.
     pub const VIA: Self = Self("via");
+    /// The keyword `renaming` of an import or of an offer, before the braced
+    /// pairs it reads its source or its module through.
+    pub const RENAMING: Self = Self("renaming");
     /// A numeral written as one of a form's own tiles: a universe's level or a
     /// bridge's grade.
     pub const NUMBER: Self = Self("number");

@@ -14,6 +14,13 @@
 //! importing source at the import, naming the member, as an import whose list
 //! names what its module does not declare refuses them.
 //!
+//! An import read through a renaming, `import hello : Greeting renaming {
+//! answer as reply }`, matches each member of the signature against the
+//! source's member the renaming reads for it. Each pair must read a `pub`
+//! member of the source, and its name must be fresh: a member of the source
+//! that no pair renames keeps its name, so a pair may not give that name to
+//! another member.
+//!
 //! The match reads written types only. A declaration with no signature has no
 //! type before the checker synthesises one, and a signature's sort, law or
 //! nested model has no type the match compares, so either is refused as
@@ -50,6 +57,8 @@ use crate::error::MatchFault;
 use crate::form::Placed;
 use crate::import::ImportResolution;
 use crate::import::ImportSignature;
+use crate::import::Renaming;
+use crate::import::RenamingFault;
 use crate::import::Translation;
 use crate::lower::DeclarationOutcome;
 use crate::lower::Lowerer;
@@ -115,12 +124,15 @@ impl<'source> Lowerer<'_, 'source>
     ///   read as written is matched by [`Self::unmatched`]:
     ///   [`LoweringRefusal::SignatureMismatch`] at the signature's name, naming
     ///   the member, or the refusal of a signature naming no theory. An import
-    ///   read through a flow has its source matched against the flow's domain,
-    ///   refused at the flow's name, then the signature against the flow's
-    ///   codomain by [`Self::uncovered`], refused at the signature's name, and
-    ///   the flow's instance over a refused source declares nothing. A slot of
-    ///   a functor's template, which declares nothing, is not refused, and a
-    ///   slot already refused, or already faulted, keeps its own.
+    ///   read through a renaming has its pairs checked first by
+    ///   [`Self::unrenamed`], then is matched as one read as written, each
+    ///   member read through the renaming. An import read through a flow has
+    ///   its source matched against the flow's domain, refused at the flow's
+    ///   name, then the signature against the flow's codomain by
+    ///   [`Self::uncovered`], refused at the signature's name, and the flow's
+    ///   instance over a refused source declares nothing. A slot of a functor's
+    ///   template, which declares nothing, is not refused, and a slot already
+    ///   refused, or already faulted, keeps its own.
     /// - fails: never; a refusal is carried by each declaration.
     /// - panics: none.
     ///
@@ -130,12 +142,15 @@ impl<'source> Lowerer<'_, 'source>
     ///   and one at a member the source writes no type for refuse each
     ///   declaration of the importer by name; an import via a flow whose domain
     ///   the source holds and whose codomain holds the signature settles, and
-    ///   each of the three refusals of a translation names its site.
+    ///   each of the three refusals of a translation names its site; an import
+    ///   through a renaming settles, and a pair reading no member or giving a
+    ///   name the source keeps is refused at the pair.
     /// - witness: `tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     /// - witness: `tests::namespace::an_import_at_a_wider_signature_refuses_its_source_3098`
     /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
     /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
     /// - witness: `tests::namespace::a_translation_is_refused_at_its_domain_or_its_codomain_3378`
+    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before,
@@ -163,15 +178,22 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(ref translation) => {
                     self.untranslated(signature, translation, target, sink)
                 },
-                Maybe::Absent(_) => {
-                    match self.unmatched(&signature.prefix, signature.named, target, sink) {
+                Maybe::Absent(_) => match self.unrenamed(signature, target) {
+                    Maybe::Present(verdict) => Maybe::Present(verdict),
+                    Maybe::Absent(_) => match self.unmatched(
+                        &signature.prefix,
+                        signature.named,
+                        &signature.renaming,
+                        target,
+                        sink,
+                    ) {
                         Maybe::Present(unmatched) => Maybe::Present(Verdict {
                             span: signature.named.span,
                             theory: signature.name,
                             unmatched,
                         }),
                         Maybe::Absent(held) => Maybe::Absent(held),
-                    }
+                    },
                 },
             };
             if let Maybe::Present(verdict) = verdict {
@@ -251,9 +273,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(matched::Absent::Untranslated);
         };
-        if let Maybe::Present(unmatched) =
-            self.unmatched(&domain.prefix, domain.named, target, sink)
-        {
+        if let Maybe::Present(unmatched) = self.unmatched(
+            &domain.prefix,
+            domain.named,
+            &Renaming::default(),
+            target,
+            sink,
+        ) {
             return Maybe::Present(Verdict {
                 span: translation.named.span,
                 theory: self.name_at(domain.named),
@@ -270,21 +296,98 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The first pair of the renaming the import at `signature` is read
+    /// through that the source `target` refuses.
+    ///
+    /// # Specification
+    /// - requires: `target` is collected.
+    /// - ensures: the first pair [`Renaming::unrenamable`] refuses over the
+    ///   names of `target`'s `pub` top-level declarations:
+    ///   [`MatchFault::Missing`] at the pair's member read, naming it, for a
+    ///   member the source does not publish, and
+    ///   [`LoweringRefusal::DuplicateDefinition`] at the pair's name, beside
+    ///   the source's declaration of it, for a name the source keeps; absent
+    ///   when every pair holds, or none is written.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the members are a range of the name table, which a
+    ///   clause would walk whole.
+    ///
+    /// # Clause cost
+    /// - bound: one range of the name table over `target`'s top level, then
+    ///   each pair against those names once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::match_signatures`].
+    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    fn unrenamed(
+        &self,
+        signature: &ImportSignature<'source>,
+        target: SourceIndex,
+    ) -> Maybe<Verdict<'source>, matched::Absent>
+    {
+        if signature.renamed.is_empty() {
+            return Maybe::Absent(matched::Absent::Held);
+        }
+        let published: Vec<(SurfaceName<'source>, SlotIndex)> = self
+            .collected
+            .by_name
+            .range((Container::TopLevel(target), SurfaceName::from("")) ..)
+            .take_while(|&(&(container, _), _)| container == Container::TopLevel(target))
+            .filter(|&(_, &slot)| self.collected.slot_visibility(slot) == Visibility::Public)
+            .map(|(&(_, name), &slot)| (name, slot))
+            .collect();
+        let members: Vec<SurfaceName<'source>> = published.iter().map(|&(name, _)| name).collect();
+        let Maybe::Present((at, fault)) = signature.renaming.unrenamable(&members)
+        else {
+            return Maybe::Absent(matched::Absent::Held);
+        };
+        let (Some(&(read, given)), Some(&(member, named))) = (
+            signature.renamed.get(usize::from(at)),
+            signature.renaming.pairs().get(usize::from(at)),
+        )
+        else {
+            return Maybe::Absent(matched::Absent::Held);
+        };
+        let unmatched = match fault {
+            RenamingFault::Missing => Unmatched::Member(member, MatchFault::Missing),
+            RenamingFault::Clash => {
+                let first = published
+                    .iter()
+                    .find(|&&(name, _)| name == named)
+                    .and_then(|&(_, slot)| self.collected.slots.get(usize::from(slot)))
+                    .map_or(given.span, |entry| entry.named.span);
+                Unmatched::Unnamed(LoweringRefusal::DuplicateDefinition {
+                    span: given.span,
+                    name: named,
+                    first,
+                })
+            },
+        };
+        Maybe::Present(Verdict {
+            span: read.span,
+            theory: signature.name,
+            unmatched,
+        })
+    }
+
     /// The first member of the theory `named`, after the modules `prefix`,
-    /// the `pub` interface of `target` does not hold, in the theory's order.
+    /// the `pub` interface of `target` does not hold, in the theory's order,
+    /// each member read through `renaming`.
     ///
     /// # Specification
     /// - requires: `target` is lowered.
     /// - ensures: absent when every member of the theory is an operation or a
-    ///   constant whose name a `pub` declaration at the top of `target` bears,
-    ///   that declaration's written type syntactically the type the member
-    ///   derives with no sort fixed; otherwise the first member that is not:
-    ///   [`MatchFault::Missing`] for one no `pub` declaration bears,
-    ///   [`MatchFault::Sort`] for one written at another type, and
-    ///   [`MatchFault::Unstated`] for one with no written type, or that is a
-    ///   sort, a law or a nested model, or whose type does not mint. A theory
-    ///   `named` does not name, or that presents no model signature, is the
-    ///   refusal its lookup gives, or unstated at the theory's name.
+    ///   constant whose name, read through `renaming`, a `pub` declaration at
+    ///   the top of `target` bears, that declaration's written type
+    ///   syntactically the type the member derives with no sort fixed;
+    ///   otherwise the first member that is not: [`MatchFault::Missing`] for
+    ///   one no `pub` declaration bears, [`MatchFault::Sort`] for one written
+    ///   at another type, and [`MatchFault::Unstated`] for one with no written
+    ///   type, or that is a sort, a law or a nested model, or whose type does
+    ///   not mint. A theory `named` does not name, or that presents no model
+    ///   signature, is the refusal its lookup gives, or unstated at the
+    ///   theory's name.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the verdict is the match itself, member by member
@@ -299,6 +402,7 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         prefix: &[(ByteSpan, SurfaceName<'source>)],
         named: Placed,
+        renaming: &Renaming<SurfaceName<'source>>,
         target: SourceIndex,
         sink: &mut Sink<'_>,
     ) -> Maybe<Unmatched<'source>, matched::Absent>
@@ -330,7 +434,7 @@ impl<'source> Lowerer<'_, 'source>
             let Some(position) = self
                 .collected
                 .by_name
-                .get(&(Container::TopLevel(target), member))
+                .get(&(Container::TopLevel(target), *renaming.read(&member)))
                 .copied()
                 .filter(|&position| self.collected.slot_visibility(position) == Visibility::Public)
             else {

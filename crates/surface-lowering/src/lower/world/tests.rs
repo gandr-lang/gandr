@@ -227,7 +227,7 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
                 offer
                     .answered
                     .iter()
-                    .map(|&(label, module)| (spelled(label), spelled(module)))
+                    .map(|label| (spelled(label.label), spelled(label.module)))
                     .collect::<alloc::vec::Vec<_>>(),
             )),
             Maybe::Absent(_) => Err(alloc::format!(
@@ -306,6 +306,144 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
         matches!(module.offer(), Maybe::Absent(_)) && outcomes.contains("UnresolvedTypeHead"),
         "an unimported interface is refused as the offer's own: {outcomes}"
     );
+}
+
+/// An offer's label names the translation its module is read through: `via
+/// f` resolves as an import's `via` does, to a flow declared before the
+/// offer, with each member of the flow that does more than rename, and
+/// `renaming { a as b }` keeps its pairs. A flow that does not resolve, a
+/// renaming reading no member of the module, one giving a name the module
+/// keeps and one giving a name twice are each refused as the offer's own
+/// (#3461).
+#[test]
+fn an_offer_names_the_translation_it_answers_a_label_through_3461()
+{
+    let echo =
+        include_str!("tests/fixtures/a-site-s-offer-answers-by-label-and-by-name-3523-echo.gandr");
+    let flows = include_str!(
+        "tests/unformatted/an-offer-names-the-translation-it-answers-a-label-through-3461-flows.gandr"
+    );
+    let offered = |before: &str, offers: &str, after: &str| {
+        let text = alloc::format!(
+            include_str!(
+                "tests/unformatted/an-offer-names-the-translation-it-answers-a-label-through-3461.gandr"
+            ),
+            before = before,
+            offers = offers,
+            after = after,
+            echo = echo,
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(text.as_str()), &mut arena);
+        let spelled = |span: gandr_surface_syntax::ByteSpan| {
+            alloc::string::String::from(
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default(),
+            )
+        };
+        let mut members = alloc::vec::Vec::new();
+        let mut renamings = alloc::vec::Vec::new();
+        match module.offer() {
+            Maybe::Present(offer) => Ok(offer
+                .answered
+                .iter()
+                .map(|label| {
+                    let through = match label.translation {
+                        Maybe::Absent(_) => alloc::string::String::from("as it is"),
+                        Maybe::Present(crate::module::OfferedTranslation::Via {
+                            flow,
+                            ref rewritten,
+                        }) => {
+                            members.clear();
+                            members.extend(rewritten.iter().map(|&member| spelled(member)));
+                            alloc::format!("via {} rewriting {members:?}", spelled(flow))
+                        },
+                        Maybe::Present(crate::module::OfferedTranslation::Renaming(ref pairs)) => {
+                            renamings.clear();
+                            renamings.extend(
+                                pairs
+                                    .iter()
+                                    .map(|&(read, named)| (spelled(read), spelled(named))),
+                            );
+                            alloc::format!("renaming {renamings:?}")
+                        },
+                    };
+                    alloc::format!(
+                        "{} = {} {through}",
+                        spelled(label.label),
+                        spelled(label.module)
+                    )
+                })
+                .collect::<alloc::vec::Vec<_>>()),
+            Maybe::Absent(_) => Err(alloc::format!(
+                "{:?}",
+                module
+                    .declarations()
+                    .iter()
+                    .filter(|declaration| declaration.name() == SurfaceName::from("offers"))
+                    .map(crate::module::LoweredDeclaration::outcome)
+                    .collect::<alloc::vec::Vec<_>>()
+            )),
+        }
+    };
+    assert_eq!(
+        offered(
+            flows,
+            "offers [store = Echo renaming { get as fetch, V as W }, older = Replying via \
+             renamed, newer = Replying via computed, kept = Echo];",
+            ""
+        ),
+        Ok(alloc::vec![
+            alloc::string::String::from(
+                "store = Echo renaming [(\"get\", \"fetch\"), (\"V\", \"W\")]"
+            ),
+            alloc::string::String::from("older = Replying via renamed rewriting []"),
+            alloc::string::String::from("newer = Replying via computed rewriting [\"tag\"]"),
+            alloc::string::String::from("kept = Echo as it is"),
+        ]),
+        "a renaming keeps its pairs, and a flow names the members that do more than rename"
+    );
+    for (before, offers, after, refused) in [
+        (
+            "",
+            "offers [older = Replying via renamed];",
+            flows,
+            "UnresolvedName",
+        ),
+        (
+            flows,
+            "offers [older = Replying via missing];",
+            "",
+            "UnresolvedName",
+        ),
+        (
+            "",
+            "offers [store = Echo renaming { lost as get }];",
+            "",
+            "UnknownMember",
+        ),
+        (
+            "",
+            "offers [store = Echo renaming { get as put }];",
+            "",
+            "DuplicateDefinition",
+        ),
+        (
+            "",
+            "offers [store = Echo renaming { get as fetch, put as fetch }];",
+            "",
+            "DuplicateDefinition",
+        ),
+    ] {
+        let Err(outcomes) = offered(before, offers, after)
+        else {
+            panic!("`{offers}` is refused");
+        };
+        assert!(
+            outcomes.contains(refused),
+            "`{offers}` is refused {refused} as the offer's own: {outcomes}"
+        );
+    }
 }
 
 #[test]

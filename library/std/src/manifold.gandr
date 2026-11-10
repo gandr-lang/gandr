@@ -19,10 +19,17 @@
 // a site whose offer answers each entry of the row. `gandr check` of the
 // manifold judges that before any process starts.
 //
+// An offer may answer a label with a module of another signature, read
+// through a translation: `store = Echo via downgrade` names a flow, and
+// `store = Echo renaming { fetch as get }` derives one. A translation is code
+// at the site's boundary, so a manifold admits one only by the policy its
+// `translation` states. A manifold that states none admits none.
+//
 // - see: #3374
 // - see: #3375
 // - see: #3523
 // - see: #2993 — `Manifold`
+// - see: #3461
 
 /// One place a world runs at: the key it proves, the sockets a dialer reaches
 /// it at, and the name of the key's secret. The hosting process reads the
@@ -57,3 +64,16 @@ pub data Placement : Type where
   | At : (name : String, site : Model Site) --> Placement
   /// The world `name` as `count` processes at the site.
   | Instances : (name : String, site : Model Site, count : Integer) --> Placement
+
+/// A manifold's policy for a translation between a world's requirement and
+/// the module that its site's offer gives. The manifold's file states it as
+/// `pub def translation : Translation`, a definition of its own until a
+/// theory's operation can be optional. A file that states none is `Exact`.
+pub data Translation : Type where
+  /// No translation: a module of its own members answers each label.
+  | Exact : Translation
+  /// A translation whose every member renames one member, so no code runs at
+  /// the boundary.
+  | Path : Translation
+  /// Any translation the offer names, its members' code run at the boundary.
+  | Flow : Translation

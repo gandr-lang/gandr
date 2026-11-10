@@ -317,7 +317,9 @@ use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::import::Opens;
 use crate::import::ReadAs;
+use crate::import::Renaming;
 use crate::import::Translation;
+use crate::import::WrittenTranslation;
 use crate::import::direct;
 use crate::lower::ElidableExit;
 use crate::lower::Fuel;
@@ -1818,9 +1820,42 @@ pub struct Offered
 {
     /// Each host interface the site grants, by its name's bytes.
     pub granted: Vec<ByteSpan>,
-    /// Each label the site answers, its bytes beside the bytes of the module
-    /// answering it.
-    pub answered: Vec<(ByteSpan, ByteSpan)>,
+    /// Each label the site answers, in written order.
+    pub answered: Vec<OfferedLabel>,
+}
+
+/// One label a site's offer answers, by the bytes its source writes it at.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct OfferedLabel
+{
+    /// The label's bytes.
+    pub label: ByteSpan,
+    /// The bytes of the name of the module answering it.
+    pub module: ByteSpan,
+    /// The module answering it, among [`LoweredModule::structures`].
+    pub structure: StructureIndex,
+    /// The translation the module is read through; absent where none is
+    /// written.
+    pub translation: Maybe<OfferedTranslation, direct::Absent>,
+}
+
+/// The translation an offered label's module is read through.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum OfferedTranslation
+{
+    /// `via f`: the bytes of the flow's name, and the bytes of the name of
+    /// each member of the flow that does more than rename one member, in the
+    /// flow's order.
+    Via
+    {
+        /// The bytes of the flow's name.
+        flow: ByteSpan,
+        /// The bytes of the name of each member that does more than rename.
+        rewritten: Vec<ByteSpan>,
+    },
+    /// `renaming { fetch as get }`: each pair's bytes, the member read and
+    /// the name it is read as, in written order.
+    Renaming(Vec<(ByteSpan, ByteSpan)>),
 }
 
 /// Two unqualified imports of one source binding one name to two
@@ -2139,9 +2174,9 @@ impl<'source> Collected<'source>
         self.through_imports(
             source,
             name,
-            |target| {
+            |target, read| {
                 self.by_name
-                    .get(&(Container::TopLevel(target), name))
+                    .get(&(Container::TopLevel(target), read))
                     .copied()
                     .filter(|&slot| self.slot_visibility(slot) == Visibility::Public)
             },
@@ -2247,10 +2282,12 @@ impl<'source> Collected<'source>
     /// - ensures: for an import through a flow, each image of the flow's
     ///   members and the declaration a renaming binds in its place are read by
     ///   the member's name: bare where the import binds it unqualified, after
-    ///   the import's module otherwise. For any other import that binds a
-    ///   module, each declaration of its source whose top-level name it does
-    ///   not bind unqualified is read under that module. The first import of a
-    ///   source that reads a declaration decides its name.
+    ///   the import's module otherwise. For an import through a renaming, each
+    ///   declaration a pair reads is read by the pair's name, as a flow's
+    ///   member is. For any other import that binds a module, each declaration
+    ///   of its source whose top-level name it does not bind unqualified is
+    ///   read under that module. The first import of a source that reads a
+    ///   declaration decides its name.
     /// - provides: the names a printer writes for an importer's reads
     ///   ([`LoweredModule::reads`]).
     /// - fails: never.
@@ -2260,13 +2297,15 @@ impl<'source> Collected<'source>
     ///
     /// # Clause cost
     /// - bound: each import through a flow walks its instance's exports once,
-    ///   and each import that binds a module walks the slots once.
+    ///   each import through a renaming looks each pair's member up once, and
+    ///   each import that binds a module walks the slots once.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a declaration read through an alias is read under it,
-    ///   a flow's member by its name after the alias, and a declaration read
-    ///   unqualified is not entered.
+    ///   a flow's member and a renamed member by its name after the alias, and
+    ///   a declaration read unqualified is not entered.
     /// - witness: `tests::namespace::an_importer_reads_a_declaration_as_its_import_binds_it_3498`
+    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     pub(crate) fn reads(&self) -> BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>>
     {
         let mut reads: BTreeMap<SourceIndex, BTreeMap<ConstantIndex, ReadAs<'source>>> =
@@ -2321,6 +2360,23 @@ impl<'source> Collected<'source>
                     }
                 }
                 continue;
+            }
+            if let Maybe::Present(ImportSignature { ref renaming, .. }) = *import.signature() {
+                for &(member, named_as) in renaming.pairs() {
+                    let named = match (import.opens(named_as), under) {
+                        (Opens(true), _) => ReadAs::Opened(named_as),
+                        (Opens(false), Some(under)) => ReadAs::Member {
+                            under,
+                            member: named_as,
+                        },
+                        (Opens(false), None) => continue,
+                    };
+                    if let Some(&slot) = self.by_name.get(&(Container::TopLevel(target), member))
+                        && let Some(entry) = self.slots.get(slot.0)
+                    {
+                        let _first = read.entry(entry.constant).or_insert(named);
+                    }
+                }
             }
             let Some(under) = under
             else {
@@ -2683,7 +2739,7 @@ impl<'source> Collected<'source>
         self.through_imports(
             source,
             name,
-            |target| {
+            |target, _read| {
                 self.bare_constructor(target, name, |found| {
                     (prelude != Some(target)
                         || (found.form != Generators::Presentation && !shadowed()))
@@ -2795,7 +2851,7 @@ impl<'source> Collected<'source>
         self.through_imports(
             source,
             name,
-            |target| {
+            |target, _read| {
                 self.ports
                     .get(&(target, name))
                     .copied()
@@ -2840,7 +2896,7 @@ impl<'source> Collected<'source>
         self.through_imports(
             source,
             name,
-            |target| {
+            |target, _read| {
                 self.type_members_in(Container::TopLevel(target))
                     .filter(|member| member.name == name)
                     .last()
@@ -2884,7 +2940,7 @@ impl<'source> Collected<'source>
         self.through_imports(
             source,
             name,
-            |target| {
+            |target, _read| {
                 self.modules
                     .get(&(Container::TopLevel(target), name))
                     .copied()
@@ -2909,7 +2965,9 @@ impl<'source> Collected<'source>
     ///   `translated` for the instance an import's translation binds; an import
     ///   is read only where it opens `name` ([`ImportDeclaration`]'s opening:
     ///   every export, or the names its list lists, and of those only the names
-    ///   its signature states when it is written at one).
+    ///   its signature states when it is written at one). `lookup` is given the
+    ///   source and the name read there: the member a renaming reads for
+    ///   `name`, or `name` itself.
     /// - fails: [`Ambiguity`] for two imports answering two values.
     /// - panics: none.
     ///
@@ -2921,6 +2979,7 @@ impl<'source> Collected<'source>
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
     /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
@@ -2934,7 +2993,7 @@ impl<'source> Collected<'source>
     ) -> Result<Maybe<(Found, ByteSpan), imported::Absent>, Ambiguity>
     where
         Found: Copy + Eq,
-        Lookup: Fn(SourceIndex) -> Option<Found>,
+        Lookup: Fn(SourceIndex, SurfaceName<'source>) -> Option<Found>,
         Translated: Fn(&crate::import::Translation<'source>) -> Option<Found>,
     {
         let mut answered: Maybe<(Found, ByteSpan), imported::Absent> =
@@ -2950,7 +3009,10 @@ impl<'source> Collected<'source>
                     via: Maybe::Present(ref translation),
                     ..
                 }) => translated(translation),
-                Maybe::Present(_) | Maybe::Absent(_) => lookup(target),
+                Maybe::Present(ImportSignature { ref renaming, .. }) => {
+                    lookup(target, *renaming.read(&name))
+                },
+                Maybe::Absent(_) => lookup(target, name),
             };
             let Some(found) = read
             else {
@@ -2970,7 +3032,7 @@ impl<'source> Collected<'source>
         if let Maybe::Absent(_) = answered
             && let Some(prelude) = self.unit.prelude()
             && prelude != source
-            && let Some(found) = lookup(prelude)
+            && let Some(found) = lookup(prelude, name)
             && let Ok(start) = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize))
         {
             answered = Maybe::Present((found, start));
@@ -4574,8 +4636,9 @@ pub struct WrittenImport
     /// segments of its path, the theory's name last; empty when none is
     /// written.
     pub signature: Vec<Placed>,
-    /// The flow the signature is read through, `via f`: its name's tile.
-    pub via: Maybe<Placed, direct::Absent>,
+    /// The translation the signature is read through, `via f` or `renaming
+    /// { fetch as get }`, as its tiles spell it.
+    pub translation: Maybe<WrittenTranslation, direct::Absent>,
     /// The bytes the import covers.
     pub span: ByteSpan,
     /// The bytes between the address's quotes, as written, escapes included;
@@ -4604,15 +4667,16 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - requires: `pieces` is the reading of the import `import`.
-/// - ensures: the import the tiles `import " … " (as name)? (: Path (via
-///   name)?)? (( names ))? ;` spell, in that order with nothing after them, its
-///   address read between the quotes; or the tiles `import name (. name)* (as
-///   name)? (: Path (via name)?)? (( names ))? ;`, its address the module
-///   path's file, as [`module_file`] names it, and bound under the path when no
-///   alias is written. `Path` is a type name then any number of dotted names of
-///   either case, each kept in `signature`; the name after `via` is kept in
-///   `via`. `names` is one name or more, separated by commas, a trailing one
-///   admitted, each kept in `listed`.
+/// - ensures: the import the tiles `import " … " (as name)? (: Path
+///   (translation)?)? (( names ))? ;` spell, in that order with nothing after
+///   them, its address read between the quotes; or the tiles `import name (.
+///   name)* (as name)? (: Path (translation)?)? (( names ))? ;`, its address
+///   the module path's file, as [`module_file`] names it, and bound under the
+///   path when no alias is written. `Path` is a type name then any number of
+///   dotted names of either case, each kept in `signature`; the translation, as
+///   [`read_translation`] reads it, is kept in `translation`. `names` is one
+///   name or more, separated by commas, a trailing one admitted, each kept in
+///   `listed`.
 /// - provides: the reading the collection and [`written_imports`] share.
 /// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
 ///   inside the import that holds it or else `form`, as
@@ -4697,7 +4761,7 @@ fn read_import<'source>(
         Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
     };
     let mut signature = Vec::new();
-    let mut via = Maybe::Absent(direct::Absent::Unwritten);
+    let mut translation = Maybe::Absent(direct::Absent::Unwritten);
     if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
         let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
@@ -4713,11 +4777,12 @@ fn read_import<'source>(
                 },
             }
         }
-        if let Maybe::Present(_) = cursor.tile(TileName::VIA) {
-            match cursor.tile(TileName::IDENTIFIER) {
-                Maybe::Present(flow) => via = Maybe::Present(flow),
-                Maybe::Absent(_) => return Err(out_of_place(&cursor)),
-            }
+        match read_translation(&mut cursor) {
+            Maybe::Present(written) => translation = Maybe::Present(written),
+            Maybe::Absent(written_translation::Absent::Unwritten) => {},
+            Maybe::Absent(written_translation::Absent::Misplaced) => {
+                return Err(out_of_place(&cursor));
+            },
         }
     }
     let mut listed = Vec::new();
@@ -4753,11 +4818,92 @@ fn read_import<'source>(
         alias,
         listed,
         signature,
-        via,
+        translation,
         span: import.span,
         addressed,
         address,
     })
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a cursor reads no translation.
+    pub mod written_translation {
+        /// The reason none is read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Neither `via` nor `renaming` stands at the cursor.
+            Unwritten,
+            /// A translation's keyword stands at the cursor, and a tile after
+            /// it is out of place.
+            Misplaced,
+        }
+    }
+}
+
+/// The translation the tiles at `cursor` spell, `via f` or `renaming { a as
+/// b (, a as b)* ,? }`, the cursor past it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`WrittenTranslation::Via`] with the flow's name tile after
+///   `via`; [`WrittenTranslation::Renaming`] with each pair's two name tiles,
+///   of either case, in written order, after `renaming`;
+///   [`written_translation::Absent::Unwritten`], the cursor unmoved, where
+///   neither keyword stands; [`written_translation::Absent::Misplaced`], the
+///   cursor at the first tile out of place, otherwise.
+/// - provides: the reading an import's signature and a site's offer share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an import read via a flow, an import read through a
+///   renaming and an offer read through each are read whole.
+/// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+/// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+/// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(WrittenTranslation::Renaming(ref pairs)) => !pairs.is_empty(),
+    | Maybe::Present(WrittenTranslation::Via(_)) | Maybe::Absent(_) => true,
+})]
+fn read_translation(
+    cursor: &mut Cursor<'_>
+) -> Maybe<WrittenTranslation, written_translation::Absent>
+{
+    let misplaced = Maybe::Absent(written_translation::Absent::Misplaced);
+    if let Maybe::Present(_) = cursor.tile(TileName::VIA) {
+        return match cursor.tile(TileName::IDENTIFIER) {
+            Maybe::Present(flow) => Maybe::Present(WrittenTranslation::Via(flow)),
+            Maybe::Absent(_) => misplaced,
+        };
+    }
+    if let Maybe::Absent(_) = cursor.tile(TileName::RENAMING) {
+        return Maybe::Absent(written_translation::Absent::Unwritten);
+    }
+    if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
+        return misplaced;
+    }
+    let name = |cursor: &mut Cursor<'_>| match cursor.tile(TileName::IDENTIFIER) {
+        Maybe::Present(name) => Maybe::Present(name),
+        Maybe::Absent(_) => cursor.tile(TileName::TYPE_IDENTIFIER),
+    };
+    let mut pairs = Vec::new();
+    while let Maybe::Present(read) = name(cursor) {
+        let (Maybe::Present(_), Maybe::Present(named)) = (cursor.tile(TileName::AS), name(cursor))
+        else {
+            return misplaced;
+        };
+        pairs.push((read, named));
+        if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+            break;
+        }
+    }
+    if pairs.is_empty() {
+        return misplaced;
+    }
+    match cursor.tile(TileName::BRACE_CLOSE) {
+        Maybe::Present(_) => Maybe::Present(WrittenTranslation::Renaming(pairs)),
+        Maybe::Absent(_) => misplaced,
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -6504,12 +6650,17 @@ impl<'source> Collector<'_, 'source>
         };
         let declaration = match written.signature.split_last() {
             Some((&named, prefix)) => {
-                let via = match written.via {
-                    Maybe::Present(flow) => {
-                        Maybe::Present(self.translate(import, flow, resolution))
+                let (via, renamed) = match written.translation {
+                    Maybe::Present(WrittenTranslation::Via(flow)) => (
+                        Maybe::Present(self.translate(import, flow, resolution)),
+                        Vec::new(),
+                    ),
+                    Maybe::Present(WrittenTranslation::Renaming(pairs)) => {
+                        (Maybe::Absent(direct::Absent::Renamed), pairs)
                     },
-                    Maybe::Absent(unwritten) => Maybe::Absent(unwritten),
+                    Maybe::Absent(unwritten) => (Maybe::Absent(unwritten), Vec::new()),
                 };
+                let renaming = self.renaming_of(&renamed)?;
                 declaration.signed(ImportSignature {
                     prefix: prefix
                         .iter()
@@ -6519,11 +6670,64 @@ impl<'source> Collector<'_, 'source>
                     name: self.name_of(named),
                     stated: Maybe::Absent(crate::import::unread::Absent::Collecting),
                     via,
+                    renaming,
+                    renamed,
                 })
             },
             None => declaration,
         };
         self.collected.imports.bind(declaration)
+    }
+
+    /// The renaming the pairs `pairs` spell, each the tile of the member read
+    /// and the tile of the name it is read as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pairs' names in written order.
+    /// - provides: the reading an import's renaming and an offer's share.
+    /// - fails: when a member is read twice, or a name is given twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DuplicateDefinition`] at the second pair's member
+    /// read, or at its name given.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a renaming of distinct names reads, and a name given
+    ///   twice is refused at the second.
+    /// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|renaming| renaming.pairs().len() == pairs.len()))]
+    pub(crate) fn renaming_of(
+        &self,
+        pairs: &[(Placed, Placed)],
+    ) -> Result<Renaming<SurfaceName<'source>>, LoweringRefusal<'source>>
+    {
+        let mut named: Vec<(SurfaceName<'source>, SurfaceName<'source>)> =
+            Vec::with_capacity(pairs.len());
+        for &(read, given) in pairs {
+            let pair = (self.name_of(read), self.name_of(given));
+            // `named` holds the pairs before this one, so it zips with their
+            // tiles.
+            let twice = named.iter().zip(pairs).find_map(
+                |(&(first_read, first_given), &(first_at, first_named))| {
+                    if first_read == pair.0 {
+                        Some((read.span, pair.0, first_at.span))
+                    }
+                    else if first_given == pair.1 {
+                        Some((given.span, pair.1, first_named.span))
+                    }
+                    else {
+                        None
+                    }
+                },
+            );
+            if let Some((span, name, first)) = twice {
+                return Err(LoweringRefusal::DuplicateDefinition { span, name, first });
+            }
+            named.push(pair);
+        }
+        Ok(Renaming::new(named))
     }
 
     /// Read one declaration form's pieces into its slot in `container`,
@@ -8236,23 +8440,26 @@ impl<'source> Collector<'_, 'source>
         })
     }
 
-    /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`.
+    /// Read a functor application's tail past its `=`: `F(P(.p)*) ;`, or a
+    /// flow's, `f(P(.p)*) ;`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the binding's `=`.
-    /// - ensures: the functor's name tile and the argument path's segment
-    ///   tiles, at least one, when the tail reads `F(P(.p)*) ;` and nothing
-    ///   follows it; absent, the cursor at the first tile out of place,
+    /// - ensures: the functor's or the flow's name tile and the argument path's
+    ///   segment tiles, at least one, when the tail reads `F(P(.p)*) ;` and
+    ///   nothing follows it; absent, the cursor at the first tile out of place,
     ///   otherwise.
     /// - provides: the application half of [`Self::header`].
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a one-segment and a dotted argument are read, and a
-    ///   tail out of shape is refused under the binding's name.
+    /// - hypothesis: L3 — a one-segment and a dotted argument are read, a
+    ///   flow's name heads one, and a tail out of shape is refused under the
+    ///   binding's name.
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    /// - witness: `tests::modules::functors::a_flow_applies_to_a_module_3461`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present((_, ref argument)) => !argument.is_empty(),
         | Maybe::Absent(_) => true,
@@ -8260,9 +8467,12 @@ impl<'source> Collector<'_, 'source>
     fn application(cursor: &mut Cursor<'_>) -> Maybe<(Placed, Vec<Placed>), application::Absent>
     {
         let misplaced = Maybe::Absent(application::Absent::Misplaced);
-        let Maybe::Present(functor) = cursor.tile(TileName::TYPE_IDENTIFIER)
-        else {
-            return misplaced;
+        let functor = match cursor.tile(TileName::TYPE_IDENTIFIER) {
+            Maybe::Present(functor) => functor,
+            Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                Maybe::Present(flow) => flow,
+                Maybe::Absent(_) => return misplaced,
+            },
         };
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
             return misplaced;

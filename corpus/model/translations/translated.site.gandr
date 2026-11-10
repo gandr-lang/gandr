@@ -1,0 +1,43 @@
+// A site that reads its newer module as the older store, through a renaming
+// and via a flow.
+//
+// The site keeps the newer module, and the role keeps the older signature.
+// A translation joins them at the boundary, and no code runs there.
+//
+// The offer names a translation after each module. `store = Echo renaming {
+// fetch as get }` reads `Echo`'s `fetch` as `get`, and every other member as
+// itself. `cache = Echo via downgrade` reads `Echo` through the published flow
+// `downgrade`, which resolves as an import's `via` resolves.
+//
+// - see: `translated.gandr` — the role whose `far` requires the older store
+// - see: `translated.manifold.gandr` — the manifold placing `far` here
+
+// The site theory.
+import std.manifold (Site);
+// The newer store, and the flow to the older one.
+import "./translated.versions.gandr" (Newer, downgrade);
+
+/// Every key holds its own name, and a write keeps nothing.
+pub module Echo : Model(Newer) with sort V = String where
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def fetch(key : String, k : String -> String) -> String { k key }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
+
+/// The site answers `store` with `Echo`, its `fetch` read as `get`, and
+/// `cache` with `Echo` read via `downgrade`.
+pub offers [store = Echo renaming { fetch as get }, cache = Echo via downgrade];
+
+/// The far site, on a loopback socket.
+pub module Site : Model(Site) where
+  /// The key the hosting process proves.
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  /// The socket it binds, where a dialer reaches it.
+  def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
+
+/// The far site's model, where a manifold places a world.
+pub def site : Model Site = pack Site at Model Site;

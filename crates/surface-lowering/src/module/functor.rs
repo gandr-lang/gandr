@@ -77,12 +77,17 @@
 //! collected as a functor whose parameter is `Model(Newer)` and whose result is
 //! ascribed `Model(Older)`, under the flow's name. Its body reads the domain's
 //! members by their bare names, before its own, so `def tag = tag ;` reads the
-//! domain's `tag`. A flow is applied only by an import read through it, whose
-//! argument is the imported source: each component is the source's `pub`
-//! declaration of its name. The instance enters no module path. Its witnesses
-//! are named at the import's `via`, and a body member whose definition is a
-//! domain member's name alone is a renaming: its image is the source's
-//! declaration, and no slot of the instance mints for it.
+//! domain's `tag`. A flow is applied in two places. An import read through it
+//! applies it to the imported source: each component is the source's `pub`
+//! declaration of its name, the instance enters no module path, and its
+//! witnesses are named at the import's `via`. A module binding applies it to
+//! a module as it applies a functor, `module Older = downgrade(Echo) ;`: each
+//! component is the module's member of its name, and the instance is the
+//! binding's module. In both, a body member whose definition is a domain
+//! member's name alone is a renaming: its image is the argument's member, and
+//! no slot of the instance mints for it. A deployment reads the members that
+//! are not renamings ([`Collector::rewritten`]): a flow none of whose members
+//! does more than rename is a path, and its policy admits it as one.
 //!
 //! # Held outside this rung
 //!
@@ -117,10 +122,12 @@
 //!   source's declaration, and no slot of the instance mints for it.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -573,6 +580,59 @@ pub struct Applied<'source>
     pub functor: Placed,
     /// The argument's path, one tile per segment.
     pub argument: Vec<Placed>,
+}
+
+impl<'source> Collected<'source>
+{
+    /// The flow named `name` that a translation written at `at`, in the
+    /// source `source`, reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the flow of that name `source` declares before `at`; where
+    ///   none is, one a source `published` admits declares `pub`; absent,
+    ///   [`unflowed::Absent::Undeclared`], where neither is.
+    /// - provides: the one resolution an import's `via` and an offer's `via`
+    ///   share.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the collected functors.
+    ///
+    /// # Clause cost
+    /// - bound: one walk of the collected functors.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow the importer declares and one its source
+    ///   publishes each resolve; a name no flow bears resolves nothing; an
+    ///   offer's flow resolves as an import's does.
+    /// - witness: `tests::namespace::a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378`
+    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    pub(crate) fn translation_flow(
+        &self,
+        source: SourceIndex,
+        at: ByteOffset,
+        name: SurfaceName<'source>,
+        published: impl Fn(SourceIndex) -> bool,
+    ) -> Maybe<FunctorIndex, unflowed::Absent>
+    {
+        self.functors
+            .iter()
+            .enumerate()
+            .filter(|&(_, functor)| {
+                matches!(functor.scope, BodyScope::Domain { .. }) && functor.name == name && {
+                    let declared = self.unit.source_at(functor.declared_by.span.start());
+                    (declared == source && functor.declared_by.span.end() <= at)
+                        || (published(declared)
+                            && self.structure_visibility(functor.body) == Visibility::Public)
+                }
+            })
+            .min_by_key(|&(_, functor)| {
+                self.unit.source_at(functor.declared_by.span.start()) != source
+            })
+            .map_or(Maybe::Absent(unflowed::Absent::Undeclared), |(index, _)| {
+                Maybe::Present(FunctorIndex(index))
+            })
+    }
 }
 
 impl<'source> Collector<'_, 'source>
@@ -1058,25 +1118,20 @@ impl<'source> Collector<'_, 'source>
                 Maybe::Absent(uninstantiated::Absent::Unimported)
             },
         };
-        let collected: &Collected<'source> = self.collected;
         let published =
             |at: SourceIndex| matches!(target, Maybe::Present(imported) if imported == at);
-        let resolved = collected
-            .functors
-            .iter()
-            .enumerate()
-            .filter(|&(_, functor)| {
-                matches!(functor.scope, BodyScope::Domain { .. }) && functor.name == name && {
-                    let at = collected.unit.source_at(functor.declared_by.span.start());
-                    (at == source && functor.declared_by.span.end() <= import.span.start())
-                        || (published(at)
-                            && collected.structure_visibility(functor.body) == Visibility::Public)
-                }
-            })
-            .min_by_key(|&(_, functor)| {
-                collected.unit.source_at(functor.declared_by.span.start()) != source
-            })
-            .map(|(index, functor)| (FunctorIndex(index), functor.clone()));
+        let resolved =
+            match self
+                .collected
+                .translation_flow(source, import.span.start(), name, published)
+            {
+                Maybe::Present(index) => self
+                    .collected
+                    .functors
+                    .get(usize::from(index))
+                    .map(|functor| (index, functor.clone())),
+                Maybe::Absent(_) => None,
+            };
         let Some((index, template)) = resolved
         else {
             return Translation {
@@ -1135,6 +1190,72 @@ impl<'source> Collector<'_, 'source>
             },
             lacking: Maybe::Absent(lacked::Absent::Published),
         }
+    }
+
+    /// The name tiles of the members of the flow `flow` that do more than
+    /// rename one member of its domain.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each exported member of the flow's body, in export order,
+    ///   whose definition is not a lone name some component of the flow's
+    ///   domain bears; none for an index no flow holds.
+    /// - provides: the member test a deployment's `Path` policy reads: a flow
+    ///   is a path when each member renames one member.
+    /// - fails: never; a member whose definition does not read is not a
+    ///   renaming.
+    /// - panics: none.
+    /// - executable: none — as [`Self::renamings`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `def answer = reply ;` renames, and `def answer =
+    ///   reply + 1 ;` is code.
+    /// - witness: `lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    pub(super) fn rewritten(
+        &self,
+        flow: FunctorIndex,
+    ) -> Vec<Placed>
+    {
+        let mut rewritten = Vec::new();
+        let Some(template) = self.collected.functors.get(usize::from(flow))
+        else {
+            return rewritten;
+        };
+        let Some(body) = self.collected.structures.get(template.body.0)
+        else {
+            return rewritten;
+        };
+        let domain: BTreeSet<SurfaceName<'_>> = template
+            .components
+            .iter()
+            .map(|component| component.name)
+            .collect();
+        let mut scratch = Pieces::default();
+        for &export in &body.exports {
+            let Member::Slot(slot) = export
+            else {
+                continue;
+            };
+            let Some(entry) = self.collected.slots.get(slot.0)
+            else {
+                continue;
+            };
+            let renames = match entry.definition {
+                Maybe::Present(Half {
+                    operand: Operand::Written(written),
+                    ..
+                }) => match self.lone_name(written.node, &mut scratch) {
+                    Ok(Some(tile)) => domain.contains(&self.name_of(tile)),
+                    Ok(None) | Err(_) => false,
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => false,
+            };
+            if !renames {
+                rewritten.push(entry.named);
+            }
+        }
+
+        rewritten
     }
 
     /// The module the argument path `head`, then `rest`, names.
@@ -1337,7 +1458,8 @@ impl<'source> Collector<'_, 'source>
     ///   entered among its container's modules only for a module binding, and
     ///   an import's witnesses named at the binding's name. For a flow, each
     ///   image of a body member defined as one value component, a renaming, is
-    ///   recorded with the argument's member that component matched.
+    ///   recorded with the argument's member that component matched; applied to
+    ///   a module, the instance's module exports that member under the image.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1346,6 +1468,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    /// - witness: `tests::modules::functors::a_flow_applies_to_a_module_3461`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.structures.len()),
         ensures: |ret| match ret {
@@ -1548,6 +1671,16 @@ impl<'source> Collector<'_, 'source>
         }
         if matches!(template.scope, BodyScope::Domain { .. }) {
             instance.renamed = self.renamings(template, &instance);
+            // A module binding reads a renamed member as the argument's
+            // member it binds, as an import reads it through its translation:
+            // the image declares nothing of its own.
+            if matches!(argument, Argument::Module(_))
+                && let Some(module) = self.collected.structures.get_mut(instance.structure.0)
+            {
+                for (&image, &member) in &instance.renamed {
+                    let _bound = module.exported_as.insert(image, member);
+                }
+            }
         }
         self.collected.instances.push(instance);
 

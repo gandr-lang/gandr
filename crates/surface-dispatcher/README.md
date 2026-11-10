@@ -40,7 +40,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.
 - `Exercised` and `Row`: the fragment's exercised table.
 - `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `last_declared::Absent` and `declaration_name::Absent`: the run stage.
-- `Script`, `ScriptRun`, `Ran`, `execute`, `run_source` and `host`: the run and host verbs; where migrations go is [`worlds`](src/evaluate/worlds.rs)'s.
+- `Script`, `ScriptRun`, `Ran`, `execute`, `run_source` and `host`: the run and host verbs.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb.
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
 - `Census`, `CensusStep`, `CensusFault` and `CellRow`: the cells verb ([`cells`](src/cells.rs)).
@@ -124,6 +124,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling — a run is a local artifact.
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: a source its flow refuses answers at no site.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a failed translation refuses its importer.
+- `vault:01a17f47-4717-7b62-93c4-f9d2f8369221` — lineage: a policy off by default.
 - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — background: the blind check the tier meets a pair by.
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.

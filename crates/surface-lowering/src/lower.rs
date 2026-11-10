@@ -5413,7 +5413,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Some((entry.constant, required))
             })
             .collect();
-        // The offer the current source writes, as it writes its entries.
+        // The offer the current source writes, as it writes its entries. An
+        // offer is kept only when each label's module is one the source
+        // declares, so each label finds its structure.
         let offer = self.collected.offers.get(&self.current.source).map_or(
             Maybe::Absent(crate::module::offer::Absent::Unoffered),
             |offer| {
@@ -5426,7 +5428,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     answered: offer
                         .answered
                         .iter()
-                        .map(|&(label, module)| (label.span, module.span))
+                        .filter_map(|entry| {
+                            let structure = *self.collected.modules.get(&(
+                                Container::TopLevel(self.current.source),
+                                self.name_at(entry.module),
+                            ))?;
+                            Some(crate::module::OfferedLabel {
+                                label: entry.label.span,
+                                module: entry.module.span,
+                                structure,
+                                translation: match entry.translation {
+                                    Maybe::Present(crate::import::WrittenTranslation::Via(
+                                        flow,
+                                    )) => Maybe::Present(crate::module::OfferedTranslation::Via {
+                                        flow: flow.span,
+                                        rewritten: entry
+                                            .rewritten
+                                            .iter()
+                                            .map(|member| member.span)
+                                            .collect(),
+                                    }),
+                                    Maybe::Present(
+                                        crate::import::WrittenTranslation::Renaming(ref pairs),
+                                    ) => {
+                                        Maybe::Present(crate::module::OfferedTranslation::Renaming(
+                                            pairs
+                                                .iter()
+                                                .map(|&(read, named)| (read.span, named.span))
+                                                .collect(),
+                                        ))
+                                    },
+                                    Maybe::Absent(absent) => Maybe::Absent(absent),
+                                },
+                            })
+                        })
                         .collect(),
                 })
             },
@@ -9759,7 +9794,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(slot) => Some(slot),
                 Maybe::Absent(_) => None,
             },
-            Maybe::Present(_) | Maybe::Absent(_) => self
+            Maybe::Present(ImportSignature { ref renaming, .. }) => self
+                .collected
+                .by_name
+                .get(&(Container::TopLevel(target), *renaming.read(&member)))
+                .copied(),
+            Maybe::Absent(_) => self
                 .collected
                 .by_name
                 .get(&(Container::TopLevel(target), member))
@@ -15155,7 +15195,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration owning `site` — its module, each module enclosing it, then
     ///   its source's top level — that declares a type member of the name,
     ///   written wholly before `site`, answers it, the last such of that
-    ///   container; past the top level, the member its source's unqualified
+    ///   container; a flow's body is read as its domain, so a type component of
+    ///   the flow's parameter answers the name there and the body's own members
+    ///   do not; past the top level, the member its source's unqualified
     ///   imports answer, as [`Collected::imported_type_member`] reads them, the
     ///   import marked reached. A site no declaration owns, or a name no such
     ///   member has, answers nothing.
@@ -15176,6 +15218,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   two imports write, and one only an import of the import writes,
     ///   separate the import fallback.
     /// - witness: `tests::modules::a_type_member_is_named_only_after_it_is_written`
+    /// - witness: `tests::modules::functors::a_flow_reads_its_domain_s_sorts_by_name_3461`
     /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     /// - witness: `tests::namespace::an_imported_top_level_type_member_names_its_type_1834`
     #[spec(
@@ -15201,6 +15244,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         );
         loop {
             self.fuel.spend()?;
+            // A flow's body reads its domain's sorts by name and never its
+            // own, as it reads its values, so `type C = C ;` reads the
+            // domain's `C`.
+            if let Maybe::Present((parameter, outer)) = self.domain_scope(container) {
+                if let Some(&stated) = self
+                    .collected
+                    .structures
+                    .get(usize::from(parameter))
+                    .and_then(|structure| structure.types.iter().find(|stated| stated.name == name))
+                {
+                    return Ok(Maybe::Present(stated));
+                }
+                container = outer;
+                continue;
+            }
             let written = self
                 .collected
                 .type_members_in(container)

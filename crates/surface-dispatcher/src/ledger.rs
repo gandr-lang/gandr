@@ -2278,8 +2278,10 @@ mod tests
             form("import_declaration"),
             "import ⦅ ⟨string.type⟩ ‖ ‹identifier› ⦅ . ‹identifier› ⦆* ⦆ ⦅ as ‹identifier› ⦆? \
              ⦅ : ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦅ via \
-             ‹identifier› ⦆? ⦆? ⦅ ( ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› \
-             ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ) ⦆? ;"
+             ‹identifier› ‖ renaming { ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› \
+             ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ as ⦅ ‹identifier› \
+             ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? } ⦆? ⦆? ⦅ ( ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ \
+             ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ) ⦆? ;"
         );
         assert_eq!(form("binary_expression.or"), "EXPRESSION || EXPRESSION");
         assert_eq!(form("boolean.expression"), "true ‖ false");

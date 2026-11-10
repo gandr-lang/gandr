@@ -407,12 +407,13 @@ fn declarations(
     // After the name, a functor declares its parameter in parentheses,
     // `module MkSet(Elt : #{ … }) :> #{ … } where { … }` (`functor_parameter`),
     // and a functor application binds its instance, `module IntSet =
-    // MkSet(IntOrd) ;` (`functor_application_tail`). The application's tail
-    // opens at `=`, the parameter at `(`, the ascription at `:` or `:>` and the
-    // body at `where`, so the choice stays one token deep. The application is
-    // a module binding and nothing else: no rule projects from it, so
-    // `MkSet(IntOrd).T` has no reading but the one the lowering refuses by
-    // name.
+    // MkSet(IntOrd) ;` (`functor_application_tail`). A flow applies to a
+    // module the same way, `module Older = downgrade(Echo) ;`, its name
+    // lowercase as a flow's is. The application's tail opens at `=`, the
+    // parameter at `(`, the ascription at `:` or `:>` and the body at `where`,
+    // so the choice stays one token deep. The application is a module binding
+    // and nothing else: no rule projects from it, so `MkSet(IntOrd).T` has no
+    // reading but the one the lowering refuses by name.
     out.push(r(
         RuleName("module_declaration"),
         Provenance("module_declaration"),
@@ -489,6 +490,11 @@ fn declarations(
     // `import hello : Older via downgrade ;`: the source is matched against
     // the flow's domain, and the signature against its codomain. `via` is
     // contextual: no identifier stands after a signature's path.
+    //
+    // `renaming { fetch as get }` after the signature, in place of `via`,
+    // reads the source's `fetch` as the signature's `get`: the flow it derives
+    // renames each member it lists and keeps every other. `renaming` is
+    // contextual for the same reason as `via`.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),
@@ -507,7 +513,7 @@ fn declarations(
             opt(seq([
                 t(TileLabel(":")),
                 theory_path(),
-                opt(seq([t(TileLabel("via")), t(TileLabel("identifier"))])),
+                opt(translation_tail()),
             ])),
             opt(seq([
                 t(TileLabel("(")),
@@ -559,6 +565,11 @@ fn declarations(
     // declares, named bare as a handler is. The label is an operand, as a
     // row's is, so it shares the hole a package's lowercase path reads in.
     // Closed, as a requirement is, and one to a site's file.
+    //
+    // A label's module may be read through a translation, as an import's
+    // source is: `store = Echo via downgrade` or `store = Echo renaming {
+    // fetch as get }`. The manifold's policy decides whether a deployment
+    // admits it.
     out.push(r(
         RuleName("offers_declaration"),
         Provenance("offers_declaration"),
@@ -571,7 +582,11 @@ fn declarations(
                 theory_path(),
                 seq([
                     h(Sort::Type),
-                    opt(seq([t(TileLabel("=")), t(TileLabel("type_identifier"))])),
+                    opt(seq([
+                        t(TileLabel("=")),
+                        t(TileLabel("type_identifier")),
+                        opt(translation_tail()),
+                    ])),
                 ]),
             ])),
             t(TileLabel("]")),
@@ -733,15 +748,18 @@ fn functor_parameter() -> Regex
 /// Build a functor application's binding tail, `= MkSet(IntOrd) ;`: the
 /// functor's name and the module path it is applied to, in parentheses.
 ///
+/// The functor's name is a type name, or the name of a flow, which applies to
+/// a module as a functor does: `= downgrade(Echo) ;`.
+///
 /// The argument is a path, `IntOrd` or `Outer.Inner`, never a structure
 /// literal: an application names modules that exist, and an inline structure
 /// is a module binding written first.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an equals sign, the functor's type name, an opening parenthesis,
-///   a type name followed by any number of dotted segments of either name case,
-///   the closer and a semicolon.
+/// - ensures: an equals sign, the functor's name of either case, an opening
+///   parenthesis, a type name followed by any number of dotted segments of
+///   either name case, the closer and a semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -751,12 +769,12 @@ fn functor_parameter() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && ["=", "type_identifier", "(", "type_identifier"].iter().zip(parts.iter()).chain([")", ";"].iter().zip(parts.iter().skip(5))).all(|(label, part)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == *label)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && [(0_usize, "="), (2, "("), (3, "type_identifier"), (5, ")"), (6, ";")].iter().all(|&(at, label)| parts.get(at).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref names) if names.len() == 2)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
 fn functor_application_tail() -> Regex
 {
     seq([
         t(TileLabel("=")),
-        t(TileLabel("type_identifier")),
+        alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
         t(TileLabel("(")),
         t(TileLabel("type_identifier")),
         repeat(seq([
@@ -765,6 +783,42 @@ fn functor_application_tail() -> Regex
         ])),
         t(TileLabel(")")),
         t(TileLabel(";")),
+    ])
+}
+
+/// Build the translation a source or a module is read through, after an
+/// import's signature or an offer's module: `via downgrade`, a flow by name,
+/// or `renaming { fetch as get, … }`, the flow that renames each listed
+/// member and keeps every other.
+///
+/// Each side of a renamed pair is a name of either case, since a theory's
+/// operations and its sorts are both members.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a choice of `via` and a name, or `renaming`, a brace, one or more
+///   comma-separated pairs of a name, `as` and a name, and the closing brace.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref arms) if arms.len() == 2))]
+fn translation_tail() -> Regex
+{
+    let name = || alt([t(TileLabel("identifier")), t(TileLabel("type_identifier"))]);
+    alt([
+        seq([t(TileLabel("via")), t(TileLabel("identifier"))]),
+        seq([
+            t(TileLabel("renaming")),
+            t(TileLabel("{")),
+            comma1(seq([name(), t(TileLabel("as")), name()])),
+            t(TileLabel("}")),
+        ]),
     ])
 }
 

@@ -1,0 +1,13 @@
+import "./v.gandr" (Newer, downgrade);
+pub module Echo : Model(Newer) with sort V = {sort} where {{
+  type C = {sort};
+  def fetch(key : {sort}, k : {sort} -> {sort}) -> {sort} {{ k key }}
+  def put(key : {sort}, value : {sort}, k : {sort}) -> {sort} {{ k }}
+}}
+{offers}
+pub module Site : Model(Site) where {{
+  def key = "{key}";
+  def sockets = "";
+  def secret = "far";
+}}
+pub def site : Model(Site) = pack Site at Model(Site);

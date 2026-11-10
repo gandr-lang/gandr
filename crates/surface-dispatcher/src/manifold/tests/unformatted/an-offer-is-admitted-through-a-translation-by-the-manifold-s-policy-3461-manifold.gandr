@@ -1,0 +1,9 @@
+import std.list (List);
+import "./{site}" as placed;
+pub module Manifold : Model(Manifold) where {{
+  def artifact = "p.gandr";
+}}
+{translation}
+pub def placements : List(Placement) = #[
+  At "far" placed.site,
+];

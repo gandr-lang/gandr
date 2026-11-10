@@ -29,6 +29,22 @@
 //! it and the site's `Authority` attenuates to its operations, judged in the
 //! site's own text.
 //!
+//! # Judging a translation
+//!
+//! An offer may read its module through a translation: `store = Echo via
+//! downgrade` names a flow from the module's signature to the one the role
+//! requires, and `store = Echo renaming { fetch as get }` derives one, each
+//! member a renaming. A translation is code at the site's boundary, so the
+//! manifold admits it only by its `translation`, `std.manifold`'s
+//! `Translation`: [`Translation::Exact`], the default, admits none;
+//! [`Translation::Path`] admits a renaming and a flow each of whose members
+//! renames one member, so nothing runs at the boundary; [`Translation::Flow`]
+//! admits any flow the offer names. The policy is judged first, by name, and a
+//! translation it refuses is refused at its label naming the member. The
+//! translation it admits is then judged in the written text: the flow applied
+//! to the module, or the module's members renamed, stands in for the module
+//! the functor over the label's theory takes.
+//!
 //! # Boundaries
 //!
 //! - **The program by path.** A manifold names the program it deploys by its
@@ -49,14 +65,32 @@
 //!   as a clash, not as an offer the site lacks.
 //! - **The check alone judges.** `gandr check` of a manifold judges its
 //!   deployment; `gandr run --manifold` reads the bindings without it, and the
-//!   offer is not yet the far world's authority (#3546).
+//!   offer is not yet the far world's authority (#3546). The translated
+//!   endpoint, the role read through its offer's flow at run, is #6271's.
+//! - **A flow's row is empty.** The checker refuses a flow member that performs
+//!   an effect, so a flow adds no entry to the world's row, and `Flow` joins
+//!   nothing to it. A flow's grade joins the check with #3524.
+//! - **A flow reads no sort of its domain.** A flow's body reads its domain's
+//!   values and none of its sorts (#3378), so a flow translates a role only
+//!   between theories whose operations are written at fixed types.
+//! - **A renaming renames values and types.** The judgement writes each type
+//!   and each value member of the module under the name the renaming gives it.
+//!   A nested module of the offered module is not written, so a role whose
+//!   theory requires one is refused naming it.
 //!
 //! # References
 //!
 //! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: the compilation
 //!   ruling, § compilation-recipe-refinements: a deployment binds roles to
 //!   world keys, instance counts and discovery, and never enters an artifact's
-//!   identity.
+//!   identity; § compilation-recipe-zero-cost: a policy is off by default, and
+//!   an artifact built without it carries none of its bytes.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: the univalence
+//!   design, § The trust story: one side supplies the translation, and
+//!   transport along a renaming is free.
+//! - `vault:01a17f47-4717-7b62-93c4-f9d2f8369221` — lineage: the dynamic
+//!   linking design, § dynamic-linking-policy: a policy off by default, refused
+//!   at check time.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -87,6 +121,8 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::OfferedTranslation;
+use gandr_surface_lowering::Renaming;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::decode_escapes;
 use gandr_surface_lowering::labelled;
@@ -374,6 +410,45 @@ pub struct Manifold
     /// How a runner finds the sites: by multicast DNS when a site names no
     /// socket.
     lookup: Lookup,
+    /// What the manifold admits between a role and the module its site
+    /// answers a label with.
+    translation: Translation,
+}
+
+/// What a manifold admits between a role and the module its site answers a
+/// label with, as `std.manifold`'s `Translation` spells it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Translation
+{
+    /// `Exact`: each module is read as it is, and an offer that names a
+    /// translation is refused.
+    #[default]
+    Exact,
+    /// `Path`: a renaming is admitted, and a flow each of whose members
+    /// renames one member, so no code runs at the boundary.
+    Path,
+    /// `Flow`: any flow the offer names is admitted.
+    Flow,
+}
+
+impl fmt::Display for Translation
+{
+    /// The policy, as `std.manifold` spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Exact => "Exact",
+            Self::Path => "Path",
+            Self::Flow => "Flow",
+        })
+    }
 }
 
 impl Manifold
@@ -383,11 +458,12 @@ impl Manifold
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the file checked alone over what it imports, and its
-    ///   `Manifold.artifact` and `placements` run: the artifact's path joined
-    ///   to the file's directory, and each placement read as a world bound to
-    ///   the peer its key and sockets spell, a world placed twice keeping its
-    ///   last; a runner finds sites by multicast DNS when any placement names
-    ///   no socket.
+    ///   `Manifold.artifact`, `placements` and `translation` run: the
+    ///   artifact's path joined to the file's directory, each placement read as
+    ///   a world bound to the peer its key and sockets spell, a world placed
+    ///   twice keeping its last, and the policy the translation spells,
+    ///   [`Translation::Exact`] when the file declares none; a runner finds
+    ///   sites by multicast DNS when any placement names no socket.
     /// - provides: the bindings `gandr run --manifold` ships by and `gandr host
     ///   --manifold` serves by.
     /// - fails: as [`Undeployed`] names, at the first field or placement that
@@ -399,21 +475,41 @@ impl Manifold
     /// [`Undeployed::Unread`], [`Undeployed::Refused`],
     /// [`Undeployed::Undeclared`], [`Undeployed::Unstrung`],
     /// [`Undeployed::Unplaced`], [`Undeployed::Replicated`],
-    /// [`Undeployed::Unkeyed`] and [`Undeployed::Unsocketed`].
+    /// [`Undeployed::Unkeyed`], [`Undeployed::Unsocketed`] and
+    /// [`Undeployed::Untranslatable`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the corpus manifold binds `far` to the corpus site's
     ///   peer and deploys the migration model; a manifold placing a world twice
     ///   over, one declaring no placements and one whose placements are no list
-    ///   of them are refused at that field.
+    ///   of them are refused at that field; a manifold declaring no translation
+    ///   is exact.
     /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
     /// - witness: `manifold::tests::a_field_that_does_not_read_is_refused_by_name_3374`
+    /// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
     #[inline]
     pub fn read(file: &Path) -> Result<Self, Undeployed>
     {
-        let [artifact, placements] =
-            ran_alone(file, [Stated::Artifact.name(), Stated::Placements.name()])
-                .map_err(|unran| Undeployed::of(file, unran))?;
+        let [artifact, placements, translation] = ran_alone(file, [
+            Stated::Artifact.name(),
+            Stated::Placements.name(),
+            Stated::Translation.name(),
+        ])
+        .map_err(|unran| Undeployed::of(file, unran))?;
+        let translation = match translation {
+            Maybe::Absent(declaration_name::Absent::Undeclared) => Translation::Exact,
+            Maybe::Present(came) => match came.as_str() {
+                "Exact" => Translation::Exact,
+                "Path" => Translation::Path,
+                "Flow" => Translation::Flow,
+                _ => {
+                    return Err(Undeployed::Untranslatable {
+                        file: file.to_path_buf(),
+                        came,
+                    });
+                },
+            },
+        };
         let artifact = file.parent().unwrap_or_else(|| Path::new("")).join(strung(
             file,
             Stated::Artifact,
@@ -473,6 +569,7 @@ impl Manifold
             placed: worlds,
             bindings: bindings.into_iter().collect(),
             lookup,
+            translation,
         })
     }
 
@@ -629,6 +726,7 @@ impl Manifold
                         world,
                         entries,
                         site,
+                        translation: self.translation,
                     };
                     refused.extend(offering.judged());
                     continue;
@@ -744,6 +842,8 @@ pub enum Stated
     Artifact,
     /// `placements`.
     Placements,
+    /// `translation`.
+    Translation,
     /// `Secrets.secret`.
     Secrets,
 }
@@ -762,6 +862,7 @@ impl Stated
             Self::Secret => "Site.secret",
             Self::Artifact => "Manifold.artifact",
             Self::Placements => "placements",
+            Self::Translation => "translation",
             Self::Secrets => "Secrets.secret",
         })
     }
@@ -989,6 +1090,30 @@ pub enum Undeployed
         /// Why the site's offer does not answer it, spelled.
         why: String,
     },
+    /// `translation` runs to something other than `Exact`, `Path` or `Flow`.
+    Untranslatable
+    {
+        /// The file.
+        file: PathBuf,
+        /// What its run came to, spelled.
+        came: String,
+    },
+    /// The manifold's `translation` refuses how a site answers an entry of
+    /// the row the world placed at it requires.
+    Untranslated
+    {
+        /// The site's file.
+        site: PathBuf,
+        /// The world placed.
+        world: WorldName,
+        /// The label refused.
+        entry: String,
+        /// The manifold's policy.
+        policy: Translation,
+        /// The translation the offer names, and the member that refuses it,
+        /// spelled.
+        why: String,
+    },
 }
 
 impl Undeployed
@@ -1041,6 +1166,9 @@ impl fmt::Display for Undeployed
                     Stated::Artifact => "`module Manifold : Model(Manifold)` from `std.manifold`",
                     Stated::Placements => {
                         "`pub def placements : List(Placement)`, its `List` from `std.list`"
+                    },
+                    Stated::Translation => {
+                        "`pub def translation : Translation` from `std.manifold`"
                     },
                     Stated::Secrets => {
                         "`module Secrets : Model(Secrets) with sort K = Secret.T` from `std.secret`"
@@ -1153,6 +1281,23 @@ impl fmt::Display for Undeployed
             } => write!(
                 f,
                 "`{world}` requires `{entry}`, and the site `{}` does not answer it: {why}",
+                site.display()
+            ),
+            Self::Untranslatable { ref file, ref came } => write!(
+                f,
+                "`translation` of `{}` runs to `{came}`, not to `Exact`, `Path` or `Flow`",
+                file.display()
+            ),
+            Self::Untranslated {
+                ref site,
+                ref world,
+                ref entry,
+                policy,
+                ref why,
+            } => write!(
+                f,
+                "`{world}` requires `{entry}`, and the manifold's `translation`, `{policy}`, \
+                 refuses how the site `{}` answers it: {why}",
                 site.display()
             ),
         }
@@ -1354,8 +1499,46 @@ struct Offer
 {
     /// Each host interface the site grants, by its name.
     granted: BTreeSet<String>,
-    /// Each label the site answers, with the name of the module answering it.
-    answered: BTreeMap<String, String>,
+    /// Each label the site answers, with the module answering it.
+    answered: BTreeMap<String, Answer>,
+}
+
+/// The module a site answers a label with, and how the deployment reads it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Answer
+{
+    /// The module's name.
+    module: String,
+    /// The translation the module is read through.
+    through: Through,
+}
+
+/// How a deployment reads the module a site answers a label with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Through
+{
+    /// As it is.
+    Exact,
+    /// Through the flow named, `via f`, beside the name of each of its
+    /// members that does more than rename one member, in the flow's order.
+    Flow
+    {
+        /// The flow's name.
+        flow: String,
+        /// Each member that does more than rename.
+        rewritten: Vec<String>,
+    },
+    /// Through a renaming, `renaming { fetch as get }`, beside the module's
+    /// members: each type's name, then each value's.
+    Renaming
+    {
+        /// The renaming.
+        renaming: Renaming<String>,
+        /// Each type member's name.
+        types: Vec<String>,
+        /// Each value member's name.
+        values: Vec<String>,
+    },
 }
 
 /// The offer the site's module `module` writes, read off the unit's text
@@ -1363,15 +1546,18 @@ struct Offer
 ///
 /// # Specification
 /// - requires: `text` is the text `module`'s spans index.
-/// - ensures: the host interfaces and the labels with their modules the
-///   module's `offers` writes; the empty offer when it writes none, or when
-///   `text` does not hold its bytes.
+/// - ensures: the host interfaces and the labels the module's `offers` writes,
+///   each label with its module and the translation written after it: a flow
+///   with its members that do more than rename, or a renaming with the members
+///   the module exports; the empty offer when it writes none, or when `text`
+///   does not hold its bytes.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Manifold::judged`].
 /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+/// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
 #[spec(ensures: |ret| ret.granted.len() <= match module.offer() { Maybe::Present(offer) => offer.granted.len(), Maybe::Absent(_) => 0 })]
 fn offered(
     module: &LoweredModule<'_>,
@@ -1390,11 +1576,125 @@ fn offered(
     let answered = offered
         .answered
         .iter()
-        .map(|&(label, answering)| Some((spelled(text, label)?, spelled(text, answering)?)))
-        .collect::<Option<BTreeMap<String, String>>>();
+        .map(|answering| {
+            let through = match answering.translation {
+                Maybe::Absent(_) => Through::Exact,
+                Maybe::Present(OfferedTranslation::Via {
+                    flow,
+                    ref rewritten,
+                }) => Through::Flow {
+                    flow: spelled(text, flow)?,
+                    rewritten: rewritten
+                        .iter()
+                        .map(|&member| spelled(text, member))
+                        .collect::<Option<Vec<String>>>()?,
+                },
+                Maybe::Present(OfferedTranslation::Renaming(ref pairs)) => {
+                    let structure = module.structures().get(usize::from(answering.structure))?;
+                    Through::Renaming {
+                        renaming: Renaming::new(
+                            pairs
+                                .iter()
+                                .map(|&(read, named)| {
+                                    Some((spelled(text, read)?, spelled(text, named)?))
+                                })
+                                .collect::<Option<Vec<(String, String)>>>()?,
+                        ),
+                        types: structure
+                            .types()
+                            .iter()
+                            .map(|member| String::from(member.name.as_ref()))
+                            .chain(
+                                structure
+                                    .sealed()
+                                    .iter()
+                                    .map(|member| String::from(member.name.as_ref())),
+                            )
+                            .collect(),
+                        values: structure
+                            .values()
+                            .iter()
+                            .map(|member| String::from(member.name.as_ref()))
+                            .collect(),
+                    }
+                },
+            };
+            Some((spelled(text, answering.label)?, Answer {
+                module: spelled(text, answering.module)?,
+                through,
+            }))
+        })
+        .collect::<Option<BTreeMap<String, Answer>>>();
     match (granted, answered) {
         (Some(granted), Some(answered)) => Offer { granted, answered },
         (None, _) | (_, None) => Offer::default(),
+    }
+}
+
+/// Why the manifold's policy `policy` refuses the answer `answer`: its module
+/// read through its translation.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: absent for a module read as it is, and for any translation under
+///   [`Translation::Flow`]; under [`Translation::Path`], absent for a renaming
+///   and for a flow each of whose members renames one member, and the first
+///   member that does more than rename otherwise; under [`Translation::Exact`],
+///   the translation named, for every translation.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the reason is a spelling of the translation, which a
+///   clause would restate whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a renaming under `Exact` and a flow with code under
+///   `Path` are refused naming the translation and the member, and a renaming
+///   under `Path` and a flow under `Flow` are admitted.
+/// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
+fn refused_by(
+    policy: Translation,
+    answer: &Answer,
+) -> Maybe<String, admitted::Absent>
+{
+    let module = &answer.module;
+    match (policy, &answer.through) {
+        (Translation::Exact, &Through::Flow { ref flow, .. }) => Maybe::Present(format!(
+            "the offer reads `{module}` via the flow `{flow}`, and `Exact` admits no translation"
+        )),
+        (Translation::Exact, &Through::Renaming { .. }) => Maybe::Present(format!(
+            "the offer reads `{module}` through a renaming, and `Exact` admits no translation"
+        )),
+        (
+            Translation::Path,
+            &Through::Flow {
+                ref flow,
+                ref rewritten,
+            },
+        ) => rewritten
+            .first()
+            .map_or(Maybe::Absent(admitted::Absent::Admitted), |member| {
+                Maybe::Present(format!(
+                    "the member `{member}` of the flow `{flow}` does more than rename a member of \
+                 `{module}`, and `Path` admits only renamings"
+                ))
+            }),
+        (_, &Through::Exact)
+        | (Translation::Flow, _)
+        | (Translation::Path, &Through::Renaming { .. }) => {
+            Maybe::Absent(admitted::Absent::Admitted)
+        },
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a policy refuses no translation.
+    mod admitted {
+        /// The reason none is refused.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The policy admits the translation, or none is named.
+            Admitted,
+        }
     }
 }
 
@@ -1416,6 +1716,12 @@ const OFFERED: &str = "DeployedOffer";
 /// operations, followed by the entry's position in the row.
 const GRANTED: &str = "deployedGrant";
 
+/// The module the deployment check writes for each label read through a
+/// translation: the flow applied to the module, or the module's members
+/// renamed, followed by the label's position in the row. [`OFFERED`] then
+/// applies [`REQUIRED`] to it.
+const TRANSLATED: &str = "DeployedTranslation";
+
 /// An entry's position in the row it stands in, counted from zero in written
 /// order.
 ///
@@ -1426,7 +1732,7 @@ const GRANTED: &str = "deployedGrant";
 struct Position(usize);
 
 /// A label the site binds a module to: the entry, its position, and the
-/// module's name.
+/// module with the translation it is read through.
 ///
 /// # Specification
 /// trivial.
@@ -1437,8 +1743,8 @@ struct Bound<'judged>
     position: Position,
     /// The entry.
     entry: &'judged Entry,
-    /// The name of the module the site binds the entry's label to.
-    module: &'judged str,
+    /// The module the site binds the entry's label to, and how it is read.
+    answer: &'judged Answer,
 }
 
 /// A host interface the site lists: the entry's position, and the host's
@@ -1486,6 +1792,8 @@ struct Offering<'judged>
     entries: &'judged [Entry],
     /// The file of the site it is placed at.
     site: &'judged Path,
+    /// What the manifold admits between the role and the site's modules.
+    translation: Translation,
 }
 
 impl Offering<'_>
@@ -1499,15 +1807,20 @@ impl Offering<'_>
     ///   interface the host declares, is answered when the offer lists it and
     ///   the site's own text, with [`GRANTED`] attenuating its `Authority` to
     ///   the interface's operations, holds them ([`Self::granted`]). A theory's
-    ///   label is answered when the offer binds a module to it that the
-    ///   program's text, with the module imported and [`OFFERED`] applying
-    ///   [`REQUIRED`] to it, takes at `Model(T)` and the sorts the entry fixes
-    ///   ([`Self::modelled`]). Empty when every entry is answered.
+    ///   label whose module the offer reads through a translation is first
+    ///   judged by the manifold's policy ([`refused_by`]), and a translation
+    ///   the policy refuses is an [`Undeployed::Untranslated`] naming the
+    ///   label, the translation and the member that refuses it. A label the
+    ///   policy admits is answered when the offer binds a module to it that the
+    ///   program's text, with the module imported, read through its translation
+    ///   as [`TRANSLATED`], and [`OFFERED`] applying [`REQUIRED`] to it, takes
+    ///   at `Model(T)` and the sorts the entry fixes ([`Self::modelled`]).
+    ///   Empty when every entry is answered.
     /// - provides: the member-by-member judgement of [`Manifold::judged`].
     /// - fails: never; each entry unanswered is an [`Undeployed::Unoffered`]
     ///   naming it, by the label for a theory and by its name for a host
     ///   interface, and a site's file that does not read or lower refuses every
-    ///   entry.
+    ///   entry. The refusals stand in the row's written order.
     /// - panics: none.
     /// - executable: none — the judgement checks the program and the site
     ///   again, which a predicate could only observe by checking them once
@@ -1516,6 +1829,7 @@ impl Offering<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Manifold::judged`].
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    /// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
     fn judged(self) -> Vec<Undeployed>
     {
         let mut arena = CoreArena::new();
@@ -1554,6 +1868,7 @@ impl Offering<'_>
             Err(Unran::Unread { message: why } | Unran::Refused { why }) => return every(&why),
         };
         let mut why: BTreeMap<Position, String> = BTreeMap::new();
+        let mut untranslated: BTreeMap<Position, Undeployed> = BTreeMap::new();
         let mut bound = Vec::new();
         let mut listed = Vec::new();
         for (at, entry) in self.entries.iter().enumerate() {
@@ -1572,11 +1887,22 @@ impl Offering<'_>
                     }
                 },
                 (Maybe::Absent(_), &Maybe::Present(ref label)) => match offer.answered.get(label) {
-                    Some(module) => bound.push(Bound {
-                        position,
-                        entry,
-                        module,
-                    }),
+                    Some(answer) => match refused_by(self.translation, answer) {
+                        Maybe::Present(refusal) => {
+                            let _first = untranslated.insert(position, Undeployed::Untranslated {
+                                site: self.site.to_path_buf(),
+                                world: self.world.clone(),
+                                entry: label.clone(),
+                                policy: self.translation,
+                                why: refusal,
+                            });
+                        },
+                        Maybe::Absent(_) => bound.push(Bound {
+                            position,
+                            entry,
+                            answer,
+                        }),
+                    },
                     None => {
                         let _first = why.insert(
                             position,
@@ -1589,9 +1915,14 @@ impl Offering<'_>
         }
         why.extend(self.modelled(&bound));
         why.extend(self.granted(SourceText::from(site.as_str()), &listed));
-        why.into_iter()
-            .filter_map(|(Position(at), why)| Some(unoffered(self.entries.get(at)?, why)))
-            .collect()
+        let mut refused: BTreeMap<Position, Undeployed> = why
+            .into_iter()
+            .filter_map(|(position, why)| {
+                Some((position, unoffered(self.entries.get(position.0)?, why)))
+            })
+            .collect();
+        refused.extend(untranslated);
+        refused.into_values().collect()
     }
 
     /// Why each label the site binds a module to is not answered by it.
@@ -1602,19 +1933,26 @@ impl Offering<'_>
     ///   by its path from the program's directory, under [`SITE_ALIAS`] and
     ///   listing each module of `bound`, and per label the functor [`REQUIRED`]
     ///   over a model of the label's theory at the entry's sorts and
-    ///   [`OFFERED`] applying it to the module, judged at the program's path as
-    ///   [`stepped_alone`] judges a text; each label whose lines a diagnostic
-    ///   marks, with that diagnostic spelled. The modules are imported by their
-    ///   bare names because a functor applies a module by its name, so a
-    ///   program declaring a module of one of their names is refused here.
+    ///   [`OFFERED`] applying it to the module as the label reads it, judged at
+    ///   the program's path as [`stepped_alone`] judges a text; each label
+    ///   whose lines a diagnostic marks, with that diagnostic spelled. A label
+    ///   read through a translation is read as [`TRANSLATED`], written before
+    ///   its lines: for a flow, the flow applied to the module; for a renaming,
+    ///   a module whose every member is the module's member of the name the
+    ///   renaming reads, under the name it gives, each type member a type and
+    ///   each value member a definition. The modules are imported by their bare
+    ///   names because a functor applies a module by its name, so a program
+    ///   declaring a module of one of their names is refused here.
     /// - fails: never; a text refused as a whole refuses every label.
     /// - panics: none.
     /// - executable: none — as [`Self::judged`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module at the sorts the requirement fixes is taken,
-    ///   and one at other sorts is refused naming both types.
+    ///   and one at other sorts is refused naming both types; a module read via
+    ///   a flow and one read through a renaming are taken.
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
+    /// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
     fn modelled(
         self,
         bound: &[Bound<'_>],
@@ -1635,7 +1973,10 @@ impl Offering<'_>
                 })
                 .collect();
         };
-        let modules: BTreeSet<&str> = bound.iter().map(|label| label.module).collect();
+        let modules: BTreeSet<&str> = bound
+            .iter()
+            .map(|label| label.answer.module.as_str())
+            .collect();
         let mut written = format!(
             include_str!("manifold/unformatted/modelled-written.gandr"),
             program = self.program,
@@ -1646,13 +1987,39 @@ impl Offering<'_>
         let mut wrote = Vec::with_capacity(bound.len());
         for label in bound {
             let start = ByteOffset::from(written.len());
+            let at = label.position.0;
+            let module = &label.answer.module;
+            let read = match label.answer.through {
+                Through::Exact => module.clone(),
+                Through::Flow { ref flow, .. } => {
+                    let _written = writeln!(written, "module {TRANSLATED}{at} = {flow}({module});");
+                    format!("{TRANSLATED}{at}")
+                },
+                Through::Renaming {
+                    ref renaming,
+                    ref types,
+                    ref values,
+                } => {
+                    let _written = write!(written, "module {TRANSLATED}{at} where {{");
+                    for member in types {
+                        let named = renaming.named(member);
+                        let _written = write!(written, " type {named} = {module}.{member};");
+                    }
+                    for member in values {
+                        let named = renaming.named(member);
+                        let _written = write!(written, " def {named} = {module}.{member};");
+                    }
+                    written.push_str(" }\n");
+                    format!("{TRANSLATED}{at}")
+                },
+            };
             let _written = write!(
                 written,
                 include_str!("manifold/unformatted/modelled-written-label.gandr"),
-                at = label.position.0,
+                at = at,
                 interface = label.entry.interface,
                 manifest = label.entry.manifest,
-                module = label.module,
+                module = read,
                 OFFERED = OFFERED,
                 REQUIRED = REQUIRED,
             );

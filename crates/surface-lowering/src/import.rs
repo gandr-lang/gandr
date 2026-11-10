@@ -334,6 +334,11 @@ pub struct ImportSignature<'source>
     pub stated: Maybe<Vec<Name>, unread::Absent>,
     /// The translation the import's source is read through, `via f`.
     pub via: Maybe<Translation<'source>, direct::Absent>,
+    /// The renaming the import's source is read through, `renaming { fetch
+    /// as get }`; empty when none is written.
+    pub renaming: Renaming<SurfaceName<'source>>,
+    /// The renaming's pairs' tiles, in the renaming's order.
+    pub renamed: Vec<(Placed, Placed)>,
 }
 
 /// The flow an import's source is read through, `import m : S via f ;`.
@@ -370,15 +375,241 @@ pub struct Translation<'source>
     pub lacking: Maybe<SurfaceName<'source>, lacked::Absent>,
 }
 
+/// A translation as its tiles spell it, after an import's signature or after
+/// an offer's module.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum WrittenTranslation
+{
+    /// `via f`: the flow's name tile.
+    Via(Placed),
+    /// `renaming { fetch as get, … }`: each pair's tiles, the member read
+    /// first and the name it is read as second, in written order.
+    Renaming(Vec<(Placed, Placed)>),
+}
+
+/// The flow a renaming derives, `renaming { fetch as get }`: each member of
+/// the signature reads one member of what is renamed, the one it renames or
+/// the one of its own name.
+///
+/// The one derivation an import's renaming and an offer's renaming share: an
+/// import reads its source's top level through it, and a deployment reads the
+/// offered module's members through it. Every member is a renaming, so its
+/// round trips are reflexivity and no code runs.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the pairs in written order, each the member read and the name it
+///   is read as.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — a pair list holds no invariant a clause checks; the
+///   reader refuses a name written twice, and [`Renaming::unrenamable`] checks
+///   the pairs against what is renamed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a renamed member reads its pair's member, and every other
+///   member reads itself.
+/// - witness: `tests::namespace::an_import_renaming_reads_its_source_s_member_under_the_signature_s_name_3461`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Renaming<Name>
+{
+    /// Each pair: the member read, then the name it is read as.
+    pairs: Vec<(Name, Name)>,
+}
+
+impl<Name> Default for Renaming<Name>
+{
+    /// The renaming of no pair: every member reads itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self { pairs: Vec::new() }
+    }
+}
+
+impl<Name: Ord> Renaming<Name>
+{
+    /// The renaming of the pairs `pairs`, each the member read and the name
+    /// it is read as.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(pairs: Vec<(Name, Name)>) -> Self
+    {
+        Self { pairs }
+    }
+
+    /// Each pair: the member read, then the name it is read as.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pairs(&self) -> &[(Name, Name)]
+    {
+        &self.pairs
+    }
+
+    /// The member the name `name` reads: the member its pair renames, or
+    /// `name` itself when no pair is read as it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first of the first pair whose second is `name`; `name`
+    ///   when there is none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the pairs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Renaming`].
+    /// - witness: `import::tests::a_renaming_reads_and_names_each_member_by_its_pair_3461`
+    #[inline]
+    #[must_use]
+    pub fn read<'name>(
+        &'name self,
+        name: &'name Name,
+    ) -> &'name Name
+    {
+        self.pairs
+            .iter()
+            .find(|&&(_, ref named)| named == name)
+            .map_or(name, |&(ref read, _)| read)
+    }
+
+    /// The name the member `member` is read as: the name its pair gives it,
+    /// or `member` itself when no pair renames it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the second of the first pair whose first is `member`;
+    ///   `member` when there is none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the pairs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Renaming`].
+    /// - witness: `import::tests::a_renaming_reads_and_names_each_member_by_its_pair_3461`
+    #[inline]
+    #[must_use]
+    pub fn named<'name>(
+        &'name self,
+        member: &'name Name,
+    ) -> &'name Name
+    {
+        self.pairs
+            .iter()
+            .find(|&&(ref read, _)| read == member)
+            .map_or(member, |&(_, ref named)| named)
+    }
+
+    /// The first pair the members `members` of what is renamed refuse, by
+    /// its position, beside why.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first pair in written order whose member read is none of
+    ///   `members`, [`RenamingFault::Missing`], or whose name is one of
+    ///   `members` that no pair renames, [`RenamingFault::Clash`]; absent when
+    ///   every pair reads a member and names a fresh one.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the pairs and the
+    ///   members.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair reading no member and a pair naming a member
+    ///   left alone are each found by position, and a pair naming a member
+    ///   renamed away is fresh.
+    /// - witness: `import::tests::a_renaming_reads_and_names_each_member_by_its_pair_3461`
+    #[inline]
+    pub fn unrenamable(
+        &self,
+        members: &[Name],
+    ) -> Maybe<(PairIndex, RenamingFault), renamable::Absent>
+    {
+        let mut held: Vec<&Name> = members.iter().collect();
+        held.sort_unstable();
+        let mut renamed: Vec<&Name> = self.pairs.iter().map(|&(ref read, _)| read).collect();
+        renamed.sort_unstable();
+        for (at, &(ref read, ref named)) in self.pairs.iter().enumerate() {
+            if held.binary_search(&read).is_err() {
+                return Maybe::Present((PairIndex(at), RenamingFault::Missing));
+            }
+            if held.binary_search(&named).is_ok() && renamed.binary_search(&named).is_err() {
+                return Maybe::Present((PairIndex(at), RenamingFault::Clash));
+            }
+        }
+        Maybe::Absent(renamable::Absent::Renamable)
+    }
+}
+
+/// A pair's place in a [`Renaming`], counted from zero in written order.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PairIndex(usize);
+
+impl From<PairIndex> for usize
+{
+    /// The place, as an index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: PairIndex) -> Self
+    {
+        index.0
+    }
+}
+
+/// Why a renaming's pair is refused by what it renames.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RenamingFault
+{
+    /// The member the pair reads is not a member of what is renamed.
+    Missing,
+    /// The name the pair gives is a member of what is renamed, and no pair
+    /// renames that member away.
+    Clash,
+}
+
 quenchant_shape::reason_enum! {
-    /// Why an import is read through no translation.
+    /// Why a renaming refuses no pair.
+    pub mod renamable {
+        /// The reason none is refused.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Every pair reads a member and gives a fresh name.
+            Renamable,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an import or an offer is read through no flow.
     pub mod direct {
         /// The reason none is read.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No `via` follows the import's signature, so its source is read
-            /// as it is.
+            /// No translation follows the import's signature or the offer's
+            /// module, so it is read as it is.
             Unwritten,
+            /// A renaming follows it, so it is read by name through the
+            /// renaming and through no flow.
+            Renamed,
         }
     }
 }
@@ -1298,5 +1529,46 @@ mod tests
             Maybe::Absent(super::alias_scope::Absent::Unaliased)
         ));
         assert_eq!(imports.of(SourceIndex::from(1_usize)).count(), 2_usize);
+    }
+
+    /// #3461: a renaming reads each renamed member through its pair and any
+    /// other member as itself; its check refuses a pair reading no member and
+    /// a pair giving a name a member keeps, and admits a swap.
+    #[test]
+    fn a_renaming_reads_and_names_each_member_by_its_pair_3461()
+    {
+        let renaming =
+            |pairs: &[(&'static str, &'static str)]| super::Renaming::new(pairs.to_vec());
+        let renamed = renaming(&[("fetch", "get")]);
+        assert_eq!(
+            (renamed.read(&"get"), renamed.read(&"put")),
+            (&"fetch", &"put"),
+            "the signature's `get` reads `fetch`, and `put` reads itself"
+        );
+        assert_eq!(
+            (renamed.named(&"fetch"), renamed.named(&"put")),
+            (&"get", &"put"),
+            "`fetch` is read as `get`, and `put` as itself"
+        );
+        let members = ["fetch", "put"];
+        assert_eq!(
+            renamed.unrenamable(&members),
+            Maybe::Absent(super::renamable::Absent::Renamable)
+        );
+        assert_eq!(
+            renaming(&[("put", "keep"), ("lost", "get")]).unrenamable(&members),
+            Maybe::Present((super::PairIndex(1_usize), super::RenamingFault::Missing)),
+            "a pair reading no member is refused by its position"
+        );
+        assert_eq!(
+            renaming(&[("fetch", "put")]).unrenamable(&members),
+            Maybe::Present((super::PairIndex(0_usize), super::RenamingFault::Clash)),
+            "a pair giving the name of a member left alone is refused"
+        );
+        assert_eq!(
+            renaming(&[("fetch", "put"), ("put", "fetch")]).unrenamable(&members),
+            Maybe::Absent(super::renamable::Absent::Renamable),
+            "a swap gives each name to a member renamed away"
+        );
     }
 }
