@@ -59,12 +59,14 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use core::fmt::Write as _;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_fork::Fork;
 use gandr_storage_store::ContentPtr;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
@@ -911,12 +913,12 @@ impl Package
     ///   resolved, and the lock standing at its root must be the one they
     ///   resolve to — none at all when it has none; then its address over its
     ///   own items and that lock's addresses, read back through `store`, and
-    ///   its signature key, as [`Package::identity`] gives them, are committed
-    ///   to `store` together. Each dependency is locked under its coordinate by
-    ///   the pointer the commit returns, and a `gh:` one by its revision. The
-    ///   lock is a function of the packages' contents, coordinates and
-    ///   revisions alone, whatever directory the process runs in and whatever
-    ///   the store held.
+    ///   its signature key, as [`Package::identity`] gives them on `fork`, are
+    ///   committed to `store` together. Each dependency is locked under its
+    ///   coordinate by the pointer the commit returns, and a `gh:` one by its
+    ///   revision. The lock is a function of the packages' contents,
+    ///   coordinates and revisions alone, whatever directory the process runs
+    ///   in and whatever the store held.
     /// - provides: the lock `gandr check` reconciles and `gandr lock` writes.
     /// - fails: [`Unresolved`], at the first dependency that does not resolve.
     /// - panics: none.
@@ -945,12 +947,15 @@ impl Package
     /// - witness: `tests::package::a_dependency_cycle_is_refused_by_its_paths_3072`
     /// - witness: `tests::package::a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714`
     #[inline]
-    pub fn resolve(
+    pub fn resolve<F>(
         &self,
-        grammar: &gandr_surface_grammar::Pbg,
+        grammar: &Arc<gandr_surface_grammar::Pbg>,
         store: &mut Store,
         revisions: Revisions,
+        fork: &F,
     ) -> Result<Lock, Unresolved>
+    where
+        F: Fork,
     {
         let mut open = BTreeSet::from([self.root.clone()]);
         let mut frames = Vec::from([Frame::of(self.clone(), None, grammar)?]);
@@ -1031,7 +1036,7 @@ impl Package
                 });
             }
             let identity = package
-                .identity(grammar, &Unshadowed, &own, store)
+                .identity(grammar, &Unshadowed, &own, store, fork)
                 .map_err(|fault| Unresolved::Unaddressed {
                     coordinate: coordinate.clone(),
                     fault,

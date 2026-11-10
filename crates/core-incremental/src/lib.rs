@@ -196,7 +196,7 @@ pub use crate::checkpoint::Resume;
 pub use crate::checkpoint::ResumeCensus;
 pub use crate::checkpoint::ResumeError;
 pub use crate::checkpoint::check_program;
-pub use crate::checkpoint::content_keys;
+pub use crate::checkpoint::content_key;
 pub use crate::checkpoint::lead;
 pub use crate::checkpoint::leading;
 pub use crate::checkpoint::recall;

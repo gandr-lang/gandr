@@ -2089,6 +2089,35 @@ pub fn lower_closure(
     lowering::suspend(grammar, text, unit, lowerings)
 }
 
+/// The prelude laid before no source and lowered as a closure under
+/// `grammar`: what every component's unit begins with, so that a component
+/// lowers after it at the cost of its own sources.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the prelude's text and the newline after it lowered as
+///   [`lower_closure`] lowers a closure of the prelude alone, or `None` when
+///   that closure is not held.
+/// - fails: never; a closure not held is `None`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a walk of several components parses the prelude once.
+/// - witness: `walk::tests::a_walk_parses_the_prelude_once_for_every_component_2331`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|closure| closure.unit().sources().len() == 1_usize))]
+pub fn lower_prelude(grammar: &Arc<Pbg>) -> Option<ClosureLowering>
+{
+    let (text, unit) =
+        gandr_surface_lowering::prelude::lay(SourceText::from(""), &Unit::single()).ok()?;
+    lower_closure(
+        Arc::clone(grammar),
+        text,
+        unit.before_last().ok()?,
+        &mut LoweringCount::default(),
+    )
+    .ok()
+}
+
 /// [`lower_parsed_unit`] over `parsed`, resuming `closure`'s lowering, each
 /// rule block of the document decided through `decisions`.
 ///

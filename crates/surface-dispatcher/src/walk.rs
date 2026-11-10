@@ -99,8 +99,6 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::ClosureLowering;
-use gandr_surface_lowering::Unit;
-use gandr_surface_lowering::prelude;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
@@ -112,6 +110,7 @@ use crate::component::Given;
 use crate::component::Grouped;
 use crate::component::ParsedBytes;
 use crate::component::Reading;
+use crate::component::Unshadowed;
 use crate::component::group;
 use crate::compose::Admission;
 use crate::compose::Checking;
@@ -124,9 +123,9 @@ use crate::compose::LoweringCount;
 use crate::compose::Positioning;
 use crate::compose::judge_component;
 use crate::compose::kept;
-use crate::compose::lower_closure;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
+use crate::compose::lower_prelude;
 use crate::compose::lower_unit_source;
 use crate::pool::Helped;
 use crate::pool::Pool;
@@ -441,9 +440,9 @@ struct Job<'text>
 /// rather than once per component (#2331).
 ///
 /// - Choice: the closure an editor holds for a document's imports
-///   ([`lower_closure`], [`JudgedClosure`], [`lower_onto_closure`]), held for
-///   the prelude alone, which every component's unit begins with whatever it
-///   imports.
+///   ([`lower_closure`](crate::compose::lower_closure), [`JudgedClosure`],
+///   [`lower_onto_closure`]), held for the prelude alone, which every
+///   component's unit begins with whatever it imports.
 /// - Alternatives: a closure per component's whole import closure, which two
 ///   components share only when they import alike; a cache across walks keyed
 ///   by the grammar and the prelude's text, which a process walking once does
@@ -471,9 +470,8 @@ impl Prelude
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with `grammar`, the prelude's text and the newline after it
-    ///   lowered as [`lower_closure`] lowers a closure of the prelude alone,
-    ///   `None` when that closure is not held; without one, no lowering. No
-    ///   judgement is made.
+    ///   lowered as [`lower_prelude`] lowers it, `None` when that closure is
+    ///   not held; without one, no lowering. No judgement is made.
     /// - provides: what every component of a walk is lowered onto and judged
     ///   after, made once.
     /// - fails: never.
@@ -490,17 +488,7 @@ impl Prelude
         grant: &HostGrant,
     ) -> Self
     {
-        let lowering = grammar.and_then(|grammar| {
-            let (text, unit) = prelude::lay(SourceText::from(""), &Unit::single()).ok()?;
-            lower_closure(
-                Arc::clone(grammar),
-                text,
-                unit.before_last().ok()?,
-                &mut LoweringCount::default(),
-            )
-            .ok()
-            .map(Arc::new)
-        });
+        let lowering = grammar.and_then(|grammar| lower_prelude(grammar).map(Arc::new));
         Self {
             lowering,
             grant: grant.clone(),
@@ -873,7 +861,13 @@ impl Walk
         };
         let grant = &self.grant;
         let positioning = self.positioning;
-        let grouped = group(grammar, given, Reading::ImportForms, &BTreeSet::new());
+        let grouped = group(
+            grammar,
+            given,
+            Reading::ImportForms,
+            &BTreeSet::new(),
+            &Unshadowed,
+        );
         self.report.parsed_mut().absorb(grouped.parsed);
         // The prelude every component lays first, parsed and lowered here once
         // and judged once under each root it is asked for.
@@ -1722,6 +1716,7 @@ fn regroup(
         given_of(component),
         Reading::Whole,
         &BTreeSet::new(),
+        &Unshadowed,
     )
 }
 
@@ -1823,7 +1818,13 @@ fn part(
 {
     let mut apart = BTreeSet::from([first]);
     loop {
-        let again = group(grammar, given_of(component), Reading::Whole, &apart);
+        let again = group(
+            grammar,
+            given_of(component),
+            Reading::Whole,
+            &apart,
+            &Unshadowed,
+        );
         let before = apart.len();
         for piece in again
             .components
