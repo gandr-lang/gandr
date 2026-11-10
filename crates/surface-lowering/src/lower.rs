@@ -798,6 +798,8 @@ pub use runs::RunSpelling;
 
 mod identity;
 
+pub use identity::HERE;
+
 mod implicit;
 
 mod inert;

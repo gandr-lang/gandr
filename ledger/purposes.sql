@@ -1392,10 +1392,11 @@ INSERT INTO purpose VALUES('kernel-term','presented::Convergence','enum','Whethe
 INSERT INTO purpose VALUES('kernel-term','presented::Exhausted','struct','A normalization ran out of fuel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FieldCount','struct','How many fields a constructor has, as rewriting counts its subterms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::FreeCell','struct','A free invertible 1-cell of a presented type''s sort: a generator between two closed terms of the sort, each a side over the sort''s own constructor table holding no variable.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','presented::FreeCells','struct','The free cells a type of words is minted over: the sort whose closed terms they join, by its admission position, and the cells, one generator each, in written order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::FreeCells','struct','The free cells a type of words is minted over: the sort whose closed terms they join, by its admission position, how many times the point is wrapped in its reflexivity, and the cells, one generator each, in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Normalized','enum','Whether a normalization rewrote anything.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::Presentation','struct','A declaration''s rules, in the order the producer wrote them, shared, and for a type of words the free cells it is minted over.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::PresentedRule','struct','One oriented rule `left ==> right` over a declaration''s constructors.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','presented::Reflexivities','struct','How many times a point is wrapped in its reflexivity: none for the point, one for `Path.here a`, two for `Path.here (Path.here a)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RewriteFuel','struct','The nodes a normalization may still compare or copy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleFault','enum','Why a rule does not present its type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','presented::RuleIndex','struct','A rule''s position in its declaration''s written order.',NULL,'fits','sound',NULL);
@@ -1470,6 +1471,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA','constant','Declarati
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_INDEXED','constant','Declaration tag: an indexed datatype, whose segment closes with its index classifiers and the index each constructor''s value stands at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_PRESENTED','constant','Declaration tag: a presented datatype, whose segment closes with the rules rewriting its constructor terms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS','constant','Declaration tag: a type of words, a presented datatype whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS_HIGHER','constant','Declaration tag: a type of words over cells above dimension one, whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF','constant','Declaration kind: a typed definition.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_COVERED','constant','Declaration tag: a typed definition whose segment closes with the cover derivation of each match in its body.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_LAWFUL','constant','Declaration tag: a typed definition whose segment closes with the laws its folds rest on.',NULL,'fits','sound',NULL);

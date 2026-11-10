@@ -85,6 +85,7 @@ use gandr_kernel_term::FreeCells;
 use gandr_kernel_term::Normalized;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::PresentedRule;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleSlot;
@@ -243,7 +244,8 @@ impl Presentations
 
     /// The types of words whose cells loop in the sort admitted at `sort`, by
     /// admission position ascending, each with its cells: the order a case
-    /// over the sort keeps its loop arms in.
+    /// over the sort keeps its loop arms in. Cells above dimension one are no
+    /// loops ([`Self::higher`]).
     ///
     /// # Specification
     /// trivial.
@@ -258,10 +260,37 @@ impl Presentations
                 presented
                     .presentation
                     .cells()
-                    .filter(|cells| cells.sort() == sort)
+                    .filter(|cells| {
+                        cells.sort() == sort && cells.reflexivities() == Reflexivities::NONE
+                    })
                     .map(|cells| (words, cells))
             })
         })
+    }
+
+    /// The type of words whose cells stand above dimension one in the sort
+    /// admitted at `sort`, when there is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn higher(
+        &self,
+        sort: ConstantIndex,
+    ) -> Option<ConstantIndex>
+    {
+        self.0
+            .iter()
+            .flat_map(|table| table.iter())
+            .find_map(|(&words, presented)| {
+                presented
+                    .presentation
+                    .cells()
+                    .is_some_and(|cells| {
+                        cells.sort() == sort && cells.reflexivities() != Reflexivities::NONE
+                    })
+                    .then_some(words)
+            })
     }
 
     /// The field counts of the constructors of the sort the type of words at
@@ -280,14 +309,19 @@ impl Presentations
 
     /// The type of words the path type `Path[.A = domain](left, right)` reads
     /// as: the one whose cells loop at a point both endpoints spell, over
-    /// the parameterless data type `domain` names.
+    /// the parameterless data type `domain` names. Cells above dimension one
+    /// loop at the point wrapped in its reflexivity: `domain` is then itself a
+    /// path type at the wrapped point, down to the data type.
     ///
     /// # Specification
     /// - requires: nothing — unreadable ids read as no words.
-    /// - ensures: `Some(words)` exactly when `domain` is a parameterless data
-    ///   type, `words` a presented type whose cells are over it, and `left` and
-    ///   `right` each a constructor term of that type spelling the cells'
-    ///   point; admission keeps one type of words per point.
+    /// - ensures: `Some(words)` exactly when `domain` reads through `n` path
+    ///   types down to a parameterless data type, the endpoints at each path
+    ///   type are the point wrapped once less than at the one above it and `n`
+    ///   times at `left` and `right`, `words` a presented type whose cells are
+    ///   over it wrapped `n` times, and every unwrapped endpoint a constructor
+    ///   term of that type spelling the cells' point; admission keeps one type
+    ///   of words per point and wrapping.
     /// - provides: the identification every reader of a path type shares: the
     ///   checking machine's fibre and case, and conversion at a mode switch.
     /// - fails: never.
@@ -296,7 +330,8 @@ impl Presentations
     /// # Adequacy
     /// - hypothesis: L3 — the circle's loop is a word checked at its path type,
     ///   a case over a path reads the words' table, and a path at another point
-    ///   reads as no words.
+    ///   reads as no words; the sphere's path at the reflexivity of its point
+    ///   reads as the words of its 2-cell.
     /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
     #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some())))]
     #[must_use]
@@ -308,21 +343,13 @@ impl Presentations
     ) -> Option<ConstantIndex>
     {
         let table = self.0.as_ref()?;
-        let Some(&ValueType::Data {
-            declaration: sort,
-            ref arguments,
-        }) = arena.value_type(domain)
-        else {
-            return None;
-        };
-        if !arguments.is_empty() {
-            return None;
-        }
+        let (sort, wrapped) = tower(arena, domain, (left, right))?;
         table.iter().find_map(|(&words, presented)| {
             let cells = presented.presentation.cells()?;
             (cells.sort() == sort
-                && spells(arena, sort, left, cells.point()) == Spelling::Spelled
-                && spells(arena, sort, right, cells.point()) == Spelling::Spelled)
+                && cells.reflexivities() == wrapped
+                && spelled_along(arena, sort, domain, (left, right), cells.point())
+                    == Spelling::Spelled)
                 .then_some(words)
         })
     }
@@ -362,6 +389,155 @@ impl Presentations
         }
         ty
     }
+}
+
+/// The sort a path type's domain reads down to, and how many path types it
+/// passes on the way.
+///
+/// # Specification
+/// - requires: nothing — unreadable ids read as no tower.
+/// - ensures: `Some((sort, n))` exactly when `domain` reads through `n` path
+///   types down to `Data(sort, [])`, and the endpoints at each level are
+///   wrapped in reflexivity once less than the level above, `n` times at the
+///   outer endpoints `left` and `right`.
+/// - provides: the shape half of [`Presentations::words`]; [`spelled_along`]
+///   reads the bases.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` reads one path type of the domain per turn.
+/// - measure: the path types left in the domain, each a strict part of the one
+///   above it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentations::words`].
+/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+#[spec(ensures: |ret| ret.is_none_or(|(_, levels)| unwrapped(arena, left).1 == levels && unwrapped(arena, right).1 == levels))]
+fn tower(
+    arena: &TermArena,
+    domain: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+) -> Option<(ConstantIndex, Reflexivities)>
+{
+    let (mut domain, mut ends) = (domain, (left, right));
+    let mut wraps = None;
+    let mut levels = 0_usize;
+    loop {
+        let (_, left_wraps) = unwrapped(arena, ends.0);
+        let (_, right_wraps) = unwrapped(arena, ends.1);
+        if left_wraps != right_wraps {
+            return None;
+        }
+        // Each level's endpoints are wrapped once less than the level above.
+        let count = usize::from(left_wraps);
+        if let Some(above) = wraps
+            && count.checked_add(1) != Some(above)
+        {
+            return None;
+        }
+        wraps = Some(count);
+        let ty = arena.value_type(domain)?;
+        if let ValueType::Data {
+            declaration,
+            ref arguments,
+        } = *ty
+            && arguments.is_empty()
+            && left_wraps == Reflexivities::NONE
+        {
+            return Some((declaration, Reflexivities::from(levels)));
+        }
+        let ValueType::Path {
+            domain: inner,
+            left,
+            right,
+        } = *ty
+        else {
+            return None;
+        };
+        domain = inner;
+        ends = (left, right);
+        levels = levels.checked_add(1)?;
+    }
+}
+
+/// Whether every endpoint along the domain [`tower`] reads, unwrapped, spells
+/// `point` over `sort`.
+///
+/// # Specification
+/// - requires: [`tower`] reads `domain` and the endpoints down to `sort`.
+/// - ensures: [`Spelling::Spelled`] exactly when each endpoint's base spells
+///   `point`.
+/// - provides: the point half of [`Presentations::words`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: as [`tower`].
+/// - measure: as [`tower`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentations::words`].
+/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+#[spec(ensures: |ret| ret == Spelling::Apart || spells(arena, sort, unwrapped(arena, left).0, point) == Spelling::Spelled)]
+fn spelled_along(
+    arena: &TermArena,
+    sort: ConstantIndex,
+    domain: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+    point: &[RuleNode],
+) -> Spelling
+{
+    let (mut domain, mut ends) = (domain, (left, right));
+    loop {
+        let spelled =
+            |end: ValueId| spells(arena, sort, unwrapped(arena, end).0, point) == Spelling::Spelled;
+        if !spelled(ends.0) || !spelled(ends.1) {
+            return Spelling::Apart;
+        }
+        match arena.value_type(domain) {
+            Some(&ValueType::Path {
+                domain: inner,
+                left,
+                right,
+            }) => {
+                domain = inner;
+                ends = (left, right);
+            },
+            Some(_) | None => return Spelling::Spelled,
+        }
+    }
+}
+
+/// `value` with every reflexivity around it taken off, and how many there
+/// were.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id is its own base.
+/// - ensures: `(base, n)` with `value` the base wrapped `n` times in `here(_)`,
+///   and the base no reflexivity.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` takes one reflexivity off per turn.
+/// - measure: the reflexivities left, each a strict part of the one around it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentations::words`].
+/// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
+#[spec(ensures: |ret| !matches!(arena.value(ret.0), Some(&Value::Here { .. })))]
+fn unwrapped(
+    arena: &TermArena,
+    value: ValueId,
+) -> (ValueId, Reflexivities)
+{
+    let (mut base, mut wraps) = (value, 0_usize);
+    while let Some(&Value::Here { point, .. }) = arena.value(base) {
+        base = point;
+        wraps = wraps.saturating_add(1);
+    }
+    (base, Reflexivities::from(wraps))
 }
 
 /// Whether a value is the closed term a rule side spells.
@@ -504,7 +680,7 @@ pub(crate) fn admit(
 ///   rules are the mint — the empty word with no field, then per cell a letter
 ///   and an inverse each over one field of the declaration's own type, and
 ///   [`FreeCells::cancellations`] — and no earlier type of words loops at the
-///   same point of the same sort.
+///   same point of the same sort, wrapped as many times in its reflexivity.
 /// - provides: the kernel's whole trust in a type of words: the producer's
 ///   table and rules are a claim it re-derives, never reads.
 /// - fails: [`CellFault::Sort`], a fault of [`FreeCells::validate`],
@@ -572,7 +748,11 @@ fn words(
             .declaration()
             .presentation()
             .cells()
-            .is_some_and(|earlier| earlier.sort() == sort && earlier.point() == cells.point())
+            .is_some_and(|earlier| {
+                earlier.sort() == sort
+                    && earlier.point() == cells.point()
+                    && earlier.reflexivities() == cells.reflexivities()
+            })
     }) {
         return Err(CellFault::Twice);
     }
