@@ -3796,8 +3796,14 @@ where
     match (roots.presentation.cells(), roots.indices.is_empty()) {
         (None, true) => writer.tag(Tag(0)),
         (Some(cells), _) => {
-            writer.tag(Tag(1));
+            // Words over cells above dimension one take a tag of their own,
+            // so the words over loops keep their bytes.
+            let above = usize::from(cells.reflexivities()).checked_sub(1);
+            writer.tag(Tag(if above.is_some() { 3 } else { 1 }));
             writer.count(Count(usize::from(cells.sort())))?;
+            if let Some(above) = above {
+                writer.count(Count(above))?;
+            }
             writer.count(Count(cells.cells().len()))?;
             for cell in cells.cells() {
                 write_rule_side(writer, cell.source())?;
@@ -3887,8 +3893,14 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
     let presentation = gandr_core_term::Presentation::new(rules);
     let (presentation, indices, results) = match reader.tag()?.0 {
         0 => (presentation, Vec::new(), Vec::new()),
-        1 => {
+        tag @ (1 | 3) => {
             let sort = gandr_kernel_term::ConstantIndex::from(reader.count()?.0);
+            let reflexivities = if tag == 3 {
+                reader.count()?.0.saturating_add(1)
+            }
+            else {
+                0
+            };
             let count = reader.count()?;
             let mut cells = Vec::new();
             for _ in 0 .. count.0 {
@@ -3897,7 +3909,10 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
                 cells.push(gandr_kernel_term::FreeCell::new(source, target));
             }
             (
-                presentation.carrying(gandr_kernel_term::FreeCells::new(sort, cells)),
+                presentation.carrying(
+                    gandr_kernel_term::FreeCells::new(sort, cells)
+                        .wrapped(gandr_kernel_term::Reflexivities::from(reflexivities)),
+                ),
                 Vec::new(),
                 Vec::new(),
             )

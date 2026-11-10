@@ -2642,9 +2642,11 @@ fn decode_declaration(
             // words with its rules and then its sort and cells. A rule count
             // of none under the presented kind decodes, and the canonical
             // re-encoding, which writes such a declaration under the plain
-            // kind, refuses it; under the words kind it is the kernel's to
+            // kind, refuses it; under a words kind it is the kernel's to
             // refuse, against the rules the cells mint.
-            if kind_tag == tags::KIND_DATA_PRESENTED || kind_tag == tags::KIND_DATA_WORDS {
+            let worded =
+                kind_tag == tags::KIND_DATA_WORDS || kind_tag == tags::KIND_DATA_WORDS_HIGHER;
+            if kind_tag == tags::KIND_DATA_PRESENTED || worded {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
                     let left = decode_rule_side(reader)?;
@@ -2652,8 +2654,16 @@ fn decode_declaration(
                     rules.push(crate::presented::PresentedRule::new(left, right));
                 }
             }
-            if kind_tag == tags::KIND_DATA_WORDS {
+            if worded {
                 let sort = ConstantIndex::from(usize::from(reader.read_usize()?));
+                // The higher kind writes how many times the point is
+                // wrapped, less one.
+                let reflexivities = if kind_tag == tags::KIND_DATA_WORDS_HIGHER {
+                    usize::from(reader.read_usize()?).saturating_add(1)
+                }
+                else {
+                    0
+                };
                 let count = usize::from(reader.read_usize()?);
                 let mut written = Vec::new();
                 for _ in 0 .. count {
@@ -2661,7 +2671,10 @@ fn decode_declaration(
                     let target = decode_rule_side(reader)?;
                     written.push(crate::presented::FreeCell::new(source, target));
                 }
-                cells = Some(crate::presented::FreeCells::new(sort, written));
+                cells = Some(
+                    crate::presented::FreeCells::new(sort, written)
+                        .wrapped(crate::presented::Reflexivities::from(reflexivities)),
+                );
             }
             // A holder closes with its role.
             if kind_tag == tags::KIND_DATA_ROLED {
@@ -4384,7 +4397,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 | 19 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 18 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 | 19 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 18 | 20 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -4393,6 +4406,7 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         tags::KIND_DATA
         | tags::KIND_DATA_PRESENTED
         | tags::KIND_DATA_WORDS
+        | tags::KIND_DATA_WORDS_HIGHER
         | tags::KIND_DATA_INDEXED
         | tags::KIND_DATA_ROLED => Ok(DeclKind::Data),
         tags::KIND_CODATA => Ok(DeclKind::Codata),
@@ -5605,7 +5619,7 @@ mod tests
                 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                6 | 8 | 10 | 11 | 18 => Ok(super::DeclKind::Data),
+                6 | 8 | 10 | 11 | 18 | 20 => Ok(super::DeclKind::Data),
                 13 => Ok(super::DeclKind::Codata),
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };

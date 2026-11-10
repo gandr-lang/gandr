@@ -158,7 +158,13 @@ fn replay(
             } => {
                 // A case over a sort with loops carries either no loop branch,
                 // its loops then owed by the case's own check, or one branch
-                // for each loop the sort owes, in the order it owes them.
+                // for each loop the sort owes, in the order it owes them. A
+                // case over a sort with cells above dimension one has no
+                // branch for them yet, so it is refused.
+                // - see: #6395 — the case at a higher cell.
+                if presentations.higher(family).is_some() {
+                    return Err(CoverRefusal::Loops(id));
+                }
                 if !loops.is_empty() {
                     owed.clear();
                     for (words, cells) in presentations.looping(family) {

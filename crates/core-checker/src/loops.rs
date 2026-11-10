@@ -96,6 +96,7 @@ use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::build_side;
 use quenchant_shape::shape::Maybe;
@@ -117,14 +118,16 @@ pub struct Loop
 
 /// The loops in the sort `datatype` names, in the order a case's loop arms
 /// follow its constructors' branches: by the admission position of the words
-/// they mint, then in written order.
+/// they mint, then in written order. Cells above dimension one are no loops
+/// ([`higher`]).
 ///
 /// # Specification
 /// - requires: `datatype` is formed.
 /// - ensures: one [`Loop`] per cell of every admitted type of words whose cells
-///   loop in the parameterless data type `datatype` is, words ascending by
-///   admission position and cells in written order; none for any other type.
-///   Each type of words read is logged as consulted.
+///   loop in the parameterless data type `datatype` is, at its point and not at
+///   its reflexivity, words ascending by admission position and cells in
+///   written order; none for any other type. Each type of words read is logged
+///   as consulted.
 /// - provides: the loops a case over the sort owes, and the order its loop arms
 ///   take.
 /// - fails: never.
@@ -155,7 +158,8 @@ pub fn loops(
         .iter()
         .filter_map(|(&words, signature)| {
             let cells = signature.presentation().cells()?;
-            (cells.sort() == sort).then_some((words, cells.cells().len()))
+            (cells.sort() == sort && cells.reflexivities() == Reflexivities::NONE)
+                .then_some((words, cells.cells().len()))
         })
         .collect();
     let mut owed = Vec::new();
@@ -167,6 +171,50 @@ pub fn loops(
         }));
     }
     owed
+}
+
+/// The type of words whose cells stand above dimension one in the sort
+/// `datatype` names, when there is one.
+///
+/// # Specification
+/// - requires: `datatype` is formed.
+/// - ensures: `Some(words)` exactly when `datatype` is a parameterless data
+///   type and the admitted type of words `words` has cells over it at its
+///   point's reflexivity. That type of words is logged as consulted.
+/// - provides: the refusal of a case over the sort until a case has a branch
+///   for such a cell.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's case is refused, the circle's is not.
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+#[spec(ensures: |ret| ret.is_none_or(|words| context.data_signatures().get(&words).and_then(|signature| signature.presentation().cells()).is_some_and(|cells| cells.reflexivities() != Reflexivities::NONE)))]
+#[must_use]
+pub fn higher(
+    context: &mut CheckingContext<'_>,
+    datatype: ValueTypeId,
+) -> Option<ConstantIndex>
+{
+    let Some(&ValueType::Data {
+        declaration: sort,
+        ref arguments,
+    }) = context.arena().value_type(datatype)
+    else {
+        return None;
+    };
+    if !arguments.is_empty() {
+        return None;
+    }
+    let found = context
+        .data_signatures()
+        .iter()
+        .find_map(|(&words, signature)| {
+            let cells = signature.presentation().cells()?;
+            (cells.sort() == sort && cells.reflexivities() != Reflexivities::NONE).then_some(words)
+        })?;
+    let _logged = context.consult_data(found);
+    Some(found)
 }
 
 /// Decide that the case `at` over the sort `datatype` respects every loop in
@@ -683,6 +731,39 @@ pub fn point(
         return Err(CheckRefusal::MachineInvariant);
     }
     Ok(point)
+}
+
+/// The carrier and the point a type of words reads its path at, its cells
+/// wrapped `reflexivities` times: `carrier` and `point` at loops, and for
+/// each wrapping the path type at the point below and its reflexivity.
+///
+/// # Specification
+/// - requires: `point` is a value of `carrier`.
+/// - ensures: `(carrier, point)` for no wrapping; otherwise `(Path[.A = c](p,
+///   p), here(p))` over the pair `(c, p)` for one wrapping fewer.
+/// - provides: the path a word above dimension one reads as, the sphere's
+///   `Path[.A = Path[.A = S2](Base, Base)](here(Base), here(Base))`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's 2-cell checks at the path at the reflexivity
+///   of its point in both checkers.
+/// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+#[spec(captures: before = (carrier, point), ensures: |ret| reflexivities != Reflexivities::NONE || ret == before)]
+pub fn wrapped(
+    context: &mut CheckingContext<'_>,
+    (carrier, point): (ValueTypeId, ValueId),
+    reflexivities: Reflexivities,
+) -> (ValueTypeId, ValueId)
+{
+    let arena = context.arena_mut();
+    let (mut carrier, mut point) = (carrier, point);
+    for _ in 0 .. usize::from(reflexivities) {
+        carrier = arena.value_type_path(carrier, point, point);
+        point = arena.value_here(point);
+    }
+    (carrier, point)
 }
 
 /// The point the type of words at `words` loops at, as a term of `carrier`,

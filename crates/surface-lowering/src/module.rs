@@ -388,6 +388,7 @@ pub use self::data::Generators;
 pub use self::data::Ported;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
+pub use self::data::reflexivities_around;
 pub use self::derive::DerivedSlot;
 pub use self::foreign::BoundarySlot;
 use self::foreign::Foreign;

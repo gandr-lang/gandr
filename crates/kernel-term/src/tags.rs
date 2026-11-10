@@ -873,6 +873,17 @@ pub const KIND_DEF_LAWFUL: WireTag = WireTag(0x09);
 /// refuses it as an unknown declaration kind rather than misreading it, which
 /// is why the format version holds.
 pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
+/// Declaration tag: a type of words over cells above dimension one, whose
+/// segment closes with the free cells it is minted over.
+///
+/// After the [`KIND_DATA_WORDS`] sort position comes how many times the
+/// cells' point is wrapped in its reflexivity, less one, then the cell count
+/// and the cells as [`KIND_DATA_WORDS`] writes them. The kernel reads the path
+/// type at the wrapped point as the words. Words over loops write
+/// [`KIND_DATA_WORDS`], so every other artifact keeps its bytes, and a reader
+/// predating this kind refuses it as an unknown declaration kind rather than
+/// misreading it, which is why the format version holds.
+pub const KIND_DATA_WORDS_HIGHER: WireTag = WireTag(0x14);
 /// Declaration tag: a sealed abstract type whose segment closes with its
 /// element interface.
 ///

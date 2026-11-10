@@ -1,0 +1,24 @@
+/// `spheres`: The 2-sphere and the 3-sphere as presentations.
+/// Implemented: a data declaration declares a cell at the reflexivity of a
+/// point. The checker and the kernel take the path type at that wrapped point
+/// as the cell's words.
+/// Not implemented: no case over a sphere takes a branch at its cell. `Path.ap`
+/// on the cell needs that branch.
+///
+/// - owes: #6395
+// The spheres, their cells at their path types, and the cancellations.
+import "../../model/identity/sphere.gandr";
+
+/// The 2-cell and its inverse reduce to the empty word, by conversion.
+@[checks]
+def surfUnwound : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)](
+  back surf ∷ surf ∷ Path.here (Path.here Base2),
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// Two 2-cells reduce to no shorter word: no rule identifies them.
+@[refuses("EndpointMismatch")]
+def surfDoubled : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)](
+  surf ∷ surf ∷ Path.here (Path.here Base2),
+  surf ∷ Path.here (Path.here Base2)
+) = Path.here (surf ∷ surf ∷ Path.here (Path.here Base2));

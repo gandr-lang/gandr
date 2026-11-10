@@ -46,6 +46,17 @@
 //! read `Path[.A = T](a, a)` at the point as those words; each loop is bound at
 //! it as the word of its one letter.
 //!
+//! A cell may stand at the point's reflexivity, `| surf : Path.here Base <->
+//! Path.here Base`: a loop of dimension two, the 2-sphere's cell. Each side is
+//! read through its `Path.here` calls down to the closed term, and the count
+//! of calls is the cell's wrapping. The loops at one point and wrapping mint
+//! their words as above, and the checkers and the kernel read the path type at
+//! the wrapped point, `Path[.A = Path[.A = T](a, a)](Path.here a, Path.here
+//! a)`, as them. A case over such a family is declined until a case has a
+//! branch for the cell.
+//!
+//! - see: #6395 — the case at a higher cell and `Path.ap` on it
+//!
 //! - **Refusals.** A directed cell, `-->` between terms, is
 //!   `LoweringRefusal::DirectedCell`; a cell between distinct terms is
 //!   `LoweringRefusal::CellNotALoop` — the free groupoid on a graph, whose
@@ -72,6 +83,7 @@ use anodized::spec;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::RuleNode;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Reflexivities;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteOffset;
@@ -320,17 +332,20 @@ pub struct DataForm
 }
 
 /// One loop of a data declaration, `name : a <-> a`: a free invertible cell
-/// from the closed term `a` to itself.
+/// from the closed term `a` to itself. A cell at the point's reflexivity,
+/// `surf : Path.here a <-> Path.here a`, is a loop of dimension two.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: the point is a closed constructor term of the declaration's own
-///   generators, in pre-order, which both sides of the cell spelled.
+///   generators, in pre-order, which both sides of the cell spelled inside as
+///   many `Path.here` calls as `reflexivities` counts.
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a loop at a point keeps its name and point; a cell
-///   between distinct terms and a directed one never become a cell form.
+///   between distinct terms and a directed one never become a cell form; a cell
+///   at the point's reflexivity keeps the wrapping.
 /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
 /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -343,18 +358,20 @@ pub struct CellForm
     pub named: Placed,
     /// The point the cell loops at, over the declaration's generators.
     pub point: Box<[RuleNode]>,
+    /// How many `Path.here` calls wrap the point on each side.
+    pub reflexivities: Reflexivities,
     /// Each written node of the cell's two sides, in pre-order, the source's
     /// first: each spells the point's subterm at that node.
     pub sides: Vec<Placed>,
 }
 
-/// The words of the loops a data declaration declares at one point: the
-/// presented type a path at that point reads as.
+/// The words of the loops a data declaration declares at one point and
+/// wrapping: the presented type a path at that wrapped point reads as.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: every loop is the declaration's, at the point, in the order its
-///   letters take their tags.
+/// - ensures: every loop is the declaration's, at the point and wrapping, in
+///   the order its letters take their tags.
 /// - executable: none — the indices hold no list to check them against.
 ///
 /// # Adequacy
@@ -369,6 +386,8 @@ pub struct WordsForm
     pub slot: SlotIndex,
     /// The point, over the declaration's generators.
     pub point: Box<[RuleNode]>,
+    /// How many times the point is wrapped in its reflexivity.
+    pub reflexivities: Reflexivities,
     /// Each loop's slot, the binding its name declares, in generator order.
     pub loops: Vec<SlotIndex>,
 }
@@ -1003,17 +1022,18 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Admit the words of the loops the data declaration entered last
-    /// declares, one words slot per point, and a binding per loop.
+    /// declares, one words slot per point and wrapping, and a binding per
+    /// loop.
     ///
     /// # Specification
     /// - requires: the declaration `declaration` was the last one entered on
     ///   the data list.
-    /// - ensures: for each point a loop of the declaration is at, in the order
-    ///   its first loop is written, one [`Role::Words`] slot entered in no
-    ///   namespace and, after it, one declared slot per loop at the point,
-    ///   named by the loop and entered in the top level's name table, whose
-    ///   definition is the loop's letter; one [`WordsForm`] per point. A
-    ///   declaration without loops changes nothing.
+    /// - ensures: for each point and wrapping a loop of the declaration is at,
+    ///   in the order its first loop is written, one [`Role::Words`] slot
+    ///   entered in no namespace and, after it, one declared slot per loop
+    ///   there, named by the loop and entered in the top level's name table,
+    ///   whose definition is the loop's letter; one [`WordsForm`] per point and
+    ///   wrapping. A declaration without loops changes nothing.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1037,14 +1057,17 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let family = form.slot;
-        let mut points: Vec<(Box<[RuleNode]>, Vec<CellForm>)> = Vec::new();
+        // The cells at one point and wrapping, in the order the first of them
+        // is written; the group's first cell carries its point.
+        let mut points: Vec<Vec<CellForm>> = Vec::new();
         for cell in &form.cells {
-            match points
-                .iter_mut()
-                .find(|&&mut (ref point, _)| *point == cell.point)
-            {
-                Some(&mut (_, ref mut loops)) => loops.push(cell.clone()),
-                None => points.push((cell.point.clone(), Vec::from([cell.clone()]))),
+            match points.iter_mut().find(|loops| {
+                loops.first().is_some_and(|first| {
+                    first.point == cell.point && first.reflexivities == cell.reflexivities
+                })
+            }) {
+                Some(loops) => loops.push(cell.clone()),
+                None => points.push(Vec::from([cell.clone()])),
             }
         }
         let name = self
@@ -1053,10 +1076,15 @@ impl<'source> Collector<'_, 'source>
             .get(family.0)
             .map_or_else(|| SurfaceName::from(""), |slot| slot.name);
         let top = self.family_container(family, declaration.span.start());
-        for (point, cells) in points {
+        for cells in points {
+            let Some(first) = cells.first()
+            else {
+                continue;
+            };
+            let (point, reflexivities, named) =
+                (first.point.clone(), first.reflexivities, first.named);
             let index = self.collected.words.len();
             let words = SlotIndex(self.collected.slots.len());
-            let named = cells.first().map_or(declaration, |cell| cell.named);
             self.collected.slots.push(DeclarationSlot {
                 name,
                 container: top,
@@ -1105,6 +1133,7 @@ impl<'source> Collector<'_, 'source>
                 family: position,
                 slot: words,
                 point,
+                reflexivities,
                 loops,
             });
         }
@@ -1354,12 +1383,14 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `generators` are every generator of the declaration.
     /// - ensures: one loop per cell, in order, its point the closed term both
-    ///   its sides spell over `generators`.
+    ///   its sides spell over `generators` inside as many `Path.here` calls on
+    ///   each side ([`reflexivities_around`]).
     /// - fails: a cell of a parameterised declaration, and a side that is no
     ///   closed term of the declaration's generators, as outside the fragment
     ///   by the cell member's name; a cell named as an earlier cell or an
     ///   earlier declaration of `container` is;
-    ///   [`LoweringRefusal::CellNotALoop`] for sides that spell distinct terms.
+    ///   [`LoweringRefusal::CellNotALoop`] for sides that spell distinct terms
+    ///   or wrap them in distinct counts of `Path.here`.
     /// - panics: none.
     ///
     /// # Errors
@@ -1421,16 +1452,19 @@ impl<'source> Collector<'_, 'source>
                     first,
                 });
             }
-            let side = |at: Placed| -> Result<ClosedTerm, LoweringRefusal<'source>> {
-                match closed_term(self.pbg, self.tree, at, &tag_of)? {
-                    Maybe::Present(term) => Ok(term),
-                    Maybe::Absent(_) => {
-                        Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember))
-                    },
-                }
-            };
-            let (source, target) = (side(cell.source)?, side(cell.target)?);
-            if source.nodes != target.nodes {
+            let side =
+                |at: Placed| -> Result<(ClosedTerm, Reflexivities), LoweringRefusal<'source>> {
+                    let (base, wraps) = reflexivities_around(self.pbg, self.tree, at)?;
+                    match closed_term(self.pbg, self.tree, base, &tag_of)? {
+                        Maybe::Present(term) => Ok((term, wraps)),
+                        Maybe::Absent(_) => {
+                            Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember))
+                        },
+                    }
+                };
+            let ((source, source_wraps), (target, target_wraps)) =
+                (side(cell.source)?, side(cell.target)?);
+            if source.nodes != target.nodes || source_wraps != target_wraps {
                 return Err(LoweringRefusal::CellNotALoop { span: cell.at.span });
             }
             cells.push(CellForm {
@@ -1443,6 +1477,7 @@ impl<'source> Collector<'_, 'source>
                     .copied()
                     .collect(),
                 point: source.nodes,
+                reflexivities: source_wraps,
             });
         }
 
@@ -2412,6 +2447,111 @@ where
         nodes: nodes.into_boxed_slice(),
         written: visited,
     }))
+}
+
+/// The operand of the `Path.here` call written at `at`, when it is one.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(a)` exactly when `at` is a call of one operand `a` whose
+///   head selects `here` from the `Path` former; `None` otherwise.
+/// - fails: the shape refusals of a mold the grammar does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a cell at the point's reflexivity reads its point inside
+///   the call, and any other call is no reflexivity.
+/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|operand| operand.node != at.node)))]
+fn reflexivity_operand<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: Placed,
+) -> Result<Option<Placed>, LoweringRefusal<'source>>
+{
+    let Some(node) = tree.node(at.node)
+    else {
+        return Ok(None);
+    };
+    let Shape::Form {
+        former: Former::Call,
+        ..
+    } = shape_of(pbg, node)?
+    else {
+        return Ok(None);
+    };
+    let mut pieces = Pieces::new();
+    read_pieces(pbg, tree, at.node, &mut pieces)?;
+    if let Maybe::Present(_) = pieces.repair {
+        return Ok(None);
+    }
+    let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
+        Piece::Operand(operand) => Some(operand),
+        Piece::Tile { .. } => None,
+    });
+    let (Some(head), Some(operand), None) = (operands.next(), operands.next(), operands.next())
+    else {
+        return Ok(None);
+    };
+    read_pieces(pbg, tree, head.node, &mut pieces)?;
+    let &[
+        Piece::Operand(holder),
+        Piece::Tile {
+            label: TileName::DOT,
+            ..
+        },
+        Piece::Tile {
+            label: TileName::IDENTIFIER,
+            at: selected,
+        },
+    ] = pieces.pieces.as_slice()
+    else {
+        return Ok(None);
+    };
+    let spelled = |placed: Placed, text: &str| {
+        tree.fragment(placed.node)
+            .is_some_and(|written| written.as_ref() == text)
+    };
+    Ok((spelled(holder, "Path") && spelled(selected, crate::lower::HERE)).then_some(operand))
+}
+
+/// The term written at `at` with every `Path.here` call around it taken off,
+/// and how many there were.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `(base, n)` with `at` the base inside `n` nested `Path.here`
+///   calls, the base no such call.
+/// - fails: as [`reflexivity_operand`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`reflexivity_operand`].
+///
+/// # Termination
+/// - reason: the `while let` takes one call off per turn.
+/// - measure: the written nodes inside `at`, each operand a strict part of the
+///   call around it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`reflexivity_operand`].
+/// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(base, _)| matches!(reflexivity_operand(pbg, tree, base), Ok(None))))]
+pub fn reflexivities_around<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: Placed,
+) -> Result<(Placed, Reflexivities), LoweringRefusal<'source>>
+{
+    let (mut base, mut wraps) = (at, 0_usize);
+    while let Some(operand) = reflexivity_operand(pbg, tree, base)? {
+        base = operand;
+        wraps = wraps.saturating_add(1);
+    }
+    Ok((base, Reflexivities::from(wraps)))
 }
 
 /// The refusal a member the fragment does not read earns, by its own name

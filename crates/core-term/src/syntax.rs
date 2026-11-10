@@ -306,6 +306,7 @@ use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
@@ -2710,12 +2711,18 @@ quenchant_shape::reason_enum! {
 ///
 /// The declaration among `signatures` whose free cells loop at a point both
 /// endpoints spell, over the parameterless data type `carrier` is as written.
+/// Cells above dimension one loop at the point wrapped in its reflexivity:
+/// the carrier is then itself a path type at the wrapped point, down to the
+/// data type, and each endpoint along it the point wrapped once less.
 ///
 /// # Specification
 /// - requires: nothing; unreadable ids read as no words.
-/// - ensures: `Present(words)` exactly when `carrier` is `Data(sort, [])` and
-///   `words`, the first such in key order, carries cells over `sort` whose
-///   point both `left` and `right` spell as constructor terms of `sort`.
+/// - ensures: `Present(words)` exactly when the carrier reads, through `n` path
+///   types, down to `Data(sort, [])`, the endpoints at each path type are the
+///   point wrapped once less than at the one above it and `n` times at the
+///   outer one, and `words`, the first such in key order, carries cells over
+///   `sort` wrapped `n` times whose point every unwrapped endpoint spells as a
+///   constructor term of `sort`.
 /// - provides: the identification a checker reads a path type by
 ///   (`CheckingContext::words`), the one the kernel's `Presentations::words`
 ///   makes over the admitted cells, and the one a printed type's reading back
@@ -2725,8 +2732,10 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's path at its point reads as its words; with
-///   an endpoint off the point it reads as none.
+///   an endpoint off the point it reads as none; the sphere's path at the
+///   reflexivity of its point reads as the words of its 2-cell.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(words) => signatures.get(&words).is_some_and(|signature| signature.presentation().cells().is_some()),
     Maybe::Absent(_) => true,
@@ -2739,26 +2748,170 @@ pub fn identified_words(
     (left, right): (ValueId, ValueId),
 ) -> Maybe<ConstantIndex, unworded::Absent>
 {
-    let Some(&ValueType::Data {
-        declaration: sort,
-        ref arguments,
-    }) = arena.value_type(carrier)
+    let Some((sort, wrapped)) = tower(arena, carrier, (left, right))
     else {
         return Maybe::Absent(unworded::Absent::Unlooped);
     };
-    if !arguments.is_empty() {
-        return Maybe::Absent(unworded::Absent::Unlooped);
-    }
     signatures
         .iter()
         .find_map(|(&words, signature)| {
             let cells = signature.presentation().cells()?;
             (cells.sort() == sort
-                && spells(arena, sort, left, cells.point()) == Spelling::Spelled
-                && spells(arena, sort, right, cells.point()) == Spelling::Spelled)
+                && cells.reflexivities() == wrapped
+                && spelled_along(arena, sort, carrier, (left, right), cells.point())
+                    == Spelling::Spelled)
                 .then_some(words)
         })
         .map_or(Maybe::Absent(unworded::Absent::Unlooped), Maybe::Present)
+}
+
+/// The sort a path type's carrier reads down to, and how many path types it
+/// passes on the way.
+///
+/// # Specification
+/// - requires: nothing; unreadable ids read as no tower.
+/// - ensures: `Some((sort, n))` exactly when `carrier` reads through `n` path
+///   types down to `Data(sort, [])`, and the endpoints at each level are
+///   wrapped in reflexivity once less than the level above, `n` times at the
+///   outer endpoints `left` and `right`.
+/// - provides: the shape half of [`identified_words`]; [`spelled_along`] reads
+///   the bases.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` reads one path type of the carrier per turn.
+/// - measure: the path types left in the carrier, each a strict part of the one
+///   above it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| ret.is_none_or(|(_, levels)| unwrapped(arena, left).1 == levels && unwrapped(arena, right).1 == levels))]
+fn tower(
+    arena: &crate::CoreArena,
+    carrier: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+) -> Option<(ConstantIndex, Reflexivities)>
+{
+    let (mut carrier, mut ends) = (carrier, (left, right));
+    let mut wraps = None;
+    let mut levels = 0_usize;
+    loop {
+        let (_, left_wraps) = unwrapped(arena, ends.0);
+        let (_, right_wraps) = unwrapped(arena, ends.1);
+        if left_wraps != right_wraps {
+            return None;
+        }
+        // Each level's endpoints are wrapped once less than the level above.
+        let count = usize::from(left_wraps);
+        if let Some(above) = wraps
+            && count.checked_add(1) != Some(above)
+        {
+            return None;
+        }
+        wraps = Some(count);
+        let ty = arena.value_type(carrier)?;
+        if let ValueType::Data {
+            declaration,
+            ref arguments,
+        } = *ty
+            && arguments.is_empty()
+            && left_wraps == Reflexivities::NONE
+        {
+            return Some((declaration, Reflexivities::from(levels)));
+        }
+        let ValueType::Path {
+            carrier: inner,
+            left,
+            right,
+        } = *ty
+        else {
+            return None;
+        };
+        carrier = inner;
+        ends = (left, right);
+        levels = levels.checked_add(1)?;
+    }
+}
+
+/// Whether every endpoint along the carrier [`tower`] reads, unwrapped, spells
+/// `point` over `sort`.
+///
+/// # Specification
+/// - requires: [`tower`] reads `carrier` and the endpoints down to `sort`.
+/// - ensures: [`Spelling::Spelled`] exactly when each endpoint's base spells
+///   `point`.
+/// - provides: the point half of [`identified_words`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: as [`tower`].
+/// - measure: as [`tower`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| ret == Spelling::Apart || spells(arena, sort, unwrapped(arena, left).0, point) == Spelling::Spelled)]
+fn spelled_along(
+    arena: &crate::CoreArena,
+    sort: ConstantIndex,
+    carrier: ValueTypeId,
+    (left, right): (ValueId, ValueId),
+    point: &[gandr_kernel_term::RuleNode],
+) -> Spelling
+{
+    let (mut carrier, mut ends) = (carrier, (left, right));
+    loop {
+        let spelled =
+            |end: ValueId| spells(arena, sort, unwrapped(arena, end).0, point) == Spelling::Spelled;
+        if !spelled(ends.0) || !spelled(ends.1) {
+            return Spelling::Apart;
+        }
+        match arena.value_type(carrier) {
+            Some(&ValueType::Path {
+                carrier: inner,
+                left,
+                right,
+            }) => {
+                carrier = inner;
+                ends = (left, right);
+            },
+            Some(_) | None => return Spelling::Spelled,
+        }
+    }
+}
+
+/// `value` with every reflexivity around it taken off, and how many there
+/// were.
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is its own base.
+/// - ensures: `(base, n)` with `value` the base wrapped `n` times in `here(_)`,
+///   and the base no reflexivity.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` takes one reflexivity off per turn.
+/// - measure: the reflexivities left, each a strict part of the one around it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`identified_words`].
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
+#[spec(ensures: |ret| !matches!(arena.value(ret.0), Some(&Value::Here(_))))]
+fn unwrapped(
+    arena: &crate::CoreArena,
+    value: ValueId,
+) -> (ValueId, Reflexivities)
+{
+    let (mut base, mut wraps) = (value, 0_usize);
+    while let Some(&Value::Here(inner)) = arena.value(base) {
+        base = inner;
+        wraps = wraps.saturating_add(1);
+    }
+    (base, Reflexivities::from(wraps))
 }
 
 /// Whether `words` is `Data(w, [])` and `path` a path type
@@ -2817,11 +2970,12 @@ fn read_as_words(
 /// - requires: nothing; unreadable ids identify nothing.
 /// - ensures: [`CertificateEquality::Equal`] exactly when `here` is `here(p)`
 ///   and `word` the constructor of tag zero with no fields of `Data(w, [])`,
-///   `w` among `signatures` with cells whose point `p` spells over their sort;
+///   `w` among `signatures` with cells wrapped `n` times whose point `p`,
+///   wrapped `n` times in reflexivity, spells over their sort;
 ///   [`CertificateEquality::Different`] otherwise.
 /// - provides: the value half of the identification [`read_as_words`] makes for
 ///   types: `here(a)` at the point of a family's loops is its empty word, as
-///   the lowering reads it.
+///   the lowering reads it, and `here(here(a))` the empty word of its 2-cells.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2830,6 +2984,7 @@ fn read_as_words(
 ///   word, alone and under a transport, compares equal; off the point it stays
 ///   different.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_path_at_a_wrapped_point_reads_as_the_words_above_it`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || matches!(arena.value(here), Some(&Value::Here(_))))]
 fn empty_word(
     arena: &crate::CoreArena,
@@ -2856,6 +3011,7 @@ fn empty_word(
     else {
         return CertificateEquality::Different;
     };
+    let (base, wraps) = unwrapped(arena, point);
     let empty = tag == ConstructorTag::from(0_usize)
         && fields.is_empty()
         && arguments.is_empty()
@@ -2863,7 +3019,8 @@ fn empty_word(
             .get(&declaration)
             .and_then(|signature| signature.presentation().cells())
             .is_some_and(|cells| {
-                spells(arena, cells.sort(), point, cells.point()) == Spelling::Spelled
+                cells.reflexivities() == wraps
+                    && spells(arena, cells.sort(), base, cells.point()) == Spelling::Spelled
             });
     if empty {
         CertificateEquality::Equal
@@ -4982,6 +5139,104 @@ mod tests
             equal_type_reading(&arena, &signatures, off_doubled, over_path),
             CertificateEquality::Different,
             "reflexivity off the point is no word"
+        );
+    }
+
+    #[test]
+    fn a_path_at_a_wrapped_point_reads_as_the_words_above_it()
+    {
+        use gandr_kernel_term::FreeCell;
+        use gandr_kernel_term::FreeCells;
+        use gandr_kernel_term::Presentation;
+        use gandr_kernel_term::Reflexivities;
+        use gandr_kernel_term::RuleNode;
+
+        // The 2-sphere: one point, and words over a cell at its reflexivity.
+        let mut arena = crate::CoreArena::new();
+        let kind = arena.value_type_universe(
+            Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            Level::zero(),
+        );
+        let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+        let carrier = arena.value_type_data(sort, alloc::vec![]);
+        let own = arena.value_type_data(words, alloc::vec![]);
+        let point =
+            arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), alloc::vec![]);
+        let base = || -> alloc::boxed::Box<[RuleNode]> {
+            [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+        };
+        let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())])
+            .wrapped(Reflexivities::from(1_usize));
+        let mut signatures = BTreeMap::new();
+        let _sort = signatures.insert(
+            sort,
+            alloc::sync::Arc::new(DataSignature::new(
+                alloc::vec![],
+                alloc::vec![alloc::vec![]],
+                kind,
+            )),
+        );
+        let _words = signatures.insert(
+            words,
+            alloc::sync::Arc::new(
+                DataSignature::new(
+                    alloc::vec![],
+                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    kind,
+                )
+                .presented(Presentation::words(cells)),
+            ),
+        );
+        let loops = arena.value_type_path(carrier, point, point);
+        let reflexive = arena.value_here(point);
+        let twice = arena.value_here(reflexive);
+        assert_eq!(
+            identified_words(&arena, &signatures, loops, (reflexive, reflexive)),
+            Maybe::Present(words),
+            "the path at the point's reflexivity reads as the words above it"
+        );
+        assert_eq!(
+            identified_words(&arena, &signatures, carrier, (point, point)),
+            Maybe::Absent(unworded::Absent::Unlooped),
+            "the path at the point itself reads as no words: no loop stands there"
+        );
+        for (left, right, what) in [
+            (point, point, "endpoints wrapped once too few"),
+            (reflexive, twice, "endpoints wrapped unequally"),
+            (twice, twice, "endpoints wrapped once too many"),
+        ] {
+            assert_eq!(
+                identified_words(&arena, &signatures, loops, (left, right)),
+                Maybe::Absent(unworded::Absent::Unlooped),
+                "{what} read as no words"
+            );
+        }
+        let off = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let off_loops = arena.value_type_path(carrier, point, off);
+        assert_eq!(
+            identified_words(&arena, &signatures, off_loops, (reflexive, reflexive)),
+            Maybe::Absent(unworded::Absent::Unlooped),
+            "a carrier off the point reads as no words"
+        );
+        // Reflexivity at the wrapped point against the empty word above it.
+        let at_wrapped = arena.value_type_path(loops, reflexive, reflexive);
+        let empty =
+            arena.value_constructor(words, own, ConstructorTag::from(0_usize), alloc::vec![]);
+        let doubled = arena.value_type_path(at_wrapped, twice, twice);
+        let over_path = arena.value_type_path(at_wrapped, empty, empty);
+        let once = arena.value_type_path(at_wrapped, reflexive, reflexive);
+        assert_eq!(
+            (
+                equal_type_reading(&arena, &signatures, own, at_wrapped),
+                equal_type_reading(&arena, &signatures, doubled, over_path),
+                equal_type_reading(&arena, &signatures, once, over_path),
+            ),
+            (
+                CertificateEquality::Equal,
+                CertificateEquality::Equal,
+                CertificateEquality::Different
+            ),
+            "the words are the path at the wrapped point, and its reflexivity their empty word"
         );
     }
 
