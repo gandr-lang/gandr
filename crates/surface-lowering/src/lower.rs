@@ -6772,7 +6772,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 );
                 match export {
                     Member::Slot(slot) => {
-                        let read = entry.exported_as.get(&slot).copied().unwrap_or(slot);
+                        let read = self.collected.exported_read(structure, slot);
                         let _replaced = self.exported.insert(root.extended(&path), read);
                     },
                     Member::Module(nested) => work.push((nested, path)),
@@ -15152,9 +15152,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             match exported {
                 Some(Member::Module(inner)) if !last => (module, spelled) = (inner, member),
                 Some(Member::Slot(slot)) if last => {
-                    return Ok(Maybe::Present(
-                        structure.exported_as.get(&slot).copied().unwrap_or(slot),
-                    ));
+                    return Ok(Maybe::Present(self.collected.exported_read(module, slot)));
                 },
                 Some(Member::Module(_)) => return Err(site.out(FragmentBoundary::WrongSort)),
                 Some(Member::Slot(_)) => return Ok(unresolved),
@@ -25568,8 +25566,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.len() == self.collected.structures.len()
                 && ret
                     .iter()
+                    .enumerate()
                     .zip(&self.collected.structures)
-                    .all(|(lowered, structure)| {
+                    .all(|((position, lowered), structure)| {
                         if lowered.path().last() != Some(&structure.name)
                             || lowered.span() != structure.declared_by.span
                             || lowered.coerced() != structure.coerced
@@ -25581,7 +25580,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         for &export in &structure.exports {
                             match export {
                                 | Member::Slot(slot) => {
-                                    let read = structure.exported_as.get(&slot).copied().unwrap_or(slot);
+                                    let read = self.collected.exported_read(StructureIndex::from(position), slot);
                                     if self.collected.slots.get(usize::from(slot)).is_some_and(
                                         |member| {
                                             !values.next().is_some_and(|value| {
@@ -25635,7 +25634,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for &export in &structure.exports {
                 match export {
                     Member::Slot(slot) => {
-                        let read = structure.exported_as.get(&slot).copied().unwrap_or(slot);
+                        let read = self
+                            .collected
+                            .exported_read(StructureIndex::from(position), slot);
                         if let Some(member) = self.collected.slots.get(usize::from(slot))
                             && let Some(reader) = self.collected.slots.get(usize::from(read))
                         {
