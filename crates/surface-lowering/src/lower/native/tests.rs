@@ -6157,6 +6157,64 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
     );
 }
 
+/// #6446: no core node holds a `Path.here` call around a higher cell's point,
+/// in a cell's side or in an empty word's point. Each such call answers at the
+/// family wrapped once for each call at and inside it.
+#[test]
+fn a_higher_cell_s_wrapping_calls_answer_at_their_wrapped_types_6446()
+{
+    let source = include_str!(
+        "tests/fixtures/a-higher-cell-s-wrapping-calls-answer-at-their-wrapped-types-6446.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    // How many path types wrap the family in the label of `text`, written
+    // first after `from`.
+    let wrapping = |text: &str, from: &str| {
+        let after = source.find(from)?;
+        let start = source.get(after ..)?.find(text)?.saturating_add(after);
+        let ty = module
+            .origins()
+            .labels()
+            .iter()
+            .find_map(|label| match label.labelled {
+                crate::origin::Labelled::ValueType { ty, .. }
+                    if usize::from(label.span.start()) == start
+                        && usize::from(label.span.end()) == start.saturating_add(text.len()) =>
+                {
+                    Some(ty)
+                },
+                crate::origin::Labelled::ValueType { .. }
+                | crate::origin::Labelled::CompType { .. }
+                | crate::origin::Labelled::Value(_)
+                | crate::origin::Labelled::Endpoint(_)
+                | crate::origin::Labelled::Branch { .. }
+                | crate::origin::Labelled::Bound(_)
+                | crate::origin::Labelled::Kind(_) => None,
+            })?;
+        let (mut at, mut depth) = (ty, 0_usize);
+        while let Some(&ValueType::Path { carrier, .. }) = arena.value_type(at) {
+            at = carrier;
+            depth = depth.saturating_add(1);
+        }
+        matches!(arena.value_type(at), Some(&ValueType::Data { .. })).then_some(depth)
+    };
+    for (from, text, depth) in [
+        ("surf3 :", "Path.here (Path.here Base3)", 2_usize),
+        ("surf3 :", "Path.here Base3", 1),
+        ("<->", "Path.here (Path.here Base3)", 2),
+        ("<->", "Path.here Base3", 1),
+        (") = Path.here (", "Path.here (Path.here Base3)", 2),
+        (") = Path.here (", "Path.here Base3", 1),
+    ] {
+        assert_eq!(
+            wrapping(text, from),
+            Some(depth),
+            "`{text}` after `{from}` answers at the family wrapped {depth} times"
+        );
+    }
+}
+
 #[test]
 fn only_back_inverts_a_letter()
 {
