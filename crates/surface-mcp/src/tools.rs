@@ -264,7 +264,187 @@ fn propose_schema() -> Value
     })
 }
 
-/// Every tool, in name order.
+/// The schema of a tool that takes no argument.
+///
+/// # Specification
+/// trivial.
+fn empty_schema() -> Value
+{
+    json!({ "type": "object", "properties": {} })
+}
+
+/// The position that `arguments` names, as the language server reads one.
+///
+/// # Specification
+/// trivial.
+fn position(arguments: &Value) -> Result<Value, ToolRefusal>
+{
+    match (arguments.get("line"), arguments.get("character")) {
+        (Some(line), Some(character)) if line.is_u64() && character.is_u64() => {
+            Ok(json!({ "line": line, "character": character }))
+        },
+        _ => Err(ToolRefusal(String::from(
+            "`line` and `character` must be non-negative integers",
+        ))),
+    }
+}
+
+/// What answers an operation over the hub.
+#[derive(Clone, Copy)]
+enum Answer
+{
+    /// An answer that names no document: from the documents that the hub
+    /// holds, or from the features ledger.
+    Hub(fn(&mut Workspace, &Value) -> Result<Value, ToolRefusal>),
+    /// An answer over one document that the hub holds. The call writes the
+    /// URI of the document and the version it answered at beside it.
+    Document(fn(&mut Workspace, &DocumentUri, &Value) -> Result<Value, ToolRefusal>),
+}
+
+/// One operation of the hub, as each face offers it.
+struct Operation
+{
+    /// The name that a client calls it by.
+    name: &'static str,
+    /// The title that the Model Context Protocol shows. A tool of the
+    /// Reactive Agent Protocol has no title.
+    title: &'static str,
+    /// What the operation answers.
+    description: &'static str,
+    /// The JSON Schema of its arguments.
+    schema: fn() -> Value,
+    /// What answers it.
+    answer: Answer,
+}
+
+/// Every operation of the hub, in ascending name order. The Model Context
+/// Protocol's `tools/list` and the Reactive Agent Protocol's manifest each
+/// encode this table, and both faces call through it. Thus a row added here
+/// reaches both faces.
+static OPERATIONS: [Operation; 9] = [
+    Operation {
+        name: "diagnostics",
+        title: "Diagnostics",
+        description: "The diagnostics last published for an open document: each refusal, warning and \
+                      obligation the editor shows, with its range, code and message.",
+        schema: document_schema,
+        answer: Answer::Document(|workspace, uri, _arguments| {
+            let (_version, diagnostics) = workspace
+                .published(uri)
+                .ok_or_else(|| ToolRefusal(String::from("the document closed")))?;
+            Ok(json!({ "diagnostics": diagnostics }))
+        }),
+    },
+    Operation {
+        name: "documents",
+        title: "Open documents",
+        description: "Every document the hub holds open, with the version it is at.",
+        schema: empty_schema,
+        answer: Answer::Hub(|workspace, _arguments| {
+            let documents: Vec<Value> = workspace
+                .held()
+                .map(|(uri, version)| json!({ "uri": uri, "version": version }))
+                .collect();
+            Ok(json!({ "documents": documents }))
+        }),
+    },
+    Operation {
+        name: "expected_syntax",
+        title: "Expected syntax",
+        description: "The syntax the parser expects to close the form a position ends, as snippets.",
+        schema: position_schema,
+        answer: Answer::Document(|workspace, uri, arguments| {
+            let completions = ask(
+                workspace,
+                &json!({
+                    "method": "textDocument/inlineCompletion",
+                    "params": {
+                        "textDocument": { "uri": uri },
+                        "position": position(arguments)?,
+                        "context": { "triggerKind": 2_u8 },
+                    },
+                }),
+            )?;
+            Ok(json!({ "completions": completions }))
+        }),
+    },
+    Operation {
+        name: "ledger_list",
+        title: "List the features ledger",
+        description: "The features of gandr, one per row of the features ledger: its id, area, name, \
+                      status (implemented, partial, planned or declined) and one sentence on what it \
+                      is, narrowed to an area and a status when given. Before writing a form, list \
+                      its area.",
+        schema: ledger_list_schema,
+        answer: Answer::Hub(|_workspace, arguments| ledger_listed(arguments)),
+    },
+    Operation {
+        name: "ledger_show",
+        title: "Show a feature",
+        description: "One feature of the features ledger: its row, each of its exemplars' gandr \
+                      sources whole, whose `///` comments explain the form, and the paths of the \
+                      corpus sources and tests that witness it. Show each feature a form uses \
+                      before writing it.",
+        schema: ledger_show_schema,
+        answer: Answer::Hub(|_workspace, arguments| ledger_shown(arguments)),
+    },
+    Operation {
+        name: "outline",
+        title: "Outline",
+        description: "An open document's declarations, each nested inside the one that holds it.",
+        schema: document_schema,
+        answer: Answer::Document(|workspace, uri, _arguments| {
+            let symbols = ask(
+                workspace,
+                &json!({ "method": "textDocument/documentSymbol", "params": { "textDocument": { "uri": uri } } }),
+            )?;
+            Ok(json!({ "symbols": symbols }))
+        }),
+    },
+    Operation {
+        name: "propose",
+        title: "Propose a fill to the editor",
+        description: "Offer a fill of a range of an open document to its editors. gandr judges the \
+                      document with the fill applied; a fill that leaves no error, or fewer errors \
+                      than the document has, is kept and shown in the editor as ghost text, a code \
+                      lens, a code action and, with an explanation, a hover note, until the document \
+                      is next edited. A fill that does not check is answered with its diagnostics and \
+                      never shown. `version` is the document's version the fill was made against.",
+        schema: propose_schema,
+        answer: Answer::Document(proposed),
+    },
+    Operation {
+        name: "trial",
+        title: "Try candidate fills",
+        description: "Judge candidate edits of an open document without changing it, best first: each \
+                      candidate replaces `range` when given, or the whole text otherwise. Each result \
+                      names the candidate's index, how far it got (`judged`, `refusedWhole` or \
+                      `faulted`) and the diagnostics the edit would publish.",
+        schema: trial_schema,
+        answer: Answer::Document(|workspace, uri, arguments| {
+            Ok(json!({ "trials": tried(workspace, uri, arguments)? }))
+        }),
+    },
+    Operation {
+        name: "type_of",
+        title: "Type of a declaration",
+        description: "The type and documentation of the declaration whose name is at a position.",
+        schema: position_schema,
+        answer: Answer::Document(|workspace, uri, arguments| {
+            let hover = ask(
+                workspace,
+                &json!({
+                    "method": "textDocument/hover",
+                    "params": { "textDocument": { "uri": uri }, "position": position(arguments)? },
+                }),
+            )?;
+            Ok(json!({ "hover": hover }))
+        }),
+    },
+];
+
+/// Every tool, in name order, as the Model Context Protocol's `tools/list`
+/// encodes the table: its name, title, description and input schema.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -282,78 +462,50 @@ fn propose_schema() -> Value
 #[must_use]
 pub fn list() -> Vec<Value>
 {
-    let empty = json!({ "type": "object", "properties": {} });
-    Vec::from([
-        json!({
-            "name": "diagnostics",
-            "title": "Diagnostics",
-            "description": "The diagnostics last published for an open document: each refusal, warning and \
-                            obligation the editor shows, with its range, code and message.",
-            "inputSchema": document_schema(),
-        }),
-        json!({
-            "name": "documents",
-            "title": "Open documents",
-            "description": "Every document the hub holds open, with the version it is at.",
-            "inputSchema": empty,
-        }),
-        json!({
-            "name": "expected_syntax",
-            "title": "Expected syntax",
-            "description": "The syntax the parser expects to close the form a position ends, as snippets.",
-            "inputSchema": position_schema(),
-        }),
-        json!({
-            "name": "ledger_list",
-            "title": "List the features ledger",
-            "description": "The features of gandr, one per row of the features ledger: its id, area, name, \
-                            status (implemented, partial, planned or declined) and one sentence on what it \
-                            is, narrowed to an area and a status when given. Before writing a form, list \
-                            its area.",
-            "inputSchema": ledger_list_schema(),
-        }),
-        json!({
-            "name": "ledger_show",
-            "title": "Show a feature",
-            "description": "One feature of the features ledger: its row, each of its exemplars' gandr \
-                            sources whole, whose `///` comments explain the form, and the paths of the \
-                            corpus sources and tests that witness it. Show each feature a form uses \
-                            before writing it.",
-            "inputSchema": ledger_show_schema(),
-        }),
-        json!({
-            "name": "outline",
-            "title": "Outline",
-            "description": "An open document's declarations, each nested inside the one that holds it.",
-            "inputSchema": document_schema(),
-        }),
-        json!({
-            "name": "propose",
-            "title": "Propose a fill to the editor",
-            "description": "Offer a fill of a range of an open document to its editors. gandr judges the \
-                            document with the fill applied; a fill that leaves no error, or fewer errors \
-                            than the document has, is kept and shown in the editor as ghost text, a code \
-                            lens, a code action and, with an explanation, a hover note, until the document \
-                            is next edited. A fill that does not check is answered with its diagnostics and \
-                            never shown. `version` is the document's version the fill was made against.",
-            "inputSchema": propose_schema(),
-        }),
-        json!({
-            "name": "trial",
-            "title": "Try candidate fills",
-            "description": "Judge candidate edits of an open document without changing it, best first: each \
-                            candidate replaces `range` when given, or the whole text otherwise. Each result \
-                            names the candidate's index, how far it got (`judged`, `refusedWhole` or \
-                            `faulted`) and the diagnostics the edit would publish.",
-            "inputSchema": trial_schema(),
-        }),
-        json!({
-            "name": "type_of",
-            "title": "Type of a declaration",
-            "description": "The type and documentation of the declaration whose name is at a position.",
-            "inputSchema": position_schema(),
-        }),
-    ])
+    OPERATIONS
+        .iter()
+        .map(|operation| {
+            json!({
+                "name": operation.name,
+                "title": operation.title,
+                "description": operation.description,
+                "inputSchema": (operation.schema)(),
+            })
+        })
+        .collect()
+}
+
+/// Every tool, in name order, as the Reactive Agent Protocol's manifest
+/// encodes the table: its name, description and input schema.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the tools are offered in the order of [`list`], each with the
+///   name, the description and the input schema that [`list`] gives it, and no
+///   title.
+/// - provides: the tools of the manifest at `/.well-known/rap-toolset`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the manifest that the toolset serves and the `tools/list`
+///   that the hub's socket answers name the same operations with the same
+///   schemas.
+/// - witness: `rap::tests::both_faces_offer_one_table`
+#[spec(ensures: |ret| ret.len() == OPERATIONS.len()
+    && ret.iter().all(|tool| tool.get("title").is_none()))]
+#[must_use]
+pub fn offered() -> Vec<Value>
+{
+    OPERATIONS
+        .iter()
+        .map(|operation| {
+            json!({
+                "name": operation.name,
+                "description": operation.description,
+                "inputSchema": (operation.schema)(),
+            })
+        })
+        .collect()
 }
 
 /// The result of calling the tool `name` with `arguments` over `workspace`.
@@ -362,10 +514,11 @@ pub fn list() -> Vec<Value>
 /// - requires: nothing; any name and arguments are admitted.
 /// - ensures: a document tool answers for a document the hub holds, naming its
 ///   URI and the version answered at; a features ledger tool answers from the
-///   ledger under its root; a document the hub does not hold, arguments the
-///   tool cannot read, a ledger that cannot be read or answer, and a name no
-///   tool has are refused.
-/// - provides: `tools/call`.
+///   ledger under its root; a name no tool has, a document the hub does not
+///   hold, arguments the tool cannot read, and a ledger that cannot be read or
+///   answer are refused.
+/// - provides: `tools/call`, and the invocations of the Reactive Agent
+///   Protocol's toolset.
 /// - fails: as above, with the reason in the refusal.
 /// - panics: none.
 ///
@@ -389,77 +542,23 @@ pub fn call(
 ) -> Result<Value, ToolRefusal>
 {
     let name = name.and_then(Value::as_str).unwrap_or_default();
-    match name {
-        "documents" => {
-            let documents: Vec<Value> = workspace
-                .held()
-                .map(|(uri, version)| json!({ "uri": uri, "version": version }))
-                .collect();
-            return Ok(json!({ "documents": documents }));
+    let operation = OPERATIONS
+        .binary_search_by(|operation| operation.name.cmp(name))
+        .ok()
+        .and_then(|row| OPERATIONS.get(row))
+        .ok_or_else(|| ToolRefusal(alloc::format!("no tool is named `{name}`")))?;
+    match operation.answer {
+        Answer::Hub(answer) => answer(workspace, arguments),
+        Answer::Document(answer) => {
+            let (uri, version) = held(workspace, arguments)?;
+            let answer = answer(workspace, &uri, arguments)?;
+            let mut answered = json!({ "uri": uri, "version": version });
+            if let (Some(into), Value::Object(from)) = (answered.as_object_mut(), answer) {
+                into.extend(from);
+            }
+            Ok(answered)
         },
-        "ledger_list" => return ledger_listed(arguments),
-        "ledger_show" => return ledger_shown(arguments),
-        _ => {},
     }
-    let (uri, version) = held(workspace, arguments)?;
-    let document = json!({ "uri": uri });
-    let position = || -> Result<Value, ToolRefusal> {
-        match (arguments.get("line"), arguments.get("character")) {
-            (Some(line), Some(character)) if line.is_u64() && character.is_u64() => {
-                Ok(json!({ "line": line, "character": character }))
-            },
-            _ => Err(ToolRefusal(String::from(
-                "`line` and `character` must be non-negative integers",
-            ))),
-        }
-    };
-    let answer = match name {
-        "diagnostics" => {
-            let (_version, diagnostics) = workspace
-                .published(&uri)
-                .ok_or_else(|| ToolRefusal(String::from("the document closed")))?;
-            json!({ "diagnostics": diagnostics })
-        },
-        "outline" => {
-            let symbols = ask(
-                workspace,
-                &json!({ "method": "textDocument/documentSymbol", "params": { "textDocument": document } }),
-            )?;
-            json!({ "symbols": symbols })
-        },
-        "expected_syntax" => {
-            let completions = ask(
-                workspace,
-                &json!({
-                    "method": "textDocument/inlineCompletion",
-                    "params": {
-                        "textDocument": document,
-                        "position": position()?,
-                        "context": { "triggerKind": 2_u8 },
-                    },
-                }),
-            )?;
-            json!({ "completions": completions })
-        },
-        "type_of" => {
-            let hover = ask(
-                workspace,
-                &json!({
-                    "method": "textDocument/hover",
-                    "params": { "textDocument": document, "position": position()? },
-                }),
-            )?;
-            json!({ "hover": hover })
-        },
-        "trial" => json!({ "trials": tried(workspace, &uri, arguments)? }),
-        "propose" => proposed(workspace, &uri, arguments)?,
-        _ => return Err(ToolRefusal(alloc::format!("no tool is named `{name}`"))),
-    };
-    let mut answered = json!({ "uri": uri, "version": version });
-    if let (Some(into), Value::Object(from)) = (answered.as_object_mut(), answer) {
-        into.extend(from);
-    }
-    Ok(answered)
 }
 
 /// The name of a features ledger tool's argument.

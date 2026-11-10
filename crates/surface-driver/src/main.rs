@@ -56,8 +56,10 @@
 //! | `gandr mcp --socket <path> --linger-ms <ms>` | as `mcp`, through the hub on that socket, a hub it starts lingering that long | as `mcp` |
 //! | `gandr view` | the cards of the document the workspace's hub checked last, full-screen on a terminal; piped, each report's lines then a blank line (Unix) | a stream that failed, a line that is not a frame, or a hub it could not reach |
 //! | `gandr view --socket <path> --linger-ms <ms>` | as `view`, through the hub on that socket, a hub it starts lingering that long | as `view` |
-//! | `gandr serve` | each client's timing lines on standard error, until no client has connected for a minute | a socket it cannot bind or serve |
-//! | `gandr serve --socket <path> --linger-ms <ms>` | as `serve`, on that socket, lingering that long | as `serve` |
+//! | `gandr serve` | the URL of the toolset's manifest, then each client's timing lines, on standard error, until it is stopped; the URL also in the address file beside the socket | a socket it cannot bind or serve, an address file that names a toolset that still listens, or a toolset it cannot open |
+//! | `gandr serve --port <port>` | as `serve`, its toolset on that port | as `serve` |
+//! | `gandr serve --no-toolset` | each client's timing lines on standard error, until no client has connected for a minute | a socket it cannot bind or serve |
+//! | `gandr serve --socket <path> --linger-ms <ms>` | as `serve`, on that socket, lingering that long once it has no toolset and no client | as `serve` |
 //! | `gandr repl` | the line editor's prompt on a terminal; piped, each submission's echo and its lines, as a plain transcript | a fault that stops the loop |
 //! | `gandr repl --batch` | the plain transcript, even on a terminal | as `repl` |
 //! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
@@ -622,16 +624,21 @@ enum Command
     /// of one workspace, and the Model Context Protocol to every model, over
     /// one Unix socket, all of them sharing the documents the editors open.
     ///
-    /// With `--port`, the hub also serves the Reactive Agent Protocol's
-    /// toolset over HTTP on the loopback interface, and runs until it is
-    /// stopped. It keeps each call it acknowledged under the user's state
-    /// directory until the call is answered.
+    /// The hub also serves the Reactive Agent Protocol's toolset over HTTP on
+    /// the loopback interface, which is the default face for an agent. It
+    /// writes the URL of the toolset's manifest to a file beside its socket,
+    /// with the extension `rap`, for a runtime to read, and says it on
+    /// standard error. It runs until it is stopped, and it keeps each call it
+    /// acknowledged under the user's state directory until the call is
+    /// answered.
     ///
-    /// `gandr lsp` and `gandr mcp` start one when none runs. Exits 0 when the
-    /// hub has had no client for its linger or another hub already serves the
-    /// socket, and 2 when the socket cannot be bound or served. With `--port`,
-    /// it also exits 2 when the port cannot be bound, the store of calls cannot
-    /// be opened, or another hub already serves the socket.
+    /// `gandr lsp`, `gandr mcp` and `gandr view` start one with
+    /// `--no-toolset` when none runs. Exits 0 when the hub has had no client
+    /// for its linger or another hub already serves the socket, and 2 when the
+    /// socket cannot be bound or served. With the toolset, it also exits 2
+    /// when the address file names a toolset that still listens, the port
+    /// cannot be bound, the store of calls cannot be opened, the address file
+    /// cannot be written, or another hub already serves the socket.
     #[cfg(unix)]
     Serve
     {
@@ -643,11 +650,13 @@ enum Command
         /// exiting. Defaults to a minute.
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
-        /// Serve the Reactive Agent Protocol's toolset on this port of the
-        /// loopback interface. Port 0 takes a free port, which the hub names
-        /// on standard error.
+        /// Serve the toolset on this port of the loopback interface, rather
+        /// than on a free port.
         #[arg(long, value_name = "PORT")]
         port: Option<u16>,
+        /// Serve no toolset: the hub alone, which exits after its linger.
+        #[arg(long, conflicts_with = "port")]
+        no_toolset: bool,
     },
     /// Serve the Model Context Protocol over standard input and output: tools
     /// and resources reading the documents the workspace's editors hold open.
@@ -2120,12 +2129,16 @@ fn main() -> ExitCode
             socket,
             linger_ms,
             port,
+            no_toolset,
         }) => {
-            let toolset = match port
-                .map(|port| {
+            let toolset = match (!no_toolset)
+                .then(|| {
                     configuration.deliveries().map(|policy| {
                         (
-                            core::net::SocketAddr::from((core::net::Ipv4Addr::LOCALHOST, port)),
+                            core::net::SocketAddr::from((
+                                core::net::Ipv4Addr::LOCALHOST,
+                                port.unwrap_or(0_u16),
+                            )),
                             policy,
                         )
                     })
@@ -2821,8 +2834,9 @@ fn view(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a hub answering at once is connected; otherwise this executable
-///   is started detached as `gandr serve` on the socket with `--spelling`
-///   naming `spelling`, and the socket is tried every 20 ms for five seconds.
+///   is started detached as `gandr serve --no-toolset` on the socket with
+///   `--spelling` naming `spelling`, so the hub serves no toolset and lingers
+///   out, and the socket is tried every 20 ms for five seconds.
 /// - provides: one way every client reaches its workspace's hub.
 /// - fails: when the socket cannot be named, the hub cannot be started, or it
 ///   never answers within five seconds.
@@ -2854,6 +2868,7 @@ fn reach_hub(
     }
     let child = std::process::Command::new(std::env::current_exe()?)
         .arg("serve")
+        .arg("--no-toolset")
         .arg("--socket")
         .arg(&socket)
         .arg("--linger-ms")
@@ -2895,20 +2910,23 @@ fn reach_hub(
 ///   its timing lines on standard error, and exits `0` when it lingers out; a
 ///   socket another hub serves exits `0` at once, noted on standard error. A
 ///   socket that cannot be bound or served is noted and exits `2`. With
-///   `toolset`, the hub also serves [`toolset`]'s face beside its socket, says
-///   the manifest's URL on standard error, and runs until it is stopped; a
-///   toolset that cannot open, or a socket another hub serves, is noted and
-///   exits `2`.
+///   `toolset`, the hub also serves [`toolset`]'s face beside its socket,
+///   writes the manifest's URL to the address file beside the socket and says
+///   it on standard error, and runs until it is stopped. It removes the file
+///   when it stops. An address file that names a toolset that still listens, a
+///   toolset that cannot open, a file that cannot be written, or a socket
+///   another hub serves is noted and exits `2`.
 /// - provides: `gandr serve`.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a hub serving a client exits `0` after its linger and
-///   removes its socket; a hub given a port says where its manifest is and
-///   serves it.
+///   removes its socket; a hub with its toolset writes the URL of its manifest
+///   to the address file and serves the manifest there, and a second hub of the
+///   workspace refuses and names the file.
 /// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
-/// - witness: `tests::cli::serve_offers_the_toolset_on_a_named_port`
+/// - witness: `tests::cli::serve_offers_the_toolset_by_default`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn hub(
@@ -2923,7 +2941,13 @@ fn hub(
         Err(error) => return hub_fault(&error),
     };
     let toolset = match toolset
-        .map(|(address, policy)| self::toolset(address, policy))
+        .map(|(address, policy)| {
+            // A second hub of the workspace stops here, before it binds a port
+            // or opens the store of calls that the first one holds.
+            let announcement = gandr_surface_mcp::Announcement::beside(&socket);
+            announcement.vacant()?;
+            self::toolset(address, policy).map(|toolset| (toolset, announcement))
+        })
         .transpose()
     {
         Ok(toolset) => toolset,
@@ -2931,33 +2955,39 @@ fn hub(
     };
     match gandr_surface_lsp::bind(&socket) {
         Ok(Maybe::Present(listener)) => {
-            let beside = match toolset {
-                Some(toolset) => match toolset.address() {
-                    Ok(address) => {
-                        drop(writeln!(
-                            std::io::stderr(),
-                            "gandr: the toolset is at http://{address}/.well-known/rap-toolset"
-                        ));
-                        let beside: gandr_surface_lsp::Beside = Box::new(
-                            move |workspace: alloc::sync::Arc<
-                                std::sync::Mutex<gandr_surface_lsp::Workspace>,
-                            >,
-                                  peer: gandr_surface_lsp::Peer| {
-                                if let Err(error) =
-                                    toolset.serve(&workspace, peer, std::io::stderr())
-                                {
-                                    drop(writeln!(
-                                        std::io::stderr(),
-                                        "gandr: the toolset stopped: {error}"
-                                    ));
-                                }
-                            },
-                        );
-                        Some(beside)
-                    },
-                    Err(error) => return hub_fault(&error),
+            let (beside, _announced) = match toolset {
+                Some((toolset, announcement)) => {
+                    match toolset.address().and_then(|address| {
+                        announcement
+                            .write(address)
+                            .map(|announced| (address, announced))
+                    }) {
+                        Ok((address, announced)) => {
+                            drop(writeln!(
+                                std::io::stderr(),
+                                "gandr: the toolset is at http://{address}/.well-known/rap-toolset"
+                            ));
+                            let beside: gandr_surface_lsp::Beside = Box::new(
+                                move |workspace: alloc::sync::Arc<
+                                    std::sync::Mutex<gandr_surface_lsp::Workspace>,
+                                >,
+                                      peer: gandr_surface_lsp::Peer| {
+                                    if let Err(error) =
+                                        toolset.serve(&workspace, peer, std::io::stderr())
+                                    {
+                                        drop(writeln!(
+                                            std::io::stderr(),
+                                            "gandr: the toolset stopped: {error}"
+                                        ));
+                                    }
+                                },
+                            );
+                            (Some(beside), Some(announced))
+                        },
+                        Err(error) => return hub_fault(&error),
+                    }
                 },
-                None => None,
+                None => (None, None),
             };
             match gandr_surface_lsp::run_hub(
                 &listener,
@@ -2998,7 +3028,7 @@ fn hub(
 ///   `<calls>/<workspace>.jsonl`, where `<calls>` is [`config::calls`] and
 ///   `<workspace>` is `gandr_surface_lsp::workspace_name` of the current
 ///   directory, so every build of the driver reads one store per workspace.
-/// - provides: `gandr serve --port`'s face.
+/// - provides: `gandr serve`'s face.
 /// - fails: when the address cannot be bound, no directory names the state, the
 ///   current directory cannot be read, or the store cannot open.
 /// - panics: none.
