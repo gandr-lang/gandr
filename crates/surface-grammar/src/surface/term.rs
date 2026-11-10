@@ -132,7 +132,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.application", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 112 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 103 => Sort::Pattern, 32..=36 => Sort::Instantiation, 111 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.application", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 113 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=13 => Sort::Item, 14..=20 => Sort::ModuleMember, 21..=32 | 104 => Sort::Pattern, 33..=37 => Sort::Instantiation, 112 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -250,9 +250,10 @@ fn items(
 }
 
 /// Append the declaration forms: `data` and `codata` datatypes and their
-/// members, `module` and the `flow` translations between theories, `import`,
-/// `world`, a site's `offers`, the reserved operator-fixity declaration, the
-/// reserved mutual-recursion `rec` block and the `pub` mark.
+/// members, `module`, the `flow` translations between theories and the `path`
+/// between two of them, `import`, `world`, a site's `offers`, the reserved
+/// operator-fixity declaration, the reserved mutual-recursion `rec` block and
+/// the `pub` mark.
 ///
 /// All land at `item.singleton` beside the def family. Every form is
 /// keyword-led (a fresh first-token discriminator with no lookahead against
@@ -275,7 +276,7 @@ fn items(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 9 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "import_declaration", "world_declaration", "offers_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "flow_declaration", "path_declaration", "import_declaration", "world_declaration", "offers_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -463,6 +464,42 @@ fn declarations(
             t(TileLabel("where")),
             t(TileLabel("{")),
             repeat(h(Sort::ModuleMember)),
+            t(TileLabel("}")),
+        ]),
+    ));
+
+    // --- path declaration --------------------------------------------------
+    // `path p : V1 <~> V2 where { into where { … } from where { … } }`: a
+    // path between the signatures `V1` and `V2`, two flows whose round trips
+    // conversion decides. `into` is `V2`'s members over `V1`'s, and `from`
+    // is `V1`'s members over `V2`'s. Both signatures are type paths around
+    // the equivalence tile `≃`, which the labeler offers for `<~>`. `path`,
+    // `into` and `from` stay contextual: `path` is a name across the corpus,
+    // and the declaration's own block is the only slot of `into` and `from`.
+    out.push(r(
+        RuleName("path_declaration"),
+        Provenance("path_declaration"),
+        s,
+        p,
+        seq([
+            t(TileLabel("path")),
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            theory_path(),
+            t(TileLabel("≃")),
+            theory_path(),
+            t(TileLabel("where")),
+            t(TileLabel("{")),
+            t(TileLabel("into")),
+            t(TileLabel("where")),
+            t(TileLabel("{")),
+            repeat(h(Sort::ModuleMember)),
+            t(TileLabel("}")),
+            t(TileLabel("from")),
+            t(TileLabel("where")),
+            t(TileLabel("{")),
+            repeat(h(Sort::ModuleMember)),
+            t(TileLabel("}")),
             t(TileLabel("}")),
         ]),
     ));

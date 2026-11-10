@@ -245,7 +245,9 @@ pub enum Insertion
     /// A node of the record or the flow a relation between types abbreviates,
     /// below the type itself, every one located at the relation: the source
     /// writes `A ≃ B`, never the record's fields, the terms its round trips
-    /// read or the binders it opens.
+    /// read or the binders it opens. And a node of a round trip a path
+    /// between signatures states, located where the trip minted it: the
+    /// source writes the path's two bodies, never their round trips.
     Relation,
     /// A node of the words a data declaration's loops present, every one
     /// located at the declaration: the source writes the loops and their

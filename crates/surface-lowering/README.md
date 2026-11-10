@@ -47,7 +47,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredStructure`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names; [`module`](src/module.rs) names the types they are read through.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>`, its abstract types and the atoms a sealed module exports.
-- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from a theory, checked and packed, and type members with parameters.
+- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived, checked and packed, type members with parameters, and a `path`'s functions and round trips.
 - Binary sessions: session types, actions and the statements binding them, lowered to core session actions ([`lower::session`](src/lower/session.rs)).
 - Worlds: `world`, `requires`, `offers`, `at`, `hold`, `migrate`, `mobile` and `@[ entry(…) ]` ([`module::world`](src/module/world.rs)).
 

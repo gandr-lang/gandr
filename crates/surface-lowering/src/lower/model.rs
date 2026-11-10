@@ -463,6 +463,16 @@ impl Bundled
                 .any(|binds| binds.0)
         }))
     }
+
+    /// The signature of the outermost theory: the one the type is written
+    /// over, less the sorts its manifests fix.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn outermost(&self) -> Option<&ModelSignature>
+    {
+        self.theories.first().map(|theory| &theory.signature)
+    }
 }
 
 /// One theory of a [`Bundled`] record.
@@ -2732,6 +2742,43 @@ impl<'source> Lowerer<'_, 'source>
         Ok(theories)
     }
 
+    /// The bundle of the theory a path's header names, `theory`, with no sort
+    /// fixed, its refusals placed at `written`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the bundle [`Self::bundled_from`] reads off the theory
+    ///   [`Self::bundle_theory`] finds declared before `written`, named at the
+    ///   theory's name tile.
+    /// - fails: as [`Self::bundle_theory`] and [`Self::bundled_from`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::bundled`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path's two signatures each bundle as the model type
+    ///   `Model(T)` of their theory does.
+    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |bundled| !bundled.theories.is_empty()))]
+    pub(super) fn theory_bundle(
+        &self,
+        written: Site,
+        theory: &crate::module::TheoryPath<'source>,
+    ) -> Result<Bundled, LoweringRefusal<'source>>
+    {
+        let name = self.name_at(theory.named);
+        let outermost =
+            self.bundle_theory(written, (written.at.span.start(), &theory.prefix, name))?;
+        let theories = self.bundled_from(written, outermost)?;
+
+        Ok(Bundled {
+            theories,
+            named: theory.named.node,
+            manifests: Vec::new(),
+        })
+    }
+
     /// Mint a theory's models as a type: the bundled record `bundled` states.
     ///
     /// # Specification
@@ -4287,7 +4334,7 @@ impl<'source> Lowerer<'_, 'source>
 /// - hypothesis: L3 — a counter's module packs as the pairs its record nests.
 /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
 #[spec(ensures: |ret| ret.is_some() || values.is_empty())]
-fn packed_record(
+pub(super) fn packed_record(
     signature: &ModelSignature,
     values: &[ValueId],
     sink: &mut Sink<'_>,

@@ -516,6 +516,7 @@ INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surfa
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-dispatcher','typed','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-grammar','surface::term','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-lowering','module::functor','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-lowering','module::path','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-lsp','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-parser','mold','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160','core-term','handler::subject','background',NULL,NULL,NULL);
@@ -582,6 +583,7 @@ INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surfa
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-grammar','surface::term','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','lower::native','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','module::functor','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lowering','module::path','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-lsp','complete','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surface-parser','mold','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-2ecf-7893-afda-f14010a8acbe','surface-dispatcher','typed','exemplar',NULL,NULL,NULL);

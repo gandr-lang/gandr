@@ -183,8 +183,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for the body of a functor whose scope is
-    ///   [`BodyScope::Domain`], a flow's, its parameter and the body's own
-    ///   container; absent for any other container.
+    ///   [`BodyScope::Domain`], a flow's, or [`BodyScope::Path`], a path's, its
+    ///   parameter and the body's own container; absent for any other
+    ///   container.
     /// - provides: the domain half of [`Self::resolve_name`].
     /// - fails: never.
     /// - panics: none.
@@ -199,7 +200,7 @@ impl<'source> Lowerer<'_, 'source>
             if self.collected.structures.get(usize::from(module)).is_some_and(|structure| structure.container == outer
                 && matches!(structure.stratum, Stratum::Functor(functor)
                     if self.collected.functors.get(usize::from(functor)).is_some_and(|found| found.parameter == parameter
-                        && matches!(found.scope, BodyScope::Domain { .. }))))),
+                        && matches!(found.scope, BodyScope::Domain { .. } | BodyScope::Path { .. }))))),
         | Maybe::Absent(_) => true,
     })]
     pub(super) fn domain_scope(
@@ -220,7 +221,12 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(parameter_path::Absent::Outside);
         };
         match self.collected.functors.get(usize::from(functor)) {
-            Some(found) if matches!(found.scope, BodyScope::Domain { .. }) => {
+            Some(found)
+                if matches!(
+                    found.scope,
+                    BodyScope::Domain { .. } | BodyScope::Path { .. }
+                ) =>
+            {
                 Maybe::Present((found.parameter, structure.container))
             },
             Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
@@ -1080,7 +1086,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — as [`Lowerer::mint_instances`].
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 #[spec(ensures: |ret| ret == subject || sink.arena.value_type(ret).is_some())]
-fn rename_type(
+pub(super) fn rename_type(
     sink: &mut Sink<'_>,
     renaming: &Renaming,
     subject: ValueTypeId,
@@ -1108,7 +1114,7 @@ fn rename_type(
 /// - hypothesis: L3 — as [`Lowerer::mint_instances`].
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 #[spec(ensures: |ret| ret == subject || sink.arena.value(ret).is_some())]
-fn rename_value(
+pub(super) fn rename_value(
     sink: &mut Sink<'_>,
     renaming: &Renaming,
     subject: ValueId,

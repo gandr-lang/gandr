@@ -273,6 +273,16 @@ pub enum BodyScope<'source>
         /// `V2`, the theory the body is a model of.
         codomain: TheoryPath<'source>,
     },
+    /// One body of a path, `path p : V1 <~> V2`: it reads its domain's
+    /// members by name, as a flow's body does, and no import or application
+    /// names it. Its domain is `V1` for `into` and `V2` for `from`.
+    Path
+    {
+        /// The theory the body reads.
+        domain: TheoryPath<'source>,
+        /// The theory the body is a model of.
+        codomain: TheoryPath<'source>,
+    },
 }
 
 /// A theory as a header names it, `Kit.Older`.
@@ -1017,7 +1027,9 @@ impl<'source> Collector<'_, 'source>
             .functors
             .iter()
             .enumerate()
-            .find(|&(_, functor)| functor.name == functor_name)
+            .find(|&(_, functor)| {
+                functor.name == functor_name && !matches!(functor.scope, BodyScope::Path { .. })
+            })
             .map(|(index, functor)| (FunctorIndex(index), functor.clone()))
         else {
             refuse(self, LoweringRefusal::NotAFunctor {

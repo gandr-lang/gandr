@@ -885,8 +885,19 @@ impl<'arena> Engine<'arena>
         if rewrite == Rewrite::Rename
             && let Maybe::Present(renamed) = self.renamed(node)
         {
-            let _previous = self.memo.insert((node, depth, rewrite), renamed);
-            self.results.push(renamed);
+            if depth == Binders::NONE {
+                let _previous = self.memo.insert((node, depth, rewrite), renamed);
+                self.results.push(renamed);
+                return;
+            }
+            // The leaf's replacement is read where the leaf stands: raised past
+            // the binders above it, in this walk, as a carried occurrence is.
+            self.tasks.push(Task::Record(node, depth, rewrite));
+            self.tasks.push(Task::Open(
+                renamed,
+                Binders::NONE,
+                Rewrite::Relocate(Offset::raise(depth)),
+            ));
             return;
         }
         if let (Rewrite::Abstract(constant, index), Node::Value(id)) = (rewrite, node)
@@ -1396,14 +1407,16 @@ impl<'arena> Engine<'arena>
         self.results.push(answer);
     }
 
-    /// What a renaming answers for `node` when `node` is a leaf it names.
+    /// What a renaming answers for `node` when `node` is a leaf it names, read
+    /// where the renaming states it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a constant the renaming names, a constant node at the
     ///   position it names for it; for an atom it names, the type it names for
     ///   it; absent for every other node, a constant or atom it does not name
-    ///   among them.
+    ///   among them. [`Self::open`] raises the answer past the binders above
+    ///   `node`.
     /// - provides: the one point a renaming differs from a congruence.
     /// - fails: never.
     /// - panics: none.
@@ -1411,8 +1424,10 @@ impl<'arena> Engine<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a renamed constant, a renamed atom, a constant and an
     ///   atom the renaming does not name, and each under a binder, separate the
-    ///   two leaf rules from identity.
+    ///   two leaf rules from identity; an atom renamed to an open type reads it
+    ///   raised past each binder above the atom.
     /// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+    /// - witness: `rewrite::tests::a_renaming_raises_an_open_type_past_the_binders_above_its_atom_3487`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(renamed) => core::mem::discriminant(&renamed) == core::mem::discriminant(&node),
         | Maybe::Absent(renamed::Absent::Unnamed) => true,
@@ -5475,6 +5490,53 @@ pub fn abstract_constant_value_type(
     }
 }
 
+/// Abstract the constant `constant` out of the value `subject` as the
+/// variable `index`, reporting each node it rewrote.
+///
+/// Every occurrence becomes the intuitionistic variable counting past the
+/// binders it stands under to `index`.
+///
+/// # Specification
+/// - requires: `subject` names a value of `arena`, and `index` is free in the
+///   context `subject` is read in.
+/// - ensures: `subject` with every `constant` replaced by that variable, every
+///   other node kept, and `subject` itself when it names no `constant`;
+///   `carried` gains one pair per node the abstraction changed, as
+///   [`rename_value_traced`] reports them.
+/// - provides: a body of a path read over its bound model: each constant
+///   standing for a member of the domain becomes the variable the body binds to
+///   that member.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constant under no binder and under one become the
+///   variable at the index and one past it, and a value naming another constant
+///   is kept.
+/// - witness: `rewrite::tests::an_abstraction_replaces_a_value_s_constant_by_a_variable_under_binders`
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == subject || arena.value(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn abstract_constant_value_traced(
+    arena: &mut CoreArena,
+    subject: ValueId,
+    (constant, index): (ConstantIndex, DeBruijnIndex),
+    carried: &mut Vec<Carried>,
+) -> ValueId
+{
+    let mut engine = Engine::new(arena);
+    let abstracted = engine.run(
+        Node::Value(subject),
+        Binders::NONE,
+        Rewrite::Abstract(constant, index),
+    );
+    report(&engine.memo, carried);
+    match abstracted {
+        Node::Value(id) => id,
+        Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    }
+}
+
 /// Read a receive's body with its payload bound intuitionistically.
 ///
 /// Every read of the payload's linear binder becomes the variable of one
@@ -7726,8 +7788,9 @@ pub fn substitute_environment_comp_type(
 /// constant by another, each atom by a type, each bound region by a region.
 ///
 /// # Specification
-/// - requires: nothing to construct this data; a replacing type is a closed
-///   type of the arena the renaming is applied in.
+/// - requires: nothing to construct this data; a replacing type is a type of
+///   the arena the renaming is applied in, read where the subject's root
+///   stands.
 /// - ensures: a later entry for a name replaces an earlier one, so the renaming
 ///   is a function on constants, on atoms and on bound regions.
 /// - provides: what [`rename_value_traced`] and [`rename_value_type_traced`]
@@ -7848,7 +7911,8 @@ static NOTHING_RENAMED: Renaming = Renaming::new();
 ///
 /// # Specification
 /// - requires: `subject` is live in `arena`; every type `renaming` replaces an
-///   atom by is a closed type of `arena`.
+///   atom by is a type of `arena` read where `subject` stands, and an atom
+///   under binders reads it raised past them.
 /// - ensures: `subject` with every constant the renaming names replaced by the
 ///   constant it names for it and every atom it names by the type it names for
 ///   it, at every depth and in every family the walk reaches — a quoted type's
