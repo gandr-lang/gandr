@@ -635,24 +635,9 @@ fn entry_unfoldings(
     judgement: Judgement<'_>,
 ) -> Unfoldings
 {
-    Unfoldings::new(
-        judgement
-            .entries
-            .iter()
-            .map(|entry| match *entry.content() {
-                DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-                DeclarationContent::Data { .. }
-                | DeclarationContent::Codata { .. }
-                | DeclarationContent::Axiom { .. }
-                | DeclarationContent::LiteralIdentity { .. }
-                | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
-            })
-            .collect(),
-    )
-    .presenting(judgement.presentations.clone())
-    .identifying(judgement.entries)
-    .testing(judgement.entries)
-    .ruling(arena, judgement.entries)
+    Unfoldings::from_entries(judgement.entries)
+        .presenting(judgement.presentations.clone())
+        .ruling(arena, judgement.entries)
 }
 
 /// Admit `declared` as the one type a literal identity test at `test`'s base
@@ -3545,24 +3530,9 @@ fn admitted_unfoldings(
     judgement: Judgement<'_>,
 ) -> Unfoldings
 {
-    Unfoldings::new(
-        judgement
-            .entries
-            .iter()
-            .map(|entry| match *entry.content() {
-                DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-                DeclarationContent::Data { .. }
-                | DeclarationContent::Codata { .. }
-                | DeclarationContent::Axiom { .. }
-                | DeclarationContent::LiteralIdentity { .. }
-                | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
-            })
-            .collect(),
-    )
-    .presenting(judgement.presentations.clone())
-    .identifying(judgement.entries)
-    .testing(judgement.entries)
-    .ruling(arena, judgement.entries)
+    Unfoldings::from_entries(judgement.entries)
+        .presenting(judgement.presentations.clone())
+        .ruling(arena, judgement.entries)
 }
 
 /// The checker machine that [`run`] drives: from an initial goal and context
