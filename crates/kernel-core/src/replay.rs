@@ -365,6 +365,11 @@
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a chain has one
 //!   composite up to its nestings, so every nesting reads as the left-nested
 //!   fold a composite realises.
+//! - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace records
+//!   decisions only. The replay owns the deterministic run of a held operand,
+//!   under its budget, and `Replay::bound_link` starts that run at a bind over
+//!   a stuck link. A run that parts from the evaluator declines, and the
+//!   endpoint check still stands.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -2654,6 +2659,9 @@ enum RunStep
 {
     /// It returned this value, which is no returned endpoint.
     Returns(ValueId),
+    /// It reached this transport, which the evaluator holds as a value
+    /// ([`crate::element_identity::held_transport`]): the run returns it held.
+    Holds(ComputationId),
     /// It returned an endpoint, and the run reads on into this computation as
     /// the reading names.
     Reads(ComputationId, HeldReading),
@@ -4280,6 +4288,140 @@ where
         frames.truncate(at);
         frames.extend(moved);
         AlongComposite::Moved(focus)
+    }
+
+    /// The held run that a bind over a stuck link starts: the link of the
+    /// innermost frame over the held stuck link, and the stuck link that runs.
+    ///
+    /// The evaluator binds a stuck link as the endpoint it holds. The append
+    /// of the link outside runs that endpoint before it reads its word
+    /// (`eval::words::appended`). So the replay reads `y ← tr(Q′, k, v);
+    /// tr(Q↑, q↑, y)` as the held operand `tr(Q′, k, v)` of `tr(Q, q,
+    /// ⟨tr(Q′, k, v)⟩)`, and runs it as [`Run::Held`]. The run unfolds the
+    /// definitions that name `k` and records no decision for them. It returns
+    /// the held transport that it reaches ([`Self::run_step`]). The run starts
+    /// only where the definitions end at a held path, so it never sticks.
+    ///
+    /// # Specification
+    /// - requires: `focus` and `frames` are [`Self::reduce`]'s state at a stuck
+    ///   weak head, `cells` the environments they close over.
+    /// - ensures: `Some((tr(Q, q, ⟨l⟩), l))`, the innermost frame popped, when
+    ///   that frame binds into `y. tr(Q↑, q↑, y)` with `Q` a
+    ///   [`crate::words::singleton`] family, the focus is `l = tr(Q′, k, v)`
+    ///   with `Q′` one too, and the definitions that name `k` unfold, one after
+    ///   another, to `u` with `tr(Q′, u, v)` a
+    ///   [`crate::element_identity::held_transport`]; `None` with `frames`
+    ///   unchanged otherwise.
+    /// - provides: the start of a held operand's run at a bind, as the
+    ///   evaluator's append runs the endpoint it holds.
+    /// - fails: [`Stop::Budget`] when the walk along the definitions exhausts
+    ///   the budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop that walks the definitions, not
+    ///   recursion.
+    /// - measure: the budget left, which each definition the loop reads
+    ///   charges.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the composite of three negation paths walks `true`
+    ///   with one recorded unfolding of `negPath` fewer than it has paths, as
+    ///   the checker records. Left as a bind over the stuck link, the replay
+    ///   unfolds every path and refuses what the checker accepted.
+    /// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
+    #[spec(captures: before = frames.len(), ensures: |ret| match ret {
+        Ok(Some(_)) => frames.len() < before,
+        Ok(None) => frames.len() == before,
+        Err(_) => true,
+    })]
+    fn bound_link(
+        &mut self,
+        cells: &mut Environments,
+        focus: Closure<ComputationId>,
+        frames: &mut Vec<Closure<Frame>>,
+    ) -> Result<Option<(crate::element_identity::ElementTransport, ComputationId)>, Stop>
+    {
+        let Some(&innermost) = frames.last()
+        else {
+            return Ok(None);
+        };
+        if !matches!(innermost.node, Frame::Bind(_)) {
+            return Ok(None);
+        }
+        let Frame::Bind(onward) = self.unload_frame(cells, innermost)
+        else {
+            return Ok(None);
+        };
+        let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = self.arena.computation(onward)
+        else {
+            return Ok(None);
+        };
+        if !matches!(self.arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+            || crate::element_identity::binder_use(
+                self.arena,
+                crate::element_identity::Family::Value(path),
+            ) != BinderUse::Ignored
+            || crate::words::singleton(self.arena, motive).is_none()
+            || self.bound_use(motive) == BinderUse::Read
+        {
+            return Ok(None);
+        }
+        let link = self.unload(cells, focus);
+        let Some(&Computation::PathTransport {
+            motive: inner,
+            path: along,
+            value: moved,
+        }) = self.arena.computation(link)
+        else {
+            return Ok(None);
+        };
+        if crate::words::singleton(self.arena, inner).is_none() {
+            return Ok(None);
+        }
+        // The run returns only where the definitions that head the path end
+        // at a held transport. Elsewhere it sticks, and the evaluator keeps
+        // the operand as it was.
+        let mut end = along;
+        while let Some(&Value::Constant(constant)) = self.arena.value(end)
+            && let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+        {
+            self.charge()?;
+            end = body;
+        }
+        if end == along {
+            return Ok(None);
+        }
+        let ended = self.arena.computation_path_transport(inner, end, moved);
+        if !bool::from(crate::element_identity::held_transport(self.arena, ended)) {
+            return Ok(None);
+        }
+        frames.pop();
+        let held = self.arena.value_returned(link);
+        let outer = self.instantiate(onward, held);
+        let Some(&Computation::PathTransport {
+            motive,
+            path,
+            value,
+        }) = self.arena.computation(outer)
+        else {
+            return Err(unreadable());
+        };
+        Ok(Some((
+            crate::element_identity::ElementTransport {
+                motive,
+                path,
+                value,
+            },
+            link,
+        )))
     }
 
     /// The continuation, family and path computation of `frame`, a bind into
@@ -8789,6 +8931,27 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         None => return Err(unreadable()),
                     }
                 }
+                // A bind over a stuck link whose path a definition names holds
+                // the link as its endpoint, and the append of the link outside
+                // runs it ([`Self::bound_link`]): the run reads in place of
+                // this reading, which waits on what it comes to.
+                if let Some((transport, operand)) =
+                    self.bound_link(&mut cells, focus, &mut frames)?
+                {
+                    let outer = self.unload_frames(&mut cells, &mut frames);
+                    runs.push(Run::Held(HeldRun {
+                        transport,
+                        operand,
+                        frames: outer,
+                        attempts: core::mem::take(&mut attempts),
+                        reduction,
+                        reading: HeldReading::Operand,
+                    }));
+                    reduction = Reduction::Endpoint;
+                    focus = Closure::closed(operand);
+                    progress = Progress::Unchanged;
+                    continue;
+                }
                 // A transport along a stuck composite moves its operand along
                 // each of the composite's paths in order, as the evaluator's
                 // `AlongThen` row moves it. A returned path runs first, as the
@@ -9002,7 +9165,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // there, as the evaluator evaluates a returned endpoint. One a
             // bind's or a transport's run returns reads by the evaluator's one
             // rule for a resumed endpoint ([`Self::resumed`]). A value it
-            // returns moves along the path. A run that sticks leaves the
+            // returns moves along the path, and so does a transport the
+            // evaluator holds as a value, held. A run that sticks leaves the
             // operand as it was, and the transport runs its returned path
             // first, or its operand; the conversion unfolds what the operand
             // holds later, by a recorded step.
@@ -9060,6 +9224,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         run.transport.path,
                         value,
                     ),
+                    RunStep::Holds(transport) => {
+                        let held = self.arena.value_returned(transport);
+                        self.arena.computation_path_transport(
+                            run.transport.motive,
+                            run.transport.path,
+                            held,
+                        )
+                    },
                     RunStep::Sticks => {
                         if let Some(reduct) = crate::words::run_path(
                             self.arena,
@@ -9879,7 +10051,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// what the run meets, and records no decision for it: the dialogue under
     /// a stuck transport names no unfolding. An endpoint a call's run returns
     /// is evaluated, its computation run and every call there held: the
-    /// level-two whisker's `⟨tr(…, here(…))⟩` runs on to `here(…)`. An
+    /// level-two whisker's `⟨tr(…, here(…))⟩` runs on to `here(…)`. A run
+    /// that reaches a transport the evaluator holds as a value returns it
+    /// held, as the evaluator's `step_path_transport` returns it. An
     /// endpoint the run of a bind or a transport returns is read by
     /// [`Self::resumed`], the evaluator's one rule for it. A run that sticks
     /// at a head no definition unfolds, or at a call an endpoint holds,
@@ -9894,7 +10068,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - ensures: `Returns(v)` when `read` is `return v` and `v` is no returned
     ///   endpoint; `Reads(c, Returned)` when `read` is `return ⟨c⟩` and
     ///   `reading` is no operand; the step [`Self::resumed`] reads at `c` when
-    ///   `read` is `return ⟨c⟩` and `reading` is an operand; `Unfolds(k)` when
+    ///   `read` is `return ⟨c⟩` and `reading` is an operand; `Holds(read)` when
+    ///   `reading` is a call or an operand and `read` is a
+    ///   [`crate::element_identity::held_transport`]; `Unfolds(k)` when
     ///   `reading` is a call or an operand, the definition `k` heads `read`,
     ///   and a constructor opens its gate if `k` is a recursive definition;
     ///   `Sticks` otherwise.
@@ -9910,13 +10086,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   leaves nothing for the unfolding the checker records. An endpoint a
     ///   call's run returns, left unread, keeps the operand held where the
     ///   checker's run reached reflexivity; its calls unfolded, the operand
-    ///   runs past what the checker held.
+    ///   runs past what the checker held. A held transport read as stuck keeps
+    ///   the operand as it was, and the replay refuses what the checker
+    ///   accepted.
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
     /// - witness: `replay::tests::a_held_run_reads_on_into_an_endpoint_it_returns_4228`
     /// - witness: `replay::tests::an_operand_s_run_runs_the_call_it_returns_4412`
+    /// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
     #[spec(ensures: |ret| match ret {
         RunStep::Returns(read) => self.arena.value(read).is_some(),
+        RunStep::Holds(held) => held == read,
         RunStep::Reads(read, next) => self.arena.computation(read).is_some() && next != HeldReading::Operand,
         RunStep::RunsPath(transport, call, _) => self.arena.computation(transport).is_some() && self.held_reading(call) == HeldReading::Call,
         RunStep::Unfolds(_) | RunStep::Sticks => true,
@@ -9940,6 +10120,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         }
         if reading == HeldReading::Returned {
             return RunStep::Sticks;
+        }
+        // A transport the evaluator holds is a value, and the run ends there.
+        if bool::from(crate::element_identity::held_transport(self.arena, read)) {
+            return RunStep::Holds(read);
         }
         let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) = self.shape(
             Term::Computation(read),
@@ -10011,7 +10195,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     #[spec(ensures: |ret| match ret {
         RunStep::Reads(read, next) => read == endpoint && next != HeldReading::Operand,
         RunStep::RunsPath(transport, call, _) => transport == endpoint && self.held_reading(call) == HeldReading::Call,
-        RunStep::Returns(_) | RunStep::Unfolds(_) => false,
+        RunStep::Returns(_) | RunStep::Holds(_) | RunStep::Unfolds(_) => false,
         RunStep::Sticks => true,
     })]
     fn resumed(

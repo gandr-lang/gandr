@@ -1348,7 +1348,8 @@ where
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
 /// - ensures: `Reduced` with the transport along a named path's word; with the
 ///   path returned along the empty word by [`appended`]'s row, before either
-///   side runs; with a returned operand run first; with a returned path run
+///   side runs; with a returned operand that is no held transport
+///   ([`crate::element_identity::held_path`]) run first, and a returned path
 ///   next; with the operand returned along the empty word, or its named word
 ///   reread; with the first letter's transport bound into the rest's along a
 ///   longer word; along one letter in a path family over a carrier its binder
@@ -1378,6 +1379,7 @@ where
 /// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
 /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 /// - witness: `tests::native_formers::a_word_of_two_letters_moves_a_path_letter_by_letter`
+/// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -1412,8 +1414,10 @@ where
     }
     // A returned operand runs first, as an elimination meeting one does and as
     // the evaluator's append runs a held operand: `tr(P, w, ⟨c⟩) ⇝ y ← c;
-    // tr(P↑, w↑, y)`.
-    if let Some(&Value::Returned(operand)) = arena.value(value) {
+    // tr(P↑, w↑, y)`. A held transport is a value the evaluator never runs.
+    if let Some(&Value::Returned(operand)) = arena.value(value)
+        && !bool::from(crate::element_identity::held_path(arena, value))
+    {
         let one = BinderDepth::from(1_u32);
         let lifted = shift_value_type(arena, table, memo, motive, one, one);
         let onward = shift_value(arena, table, memo, path, BinderDepth::NONE, one);
@@ -1743,8 +1747,9 @@ pub fn singleton(
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed term reads as `None`.
-/// - ensures: `Some(c)` exactly when the operand is `⟨c⟩`, no definition names
-///   the path, the path is no word's letter or empty word, and `motive` is a
+/// - ensures: `Some(c)` exactly when the operand is `⟨c⟩` and no held transport
+///   ([`crate::element_identity::held_path`]), no definition names the path,
+///   the path is no word's letter or empty word, and `motive` is a
 ///   [`singleton`] family; `None` otherwise.
 /// - provides: where the replay runs the held operand as the evaluator's append
 ///   runs it, so both engines read `spin(Z) then q` as `q`.
@@ -1756,6 +1761,7 @@ pub fn singleton(
 ///   empty word reduces to its second word in both engines; were the call left
 ///   held, the replay would refuse what the checker accepted.
 /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+/// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
 #[spec(ensures: |ret| ret.is_none_or(|held| arena.computation(held).is_some()))]
 pub fn held_operand(
     arena: &TermArena,
@@ -1769,6 +1775,7 @@ pub fn held_operand(
     };
     if named(arena, unfoldings, term.path).is_some()
         || head(arena, unfoldings.presentations(), term.path) != Head::Other
+        || bool::from(crate::element_identity::held_path(arena, term.value))
     {
         return None;
     }
