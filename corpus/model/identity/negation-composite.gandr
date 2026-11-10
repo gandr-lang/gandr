@@ -1,0 +1,54 @@
+/// This source transports a Boolean along a composite of negation paths.
+/// It follows cctt's `tests/bench/negPath.cctt`, a rung of the Brunerie
+/// ladder that cctt and gandr both state.
+///
+/// Negation is its own inverse, so `ua` makes it a path from `Bool` to
+/// itself. The composite of `n + 1` such paths moves `true` to `true` when
+/// `n` is odd and to `false` when `n` is even.
+///
+/// The checker computes each transport by conversion. The kernel replays
+/// each conversion within its budget.
+///
+/// - see: #6268
+// The natural numbers count the negations.
+import "./circle-base.gandr";
+
+/// The `negBool` function is cctt's `negBool`, Boolean negation.
+def negBool(b : Bool) -> Bool =
+  match b where
+    | true => false
+    | false => true
+
+/// Negation undoes itself.
+def negNeg(b : Bool) -> Path[.A = Bool](negBool (negBool b), b) =
+  match b where
+    | true => Path.here true
+    | false => Path.here false
+
+/// Negation is its own bi-invertible inverse.
+def negEquiv : Bool ≃ Bool = *{negBool, *{*{negBool, negNeg}, *{negBool, negNeg}}};
+
+/// The `negPath` path is cctt's `negPath`, negation as a path in the universe.
+def negPath : Path[.A = Type](Bool, Bool) = ua negEquiv;
+
+/// The `boolPathN` path composes `n + 1` negation paths, each new one on the
+/// right, as cctt's `BoolPathN` iterates.
+def rec boolPathN(n : Nat) -> Path[.A = Type](Bool, Bool) =
+  match n where
+    | Zero => negPath
+    | Succ(k) => Path.step (boolPathN[<] k) negPath
+
+/// The `negVal` function is cctt's `val`, the transport of `true`.
+def negVal(n : Nat) -> Bool = Path.walk (fun (X) { X }) (boolPathN n) true
+
+/// One negation moves `true` to `false`.
+def negOnce : Path[.A = Bool](negVal Zero, false) = Path.here false;
+
+/// Two negations move `true` back to `true`.
+def negTwice : Path[.A = Bool](negVal (Succ Zero), true) = Path.here true;
+
+/// Eleven negations move `true` to `false`.
+def negEleven : Path[.A = Bool](
+  negVal (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))))))),
+  false
+) = Path.here false;
