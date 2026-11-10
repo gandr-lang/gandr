@@ -1,10 +1,12 @@
 //! Completion handles an overlap that parts at a call.
 //!
-//! The two `swap` rules overlap at `swap(Zero, n)`.
+//! The two `swap` rules overlap at `swap(Zero, n)`. One reduct is `n`. The
+//! other reduct is `add(n, Zero)`.
 //!
-//! One reduct is `n`. The other reduct is `add(n, Zero)`.
-//! Completion derives a rule from `add(n, Zero)` to `n`. The derived rule joins
-//! the pair. The kernel reads it with the written rules.
+//! Completion derives a rule from `add(n, Zero)` to `n`. The derived rule
+//! follows from the written rules, because both sides are reducts of one
+//! peak. The derived rule joins the pair, and completion decides the pairs
+//! again (§ 7 of the cited work). The kernel reads it with the written rules.
 //!
 //! - see: #338
 //! - cites: [Knuth-1970-simple_word_problems_universal_algebras]

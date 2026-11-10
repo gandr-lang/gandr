@@ -22,7 +22,8 @@ theory GradedCut where
 
   rule cutLeft : orBot x y ==> x;
 
-/// The outer `cutLeft` law chooses the nested inner cut.
+/// The outer `cutLeft` law chooses the nested inner cut. The inner choice has
+/// the cut grade, so it stands as the left branch of the outer choice.
 @[normalizes("orBot(orBot(cut, fail), fail) ~> cut")]
 theory NestedCut where
   sort Grade : Type;

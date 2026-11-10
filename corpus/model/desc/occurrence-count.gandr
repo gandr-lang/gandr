@@ -2,6 +2,9 @@
 //!
 //! The count is the hole's Lipschitz constant under one step
 //! [Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems].
+//! The constant is the factor by which one step can stretch the distance
+//! between two instances of the hole. Section 8.2 of the cited work gives
+//! this definition.
 //!
 //! `gandr cells` reports every count. The report does not refuse a count.
 //! `mirror` is linear. `left` has count zero. `twice` and `thrice` duplicate

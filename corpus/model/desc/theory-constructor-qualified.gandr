@@ -4,6 +4,7 @@
 //
 // A value can use a qualified constructor.
 // Qualification selects `Theory` when a source constructor has the same name.
+// The printer writes the `Theory` constructor back in its qualified form.
 //
 // - see: #354
 // - see: #2428

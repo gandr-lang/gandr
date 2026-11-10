@@ -2,8 +2,9 @@
 //
 // A `theory` block still mints its code.
 //
-// An unshadowed `Theory` constructor keeps its ordinary meaning.
-// A generic program reads the block through `Oper` and `Presents`.
+// An unshadowed `Theory` constructor keeps its ordinary meaning. The source
+// declares `App` before the block and `Sort` after it. A generic program reads
+// the block through `Oper` and `Presents`.
 //
 // - see: #2348
 

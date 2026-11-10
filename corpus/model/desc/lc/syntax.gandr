@@ -1,8 +1,14 @@
 //! This source defines the pure lambda calculus.
 //!
-//! `LC` has one substitution.
+//! `LC` has one substitution. It is the single-substitution calculus of § 7 of
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics].
+//! It is the presentation that `first_order` mints from `theory Lambda`. Its
+//! names omit the generated `$`, and its context arguments are implicit, as a
+//! `theory` block writes them.
 //!
-//! The source uses de Bruijn indices. `Lift` is a substitution constructor.
+//! The source uses de Bruijn indices. `Lift` is a substitution constructor, so
+//! the substitution laws reach their inductive steps by conversion. Lifting as
+//! a definition reaches them too.
 //!
 //! - see: #640
 //! - see: #2422
@@ -13,7 +19,9 @@
 // The naturals, the de Bruijn indices.
 import "../model-in-source.gandr";
 
-/// `LC` is the pure lambda calculus with single substitution.
+/// `LC` is the pure lambda calculus with single substitution. No order of
+/// paths orients law 3, so the checker refuses the rules, but the block still
+/// derives `Model(LC)`.
 @[refuses("RulesUnoriented")]
 pub theory LC where
   sort Con : Type;
@@ -91,7 +99,8 @@ pub def shiftBy(a : Term, k : N) -> Term =
     | Z => a
     | S(j) => rename a (RShift (S j))
 
-/// `look` returns the term for `n` under `k` binders.
+/// `look` returns the term for `n` under `k` binders, where `k` counts the
+/// binders that the lookup crosses. Each lift that it passes adds one.
 pub def rec look(n : N, s : Env, k : N) -> Term =
   match s where
     | Shift(j) => Ix (plusTwo n j k)
