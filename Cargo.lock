@@ -1342,6 +1342,7 @@ dependencies = [
  "gandr-core-fork",
  "gandr-core-publish",
  "gandr-kernel-core",
+ "gandr-lang",
  "gandr-runtime-net",
  "gandr-storage-store",
  "gandr-surface-diagnostics",

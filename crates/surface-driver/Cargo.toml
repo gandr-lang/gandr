@@ -98,9 +98,12 @@ tracing-subscriber = { workspace = true, optional = true }
 # with the parser and counts the molder's decisions. Its latency workload
 # types into a language-server session through the language server's client,
 # as the hotpath bench's workloads do, and its incremental workload parses
-# each revision through the session's form store, on the serial fork.
+# each revision through the session's form store, on the serial fork. The
+# `check --activity` witness reads the activity ring, so the crate's own
+# targets turn its `instrument` feature on.
 [dev-dependencies]
 gandr-core-fork.workspace = true
+gandr-lang = { workspace = true, features = ["instrument"] }
 gandr-surface-lsp = { workspace = true, features = ["client"] }
 gandr-surface-parser.workspace = true
 gandr-surface-session.workspace = true

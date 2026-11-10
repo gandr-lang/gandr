@@ -531,6 +531,13 @@ path = "crates/kernel-strata"
 path = "crates/kernel-term"
 default-features = false
 
+# The `gandr` driver: its verbs over the surface pipeline, the hub and the
+# faces it serves.
+# consumers:
+# - surface-driver (dev)
+[workspace.dependencies.gandr-lang]
+path = "crates/surface-driver"
+
 # Copy-and-patch emission: the lowering of the command IL, the patchers for
 # arm64 on macOS and Linux and for Linux x86-64, the content cache and the
 # native tier's policy, falling back to the portable executor.
