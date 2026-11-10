@@ -135,6 +135,7 @@ use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Solutions;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
@@ -2185,10 +2186,6 @@ fn judge(
     }
 }
 
-/// The solution of each hole a body's calls nominated, by hole: the value and
-/// the binders it is written under.
-type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_term::Binders)>;
-
 /// Judge `body` again with each hole its calls nominated for an omitted
 /// implicit filled by the solution the run `first` bound it to, each model
 /// slot of `models` the run met first resolved to its one candidate, against
@@ -2353,7 +2350,7 @@ fn formed_filled(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a solution mentioning a hole solved after it is read
-///   through in a second round, raised past the binders between the two.
+///   through, raised past the binders between the two.
 /// - witness: `module::tests::a_solution_naming_a_later_hole_is_read_through_1216`
 /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
 #[spec(ensures: |ret| ret >= body)]
@@ -2363,14 +2360,7 @@ fn fill(
     solutions: &Solutions,
 ) -> ValueId
 {
-    rounds(body, solutions, |subject, hole, solution| {
-        gandr_core_term::fill_value_hole(
-            arena,
-            (subject, gandr_core_term::Binders::NONE),
-            hole,
-            solution,
-        )
-    })
+    gandr_core_term::fill_value_holes(arena, (body, gandr_core_term::Binders::NONE), solutions)
 }
 
 /// `ty`, a type a typed run recorded under `depth` intuitionistic binders,
@@ -2399,53 +2389,18 @@ fn solved_type(
     else {
         return ty;
     };
-    rounds(ty, solutions, |subject, hole, solution| match subject {
-        TypeNode::Value(id) => TypeNode::Value(gandr_core_term::fill_value_type_hole(
+    match ty {
+        TypeNode::Value(id) => TypeNode::Value(gandr_core_term::fill_value_type_holes(
             arena,
             (id, under),
-            hole,
-            solution,
+            solutions,
         )),
-        TypeNode::Computation(id) => TypeNode::Computation(gandr_core_term::fill_comp_type_hole(
+        TypeNode::Computation(id) => TypeNode::Computation(gandr_core_term::fill_comp_type_holes(
             arena,
             (id, under),
-            hole,
-            solution,
+            solutions,
         )),
-    })
-}
-
-/// `subject` after one `step` per solution, round after round until a round
-/// changes nothing: each round fills what the previous one inserted.
-///
-/// # Specification
-/// trivial.
-pub fn rounds<Subject, Step>(
-    subject: Subject,
-    solutions: &Solutions,
-    mut step: Step,
-) -> Subject
-where
-    Subject: Copy + Eq,
-    Step: FnMut(
-        Subject,
-        gandr_core_term::hole::HoleId,
-        (ValueId, gandr_core_term::Binders),
-    ) -> Subject,
-{
-    let mut subject = subject;
-    // With no cycle among the solutions, one round per solution reaches the
-    // end.
-    for _round in 0 ..= solutions.len() {
-        let before = subject;
-        for (&hole, &solution) in solutions {
-            subject = step(subject, hole, solution);
-        }
-        if subject == before {
-            break;
-        }
     }
-    subject
 }
 
 /// `failure` with each type its refusal compares read through every solution

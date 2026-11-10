@@ -1843,18 +1843,23 @@ pub fn readback_value(
 }
 
 /// Read a domain value back into the core arena as [`readback_value`] does,
-/// and report whether the run read a call through its definition's body
-/// without running it.
+/// and report the fuel the run did not spend.
+///
+/// The report also says whether the run read a call through its definition's
+/// body without running it.
 ///
 /// # Specification
 /// - requires: as [`readback_value`].
 /// - ensures: on success the term [`readback_value`] reads, paired with
 ///   [`SpentCalls::Held`] when some unfolding the run spent kept an elimination
 ///   of its spine past the static applications beta folds, and
-///   [`SpentCalls::Ran`] otherwise. [`ReadbackMode::ZeroUnfold`] spends
-///   nothing, so it always reports [`SpentCalls::Ran`].
+///   [`SpentCalls::Ran`] otherwise, and with the fuel left: `fuel` less one
+///   unit for each step of the run and of each evaluation it drove.
+///   [`ReadbackMode::ZeroUnfold`] spends no unfolding, so it always reports
+///   [`SpentCalls::Ran`].
 /// - provides: the question a caller iterating readback to a normal form asks
-///   before it pays one more evaluation to confirm one.
+///   before it pays one more evaluation to confirm one, and the budget that
+///   evaluation spends from.
 /// - fails: as [`readback_value`].
 /// - panics: none.
 ///
@@ -1864,12 +1869,14 @@ pub fn readback_value(
 /// # Adequacy
 /// - hypothesis: L3 — a spent operator whose spine is static applications alone
 ///   reports `Ran`; a spent definition forced and applied reports `Held` and
-///   reads back a redex a second evaluation reduces.
+///   reads back a redex a second evaluation reduces; each run reports less fuel
+///   than it was given.
 /// - witness: `readback::tests::a_spent_call_left_unrun_is_reported_held`
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
-    || ret.as_ref().is_ok_and(|&(term, spent)| core.value(term).is_some()
-        && (mode == ReadbackMode::Unfolding || spent == SpentCalls::Ran)))]
+    || ret.as_ref().is_ok_and(|&(term, spent, left)| core.value(term).is_some()
+        && (mode == ReadbackMode::Unfolding || spent == SpentCalls::Ran)
+        && u32::from(left) <= u32::from(fuel)))]
 pub fn readback_value_spending(
     core: &mut CoreArena,
     domain: &mut DomainArena,
@@ -1877,7 +1884,7 @@ pub fn readback_value_spending(
     mode: ReadbackMode,
     fuel: Fuel,
     value: DomainValueId,
-) -> Result<(ValueId, SpentCalls), ReadbackFault>
+) -> Result<(ValueId, SpentCalls, Fuel), ReadbackFault>
 {
     let mut machine = Machine::new(definitions, mode, fuel);
     machine.tasks.push(Task::Value {
@@ -1886,7 +1893,8 @@ pub fn readback_value_spending(
     });
     run(core, domain, &mut machine)?;
     let spent = machine.spent;
-    Ok((machine.pop_value()?, spent))
+    let left = machine.fuel;
+    Ok((machine.pop_value()?, spent, left))
 }
 
 /// Read a domain computation back into the core arena, under no open binder.

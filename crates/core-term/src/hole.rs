@@ -80,10 +80,12 @@
 //! A hole a call nominates for an implicit it omits ([`HoleId::nominated`]),
 //! or the elaborator for a wildcard `_` ([`HoleId::wildcard`]), stands for a
 //! metavariable, whose solution is written under the binders the call or the
-//! wildcard stands under. `fill_value_hole`, `fill_value_type_hole` and
-//! `fill_comp_type_hole` place the solution wherever the hole stands, raised
+//! wildcard stands under. `fill_value_holes`, `fill_value_type_holes` and
+//! `fill_comp_type_holes` place each solution wherever its hole stands, raised
 //! past the binders between: inside a type the call's head was instantiated
-//! at, or inside another solution, the hole stands deeper than its scope.
+//! at, or inside another solution, the hole stands deeper than its scope. One
+//! walk reads every solution so placed with the others, so a chain of
+//! solutions costs one visit of each node at each depth.
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;

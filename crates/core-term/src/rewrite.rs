@@ -116,6 +116,14 @@
 //! - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: §
 //!   elim-refine-with-abstraction, a goal generalised over a solved variable,
 //!   whose types an environment substitution reads back where they are written.
+//! - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: §
+//!   implicits-rule-forced-solutions, a body read with the solutions of its
+//!   implicits once the judgement solves them; [`Rewrite::Solved`] reads every
+//!   solution in one walk.
+//! - `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments`
+//!   — newest: § 9.3 rule Env-∆, a solved metavariable read through its
+//!   solution where the term meets it, and the solution read again with the
+//!   others.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -387,11 +395,15 @@ enum Rewrite
     Rotate(Binders),
     /// Replace every hole of the name, in the filling's family, by the filling.
     Fill(HoleId, Node),
-    /// Replace every value hole of the name by the value, written under the
-    /// count of binders: an occurrence that many binders deep takes it as it
-    /// stands, one deeper takes it raised past the binders between, and one
-    /// shallower stands.
-    Solve(HoleId, ValueId, Binders),
+    /// Replace every value hole the engine's solutions name by its solution,
+    /// read again with the solutions where the hole stands: an occurrence as
+    /// many binders deep as the solution's scope takes it as it stands, one
+    /// deeper takes it raised past the binders between, and one shallower
+    /// stands.
+    Solved,
+    /// Note every value hole the walk meets in the engine's found holes, and
+    /// leave every node as it stands.
+    Holes,
     /// Wrap every node the engine's sites name in the mark it names.
     Wrap,
     /// Read every resumption of a suspended function, `resume(thunk(λx. N),
@@ -469,7 +481,8 @@ impl Rewrite
             | Self::Instantiate(..)
             | Self::Rotate(_)
             | Self::Fill(..)
-            | Self::Solve(..)
+            | Self::Solved
+            | Self::Holes
             | Self::Wrap
             | Self::Resumed
             | Self::Environment
@@ -512,6 +525,12 @@ enum Task
     /// Answer an instantiated decode of the binder itself by its call,
     /// raised, returned: the result on top of the stack (#3937).
     ReturnAhead(Node, Binders, Rewrite),
+    /// Open the result on top of the stack, popped, at the depth under the
+    /// rewrite: a solution raised past its scope, read with the solutions.
+    Reopen(Binders, Rewrite),
+    /// Close the reading of the hole's solution: a later occurrence of the
+    /// hole reads its solution again.
+    Leave(HoleId),
 }
 
 /// What one variable occurrence rewrites to.
@@ -555,6 +574,14 @@ struct Engine<'arena>
     /// Each run a crossing minted beside the value it applies the reduct to,
     /// in minting order.
     crossed: Vec<(ValueId, ValueId)>,
+    /// Each hole a solved fill replaces, beside its solution and the binders
+    /// the solution is written under; nothing outside one.
+    solutions: &'arena Solutions,
+    /// The holes whose solutions the walk is reading now: one met again
+    /// inside its own reading stands, so a cycle among the solutions ends.
+    expanding: alloc::collections::BTreeSet<HoleId>,
+    /// The value holes a hole survey met; nothing outside one.
+    found: alloc::collections::BTreeSet<HoleId>,
     /// The record updates a build turns into records, each with the labels
     /// its base keeps.
     updates: BTreeMap<ValueId, Vec<FieldLabel>>,
@@ -612,6 +639,9 @@ impl<'arena> Engine<'arena>
             sites: BTreeMap::new(),
             crossings: BTreeMap::new(),
             crossed: Vec::new(),
+            solutions: &NOTHING_SOLVED,
+            expanding: alloc::collections::BTreeSet::new(),
+            found: alloc::collections::BTreeSet::new(),
             updates: BTreeMap::new(),
             kept: Kept::Projected,
             environment: Vec::new(),
@@ -716,6 +746,14 @@ impl<'arena> Engine<'arena>
                 Task::Hoist(region, depth) => self.hoist(region, depth),
                 Task::BindAhead(node, depth, step) => self.bind_ahead(node, depth, step),
                 Task::ReturnAhead(node, depth, step) => self.return_ahead(node, depth, step),
+                Task::Reopen(depth, step) => {
+                    if let Some(raised) = self.results.pop() {
+                        self.tasks.push(Task::Open(raised, depth, step));
+                    }
+                },
+                Task::Leave(hole) => {
+                    let _present = self.expanding.remove(&hole);
+                },
             }
         }
         self.results.pop().unwrap_or(subject)
@@ -749,6 +787,7 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::substitution_avoids_capture`
     /// - witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`
     /// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
+    /// - witness: `rewrite::tests::a_chain_of_solutions_is_read_in_one_walk_6181`
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len()],
         ensures: (ready.checked_add(1) == Some(self.results.len()) && self.tasks.len() == pending
@@ -828,29 +867,19 @@ impl<'arena> Engine<'arena>
             self.results.push(filling);
             return;
         }
-        if let (Rewrite::Solve(hole, solution, scope), Node::Value(id)) = (rewrite, node)
-            && self.arena.value(id) == Some(&Value::Hole(hole))
+        if let (Rewrite::Solved, Node::Value(id)) = (rewrite, node)
+            && let Some(&Value::Hole(hole)) = self.arena.value(id)
+            && let Some(&solution) = self.solutions.get(&hole)
         {
-            match depth.0.checked_sub(scope.0) {
-                Some(0) => {
-                    let _previous = self
-                        .memo
-                        .insert((node, depth, rewrite), Node::Value(solution));
-                    self.results.push(Node::Value(solution));
-                },
-                Some(past) => {
-                    self.tasks.push(Task::Record(node, depth, rewrite));
-                    self.tasks.push(Task::Open(
-                        Node::Value(solution),
-                        Binders::NONE,
-                        Rewrite::Relocate(Offset::raise(Binders(past))),
-                    ));
-                },
-                None => {
-                    let _previous = self.memo.insert((node, depth, rewrite), node);
-                    self.results.push(node);
-                },
-            }
+            self.read_solution((node, depth), hole, solution);
+            return;
+        }
+        if let (Rewrite::Holes, Node::Value(id)) = (rewrite, node)
+            && let Some(&Value::Hole(hole)) = self.arena.value(id)
+        {
+            let _new = self.found.insert(hole);
+            let _previous = self.memo.insert((node, depth, rewrite), node);
+            self.results.push(node);
             return;
         }
         if rewrite == Rewrite::Rename
@@ -942,6 +971,64 @@ impl<'arena> Engine<'arena>
         }
         self.tasks.push(Task::Close(node, depth, rewrite));
         self.push_children(node, depth, rewrite);
+    }
+
+    /// Answer the hole `hole`, standing at `node` under `depth` binders, by
+    /// its solution read with the engine's solutions.
+    ///
+    /// # Specification
+    /// - requires: `node` is a value hole named `hole`; `solution` is the
+    ///   hole's solution beside the binders it is written under.
+    /// - ensures: pushes exactly one result for `node` by the time every task
+    ///   this call schedules has run: `node` itself when `depth` is shallower
+    ///   than the solution's scope, or when the walk is reading the hole's
+    ///   solution already; otherwise the solution raised past the binders
+    ///   between its scope and `depth`, read with the solutions at `depth`.
+    /// - provides: the fill of every solved hole in one walk, each solution
+    ///   rewritten once at each depth it is read at.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the tasks this call schedules push the result after
+    ///   it returns, so no predicate at its exit reads that result.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of solutions, each naming the next hole, is
+    ///   read through in one walk; a cycle leaves one of its holes standing.
+    /// - witness: `rewrite::tests::a_chain_of_solutions_is_read_in_one_walk_6181`
+    /// - witness: `rewrite::tests::a_cycle_of_solutions_leaves_a_hole_6181`
+    fn read_solution(
+        &mut self,
+        (node, depth): (Node, Binders),
+        hole: HoleId,
+        (solution, scope): (ValueId, Binders),
+    )
+    {
+        let Some(past) = depth.0.checked_sub(scope.0)
+        else {
+            let _previous = self.memo.insert((node, depth, Rewrite::Solved), node);
+            self.results.push(node);
+            return;
+        };
+        if !self.expanding.insert(hole) {
+            // The solver's occurs check keeps a hole out of its own
+            // solution, so only a cycle reaches here: the hole stands.
+            self.results.push(node);
+            return;
+        }
+        self.tasks.push(Task::Record(node, depth, Rewrite::Solved));
+        self.tasks.push(Task::Leave(hole));
+        if past == 0 {
+            self.tasks
+                .push(Task::Open(Node::Value(solution), depth, Rewrite::Solved));
+        }
+        else {
+            self.tasks.push(Task::Reopen(depth, Rewrite::Solved));
+            self.tasks.push(Task::Open(
+                Node::Value(solution),
+                Binders::NONE,
+                Rewrite::Relocate(Offset::raise(Binders(past))),
+            ));
+        }
     }
 
     /// `node`, closed under a linear raise, with the linear slot it names where
@@ -1626,7 +1713,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Instantiate(..)
             | Rewrite::Rotate(_)
             | Rewrite::Fill(..)
-            | Rewrite::Solve(..)
+            | Rewrite::Solved
+            | Rewrite::Holes
             | Rewrite::Wrap
             | Rewrite::Resumed
             | Rewrite::Environment
@@ -1934,7 +2022,7 @@ impl<'arena> Engine<'arena>
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1)))
             },
-            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Resumed | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
+            | Rewrite::Fill(..) | Rewrite::Solved | Rewrite::Holes | Rewrite::Wrap | Rewrite::Resumed | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
                 ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
@@ -2024,7 +2112,8 @@ impl<'arena> Engine<'arena>
                 }
             },
             Rewrite::Fill(..)
-            | Rewrite::Solve(..)
+            | Rewrite::Solved
+            | Rewrite::Holes
             | Rewrite::Wrap
             | Rewrite::Resumed
             | Rewrite::Elaborate
@@ -6240,53 +6329,115 @@ pub fn fill_hole(
     node_term(filled, subject)
 }
 
-/// Fill every value hole named `hole` in the value type `subject`, read under
-/// `under` binders, by `solution`, written under `scope` binders: a
-/// metavariable's solution read into a type that mentions it.
+/// The name of every value hole that stands in the value `subject`, read in
+/// one walk.
 ///
 /// # Specification
-/// - requires: `subject` and `solution` are live in `arena`.
-/// - ensures: `subject` with each occurrence of the hole that stands under
-///   exactly `scope` binders, counting `under`, replaced by `solution`, and
-///   each deeper one by `solution` raised past the binders between; an
-///   occurrence shallower than `scope`, a computation hole and a hole of
-///   another name stand; `subject` itself when it holds no such hole.
-/// - provides: a type the checker recorded while a metavariable stood unsolved,
-///   read with its solution.
+/// - requires: `subject` is live in `arena`.
+/// - ensures: exactly the names `h` for which [`fill_hole`] of a value hole
+///   named `h` changes `subject`: each value hole the walk reaches, inside a
+///   type, a computation or another value; a computation hole is not one.
+/// - provides: the holes an occurs check reads, in one walk of the term rather
+///   than one walk for each metavariable.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause ranges over every hole name, and no
+///   predicate at the call's exit enumerates the names to fill.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value hole under a binder and inside a type, a
+///   computation hole and a hole-free subject separate the walk's reach, the
+///   family and the empty survey.
+/// - witness: `rewrite::tests::a_hole_survey_names_each_value_hole_once_6181`
+#[inline]
+#[must_use]
+pub fn value_holes(
+    arena: &mut CoreArena,
+    subject: ValueId,
+) -> alloc::collections::BTreeSet<HoleId>
+{
+    let mut engine = Engine::new(arena);
+    let _surveyed = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Holes);
+    engine.found
+}
+
+/// Each solved hole beside its solution and the count of binders the solution
+/// is written under.
+pub type Solutions = BTreeMap<HoleId, (ValueId, Binders)>;
+
+/// The solutions every rewrite but a solved fill carries: it names nothing.
+static NOTHING_SOLVED: Solutions = BTreeMap::new();
+
+/// `subject`, read under `under` binders, with every value hole `solutions`
+/// names filled in one walk.
+///
+/// # Specification
+/// trivial.
+fn solved(
+    arena: &mut CoreArena,
+    (subject, under): (Node, Binders),
+    solutions: &Solutions,
+) -> Node
+{
+    let mut engine = Engine::new(arena);
+    engine.solutions = solutions;
+    engine.run(subject, under, Rewrite::Solved)
+}
+
+/// Fill every value hole that `solutions` names in the value type `subject`,
+/// read under `under` binders, in one walk.
+///
+/// The walk reads each solution so placed with `solutions` again:
+/// metavariables' solutions read into a type that mentions them.
+///
+/// # Specification
+/// - requires: `subject` and every solution are live in `arena`; no solution
+///   mentions its own hole, directly or through other solutions: the solver's
+///   occurs check.
+/// - ensures: `subject` with each occurrence of a named hole that stands under
+///   at least its solution's scope of binders, counting `under`, replaced by
+///   the solution raised past the binders between and read with `solutions`
+///   where the hole stands; an occurrence shallower than its scope, a
+///   computation hole and a hole `solutions` does not name stand; `subject`
+///   itself when it holds no such hole. A hole met inside the reading of its
+///   own solution stands there, so a cycle among the solutions ends.
+/// - provides: a type the checker recorded while metavariables stood unsolved,
+///   read with their solutions, in one walk that rewrites each node and each
+///   solution once at each depth it is read at.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an occurrence at the scope, one a binder past it inside
 ///   the type, one read shallower than the scope and a hole-free type separate
-///   the placement, the raise, the standing occurrence and identity reuse.
+///   the placement, the raise, the standing occurrence and identity reuse; a
+///   chain of solutions, each naming the next hole, separates one walk from a
+///   walk for each hole; a cycle separates a walk that ends from one that does
+///   not.
 /// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
+/// - witness: `rewrite::tests::a_chain_of_solutions_is_read_in_one_walk_6181`
+/// - witness: `rewrite::tests::a_cycle_of_solutions_leaves_a_hole_6181`
 #[spec(ensures: |ret| ret == subject || arena.value_type(ret).is_some())]
 #[inline]
 #[must_use]
-pub fn fill_value_type_hole(
+pub fn fill_value_type_holes(
     arena: &mut CoreArena,
     (subject, under): (ValueTypeId, Binders),
-    hole: HoleId,
-    (solution, scope): (ValueId, Binders),
+    solutions: &Solutions,
 ) -> ValueTypeId
 {
-    match Engine::new(arena).run(
-        Node::ValueType(subject),
-        under,
-        Rewrite::Solve(hole, solution, scope),
-    ) {
+    match solved(arena, (Node::ValueType(subject), under), solutions) {
         Node::ValueType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
     }
 }
 
-/// [`fill_value_type_hole`] at a value: a body whose holes stand for
+/// [`fill_value_type_holes`] at a value: a body whose holes stand for
 /// metavariables, read with their solutions.
 ///
 /// # Specification
-/// - requires: as [`fill_value_type_hole`].
-/// - ensures: as [`fill_value_type_hole`], at a value.
+/// - requires: as [`fill_value_type_holes`].
+/// - ensures: as [`fill_value_type_holes`], at a value.
 /// - provides: a body the checker judged with metavariables standing, read with
 ///   their solutions; a solution mentioning another hole raises that hole's
 ///   solution past the binders between their scopes.
@@ -6294,55 +6445,46 @@ pub fn fill_value_type_hole(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`fill_value_type_hole`].
+/// - hypothesis: L3 — as [`fill_value_type_holes`].
 /// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
+/// - witness: `rewrite::tests::a_chain_of_solutions_is_read_in_one_walk_6181`
 #[spec(ensures: |ret| ret == subject || arena.value(ret).is_some())]
 #[inline]
 #[must_use]
-pub fn fill_value_hole(
+pub fn fill_value_holes(
     arena: &mut CoreArena,
     (subject, under): (ValueId, Binders),
-    hole: HoleId,
-    (solution, scope): (ValueId, Binders),
+    solutions: &Solutions,
 ) -> ValueId
 {
-    match Engine::new(arena).run(
-        Node::Value(subject),
-        under,
-        Rewrite::Solve(hole, solution, scope),
-    ) {
+    match solved(arena, (Node::Value(subject), under), solutions) {
         Node::Value(id) => id,
         Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
     }
 }
 
-/// [`fill_value_type_hole`] at a computation type.
+/// [`fill_value_type_holes`] at a computation type.
 ///
 /// # Specification
-/// - requires: as [`fill_value_type_hole`].
-/// - ensures: as [`fill_value_type_hole`], at a computation type.
-/// - provides: as [`fill_value_type_hole`].
+/// - requires: as [`fill_value_type_holes`].
+/// - ensures: as [`fill_value_type_holes`], at a computation type.
+/// - provides: as [`fill_value_type_holes`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`fill_value_type_hole`].
+/// - hypothesis: L3 — as [`fill_value_type_holes`].
 /// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
 #[spec(ensures: |ret| ret == subject || arena.comp_type(ret).is_some())]
 #[inline]
 #[must_use]
-pub fn fill_comp_type_hole(
+pub fn fill_comp_type_holes(
     arena: &mut CoreArena,
     (subject, under): (CompTypeId, Binders),
-    hole: HoleId,
-    (solution, scope): (ValueId, Binders),
+    solutions: &Solutions,
 ) -> CompTypeId
 {
-    match Engine::new(arena).run(
-        Node::CompType(subject),
-        under,
-        Rewrite::Solve(hole, solution, scope),
-    ) {
+    match solved(arena, (Node::CompType(subject), under), solutions) {
         Node::CompType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => subject,
     }
