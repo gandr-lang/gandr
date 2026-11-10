@@ -1,0 +1,74 @@
+test: ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237 --break record_faces
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/eda513dbba3ba855/out/gandr_surface_dispatcher-eda513dbba3ba855"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/eda513dbba3ba855/out/gandr_surface_dispatcher-eda513dbba3ba855' (x86_64).
+(lldb) settings set -- target.run-args  "ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex record_faces
+Breakpoint 1: 48 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-eda513dbba3ba855`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000071d5838
+(lldb) run
+
+running 1 test
+test ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1748744 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/eda513dbba3ba855/out/gandr_surface_dispatcher-eda513dbba3ba855' (x86_64)
+Process 1748744 stopped
+* thread #2, name = 'ledger::recover', stop reason = breakpoint 1.6
+       frame #0: 0x000055555c5155a0 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::record_faces at term.rs:4010:1
+   4007	///   finite corpus are not exhausted.
+   4008	/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+   4009	/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+-> 4010	#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "where")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
+    	^
+   4011	fn record_faces() -> Regex
+   4012	{
+   4013	    seq([
+(lldb) bt 24
+* thread #2, name = 'ledger::recover', stop reason = breakpoint 1.6
+   * frame #0: 0x000055555c5155a0 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::record_faces at term.rs:4010:1
+     frame #1: 0x000055555c505012 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::type_member_tail::{closure#0}((null)={}) at term.rs:3989:33
+     frame #2: 0x000055555c51663f gandr_surface_dispatcher-eda513dbba3ba855`anodized::__::eval_once::<gandr_surface_grammar::model::Regex, gandr_surface_grammar::surface::term::type_member_tail::{closure#0}>(closure=<unavailable>) at __.rs:32:5 [inlined]
+     frame #3: 0x000055555c516635 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::type_member_tail at term.rs:3980:1
+     frame #4: 0x000055555c50d939 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::attributed_module_member::{closure#0}((null)={}) at term.rs:3929:28
+     frame #5: 0x000055555c51754f gandr_surface_dispatcher-eda513dbba3ba855`anodized::__::eval_once::<gandr_surface_grammar::model::Regex, gandr_surface_grammar::surface::term::attributed_module_member::{closure#0}>(closure=<unavailable>) at __.rs:32:5 [inlined]
+     frame #6: 0x000055555c517545 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::attributed_module_member at term.rs:3923:1
+     frame #7: 0x000055555c502437 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::module_members::{closure#1} at term.rs:3848:9
+     frame #8: 0x000055555c515dc8 gandr_surface_dispatcher-eda513dbba3ba855`anodized::__::eval_once::<(), gandr_surface_grammar::surface::term::module_members::{closure#1}>(closure={_ref__out:size=14, _ref__p:{__0:{0:0}}}) at __.rs:32:5 [inlined]
+     frame #9: 0x000055555c515dbe gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::module_members(out=size=14, p={0:{0:0}}) at term.rs:3821:1
+     frame #10: 0x000055555c51026d gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::rules::{closure#0} at term.rs:160:5
+     frame #11: 0x000055555c517a87 gandr_surface_dispatcher-eda513dbba3ba855`anodized::__::eval_once::<core::result::Result<alloc::vec::Vec<gandr_surface_grammar::model::Rule>, gandr_surface_grammar::model::PbgError>, gandr_surface_grammar::surface::term::rules::{closure#0}>(closure={_ref__precs:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, names:{root:Some({height:1, node:{…}, _marker:{…}}), length:27, alloc:{value:{0:{…}}}, _marker:{}}}}) at __.rs:32:5 [inlined]
+     frame #12: 0x000055555c517a7d gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::rules(precs={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, names:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:27, alloc:{value:{0:{}}}, _marker:{}}}) at term.rs:135:1
+     frame #13: 0x000055555c56cae8 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::built_in_rules::{closure#0} at surface.rs:598:21
+     frame #14: 0x000055555c5712b2 gandr_surface_dispatcher-eda513dbba3ba855`anodized::__::eval_once::<core::result::Result<alloc::vec::Vec<gandr_surface_grammar::model::Rule>, gandr_surface_grammar::model::PbgError>, gandr_surface_grammar::surface::built_in_rules::{closure#0}>(closure={_ref__precs:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, names:{root:Some({height:1, node:{…}, _marker:{…}}), length:27, alloc:{value:{0:{…}}}, _marker:{}}}}) at __.rs:32:5 [inlined]
+     frame #15: 0x000055555c5712a8 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::built_in_rules(precs={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, names:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:27, alloc:{value:{0:{}}}, _marker:{}}}) at surface.rs:595:1
+     frame #16: 0x000055555727402d gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::built_in::{closure#0}((null)={}) at surface.rs:573:17
+     frame #17: 0x0000555557280c32 gandr_surface_dispatcher-eda513dbba3ba855`anodized::__::eval_once::<core::result::Result<gandr_surface_grammar::model::Pbg, gandr_surface_grammar::model::PbgError>, gandr_surface_grammar::surface::built_in::{closure#0}>(closure=<unavailable>) at __.rs:32:5 [inlined]
+     frame #18: 0x0000555557280c28 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::built_in at surface.rs:568:1
+     frame #19: 0x0000555557360dd6 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_dispatcher::ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237 at recovery.rs:1606:19
+     frame #20: 0x000055555730c3b7 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_dispatcher::ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237::{closure#0}((null)={}) at recovery.rs:1595:62
+     frame #21: 0x0000555557823e16 gandr_surface_dispatcher-eda513dbba3ba855`<gandr_surface_dispatcher::ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #22: 0x0000555557d6be5b gandr_surface_dispatcher-eda513dbba3ba855`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #23: 0x0000555557d6be59 gandr_surface_dispatcher-eda513dbba3ba855`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+(lldb) frame variable --depth 3
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x000055555c505012 gandr_surface_dispatcher-eda513dbba3ba855`gandr_surface_grammar::surface::term::type_member_tail::{closure#0}((null)={}) at term.rs:3989:33
+   3986	        opt(head_params()),
+   3987	        t(TileLabel("=")),
+   3988	        h(Sort::Type),
+-> 3989	        alt([t(TileLabel(";")), record_faces()]),
+    	                                ^
+   3990	    ])
+   3991	}
+   3992	
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::surface::term::type_member_tail::{closure_env#0})  = {}
