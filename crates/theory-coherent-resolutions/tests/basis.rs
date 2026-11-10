@@ -20,7 +20,6 @@ use gandr_theory_coherent_resolutions::TripleIndex;
 use gandr_theory_coherent_resolutions::Witness;
 use gandr_theory_coherent_resolutions::join_critical_pairs;
 use gandr_theory_discrete_morse::Budget;
-use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Closure;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Composites;
@@ -33,7 +32,6 @@ use gandr_theory_discrete_morse::Invertibility;
 use gandr_theory_discrete_morse::Matching;
 use gandr_theory_discrete_morse::Reduction as _;
 use gandr_theory_discrete_morse::Refusal;
-use gandr_theory_discrete_morse::Scheme;
 use gandr_theory_discrete_morse::Standing;
 use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::equivalence;
@@ -176,7 +174,9 @@ fn the_braid_monoid_keeps_two_confluences()
     let ([a, b, c, d], [sasta, sasast, sasasas, sasasaa]) = names();
     let cells = basis.cells();
     assert_eq!(cells, [a, b, c, d, sasta, sasast, sasasas, sasasaa]);
-    let equivalence = equivalence(&mut basis, &cells, walk()).expect("the reduction is acyclic");
+    let matching = basis.matching();
+    let mut scheme = matching.on(&mut basis);
+    let equivalence = equivalence(&mut scheme, &cells, walk()).expect("the reduction is acyclic");
     assert_eq!(
         equivalence.critical(),
         [a, b, sasasas, sasasaa],
@@ -195,7 +195,7 @@ fn the_braid_monoid_keeps_two_confluences()
     let mut held = Vec::new();
     for removal in equivalence.removals() {
         held.clear();
-        basis
+        scheme
             .generators(&removal.definition().replacement, &mut held)
             .expect("the replacement reads");
         assert!(
@@ -205,10 +205,10 @@ fn the_braid_monoid_keeps_two_confluences()
         );
     }
     equivalence
-        .replay(&mut basis, &cells, walk())
+        .replay(&mut scheme, &cells, walk())
         .expect("the equivalence replays");
     let mut bound = equivalence
-        .on(&mut basis, &cells, walk())
+        .on(&mut scheme, &cells, walk())
         .expect("the equivalence reads on its basis");
     for removed in [c, d] {
         let own = bound.generator(&removed).expect("the confluence is a cell");
@@ -234,8 +234,10 @@ fn each_removal_of_the_braid_reduction_is_one_tietze_move_6059()
     let certificates = certificates(&store);
     let basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
     let cells = basis.cells();
+    let matching = basis.matching();
     let mut whole = basis.clone();
-    let reduction = equivalence(&mut whole, &cells, walk()).expect("the reduction is acyclic");
+    let mut scheme = matching.on(&mut whole);
+    let reduction = equivalence(&mut scheme, &cells, walk()).expect("the reduction is acyclic");
     let stated: Vec<Matching<BasisCell>> = reduction
         .removals()
         .iter()
@@ -273,7 +275,7 @@ fn each_removal_of_the_braid_reduction_is_one_tietze_move_6059()
         assert_eq!(each.replay(), Ok(()), "the move replays as a reduction");
     }
     let mut bound = reduction
-        .on(&mut whole, &cells, walk())
+        .on(&mut scheme, &cells, walk())
         .expect("the reduction reads on its basis");
     for cell in &cells {
         let own = bound.generator(cell).expect("the cell is a generator");
@@ -318,7 +320,9 @@ fn the_reduction_passes_the_collapse_and_a_cycle_is_refused()
     let certificates = certificates(&store);
     let mut basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
     let cells = basis.cells();
-    let checked = collapse(&mut basis, &cells, walk()).expect("the walk stays in budget");
+    let matching = basis.matching();
+    let checked =
+        collapse(&mut matching.on(&mut basis), &cells, walk()).expect("the walk stays in budget");
     assert_eq!(
         checked.faults(),
         Faults::default(),
@@ -420,21 +424,6 @@ impl Complex for Forging<'_>
     ) -> Result<Invertibility, BasisFault>
     {
         self.basis.pairing(face, cell, incidence)
-    }
-}
-
-impl Scheme for Forging<'_>
-{
-    /// The basis's class.
-    ///
-    /// # Specification
-    /// trivial.
-    fn class(
-        &mut self,
-        cell: &BasisCell,
-    ) -> Result<Class<BasisCell>, BasisFault>
-    {
-        self.basis.class(cell)
     }
 }
 
@@ -585,8 +574,10 @@ fn a_forged_witness_is_refused_by_name()
     let certificates = certificates(&store);
     let basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
     let cells = basis.cells();
+    let matching = basis.matching();
     let mut forging = Forging { basis };
-    let forged = equivalence(&mut forging, &cells, walk()).expect("the build trusts its search");
+    let forged = equivalence(&mut matching.on(&mut forging), &cells, walk())
+        .expect("the build trusts its search");
     let ([_, _, c, _], [sasta, ..]) = names();
     let removal = forged.removals().first().expect("C is removed first");
     let own = forging.basis.generator(&c).expect("C is a cell");
@@ -604,7 +595,7 @@ fn a_forged_witness_is_refused_by_name()
     );
     assert_eq!(*removal.partner(), sasta);
     assert_eq!(
-        forged.replay(&mut forging.basis, &cells, walk()),
+        forged.replay(&mut matching.on(&mut forging.basis), &cells, walk()),
         Err(Refusal::Forged(c))
     );
 }
@@ -626,14 +617,16 @@ fn cells_with_no_triple_keep_each_confluence()
     assert!(basis.triples().is_empty());
     let cells = basis.cells();
     assert_eq!(cells, [confluence(CertificateIndex::from(0_usize))]);
-    let equivalence = equivalence(&mut basis, &cells, walk()).expect("nothing pairs");
+    let matching = basis.matching();
+    let mut scheme = matching.on(&mut basis);
+    let equivalence = equivalence(&mut scheme, &cells, walk()).expect("nothing pairs");
     assert_eq!(equivalence.critical(), cells.as_slice());
     assert!(equivalence.removals().is_empty());
     equivalence
-        .replay(&mut basis, &cells, walk())
+        .replay(&mut scheme, &cells, walk())
         .expect("the identity replays");
     let mut bound = equivalence
-        .on(&mut basis, &cells, walk())
+        .on(&mut scheme, &cells, walk())
         .expect("the equivalence reads on its basis");
     let own = bound
         .generator(&cells[0])
@@ -659,10 +652,12 @@ fn a_triple_past_the_budget_pairs_nothing()
     assert_eq!(basis.standing(&sasasaa), Ok(Standing::Outside));
     let cells = basis.cells();
     assert_eq!(cells, [a, b, c, d, sasta, sasast]);
-    let equivalence = equivalence(&mut basis, &cells, walk()).expect("the reduction is acyclic");
+    let matching = basis.matching();
+    let mut scheme = matching.on(&mut basis);
+    let equivalence = equivalence(&mut scheme, &cells, walk()).expect("the reduction is acyclic");
     assert_eq!(equivalence.critical(), [a, b]);
     equivalence
-        .replay(&mut basis, &cells, walk())
+        .replay(&mut scheme, &cells, walk())
         .expect("the equivalence replays");
 }
 
