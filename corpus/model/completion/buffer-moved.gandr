@@ -1,14 +1,21 @@
 //! `buffer-moved` transfers an owned buffer to a mock ring submission.
 //!
-//! A submission owns its buffer until its completion. The pathological twin
-//! refuses the old owner when it closes the buffer as `UsedAfterClose`.
+//! The submission takes the buffer by move, not by borrow. The kernel owns the
+//! buffer until the operation completes [boats-2020-notes_on_io_uring]. The
+//! pathological twin refuses the old owner when it closes the buffer as
+//! `UsedAfterClose`.
 //!
 //! The checker consumes the owner's endpoint at `send`. The mock kernel closes
-//! the buffer before it posts the completion.
+//! the buffer before it posts the completion. The buffer is a linear resident,
+//! the end of a forked owner. Its move into a submission is delegation
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming].
 //!
 //! - see: corpus/pathological/completion/buffer-touched.gandr
-//! - see: https://doi.org/10.1007/BFb0053567
-//! - see: https://without.boats/blog/io-uring/
+//! - cites: [boats-2020-notes_on_io_uring]
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";

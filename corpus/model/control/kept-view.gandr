@@ -2,9 +2,14 @@
 //!
 //! A kept shared view can outlive the access that lent it.
 //! Its held value stays frozen until the region ends.
+//! A value can enter a region at any time and never leaves it.
 //!
 //! The checker orders regions by outlives.
 //! It releases the held value when the region ends.
+//! Lifetimes that control states follow boats
+//! [boats-2024-references_are_jumps].
+//! Regions as ordered extents follow Koronkevich and Bowman
+//! [Koronkevich-2025-type_universes_kripke_worlds].
 //!
 //! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
 //! - cites: [boats-2024-references_are_jumps]

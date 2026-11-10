@@ -5,6 +5,8 @@
 //!
 //! The checker reads a statement as an elimination.
 //! A binder can infer the block result.
+//! An elimination synthesises when its principal premise synthesises
+//! [Dunfield-2019-bidirectional_typing].
 //!
 //! - see: #1374 — `statement`
 //! - cites: [Dunfield-2019-bidirectional_typing]

@@ -4,7 +4,8 @@
 //! needs no doc comment.
 //!
 //! The checker reads the attribute into the declaration report. A query reads
-//! that report with the verdict.
+//! that report with the verdict. The attribute follows `#[doc]` of Rust (The
+//! Rust Reference, § Attributes).
 //!
 //! - see: https://doc.rust-lang.org/reference/
 

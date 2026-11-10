@@ -5,6 +5,9 @@
 //!
 //! A block call lends the place at the requested mode.
 //! A call without a block reads the place.
+//! One body serves every mode.
+//! An explicit object parameter deduces the qualifiers of its receiver in the
+//! same way [Azman-2021-deducing_this].
 //!
 //! - see: #2255
 //! - cites: [Azman-2021-deducing_this]

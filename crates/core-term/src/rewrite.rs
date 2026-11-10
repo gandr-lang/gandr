@@ -2305,7 +2305,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Patched { ref fixed, .. } => fixed.len().saturating_add(1),
+ValueType::Patched { ref fixed, ref meets, .. } => fixed.len().saturating_add(meets.len()).saturating_add(1),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Qubit | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
@@ -4474,7 +4474,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
         captures: [ready = self.results.len(), children = self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Patched { ref fixed, .. } => fixed.len().saturating_add(1),
+ValueType::Patched { ref fixed, ref meets, .. } => fixed.len().saturating_add(meets.len()).saturating_add(1),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Qubit | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),

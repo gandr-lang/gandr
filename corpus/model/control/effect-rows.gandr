@@ -5,6 +5,8 @@
 //!
 //! A sequence joins computation rows.
 //! The checker reads a computation at a row with more interfaces.
+//! These are the set operations of a row
+//! [Hillerström-2016-liberating_effects_rows_handlers], § 2.
 //!
 //! - see: #2269
 //! - see: ../../pathological/control/effect-rows.gandr

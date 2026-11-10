@@ -4,7 +4,8 @@
 //! The declaration itself still checks.
 //!
 //! The checker records each attribute on its declaration. The `deprecated`
-//! lint reports every use.
+//! lint reports every use. The attribute follows `#[deprecated]` of Rust (The
+//! Rust Reference, § Diagnostic attributes).
 //!
 //! - see: corpus/pathological/attributes/ill-typed-deprecation.gandr
 //! - see: https://doc.rust-lang.org/reference/

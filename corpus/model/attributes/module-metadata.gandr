@@ -1,7 +1,8 @@
 //! `module-metadata` puts package data on a declaration as attributes.
 //!
-//! The language registers no package metadata schema. The source refuses its
-//! first unknown attribute.
+//! The attributes give a name and version, a dependency and a toolchain bound,
+//! after the manifest format of Cargo. The language registers no package
+//! metadata schema. The source refuses its first unknown attribute.
 //!
 //! The checker reads each attribute block on its declaration. It refuses a
 //! name with no registered schema.
