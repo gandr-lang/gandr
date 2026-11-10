@@ -38,6 +38,12 @@
 //! replay step and each schedule event have their sites inside the checker,
 //! the kernel and the pool, so no method here names them yet. The hub does
 //! not compile a declaration, so no phase names a compile step yet.
+//!
+//! # References
+//!
+//! - `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: §
+//!   engine-surface-layers decides the one sink, the silent sink, the
+//!   `instrument` feature and the choice of sink for each recheck.
 
 use gandr_core_incremental::ItemCount;
 use gandr_surface_lowering::DeclarationCount;
