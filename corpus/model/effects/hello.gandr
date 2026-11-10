@@ -2,6 +2,8 @@
 //
 // `gandr run` passes `Authority` to `main`. The program opens a console from
 // that authority.
+// Nothing reaches the standard streams through the ambient
+// `std.io.Console.Eff` interface.
 //
 // `print` emits one line through the console.
 //

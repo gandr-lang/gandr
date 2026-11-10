@@ -4,6 +4,8 @@
 //! refuses a reversed widening as `TypeMismatch`. It refuses
 //! unequal functions as
 //! `EndpointMismatch`.
+//! Rust lets a `&'long T` stand where a function expects a `&'short T`. A
+//! function generic in its region cannot tell which one it receives.
 //!
 //! The checker verifies each square by conversion. Both examples run to `5`.
 //!

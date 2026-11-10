@@ -3,9 +3,9 @@
 //! Each view escapes its hold. The checker refuses both programs as
 //! `ViewEscaped`.
 //!
-//! The source keeps each view at a handler region. Rust rejects a block
-//! reference after its local ends. The source imports the early exit host
-//! interface.
+//! The source keeps each view at a handler region. The binding of a handler
+//! opens no region of its own. Rust rejects a block reference after its local
+//! ends. The source imports the early exit host interface.
 //!
 //! - see: #1494 — `keptPastHold`, `keptPastNestedHold`
 import std.process;

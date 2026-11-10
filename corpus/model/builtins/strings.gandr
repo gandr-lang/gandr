@@ -28,6 +28,7 @@ def same() -> Bool { slogan == "types are machines" }
 def different() -> Bool { slogan == "types are types" }
 
 /// `across` refuses equality between an integer and a string.
+/// The integer fixes the carrier of `==`, and a string is not in that carrier.
 @[ refuses("TypeMismatch") ]
 def across() -> Bool { 3 == "three" }
 

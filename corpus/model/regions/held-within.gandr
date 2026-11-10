@@ -3,8 +3,9 @@
 //! The hold freezes its value. The pathological twin refuses a view that
 //! escapes the hold as `ViewEscaped`.
 //!
-//! The checker keeps each view at its declared hold. Both examples run to
-//! `42`. The source imports the early exit host interface.
+//! The checker keeps each view at its declared hold. The binding of a handler
+//! opens no region of its own. Both examples run to `42`. The source imports
+//! the early exit host interface.
 //!
 //! - see: corpus/pathological/regions/held-within.gandr — a view after its hold
 import std.process;

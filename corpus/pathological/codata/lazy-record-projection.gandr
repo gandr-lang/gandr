@@ -24,6 +24,7 @@ def missing_label(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
   m.size
 
 /// `past_the_end` selects position two from a two-entry record.
+/// The positions of a two-entry record are `0` and `1`.
 @[ refuses("UnresolvedName") ]
 def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
   m.2

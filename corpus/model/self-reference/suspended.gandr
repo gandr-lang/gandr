@@ -2,6 +2,8 @@
 //!
 //! The reified stack retains the view outside its source frame. The checker
 //! reports `ViewEscaped` for the `dangling` source.
+//! A suspended computation reaches its locals in the window of its frame,
+//! never by an address into itself.
 //!
 //! The source imports the host early exit interface.
 //! The handler resumes after `exit`. The source runs to `12`.

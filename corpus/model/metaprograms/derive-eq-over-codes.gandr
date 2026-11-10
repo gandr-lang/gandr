@@ -6,6 +6,7 @@
 //!
 //! The checker lowers the traversal to closed core and judges the result.
 //! The kernel replays the checked derivation.
+//! So the kernel trusts no part of the derivation.
 //!
 //! - cites: [Chapman-2010-gentle_art_levitation]
 //!

@@ -3,10 +3,13 @@
 // A row names each effect instance. A session remains a linear channel type.
 //
 // The commutation rules state which operations fusion may reorder.
+// A commutation past an operation that answers a value is a law over
+// continuations. An effect that commutes with nothing has no law to write.
 //
 // - see: `../../pathological/effects/domhringr.gandr` — invalid continuation ports
 
 /// `Store` puts values and gets them by digest.
+/// It has one instance and commutes with every effect.
 theory Store where
   sort Value : Type;
   sort Digest : Type;
@@ -15,6 +18,7 @@ theory Store where
   rule getPut : get (put v) ==> v;
 
 /// `Journal` appends entries and reads them by index.
+/// It has one instance for each task, and two appends do not commute.
 theory Journal where
   sort Entry : Type;
   sort Index : Type;
@@ -23,18 +27,24 @@ theory Journal where
   rule readAppend : read (append e) ==> e;
 
 /// `Judge` asks an external endpoint for a readout.
+/// It has one instance for each endpoint.
+/// Limits: no law holds of an outside endpoint, and an answer repeats only
+/// under a pinned seed and model.
 theory Judge where
   sort Question : Type;
   sort Readout : Type;
   oper ask : (q : Question) --> Readout;
 
 /// `Witness` retrieves a claim by name.
+/// It has one instance and commutes with every effect except `Clock`.
 theory Witness where
   sort Name : Type;
   sort Claim : Type;
   oper lookup : (n : Name) --> Claim;
 
 /// `Clock` creates instants and deadline tokens.
+/// It has one instance and commutes with nothing, because `now` does not
+/// commute with an operation that takes time.
 theory Clock where
   sort Instant : Type;
   sort Duration : Type;
@@ -43,22 +53,29 @@ theory Clock where
   oper deadline : (d : Duration) --> Token;
 
 /// `Random` samples a distribution.
+/// It has one instance for each seed and commutes with every effect.
+/// Limits: no law holds of a draw.
 theory Random where
   sort Distribution : Type;
   sort Draw : Type;
   oper sample : (d : Distribution) --> Draw;
 
 /// `Trace` emits events to a sink.
+/// It has one instance for each sink, and an emit commutes with every read
+/// but not with an emit to the same sink.
 theory Trace where
   sort Event : Type;
   oper emit : (e : Event) --> Unit;
 
 /// `Fail` raises a reason and returns `Void`.
+/// It has one instance for each protocol, commutes with nothing, and its
+/// unwind releases each linear hold.
 theory Fail where
   sort Reason : Type;
   oper raise : (r : Reason) --> Void;
 
 /// `Cancel` interrupts the work named by a token.
+/// It has one instance for each dispatch and commutes with nothing.
 theory Cancel where
   sort Token : Type;
   oper interrupt : (t : Token) --> Unit;

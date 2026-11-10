@@ -2,6 +2,8 @@
 //!
 //! A productive recursive call stands as a whole copattern arm.
 //! The refusal is unguarded corecursion.
+//! Each observation yields before the function runs again.
+//! So the fixpoint needs no termination claim.
 //!
 //! The stream functions construct copattern blocks and observe their thunks.
 //! Each test reads heads and tails from constructed streams.
@@ -18,6 +20,7 @@ def rec upward(n : Integer) -> Stream Integer =
   &{.head => n, .tail => upward[>] (n + 1)}
 
 /// The function produces n forever with its tail clause before its head clause.
+/// A copattern block answers the observations in the order of the declaration.
 def rec always(n : Integer) -> Stream Integer =
   &{.tail => always[>] n, .head => n}
 
@@ -34,6 +37,7 @@ def second(s : +U (Stream Integer)) -> Integer =
   first s.tail
 
 /// The function combines two streams pointwise with f.
+/// Every parameter varies from call to call, and the call stays productive.
 def rec zipWith(
   f : (Integer, Integer) -> Integer,
   s : +U (Stream Integer),

@@ -2,8 +2,13 @@
 //!
 //! `get` gives the current state to its continuation. The carrier is a
 //! function from state to result.
+//! In the standard model of a second-order signature, the binder of a
+//! representable sort is an exponential.
 //!
 //! The checker derives model operations from the stated theory.
+//!
+//! Limits: a law that relates terms at the port of `get` is a path between
+//! host functions. The derivation does not state such a law yet.
 //!
 //! - see: `../../pathological/effects/state-model.gandr` — model refusals
 //! - see: #2421 — `carried`
@@ -35,6 +40,7 @@ def putThenGet() -> Integer =
   program 0
 
 /// `Overwriting` models the put-put law.
+/// Put-put relates no term at the port of `get`.
 module Overwriting : Model(StatePutPut) with sort S = Integer where
   /// `C` maps the current state to an integer.
   type C = Integer -> Integer;
@@ -66,6 +72,8 @@ def passing : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (
 };
 
 /// `negated` carries the state model along count negation.
+/// A model is a record, so the carried model is a model again with its `get`
+/// conjugated by the negation.
 def negated : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk
   (fun (x) {
     type(Model State.Eff with sort S = x with sort C = (x -> Integer))

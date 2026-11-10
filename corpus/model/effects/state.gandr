@@ -2,11 +2,23 @@
 //
 // `get` passes state to its continuation. `put` replaces state before its
 // continuation.
+// The laws are the global-state rules of § 2.1 of the cited work. The path
+// order orients each rule.
 //
-// The checker tests overlaps between the state rules.
+// The checker tests overlaps between the state rules. Each overlap joins in
+// the second-order reading.
+//
+// Limits: the checker refuses the law `getPut` beside these laws in the
+// pathological twin.
 //
 // - see: #2116 — `StatePutLaws`, `StateGetGet`
 // - see: #1934 — `StateLaws`
+// - see: `../specification/state-wp.gandr` — a state-passing handler checked
+//   against `StateLaws`
+// - cites: [e.k.Cooper-2023-marriage_effects_rewrites], § 2.1 — the laws of
+//   global state
+//
+// [e.k.Cooper-2023-marriage_effects_rewrites]: https://arxiv.org/abs/2302.02462 "Cooper, The marriage of effects and rewrites"
 
 /// `State.Eff` declares state reads and stores.
 pub theory State.Eff where
