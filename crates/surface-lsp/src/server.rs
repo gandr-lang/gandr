@@ -12244,6 +12244,130 @@ mod tests
         );
     }
 
+    /// The tier lenses of `document` once the judgement of the change `body`
+    /// carries has run and its admission waits for the pool, then once the
+    /// admission has ended.
+    ///
+    /// # Specification
+    /// trivial.
+    fn judged_then_admitted(
+        (server, workspace, admissions): (&mut Server, &mut Workspace, &mut Admissions),
+        pool: &Arc<Pool>,
+        (document, body, text): (&DocumentUri, &Body, crate::anchor::Source<'_>),
+    ) -> (Vec<String>, Vec<String>)
+    {
+        let (mut blocking, mut gates) = gated(pool);
+        let _handled = server.handle(workspace, body);
+        let _waiting = server.admit(workspace, admissions);
+        // A third blocking job queues behind the judgement: once it starts,
+        // the judgement has run, and the admission waits for the pool.
+        let (started, began) = std::sync::mpsc::channel();
+        gates.push(blocked(&mut blocking, Gated(2_u8), &started));
+        drop(gates.remove(0));
+        began
+            .recv()
+            .expect("the third blocking job starts after the judgement");
+        let _judged = server.admitted(workspace, admissions, Awaiting::Ended);
+        let judged = tier_lenses((&mut *server, &mut *workspace), document, text);
+        drop(gates);
+        let _settled = server.admitted(workspace, admissions, Awaiting::All);
+        let settled = tier_lenses((server, workspace), document, text);
+        drop(blocking);
+        (judged, settled)
+    }
+
+    /// #6286: a judgement shows each declaration's kept tier before its
+    /// admission ends. A comment keeps every tier, and an edit to one
+    /// declaration shows that declaration alone pending until its admission
+    /// settles it again.
+    #[test]
+    fn a_comment_edit_keeps_each_kernel_tier_6286()
+    {
+        let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::MIN.saturating_add(1),
+        ))));
+        let Connected {
+            mut server,
+            mut workspace,
+            ..
+        } = initialized();
+        let mut admissions = Admissions::new(Arc::clone(&pool), Inbox::default().changes());
+        let uri = "file:///a-comment-edit-keeps-each-kernel-tier-6286.gandr";
+        let document = DocumentUri::from(uri);
+        let text =
+            include_str!("server/fixtures/a-comment-edit-keeps-each-kernel-tier-6286-first.gandr");
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}});
+        let change = |version: i32, text: &str| {
+            Body::from(
+                serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": uri, "version": version},
+                    "contentChanges": [{"text": text}]}})
+                .to_string()
+                .into_bytes(),
+            )
+        };
+        let replayed = ["def a+0: kernel replayed", "def b+0: kernel replayed"];
+        assert_eq!(
+            judged_then_admitted(
+                (&mut server, &mut workspace, &mut admissions),
+                &pool,
+                (
+                    &document,
+                    &Body::from(open.to_string().into_bytes()),
+                    crate::anchor::Source(text)
+                ),
+            ),
+            (
+                vec![
+                    String::from("def a+0: kernel pending"),
+                    String::from("def b+0: kernel pending"),
+                ],
+                replayed.map(String::from).to_vec()
+            ),
+            "a first judgement waits on its admission, which replays each declaration"
+        );
+        let commented =
+            include_str!("server/fixtures/a-comment-edit-keeps-each-kernel-tier-6286-noted.gandr");
+        assert_eq!(
+            judged_then_admitted(
+                (&mut server, &mut workspace, &mut admissions),
+                &pool,
+                (
+                    &document,
+                    &change(2_i32, commented),
+                    crate::anchor::Source(commented)
+                ),
+            ),
+            (
+                replayed.map(String::from).to_vec(),
+                replayed.map(String::from).to_vec()
+            ),
+            "a comment keeps each tier at the judgement"
+        );
+        let edited =
+            include_str!("server/fixtures/a-comment-edit-keeps-each-kernel-tier-6286-edited.gandr");
+        assert_eq!(
+            judged_then_admitted(
+                (&mut server, &mut workspace, &mut admissions),
+                &pool,
+                (
+                    &document,
+                    &change(3_i32, edited),
+                    crate::anchor::Source(edited)
+                ),
+            ),
+            (
+                vec![
+                    String::from("def a+0: kernel pending"),
+                    String::from("def b+0: kernel replayed"),
+                ],
+                replayed.map(String::from).to_vec()
+            ),
+            "the edited declaration alone waits on its admission"
+        );
+    }
+
     #[test]
     fn a_rename_rewrites_a_name_everywhere_it_is_written()
     {

@@ -287,8 +287,8 @@
 //!   measures for the declaration it names.
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel
 //!   re-assessment (§ kernel-reassessment-design, item 9) — an admission hands
-//!   each declaration's kernel tier to the editor (`Admitted::tiers`), computed
-//!   off the keystroke path.
+//!   each declaration's kernel tier to the editor through the session's account
+//!   (`Session::account`), computed off the keystroke path.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -400,6 +400,8 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::account::Account;
+use crate::account::CheckerVerdict;
 use crate::closures;
 use crate::closures::ClosureAdmission;
 use crate::edit::EditScript;
@@ -882,9 +884,6 @@ pub struct Admitted
     /// Each declaration the bridge declines for a former the kernel has no
     /// image of, in admission order.
     pub declined: Vec<Declined>,
-    /// Each declaration's kernel tier, in admission order, at its position in
-    /// the readmission: the resumed declarations of the import closure first.
-    pub tiers: Vec<(ConstantIndex, KernelTier)>,
     /// Whether it reached the block store.
     checkpoint: KernelCheckpoint,
     /// How many declarations the readmission offered the kernel again; the
@@ -1730,6 +1729,10 @@ pub struct Session<Store, Blocks>
     /// The latest untabled judgement, which a revision moving no lowered node
     /// takes rather than judging again.
     recorded: Recorded,
+    /// One row for each declaration of the latest judged revision's own text,
+    /// by its content key: the checker's verdict, the kernel tier and the
+    /// compile tier.
+    account: Account,
 }
 
 /// Whether a session's judgements keep the type table of each revision.
@@ -1996,6 +1999,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             runs: closures::Runs::new(),
             tables: Tables::Unkept,
             recorded: Recorded::default(),
+            account: Account::default(),
         }
     }
 
@@ -2165,6 +2169,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 runs: closures::Runs::new(),
                 tables: Tables::Unkept,
                 recorded: Recorded::default(),
+                account: Account::default(),
             },
             restored,
         })
@@ -3037,6 +3042,37 @@ impl<Store, Blocks> Session<Store, Blocks>
             Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
         };
         sink.judged(census.judged);
+        // The account takes the revision's own declarations: each item after
+        // the closure's, with the content key its checkpoint keeps and the
+        // checker's verdict on it, read off the report at its position.
+        if let (Maybe::Present(resume), &Composed::Settled { ref report, .. }) =
+            (self.incremental.last(), &composed)
+        {
+            let mut verdicts = report
+                .declarations()
+                .iter()
+                .map(|declaration| {
+                    (
+                        declaration.constant(),
+                        CheckerVerdict::of(&declaration.produced()),
+                    )
+                })
+                .peekable();
+            self.account.judged(
+                items
+                    .items()
+                    .iter()
+                    .zip(resume.checkpoints().items())
+                    .skip(boundary)
+                    .filter_map(|(item, checkpoint)| {
+                        let constant = item.declaration().constant();
+                        while verdicts.next_if(|&(at, _)| at < constant).is_some() {}
+                        verdicts
+                            .next_if(|&(at, _)| at == constant)
+                            .map(|(_, verdict)| (constant, checkpoint.key(), verdict))
+                    }),
+            );
+        }
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;
@@ -3398,7 +3434,15 @@ impl<Store, Blocks> Session<Store, Blocks>
                 usize::from(resumption.resumed) == usize::from(found.crossed().boundary())
             }),
         };
-        let kernel = resumption.artifact?;
+        let kernel = match resumption.artifact {
+            Ok(kernel) => kernel,
+            Err(stopped) => {
+                self.account
+                    .settled(&[(stopped.constant(), KernelTier::of(stopped.outcome()))]);
+                return Err(stopped);
+            },
+        };
+        self.account.settled(&resumption.tiers);
         let checkpoint = match Store::KEEPING {
             Keeping::Kept => checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref()),
             Keeping::Discarded => KernelCheckpoint::Discarded,
@@ -3407,11 +3451,23 @@ impl<Store, Blocks> Session<Store, Blocks>
             kernel,
             positions: resumption.positions,
             declined: resumption.declined,
-            tiers: resumption.tiers,
             checkpoint,
             crossed: offered,
             judged: DeclarationCount::from(usize::from(resumption.judged)),
         }))
+    }
+
+    /// The account of the latest judged revision: one row for each declaration
+    /// of its own text, by its content key, with the checker's verdict, the
+    /// kernel tier and the compile tier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn account(&self) -> &Account
+    {
+        &self.account
     }
 
     /// The root the session's source sits under.

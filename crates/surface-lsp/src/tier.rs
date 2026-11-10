@@ -59,6 +59,7 @@ use gandr_surface_dispatcher::Unruled;
 use gandr_surface_render_remote::Glyph;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::Warrant;
+use gandr_surface_session::KernelState;
 use quenchant_shape::shape::Maybe;
 use serde::Serialize;
 
@@ -168,14 +169,17 @@ pub struct Tiers
 impl Tiers
 {
     /// The tiers of a judgement that lists `declared` over the text that
-    /// `index` indexes: each declaration the checker accepted is pending, and
-    /// each one it refused is unoffered.
+    /// `index` indexes: each declaration the checker refused is unoffered, and
+    /// each one it accepted takes the kernel tier of its account row, which an
+    /// earlier admission settled for the same content and verdict, or is
+    /// pending.
     ///
     /// # Specification
     /// - requires: `declared` is in admission order, and its spans lie in the
     ///   text that `index` indexes.
-    /// - ensures: one entry per declaration whose span has a range, in order;
-    ///   an accepted one pending, a refused one unoffered.
+    /// - ensures: one entry per declaration whose span has a range, in order; a
+    ///   refused one unoffered; an accepted one at its row's settled tier, else
+    ///   pending.
     /// - provides: what the document's copy holds between its judgement and its
     ///   admission.
     /// - fails: never.
@@ -183,15 +187,14 @@ impl Tiers
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module's declarations read `kernel pending` before
-    ///   its admission ends.
+    ///   its first admission ends, keep their tiers across an edit to a
+    ///   comment, and an edited declaration alone reads `kernel pending` again.
     /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517`
-    #[spec(captures: [listed = declared.iter().map(|declared| (declared.constant, declared.checked)).collect::<Vec<_>>()],
+    /// - witness: `server::tests::a_comment_edit_keeps_each_kernel_tier_6286`
+    #[spec(captures: [listed = declared.iter().map(|declared| (declared.constant, Self::held(declared))).collect::<Vec<_>>()],
         ensures: |ret| ret.each.len() <= listed.len()
-        && ret.each.iter().all(|tiered| listed.iter().any(|&(constant, checked)|
-            constant == tiered.constant && match checked {
-                Checked::Accepted => tiered.tier == Tier::Pending,
-                Checked::Refused => tiered.tier == Tier::Settled(KernelTier::Unoffered),
-            })))]
+        && ret.each.iter().all(|tiered| listed.iter().any(|&(constant, ref tier)|
+            constant == tiered.constant && tiered.tier == *tier)))]
     #[must_use]
     pub fn judged(
         declared: Vec<Declared>,
@@ -205,14 +208,29 @@ impl Tiers
                     Some(Tiered {
                         constant: declared.constant,
                         range: ranged(index, declared.span)?,
+                        tier: Self::held(&declared),
                         name: declared.name,
-                        tier: match declared.checked {
-                            Checked::Accepted => Tier::Pending,
-                            Checked::Refused => Tier::Settled(KernelTier::Unoffered),
-                        },
                     })
                 })
                 .collect(),
+        }
+    }
+
+    /// The tier a judgement shows for `declared`: unoffered when the checker
+    /// refused it, its account row's settled tier when it has one, and pending
+    /// otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held(declared: &Declared) -> Tier
+    {
+        match (declared.checked, declared.row) {
+            (Checked::Refused, _) => Tier::Settled(KernelTier::Unoffered),
+            (Checked::Accepted, Maybe::Present(row)) => match row.kernel() {
+                KernelState::Settled(tier) => Tier::Settled(tier),
+                KernelState::Pending => Tier::Pending,
+            },
+            (Checked::Accepted, Maybe::Absent(_)) => Tier::Pending,
         }
     }
 

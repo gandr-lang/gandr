@@ -404,3 +404,60 @@ fn an_item_s_content_key_moves_only_with_its_content_1547()
     );
     assert_ne!(first_two, edited_two, "the edited item's key moves");
 }
+
+/// #6286: each checkpoint keeps the content key of its item, from a fresh
+/// pass and from a resume after an edit alike, so a reader keys the item's
+/// outcomes without a second hash, and an edit moves the key of the edited
+/// item alone.
+#[test]
+fn a_checkpoint_keeps_the_content_key_of_its_item_6286()
+{
+    let kept = |resume: &super::Resume| {
+        resume
+            .checkpoints()
+            .items()
+            .iter()
+            .map(ItemCheckpoint::key)
+            .collect::<vec::Vec<_>>()
+    };
+    let mut first = integers(CoreArena::new(), &[
+        (Key("one"), Digits("1")),
+        (Key("two"), Digits("2")),
+    ]);
+    let keys = content_keys(&first);
+    let checked = super::check_program(&mut first, gandr_core_checker::CheckBudget::DEFAULT)
+        .expect("the program checks");
+    assert_eq!(kept(&checked), keys, "a fresh pass keeps each item's key");
+    let mut edited = integers(noisy(Noise(3)), &[
+        (Key("one"), Digits("1")),
+        (Key("two"), Digits("20")),
+    ]);
+    let edited_keys = content_keys(&edited);
+    let resumed = super::resume(checked, &mut edited).expect("the edit resumes");
+    let resumed_keys = kept(&resumed);
+    assert_eq!(
+        resumed_keys, edited_keys,
+        "a resume keeps each edited item's key"
+    );
+    assert_eq!(
+        (
+            resumed_keys.first() == keys.first(),
+            resumed_keys.get(1) == keys.get(1)
+        ),
+        (true, false),
+        "the edit moves the key of the edited item alone"
+    );
+    let remade = resumed.checkpoints().items().iter().map(|checkpoint| {
+        ItemCheckpoint::new(
+            checkpoint.content().clone(),
+            checkpoint.footprint().clone(),
+            checkpoint.support().to_vec(),
+            checkpoint.typing().clone(),
+        )
+        .key()
+    });
+    assert!(
+        remade.eq(edited_keys),
+        "a checkpoint made from its parts, as a decoder makes it, reads the same key"
+    );
+}
