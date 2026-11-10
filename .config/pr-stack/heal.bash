@@ -24,7 +24,13 @@ members_json='[{"number":2,"head":"lower"},{"number":3,"head":"own"},{"number":4
 server_stack() { printf '%s\n' "$members_json"; }
 queued_of() { echo '[]'; }
 queue_removal() { echo none; }
-member_paths() { echo '[]'; }
+member_paths() {
+  if [[ $large_paths == true && $2 == 0 ]]; then
+    printf '%*s' 131073 '' | tr ' ' x | jq -Rs '[.]'
+  else
+    echo '[]'
+  fi
+}
 git() { :; }
 restack() { jq -r '"restack " + (map("#\(.number)") | join(" "))' <<< "$1" > "$work/asked"; }
 restack_past() { echo "past #$2" > "$work/asked"; }
@@ -34,6 +40,7 @@ for (( i = 0; i < count; i++ )); do
   name=$(jq -r ".[$i].name" "$cases")
   expected=$(jq -r ".[$i].output" "$cases")
   red_member=$(jq -r ".[$i].red // empty" "$cases")
+  large_paths=$(jq -r ".[$i].large_paths // false" "$cases")
   red_check() { if [[ $1 == "$red_member" ]]; then echo required; fi; }
   number=3
   heals=0
