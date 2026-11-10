@@ -2896,6 +2896,7 @@ pub fn eval_value(
 /// - hypothesis: L3 — the decision surface is the reported remainder, separated
 ///   by a forced body whose cost the readback's remainder carries.
 /// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
+#[inline]
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|pair| {
         domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)

@@ -3340,8 +3340,20 @@ fn a_spent_call_left_unrun_is_reported_held()
         let mut domain = DomainArena::new();
         let evaluated =
             eval_value(core, &mut domain, definitions, ample(), term).expect("the term evaluates");
-        super::readback_value_spending(core, &mut domain, definitions, mode, ample(), evaluated)
-            .expect("the term reads back")
+        let (read, spent, left) = super::readback_value_spending(
+            core,
+            &mut domain,
+            definitions,
+            mode,
+            ample(),
+            evaluated,
+        )
+        .expect("the term reads back");
+        assert!(
+            u32::from(left) < u32::from(ample()),
+            "the run spends from the fuel it is given"
+        );
+        (read, spent)
     };
 
     let (_, alone) = read(&mut core, ReadbackMode::Unfolding, reference);

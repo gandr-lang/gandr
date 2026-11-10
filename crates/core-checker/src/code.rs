@@ -215,6 +215,13 @@ const CODE_FUEL: u32 = 4_096_u32;
 /// the previous round's normal form calls.
 const CLAIM_ROUNDS: u32 = 64_u32;
 
+/// The budget that one reading of a claim spends across all its rounds, 2^19
+/// steps. It is [`CLAIM_ROUNDS`] rounds of an evaluation and a readback at
+/// [`CODE_FUEL`] each, so a reading that does not end declines after the same
+/// work as when each round had its own budget. One round can spend all of it,
+/// so the width of a normal form is not bound by one round's budget.
+const READING_FUEL: u32 = 0x0008_0000_u32;
+
 /// The definitions a code may unfold, in admission order.
 #[derive(Clone, Debug, Default)]
 pub struct CodeDefinitions
@@ -2021,7 +2028,8 @@ impl CodeDefinitions
     /// # Termination
     /// - reason: the outer `loop` runs at most [`CLAIM_ROUNDS`] rounds and the
     ///   inner `while let` peels one lambda of the finite normal form per turn,
-    ///   not recursion; evaluation and readback run under their own fuel.
+    ///   not recursion; each round's evaluation and readback spend what the
+    ///   rounds before left of one [`READING_FUEL`].
     /// - measure: the rounds left, then the lambdas left above the body.
     ///
     /// # Adequacy
@@ -2042,23 +2050,24 @@ impl CodeDefinitions
     ) -> Result<Readback, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: claim };
-        let fuel = Fuel::from(CODE_FUEL);
+        let mut fuel = Fuel::from(READING_FUEL);
         let mut current = claim;
         let mut rounds = 0_u32;
         loop {
             let mut domain = DomainArena::new();
-            let evaluated =
-                gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, current)
+            let (evaluated, left) =
+                gandr_core_nbe::eval_closed_value(core, &mut domain, definitions, fuel, current)
                     .map_err(|_fault| undecided)?;
-            let (read, spent) = gandr_core_nbe::readback_value_spending(
+            let (read, spent, left) = gandr_core_nbe::readback_value_spending(
                 core,
                 &mut domain,
                 definitions,
                 ReadbackMode::Unfolding,
-                fuel,
+                left,
                 evaluated,
             )
             .map_err(|_fault| undecided)?;
+            fuel = left;
             let ran = spent == gandr_core_nbe::SpentCalls::Ran;
             let Some(&Value::Thunk(mut body)) = core.value(read)
             else {

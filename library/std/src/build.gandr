@@ -38,9 +38,7 @@
 // constant of another sort has no equivalence to its entries. The encoder
 // escapes no character of a string, because `std.string` has no operation on
 // a character. One table holds every line, in the presentation's order, and
-// the manifest step's tables wait on #4725. The checker unfolds `modelType`
-// for at most 20 `String` constants or 14 `Bool` constants, and a wider
-// presentation's type is undecided (#6181).
+// the manifest step's tables wait on #4725.
 //
 // - see: #533
 // - see: #3029
@@ -49,7 +47,6 @@
 // - see: #4527
 // - see: #2993 — `Toolchain`
 // - see: #6046 — `modelType`, `encode` and `render`
-// - see: #6181 — the widest presentation `modelType` unfolds
 
 /// The version a package and a workspace release at. [`Project`] brings it to
 /// both, so a member reads its version from its workspace's model.

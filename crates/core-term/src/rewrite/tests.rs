@@ -35,15 +35,16 @@ use super::Crossing;
 use super::Nesting;
 use super::Node;
 use super::Renaming;
+use super::Solutions;
 use super::Unenclosed;
 use super::constructor_classifier;
 use super::constructor_classifier_at;
 use super::cross_reducts;
 use super::elaborate_nested_traced;
-use super::fill_comp_type_hole;
+use super::fill_comp_type_holes;
 use super::fill_hole;
-use super::fill_value_hole;
-use super::fill_value_type_hole;
+use super::fill_value_holes;
+use super::fill_value_type_holes;
 use super::instantiate_comp_type;
 use super::instantiate_value;
 use super::relevel_value_type;
@@ -60,6 +61,7 @@ use super::substitute_environment_comp_type;
 use super::substitute_environment_copied_traced;
 use super::substitute_environment_traced;
 use super::substitute_environment_value_type;
+use super::value_holes;
 use super::wrap_marks;
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -2671,9 +2673,9 @@ fn a_solution_fills_a_type_raised_past_its_scope_1216()
     let hole = HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name");
     let standing = arena.value_hole(hole);
     let solution = variable(&mut arena, DeBruijnIndex::from(0_u32));
-    let solved = (solution, Binders::ONE);
+    let solved = Solutions::from([(hole, (solution, Binders::ONE))]);
     let decoded = arena.value_type_element(standing, Level::zero());
-    let filled = fill_value_type_hole(&mut arena, (decoded, Binders::ONE), hole, solved);
+    let filled = fill_value_type_holes(&mut arena, (decoded, Binders::ONE), &solved);
     assert_eq!(
         arena.value_type(filled),
         Some(&ValueType::Element {
@@ -2683,7 +2685,7 @@ fn a_solution_fills_a_type_raised_past_its_scope_1216()
         "at the solution's scope the hole takes it as it stands"
     );
     assert_eq!(
-        fill_value_type_hole(&mut arena, (decoded, Binders::NONE), hole, solved),
+        fill_value_type_holes(&mut arena, (decoded, Binders::NONE), &solved),
         decoded,
         "read outside the solution's scope the hole stands"
     );
@@ -2693,7 +2695,7 @@ fn a_solution_fills_a_type_raised_past_its_scope_1216()
     );
     let returned = arena.comp_type_returner(decoded);
     let dependent = arena.comp_type_pi(small, returned);
-    let filled = fill_comp_type_hole(&mut arena, (dependent, Binders::ONE), hole, solved);
+    let filled = fill_comp_type_holes(&mut arena, (dependent, Binders::ONE), &solved);
     let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(filled)
     else {
         panic!("a filled pi: {:?}", arena.comp_type(filled));
@@ -2717,7 +2719,7 @@ fn a_solution_fills_a_type_raised_past_its_scope_1216()
     let returned = arena.computation_return(standing);
     let lambda = arena.computation_lambda(returned);
     let suspended = arena.value_thunk(lambda);
-    let filled = fill_value_hole(&mut arena, (suspended, Binders::ONE), hole, solved);
+    let filled = fill_value_holes(&mut arena, (suspended, Binders::ONE), &solved);
     let Some(&Value::Thunk(lambda)) = arena.value(filled)
     else {
         panic!("a filled thunk");
@@ -2740,9 +2742,137 @@ fn a_solution_fills_a_type_raised_past_its_scope_1216()
     );
     let unit = arena.value_type_unit();
     assert_eq!(
-        fill_value_type_hole(&mut arena, (unit, Binders::ONE), hole, solved),
+        fill_value_type_holes(&mut arena, (unit, Binders::ONE), &solved),
         unit,
         "a type holding no hole is its own filling"
+    );
+}
+
+/// The holes `holes` as a chain, each solved by a pair of `unit` and the next
+/// hole, the last solved by `unit`, all at no binder.
+///
+/// # Specification
+/// trivial.
+fn chained_solutions(
+    arena: &mut CoreArena,
+    holes: &[HoleId],
+    unit: ValueId,
+) -> (Vec<ValueId>, Solutions)
+{
+    let standing: Vec<ValueId> = holes.iter().map(|&hole| arena.value_hole(hole)).collect();
+    let nexts = standing
+        .iter()
+        .skip(1)
+        .copied()
+        .map(Some)
+        .chain(core::iter::once(None));
+    let mut solutions = Solutions::new();
+    for (&hole, next) in holes.iter().zip(nexts) {
+        let solution = next.map_or(unit, |next| arena.value_tuple(&[unit, next]));
+        let _previous = solutions.insert(hole, (solution, Binders::NONE));
+    }
+    (standing, solutions)
+}
+
+#[test]
+fn a_chain_of_solutions_is_read_in_one_walk_6181()
+{
+    // A presentation's entries solve one hole for each entry, and the
+    // solution of each names the next. Read hole by hole and round by round,
+    // a chain of n holes rebuilt its first pairs n times; one walk rebuilds
+    // each pair once.
+    let length = 64_u32;
+    let mut arena = CoreArena::new();
+    let unit = arena.value_unit();
+    let holes: Vec<HoleId> = (0 .. length)
+        .map(|index| HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"))
+        .collect();
+    let (standing, solutions) = chained_solutions(&mut arena, &holes, unit);
+    let first = *standing.first().expect("a chain of one hole or more");
+    let mark = arena.watermark();
+    let filled = fill_value_holes(&mut arena, (first, Binders::NONE), &solutions);
+    let minted = arena.values_since(mark).len();
+    let mut at = filled;
+    for _entry in 1 .. length {
+        let Some(&Value::Tuple(ref components)) = arena.value(at)
+        else {
+            panic!("each entry reads as a pair: {:?}", arena.value(at));
+        };
+        let &[head, rest] = components.as_ref()
+        else {
+            panic!("each entry holds two components");
+        };
+        assert_eq!(head, unit, "an entry's own component");
+        at = rest;
+    }
+    assert_eq!(at, unit, "the last hole reads its solution");
+    assert!(
+        minted < usize::try_from(length).expect("a small length"),
+        "one walk mints each rebuilt pair once, {minted} for {length} holes"
+    );
+}
+
+#[test]
+fn a_cycle_of_solutions_leaves_a_hole_6181()
+{
+    // The occurs check keeps a cycle out of a solver's answers; a fill given
+    // one still ends, the hole that its own reading meets standing.
+    let mut arena = CoreArena::new();
+    let first = HoleId::nominated(NominationIndex::from(0_u32)).expect("a nominated name");
+    let second = HoleId::nominated(NominationIndex::from(1_u32)).expect("a nominated name");
+    let (first_standing, second_standing) = (arena.value_hole(first), arena.value_hole(second));
+    let unit = arena.value_unit();
+    let to_second = arena.value_tuple(&[unit, second_standing]);
+    let to_first = arena.value_tuple(&[unit, first_standing]);
+    let solutions = Solutions::from([
+        (first, (to_second, Binders::NONE)),
+        (second, (to_first, Binders::NONE)),
+    ]);
+    let filled = fill_value_holes(&mut arena, (first_standing, Binders::NONE), &solutions);
+    let Some(&Value::Tuple(ref components)) = arena.value(filled)
+    else {
+        panic!(
+            "the first hole reads as its pair: {:?}",
+            arena.value(filled)
+        );
+    };
+    assert_eq!(
+        components.as_ref(),
+        &[unit, to_first],
+        "the second hole reads its pair, whose first hole stands"
+    );
+}
+
+#[test]
+fn a_hole_survey_names_each_value_hole_once_6181()
+{
+    // An occurs check reads the holes of a term in one walk. The walk
+    // reaches a value hole under a binder and inside a type, names a hole met
+    // twice once, and leaves a computation hole out.
+    let mut arena = CoreArena::new();
+    let [twice, typed, computed] = [0_u32, 1, 2]
+        .map(|index| HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"));
+    let twice_standing = arena.value_hole(twice);
+    let typed_standing = arena.value_hole(typed);
+    let decoded = arena.value_type_element(typed_standing, Level::zero());
+    let quoted = arena.value_quote(decoded);
+    let pair = arena.value_tuple(&[twice_standing, quoted, twice_standing]);
+    let returned = arena.computation_return(pair);
+    let computation = arena.computation_hole(computed);
+    let sequenced = arena.computation_bind(computation, returned);
+    let lambda = arena.computation_lambda(sequenced);
+    let suspended = arena.value_thunk(lambda);
+    let mark = arena.watermark();
+    assert_eq!(
+        value_holes(&mut arena, suspended),
+        alloc::collections::BTreeSet::from([twice, typed]),
+        "each value hole the walk reaches, and no computation hole"
+    );
+    assert_eq!(mark, arena.watermark(), "a survey mints nothing");
+    let unit = arena.value_unit();
+    assert!(
+        value_holes(&mut arena, unit).is_empty(),
+        "a hole-free value names no hole"
     );
 }
 
