@@ -2442,15 +2442,46 @@ fn held(
     path: ValueId,
 ) -> Option<(Held, ValueId, ValueId)>
 {
+    let Some(&Value::Returned(formed)) = arena.value(path)
+    else {
+        return None;
+    };
+    formed_held(arena, formed)
+}
+
+/// Read a transport as the one that a held `back` or `then` of a universe
+/// path forms: [`held`] at `⟨formed⟩`.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reads as neither.
+/// - ensures: `Some((shape, along, moved))` exactly when [`held`] reads
+///   `⟨formed⟩` as `(shape, along, moved)`.
+/// - provides: one reading for [`held`] and [`held_transport`], which read a
+///   path and a transport.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`held`].
+/// - witness: `element_identity::tests::transport_back_along_univalence_applies_the_left_inverse`
+/// - witness: `element_identity::tests::transport_along_then_moves_along_both_paths`
+#[spec(ensures: |ret| ret.is_none() || matches!(arena.computation(formed), Some(&gandr_kernel_term::Computation::PathTransport { .. })))]
+fn formed_held(
+    arena: &TermArena,
+    formed: ComputationId,
+) -> Option<(Held, ValueId, ValueId)>
+{
     let bound = |arena: &TermArena, endpoint| matches!(arena.value(endpoint), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32));
     let mut read = None;
-    let mut focus = path;
-    while let Some(&Value::Returned(formed)) = arena.value(focus) {
+    let mut focus = formed;
+    // The walk descends one held path per turn through an acyclic arena, so
+    // it ends at the first path that holds no transport.
+    loop {
         let Some(&gandr_kernel_term::Computation::PathTransport {
             motive,
             path: along,
             value: moved,
-        }) = arena.computation(formed)
+        }) = arena.computation(focus)
         else {
             return None;
         };
@@ -2472,17 +2503,86 @@ fn held(
             Held::Back
         }
         else {
-            composite_legs(arena, formed).map(|_legs| Held::Then)?
+            composite_legs(arena, focus).map(|_legs| Held::Then)?
         };
         read.get_or_insert((shape, along, moved));
-        focus = along;
+        match arena.value(along) {
+            Some(&Value::Returned(next)) => focus = next,
+            Some(&Value::Univalence(_)) => return read,
+            Some(_) | None => return None,
+        }
     }
-    if matches!(arena.value(focus), Some(&Value::Univalence(_))) {
-        read
+}
+
+/// Whether the evaluator holds a path or a transport as a value it never runs.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub(crate) struct EvaluatorHolds(bool);
+
+impl From<EvaluatorHolds> for bool
+{
+    /// Unwraps the answer to a plain decision.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(holds: EvaluatorHolds) -> Self
+    {
+        holds.0
     }
-    else {
-        None
-    }
+}
+
+/// Whether the evaluator holds `transport` as a value: the transport that a
+/// held `back` or `then` of a universe path forms.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reads as no held transport.
+/// - ensures: `true` exactly when [`held`] reads `⟨transport⟩`.
+/// - provides: the end of a held operand's run in the replay, which returns the
+///   held transport as the evaluator's `step_path_transport` does.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the run of the inner link of `boolPathN(2)` ends at
+///   `tr(Q, ua(e), v)` and returns it held, as the evaluator does. Read as
+///   stuck, the run keeps the operand as it was, and the replay refuses what
+///   the checker accepted.
+/// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
+#[spec(ensures: |ret| !ret.0 || matches!(arena.computation(transport), Some(&gandr_kernel_term::Computation::PathTransport { .. })))]
+pub(crate) fn held_transport(
+    arena: &TermArena,
+    transport: ComputationId,
+) -> EvaluatorHolds
+{
+    EvaluatorHolds(formed_held(arena, transport).is_some())
+}
+
+/// Whether the evaluator holds `path` as a value a transport in a link does
+/// not run: a univalence, or a held `back` or `then` of one.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reads as no held path.
+/// - ensures: `true` exactly when `path` is `ua(e)` or [`held`] reads it.
+/// - provides: the paths whose transport in a link the evaluator holds as the
+///   transport that forms it, and the operands its append rows never run.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `q then ⟨negPath then ua(e)⟩` holds its operand, as the
+///   evaluator holds it; run as a call, the operand stands on its own path and
+///   the replay unfolds a definition the checker never recorded.
+/// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
+#[spec(ensures: |ret| !ret.0 || matches!(arena.value(path), Some(&(Value::Univalence(_) | Value::Returned(_)))))]
+pub(crate) fn held_path(
+    arena: &TermArena,
+    path: ValueId,
+) -> EvaluatorHolds
+{
+    EvaluatorHolds(
+        matches!(arena.value(path), Some(&Value::Univalence(_))) || held(arena, path).is_some(),
+    )
 }
 
 /// The two paths of the composite `p then q` that `computation` is, `(p, q)`.
