@@ -1,33 +1,53 @@
-//! This fixture defines an operator and a seat.
+//! This fixture defines an operator and a seat. The operator migrates work to
+//! the seat.
 //!
-//! The operator migrates work to the seat.
+//! Each judgement of the seat exchange holds at a world. Only a mobile and open
+//! value comes back. A `mobile type` component of a sealed signature says that
+//! its representation crosses. A mobile and open report returns to the
+//! operator.
 //!
-//! A mobile and open report returns to the operator.
+//! The judgement `M : A @ w` reads a term at a world. `A at w` is a handle to a
+//! value at `w`. `hold` makes a handle at the current world, and `let x at w`
+//! opens a handle at `w`. `migrate [w] { M }` runs `M` at `w` and spends one
+//! capability `cap_w` that the entry holds. These forms are `get`, `hold` and
+//! `leta` of § 3 of the cited work.
 //!
 //! - cites: [Vii-2007-typesafe_distributed_programming_ml5]
 //!
 //! [Vii-2007-typesafe_distributed_programming_ml5]: https://doi.org/10.1007/978-3-540-78663-4_9 "Murphy, Crary and Harper, Type-Safe Distributed Programming with ML5"
 
-// The seat protocol defines the mobile report.
+// The seat protocol defines the mobile report. Its signature seals the
+// messages.
 import "../sessions/seat-base.gandr";
 
+/// The world the operator stands at.
 pub world operator;
 
+/// The world a seat works at.
 pub world seat;
 
+/// The operator holds one capability to the seat, runs the seat's work there
+/// and takes the report back. The migration spends the capability and carries
+/// the mobile report back.
 @[entry(*{operator, seat}), runs("\"progress\"")]
 pub def collect() -> Seat.Report =
   migrate [seat] { pure Seat.progress }
 
+/// The same turn returns a handle that `hold` makes at the seat. The handle
+/// crosses back because the mark on `Report` says that its content is open.
 @[entry(*{operator, seat}), runs("\"progress\"")]
 def dispatch() -> -F (Seat.Report at seat) =
   migrate [seat] { (hold Seat.progress) }
 
+/// The seat opens a handle at its own world and reads the report where the
+/// seat wrote it.
 @[entry(seat)]
 def opened(report : Seat.Report at seat) -> Seat.Report =
   let written at seat = report
   pure written
 
+/// `let report at seat` binds the report of the seat's handle at the seat's
+/// world. So a second migration reads it there and spends a second capability.
 @[entry(*{operator, seat, seat}), runs("\"progress\"")]
 def review() -> Seat.Report =
   let held : Seat.Report at seat = migrate [seat] { (hold Seat.progress) };

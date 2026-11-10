@@ -1,15 +1,27 @@
-//! This fixture runs a migration model on two processes.
+//! This fixture runs a migration model on two processes. Each process binds
+//! one declared world.
 //!
-//! Each process binds one declared world.
+//! A world names a process only through the binding of its host, never in the
+//! source. Each migration to `far` runs in the process that binds `far`. The
+//! two migrations hold and read one value at `far`.
 //!
-//! The two migrations hold and read one value at `far`.
+//! One process hosts `far` with `gandr host`, and another runs `main` with
+//! `gandr run`. Each process takes the binding `--world far=<key>@<ip:port>`,
+//! or the site and the manifold that the binding desugars from. The second
+//! migration reads a capture that the hosting process holds already. So no
+//! process fetches it. With no `--world` and no manifold, both migrations run
+//! in this process and answer the same.
 //!
 //! - see: `crates/surface-driver/tests/net.rs`
 
+/// The world the entry runs at.
 pub world near;
 
+/// The world the work runs at, in the process that its binding names.
 pub world far;
 
+/// `far` computes forty-two and holds it. A second migration reads it there
+/// again.
 @[entry(*{near, far, far}), runs("42")]
 def main() -> Integer =
   let held : Integer at far = migrate [far] { (hold (6 * 7)) };
