@@ -5570,6 +5570,51 @@ fn a_module_path_reads_the_module_its_source_sees_4797()
     );
 }
 
+/// #6174: a theory that an imported source exports is a value where a type
+/// reads one. `shapeOf(M.Shape)` lowers as `shapeOf(Small)` does for a local
+/// theory. A path that names no member of `M` is refused by name.
+#[test]
+fn a_theory_an_import_exports_is_a_value_in_a_type_6174()
+{
+    let pbg = grammar();
+    let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-theory-an-import-exports-is-a-value-in-a-type-6174-1.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-theory-an-import-exports-is-a-value-in-a-type-6174-2.gandr"
+            )),
+            &[on(0_usize)],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let refused: Vec<(String, bool)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let DeclarationOutcome::Refused(refusal) = declaration.outcome()
+            else {
+                return None;
+            };
+            Some((
+                String::from(declaration.name().as_ref()),
+                matches!(refusal, LoweringRefusal::UnknownMember { .. }),
+            ))
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        [(String::from("absent"), true)],
+        "`qualified` reads the imported theory as a value, and `absent` is refused by name"
+    );
+}
+
 /// The base the visibility witnesses import: each form exported by a `pub`
 /// mark on its signature, its definition, before or after its attributes, and
 /// each kept private by none.

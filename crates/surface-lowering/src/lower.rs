@@ -14457,22 +14457,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
-                // The prelude's derivation is no value: it stands only as the
-                // head of a definition's whole body (`lower::generic`).
-                if self.generic == Some(exported) {
-                    return Err(LoweringRefusal::GenericMisplaced { span: site.at.span });
-                }
-                self.exported_across(site, self.name_at(head), exported)?;
-                self.select(site, exported)?;
-                if let Some(&(_, member)) = links.first()
-                    && let Some(entry) = self.collected.slots.get(usize::from(exported))
-                {
-                    self.resolved(member.span, Resolved::Declaration {
-                        constant: entry.constant,
-                        declared: Maybe::Absent(binder_type::Absent::Untyped),
-                    });
-                }
-                Ok(())
+                let member = links.first().map(|&(_, member)| member);
+                self.component_value(site, exported, head, member)
             },
             PathResolution::Complete(Recognized::ModuleNamespace) => {
                 Err(site.out(FragmentBoundary::WrongSort))
@@ -15329,7 +15315,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a data family stands at them (#3051). A path that ends at a function a
     ///   module exports and writes an argument list calls that function, as
     ///   [`Self::applied_path`] reads it. Where a value is read, the path is
-    ///   that call (#5213, #5383).
+    ///   that call (#5213, #5383). Where a value is read, an unapplied path
+    ///   that ends at a component that is no data family, a theory among them,
+    ///   is the component's constant, as a projection reads it (#6174).
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -15337,11 +15325,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   naming the head for a path no module governs;
     ///   [`LoweringRefusal::ProjectionFromApplication`] for a chain whose head
     ///   is an application of a functor; the wrong-sort refusal for a path
-    ///   ending at a value component or a module, and outside value-type
-    ///   position; the forward-member refusal for a type component declared at
-    ///   or after the referring declaration, so a type always lowers before its
-    ///   readers; the arity refusal, naming the count written, for an argument
-    ///   list a member does not take.
+    ///   ending at a module, at a value component outside value position, and
+    ///   outside value-type position; the forward-member refusal for a type
+    ///   component declared at or after the referring declaration, so a type
+    ///   always lowers before its readers; the arity refusal, naming the count
+    ///   written, for an argument list a member does not take.
     /// - panics: none.
     ///
     /// # Errors
@@ -15354,7 +15342,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   type or refusal; a path past a parameter's type, refused at that link;
     ///   a model binder's sort, read as its carrier; a module's family applied
     ///   through its name, read as its expansion, and refused at another count;
-    ///   a module's function called where a value is read, read as the call.
+    ///   a module's function called where a value is read, read as the call; a
+    ///   module's theory read where a value is read, as its constant.
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `tests::modules::an_unbound_type_path_is_refused_by_name`
     /// - witness: `tests::modules::opaque_ascription_seals`
@@ -15362,12 +15351,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
     /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     /// - witness: `tests::modules::a_module_s_function_is_called_where_a_value_is_read_5383`
+    /// - witness: `tests::modules::a_module_s_theory_is_a_value_in_a_type_6174`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Former(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Former(..) | Plan::Constant(_)))
                 )
         },
     )]
@@ -15616,11 +15606,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the family over the arguments, none when the path writes
     ///   none, as [`Self::family`] reads it, when the component is a data
     ///   family declared strictly before the declaration `site` belongs to.
+    ///   Where a value is read, an unapplied component that is no data family
+    ///   is its value, as [`Self::component_value`] reads it (#6174).
     /// - provides: a type path's reading of a family a module body declares.
-    /// - fails: the wrong-sort refusal for a component that is no data family;
-    ///   [`LoweringRefusal::ForwardMemberReference`] for one declared at or
-    ///   after the referring declaration; the export refusal of a component its
-    ///   source keeps private; the family's own refusals.
+    /// - fails: the wrong-sort refusal for a component that is no data family,
+    ///   except as a value; [`LoweringRefusal::ForwardMemberReference`] for one
+    ///   declared at or after the referring declaration; the export refusal of
+    ///   a component its source keeps private; the family's own refusals.
     /// - panics: none.
     /// - executable: none — the plan is the family's, which [`Self::family`]
     ///   makes and its own predicate checks.
@@ -15634,6 +15626,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   to the family at `Integer`.
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
     /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+    /// - witness: `tests::modules::a_module_s_theory_is_a_value_in_a_type_6174`
     fn module_family(
         &mut self,
         site: Site,
@@ -15653,6 +15646,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let (constant, declared) = (held.constant, held.named.span);
         let Maybe::Present(arity) = self.data_family(constant)
         else {
+            // A component that is no family, as a theory's presentation, is
+            // its value where a value is read (#6174).
+            if applied.is_none() && matches!(site.reading, Reading::Value(_)) {
+                return self.component_value(site, exported, head, Some(member));
+            }
             return Err(site.out(FragmentBoundary::WrongSort));
         };
         if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
@@ -15674,6 +15672,57 @@ impl<'run, 'source> Lowerer<'run, 'source>
             end: self.operands.entries().len(),
         };
         self.family(site, constant, arity, applied.unwrap_or(none))
+    }
+
+    /// Read the module component at the slot `exported`, which a path through
+    /// the module `head` selects, as its value: the declaration the slot holds.
+    ///
+    /// # Specification
+    /// - requires: `exported` is the slot of a value component that a module
+    ///   exports, and `member` is the name that selects it, when the path
+    ///   writes one.
+    /// - ensures: the selection of the slot's declaration, as [`Self::select`]
+    ///   plans it, with the use at `member` resolved to that declaration.
+    /// - provides: the value half of a module's path, for a projection and for
+    ///   a type path read where a value is expected (#6174).
+    /// - fails: [`LoweringRefusal::GenericMisplaced`] for the prelude's
+    ///   derivation; the export refusal of a component its source keeps
+    ///   private; the refusals of [`Self::select`].
+    /// - panics: none.
+    /// - executable: none — [`Self::select`] states the plan.
+    ///
+    /// # Errors
+    /// The component's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.x` in a body and `Gandr.Package` as the argument
+    ///   of a type each read as the declaration that the module exports.
+    /// - witness: `tests::modules::a_backward_member_reference_resolves`
+    /// - witness: `tests::modules::a_module_s_theory_is_a_value_in_a_type_6174`
+    fn component_value(
+        &mut self,
+        site: Site,
+        exported: SlotIndex,
+        head: Placed,
+        member: Option<Placed>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        // The prelude's derivation is no value: it stands only as the head of
+        // a definition's whole body (`lower::generic`).
+        if self.generic == Some(exported) {
+            return Err(LoweringRefusal::GenericMisplaced { span: site.at.span });
+        }
+        self.exported_across(site, self.name_at(head), exported)?;
+        self.select(site, exported)?;
+        if let Some(member) = member
+            && let Some(entry) = self.collected.slots.get(usize::from(exported))
+        {
+            self.resolved(member.span, Resolved::Declaration {
+                constant: entry.constant,
+                declared: Maybe::Absent(binder_type::Absent::Untyped),
+            });
+        }
+        Ok(())
     }
 
     /// Read the module component at `path`, the function the link's `member`
