@@ -507,6 +507,8 @@ pub struct Instance<'source>
     pub images: BTreeMap<StructureIndex, StructureIndex>,
     /// Each image of a flow's member defined as one domain member, a
     /// renaming, with the argument's member it binds in the image's place.
+    /// An import reads it through its translation, and a module binding
+    /// through `Collected::exported_read`.
     pub renamed: BTreeMap<SlotIndex, SlotIndex>,
 }
 
@@ -1411,9 +1413,7 @@ impl<'source> Collector<'_, 'source>
                                 .get(slot.0)
                                 .is_some_and(|member| member.name == component.name) =>
                         {
-                            Some(Argued::Value(
-                                entry.exported_as.get(&slot).copied().unwrap_or(slot),
-                            ))
+                            Some(Argued::Value(self.collected.exported_read(module, slot)))
                         },
                         Member::Slot(_) | Member::Module(_) => None,
                     })
@@ -1671,16 +1671,6 @@ impl<'source> Collector<'_, 'source>
         }
         if matches!(template.scope, BodyScope::Domain { .. }) {
             instance.renamed = self.renamings(template, &instance);
-            // A module binding reads a renamed member as the argument's
-            // member it binds, as an import reads it through its translation:
-            // the image declares nothing of its own.
-            if matches!(argument, Argument::Module(_))
-                && let Some(module) = self.collected.structures.get_mut(instance.structure.0)
-            {
-                for (&image, &member) in &instance.renamed {
-                    let _bound = module.exported_as.insert(image, member);
-                }
-            }
         }
         self.collected.instances.push(instance);
 

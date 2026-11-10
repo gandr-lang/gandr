@@ -565,6 +565,7 @@ impl DescriptionDiagnostic
             )) => match spelled(Some(name), written) {
                 Maybe::Present(name) => LoweringRefusal::UnresolvedTypeHead {
                     span: self.span,
+                    head: self.span,
                     name,
                     arity: crate::resolve::HeadArity::Nullary,
                 },

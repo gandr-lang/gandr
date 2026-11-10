@@ -7,8 +7,9 @@
 //
 // - see: #1709
 
-/// `inner` and `outer` produce different reducts, and completion derives a
-/// rule that joins them.
+/// `inner` rewrites the inner restriction to a normal form, and `outer`
+/// rewrites the whole term to `z()`. Completion derives a rule that joins the
+/// two reducts.
 theory Nested where
   sort Name : Atom;
   sort P : Type;

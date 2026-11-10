@@ -471,6 +471,7 @@ use crate::module::SlotIndex;
 use crate::module::TermsForm;
 use crate::module::WordsForm;
 use crate::module::closed_term;
+use crate::module::reflexivities_around;
 use crate::module::term_generators;
 use crate::namespace::NamePath;
 use crate::namespace::PathResolution;
@@ -5011,15 +5012,17 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The empty word `Path.here(point)` is, when `point` spells the point a
-    /// family's loops are at.
+    /// family's loops are at, inside as many `Path.here` calls as the loops'
+    /// point is wrapped in.
     ///
     /// # Specification
     /// - requires: `point` is the operand of a `here` call.
     /// - ensures: the empty word of the first words whose point `point` spells
-    ///   as a closed term over their family's constructors, each written node
-    ///   of the point recorded with the words so it answers at their family;
-    ///   the unnamed absence when no words are at it, and `Path.here(point)`
-    ///   stays reflexivity.
+    ///   as a closed term over their family's constructors inside as many
+    ///   `Path.here` calls as the words' wrapping, each written node of the
+    ///   point recorded with the words so it answers at their family; the
+    ///   unnamed absence when no words are at it, and `Path.here(point)` stays
+    ///   reflexivity.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
@@ -5044,7 +5047,11 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let mut found = None;
+        let (base, wraps) = reflexivities_around(self.pbg, self.tree, point)?;
         for (index, words) in self.collected.words.iter().enumerate() {
+            if words.reflexivities != wraps {
+                continue;
+            }
             let family = Generators::Written(words.family);
             let Some(declared) = self.collected.slots.get(usize::from(words.slot))
             else {
@@ -5057,7 +5064,7 @@ impl<'source> Lowerer<'_, 'source>
                     .find(|constructor| constructor.form == family)
                     .map(|constructor| (constructor.tag, constructor.arity))
             };
-            if let Maybe::Present(term) = closed_term(self.pbg, self.tree, point, &tag_of)?
+            if let Maybe::Present(term) = closed_term(self.pbg, self.tree, base, &tag_of)?
                 && term.nodes == words.point
             {
                 found = Some((index, words.slot, term.written));
@@ -6936,7 +6943,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] when the root is no
     ///   switch on the scrutinee's constructors or a loop of its sort has no
     ///   arm; [`LoweringRefusal::DuplicateDefinition`] at a loop's second arm;
-    ///   the wrong-sort refusal at an arm for a loop of another sort.
+    ///   the wrong-sort refusal at an arm for a loop of another sort; the
+    ///   unadmitted [`Unbuilt::HigherCellCase`] at the match when the root
+    ///   switch's sort has a cell above dimension one.
     /// - panics: none.
     ///
     /// # Errors
@@ -6961,30 +6970,48 @@ impl<'source> Lowerer<'_, 'source>
         written: Vec<LoopArm>,
     ) -> Result<Vec<LoopArm>, LoweringRefusal<'source>>
     {
+        let sort_of = |words: &WordsForm| {
+            self.collected
+                .data
+                .get(words.family)
+                .and_then(|form| self.collected.slots.get(usize::from(form.slot)))
+                .map(|slot| slot.constant)
+        };
+        let root = match tests.first() {
+            Some(&Test::Data {
+                level,
+                family: Maybe::Present(family),
+                ..
+            }) if level == TreeLevel::default() => Some(family),
+            _ => None,
+        };
+        // A case over a sort with a cell above dimension one has no branch
+        // for the cell yet.
+        // - see: #6395 — the case at a higher cell.
+        if let Some(family) = root
+            && self.collected.words.iter().any(|words| {
+                words.reflexivities != gandr_kernel_term::Reflexivities::NONE
+                    && sort_of(words) == Some(family)
+            })
+        {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: site.at.span,
+                form: FormName::MATCH,
+                sort: site.reading.sort(),
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::HigherCellCase),
+            });
+        }
         if written.is_empty() {
             return Ok(written);
         }
         let uncovered = LoweringRefusal::NonExhaustiveMatch { span: site.at.span };
-        let Some(&Test::Data {
-            level,
-            family: Maybe::Present(family),
-            ..
-        }) = tests.first()
+        let Some(family) = root
         else {
             return Err(uncovered);
         };
-        if level != TreeLevel::default() {
-            return Err(uncovered);
-        }
         let mut owed = Vec::new();
         for (index, words) in self.collected.words.iter().enumerate() {
-            let sort = self
-                .collected
-                .data
-                .get(words.family)
-                .and_then(|form| self.collected.slots.get(usize::from(form.slot)))
-                .map(|slot| slot.constant);
-            if sort == Some(family) {
+            if sort_of(words) == Some(family) {
                 owed.extend((0 .. words.loops.len()).map(|generator| (index, generator)));
             }
         }
@@ -9887,7 +9914,7 @@ impl<'source> Lowerer<'_, 'source>
                 })
                 .collect();
             let presentation = gandr_core_term::Presentation::words(
-                gandr_core_term::FreeCells::new(family, cells),
+                gandr_core_term::FreeCells::new(family, cells).wrapped(words.reflexivities),
             );
             let data = DataIndex::from(self.data.len());
             self.data.push(Arc::new(
@@ -9897,12 +9924,14 @@ impl<'source> Lowerer<'_, 'source>
             let _first = self.worded.insert(index, data);
             let mark = sink.arena.watermark();
             let pointed_at = self.words_point(sink.arena, words);
+            let wrapped =
+                pointed_at.map(|based| wrapped_point(sink.arena, based, words.reflexivities));
             record_since(sink, mark, origin, Maybe::Absent(rooted::Absent::Unminted));
-            let Maybe::Present((carrier, point)) = pointed_at
+            let (Maybe::Present((carrier, _)), Maybe::Present((at, point))) = (pointed_at, wrapped)
             else {
                 continue;
             };
-            let path = sink.arena.value_type_path(carrier, point, point);
+            let path = sink.arena.value_type_path(at, point, point);
             sink.origins.record_value_type(path, origin);
             let _first = self.word_types.insert(index, (path, carrier));
             let lettered = self
@@ -9917,7 +9946,11 @@ impl<'source> Lowerer<'_, 'source>
                 .skip(self.current.pointed)
                 .filter(|&&(_, at)| at == index)
                 .map(|&(span, _)| (span, carrier));
-            let at_point = || form.cells.iter().filter(|cell| cell.point == words.point);
+            let at_point = || {
+                form.cells.iter().filter(|cell| {
+                    cell.point == words.point && cell.reflexivities == words.reflexivities
+                })
+            };
             // Each side of a loop spells the point: its nodes are minted apart
             // as the point's terms, each recorded once, written at its node.
             // A side's nodes stand in pre-order, the reverse of mint order.
@@ -10002,15 +10035,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The carrier and the point of `words`: the family's type, and the closed
-    /// term the point spells over it.
+    /// term the point spells over it, before any wrapping in reflexivity
+    /// ([`wrapped_point`] wraps them).
     ///
     /// # Specification
     /// - requires: `words` is an entry of the collection's words list.
     /// - ensures: the family's type without arguments, and the point as
     ///   [`spelled_point`] mints it over that type.
-    /// - provides: the path type `Path[.A = carrier](point, point)` a word at
-    ///   that point stands at, for the words' own binding and for a derived
-    ///   operation reading its path's type.
+    /// - provides: with [`wrapped_point`], the path type `Path[.A =
+    ///   carrier](point, point)` a word at that point stands at, for the words'
+    ///   own binding and for a derived operation reading its path's type.
     /// - fails: the unminted absence for words over a family the collection
     ///   does not hold, or a point that spells nothing.
     /// - panics: none.
@@ -13822,6 +13856,41 @@ fn spelled_point(
         .last()
         .copied()
         .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present)
+}
+
+/// The carrier and the point a type of words reads its path at, its point
+/// `(carrier, point)` wrapped `reflexivities` times in its reflexivity.
+///
+/// # Specification
+/// - requires: `point` is a value of `carrier`.
+/// - ensures: `(carrier, point)` for no wrapping; otherwise `(Path[.A = c](p,
+///   p), here(p))` over the pair `(c, p)` for one wrapping fewer.
+/// - provides: the path a word above dimension one stands at, the sphere's
+///   `Path[.A = Path[.A = S2](Base, Base)](here(Base), here(Base))`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the wrappings, not recursion.
+/// - measure: the wrappings left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's 2-cell binds at the path at the reflexivity
+///   of its point.
+/// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+#[spec(captures: before = (carrier, point), ensures: |ret| reflexivities != gandr_kernel_term::Reflexivities::NONE || ret == before)]
+pub(super) fn wrapped_point(
+    arena: &mut CoreArena,
+    (carrier, point): (ValueTypeId, ValueId),
+    reflexivities: gandr_kernel_term::Reflexivities,
+) -> (ValueTypeId, ValueId)
+{
+    let (mut carrier, mut point) = (carrier, point);
+    for _ in 0 .. usize::from(reflexivities) {
+        carrier = arena.value_type_path(carrier, point, point);
+        point = arena.value_here(point);
+    }
+    (carrier, point)
 }
 
 /// `ty`, read under `context` binders, with the value `scrutinee` abstracted

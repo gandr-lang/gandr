@@ -582,7 +582,7 @@ impl Referents
             .filter_map(|declaration| {
                 if let DeclarationOutcome::Refused(
                     LoweringRefusal::UnresolvedName { span, .. }
-                    | LoweringRefusal::UnresolvedTypeHead { span, .. },
+                    | LoweringRefusal::UnresolvedTypeHead { head: span, .. },
                 ) = declaration.outcome()
                     && !hidden
                         .iter()

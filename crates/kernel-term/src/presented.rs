@@ -1395,9 +1395,11 @@ impl FreeCell
     }
 }
 
-/// The free cells a type of words is minted over: the sort whose closed terms
-/// they join, by its admission position, and the cells, one generator each, in
-/// written order.
+/// The free cells a type of words is minted over.
+///
+/// The cells name the sort whose closed terms they join, by its admission
+/// position, and how many times the point is wrapped in its reflexivity. They
+/// hold the cells, one generator each, in written order.
 ///
 /// # The words
 ///
@@ -1409,6 +1411,19 @@ impl FreeCell
 /// letter and tag `2 + 2i` its inverse. The table and the rules follow from
 /// the cells alone, so a producer states the cells and the kernel compares
 /// what the declaration carries with this mint.
+///
+/// # Cells above dimension one
+///
+/// A cell may stand at the reflexivity of the point, `surf : Path.here Base
+/// <-> Path.here Base`, a cell of dimension two. The cells then loop at the
+/// point wrapped [`Self::reflexivities`] times in its reflexivity, and the
+/// path type at that wrapped point reads as their words. The endpoints stay
+/// closed terms of the sort, so the table, the rules and the validation are
+/// the ones at dimension one. **Alternatives.** The 2-cells over the words of
+/// the point's loops, a type of words with no cell at dimension one; that
+/// needs a type of words with the empty word alone. **Reversal.** A cell
+/// between two distinct words of the dimension below, the torus's square,
+/// needs the cells' endpoints as words, not as wrapped points.
 ///
 /// # Specification
 /// - provides: the cells and the words they mint.
@@ -1423,13 +1438,16 @@ pub struct FreeCells
 {
     /// The sort's admission position.
     sort: crate::term::ConstantIndex,
+    /// How many times the cells' point is wrapped in its reflexivity: none
+    /// for loops, one for cells of dimension two.
+    reflexivities: Reflexivities,
     /// The cells, in written order.
     cells: Box<[FreeCell]>,
 }
 
 impl FreeCells
 {
-    /// The cells `cells` of the sort admitted at `sort`.
+    /// The cells `cells` of the sort admitted at `sort`, loops at their point.
     ///
     /// # Specification
     /// trivial.
@@ -1442,7 +1460,26 @@ impl FreeCells
     {
         Self {
             sort,
+            reflexivities: Reflexivities::NONE,
             cells: cells.into_boxed_slice(),
+        }
+    }
+
+    /// These cells at their point wrapped `reflexivities` times in its
+    /// reflexivity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn wrapped(
+        self,
+        reflexivities: Reflexivities,
+    ) -> Self
+    {
+        Self {
+            reflexivities,
+            ..self
         }
     }
 
@@ -1455,6 +1492,17 @@ impl FreeCells
     pub const fn sort(&self) -> crate::term::ConstantIndex
     {
         self.sort
+    }
+
+    /// How many times the cells' point is wrapped in its reflexivity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reflexivities(&self) -> Reflexivities
+    {
+        self.reflexivities
     }
 
     /// The cells, in written order.
@@ -1641,6 +1689,47 @@ impl FreeCells
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CellIndex(usize);
+
+/// How many times a point is wrapped in its reflexivity: none for the point,
+/// one for `Path.here a`, two for `Path.here (Path.here a)`.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Reflexivities(usize);
+
+impl Reflexivities
+{
+    /// The point itself.
+    pub const NONE: Self = Self(0);
+}
+
+impl From<usize> for Reflexivities
+{
+    /// `count` wrappings.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<Reflexivities> for usize
+{
+    /// The count of wrappings.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: Reflexivities) -> Self
+    {
+        count.0
+    }
+}
 
 impl From<usize> for CellIndex
 {

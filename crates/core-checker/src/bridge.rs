@@ -3223,10 +3223,10 @@ where
                                 .copied()
                                 .unwrap_or(next);
                             gandr_kernel_term::Presentation::new(presentation.rules().to_vec())
-                                .carrying(gandr_kernel_term::FreeCells::new(
-                                    sort,
-                                    cells.cells().to_vec(),
-                                ))
+                                .carrying(
+                                    gandr_kernel_term::FreeCells::new(sort, cells.cells().to_vec())
+                                        .wrapped(cells.reflexivities()),
+                                )
                         },
                     ))
                 },

@@ -2,8 +2,9 @@
 //!
 //! `sub(sub(b, p), lift(s))` equals `sub(sub(b, s), p)`.
 //!
-//! The law does not hold by direct computation. An induction on `b` proves
-//! the law. The proof compares lookups at every index.
+//! The law does not hold by direct computation. The substitution stops at a
+//! variable `b`. An induction on `b` proves the law. `substSquare` takes it
+//! from the agreement of the two composites at every index.
 //!
 //! - see: #640
 

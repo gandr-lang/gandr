@@ -6356,8 +6356,72 @@ pub fn value_holes(
     subject: ValueId,
 ) -> alloc::collections::BTreeSet<HoleId>
 {
+    surveyed(arena, Node::Value(subject))
+}
+
+/// The name of every value hole that stands in the value type `subject`, read
+/// in one walk, as [`value_holes`] reads a value.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: exactly the names `h` for which [`fill_value_type_holes`] with a
+///   solution for `h` alone changes `subject`, at the scope of no binder.
+/// - provides: the holes a refusal's compared type holds, in one walk.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — as [`value_holes`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value hole inside a type's element, a computation type
+///   around it and a hole-free type separate the walk's reach and the empty
+///   survey.
+/// - witness: `rewrite::tests::a_type_s_hole_survey_names_its_value_holes_6195`
+#[inline]
+#[must_use]
+pub fn value_type_holes(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+) -> alloc::collections::BTreeSet<HoleId>
+{
+    surveyed(arena, Node::ValueType(subject))
+}
+
+/// The name of every value hole that stands in the computation type `subject`,
+/// read in one walk, as [`value_holes`] reads a value.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: exactly the names `h` for which [`fill_comp_type_holes`] with a
+///   solution for `h` alone changes `subject`, at the scope of no binder.
+/// - provides: as [`value_type_holes`].
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — as [`value_holes`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`value_type_holes`].
+/// - witness: `rewrite::tests::a_type_s_hole_survey_names_its_value_holes_6195`
+#[inline]
+#[must_use]
+pub fn comp_type_holes(
+    arena: &mut CoreArena,
+    subject: CompTypeId,
+) -> alloc::collections::BTreeSet<HoleId>
+{
+    surveyed(arena, Node::CompType(subject))
+}
+
+/// The holes one survey walk of `subject` names.
+///
+/// # Specification
+/// trivial.
+fn surveyed(
+    arena: &mut CoreArena,
+    subject: Node,
+) -> alloc::collections::BTreeSet<HoleId>
+{
     let mut engine = Engine::new(arena);
-    let _surveyed = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Holes);
+    let _surveyed = engine.run(subject, Binders::NONE, Rewrite::Holes);
     engine.found
 }
 

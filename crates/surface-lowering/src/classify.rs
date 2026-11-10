@@ -836,6 +836,7 @@ mod tests
             },
             LoweringRefusal::UnresolvedTypeHead {
                 span: empty,
+                head: empty,
                 name: SurfaceName::from("Intgr"),
                 arity: HeadArity::Nullary,
             },

@@ -388,6 +388,7 @@ pub use self::data::Generators;
 pub use self::data::Ported;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
+pub use self::data::reflexivities_around;
 pub use self::derive::DerivedSlot;
 pub use self::foreign::BoundarySlot;
 use self::foreign::Foreign;
@@ -2234,6 +2235,52 @@ impl<'source> Collected<'source>
         found
             .filter(|&slot| usize::from(slot) < self.slots.len())
             .map_or(Maybe::Absent(imported::Absent::Unbound), Maybe::Present)
+    }
+
+    /// The member that a reference through the namespace of `module` reads
+    /// for its exported member `slot`.
+    ///
+    /// A module binding of a flow reads a renamed member as the argument's
+    /// member that it binds, as an import reads it through its translation.
+    /// A sealed member reads the witness that states its component's type.
+    /// Any other member reads itself.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the member that [`Instance::renamed`] keys `slot` to, when
+    ///   `module` is the structure of an instance whose argument is a module;
+    ///   else the witness that [`Structure::exported_as`] keys `slot` to; else
+    ///   `slot`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module binding reads a renamed member as the
+    ///   source's declaration, and a sealed member as its witness.
+    /// - witness: `tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    #[spec(ensures: |ret| ret == slot
+        || self.structures.get(module.0).is_some_and(|entry| entry.exported_as.get(&slot) == Some(&ret)
+            || matches!(entry.stratum, Stratum::Instance(index) if self.instances.get(usize::from(index))
+                .is_some_and(|instance| instance.renamed.get(&slot) == Some(&ret)))))]
+    pub(crate) fn exported_read(
+        &self,
+        module: StructureIndex,
+        slot: SlotIndex,
+    ) -> SlotIndex
+    {
+        let Some(entry) = self.structures.get(module.0)
+        else {
+            return slot;
+        };
+        if let Stratum::Instance(index) = entry.stratum
+            && let Some(instance) = self.instances.get(usize::from(index))
+            && instance.structure == module
+            && matches!(instance.argument, Argument::Module(_))
+            && let Some(&bound) = instance.renamed.get(&slot)
+        {
+            return bound;
+        }
+        entry.exported_as.get(&slot).copied().unwrap_or(slot)
     }
 
     /// The source whose top level holds the slot `entry`, and the name it is
@@ -9622,9 +9669,7 @@ impl<'source> Collector<'_, 'source>
         listed
             .iter()
             .map(|&member| match member {
-                Member::Slot(slot) => {
-                    Member::Slot(entry.exported_as.get(&slot).copied().unwrap_or(slot))
-                },
+                Member::Slot(slot) => Member::Slot(self.collected.exported_read(module, slot)),
                 Member::Module(nested) => Member::Module(nested),
             })
             .collect()

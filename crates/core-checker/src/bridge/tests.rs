@@ -7691,6 +7691,104 @@ fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
     );
 }
 
+/// A declared type that decodes a call over an omitted model, a slot the
+/// signature leaves undecided, is refused as the slot's resolution refuses
+/// it: with two candidates naming both, and with none naming the slot. A
+/// refusal whose compared types hold no hole of a slot stands.
+#[test]
+fn a_stated_type_s_undecided_slot_is_refused_by_its_resolution_6195()
+{
+    // def unitOf    : U (Integer -> F Type) = thunk λ_. return ⌜Unit⌝ ;
+    // def integerOf : U (Integer -> F Type) = thunk λ_. return ⌜Integer⌝ ;
+    // def via : U (U (Integer -> F Type) -> Integer -> F Type)
+    //   = thunk λop λa. (force op) a ;
+    // def twice : El(⟨via ?o0 0⟩) = 0 ;  ?o0 answered by `unitOf`, `integerOf`
+    // def none  : El(⟨via ?o1 0⟩) = 0 ;  ?o1 answered by no module
+    // def apart : Unit = 0 ;             ?o2 answered by both, met nowhere
+    let mut arena = CoreArena::new();
+    let small = small(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let returns_code = arena.comp_type_returner(small);
+    let picking = arena.comp_type_arrow(integer, returns_code);
+    let picking = arena.value_type_thunk(picking);
+    let [unit_of, integer_of] = [unit_type, integer].map(|ty| {
+        let code = arena.value_quote(ty);
+        let returned = arena.computation_return(code);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    });
+    let [op, argument] = [1_u32, 0]
+        .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+    let forced = arena.computation_force(op);
+    let applied = arena.computation_application(forced, argument);
+    let via = arena.computation_lambda(applied);
+    let via = arena.computation_lambda(via);
+    let via = arena.value_thunk(via);
+    let via_type = arena.comp_type_arrow(integer, returns_code);
+    let via_type = arena.comp_type_arrow(picking, via_type);
+    let via_type = arena.value_type_thunk(via_type);
+    let holes: [gandr_core_term::hole::HoleId; 3] = nominated_holes();
+    let zero = arena.value_literal(integer_literal());
+    let [twice, none] = [holes[0], holes[1]].map(|hole| {
+        let omitted = arena.value_hole(hole);
+        let head = arena.value_constant(ConstantIndex::from(2_usize));
+        let forced = arena.computation_force(head);
+        let instantiated = arena.computation_application(forced, omitted);
+        let applied = arena.computation_application(instantiated, zero);
+        let call = arena.value_returned(applied);
+        arena.value_type_element(call, Level::zero())
+    });
+    let candidates = [0_usize, 1].map(|at| gandr_core_term::model::Candidate {
+        components: Vec::from([arena.value_constant(ConstantIndex::from(at))]),
+        fixed: Vec::new(),
+    });
+    let slot = |hole, candidates: &[gandr_core_term::model::Candidate]| {
+        Vec::from([gandr_core_term::model::ModelSlot {
+            holes: Vec::from([hole]),
+            fixed: Vec::new(),
+            candidates: candidates.to_vec(),
+        }])
+    };
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(picking), Maybe::Present(unit_of)),
+            declaration(At(1), Maybe::Present(picking), Maybe::Present(integer_of)),
+            declaration(At(2), Maybe::Present(via_type), Maybe::Present(via)),
+            declaration(At(3), Maybe::Present(twice), Maybe::Present(zero))
+                .resolving(slot(holes[0], &candidates)),
+            declaration(At(4), Maybe::Present(none), Maybe::Present(zero))
+                .resolving(slot(holes[1], &[])),
+            declaration(At(5), Maybe::Present(unit_type), Maybe::Present(zero))
+                .resolving(slot(holes[2], &candidates)),
+        ])
+    };
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(
+            verdicts.get(3),
+            Some(Verdict::Refused(CheckRefusal::ModelAmbiguous { survivors, .. }))
+                if survivors.places().map(usize::from).eq([0, 1])
+        ),
+        "two modules answer the slot the stated type decodes through: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(4),
+            Some(Verdict::Refused(CheckRefusal::ModelUnanswered { .. }))
+        ),
+        "no module answers the slot the stated type decodes through: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            verdicts.get(5),
+            Some(Verdict::Refused(CheckRefusal::TypeMismatch(_)))
+        ),
+        "a refusal over no hole of a slot stands: {verdicts:?}"
+    );
+}
+
 /// #5272: a parameter whose path type omits its carrier is read again as the
 /// first path of a composite, and the composite reads the omitted carrier. The
 /// signature's formation solves that carrier. The body reads the solved

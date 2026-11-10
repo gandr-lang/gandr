@@ -778,14 +778,16 @@ fn encode_minted_atom_table(
 ///   [`tags::KIND_DATA_PRESENTED`] and closes with the rule count and each
 ///   rule's two sides; a type of words writes [`tags::KIND_DATA_WORDS`] and
 ///   closes with the rule block, its count possibly zero, then the sort's
-///   position, the cell count and each cell's two endpoints as rule sides; an
-///   indexed data declaration writes [`tags::KIND_DATA_INDEXED`] and closes
-///   with the index count, each index classifier's root and each constructor's
-///   result roots, and no rules; a codata declaration writes
-///   [`tags::KIND_CODATA`] and closes with its parameter count and roots, then
-///   its observation count and roots; abstract types write their kind and
-///   representation roots and the extent of their scope, an open scope as
-///   `remaining`, and an interfaced one writes
+///   position, the cell count and each cell's two endpoints as rule sides; a
+///   type of words over cells above dimension one writes
+///   [`tags::KIND_DATA_WORDS_HIGHER`] and the same block, how many times the
+///   point is wrapped, less one, after the sort's position; an indexed data
+///   declaration writes [`tags::KIND_DATA_INDEXED`] and closes with the index
+///   count, each index classifier's root and each constructor's result roots,
+///   and no rules; a codata declaration writes [`tags::KIND_CODATA`] and closes
+///   with its parameter count and roots, then its observation count and roots;
+///   abstract types write their kind and representation roots and the extent of
+///   their scope, an open scope as `remaining`, and an interfaced one writes
 ///   [`tags::KIND_ABSTRACT_INTERFACED`] and closes with its relation's and its
 ///   reflexivity's roots, or, when its interface states a law,
 ///   [`tags::KIND_ABSTRACT_LAWFUL`] and the law's root after them; a literal
@@ -1135,6 +1137,11 @@ fn encode_declaration(
     }
     if let Some(cells) = cells {
         out.put_uvarint(WireU64::from(WireUsize::from(usize::from(cells.sort()))));
+        // Cells above dimension one write how many times their point is
+        // wrapped, less one, so every count the kind reads is canonical.
+        if let Some(above) = usize::from(cells.reflexivities()).checked_sub(1) {
+            out.put_uvarint(WireU64::from(WireUsize::from(above)));
+        }
         out.put_uvarint(WireU64::from(WireUsize::from(cells.cells().len())));
         for cell in cells.cells() {
             encode_rule_side(out, cell.source());
@@ -1187,6 +1194,14 @@ fn kind_tag(declaration: &Declaration) -> WireTag
     match *declaration.content() {
         DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => {
             tags::KIND_DATA_INDEXED
+        },
+        DeclarationContent::Data { .. }
+            if declaration
+                .presentation()
+                .cells()
+                .is_some_and(|cells| usize::from(cells.reflexivities()) != 0) =>
+        {
+            tags::KIND_DATA_WORDS_HIGHER
         },
         DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
             tags::KIND_DATA_WORDS
@@ -4057,6 +4072,45 @@ mod tests
                 .as_image()
                 .as_ref(),
             dropped
+        );
+        // The same cells at the reflexivity of their point write the higher
+        // kind and decode to the same wrapping.
+        let wrapped = cells.wrapped(crate::presented::Reflexivities::from(1_usize));
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = builder
+            .arena()
+            .value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let data = builder
+            .data(
+                LevelSignature::monomorphic(),
+                alloc::vec![],
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(wrapped.clone()));
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, data)];
+        let bytes = super::encode(&arena, &declarations);
+        assert_eq!(
+            bytes.as_image().as_ref().get(9),
+            Some(&u8::from(super::tags::KIND_DATA_WORDS_HIGHER))
+        );
+        let decoded = crate::decode::decode(bytes.as_image())
+            .expect("words over a wrapped point decode under their kind");
+        let declaration = decoded
+            .declarations()
+            .first()
+            .expect("one data declaration");
+        assert_eq!(
+            declaration.declaration().presentation().cells(),
+            Some(&wrapped)
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations()).as_image(),
+            bytes.as_image()
         );
     }
 
