@@ -40,25 +40,29 @@
 //! the engine hub's render bus, it follows the document the hub checked last
 //! and paints its cards — each diagnostic at its row and column with its
 //! derivation, each hole with its goal — beside an editor that shows the
-//! text; [`follow_plain`] prints the same rows to a pipe after each report.
+//! text; [`follow_plain`] prints the same lines to a pipe after each report.
 //!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in the module that owns it.
 //!
 //! **Choice.** `gandr view` attaches to the render bus of the workspace's hub
 //! and shows what an editor cannot: every diagnostic of the document the hub
-//! checked last, each at its one-based row and column with its further lines
-//! and its derivation, then each hole with its goal, under a heading naming the
-//! document, its version and the counts. The view follows whichever document's
-//! report arrived last, so it moves with the editor's focus without being told
-//! where the cursor is. It is a renderer and nothing more: the reports are the
-//! hub's, read off the diagnostics the editor already shows, and
-//! `Following::rows` is the one layout the terminal pane and a pipe print. On a
-//! terminal the frames are read on one thread and the keys on another, started
-//! once the terminal is raw, both into the one channel `drive_following` waits
-//! on, so a report paints while no key is pressed; `q`, Esc and Ctrl-C leave,
-//! and leaving sends the hub a detach. Piped, each report prints as its rows
-//! followed by a blank line, which is what the driver's witness reads.
+//! checked last, each at its one-based row and column with its code, its
+//! further lines and its derivation, then each hole with its goal, under a
+//! line of the document, its version and the counts. The view follows
+//! whichever document's report arrived last, so it moves with the editor's
+//! focus without being told where the cursor is. It is a renderer and nothing
+//! more: the reports are the hub's, read off the diagnostics the editor
+//! already shows. `Following::frame` is the one model, and [`rendering`] lays
+//! it out as the visual language's rendering data, which the terminal pane and
+//! a pipe both paint and every rule of the language checks. So the pane has
+//! no border, no title and no status line, and an empty frame paints nothing.
+//! On a terminal the frames are read on one thread and the keys on another,
+//! started once the terminal is raw, both into the one channel
+//! `drive_following` waits on, so a report paints while no key is pressed;
+//! `q`, Esc and Ctrl-C leave, and leaving sends the hub a detach. Piped, each
+//! report prints as its lines followed by a blank line, which is what the
+//! driver's witness reads.
 //!
 //! **Alternatives.** Following the cursor would need the editor to say where it
 //! is, a request the protocol does not carry to a second client; following the
@@ -83,12 +87,13 @@
 //!
 //! # Specification and evidence
 //!
-//! The crate specifies 32 nontrivial items: 23 executable predicates and 32
-//! bounded adequacy arguments. Transparent accessors, the constant quit source
-//! and the side view's frame reader and detach remain trivial. Predicates cover
-//! editing transitions, style classifications, text conservation, coordinate
-//! saturation, key precedence, fault provenance, the side view's following and
-//! layout, and the test harness's transformations.
+//! The crate specifies 33 nontrivial items: 24 executable predicates and 33
+//! bounded adequacy arguments. Transparent accessors, the constant quit source,
+//! the warrant hue, and the side view's frame reader, painters and detach
+//! remain trivial. Predicates cover editing transitions, style
+//! classifications, text conservation, coordinate saturation, key precedence,
+//! fault provenance, the side view's following, frame and rendering, and the
+//! test harness's transformations.
 //!
 //! Nine items need effect witnesses instead of predicates:
 //!
@@ -139,6 +144,10 @@
 //! - Timon Post and the crossterm contributors. `crossterm` 0.29.0. <https://docs.rs/crossterm/0.29.0/crossterm/>
 //!   — raw mode, the alternate screen and key events, reached through ratatui's
 //!   re-export.
+//! - `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the engine-surface
+//!   blueprint (§ engine-surface-visual, § engine-surface-visual-warrant). The
+//!   side view keeps its twenty rules, and the theme binds its five warrant
+//!   colours.
 
 // Module documentation that predates the shape lint: 8 headings outside the
 // vocabulary, 1 decision record and 3 budgets exceeded. Each allow leaves with
@@ -165,12 +174,12 @@ pub use crate::app::Handled;
 pub use crate::app::Key;
 pub use crate::follow::Following;
 pub use crate::follow::Heard;
-pub use crate::follow::Row;
 pub use crate::follow::Seen;
 pub use crate::follow::draw_following;
 pub use crate::follow::drive_following;
 pub use crate::follow::follow;
 pub use crate::follow::follow_plain;
+pub use crate::follow::rendering;
 pub use crate::run::Input;
 pub use crate::run::InputSource;
 pub use crate::run::SMOKE_NOTE;

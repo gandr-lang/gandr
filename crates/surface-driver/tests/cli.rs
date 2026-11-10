@@ -4177,13 +4177,19 @@ fn view_follows_an_editor(
     let first = report();
     assert_eq!(
         first.first().map(String::as_str),
-        Some("file:///tmp/viewed.gandr at version 1: 1 diagnostic, 0 holes"),
+        Some("uri file:///tmp/viewed.gandr version 1 diagnostics 1 holes 0"),
         "the view shows what the editor holds: {first:#?}"
     );
     assert!(
         first
             .get(1_usize)
-            .is_some_and(|row| row.starts_with("1:9 [UnresolvedName]")),
+            .is_some_and(|heads| heads.starts_with("span code")),
+        "the cards sit under their fields' names: {first:#?}"
+    );
+    assert!(
+        first
+            .get(2_usize)
+            .is_some_and(|card| { card.starts_with("1:9 ") && card.contains("[UnresolvedName]") }),
         "the refusal is placed at its row and column: {first:#?}"
     );
     to_editor
@@ -4197,7 +4203,7 @@ fn view_follows_an_editor(
     drop(next_from_editor());
     assert_eq!(
         report(),
-        ["file:///tmp/viewed.gandr at version 2: 0 diagnostics, 0 holes"],
+        ["uri file:///tmp/viewed.gandr version 2 diagnostics 0 holes 0"],
         "the editor's edit reaches the view within one check"
     );
     view.kill().expect("the view stops");
@@ -4205,6 +4211,151 @@ fn view_follows_an_editor(
         !view.wait().expect("the view is reaped").success(),
         "the view runs until it is stopped"
     );
+    to_editor
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+                Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+            ])
+            .as_ref(),
+        )
+        .expect("the editor's session is ended");
+    drop(to_editor);
+    // The shutdown reply is read, so the editor's last write finds a
+    // reader.
+    let mut rest = Vec::new();
+    std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
+    let ended = editor.wait_with_output().expect("the editor's server runs");
+    assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
+    hub_lingers_out(&socket);
+}
+
+/// An editor holds a corpus source open through a hub, then its next version.
+/// The view's rendering of each report the hub's render bus sends breaks no
+/// rule of the visual language, after the report before it.
+#[cfg(unix)]
+#[test]
+fn the_view_renders_a_corpus_source_in_the_visual_language()
+{
+    use std::ffi::OsStr;
+    use std::io::BufRead as _;
+    use std::io::BufReader;
+    use std::os::unix::net::UnixStream;
+
+    use gandr_surface_render_remote::FrameBody;
+    use gandr_surface_render_remote::RenderFrame;
+    use gandr_surface_render_remote::Shown;
+    use gandr_surface_render_remote::conform;
+    use gandr_surface_tui::Following;
+    use gandr_surface_tui::rendering;
+
+    const SOURCE: &str = include_str!("../../../corpus/pathological/holes/pattern-hole-arms.gandr");
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("viewrules"));
+    let socket = scratch.0.join("hub.sock");
+    let mut editor = gandr(&[
+        OsStr::new("lsp"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+        OsStr::new("--linger-ms"),
+        OsStr::new("200"),
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("the editor's server starts");
+    let mut to_editor = editor.stdin.take().expect("standard input is piped");
+    let mut from_editor = BufReader::new(editor.stdout.take().expect("standard output is piped"));
+    let mut next_from_editor = || {
+        let Maybe::Present(body) = read_frame(&mut from_editor).expect("a frame")
+        else {
+            panic!("the editor's server ended early");
+        };
+        drop(body);
+    };
+    let opened = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {"textDocument": {
+            "uri": "file:///tmp/ruled.gandr",
+            "languageId": "gandr",
+            "version": 1_i32,
+            "text": SOURCE,
+        }},
+    })
+    .to_string();
+    to_editor
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+                Text::from(opened.as_str()),
+            ])
+            .as_ref(),
+        )
+        .expect("the editor's session is written");
+    next_from_editor();
+    next_from_editor();
+    let mut bus = UnixStream::connect(&socket).expect("the hub answers on its socket");
+    bus.write_all(gandr_surface_lsp::RENDER_BUS_PREFACE.as_bytes())
+        .expect("the bus is attached");
+    let mut from_bus = BufReader::new(bus.try_clone().expect("the bus is shared"));
+    let mut line = String::new();
+    let mut following = Following::default();
+    let mut ruled = |following: &mut Following| {
+        let before = following.clone();
+        loop {
+            line.clear();
+            assert_ne!(
+                from_bus.read_line(&mut line).expect("the bus reads"),
+                0_usize,
+                "the bus ended early"
+            );
+            let frame: RenderFrame = serde_json::from_str(&line).expect("a line is a frame");
+            let _heard = following.hear(&frame);
+            if matches!(*frame.body(), FrameBody::Frame { .. }) {
+                break;
+            }
+        }
+        let (now, earlier) = (following.frame(), before.frame());
+        let drawn = rendering(&now);
+        let breaches = conform(&Shown {
+            frame: &now,
+            rendering: &drawn,
+            before: Some((&earlier, &rendering(&earlier))),
+        });
+        (drawn, breaches)
+    };
+    let (first, breaches) = ruled(&mut following);
+    assert_eq!(breaches, [], "{first:#?}");
+    assert!(
+        first
+            .panes
+            .get(1)
+            .is_some_and(|cards| cards.rows.len() >= 2),
+        "the source's refusals are shown: {first:#?}"
+    );
+    let changed = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didChange",
+        "params": {
+            "textDocument": {"uri": "file:///tmp/ruled.gandr", "version": 2_i32},
+            "contentChanges": [{"text": format!("{SOURCE}\n// The next version.\n")}],
+        },
+    })
+    .to_string();
+    to_editor
+        .write_all(frames(&[Text::from(changed.as_str())]).as_ref())
+        .expect("the editor's edit is written");
+    next_from_editor();
+    let (next, breaches) = ruled(&mut following);
+    assert_eq!(
+        breaches,
+        [],
+        "the cards the edit leaves alone stay in place: {next:#?}"
+    );
+    drop(from_bus);
+    drop(bus);
     to_editor
         .write_all(
             frames(&[

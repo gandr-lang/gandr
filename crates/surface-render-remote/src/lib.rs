@@ -3,7 +3,7 @@
 //!
 //! The crate parses, lowers, types and marks nothing, and names no other
 //! crate of the workspace, so a language server, a terminal face or an agent
-//! links it without linking the checker. Three modules:
+//! links it without linking the checker. Four modules:
 //!
 //! - `present`: highlight and mark spans over validated byte ranges, diagnostic
 //!   and goal cards, transcript blocks, and the projection from a byte offset
@@ -14,6 +14,9 @@
 //! - `wire`: the render-bus [`RenderFrame`] — a document-scoped or
 //!   connection-scoped [`FrameBody`] under the wire schema version
 //!   [`WIRE_SCHEMA_VERSION`].
+//! - `visual`: the visual language: the five [`Warrant`]s with their glyphs and
+//!   colour names, the [`Rendering`] a renderer emits for a [`Frame`] of named
+//!   fields, and the twenty [`RULES`] that [`conform`] checks it against.
 //!
 //! # `serde`
 //!
@@ -101,9 +104,10 @@
 //! | `DiagCard`, `DiagnosticCode`, `DiagnosticMessage` | the read-evaluate loop's parse-repair cards under `W0012`; the session report that maps refusals onto codes, and the language server's diagnostics once they carry that report's codes |
 //! | `TranscriptBlock`, `OutKind` | the read-evaluate loop's transcript encoder and the terminal face that draws it |
 //! | `SourceText`, `Pos`, `pos_of_byte`, `byte_of_pos` | a renderer that addresses rows and columns: the terminal face's cursor, the language server's ranges |
-//! | `LineIndex`, `Utf16Pos`, `Utf16Column` | the language server's diagnostic ranges, related locations and semantic tokens |
+//! | `LineIndex`, `Utf16Pos`, `Utf16Column` | the language server's diagnostic ranges, related locations and semantic tokens, and the side view's spans in `gandr-surface-tui` |
 //! | `MarkSpan`, `RenderFrame`, `ReportView` | the engine hub's render-bus face in `gandr-surface-lsp`, which writes a report per publication, and the side view in `gandr-surface-tui`, which reads it |
 //! | `GoalCard` | a renderer in another process, once goals carry spelled types |
+//! | `Warrant`, `Glyph`, `Frame`, `Rendering`, `RULES`, `conform` | the language server's tier lenses, which mark each declaration with its warrant, and the side view in `gandr-surface-tui`, whose rendering every rule checks |
 //!
 //! # A leaf beside the pipeline
 //!
@@ -176,6 +180,7 @@ extern crate alloc;
 
 mod diagnostic;
 mod present;
+mod visual;
 mod wire;
 
 pub use crate::diagnostic::DIAGNOSTIC_CODES;
@@ -204,6 +209,40 @@ pub use crate::present::Utf16Column;
 pub use crate::present::Utf16Pos;
 pub use crate::present::byte_of_pos;
 pub use crate::present::pos_of_byte;
+pub use crate::visual::Align;
+pub use crate::visual::At;
+pub use crate::visual::Attribute;
+pub use crate::visual::BLOCKS;
+pub use crate::visual::Breach;
+pub use crate::visual::Cell;
+pub use crate::visual::Colour;
+pub use crate::visual::Count;
+pub use crate::visual::DERIVATION_GLYPHS;
+pub use crate::visual::Datum;
+pub use crate::visual::Field;
+pub use crate::visual::FieldName;
+pub use crate::visual::Frame;
+pub use crate::visual::Glyph;
+pub use crate::visual::Head;
+pub use crate::visual::Numeral;
+pub use crate::visual::Pane;
+pub use crate::visual::Place;
+pub use crate::visual::RULES;
+pub use crate::visual::Record;
+pub use crate::visual::Rendering;
+pub use crate::visual::Revision;
+pub use crate::visual::Role;
+pub use crate::visual::Row;
+pub use crate::visual::Rule;
+pub use crate::visual::SAMPLES;
+pub use crate::visual::Shown;
+pub use crate::visual::Slug;
+pub use crate::visual::Sparkline;
+pub use crate::visual::Spot;
+pub use crate::visual::Unit;
+pub use crate::visual::WARRANTS;
+pub use crate::visual::Warrant;
+pub use crate::visual::conform;
 pub use crate::wire::DocId;
 pub use crate::wire::DocVersion;
 pub use crate::wire::DocumentUri;

@@ -1,9 +1,19 @@
 //! The side view: a render-bus client that follows the document the hub
 //! checked last and shows its cards, beside an editor that shows the text.
+//!
+//! The view builds the frame of the document it follows
+//! ([`Following::frame`]): one record that names the document, its version
+//! and its counts, then one record per card and per hole. [`rendering`] lays
+//! the frame out as the visual language's rendering data, which every rule of
+//! `gandr_surface_render_remote::RULES` checks. A painter then puts the cells
+//! on the terminal or on a pipe and adds nothing: a column is as wide as its
+//! widest cell, one space parts two columns, and a hue takes the theme's
+//! colour for its warrant.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt;
 use std::io;
 use std::io::BufRead;
 use std::io::Write;
@@ -13,41 +23,50 @@ use std::sync::mpsc::channel;
 use std::thread;
 
 use anodized::spec;
+use gandr_surface_render_remote::Align;
+use gandr_surface_render_remote::Attribute;
+use gandr_surface_render_remote::ByteOffset;
+use gandr_surface_render_remote::Cell;
+use gandr_surface_render_remote::Count;
+use gandr_surface_render_remote::Datum;
 use gandr_surface_render_remote::DiagnosticCode;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::DocumentUri;
+use gandr_surface_render_remote::Field;
+use gandr_surface_render_remote::FieldName;
+use gandr_surface_render_remote::Frame;
 use gandr_surface_render_remote::FrameBody;
 use gandr_surface_render_remote::FrameScope;
+use gandr_surface_render_remote::Head;
+use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::MarkKind;
-use gandr_surface_render_remote::OutKind;
+use gandr_surface_render_remote::Numeral;
+use gandr_surface_render_remote::Pane;
+use gandr_surface_render_remote::Place;
+use gandr_surface_render_remote::Record;
 use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_render_remote::Rendering;
 use gandr_surface_render_remote::ReportView;
+use gandr_surface_render_remote::Revision;
+use gandr_surface_render_remote::Row;
 use gandr_surface_render_remote::SourceText;
-use gandr_surface_render_remote::pos_of_byte;
+use gandr_surface_render_remote::Unit;
+use gandr_surface_render_remote::WARRANTS;
 use gandr_surface_repl::Ended;
 use gandr_surface_repl::Fault;
-use ratatui::Frame;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
-use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::Block;
+use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
 use crate::app::Key;
 use crate::run::Input;
 use crate::run::InputSource as _;
 use crate::run::Keyboard;
-use crate::theme::style_of_kind;
-
-/// The status line's style.
-const STATUS: Style = Style::new().fg(Color::DarkGray);
-
-/// The status line.
-const FOLLOWING: &str = "following the document the hub checked last · q or Esc leaves";
+use crate::theme::hue_of_warrant;
 
 /// What the side view knows: the last report of each document it heard, and
 /// which one the hub checked last.
@@ -70,8 +89,9 @@ pub enum Heard
     Detached,
 }
 
-/// One row of the side view: its kind, which styles it, and its text.
-pub type Row = (OutKind, String);
+/// One cell as a painter puts it on a line: its text, padded to its column's
+/// width, and its style.
+type Painted = (String, Style);
 
 impl Following
 {
@@ -114,103 +134,416 @@ impl Following
         }
     }
 
-    /// The rows of the document followed.
+    /// The frame of the document followed: what the view shows, as named
+    /// fields in the order it shows them.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: before any report, one line saying the view waits. Otherwise
-    ///   a heading naming the document, its version and how many cards and
-    ///   holes it carries; then each card's first line, at its one-based
-    ///   `row:column` (`-` for a card placed nowhere) and after its code in
-    ///   brackets when the code is the registry's own, as a diagnostic, its
-    ///   further lines indented under it, and each step of its derivation as an
-    ///   indented note; then each hole's message at its position, as a goal.
-    /// - provides: the one layout the terminal and a pipe both show.
+    /// - ensures: the empty frame before any report. Otherwise a frame at the
+    ///   document's version. Its first record holds the document's `uri`, its
+    ///   `version`, and the counts of its `diagnostics` and its `holes`. A
+    ///   record per card follows: its one-based `span` (absent for a card
+    ///   placed nowhere), its `code` (absent when the code is not the
+    ///   registry's own), one `message` per line of its message, and one
+    ///   `chain` per step of its derivation. A record per hole follows last:
+    ///   its `span`, an absent `code` and its `message`. Each text is trimmed,
+    ///   and an empty line or step is left out. A span is a row and a column,
+    ///   both one-based. Rows end where the language server's rows end, and the
+    ///   column counts characters.
+    /// - provides: the one model that the terminal and a pipe both render.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a report with a placed card, an unplaced card with a
-    ///   registry code and a hole lays out as exact rows; the empty view waits.
+    ///   registry code and a hole builds exact records, and the rendering of
+    ///   those records breaks no rule; the empty view builds the empty frame.
     /// - witness: `follow::tests::a_report_lays_out_its_cards_and_holes`
-    #[spec(ensures: |ret| !ret.is_empty())]
+    #[spec(ensures: |ret| ret.records.is_empty() == self.latest.is_none())]
     #[must_use]
     #[inline]
-    pub fn rows(&self) -> Vec<Row>
+    pub fn frame(&self) -> Frame
     {
-        let Some(followed) = self.latest.as_ref().and_then(|uri| self.reports.get(uri))
+        let Some(&(ref document, ref report)) =
+            self.latest.as_ref().and_then(|uri| self.reports.get(uri))
         else {
-            return Vec::from([(
-                OutKind::Info,
-                String::from("waiting for the hub to check a document"),
-            )]);
+            return Frame::default();
         };
-        let (document, report) = (&followed.0, &followed.1);
+        let revision = Revision(i64::from(i32::from(document.version)));
+        let field = |name: &'static str, datum: Datum| Field {
+            name: FieldName::from(name),
+            datum,
+            revision,
+        };
+        let text = |line: &str| Datum::Text(String::from(line.trim()));
+        let rows = LineIndex::new(SourceText::from(report.source.as_str()));
+        let span = |start: ByteOffset| {
+            let row = rows.row_of_byte(start);
+            report
+                .source
+                .get(usize::from(rows.row_bytes(row).start()) .. usize::from(start))
+                .map_or(Datum::Absent, |before| {
+                    Datum::Text(spelled(format_args!(
+                        "{}:{}",
+                        usize::from(row).saturating_add(1),
+                        before.chars().count().saturating_add(1)
+                    )))
+                })
+        };
+        let count = |count: usize| Datum::Count(Count(u64::try_from(count).unwrap_or(u64::MAX)));
         let holes = report
             .marks
             .iter()
             .filter(|mark| mark.kind == MarkKind::EmptyHole);
-        let source = SourceText::from(report.source.as_str());
-        let at = |start| {
-            pos_of_byte(source, start).map_or_else(
-                |_| String::from("-"),
-                |pos| {
-                    alloc::format!(
-                        "{}:{}",
-                        usize::from(pos.row).saturating_add(1),
-                        usize::from(pos.col).saturating_add(1)
-                    )
-                },
-            )
-        };
-        let counted = |count: usize, noun| {
-            if count == 1 {
-                alloc::format!("1 {noun}")
-            }
-            else {
-                alloc::format!("{count} {noun}s")
-            }
-        };
-        let mut rows = Vec::from([(
-            OutKind::Info,
-            alloc::format!(
-                "{} at version {}: {}, {}",
-                document.uri,
-                i32::from(document.version),
-                counted(report.diagnostics.len(), "diagnostic"),
-                counted(holes.clone().count(), "hole")
-            ),
-        )]);
+        let mut records = Vec::with_capacity(
+            report
+                .diagnostics
+                .len()
+                .saturating_add(report.marks.len())
+                .saturating_add(1),
+        );
+        records.push(Record {
+            fields: Vec::from([
+                field(
+                    "uri",
+                    Datum::Text(spelled(format_args!("{}", document.uri))),
+                ),
+                field(
+                    "version",
+                    Datum::Text(spelled(format_args!("{}", i32::from(document.version)))),
+                ),
+                field("diagnostics", count(report.diagnostics.len())),
+                field("holes", count(holes.clone().count())),
+            ]),
+        });
         for card in &report.diagnostics {
-            let place = card
-                .span
-                .map_or_else(|| String::from("-"), |span| at(span.start()));
-            let mut lines = card.message.lines();
             let code = if card.code == DiagnosticCode::Other {
-                String::new()
+                Datum::Absent
             }
             else {
-                alloc::format!("[{}] ", card.code)
+                Datum::Text(spelled(format_args!("{}", card.code)))
             };
-            rows.push((
-                OutKind::Diag,
-                alloc::format!("{place} {code}{}", lines.next().unwrap_or_default()),
-            ));
-            rows.extend(lines.map(|line| (OutKind::Diag, alloc::format!("    {line}"))));
-            rows.extend(
+            let mut fields = Vec::from([
+                field(
+                    "span",
+                    card.span
+                        .map_or(Datum::Absent, |placed| span(placed.start())),
+                ),
+                field("code", code),
+            ]);
+            fields.extend(
+                card.message
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(|line| field("message", text(line))),
+            );
+            fields.extend(
                 card.chain
                     .iter()
-                    .map(|step| (OutKind::Info, alloc::format!("    · {step}"))),
+                    .filter(|step| !step.trim().is_empty())
+                    .map(|step| field("chain", text(step))),
+            );
+            records.push(Record { fields });
+        }
+        records.extend(holes.map(|hole| Record {
+            fields: Vec::from([
+                field("span", span(hole.range.start())),
+                field("code", Datum::Absent),
+                field("message", text(&hole.message)),
+            ]),
+        }));
+        Frame { revision, records }
+    }
+}
+
+/// The text `arguments` spell: each field of a frame owns its text.
+///
+/// # Specification
+/// trivial.
+fn spelled(arguments: fmt::Arguments<'_>) -> String
+{
+    alloc::fmt::format(arguments)
+}
+
+/// The side view's rendering of `frame`, a frame [`Following::frame`] builds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: nothing for the empty frame. Otherwise a pane of one row, which
+///   draws each field of the first record as its name beside its datum. Then,
+///   when more records follow, a pane under one head per field name that those
+///   records use, in the order they first use it. Each record takes a row, and
+///   a further row while one name holds more fields; each field sits in its
+///   name's column. A text sits at the left and a count is a numeral at the
+///   right; any other datum draws nothing, and the view's frame holds none. A
+///   row that draws nothing is left out.
+/// - provides: the one rendering that the terminal and a pipe both paint.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the rendering of a report with a placed card, an unplaced
+///   card and a hole paints exact lines and breaks no rule of the visual
+///   language; the driver's witness checks each frame a running hub sends for a
+///   corpus source.
+/// - witness: `follow::tests::a_report_lays_out_its_cards_and_holes`
+#[spec(ensures: |ret| ret.panes.len() == frame.records.len().min(2))]
+#[must_use]
+#[inline]
+pub fn rendering(frame: &Frame) -> Rendering
+{
+    let Some((first, rest)) = frame.records.split_first()
+    else {
+        return Rendering::default();
+    };
+    let value = |place: Place, datum: &Datum| match *datum {
+        Datum::Text(ref text) => Cell::text(place, text.clone()),
+        Datum::Count(count) => Cell::numeral(place, Numeral::from(count)),
+        Datum::Absent
+        | Datum::Duration(_)
+        | Datum::Bytes(_)
+        | Datum::Latency { .. }
+        | Datum::Ratio { .. }
+        | Datum::Samples(_)
+        | Datum::Warrant(_)
+        | Datum::Comparison { .. } => Cell {
+            place: Some(place),
+            ..Cell::blank()
+        },
+    };
+    let mut labelled = Vec::with_capacity(first.fields.len().saturating_mul(2));
+    for (index, field) in first.fields.iter().enumerate() {
+        let place = Place {
+            record: 0,
+            field: index,
+        };
+        labelled.push(Cell::label(place, field.name));
+        labelled.push(value(place, &field.datum));
+    }
+    let mut panes = Vec::from([Pane {
+        heads: Vec::new(),
+        rows: Vec::from([Row { cells: labelled }]),
+    }]);
+    if rest.is_empty() {
+        return Rendering { panes };
+    }
+    let mut heads: Vec<Head> = Vec::new();
+    let mut columns_of: BTreeMap<FieldName, usize> = BTreeMap::new();
+    for field in rest.iter().flat_map(|record| &record.fields) {
+        let counted = matches!(field.datum, Datum::Count(_)).then_some(Unit::Count);
+        let column = *columns_of.entry(field.name).or_insert_with(|| {
+            heads.push(Head {
+                name: field.name,
+                unit: None,
+            });
+            heads.len().saturating_sub(1)
+        });
+        if let Some(head) = heads.get_mut(column) {
+            head.unit = head.unit.or(counted);
+        }
+    }
+    // The fields of each column for the record at hand, kept across records.
+    let mut columns: Vec<Vec<usize>> = heads.iter().map(|_| Vec::new()).collect();
+    let mut rows = Vec::with_capacity(rest.len());
+    for (offset, record) in rest.iter().enumerate() {
+        columns.iter_mut().for_each(Vec::clear);
+        for (index, field) in record.fields.iter().enumerate() {
+            if let Some(column) = columns_of
+                .get(&field.name)
+                .and_then(|&column| columns.get_mut(column))
+            {
+                column.push(index);
+            }
+        }
+        let depth = columns.iter().map(Vec::len).max().unwrap_or_default();
+        for line in 0 .. depth {
+            let cells: Vec<Cell> = columns
+                .iter()
+                .map(|column| {
+                    column
+                        .get(line)
+                        .and_then(|&index| {
+                            let place = Place {
+                                record: offset.saturating_add(1),
+                                field: index,
+                            };
+                            record
+                                .fields
+                                .get(index)
+                                .map(|field| value(place, &field.datum))
+                        })
+                        .unwrap_or_else(Cell::blank)
+                })
+                .collect();
+            if cells
+                .iter()
+                .any(|cell| !cell.text.is_empty() || cell.numeral.is_some())
+            {
+                rows.push(Row { cells });
+            }
+        }
+    }
+    panes.push(Pane { heads, rows });
+    Rendering { panes }
+}
+
+/// The lines a painter puts down for `rendering`: each pane's heads when it
+/// has any, then its rows; each cell padded to its column's width, with the
+/// style its attributes name. A head shows its field's name and its unit, and
+/// a cell shows its glyph and its text.
+///
+/// # Specification
+/// trivial.
+fn laid(rendering: &Rendering) -> Vec<Vec<Painted>>
+{
+    let measured = |text: &str| Span::raw(text).width();
+    let joined = |first: &str, second: &str| {
+        let parted = !first.is_empty() && !second.is_empty();
+        measured(first)
+            .saturating_add(usize::from(parted))
+            .saturating_add(measured(second))
+    };
+    let padded = |first: &str, second: &str, width: usize, align: Align| {
+        let gap = width.saturating_sub(joined(first, second));
+        let mut padded = String::with_capacity(
+            first
+                .len()
+                .saturating_add(second.len())
+                .saturating_add(gap)
+                .saturating_add(1),
+        );
+        if align == Align::Right {
+            padded.extend(core::iter::repeat_n(' ', gap));
+        }
+        padded.push_str(first);
+        if !first.is_empty() && !second.is_empty() {
+            padded.push(' ');
+        }
+        padded.push_str(second);
+        if align == Align::Left {
+            padded.extend(core::iter::repeat_n(' ', gap));
+        }
+        padded
+    };
+    let head = |head: &Head| {
+        let align = if head.unit.is_some() {
+            Align::Right
+        }
+        else {
+            Align::Left
+        };
+        (
+            <&str>::from(head.name),
+            head.unit.map_or("", <&str>::from),
+            align,
+        )
+    };
+    let mut lines = Vec::new();
+    let mut widths: Vec<usize> = Vec::new();
+    for pane in &rendering.panes {
+        widths.clear();
+        let drawn = pane
+            .heads
+            .iter()
+            .map(|held| {
+                let (name, unit, _) = head(held);
+                joined(name, unit)
+            })
+            .enumerate()
+            .chain(pane.rows.iter().flat_map(|row| {
+                row.cells
+                    .iter()
+                    .map(|held| joined(held.glyph.map_or("", <&str>::from), &held.text))
+                    .enumerate()
+            }));
+        for (column, width) in drawn {
+            if widths.len() <= column {
+                widths.resize(column.saturating_add(1), 0);
+            }
+            if let Some(widest) = widths.get_mut(column) {
+                *widest = (*widest).max(width);
+            }
+        }
+        let width = |column: usize| widths.get(column).copied().unwrap_or_default();
+        if !pane.heads.is_empty() {
+            lines.push(
+                pane.heads
+                    .iter()
+                    .enumerate()
+                    .map(|(column, held)| {
+                        let (name, unit, align) = head(held);
+                        (padded(name, unit, width(column), align), Style::new())
+                    })
+                    .collect(),
             );
         }
-        rows.extend(holes.map(|hole| {
-            (
-                OutKind::Goal,
-                alloc::format!("{} {}", at(hole.range.start()), hole.message),
-            )
+        lines.extend(pane.rows.iter().map(|row| {
+            row.cells
+                .iter()
+                .enumerate()
+                .map(|(column, held)| {
+                    (
+                        padded(
+                            held.glyph.map_or("", <&str>::from),
+                            &held.text,
+                            width(column),
+                            held.align,
+                        ),
+                        painted(held),
+                    )
+                })
+                .collect()
         }));
-        rows
     }
+    lines
+}
+
+/// The terminal style `cell`'s attributes name: a hue as the theme's colour
+/// for its warrant, and the bold and italic weights. The rules refuse every
+/// other attribute, so the painter has no paint for it.
+///
+/// # Specification
+/// trivial.
+fn painted(cell: &Cell) -> Style
+{
+    cell.attributes
+        .iter()
+        .fold(Style::new(), |style, attribute| match *attribute {
+            Attribute::Hue(colour) => WARRANTS
+                .iter()
+                .find(|warrant| warrant.colour() == colour)
+                .map_or(style, |&warrant| style.fg(hue_of_warrant(warrant))),
+            Attribute::Bold => style.add_modifier(Modifier::BOLD),
+            Attribute::Italic => style.add_modifier(Modifier::ITALIC),
+            Attribute::Faint
+            | Attribute::Opacity
+            | Attribute::Background(_)
+            | Attribute::Border
+            | Attribute::Blink => style,
+        })
+}
+
+/// The lines of `rendering` as plain text: the cells of a line parted by one
+/// space, with no space at the end.
+///
+/// # Specification
+/// trivial.
+fn printed(rendering: &Rendering) -> Vec<String>
+{
+    laid(rendering)
+        .into_iter()
+        .map(|line| {
+            let mut text = String::new();
+            for (column, (piece, _)) in line.into_iter().enumerate() {
+                if column > 0 {
+                    text.push(' ');
+                }
+                text.push_str(&piece);
+            }
+            text.truncate(text.trim_end().len());
+            text
+        })
+        .collect()
 }
 
 /// What the side view's loop acts on next.
@@ -225,13 +558,13 @@ pub enum Seen
     Closed,
 }
 
-/// Draw `following` onto `frame`: its rows in one pane, then a status line.
+/// Draw `following` onto `screen`: the rendering of its frame, line by line.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the pane, titled ` gandr view `, paints the first rows of
-///   [`Following::rows`] that fit, each in its kind's style; the status line
-///   says what is followed and how to leave.
+/// - ensures: the first lines of [`rendering`] of [`Following::frame`] that fit
+///   are painted from the top, each cell in the style its attributes name, as a
+///   pipe prints them; nothing else is painted.
 /// - provides: the side view's one paint.
 /// - fails: never.
 /// - panics: none.
@@ -240,27 +573,30 @@ pub enum Seen
 ///   witnesses observe the paint.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a scripted bus paints the waiting line, then a report's
-///   heading and card, observed through backend cells.
+/// - hypothesis: L3 — a scripted bus paints nothing before a report, then the
+///   report's lines exactly as a pipe prints them, observed through backend
+///   cells.
 /// - witness: `follow::tests::the_view_paints_what_the_bus_sends`
 #[inline]
 pub fn draw_following(
-    frame: &mut Frame<'_>,
+    screen: &mut ratatui::Frame<'_>,
     following: &Following,
 )
 {
-    let [pane, status] =
-        Layout::vertical([Constraint::Min(3), Constraint::Length(1)]).areas(frame.area());
-    let lines: Vec<Line<'_>> = following
-        .rows()
+    let lines: Vec<Line<'_>> = laid(&rendering(&following.frame()))
         .into_iter()
-        .map(|(kind, text)| Line::styled(text, style_of_kind(kind)))
+        .map(|line| {
+            let mut spans = Vec::with_capacity(line.len().saturating_mul(2));
+            for (column, (text, style)) in line.into_iter().enumerate() {
+                if column > 0 {
+                    spans.push(Span::raw(" "));
+                }
+                spans.push(Span::styled(text, style));
+            }
+            Line::from(spans)
+        })
         .collect();
-    frame.render_widget(
-        Paragraph::new(lines).block(Block::bordered().title(" gandr view ")),
-        pane,
-    );
-    frame.render_widget(Paragraph::new(FOLLOWING).style(STATUS), status);
+    screen.render_widget(Paragraph::new(lines), screen.area());
 }
 
 /// Run the side view over `terminal`, acting on what `seen` delivers, until
@@ -430,14 +766,17 @@ where
 }
 
 /// Follow the render bus `reading` carries as plain text: after each report,
-/// the followed document's rows to `output`, one per line, then a blank line.
+/// the lines of the followed document's rendering to `output`, then a blank
+/// line.
 ///
 /// # Specification
 /// - requires: `reading` carries the bus's frames, one per line.
-/// - ensures: each report is heard as [`Following::hear`] states and the rows
-///   written and flushed at once; greetings and resyncs write nothing. The view
-///   completes at a detach or the end of the stream, and ends faulted when a
-///   line is not a frame or cannot be read.
+/// - ensures: each report is heard as [`Following::hear`] states, and the lines
+///   of [`rendering`] of [`Following::frame`] are written and flushed at once,
+///   each cell padded to its column and parted from the next by one space;
+///   greetings and resyncs write nothing. The view completes at a detach or the
+///   end of the stream, and ends faulted when a line is not a frame or cannot
+///   be read.
 /// - provides: `gandr view` when standard output is not a terminal.
 /// - fails: the writer's error.
 /// - panics: none.
@@ -447,7 +786,7 @@ where
 /// The writer's error.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two reports for one document print two blocks of rows,
+/// - hypothesis: L3 — two reports for one document print two blocks of lines,
 ///   each its version's, and a detach ends the view; the driver's own witness
 ///   runs it piped through a running hub.
 /// - witness: `follow::tests::a_piped_view_prints_each_report`
@@ -480,8 +819,8 @@ where
             break;
         }
         if reported {
-            for (_kind, row) in following.rows() {
-                writeln!(output, "{row}")?;
+            for shown in printed(&rendering(&following.frame())) {
+                writeln!(output, "{shown}")?;
             }
             writeln!(output)?;
             output.flush()?;
@@ -498,8 +837,10 @@ mod tests
     use std::io;
     use std::sync::mpsc::channel;
 
+    use gandr_surface_render_remote::Breach;
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_render_remote::ByteRange;
+    use gandr_surface_render_remote::Datum;
     use gandr_surface_render_remote::DiagCard;
     use gandr_surface_render_remote::DiagnosticCode;
     use gandr_surface_render_remote::DocId;
@@ -507,9 +848,10 @@ mod tests
     use gandr_surface_render_remote::DocumentUri;
     use gandr_surface_render_remote::MarkKind;
     use gandr_surface_render_remote::MarkSpan;
-    use gandr_surface_render_remote::OutKind;
     use gandr_surface_render_remote::RenderFrame;
     use gandr_surface_render_remote::ReportView;
+    use gandr_surface_render_remote::Shown;
+    use gandr_surface_render_remote::conform;
     use gandr_surface_repl::Ended;
     use gandr_surface_repl::Fault;
     use ratatui::Terminal;
@@ -522,8 +864,37 @@ mod tests
     use super::drive_following;
     use super::follow_plain;
     use super::frames;
+    use super::printed;
+    use super::rendering;
     use crate::app::Key;
     use crate::run::Input;
+
+    /// The lines the view prints for `following`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lines(following: &Following) -> Vec<String>
+    {
+        printed(&rendering(&following.frame()))
+    }
+
+    /// The rules that the rendering of `following`'s frame breaks, after the
+    /// frame and the rendering of `before`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn breaches(
+        following: &Following,
+        before: &Following,
+    ) -> Vec<Breach>
+    {
+        let (frame, earlier) = (following.frame(), before.frame());
+        conform(&Shown {
+            frame: &frame,
+            rendering: &rendering(&frame),
+            before: Some((&earlier, &rendering(&earlier))),
+        })
+    }
 
     /// The document `name` at `version`.
     ///
@@ -606,7 +977,7 @@ mod tests
             DocumentUri::from(String::from("file:///b.gandr")),
         );
         let mut following = Following::default();
-        let heading = |following: &Following| following.rows()[0].1.clone();
+        let heading = |following: &Following| lines(following).first().cloned();
         assert_eq!(
             following.hear(&RenderFrame::hello(Vec::from([document(
                 &a,
@@ -614,11 +985,13 @@ mod tests
             )]))),
             Heard::Continue
         );
-        assert!(
-            heading(&following).starts_with("waiting"),
-            "a greeting reports nothing"
+        assert_eq!(
+            heading(&following),
+            None,
+            "a greeting reports nothing, and an empty frame draws nothing"
         );
         for (uri, version) in [(&a, 1_i32), (&b, 4_i32)] {
+            let before = following.clone();
             assert_eq!(
                 following.hear(&RenderFrame::frame(
                     document(uri, DocVersion::from(version)),
@@ -626,9 +999,11 @@ mod tests
                 )),
                 Heard::Continue
             );
+            assert_eq!(breaches(&following, &before), []);
         }
-        assert!(
-            heading(&following).starts_with("file:///b.gandr at version 4"),
+        assert_eq!(
+            heading(&following).as_deref(),
+            Some("uri file:///b.gandr version 4 diagnostics 0 holes 0"),
             "the second report is followed"
         );
         assert_eq!(
@@ -638,8 +1013,9 @@ mod tests
             )),
             Heard::Continue
         );
-        assert!(
-            heading(&following).starts_with("file:///a.gandr at version 2"),
+        assert_eq!(
+            heading(&following).as_deref(),
+            Some("uri file:///a.gandr version 2 diagnostics 0 holes 0"),
             "a newer report of the first document follows it again"
         );
         assert_eq!(following.hear(&RenderFrame::detach()), Heard::Detached);
@@ -650,6 +1026,7 @@ mod tests
     {
         let uri = DocumentUri::from(String::from("file:///a.gandr"));
         let mut following = Following::default();
+        let before = following.clone();
         assert_eq!(
             following.hear(&RenderFrame::frame(
                 document(&uri, DocVersion::from(3_i32)),
@@ -657,23 +1034,19 @@ mod tests
             )),
             Heard::Continue
         );
-        assert_eq!(following.rows(), [
-            (
-                OutKind::Info,
-                String::from("file:///a.gandr at version 3: 2 diagnostics, 1 hole")
-            ),
-            (
-                OutKind::Diag,
-                String::from("2:9 [type-mismatch] mismatched types")
-            ),
-            (OutKind::Diag, String::from("    expected `Integer`")),
-            (
-                OutKind::Info,
-                String::from("    · the type it is checked against")
-            ),
-            (OutKind::Diag, String::from("- [W0012] parse repaired")),
-            (OutKind::Goal, String::from("3:9 goal ?gap : Integer")),
+        assert_eq!(lines(&following), [
+            "uri file:///a.gandr version 3 diagnostics 2 holes 1",
+            "span code  message                          chain",
+            "2:9        [type-mismatch] mismatched types the type it is checked against",
+            "           expected `Integer`",
+            "     W0012 parse repaired",
+            "3:9        goal ?gap : Integer",
         ]);
+        assert_eq!(
+            breaches(&following, &before),
+            [],
+            "the layout keeps every rule of the visual language"
+        );
     }
 
     #[test]
@@ -706,8 +1079,17 @@ mod tests
             Heard::Continue
         );
         assert_eq!(
-            following.rows().last(),
-            Some(&(OutKind::Goal, String::from("- goal ?gap : Integer")))
+            following
+                .frame()
+                .records
+                .get(1)
+                .and_then(|hole| hole.fields.first())
+                .map(|span| &span.datum),
+            Some(&Datum::Absent)
+        );
+        assert_eq!(
+            lines(&following).last().map(String::as_str),
+            Some("          goal ?gap : Integer")
         );
     }
 
@@ -742,16 +1124,33 @@ mod tests
                     .collect()
             })
             .collect();
-        assert!(screen[0].contains(" gandr view "), "{screen:#?}");
-        assert!(
-            screen[1].contains("file:///a.gandr at version 3: 2 diagnostics, 1 hole"),
-            "{screen:#?}"
+        let piped = lines(&{
+            let mut following = Following::default();
+            let _heard = following.hear(&RenderFrame::frame(
+                document(&uri, DocVersion::from(3_i32)),
+                refused(),
+            ));
+            following
+        });
+        assert_eq!(
+            screen
+                .iter()
+                .map(|line| String::from(line.trim_end()))
+                .collect::<Vec<_>>(),
+            piped
+                .iter()
+                .map(|line| {
+                    let mut fitted: String = line.chars().take(64).collect();
+                    fitted.truncate(fitted.trim_end().len());
+                    fitted
+                })
+                .chain(core::iter::repeat_n(
+                    String::new(),
+                    10_usize.saturating_sub(piped.len())
+                ))
+                .collect::<Vec<_>>(),
+            "the terminal paints what a pipe prints, and nothing else"
         );
-        assert!(
-            screen[2].contains("2:9 [type-mismatch] mismatched types"),
-            "{screen:#?}"
-        );
-        assert!(screen[9].starts_with("following"), "{screen:#?}");
         assert!(
             inbox
                 .try_recv()
@@ -786,15 +1185,15 @@ mod tests
             follow_plain(bus.as_bytes(), &mut output),
             Ok(Ended::Completed)
         ));
-        let printed = String::from_utf8(output).expect("the rows are text");
+        let printed = String::from_utf8(output).expect("the lines are text");
         assert_eq!(
             printed
                 .split("\n\n")
                 .map(|report| report.lines().next().unwrap_or_default())
                 .collect::<Vec<_>>(),
             [
-                "file:///a.gandr at version 1: 2 diagnostics, 1 hole",
-                "file:///a.gandr at version 2: 0 diagnostics, 0 holes",
+                "uri file:///a.gandr version 1 diagnostics 2 holes 1",
+                "uri file:///a.gandr version 2 diagnostics 0 holes 0",
                 ""
             ],
             "each report prints once, and nothing after the detach"

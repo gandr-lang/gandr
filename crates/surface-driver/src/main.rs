@@ -54,7 +54,7 @@
 //! | `gandr lsp --capabilities` | the `initialize` result as one line of JSON | nothing |
 //! | `gandr mcp` | the Model Context Protocol server's lines on standard output, until standard input ends, served by the workspace's hub (Unix) | a stream that failed or a hub it could not reach |
 //! | `gandr mcp --socket <path> --linger-ms <ms>` | as `mcp`, through the hub on that socket, a hub it starts lingering that long | as `mcp` |
-//! | `gandr view` | the cards of the document the workspace's hub checked last, full-screen on a terminal; piped, each report's rows then a blank line (Unix) | a stream that failed, a line that is not a frame, or a hub it could not reach |
+//! | `gandr view` | the cards of the document the workspace's hub checked last, full-screen on a terminal; piped, each report's lines then a blank line (Unix) | a stream that failed, a line that is not a frame, or a hub it could not reach |
 //! | `gandr view --socket <path> --linger-ms <ms>` | as `view`, through the hub on that socket, a hub it starts lingering that long | as `view` |
 //! | `gandr serve` | each client's timing lines on standard error, until no client has connected for a minute | a socket it cannot bind or serve |
 //! | `gandr serve --socket <path> --linger-ms <ms>` | as `serve`, on that socket, lingering that long | as `serve` |
@@ -165,11 +165,11 @@
 //! as a stdio server in the workspace's directory.
 //!
 //! `gandr view` attaches to the same hub's render bus and follows the document
-//! it checked last: a heading naming the document, its version and how many
+//! it checked last: a line naming the document, its version and how many
 //! diagnostics and holes it carries, then each diagnostic at its one-based row
-//! and column with its derivation, then each hole with its goal
+//! and column with its code and its derivation, then each hole with its goal
 //! (`gandr-surface-tui`). On a terminal it takes the screen until `q`, Esc or
-//! Ctrl-C; piped, each report prints as its rows and a blank line. A view that
+//! Ctrl-C; piped, each report prints as its lines and a blank line. A view that
 //! cannot read the hub's frames ends with `gandr: the view: <cause>` on
 //! standard error.
 //!

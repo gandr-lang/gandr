@@ -110,7 +110,10 @@ gandr-workflow-sweep.workspace = true
 gandr-surface-tui.workspace = true
 
 # The tests give a child one terminal stream through a pseudo-terminal pair.
+# The side view's witness reads the hub's render bus as frames and checks the
+# view's rendering of each against the visual language's rules.
 [target."cfg(unix)".dev-dependencies]
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 nix.workspace = true
 
 [features]

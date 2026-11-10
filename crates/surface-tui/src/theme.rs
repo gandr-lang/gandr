@@ -1,4 +1,5 @@
-//! The face's styles: one per highlight role, one per transcript line kind.
+//! The face's styles: one per highlight role, one per transcript line kind,
+//! and one per warrant.
 //!
 //! # The style maps
 //!
@@ -16,12 +17,19 @@
 //! frame is drawn, so the whole history restyles with the theme: the echo's
 //! mark bold, a type line green as types are, a goal magenta as holes are, a
 //! diagnostic red, blame bold red, a stuck evaluation yellow, a value at the
-//! default, a note dark grey. Both maps are exhaustive matches, so a role or a
-//! kind added to the renderer seam stops the build until it is styled.
+//! default, a note dark grey. Each map is an exhaustive match, so a role, a
+//! kind or a warrant added to the renderer seam stops the build until it is
+//! styled.
+//!
+//! `hue_of_warrant` binds the visual language's five warrant colours to the
+//! terminal's: `pending` dark grey, `checked` the default foreground,
+//! `replayed` green, `refused` red and `withheld` yellow. The side view paints
+//! a cell's hue through it and through nothing else.
 
 use anodized::spec;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::OutKind;
+use gandr_surface_render_remote::Warrant;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
@@ -117,6 +125,23 @@ pub const fn style_of_kind(kind: OutKind) -> Style
         OutKind::Blame => Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
         OutKind::Stuck => Style::new().fg(Color::Yellow),
         OutKind::Info => Style::new().fg(Color::DarkGray),
+    }
+}
+
+/// The terminal colour of `warrant`'s hue.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub const fn hue_of_warrant(warrant: Warrant) -> Color
+{
+    match warrant {
+        Warrant::Pending => Color::DarkGray,
+        Warrant::Checked => Color::Reset,
+        Warrant::Replayed => Color::Green,
+        Warrant::Refused => Color::Red,
+        Warrant::Withheld => Color::Yellow,
     }
 }
 
