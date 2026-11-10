@@ -2934,6 +2934,7 @@ INSERT INTO purpose VALUES('surface-lsp','fragment::comments_coloured','function
 INSERT INTO purpose VALUES('surface-lsp','handover::Carried','struct','Names the client''s bytes a relay read and did not forward, so the next build''s relay sends them before standard input.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','handover::Handover','struct','Carries a session from one build''s relay to the next: the messages that open the connection again and the client''s bytes not yet forwarded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','handover::REPLAY','constant','The method a relay asks its hub for the connection''s replay with, and the identifier of that request and of the replayed `initialize`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','hub::Beside','type_alias','A face that serves a listener of its own over the workspace every connection shares, for the hub''s whole life.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::Face','type_alias','A face that serves a connection speaking newline-delimited JSON.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::LINGER','constant','How long a hub with no connection waits for one before it exits, unless its caller names another.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::Relayed','enum','Names how a relayed session ended: as the client''s frames decide, or switched to another build with its handover.',NULL,'fits','sound',NULL);
@@ -2942,6 +2943,7 @@ INSERT INTO purpose VALUES('surface-lsp','hub::bind','function','Listen on `sock
 INSERT INTO purpose VALUES('surface-lsp','hub::relay','function','Carry frames between a client and the hub at the other end of `hub`, until the hub closes the connection or the session moves to another build.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::run_hub','function','Serve every connection `listener`, bound to `socket`, accepts over one workspace, until none has been open for `linger`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','hub::socket_for','function','The socket the running build''s hub serving the workspace rooted at `root` listens on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','hub::workspace_name','function','The name of the workspace rooted at `root`, the same for every build.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','inline::Snippet','struct','A snippet in the protocol''s snippet syntax: literal text with tab stops.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','position::Character','struct','A zero-based character within a line, counted in UTF-16 code units, as the wire counts it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','position::Line','struct','A zero-based line, as the wire counts it.',NULL,'fits','sound',NULL);
@@ -3132,6 +3134,7 @@ INSERT INTO purpose VALUES('surface-mcp','connection::Refusal','enum','Names why
 INSERT INTO purpose VALUES('surface-mcp','face::Relayed','enum','Names how a relayed model session ended, so `gandr mcp` either exits or hands the session to the selected build.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','face::relay','function','Carries a client''s standard streams to the hub a line at a time, so `gandr mcp` reaches the hub as `gandr lsp` does and follows a toolchain switch.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','face::serve','function','Serves the Model Context Protocol on a connection''s buffered stream, so the hub''s line face answers a model''s messages.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','rap::Toolset','struct','Serves the Reactive Agent Protocol''s manifest and invoke endpoint beside the hub''s socket, so an agent runtime calls the hub''s tools and hears each answer by a callback.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','tools::ToolRefusal','struct','Names why a tool call produced no result, so the refusal''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::Closing','struct','One way to close an open form: the steps from its frontier to a tile that ends the form, in source order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::ClosingLimit','struct','How many closings closings keeps.',NULL,'fits','sound',NULL);

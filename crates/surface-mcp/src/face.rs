@@ -75,13 +75,13 @@ enum Event
     Closed,
 }
 
-/// Lock `workspace`, taking its state as it is when a holder panicked.
+/// Lock `mutex`, taking its state as it is when a holder panicked.
 ///
 /// # Specification
 /// trivial.
-fn lock(workspace: &Mutex<Workspace>) -> MutexGuard<'_, Workspace>
+pub fn lock<Held>(mutex: &Mutex<Held>) -> MutexGuard<'_, Held>
 {
-    workspace.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Write `messages`, one line each, to `writing`.
@@ -434,7 +434,7 @@ where
 }
 
 #[cfg(test)]
-mod tests
+pub mod tests
 {
     use alloc::string::String;
     use alloc::sync::Arc;
@@ -465,7 +465,7 @@ mod tests
 
     /// A scratch directory holding one hub's socket, removed when dropped.
     #[repr(transparent)]
-    struct Scratch(PathBuf);
+    pub struct Scratch(PathBuf);
 
     impl Scratch
     {
@@ -474,7 +474,7 @@ mod tests
         ///
         /// # Specification
         /// trivial.
-        fn new(test: &Value) -> Self
+        pub fn new(test: &Value) -> Self
         {
             let directory = std::env::temp_dir().join(alloc::format!(
                 "gm-{}-{}",
@@ -490,7 +490,7 @@ mod tests
         ///
         /// # Specification
         /// trivial.
-        fn socket(&self) -> PathBuf
+        pub fn socket(&self) -> PathBuf
         {
             self.0.join("hub.sock")
         }
@@ -527,6 +527,7 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(serve),
+                None,
                 gandr_surface_lsp::Workspace::spelled(gandr_surface_lsp::Spelling::Unicode),
             )
             .expect("the hub serves");
@@ -534,7 +535,7 @@ mod tests
     }
 
     /// An editor's connection: Language Server Protocol frames.
-    struct Editor
+    pub struct Editor
     {
         /// The end it writes.
         writing: UnixStream,
@@ -548,7 +549,7 @@ mod tests
         ///
         /// # Specification
         /// trivial.
-        fn new(scratch: &Scratch) -> Self
+        pub fn new(scratch: &Scratch) -> Self
         {
             Self::declaring(scratch, &json!({}))
         }
@@ -608,7 +609,7 @@ mod tests
         ///
         /// # Specification
         /// trivial.
-        fn edit(
+        pub fn edit(
             &mut self,
             uri: &Value,
             version: &Value,

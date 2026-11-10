@@ -194,8 +194,8 @@ fn homes() -> PathBuf
 /// # Specification
 /// - requires: arguments have stable operating-system string views.
 /// - ensures: selects the built driver and preserves arguments in order; the
-///   user's configuration, cache and data directories are this test's own,
-///   under [`homes`], so neither a file on the host nor an earlier run or
+///   user's configuration, cache, data and state directories are this test's
+///   own, under [`homes`], so neither a file on the host nor an earlier run or
 ///   another test reaches a case through them, and no case writes the host's
 ///   store. Neither `GANDR_TOOLCHAIN` nor the `CARGO_MANIFEST_DIR` the test
 ///   runner sets reaches the driver, so it selects as a shell does and, with no
@@ -224,6 +224,7 @@ where
     command.env("XDG_CONFIG_HOME", homes.join("config"));
     command.env("XDG_CACHE_HOME", homes.join("cache"));
     command.env("XDG_DATA_HOME", homes.join("data"));
+    command.env("XDG_STATE_HOME", homes.join("state"));
     command.env_remove("GANDR_TOOLCHAIN");
     command.env_remove("CARGO_MANIFEST_DIR");
     command
@@ -3397,6 +3398,81 @@ fn lsp_clients_share_one_engine_hub()
     assert!(
         !socket.exists(),
         "the hub exits after its linger, removing its socket"
+    );
+}
+
+#[test]
+fn serve_offers_the_toolset_on_a_named_port()
+{
+    use std::ffi::OsStr;
+    use std::io::BufRead as _;
+    use std::io::Read as _;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("rap"));
+    let socket = scratch.0.join("hub.sock");
+    let mut hub = gandr(&[
+        OsStr::new("serve"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+        OsStr::new("--port"),
+        OsStr::new("0"),
+    ])
+    .current_dir(&scratch.0)
+    .stdin(Stdio::null())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("the hub starts");
+    let mut said = String::new();
+    let _read = std::io::BufReader::new(hub.stderr.take().expect("standard error is piped"))
+        .read_line(&mut said)
+        .expect("the hub says where its toolset is");
+    let address = said
+        .trim_end()
+        .strip_prefix("gandr: the toolset is at http://")
+        .and_then(|url| url.strip_suffix("/.well-known/rap-toolset"))
+        .map(String::from);
+    let answer = address.as_deref().map(|address| {
+        let mut stream = std::net::TcpStream::connect(address).expect("the toolset accepts");
+        write!(
+            stream,
+            "GET /.well-known/rap-toolset HTTP/1.1\r\nhost: {address}\r\n\r\n"
+        )
+        .expect("the toolset reads");
+        let mut answer = String::new();
+        let _read = stream
+            .read_to_string(&mut answer)
+            .expect("the toolset answers");
+        answer
+    });
+    drop(hub.kill());
+    drop(hub.wait());
+    let answer = answer.unwrap_or_else(|| panic!("the hub names its manifest: {said}"));
+    let (head, body) = answer
+        .split_once("\r\n\r\n")
+        .expect("the answer has a head");
+    assert!(head.starts_with("HTTP/1.1 200 "), "{head}");
+    let manifest: serde_json::Value = serde_json::from_str(body).expect("the manifest is JSON");
+    let names: Vec<&str> = manifest["tools"]
+        .as_array()
+        .expect("the manifest lists tools")
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "diagnostics",
+            "documents",
+            "expected_syntax",
+            "ledger_list",
+            "ledger_show",
+            "outline",
+            "propose",
+            "trial",
+            "type_of"
+        ],
+        "the toolset offers every tool of the line face"
     );
 }
 
