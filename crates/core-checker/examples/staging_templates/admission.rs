@@ -49,6 +49,7 @@ mod queues;
 use std::io::Write as _;
 
 use anodized::spec;
+use gandr_core_checker::template::kernel_choices;
 use gandr_kernel_core::admission::Admission;
 use gandr_kernel_core::admission::Choice;
 use gandr_kernel_core::admission::Consumer;
@@ -58,6 +59,7 @@ use gandr_kernel_core::admission::Row;
 use gandr_kernel_core::admission::Schema;
 use gandr_kernel_core::admission::Work;
 use gandr_kernel_term::stage::Step;
+use gandr_theory_deep_inference::TemplateRow;
 
 use super::Analysis;
 use super::Arena;
@@ -79,6 +81,22 @@ use super::fixture;
 use super::harvest;
 use super::io;
 use super::produce;
+
+/// The kernel's choices for each row, in member order. The observer builds
+/// them once, before it times an admission.
+///
+/// # Specification
+/// trivial.
+fn kernel_rows(rows: &[TemplateRow]) -> Vec<Vec<Choice>>
+{
+    rows.iter()
+        .map(|row| {
+            let mut choices = Vec::with_capacity(row.guards().len());
+            kernel_choices(row, &mut choices);
+            choices
+        })
+        .collect()
+}
 
 /// Number of scoped workers requested for one independent family.
 #[repr(transparent)]
@@ -487,6 +505,7 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
                 return Err(StageError::Unbalanced.into());
             };
             let admission = candidate.admission_candidate()?;
+            let rows = kernel_rows(&admission.rows);
             let proposal = admission.proposal.clone();
             let start = Instant::now();
             let schema = Schema::check(admission.proposal, &mut Budget(10_000_000))?;
@@ -496,12 +515,11 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
             let start = Instant::now();
             let consumer = schema.bind(bound, &mut Budget(10_000_000))?;
             let binding_time = start.elapsed();
-            let serial =
-                admission_measure(&schema, &consumer, &members, &admission.rows, Threads(1))?;
+            let serial = admission_measure(&schema, &consumer, &members, &rows, Threads(1))?;
             let baseline = replay_measure(&arena, &members, Threads(1))?;
             let mut largest = Duration::ZERO;
             let mut row = Row::default();
-            for (choices, step) in admission.rows.iter().zip(&members) {
+            for (choices, step) in rows.iter().zip(&members) {
                 let start = Instant::now();
                 lookup(&schema, &consumer, choices, *step, &mut row)?;
                 largest = largest.max(start.elapsed());
@@ -517,13 +535,8 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
                 gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
             };
             for threads in [1, 2, 4, 8] {
-                let admitted = admission_measure(
-                    &schema,
-                    &consumer,
-                    &members,
-                    &admission.rows,
-                    Threads(threads),
-                )?;
+                let admitted =
+                    admission_measure(&schema, &consumer, &members, &rows, Threads(threads))?;
                 let plain = replay_measure(&arena, &members, Threads(threads))?;
                 if admitted.work != serial.work
                     || admitted.choices != serial.choices
@@ -555,7 +568,7 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
             // The same members through a standing pool at each width, on the
             // driver's schedule.
             for &(threads, ref pool) in &pools {
-                let pooled = pooled_measure(&schema, &consumer, &members, &admission.rows, pool)?;
+                let pooled = pooled_measure(&schema, &consumer, &members, &rows, pool)?;
                 if pooled.work != serial.work
                     || pooled.choices != serial.choices
                     || pooled.instantiations != serial.instantiations
@@ -579,7 +592,7 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
                 schema,
                 proposal,
                 members,
-                rows: admission.rows,
+                rows,
                 schema_time,
                 binding_time,
                 largest,

@@ -147,6 +147,7 @@ mod harvest;
 mod image;
 mod memo;
 mod syntax;
+pub use admission::kernel_choices;
 pub use draft::ArmCount;
 pub use draft::DraftKind;
 pub use draft::Miss;

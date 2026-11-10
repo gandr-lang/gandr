@@ -50,12 +50,10 @@ use alloc::borrow::Cow;
 use alloc::collections::btree_map;
 use core::time::Duration;
 
-use gandr_kernel_core::admission::Choice;
-use gandr_kernel_core::admission::Guard;
-use gandr_kernel_core::admission::Point;
 use gandr_kernel_core::admission::Proposal;
 use gandr_kernel_term::stage::Child;
 use gandr_kernel_term::stage::Type;
+use gandr_theory_deep_inference::TemplateRow;
 use gandr_theory_deep_inference::TripleCount;
 use gandr_theory_deep_inference::price_family_memoized;
 
@@ -318,13 +316,11 @@ enum Tidiness
     Garbage,
 }
 
-/// A draft the kernel has not judged.
+/// A draft the kernel has not judged. The drafter holds its rows.
 pub(super) struct Draft
 {
     /// The canonical schema the kernel checks.
     pub proposal: Proposal,
-    /// One choice per point for each covered member, member after member.
-    pub choices: Vec<Choice>,
     /// The draft's sizes and member count.
     pub cost: FamilyCostReport,
     /// The template the proposal was emitted from, as a change to the walked
@@ -390,6 +386,9 @@ pub(super) struct Drafter
     reach: Vec<Reach>,
     /// Nodes still to mark reachable.
     reaching: Vec<Id>,
+    /// The row of each covered member of the last finished draft, in member
+    /// order. The next draft writes its rows into the same buffers.
+    rows: Vec<TemplateRow>,
     /// Time the last finished draft spent importing new bodies.
     importing: Duration,
 }
@@ -403,6 +402,16 @@ impl Drafter
     pub(super) const fn importing(&self) -> Duration
     {
         self.importing
+    }
+
+    /// The row of each covered member of the last finished draft, in member
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn rows(&self) -> &[TemplateRow]
+    {
+        &self.rows
     }
 
     /// Clear every per-draft memory and size the bindings for one template.
@@ -1330,11 +1339,12 @@ impl Template
     ///   walk of this template.
     /// - ensures: `Ready` carries the canonical proposal over this skeleton and
     ///   the arms the covered members select, numbered by first selection in
-    ///   member order; one choice per point for each covered member, in order;
-    ///   and the template it was emitted from, with this draft's cost. A whole
-    ///   draft is ready only with no departure from a fresh run's
-    ///   generalization; every ready draft passes the selected price. The time
-    ///   spent importing new bodies is left in the drafter.
+    ///   member order, and the template it was emitted from, with this draft's
+    ///   cost. The drafter then holds the row of each covered member, in order,
+    ///   with one guard for each point. A whole draft is ready only with no
+    ///   departure from a fresh run's generalization; every ready draft passes
+    ///   the selected price. The time spent importing new bodies is left in the
+    ///   drafter.
     /// - fails: a lookup error on either side; an intern refusal.
     /// - panics: none.
     ///
@@ -1352,8 +1362,7 @@ impl Template
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|finished| match *finished {
         Finished::Ready(ref draft) => draft.proposal.equation.rule == self.rule
             && draft.proposal.arms.len() == self.entries.len()
-            && draft.choices.len() == usize::from(draft.cost.members)
-                .saturating_mul(self.entries.len())
+            && drafter.rows.len() == usize::from(draft.cost.members)
             && match gate {
                 PriceGate::Unmemoized => price_family(draft.cost.template_size,
                     draft.cost.plain_size).is_ok(),
@@ -1381,10 +1390,18 @@ impl Template
             },
         };
         let mut order: Vec<Vec<Arm>> = core::iter::repeat_with(Vec::new).take(points).collect();
-        let mut choices = Vec::with_capacity(covered.len().saturating_mul(points));
         drafter.canonical.clear();
-        for member in &covered {
+        for (at, member) in covered.iter().enumerate() {
             let start = member.saturating_mul(points);
+            // The row at this place in the last draft gives its buffer.
+            let mut guards: Vec<GuardId> = drafter
+                .rows
+                .get_mut(at)
+                .map(core::mem::take)
+                .map(Vec::from)
+                .unwrap_or_default();
+            guards.clear();
+            guards.reserve(points);
             for (index, column) in order.iter_mut().enumerate() {
                 let binding = drafter
                     .bindings
@@ -1402,12 +1419,15 @@ impl Template
                         *slot.insert(guard)
                     },
                 };
-                choices.push(Choice {
-                    point: Point(index),
-                    guard: Guard(usize::from(guard)),
-                });
+                guards.push(guard);
+            }
+            let row = TemplateRow::from(guards);
+            match drafter.rows.get_mut(at) {
+                Some(slot) => *slot = row,
+                None => drafter.rows.push(row),
             }
         }
+        drafter.rows.truncate(covered.len());
         let fresh: Vec<TermId> = order
             .iter()
             .flatten()
@@ -1442,7 +1462,7 @@ impl Template
         let source = occurrences(&graph, peak, PointCount(points), drafter)?;
         let target = occurrences(&graph, join, PointCount(points), drafter)?;
         if matches!(coverage, Coverage::Whole) {
-            let fitness = departure(&graph, &target, &arms, &choices)?;
+            let fitness = departure(&graph, &target, &arms, &drafter.rows)?;
             if let Fitness::Unfit(unfit) = fitness {
                 return Ok(Finished::Unfit(unfit));
             }
@@ -1485,16 +1505,14 @@ impl Template
             .checked_sub(target_points)
             .ok_or(StageError::Unbalanced)?;
         let mut plain_size = 0_usize;
-        for (row, _) in covered.iter().enumerate() {
+        for row in &drafter.rows {
             let mut source = source_base;
             let mut target = target_base;
             for point in 0 .. points {
-                let choice = choices
-                    .get(row.saturating_mul(points).saturating_add(point))
-                    .ok_or(StageError::Unbalanced)?;
+                let guard = row.guards().get(point).ok_or(StageError::Unbalanced)?;
                 let size = sizes
                     .get(point)
-                    .and_then(|column| column.get(choice.guard.0))
+                    .and_then(|column| column.get(usize::from(*guard)))
                     .ok_or(StageError::Unbalanced)?;
                 let bare = source_bare.get(point).ok_or(StageError::Unbalanced)?;
                 source = source.saturating_add(bare.saturating_mul(*size));
@@ -1556,7 +1574,6 @@ impl Template
         };
         Ok(Finished::Ready(Draft {
             proposal,
-            choices,
             cost,
             revision,
         }))
@@ -1719,8 +1736,8 @@ impl Revision
 /// Find where a drafted generalization departs from a fresh run's.
 ///
 /// # Specification
-/// - requires: `choices` holds one choice per point for each member, member
-///   after member, each indexing its point's arms; `target` counts the join's
+/// - requires: `rows` holds one row for each member, with one guard for each
+///   point, each indexing its point's arms; `target` counts the join's
 ///   occurrences.
 /// - ensures: `Unfit` names a point whose arms share one head, two points whose
 ///   bodies agree on every member, or a predecessor whose numeral is a point's
@@ -1745,7 +1762,7 @@ fn departure(
     graph: &Graph,
     target: &Occurrences,
     arms: &[Vec<Id>],
-    choices: &[Choice],
+    rows: &[TemplateRow],
 ) -> Result<Fitness, StageError>
 {
     let points = arms.len();
@@ -1759,21 +1776,18 @@ fn departure(
             return Ok(Fitness::Unfit(Unfit::Collapsed(EntryIndex::from(index))));
         }
     }
-    let body = |row: usize, point: usize| -> Result<Id, StageError> {
-        let choice = choices
-            .get(row.saturating_mul(points).saturating_add(point))
-            .ok_or(StageError::Unbalanced)?;
+    let body = |row: &TemplateRow, point: usize| -> Result<Id, StageError> {
+        let guard = row.guards().get(point).ok_or(StageError::Unbalanced)?;
         let id = arms
             .get(point)
-            .and_then(|column| column.get(choice.guard.0))
+            .and_then(|column| column.get(usize::from(*guard)))
             .ok_or(StageError::Unbalanced)?;
         Ok(*id)
     };
-    let rows = choices.len().checked_div(points).unwrap_or_default();
     for first in 0 .. points {
         for second in first.saturating_add(1) .. points {
             let mut merged = true;
-            for row in 0 .. rows {
+            for row in rows {
                 let left = body(row, first)?;
                 let right = body(row, second)?;
                 if left != right {
@@ -1795,7 +1809,7 @@ fn departure(
         }
         for other in (0 .. points).filter(|other| *other != point) {
             let mut shadowed = true;
-            for row in 0 .. rows {
+            for row in rows {
                 let upper = body(row, point)?;
                 let lower = body(row, other)?;
                 let upper = graph.node(upper)?;

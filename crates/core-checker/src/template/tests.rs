@@ -1102,9 +1102,12 @@ fn compressed_admission_matches_plain_families()
                 .unwrap();
         let consumer = schema.bind(arena.clone(), &mut Budget(1_000_000)).unwrap();
         let mut buffer = gandr_kernel_core::admission::Row::default();
-        for (choices, step) in input.rows.iter().zip(&family) {
+        let mut choices = Vec::new();
+        for (member, step) in input.rows.iter().zip(&family) {
+            choices.clear();
+            kernel_choices(member, &mut choices);
             let mut row = schema
-                .substitute(schema.classifiers(), choices, &mut buffer)
+                .substitute(schema.classifiers(), &choices, &mut buffer)
                 .unwrap();
             assert_eq!(
                 row.admit(&consumer, *step, &mut Budget(100_000))
