@@ -721,7 +721,8 @@ fn mutants(
 ///   well formed, not filed; a closer doubled or an opener deleted, leaving a
 ///   closer with nothing to close, and an opener deleted, leaving the rest of
 ///   its body at the top level, are counted closed early, not filed; a near
-///   miss that makes an application is marked by the application's location.
+///   miss that makes an application is marked by the application's location,
+///   and a deletion that leaves a model form by the model form's location.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
@@ -729,6 +730,7 @@ fn mutants(
 /// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
 /// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
 /// - witness: `ledger::recovery::tests::an_application_a_near_miss_makes_marks_its_mutation_6235`
+/// - witness: `ledger::recovery::tests::a_model_form_a_deletion_leaves_marks_its_mutation_6236`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
@@ -1534,6 +1536,49 @@ mod tests
                 }),
                 "{exemplar}:{at}: `{tile}` written as `{miss}` is reported at its mutation: \
                  {report}"
+            );
+        }
+    }
+
+    /// #6236: `type(` deleted from `return type(Model Counter with sort C =
+    /// x)` leaves a model form whose operand carries the manifest sort. The
+    /// lowering refuses that model form. Its refusal marks the whole form
+    /// from its `Model` tile, and the deleted site lies at its start, so each
+    /// mutant is reported at its mutation.
+    #[test]
+    fn a_model_form_a_deletion_leaves_marks_its_mutation_6236()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-model", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "manifest-sort.gandr",
+                include_str!("../../../../corpus/ledger/syntax/manifest-sort.gandr"),
+            ),
+            (
+                "manifest-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/manifest-type.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        for &(exemplar, at) in &[
+            ("manifest-sort.gandr", 198_usize),
+            ("manifest-type.gandr", 193),
+        ] {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == "type("
+                        && finding.mutation == Mutation::Deleted
+                }),
+                "{exemplar}:{at}: `type(` deleted is reported at its mutation: {report}"
             );
         }
     }
