@@ -46,10 +46,11 @@
 //!   declaring form's start to the brace opening its own body, or all of it
 //!   when it has none — about the head, as for its name: the keyword that
 //!   introduces it, the colon of its signature, a module's ascription, the
-//!   layout before its body. A member's keyword answers the member. An
-//!   attribute before the head answers the same, about the attributes. Inside a
-//!   body, a member answers by its own entries, never the declaration around
-//!   it.
+//!   layout before its body. A brace inside the form's own brackets, as an
+//!   offer's `renaming { … }`, opens no body. A member's keyword answers the
+//!   member. An attribute before the head answers the same, about the
+//!   attributes. Inside a body, a member answers by its own entries, never the
+//!   declaration around it.
 //! - **An import**, anywhere in it, about the import: the import as written,
 //!   then, for a path the document's closure read, the file it reads; for a
 //!   path it did not, why — no file there, a file under another root, a file
@@ -68,7 +69,9 @@
 //!   the constructor, a `data` declaration's or a module's brace the
 //!   declaration. A rule a `data` declaration writes answers as written. A
 //!   `rec` group's own tile answers the declarations the group writes, one to a
-//!   line.
+//!   line. A member the engine typed no binder and no term inside, as a
+//!   functor's or a flow's member that no application instantiates, answers as
+//!   written at each of its tiles.
 //! - **A root form that declares nothing** — a stray — is a declaration of the
 //!   outline's, keyed by its form as the engine keys its slot. Its tiles, the
 //!   attributes before it and the `;` after it answer its outline name with its
@@ -1238,14 +1241,20 @@ fn stub<'found>(
             // A member the engine typed nothing inside — an operation of a
             // theory a module block holds, which the lowering does not read
             // as a member — answers as written at each of its tiles, as at
-            // its name (#3303).
+            // its name (#3303). So does a member of a functor's or a flow's
+            // body that no application instantiates, written as a form of its
+            // own: the engine checks the body at each instance, and outside
+            // one it types only the kinds of the parameter's abstract types
+            // (#2183), which type no binder and no term of the member (#5469).
             else if let Some(member) = found.iter().rfind(|declaration| {
                 let (start, end) = bytes(declaration);
-                declaration.written == Written::Member
+                declaration.written != Written::Root
                     && holds(declaration)
                     && !table.entries(page, printed).any(|entry| {
                         matches!(entry, Maybe::Present(ref typed)
-                            if start <= typed.span().start() && typed.span().end() <= end)
+                            if start <= typed.span().start()
+                                && typed.span().end() <= end
+                                && typed.subject() != Subject::Type)
                     })
             }) {
                 Standing::Own(member)
@@ -2138,6 +2147,54 @@ mod tests
     fn fenced(block: SourceText<'_>) -> String
     {
         format!("```gandr\n{}\n```", <&str>::from(block))
+    }
+
+    /// #5469: a label after an offer's `renaming { … }` entry answers the
+    /// offer, as each label before it does, because the renaming's brace is
+    /// inside the offer's list and opens no body. A tile in the body of a flow
+    /// member that no application instantiates answers the member as written:
+    /// the engine checks the body at each instance, and the site only names
+    /// the flow.
+    #[test]
+    fn a_translation_s_tiles_answer_their_forms_5469()
+    {
+        for (source, needle, expected) in [
+            (
+                "../../corpus/model/translations/translated.site.gandr",
+                "cache = Echo via downgrade]",
+                "offers [store = Echo renaming { fetch as get }, cache = Echo via downgrade]",
+            ),
+            (
+                "../../corpus/pathological/worlds/rewritten.gandr",
+                "k }",
+                "def put(key : V, value : V, k : C) -> C",
+            ),
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(source);
+            let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+            let text = SourceText::from(written.as_str());
+            let at = written.find(needle).expect("the source writes the tile");
+            let index = LineIndex::new(written.as_str().into());
+            let position = Position::of_byte(&index, RenderOffset::from(at))
+                .expect("the tile is on a boundary");
+            let session = checked(text);
+            let shown = hover(
+                text,
+                &session,
+                &Reading::of(text),
+                &hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed),
+                position,
+                PLAIN,
+            );
+            assert_eq!(
+                match shown {
+                    Maybe::Present(shown) => Ok(shown.contents.value),
+                    Maybe::Absent(reason) => Err(reason),
+                },
+                Ok(fenced(SourceText::from(expected))),
+                "`{needle}` in {source} answers its form as written"
+            );
+        }
     }
 
     #[test]

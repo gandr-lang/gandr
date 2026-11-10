@@ -218,10 +218,12 @@ fn tiles(
 }
 
 /// The head of the form at `at` declaring `symbol`: from the form's own start
-/// to the first `where` or brace among its own tiles, or to the symbol's end
-/// when the form has neither. A tile reads as [`Braces::spelled`] gives it, so
-/// a layout body's `=`, which the layout pass relabels as the block's `{`,
-/// ends the head as a written `{` does (#5196).
+/// to the first `where` or brace among its own tiles outside its own square
+/// brackets, or to the symbol's end when the form has neither. A tile reads as
+/// [`Braces::spelled`] gives it, so a layout body's `=`, which the layout pass
+/// relabels as the block's `{`, ends the head as a written `{` does (#5196). A
+/// brace inside the form's brackets, as an offer's `renaming { … }` writes it,
+/// opens no body, so the head runs past it (#5469).
 ///
 /// # Specification
 /// trivial.
@@ -233,20 +235,28 @@ fn head(
     symbol: &DocumentSymbol,
 ) -> Range
 {
+    let mut bracketed = 0_usize;
     let brace = tree.children(at).find_map(|child| {
         let node = tree.node(child)?;
         let NodeLabel::Tile(mold) = node.label()
         else {
             return None;
         };
-        matches!(
-            braces.spelled(grammar, tree, child, mold).map(<&str>::from),
-            Some("where" | "{")
-        )
-        .then(|| {
-            Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
-        })
-        .flatten()
+        let spelled = braces.spelled(grammar, tree, child, mold).map(<&str>::from);
+        match spelled {
+            Some("[") => {
+                bracketed = bracketed.saturating_add(1);
+                None
+            },
+            Some("]") => {
+                bracketed = bracketed.saturating_sub(1);
+                None
+            },
+            Some("where" | "{") if bracketed == 0 => {
+                Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
+            },
+            Some(_) | None => None,
+        }
     });
     let start = tree
         .node(at)
