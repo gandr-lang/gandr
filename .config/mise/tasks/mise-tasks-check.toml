@@ -1351,6 +1351,7 @@ description = "No hashFiles over a tarball or unavailable context in a workflow"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
+#!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 program=$root/.config/workflow-contexts/jobs.jq
@@ -1373,6 +1374,10 @@ if git grep -nIE -e 'hashFiles[(][^)]*[.]tar' -- ':/.github'; then
 fi
 echo 'workflow hashing check OK: no hashFiles over a tarball or unavailable context'
 '''
+
+["check:workflow-hashing-shell"]
+description = "The workflow hashing task names its Bash interpreter"
+run = ".config/workflow-contexts/workflow-hashing-shell-cases.bash"
 
 # A landing with no enforcing shard report writes a skip result (#5496).
 # `.config/spec-cost/landed-cases.bash` invokes its runner.
