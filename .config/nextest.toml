@@ -67,9 +67,10 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 # share rotates (`gandr-workflow-sweep`'s rotation), each over the nights it
 # states beside its sample, sized from the nightly's timings: the sweeps share
 # one count, seven, and a sweep whose night would pass half the share's test
-# wall takes its own, so the typing cuts every source into sixty-eight parts,
-# the hovers at every position rotate over seventeen and the token drops over
-# thirteen. The six cheapest sweeps visit the corpus whole.
+# wall takes its own, so the typing cuts every source into 136 parts, the
+# table sweep visits a fourteenth, the hovers at every position rotate over
+# seventeen and the token drops over twenty-six. The six cheapest sweeps
+# visit the corpus whole.
 # nextest does not inherit a default filter, so the profile states it again.
 # The limit is the slowest sweep's share of the budget: a sweep's night is
 # sized to at most 170 s. A sweep that outgrows it ends there and passes
