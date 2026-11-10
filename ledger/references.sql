@@ -534,6 +534,7 @@ INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surfa
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','6de02bb253a1b29fd88181f0a1bf888e5e741f78','2026-11-02','b87e55bc6de0e06c75d5c67fb3bb8a6331151936');
 INSERT INTO reference VALUES('vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a','surface-corpus','settle','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a','surface-lowering','description','anchor','9c69093bd6aa7636622a7efb9b6e3b3ffaa60bf6','2026-11-06','e13d3fb39f8f7fe56f23ff5743148a1ee632395e');
+INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','core-checker','module','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','core-term','rewrite','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','surface-lowering','classify','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);

@@ -859,6 +859,7 @@ INSERT INTO purpose VALUES('core-term','rewrite::Unenclosed','struct','A computa
 INSERT INTO purpose VALUES('core-term','rewrite::abstract_constant_value_type','function','Abstracts a constant in a value type, the step a functor application instantiates its body by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::build_type_updates','function','Builds the updates a type rewrite schedules, the heap task stack a deep type costs heap rather than stack.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::build_updates','function','Builds the updates a rewrite schedules, the heap task stack a deep type costs heap rather than stack.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::comp_type_holes','function','Names every value hole that stands in a computation type, in one walk, the survey a refusal''s compared type reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::constructor_classifier','function','Reads a constructor''s field telescope as the function its name answers at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::constructor_classifier_at','function','Reads a constructor''s field telescope over a result its fields may name as the function its name answers at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::cross_reducts','function','Crosses the reducts of two computations, the step a conversion compares them by.',NULL,'fits','sound',NULL);
@@ -896,6 +897,7 @@ INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_copied_t
 INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_traced','function','Replaces every free index at once by the entry an evaluation environment holds for it, traced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::substitute_environment_value_type','function','Replaces every free index of a value type at once by its environment entry, how a binder''s type is read at a solved variable''s value.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::value_holes','function','Names every value hole that stands in a value, in one walk, the survey an occurs check reads.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','rewrite::value_type_holes','function','Names every value hole that stands in a value type, in one walk, the survey a refusal''s compared type reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','rewrite::wrap_marks','function','Wraps each named node once with the marks an elaboration recorded, the last step of a total elaboration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','row::Label','struct','The name of a row''s entry: a record field, a variant constructor or an effect instance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','row::LabelTwice','struct','A label a row would hold twice.',NULL,'fits','sound',NULL);

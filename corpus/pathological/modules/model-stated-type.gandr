@@ -1,16 +1,15 @@
-// This source shows a comparison in a stated type whose model two modules
-// answer.
+// This source shows two stated types that compare through a model slot. Two
+// modules answer the first slot, and no module answers the second.
 //
-// The signature decides no model for the slot. So the slot waits for the
+// The signature decides no model for either slot. So each slot waits for the
 // body, as it waits in any other position.
 //
-// The slot binds nothing before the body. The decode of the stated type then
-// meets the slot's hole, and the checker refuses the declaration.
-//
-// Limits: the refusal names the mismatch, not the two modules.
+// The decode of the stated type meets the slot's hole before the body decides
+// the slot. So the checker resolves the slot there, and the refusal names the
+// modules that answer it, or no module.
 //
 // - see: #6158 — `twice`
-// - see: #6195 — the refusal names no module
+// - see: #6195 — `twice`, `unanswered`
 // - see: `../../model/modules/model-stated-type.gandr` — a slot that the signature decides
 
 /// Two codes.
@@ -19,6 +18,13 @@ data Code : Type where
   | Yes : Code
   /// The second.
   | No : Code
+
+/// Two marks, which no module compares.
+data Mark : Type where
+  /// The first.
+  | Up : Mark
+  /// The second.
+  | Down : Mark
 
 /// The code of a flag.
 def ofFlag(b : Bool) -> Code =
@@ -68,5 +74,9 @@ module ByCode : Model(Eq) with sort Carrier = Code where
         | No => Path.here true
 
 /// Two modules answer the comparison's model.
-@[refuses("TypeMismatch")]
+@[refuses("ModelAmbiguous")]
 def twice : decoded(ofFlag(Yes == No)) = "x";
+
+/// No module answers the comparison's model.
+@[refuses("ModelUnanswered")]
+def unanswered : decoded(ofFlag(Up == Down)) = "x";
