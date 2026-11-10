@@ -23,8 +23,9 @@
 //! each entry, and [`GuardedTemplate::instance`] rebuilds the certificate from
 //! that row alone. The row matches the peak against the carrier's peak and
 //! copies no body: each body finds its arm by its content address. The
-//! instance copies the carrier's skeleton once, and it builds the peak and the
-//! join once each with every arm in place.
+//! instance finds each arm through its guard in one lookup. It copies the
+//! carrier's skeleton once, and it builds the peak and the join once each with
+//! every arm in place.
 //!
 //! # The guarded template
 //!
@@ -725,6 +726,9 @@ pub struct GuardedTemplate<A: CellAlphabet>
     /// The address of each entry in the carrier's peak: the metavariable that
     /// stands there, with the entry's index, sorted by metavariable.
     addresses: Vec<(A::Var, EntryIndex)>,
+    /// The content address of each arm, at the place its guard names: the
+    /// guards count up from zero across the entries, in entry order.
+    guards: Vec<ArmAddress>,
     /// The region's content address.
     region: TemplateAddress,
     /// The template's size `s`.
@@ -1182,7 +1186,7 @@ where
 
     let mut entries: Vec<TemplateEntry<A>> = Vec::with_capacity(points.len());
     let mut columns: Vec<Vec<ArmAddress>> = Vec::with_capacity(points.len());
-    let mut minted = 0_usize;
+    let mut guards: Vec<ArmAddress> = Vec::new();
     let mut size = usize::from(plain_size(&carrier));
     for (index, point) in points.into_iter().enumerate() {
         let entry = EntryIndex::from(index);
@@ -1199,11 +1203,11 @@ where
                 None => {
                     size = size.saturating_add(usize::from(arm.size)).saturating_add(1);
                     arms.insert(address, TemplateArm {
-                        guard: GuardId::from(minted),
+                        guard: GuardId::from(guards.len()),
                         binding: arm.binding,
                         size: arm.size,
                     });
-                    minted = minted.saturating_add(1);
+                    guards.push(address);
                 },
             }
             column.push(address);
@@ -1266,6 +1270,7 @@ where
         carrier,
         entries,
         addresses,
+        guards,
         region,
         size: NodeCount::from(size),
         plain_size: NodeCount::from(plain),
@@ -1559,8 +1564,9 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   holds no guard for; [`TemplateObstruction::ArmOutsideTemplate`] for
     ///   the first entry whose guard names none of its arms.
     /// - panics: none.
-    /// - intension: one copy of the carrier's skeleton, its peak and join built
-    ///   once each with every arm in place, and one match for each step.
+    /// - intension: one lookup of each entry's arm through its guard, one copy
+    ///   of the carrier's skeleton, its peak and join built once each with
+    ///   every arm in place, and one match for each step.
     ///
     /// # Errors
     /// As the failure clause states.
@@ -1631,10 +1637,10 @@ impl<A: CellAlphabet> GuardedTemplate<A>
                     .0
                     .get(index)
                     .ok_or(TemplateObstruction::UnboundEntry { entry: at })?;
-                entry
-                    .arms
-                    .values()
-                    .find(|arm| arm.guard == *guard)
+                self.guards
+                    .get(usize::from(*guard))
+                    .and_then(|address| entry.arms.get(address))
+                    .filter(|arm| arm.guard == *guard)
                     .ok_or(TemplateObstruction::ArmOutsideTemplate { entry: at })
             })
             .collect::<Result<Vec<&TemplateArm<A>>, TemplateObstruction>>()?;
@@ -1757,9 +1763,9 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// - executable: none — this is the postcondition's predicate.
     ///
     /// # Clause cost
-    /// - bound: one copy of the carrier and one scan of each entry's arms: the
-    ///   work of [`GuardedTemplate::instance`], which copies the carrier too
-    ///   and is its one clause reader.
+    /// - bound: one copy of the carrier and one scan of each entry's arms.
+    ///   [`GuardedTemplate::instance`] copies the carrier too, and it is the
+    ///   one clause reader of this bound.
     ///
     /// # Adequacy
     /// - hypothesis: L1 — the row of each member of generated families gives
