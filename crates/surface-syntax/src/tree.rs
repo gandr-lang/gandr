@@ -72,6 +72,17 @@
 //! and each form's descendants stay one block. The join's forms are the two
 //! trees' forms in order, and its digest is the one a parse of the whole text
 //! gives when its forms are those.
+//!
+//! # Slices
+//!
+//! [`SyntaxTree::slice`] cuts some top-level children out of a tree with the
+//! blocks of their descendants, each span counted from an anchor
+//! ([`TreeSlice`]). [`SyntaxTree::assembled`] lays slices end to end under one
+//! root over a text that holds each slice's bytes at a new anchor: one copy of
+//! each node, each span moved by its anchor and each child range by the blocks
+//! before its slice. Each form keeps its digest, so a parse that cuts its forms
+//! into slices and assembles them equals itself, and a later parse takes the
+//! forms an edit did not reach up whole.
 
 use alloc::vec::Vec;
 
@@ -89,6 +100,10 @@ use crate::span::ByteOffset;
 use crate::span::ByteSpan;
 use crate::span::SourceFragment;
 use crate::span::SourceText;
+
+mod slice;
+
+pub use slice::TreeSlice;
 
 /// One block of a tree's layout: a root with its children side by side, or the
 /// descendants of one of a root's children.

@@ -7,13 +7,16 @@
 //! ([`Labeling::relabel`]) and split at its predicted top-level form
 //! boundaries ([`FormSplit`]). Each run's identity ([`FormSplit::identity`])
 //! spells what its molding reads: its tokens, the lookahead past it, and
-//! whether it starts the source. A run whose identity the store holds is taken
-//! up from the parked unit ([`FormUnit::resume`]); the others are molded
-//! through the session's fork, largest first. The
-//! units are joined in run order and committed; the join's seam checks
-//! re-mold any run whose boundary was not real, so the parse equals the whole
-//! parse of the revision whatever the store held. The store then holds
-//! exactly the revision's units and its labeling.
+//! whether it starts the source. A run whose identity the store holds keeps its
+//! parked unit; the others are molded through the session's fork, largest
+//! first. The commit takes up whole each run whose region the store laid out
+//! after the unit the run before it holds now, where that unit, the run's own
+//! and the next run's are clean ([`FormSplit::join_laid`]). The other runs
+//! join, in run order, onto the checkpoint of the run before them; the join's
+//! seam checks re-mold any run whose boundary was not real, so the parse
+//! equals the whole parse of the revision whatever the store held. The store
+//! then holds exactly the revision's units, the regions laid for them, and its
+//! labeling.
 //!
 //! # The form store parses only the forms an edit touched
 //!
@@ -26,11 +29,12 @@
 //! under the session's grammar, is taken up from its parked unit
 //! (`FormUnit::resume`), and the rest are molded on the pool the driver hands
 //! the session (`Session::with_pool`, the calling thread alone by default),
-//! largest first. The units are joined in source order and committed into the
-//! revision's tree, which digests each top-level form once as it is laid out.
-//! The store then holds exactly the revision's units, so its memory is one
-//! revision's forms whatever the history. `Submission::forms` counts the
-//! revision's forms and the ones molded.
+//! largest first. The commit takes up whole each form whose region the store
+//! laid out after the same form before it, one copy of its nodes with its
+//! digest, and joins only the other units (`FormSplit::join_laid`). The store
+//! then holds exactly the revision's units and their regions, so its memory is
+//! one revision's forms whatever the history. `Submission::forms` counts the
+//! revision's forms, the ones molded and the ones taken up whole.
 //!
 //! **Identity.** A form's identity is the exact spelling of everything its
 //! molding reads: whether it starts the source or follows a form boundary, its
@@ -77,13 +81,13 @@
 //! **What it does not cover.** On the generated two-thousand-form module, a
 //! one-form edit does not label or re-mold the revision: the store relabels it
 //! around the edit (`Labeling::relabel`), and the store looks each form up once
-//! and prunes itself in place. The commit hashes every form once, one call
-//! each, which costs less than per-node digests in the parked units would. What
-//! remains is linear in the module, and each stage names what removes it. The
-//! commit still stages every node into the tree and the join copies every
-//! parked unit. The tree is laid out by form, each form's descendants one
-//! contiguous range (`SyntaxTree::descendants`), so the commit could take an
-//! unchanged form up as a block. The lowering reads the whole tree, and its
+//! and prunes itself in place. The commit takes an unchanged form up whole: it
+//! joins the edited forms and the form after them onto the checkpoint of the
+//! form before (`FormSplit::join_laid`), and assembles the tree from the
+//! regions with one copy of each node and one digest per form
+//! (`SyntaxTree::assembled`). A digest per form costs less than a digest per
+//! node in the parked units. What remains is linear in the module, and each
+//! stage names what removes it. The lowering reads the whole tree, and its
 //! classification cannot be kept per form: it writes about twelve index spaces
 //! keyed by the tree's positions — plans, readings, operand, statement and
 //! parameter stretches, binder scopes, case forms, answers, descents, hole
@@ -111,11 +115,14 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::FormIdentity;
 use gandr_surface_parser::FormSplit;
 use gandr_surface_parser::FormUnit;
+use gandr_surface_parser::JoinPiece;
 use gandr_surface_parser::Labeling;
+use gandr_surface_parser::LaidUnit;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::ParkedUnit;
 use gandr_surface_parser::ParseResult;
+use gandr_surface_parser::RunCount;
 use gandr_surface_parser::TokenCount;
 use gandr_surface_parser::TokenRun;
 use gandr_surface_syntax::SourceFragment;
@@ -152,21 +159,25 @@ impl From<FormCount> for usize
     }
 }
 
-/// How a revision's parse was assembled: its forms, how many of them were
-/// molded rather than taken up from the form store, and how many tokens its
-/// labeling scanned afresh.
+/// How a revision's parse was assembled: its forms and how they came in.
+///
+/// The census counts the forms molded rather than taken up from the form
+/// store, the forms the commit took up whole as laid out before, and the
+/// tokens the labeling scanned afresh.
 ///
 /// # Specification
 /// - requires: constructed by the form store's parse.
-/// - ensures: `molded` never exceeds `forms`.
+/// - ensures: `molded` and `kept` each never exceed `forms`.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; the store's parse
 ///   carries the executable clauses.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a first revision molds every form, an unchanged one none,
-///   and a one-form edit the edited form and the forms whose lookahead reads
-///   it; a census counting the taken-up forms as molded changes those counts.
+/// - hypothesis: L3 — a first revision molds every form and keeps none whole,
+///   an unchanged one molds none, and a one-form edit molds the edited form and
+///   the forms whose lookahead reads it and keeps whole the forms beyond its
+///   neighbours; a census counting the taken-up forms as molded, or a stretch's
+///   forms as kept, changes those counts.
 /// - witness: `tests::forms::a_one_form_edit_molds_only_the_forms_that_read_it`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct FormCensus
@@ -175,6 +186,8 @@ pub struct FormCensus
     forms: FormCount,
     /// The forms molded rather than taken up.
     molded: FormCount,
+    /// The forms the commit took up whole, as a parse before laid them out.
+    kept: FormCount,
     /// The tokens labeled afresh: every token of a revision labeled whole, and
     /// the relabel's scan around the edit otherwise.
     relabeled: TokenCount,
@@ -202,6 +215,18 @@ impl FormCensus
     pub const fn molded(&self) -> FormCount
     {
         self.molded
+    }
+
+    /// The forms the commit took up whole, as a parse before laid them out,
+    /// rather than joining their units again.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kept(&self) -> FormCount
+    {
+        self.kept
     }
 
     /// The tokens labeled afresh rather than shifted from the latest
@@ -246,9 +271,12 @@ pub struct FormStore
     labeled: Labeled,
     /// The latest parse.
     generation: Generation,
+    /// The serial the next parked unit takes.
+    next: Serial,
 }
 
-/// A parked unit and the parse that last took it up or parked it.
+/// A parked unit, the parse that last took it up or parked it, its serial,
+/// and the region a parse laid out for it.
 #[derive(Clone, Debug)]
 struct Held
 {
@@ -256,7 +284,37 @@ struct Held
     parked: ParkedUnit,
     /// The parse that last took it up or parked it.
     seen: Generation,
+    /// The unit's serial: two held units of one serial are one unit.
+    serial: Serial,
+    /// The region the latest parse that laid one laid out for the unit.
+    laid: Option<Laid>,
 }
+
+/// A region a parse laid out for a unit, and the unit the run before it held.
+#[derive(Clone, Debug)]
+struct Laid
+{
+    /// The unit the run before held, whose comments the region's first form
+    /// holds.
+    after: Predecessor,
+    /// The region.
+    unit: LaidUnit,
+}
+
+/// What a run follows: the start of the source, or the unit of one serial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Predecessor
+{
+    /// The run starts the source.
+    SourceStart,
+    /// The run before holds the unit of this serial.
+    Unit(Serial),
+}
+
+/// A parked unit's serial, given once by the store that parks it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Serial(u64);
 
 /// One of the store's parses, counted from its first.
 #[repr(transparent)]
@@ -293,19 +351,22 @@ impl FormStore
     /// - ensures: the parse equals [`parse`](gandr_surface_parser::parse) of
     ///   `revision` under `grammar`. A run is taken up when the store holds a
     ///   unit under its identity that was molded over `grammar`'s fingerprint,
-    ///   and molded otherwise, once per distinct identity; the census counts
-    ///   the runs and the molded identities. The store then holds one unit per
-    ///   distinct identity of the revision's runs, and the revision's labeling,
-    ///   whether the commit succeeded or not.
+    ///   and molded otherwise, once per distinct identity. A run is taken up
+    ///   whole when the store holds a region laid for its unit after the unit
+    ///   the run before it holds now. The census counts the runs, the molded
+    ///   identities and the runs taken up whole. The store then holds one unit
+    ///   per distinct identity of the revision's runs, each with the region the
+    ///   latest parse laid for it, and the revision's labeling, whether the
+    ///   commit succeeded or not.
     /// - provides: the parse every submission lowers; a grammar the store's
     ///   units were not molded over molds every form, which is the whole
     ///   revision.
     /// - fails: [`MeldError`] when the commit's arena cannot be built.
     /// - panics: only by propagating a molding job's panic.
     /// - economy: the revision is labeled around its edit; each run's identity
-    ///   is looked up once, each taken-up unit's checkpoint is cloned once into
-    ///   the join, each molded unit is parked once, and the store is pruned in
-    ///   place.
+    ///   is looked up once, each molded unit is parked once, and the store is
+    ///   pruned in place. A unit is resumed only where the join molds its run
+    ///   again; a run taken up whole costs one copy of its nodes.
     ///
     /// # Errors
     /// The commit's [`MeldError`].
@@ -313,15 +374,17 @@ impl FormStore
     /// # Adequacy
     /// - hypothesis: L3 — generated edits of every class, at both roots and
     ///   both widths, submit to the batch composition of each revision with the
-    ///   molded counts the edits predict; a unit molded over another grammar is
-    ///   never taken up.
+    ///   molded and kept counts the edits predict, and every revision commits
+    ///   the whole parse's tree; a unit molded over another grammar is never
+    ///   taken up.
     /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
     /// - witness: `tests::forms::a_one_form_edit_molds_only_the_forms_that_read_it`
+    /// - witness: `tests::forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it`
     /// - witness: `forms::tests::a_unit_of_another_grammar_is_molded_again`
     #[inline]
     #[spec(ensures: |ret| self.units.len() <= ret.as_ref().map_or(usize::MAX, |&(_, census)| usize::from(census.forms))
         && (ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, census)| parsed.tree().source() == revision
-            && census.molded <= census.forms)))]
+            && census.molded <= census.forms && census.kept <= census.forms)))]
     pub fn parse<'text, F>(
         &mut self,
         grammar: &Pbg,
@@ -345,23 +408,19 @@ impl FormStore
         };
         let split = FormSplit::labeled(&molder, revision, labeling);
         let runs = split.runs();
+        let forms = FormCount(runs.len());
         let identities: Vec<FormIdentity> = runs.iter().map(|&run| split.identity(run)).collect();
         self.generation = Generation(self.generation.0.saturating_add(1));
         let generation = self.generation;
-        // The units the store serves, in run order; the runs it cannot serve,
-        // in run order; and one of those per distinct identity, to mold.
-        let mut taken = Vec::with_capacity(runs.len());
-        let mut pending: Vec<RunPosition> = Vec::new();
+        // The runs the store cannot serve, one per distinct identity, to mold.
         let mut missing: Vec<(RunPosition, TokenRun)> = Vec::new();
         let mut planned = BTreeSet::new();
         for (position, (&run, identity)) in runs.iter().zip(&identities).enumerate() {
             match self.units.get_mut(identity) {
                 Some(held) if held.parked.fingerprint() == grammar.fingerprint() => {
                     held.seen = generation;
-                    taken.push(FormUnit::resume(grammar, run, &held.parked));
                 },
                 Some(_) | None => {
-                    pending.push(RunPosition(position));
                     if planned.insert(identity) {
                         missing.push((RunPosition(position), run));
                     }
@@ -369,48 +428,103 @@ impl FormStore
             }
         }
         let molded = mold_runs(grammar, &split, &missing, fork);
-        let census = FormCensus {
-            forms: FormCount(runs.len()),
-            molded: FormCount(molded.len()),
-            relabeled,
-        };
         let mut fresh = BTreeMap::new();
         for (RunPosition(position), unit) in molded {
             if let Some(identity) = identities.get(position) {
+                let serial = self.serial();
                 let _stale = self.units.insert(identity.clone(), Held {
                     parked: unit.park(),
                     seen: generation,
+                    serial,
+                    laid: None,
                 });
             }
             let _first = fresh.insert(position, unit);
         }
-        let mut taken = taken.into_iter();
-        let mut pending = pending.into_iter().peekable();
-        let mut units = Vec::with_capacity(runs.len());
-        for (position, (&run, identity)) in runs.iter().zip(&identities).enumerate() {
-            let unit = if pending.next_if_eq(&RunPosition(position)).is_some() {
-                match (fresh.remove(&position), self.units.get(identity)) {
-                    (Some(unit), _) => unit,
-                    // A later run of an identity molded above takes up its
-                    // unit.
-                    (None, Some(held)) => FormUnit::resume(grammar, run, &held.parked),
-                    // Every identity was parked above; molding here keeps the
-                    // parse total should that ever not hold.
-                    (None, None) => split.mold(&mut molder, run),
-                }
-            }
-            else {
-                taken.next().unwrap_or_else(|| split.mold(&mut molder, run))
-            };
-            units.push(unit);
-        }
         self.units.retain(|_, held| held.seen == generation);
-        let joined = split.join(&mut molder, units);
+        let serials: Vec<Option<Serial>> = identities
+            .iter()
+            .map(|identity| self.units.get(identity).map(|held| held.serial))
+            .collect();
+        let follows = |position: usize| {
+            position
+                .checked_sub(1)
+                .map_or(Some(Predecessor::SourceStart), |before| {
+                    serials
+                        .get(before)
+                        .copied()
+                        .flatten()
+                        .map(Predecessor::Unit)
+                })
+        };
+        // Every identity was parked above, so each run has its held unit; a
+        // run without one is molded whole, which keeps the parse total.
+        let pieces: Option<Vec<JoinPiece<'_, '_>>> = identities
+            .iter()
+            .enumerate()
+            .map(|(position, identity)| {
+                let held = self.units.get(identity)?;
+                let laid = held
+                    .laid
+                    .as_ref()
+                    .filter(|laid| Some(laid.after) == follows(position))
+                    .map(|laid| &laid.unit);
+                Some(JoinPiece::new(&held.parked, fresh.remove(&position), laid))
+            })
+            .collect();
+        let laid = pieces.map(|pieces| {
+            split.join_laid(&mut molder, pieces).map(|laid| {
+                let kept = laid.kept();
+                let (join, regions) = laid.into_parts();
+                (join, regions, kept)
+            })
+        });
+        let joined = laid.unwrap_or_else(|| {
+            let units = runs
+                .iter()
+                .map(|&run| split.mold(&mut molder, run))
+                .collect();
+            split
+                .join(&mut molder, units)
+                .map(|join| (join, Vec::new(), RunCount::default()))
+        });
         self.labeled = Labeled::Revision {
             text: text.to_owned(),
             labeling: split.into_labeling(),
         };
-        Ok((joined?.into_result(), census))
+        let (join, regions, kept) = joined?;
+        for (position, region) in regions.into_iter().enumerate() {
+            let (Some(unit), Some(after)) = (region, follows(position))
+            else {
+                continue;
+            };
+            if let Some(held) = identities
+                .get(position)
+                .and_then(|identity| self.units.get_mut(identity))
+            {
+                held.laid = Some(Laid { after, unit });
+            }
+        }
+        let census = FormCensus {
+            forms,
+            molded: FormCount(missing.len()),
+            kept: FormCount(usize::from(kept)),
+            relabeled,
+        };
+        Ok((join.into_result(), census))
+    }
+
+    /// The serial the next parked unit takes, and the store's next one past
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn serial(&mut self) -> Serial
+    {
+        let given = self.next;
+        self.next = Serial(given.0.saturating_add(1));
+        given
     }
 
     /// Parse `revision` under `grammar`, taking up every form whose identity
@@ -481,6 +595,7 @@ impl FormStore
         let census = FormCensus {
             forms: FormCount(runs.len()),
             molded: FormCount(molded.len()),
+            kept: FormCount(0),
             relabeled,
         };
         let mut units = Vec::with_capacity(runs.len());
