@@ -363,6 +363,9 @@ pub struct CellForm
     /// Each written node of the cell's two sides, in pre-order, the source's
     /// first: each spells the point's subterm at that node.
     pub sides: Vec<Placed>,
+    /// Each `Path.here` call the cell's two sides wrap the point in, the
+    /// source's first, with how many calls stand at and inside it.
+    pub wrappings: Vec<(Placed, Reflexivities)>,
 }
 
 /// The words of the loops a data declaration declares at one point and
@@ -1452,21 +1455,21 @@ impl<'source> Collector<'_, 'source>
                     first,
                 });
             }
-            let side =
-                |at: Placed| -> Result<(ClosedTerm, Reflexivities), LoweringRefusal<'source>> {
-                    let (base, wraps) = reflexivities_around(self.pbg, self.tree, at)?;
-                    match closed_term(self.pbg, self.tree, base, &tag_of)? {
-                        Maybe::Present(term) => Ok((term, wraps)),
-                        Maybe::Absent(_) => {
-                            Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember))
-                        },
-                    }
-                };
-            let ((source, source_wraps), (target, target_wraps)) =
+            let side = |at: Placed| -> Result<(ClosedTerm, Vec<Placed>), LoweringRefusal<'source>> {
+                let (base, calls) = reflexivities_around(self.pbg, self.tree, at)?;
+                match closed_term(self.pbg, self.tree, base, &tag_of)? {
+                    Maybe::Present(term) => Ok((term, calls)),
+                    Maybe::Absent(_) => {
+                        Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember))
+                    },
+                }
+            };
+            let ((source, source_calls), (target, target_calls)) =
                 (side(cell.source)?, side(cell.target)?);
-            if source.nodes != target.nodes || source_wraps != target_wraps {
+            if source.nodes != target.nodes || source_calls.len() != target_calls.len() {
                 return Err(LoweringRefusal::CellNotALoop { span: cell.at.span });
             }
+            let reflexivities = Reflexivities::from(source_calls.len());
             cells.push(CellForm {
                 at: cell.at,
                 named: cell.named,
@@ -1476,8 +1479,19 @@ impl<'source> Collector<'_, 'source>
                     .chain(&target.written)
                     .copied()
                     .collect(),
+                wrappings: [&source_calls, &target_calls]
+                    .into_iter()
+                    .flat_map(|calls| {
+                        calls.iter().enumerate().map(|(position, &call)| {
+                            (
+                                call,
+                                Reflexivities::from(calls.len().saturating_sub(position)),
+                            )
+                        })
+                    })
+                    .collect(),
                 point: source.nodes,
-                reflexivities: source_wraps,
+                reflexivities,
             });
         }
 
@@ -2519,12 +2533,13 @@ fn reflexivity_operand<'source>(
 }
 
 /// The term written at `at` with every `Path.here` call around it taken off,
-/// and how many there were.
+/// and those calls, the outermost first.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `(base, n)` with `at` the base inside `n` nested `Path.here`
-///   calls, the base no such call.
+/// - ensures: `(base, calls)` with `at` the base inside the nested `Path.here`
+///   calls `calls`, the base no such call; `calls` starts at `at` when `at` is
+///   such a call, and its count is the wrapping.
 /// - fails: as [`reflexivity_operand`].
 /// - panics: none.
 ///
@@ -2539,19 +2554,19 @@ fn reflexivity_operand<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — as [`reflexivity_operand`].
 /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(base, _)| matches!(reflexivity_operand(pbg, tree, base), Ok(None))))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(base, ref calls)| matches!(reflexivity_operand(pbg, tree, base), Ok(None)) && calls.first().is_none_or(|&first| first == at)))]
 pub fn reflexivities_around<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     at: Placed,
-) -> Result<(Placed, Reflexivities), LoweringRefusal<'source>>
+) -> Result<(Placed, Vec<Placed>), LoweringRefusal<'source>>
 {
-    let (mut base, mut wraps) = (at, 0_usize);
+    let (mut base, mut calls) = (at, Vec::new());
     while let Some(operand) = reflexivity_operand(pbg, tree, base)? {
+        calls.push(base);
         base = operand;
-        wraps = wraps.saturating_add(1);
     }
-    Ok((base, Reflexivities::from(wraps)))
+    Ok((base, calls))
 }
 
 /// The refusal a member the fragment does not read earns, by its own name

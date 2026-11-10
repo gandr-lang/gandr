@@ -3993,10 +3993,11 @@ struct Lowerer<'run, 'source>
     /// The position each theory's terms' signature takes, by their position
     /// in the collection's terms list.
     termed: BTreeMap<usize, DataIndex>,
-    /// The path type at each minted words' point and the family the point
-    /// lives in, by its position in the collection's words list: what a later
-    /// source's letters and empty words are labelled at.
-    word_types: BTreeMap<usize, (ValueTypeId, ValueTypeId)>,
+    /// The path type at each minted words' point and the type at each wrapping
+    /// of the point, the family first, by its position in the collection's
+    /// words list: what a later source's letters and empty words are labelled
+    /// at.
+    word_types: BTreeMap<usize, (ValueTypeId, Vec<ValueTypeId>)>,
     /// Each loop's binding, the path type at its point and the word of its
     /// one letter, by slot.
     looped: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
@@ -4005,10 +4006,11 @@ struct Lowerer<'run, 'source>
     /// letter of: no core node holds it, so it answers at the path type at
     /// the words' point.
     lettered: Vec<(ByteSpan, usize)>,
-    /// Each node of a point `here` names when it is the empty word, with the
-    /// words at that point: no core node holds it, so it answers at the
-    /// words' family.
-    pointed: Vec<(ByteSpan, usize)>,
+    /// Each node of a point `here` names when it is the empty word, and each
+    /// `Path.here` call around the point, with the words at that point and how
+    /// many calls stand at and inside it: no core node holds it, so it answers
+    /// at the words' family wrapped as many times.
+    pointed: Vec<(ByteSpan, usize, gandr_kernel_term::Reflexivities)>,
     /// The position each described family's decoded signature takes, by its
     /// slot: a family the native data reading does not own.
     described: BTreeMap<SlotIndex, DataIndex>,
