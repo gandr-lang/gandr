@@ -20,8 +20,12 @@ use super::Record;
 use super::Rendering;
 use super::Revision;
 use super::Row;
+use super::SAMPLES;
+use super::SampleUnit;
+use super::Samples;
 use super::Shown;
 use super::Sparkline;
+use super::TooManySamples;
 use super::Unit;
 use super::WARRANTS;
 use super::Warrant;
@@ -85,7 +89,8 @@ fn cell(
 /// trivial.
 fn example(note: Datum) -> (Frame, Rendering)
 {
-    let samples: Vec<Count> = (0_u64 .. 32_u64).map(Count).collect();
+    let samples = Samples::new(SampleUnit::Count, (0_u64 .. 32_u64).map(Count).collect())
+        .expect("a ring of 32 samples");
     let blocks: String = BLOCKS.iter().cycle().take(32).collect();
     let mut frame = Frame {
         revision: NOW,
@@ -541,4 +546,88 @@ fn a_rendering_that_paints_a_border_breaks_no_decoration()
             "{breaches:?}"
         );
     }
+}
+
+#[test]
+fn a_time_and_a_size_read_as_three_significant_digits()
+{
+    for (value, unit, text) in [
+        (0_u64, Unit::Microseconds, "0"),
+        (45_u64, Unit::Microseconds, "0.0450"),
+        (999_u64, Unit::Microseconds, "0.999"),
+        (1_000_u64, Unit::Microseconds, "1.00"),
+        (12_345_u64, Unit::Microseconds, "12.3"),
+        (999_999_u64, Unit::Microseconds, "999"),
+        (1_000_000_u64, Unit::Milliseconds, "1.00"),
+        (1_234_567_890_u64, Unit::Milliseconds, "1230"),
+        (1_023_u64, Unit::Bytes, "1020"),
+        (1_536_u64, Unit::Kibibytes, "1.50"),
+        (5_242_880_u64, Unit::Mebibytes, "5.00"),
+    ] {
+        let drawn = Numeral::of(Count(value), unit);
+        assert_eq!(drawn, numeral!(text, unit), "{value} in {unit:?}");
+        assert_eq!(patterned(&drawn), Some(()), "{value} keeps its pattern");
+    }
+}
+
+#[test]
+fn a_ring_draws_thirty_two_cells_and_its_last_value()
+{
+    let full = Samples::new(SampleUnit::Count, (0_u64 .. 32_u64).map(Count).collect())
+        .expect("a ring of 32 samples");
+    let drawn = Sparkline::of(&full, Count(31), Unit::Count).expect("a full ring draws");
+    assert_eq!(drawn.cells.chars().count(), SAMPLES);
+    assert_eq!(drawn.cells.chars().next(), Some('▁'), "the lowest sample");
+    assert_eq!(
+        drawn.cells.chars().last(),
+        Some('█'),
+        "the sample at the scale"
+    );
+    assert_eq!(drawn.last, numeral!("31", Unit::Count));
+    assert_eq!(drawn.window, numeral!("32", Unit::Count));
+    let three = Samples::new(
+        SampleUnit::Nanoseconds,
+        Vec::from([Count(5_000), Count(10_000), Count(20_000)]),
+    )
+    .expect("a ring of three samples");
+    let drawn = Sparkline::of(&three, Count(20_000), Unit::Microseconds)
+        .expect("a ring of three samples draws");
+    let unfilled: String = core::iter::repeat_n('▁', 29).collect();
+    assert_eq!(drawn.cells, alloc::format!("{unfilled}▃▅█"));
+    assert_eq!(drawn.last, numeral!("20.0", Unit::Microseconds));
+    assert_eq!(drawn.scale, numeral!("20.0", Unit::Microseconds));
+    let empty = Samples::new(SampleUnit::Count, Vec::new()).expect("an empty ring");
+    assert_eq!(Sparkline::of(&empty, Count(0), Unit::Count), None);
+    let (frame, mut rendering) = example(Datum::Absent);
+    for row in 0 .. 2 {
+        let at = At {
+            pane: 1,
+            row,
+            cell: 6,
+        };
+        let line = Sparkline::of(&full, Count(31), Unit::Count).expect("a full ring draws");
+        let drawing = cell(&mut rendering, at);
+        drawing.text = alloc::format!("{} {}", line.cells, line.last.text);
+        drawing.sparkline = Some(line);
+    }
+    let breaches = conform(&Shown {
+        frame: &frame,
+        rendering: &rendering,
+        before: None,
+    });
+    assert!(breaches.is_empty(), "{breaches:?}");
+}
+
+#[test]
+fn a_ring_holds_at_most_thirty_two_samples()
+{
+    let values = |count: u64| (0 .. count).map(Count).collect::<Vec<Count>>();
+    assert!(Samples::new(SampleUnit::Count, values(32)).is_ok());
+    assert_eq!(
+        Samples::new(SampleUnit::Count, values(33)),
+        Err(TooManySamples { offered: 33 })
+    );
+    let image = |count: u64| serde_json::json!({ "unit": "Count", "values": values(count) });
+    assert!(serde_json::from_value::<Samples>(image(32)).is_ok());
+    assert!(serde_json::from_value::<Samples>(image(33)).is_err());
 }

@@ -1105,11 +1105,14 @@ mod tests
     use std::thread::JoinHandle;
 
     use anodized::spec;
+    use gandr_surface_render_remote::AccountCard;
     use gandr_surface_render_remote::DocId;
     use gandr_surface_render_remote::DocVersion;
     use gandr_surface_render_remote::FrameBody;
     use gandr_surface_render_remote::FrameScope;
     use gandr_surface_render_remote::RenderFrame;
+    use gandr_surface_render_remote::Warrant;
+    use gandr_surface_render_remote::apply_account_edits;
     use quenchant_shape::shape::Maybe;
     use serde_json::Value;
 
@@ -1632,6 +1635,70 @@ mod tests
         (line, frame)
     }
 
+    /// The next frame on `reading` that is not an account frame, and the line
+    /// it came on: an admission settles its tiers at a time of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_unaccounted(reading: &mut BufReader<UnixStream>) -> (String, RenderFrame)
+    {
+        loop {
+            let (line, frame) = next_frame(reading);
+            if !matches!(
+                *frame.body(),
+                FrameBody::Accounts { .. } | FrameBody::AccountPatch { .. }
+            ) {
+                return (line, frame);
+            }
+        }
+    }
+
+    /// `held` after `frame`, when `frame` is an account frame: the snapshot in
+    /// place of the cards, or the patch applied to them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn followed(
+        held: &mut Vec<AccountCard>,
+        frame: &RenderFrame,
+    )
+    {
+        match *frame.body() {
+            FrameBody::Accounts { ref cards } => held.clone_from(cards),
+            FrameBody::AccountPatch { ref edits } => apply_account_edits(held, edits.clone()),
+            FrameBody::Hello { .. }
+            | FrameBody::Frame { .. }
+            | FrameBody::Resync
+            | FrameBody::Detach => {},
+        }
+    }
+
+    /// The first frame on `reading` of the document at `version`, with the
+    /// frames before it, each applied to `held` as it arrives: a publication
+    /// after an admission sends an earlier version's report again.
+    ///
+    /// # Specification
+    /// trivial.
+    fn first_at(
+        reading: &mut BufReader<UnixStream>,
+        held: &mut Vec<AccountCard>,
+        version: DocVersion,
+    ) -> (Vec<RenderFrame>, RenderFrame)
+    {
+        let mut before = Vec::new();
+        loop {
+            let (_line, frame) = next_frame(reading);
+            followed(held, &frame);
+            if matches!(
+                *frame.scope(),
+                FrameScope::Document(ref document) if document.version == version
+            ) {
+                return (before, frame);
+            }
+            before.push(frame);
+        }
+    }
+
     #[test]
     fn an_attached_view_follows_the_editors_edits()
     {
@@ -1664,11 +1731,15 @@ mod tests
         );
         let report = |frame: &RenderFrame| match *frame.body() {
             FrameBody::Frame { ref report } => report.clone(),
-            FrameBody::Hello { .. } | FrameBody::Resync | FrameBody::Detach => {
+            FrameBody::Hello { .. }
+            | FrameBody::Resync
+            | FrameBody::Accounts { .. }
+            | FrameBody::AccountPatch { .. }
+            | FrameBody::Detach => {
                 panic!("a report was owed, not {frame:?}")
             },
         };
-        let (line, first) = next_frame(&mut reading);
+        let (line, first) = next_unaccounted(&mut reading);
         assert!(
             line.contains("\"schema_version\":1"),
             "the served frame carries its schema version: {line}"
@@ -1685,7 +1756,7 @@ mod tests
                 "contentChanges":[{"text":"def f : Integer ;\ndef f = 1 ;\n"}]}}"#,
         ));
         assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
-        let (_line, second) = next_frame(&mut reading);
+        let (_line, second) = next_unaccounted(&mut reading);
         assert_eq!(
             second.scope(),
             &FrameScope::Document(document(2_i32)),
@@ -1701,14 +1772,14 @@ mod tests
         resync.push('\n');
         view.write_all(resync.as_bytes()).expect("the hub reads");
         assert_eq!(
-            next_frame(&mut reading).1,
+            next_unaccounted(&mut reading).1,
             second,
             "a resync is answered at the current version"
         );
         let mut detach = serde_json::to_string(&RenderFrame::detach()).expect("a frame encodes");
         detach.push('\n');
         view.write_all(detach.as_bytes()).expect("the hub reads");
-        assert_eq!(next_frame(&mut reading).1, RenderFrame::detach());
+        assert_eq!(next_unaccounted(&mut reading).1, RenderFrame::detach());
         let mut rest = String::new();
         assert_eq!(
             reading.read_line(&mut rest).expect("the end is read"),
@@ -1725,6 +1796,98 @@ mod tests
             RenderFrame::detach(),
             "another bus version is detached at once"
         );
+        drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    #[test]
+    fn an_attached_view_follows_the_accounts_of_the_editors_document()
+    {
+        let scratch = Scratch::new(Json("cards"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut editor = Client::new(&socket);
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                "uri":"file:///tmp/cards.gandr","version":1,
+                "text":"def one : Integer ;\ndef one = 1 ;\n// a note\n"}}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
+        let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.set_read_timeout(Some(OWED))
+            .expect("the stream takes a deadline");
+        view.write_all(RENDER_BUS_PREFACE.as_bytes())
+            .expect("the hub reads");
+        let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
+        let (_line, _greeting) = next_frame(&mut reading);
+        let (_line, snapshot) = next_frame(&mut reading);
+        assert!(
+            matches!(*snapshot.body(), FrameBody::Accounts { .. }),
+            "the attach is sent the whole account before the report: {snapshot:?}"
+        );
+        let mut held = Vec::new();
+        followed(&mut held, &snapshot);
+        let replayed = |held: &[AccountCard]| {
+            held.iter().all(|card| {
+                card.kernel
+                    .as_ref()
+                    .is_some_and(|kernel| kernel.warrant == Warrant::Replayed)
+            })
+        };
+        while held.is_empty() || !replayed(&held) {
+            let (_line, frame) = next_frame(&mut reading);
+            followed(&mut held, &frame);
+        }
+        assert_eq!(
+            held.iter()
+                .map(|card| card.name.as_str())
+                .collect::<Vec<_>>(),
+            ["one"],
+            "one card per declaration, and the admission settles it replayed"
+        );
+        let settled = held.clone();
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/cards.gandr","version":2},
+                "contentChanges":[{"text":"def one : Integer ;\ndef one = 1 ;\n// another note\n"}]}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
+        let (_earlier, report) = first_at(&mut reading, &mut held, DocVersion::from(2_i32));
+        assert!(
+            matches!(*report.body(), FrameBody::Frame { .. }),
+            "an edit to a comment sends no account patch before its report: {report:?}"
+        );
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/cards.gandr","version":3},
+                "contentChanges":[{"text":"def one : Integer ;\ndef one = 2 ;\n// another note\n"}]}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(3_i32)));
+        let (between, patch) = first_at(&mut reading, &mut held, DocVersion::from(3_i32));
+        assert!(
+            between.iter().all(|frame| !matches!(
+                *frame.body(),
+                FrameBody::Accounts { .. } | FrameBody::AccountPatch { .. }
+            )),
+            "the comment edit's admission patches nothing: {between:?}"
+        );
+        let FrameBody::AccountPatch { ref edits } = *patch.body()
+        else {
+            panic!("an edit to the declaration patches its card before the report: {patch:?}");
+        };
+        assert_eq!(
+            edits.len(),
+            2_usize,
+            "the edit drops the old key and puts the new card: {edits:?}"
+        );
+        assert_eq!(held.len(), 1_usize);
+        assert_ne!(
+            held.first().map(|card| &card.key),
+            settled.first().map(|card| &card.key),
+            "the new content has a new key"
+        );
+        drop(reading);
+        drop(view);
         drop(editor);
         hub.join().expect("the hub exits");
     }
