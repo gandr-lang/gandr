@@ -124,7 +124,13 @@ use crate::rewrite::replay_at;
 
 /// A coherence certificate: a peak and two replayable paths from it that
 /// reach one join.
+///
+/// [`Tracelet::new`] builds a certificate and records each step where replay
+/// fires it. The type is non-exhaustive, so a crate outside this one builds a
+/// certificate only through that constructor, and no certificate skips the
+/// recording.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct Tracelet<A: CellAlphabet = SequentAlphabet>
 {
     /// The overlap the certificate is rooted at; its peak is the start of
@@ -296,17 +302,18 @@ impl<A: CellAlphabet> Tracelet<A>
         )
     }
 
-    /// This certificate with each step's substitution recorded where replay
-    /// fires the step: on the peak skolemized, as [`record_path`] records it.
+    /// A certificate rooted at `overlap` whose two paths reach `joins_at`,
+    /// with each step's substitution recorded where replay fires the step: on
+    /// the peak skolemized, as [`record_path`] records it.
     ///
     /// A path built by normalization holds the substitutions of the terms
-    /// that the normalization read. Replay reads the peak skolemized, so a
-    /// certificate records its paths there before anything replays it.
+    /// that the normalization read. Replay reads the peak skolemized, so the
+    /// constructor records both paths there before anything replays them.
     ///
     /// # Specification
-    /// - ensures: the certificate with both paths recorded by [`record_path`]
-    ///   from the peak. Its overlap, its join and the cell and position of each
-    ///   step are unchanged.
+    /// - ensures: the certificate of `overlap` and `joins_at` whose paths are
+    ///   `path_a` and `path_b` recorded by [`record_path`] from the peak. The
+    ///   cell and position of each step are the ones given.
     /// - panics: none.
     /// - intension: one firing by match of each step that fires.
     ///
@@ -318,21 +325,29 @@ impl<A: CellAlphabet> Tracelet<A>
     /// - witness: `tracelet::tests::a_certificate_replays_once_recorded_on_its_skolemized_peak`
     #[inline]
     #[must_use]
-    #[spec(captures: [overlap = self.overlap.clone(), join = self.joins_at.clone()], ensures: |output|
-        output.overlap == overlap && output.joins_at == join)]
-    pub fn recorded(
-        mut self,
+    #[spec(captures: [expected_overlap = overlap.clone(), expected_join = joins_at.clone()], ensures: |output|
+        output.overlap == expected_overlap && output.joins_at == expected_join)]
+    pub fn new(
+        overlap: Overlap<A>,
+        mut path_a: Vec<CellApp<A>>,
+        mut path_b: Vec<CellApp<A>>,
+        joins_at: A::Cmd,
         store: &CellStore<A>,
     ) -> Self
     {
-        record_path(store, &self.overlap.peak, &mut self.path_a);
-        record_path(store, &self.overlap.peak, &mut self.path_b);
-        self
+        record_path(store, &overlap.peak, &mut path_a);
+        record_path(store, &overlap.peak, &mut path_b);
+        Self {
+            overlap,
+            path_a,
+            path_b,
+            joins_at,
+        }
     }
 
     /// This certificate with other ends: its overlap at `peak`, its paths
     /// copied, and `join` in place of its join. Each step's substitution is
-    /// recorded from `peak` again, as [`Tracelet::recorded`] records it.
+    /// recorded from `peak` again, as [`Tracelet::new`] records it.
     ///
     /// # Specification
     /// - ensures: a certificate whose peak is `peak` and whose join is `join`,
@@ -359,13 +374,13 @@ impl<A: CellAlphabet> Tracelet<A>
         store: &CellStore<A>,
     ) -> Self
     {
-        Self {
-            overlap: self.overlap.with_peak(peak),
-            path_a: self.path_a.clone(),
-            path_b: self.path_b.clone(),
-            joins_at: join,
-        }
-        .recorded(store)
+        Self::new(
+            self.overlap.with_peak(peak),
+            self.path_a.clone(),
+            self.path_b.clone(),
+            join,
+            store,
+        )
     }
 
     /// Replay the certificate and keep every step that fired.
@@ -685,7 +700,7 @@ where
 /// - ensures: the certificate [`confluence_tracelet`] describes when both
 ///   normalizations reached one normal form. Its paths hold the cells and the
 ///   positions of the normalizations' steps, and each step records its
-///   substitution where replay fires it ([`Tracelet::recorded`]).
+///   substitution where replay fires it ([`Tracelet::new`]).
 /// - provides: [`confluence_join::Absent::BudgetExhausted`] when either was
 ///   stopped by its budget; [`confluence_join::Absent::NormalFormsDiffer`] when
 ///   the normal forms differ.
@@ -724,19 +739,17 @@ where
     if left.normal != right.normal {
         return Maybe::Absent(confluence_join::Absent::NormalFormsDiffer);
     }
-    Maybe::Present(
-        Tracelet {
-            overlap: overlap.clone(),
-            path_a: seamed_path(overlap.left, A::root_position(), left.path),
-            path_b: seamed_path(overlap.right, overlap.seam.clone(), right.path),
-            joins_at: left.normal,
-        }
-        .recorded(store),
-    )
+    Maybe::Present(Tracelet::new(
+        overlap.clone(),
+        seamed_path(overlap.left, A::root_position(), left.path),
+        seamed_path(overlap.right, overlap.seam.clone(), right.path),
+        left.normal,
+        store,
+    ))
 }
 
 /// `cell` at `at`, then `rest`: the head step holds no substitution until its
-/// certificate records it ([`Tracelet::recorded`]).
+/// certificate records it ([`Tracelet::new`]).
 ///
 /// # Specification
 /// trivial.
@@ -818,9 +831,9 @@ where
         A::derived_provenance(),
     );
     let fused_id = store.insert(fused);
-    let tracelet = Tracelet {
-        overlap: overlap.clone(),
-        path_a: alloc::vec![
+    let tracelet = Tracelet::new(
+        overlap.clone(),
+        alloc::vec![
             CellApp {
                 cell: overlap.left,
                 at: A::root_position(),
@@ -832,14 +845,14 @@ where
                 subst: A::Subst::default(),
             },
         ],
-        path_b: alloc::vec![CellApp {
+        alloc::vec![CellApp {
             cell: fused_id,
             at: A::root_position(),
             subst: A::Subst::default(),
         }],
-        joins_at: composite,
-    }
-    .recorded(store);
+        composite,
+        store,
+    );
     Ok((fused_id, tracelet))
 }
 
@@ -1749,8 +1762,15 @@ mod tests
                 !bool::from(forged.replay(&store)),
                 "a certificate {label} does not replay"
             );
+            let recorded = Tracelet::new(
+                forged.overlap,
+                forged.path_a,
+                forged.path_b,
+                forged.joins_at,
+                &store,
+            );
             assert!(
-                bool::from(forged.recorded(&store).replay(&store)),
+                bool::from(recorded.replay(&store)),
                 "the certificate {label} replays once recorded"
             );
         }

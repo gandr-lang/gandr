@@ -1995,12 +1995,13 @@ mod tests
         else {
             panic!("every scheduled address is in the factorization");
         };
-        let replayed = Tracelet {
-            overlap: tracelet.overlap,
-            path_a: path.clone(),
-            path_b: path,
-            joins_at: tracelet.joins_at,
-        };
+        let replayed = Tracelet::new(
+            tracelet.overlap,
+            path.clone(),
+            path,
+            tracelet.joins_at,
+            &store,
+        );
         assert!(
             bool::from(replayed.replay(&store)),
             "the decompressed canonical schedule is a derivation of the same boundary"
@@ -2055,12 +2056,13 @@ mod tests
             !bool::from(nf_equal(&two_step, &fused)),
             "the two factorizations differ, so the normal forms do"
         );
-        let as_two_step = Tracelet {
-            overlap: tracelet.overlap.clone(),
-            path_a: tracelet.path_a.clone(),
-            path_b: tracelet.path_a.clone(),
-            joins_at: tracelet.joins_at.clone(),
-        };
+        let as_two_step = Tracelet::new(
+            tracelet.overlap.clone(),
+            tracelet.path_a.clone(),
+            tracelet.path_a.clone(),
+            tracelet.joins_at.clone(),
+            &store,
+        );
         assert!(
             bool::from(replay_equivalent(&tracelet, &as_two_step, &store)),
             "and the replay oracle calls them the same transformation all the same"

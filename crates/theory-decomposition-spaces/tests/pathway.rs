@@ -124,12 +124,7 @@ fn a_backward_extension_is_returned_once_with_its_exact_frontier()
         let step = CellApp::unrecorded(cell, Pos::root());
         let mut overlap = template.clone();
         overlap.peak = peak;
-        Tracelet {
-            overlap,
-            path_a: vec![step.clone()],
-            path_b: vec![step],
-            joins_at: join,
-        }
+        Tracelet::new(overlap, vec![step.clone()], vec![step], join, &store)
     };
     let left = certificate(ab, term("A"), term("B"));
     let seed = certificate(bc, term("B"), term("C"));

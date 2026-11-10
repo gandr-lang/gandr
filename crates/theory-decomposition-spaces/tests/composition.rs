@@ -115,12 +115,13 @@ fn invertible_composition_is_unital_up_to_replay()
     let unit_at = |certificate: &Tracelet, at: &CmdPat| {
         let mut overlap = certificate.overlap.clone();
         overlap.peak = at.clone();
-        Tracelet {
+        Tracelet::new(
             overlap,
-            path_a: alloc::vec::Vec::new(),
-            path_b: alloc::vec::Vec::new(),
-            joins_at: at.clone(),
-        }
+            alloc::vec::Vec::new(),
+            alloc::vec::Vec::new(),
+            at.clone(),
+            &store,
+        )
     };
     let right = unit_at(&a, &a.joins_at);
     let left = unit_at(&b, &b.overlap.peak);
@@ -269,8 +270,8 @@ fn the_acyclicity_verdict_reads_the_recorded_steps_and_not_their_order()
 fn a_renamed_presentation_meets_the_seam_through_its_substitution()
 {
     let (mut store, fused_derivation) = mixed_certificate();
-    let two_step = presentation(&fused_derivation, &fused_derivation.path_a);
-    let single_step = presentation(&fused_derivation, &fused_derivation.path_b);
+    let two_step = presentation(&fused_derivation, &fused_derivation.path_a, &store);
+    let single_step = presentation(&fused_derivation, &fused_derivation.path_b, &store);
     assert!(
         bool::from(replay_equivalent(&two_step, &single_step, &store)),
         "the two presentations are ONE certificate: one boundary, both replay"
@@ -318,8 +319,8 @@ fn a_renamed_presentation_meets_the_seam_through_its_substitution()
 fn a_single_polarity_partner_hides_the_divergence_from_every_probe()
 {
     let (mut store, fused_derivation) = mixed_certificate();
-    let two_step = presentation(&fused_derivation, &fused_derivation.path_a);
-    let single_step = presentation(&fused_derivation, &fused_derivation.path_b);
+    let two_step = presentation(&fused_derivation, &fused_derivation.path_a, &store);
+    let single_step = presentation(&fused_derivation, &fused_derivation.path_b, &store);
     assert!(
         variances(&two_step, &store).contains(&CellVariance::Mixed),
         "the hypothesis: one presentation does record a mixed hole"
@@ -347,8 +348,8 @@ fn a_single_polarity_partner_hides_the_divergence_from_every_probe()
 fn the_composite_is_a_certificate_invariant_even_where_the_verdict_is_not()
 {
     let (mut store, fused_derivation) = split_certificate();
-    let two_step = presentation(&fused_derivation, &fused_derivation.path_a);
-    let single_step = presentation(&fused_derivation, &fused_derivation.path_b);
+    let two_step = presentation(&fused_derivation, &fused_derivation.path_a, &store);
+    let single_step = presentation(&fused_derivation, &fused_derivation.path_b, &store);
     assert!(
         bool::from(replay_equivalent(&two_step, &single_step, &store)),
         "the hypothesis: two presentations of ONE certificate"
@@ -396,8 +397,8 @@ fn the_composite_is_a_certificate_invariant_even_where_the_verdict_is_not()
 fn invertible_composition_is_well_defined_on_the_replay_quotient()
 {
     let (mut store, fused_derivation) = mixed_certificate();
-    let two_step = presentation(&fused_derivation, &fused_derivation.path_a);
-    let single_step = presentation(&fused_derivation, &fused_derivation.path_b);
+    let two_step = presentation(&fused_derivation, &fused_derivation.path_a, &store);
+    let single_step = presentation(&fused_derivation, &fused_derivation.path_b, &store);
     assert!(
         bool::from(replay_equivalent(&two_step, &single_step, &store)),
         "the hypothesis: two presentations of one certificate"
@@ -645,15 +646,13 @@ fn one_step_certificate(
     let step = step.clone();
     let mut overlap = template.clone();
     overlap.peak = peak.clone();
-    Maybe::Present(
-        Tracelet {
-            overlap,
-            path_a: alloc::vec![step.clone()],
-            path_b: alloc::vec![step],
-            joins_at: stepped.normal,
-        }
-        .recorded(store),
-    )
+    Maybe::Present(Tracelet::new(
+        overlap,
+        alloc::vec![step.clone()],
+        alloc::vec![step],
+        stepped.normal,
+        store,
+    ))
 }
 
 /// Construct the certificate corpus fixture.
@@ -965,17 +964,22 @@ fn mixed_certificate() -> (CellStore, Tracelet)
         OperationName("mid1"),
         OperationName("up1"),
     ));
-    let mut a = fused(&mut store, u1, v1);
+    let a = fused(&mut store, u1, v1);
     let renamed = store.insert(mixed_step(
         FixtureHoleName("fresh"),
         OperationName("dn1"),
         OperationName("up1"),
     ));
-    a.path_b = alloc::vec![gandr_theory_coherent_resolutions::CellApp::unrecorded(
-        renamed,
-        gandr_theory_cell_complexes::Pos::root(),
-    )];
-    let a = a.recorded(&store);
+    let a = Tracelet::new(
+        a.overlap,
+        a.path_a,
+        alloc::vec![gandr_theory_coherent_resolutions::CellApp::unrecorded(
+            renamed,
+            gandr_theory_cell_complexes::Pos::root(),
+        )],
+        a.joins_at,
+        &store,
+    );
     (store, a)
 }
 
@@ -1000,21 +1004,20 @@ fn replayed_onward_partner(
         cell,
         gandr_theory_cell_complexes::Pos::root(),
     );
-    let provisional = Tracelet {
+    let mut partner = Tracelet::new(
         overlap,
-        path_a: alloc::vec![step.clone()],
-        path_b: alloc::vec![step],
-        joins_at: certificate.joins_at.clone(),
-    }
-    .recorded(store);
-    let ReplayPathOutcome::Reached(reached) = provisional.replay_trace(store).path_a.outcome
+        alloc::vec![step.clone()],
+        alloc::vec![step],
+        certificate.joins_at.clone(),
+        store,
+    );
+    let ReplayPathOutcome::Reached(reached) = partner.replay_trace(store).path_a.outcome
     else {
         panic!("the partner's single step applies at the certificate's join")
     };
-    Tracelet {
-        joins_at: reached,
-        ..provisional
-    }
+    // The recording reads the peak alone, so a new join keeps it.
+    partner.joins_at = reached;
+    partner
 }
 
 /// Construct the split certificate fixture.
@@ -1047,14 +1050,16 @@ fn split_certificate() -> (CellStore, Tracelet)
 fn presentation(
     certificate: &Tracelet,
     leg: &[gandr_theory_coherent_resolutions::CellApp],
+    store: &CellStore,
 ) -> Tracelet
 {
-    Tracelet {
-        overlap: certificate.overlap.clone(),
-        path_a: leg.to_vec(),
-        path_b: leg.to_vec(),
-        joins_at: certificate.joins_at.clone(),
-    }
+    Tracelet::new(
+        certificate.overlap.clone(),
+        leg.to_vec(),
+        leg.to_vec(),
+        certificate.joins_at.clone(),
+        store,
+    )
 }
 
 /// Construct the mixed onward certificate fixture.

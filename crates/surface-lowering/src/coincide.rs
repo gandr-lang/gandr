@@ -1285,13 +1285,7 @@ where
                 cell,
                 rule,
                 joined,
-                certificate: Tracelet {
-                    overlap,
-                    path_a,
-                    path_b,
-                    joins_at: rhs,
-                }
-                .recorded(store),
+                certificate: Tracelet::new(overlap, path_a, path_b, rhs, store),
             });
             joinability = joining.resume_with(store, budget, scheme);
         }

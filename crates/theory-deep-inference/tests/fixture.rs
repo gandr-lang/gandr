@@ -280,11 +280,5 @@ pub fn tracelet_over(
 {
     let (_store, mut overlap) = fusion_fixture();
     overlap.peak = peak.clone();
-    Tracelet {
-        overlap,
-        path_a,
-        path_b,
-        joins_at: joins_at.clone(),
-    }
-    .recorded(store)
+    Tracelet::new(overlap, path_a, path_b, joins_at.clone(), store)
 }

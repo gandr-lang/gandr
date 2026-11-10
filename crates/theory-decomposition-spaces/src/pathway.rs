@@ -790,26 +790,25 @@ mod tests
             .next()
             .expect("the one-rule store has a self-overlap to seed from");
         let step = CellApp::unrecorded(cell, Pos::root());
-        let provisional = Tracelet {
+        let mut seed = Tracelet::new(
             overlap,
-            path_a: alloc::vec![step.clone()],
-            path_b: alloc::vec![step],
-            joins_at: CmdPat::cut(
+            alloc::vec![step.clone()],
+            alloc::vec![step],
+            CmdPat::cut(
                 Polarity::Positive,
                 ProdPat::meta("m"),
                 ConsPat::meta("alpha"),
             ),
-        }
-        .recorded(store);
+            store,
+        );
         let gandr_theory_coherent_resolutions::ReplayPathOutcome::Reached(reached) =
-            provisional.replay_trace(store).path_a.outcome
+            seed.replay_trace(store).path_a.outcome
         else {
             panic!("the seed's single step applies at the overlap's peak")
         };
-        Tracelet {
-            joins_at: reached,
-            ..provisional
-        }
+        // The recording reads the peak alone, so a new join keeps it.
+        seed.joins_at = reached;
+        seed
     }
 
     #[test]

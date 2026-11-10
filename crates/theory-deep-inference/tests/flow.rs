@@ -546,12 +546,13 @@ fn replay_equivalent_certificates_can_carry_different_flows()
     let (mut store, composition) = fusion_fixture();
     let (_fused, fused_derivation) =
         derive_fused(&composition, &mut store).expect("the fused cell derives");
-    let two_step_derivation = Tracelet {
-        overlap: fused_derivation.overlap.clone(),
-        path_a: fused_derivation.path_a.clone(),
-        path_b: fused_derivation.path_a.clone(),
-        joins_at: fused_derivation.joins_at.clone(),
-    };
+    let two_step_derivation = Tracelet::new(
+        fused_derivation.overlap.clone(),
+        fused_derivation.path_a.clone(),
+        fused_derivation.path_a.clone(),
+        fused_derivation.joins_at.clone(),
+        &store,
+    );
     assert!(
         bool::from(replay_equivalent(
             &fused_derivation,
@@ -725,12 +726,13 @@ fn flow_equality_implies_replay_equivalence()
     let (mut store, composition) = fusion_fixture();
     let (_fused, fused_derivation) =
         derive_fused(&composition, &mut store).expect("the fused cell derives");
-    let two_step = Tracelet {
-        overlap: fused_derivation.overlap.clone(),
-        path_a: fused_derivation.path_a.clone(),
-        path_b: fused_derivation.path_a.clone(),
-        joins_at: fused_derivation.joins_at.clone(),
-    };
+    let two_step = Tracelet::new(
+        fused_derivation.overlap.clone(),
+        fused_derivation.path_a.clone(),
+        fused_derivation.path_a.clone(),
+        fused_derivation.joins_at.clone(),
+        &store,
+    );
     let step = add_z_at_root(&composition);
     let ground = one_step_certificate(
         &store,
