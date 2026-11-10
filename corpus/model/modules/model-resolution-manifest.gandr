@@ -2,7 +2,8 @@
 //
 // `SameInteger` and `SameBool` state different carrier sorts.
 //
-// The checker selects the model that the operands require.
+// The checker selects the model that the operands require. A model whose model
+// type states the sort is a candidate, as a module that defines the carrier is.
 //
 // - see: #739
 

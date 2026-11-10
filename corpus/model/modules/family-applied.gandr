@@ -1,6 +1,7 @@
 // This source shows applied families inside a module.
 //
-// `Shapes` declares option, pair and box families.
+// `Shapes` declares option, pair and box families. A model of a theory with an
+// indexed sort supplies the sort as such a family.
 //
 // The checker resolves family arguments through qualified names.
 //

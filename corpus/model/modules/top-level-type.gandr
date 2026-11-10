@@ -6,7 +6,7 @@
 //
 // - see: #1834
 
-/// `Band` names a rubric range.
+/// `Band` names a rubric range, in millionths.
 pub type Band = *{low : Integer, high : Integer};
 
 /// `setBand` gives the rubric range.

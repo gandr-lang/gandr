@@ -2,7 +2,9 @@
 //
 // Sixteen `Count` models each provide one distinct carrier.
 //
-// The checker resolves `advanced` once for each carrier.
+// The checker resolves `advanced` once for each carrier. It tries each of the
+// sixteen candidates at each of the sixteen slots, against one solver store
+// that holds all of their holes.
 //
 // - see: #2395
 import "./model-resolution-tally.gandr";

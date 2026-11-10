@@ -2,7 +2,10 @@
 //!
 //! The family ignores each natural argument.
 //!
-//! The checker converts its dependent arrow to a plain arrow.
+//! A family applied at its binder is a dependent codomain until the checker
+//! reads the family. A family that reads to one type at every argument makes
+//! the function type over it the arrow to that type. The checker converts the
+//! two arrows in both directions.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
@@ -19,7 +22,8 @@ def always(n : Nat) -> -F Type { return Nat }
 @[checks]
 def idAlways(x : Nat) -> -F always(x) { return x }
 
-/// The `viaArrow` declaration uses the converted plain arrow.
+/// The `viaArrow` declaration uses the converted plain arrow. It checks because
+/// `always(x)` reads to `Nat` at each `x`.
 @[checks]
 def viaArrow : +U (Nat -> -F Nat);
 def viaArrow = idAlways;

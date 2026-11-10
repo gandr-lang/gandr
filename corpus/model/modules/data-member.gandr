@@ -1,6 +1,8 @@
 // This source shows a data declaration inside a module.
 //
-// `M` contains family `Box` and constructor `B`.
+// `M` contains family `Box` and constructor `B`. A module groups a family with
+// the functions over it. So the family stands beside its functions under the
+// name of the module.
 //
 // The checker resolves bare names inside `M` and paths outside it.
 //

@@ -1,8 +1,11 @@
 //! This fixture defines a Tarski universe.
 //!
-//! The universe contains pair, dependent-pair, and path codes.
+//! Martin-Löf closes his universe under dependent functions, dependent pairs
+//! and identity types. This universe contains pair, dependent-pair, and path
+//! codes.
 //!
-//! Each decoder returns the type named by its code.
+//! Each decoder returns the type named by its code. A decode stands in place as
+//! a call. The call is the type that it returns.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!

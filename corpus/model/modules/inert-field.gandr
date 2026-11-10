@@ -1,10 +1,12 @@
 // This source shows inert operations.
 //
-// An inert operation identifies a package. It does not define
-// the package content.
+// An inert operation identifies a package. It does not define the package
+// content. So an edit to an inert operation moves the content of no other
+// declaration.
 //
 // The checker allows a manifest step and another inert declaration to read
-// it. A top-level definition marked inert is such a declaration.
+// it. A top-level definition marked inert is such a declaration. The component
+// of a model for an inert operation is inert. An `include` carries the mark.
 //
 // - see: #3029
 // - see: #6141 — a top-level definition marked inert

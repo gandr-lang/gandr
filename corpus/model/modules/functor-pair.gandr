@@ -39,7 +39,8 @@ module A = MkCounter(Seed);
 /// `B` is the second functor application.
 module B = MkCounter(Seed);
 
-/// `a_once` steps the first abstract counter.
+/// `a_once` steps the first abstract counter. A run answers it opaque at the
+/// seal of `A`.
 @[runs("⟨opaque at A⟩ : () -> A.T")]
 def a_once() -> A.T { A.step A.seed }
 

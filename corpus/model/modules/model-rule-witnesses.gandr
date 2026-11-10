@@ -1,10 +1,13 @@
 // This source shows rule witnesses in a model.
 //
-// A model gives one path witness for each theory rule.
-// `ByLeft` and `ByRight` use different witnesses for the left unit rule.
+// A rule of a theory is a cell that conversion decides. A model witnesses it by
+// a path in its carrier, since a `Path` is a cell that a program carries. A
+// model gives one path witness for each theory rule. `ByLeft` and `ByRight`
+// use different witnesses for the left unit rule.
 //
-// The checker accepts `Path.here` when the rule sides convert.
-// The kernel checks an explicit path when the sides remain distinct.
+// The checker accepts `Path.here` when the rule sides convert. The kernel
+// checks an explicit path when the sides remain distinct. The presented type is
+// the initial model, where each witness is `Path.here`.
 //
 // - see: model-ascription.gandr
 // - see: model-laws.gandr

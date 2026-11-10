@@ -2,7 +2,8 @@
 //
 // `Metrics` and `Sealed` fix `Ratio` as `Integer`.
 //
-// The checker reads each sealed scale at that stated sort.
+// The checker reads each sealed scale at that stated sort. The model type gives
+// the sort. So a model need not give it, and a sealed model keeps it.
 //
 // - see: #2917
 

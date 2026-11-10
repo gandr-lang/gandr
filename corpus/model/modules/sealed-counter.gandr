@@ -2,8 +2,10 @@
 //!
 //! `Seed` exposes an abstract counter type and its operations.
 //!
-//! The checker keeps `Seed.T` separate from `Integer`.
-//! The runtime prints a value of that type as opaque.
+//! The checker keeps `Seed.T` separate from `Integer`. Only the members that
+//! the signature exposes reach a value of `Seed.T`. A run prints such a value
+//! as opaque at the seal, because the source does not mark `Seed.T` as
+//! `mobile`.
 //!
 //! - cites: [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]
 //!

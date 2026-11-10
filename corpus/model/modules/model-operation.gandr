@@ -1,7 +1,8 @@
 // This source shows operations in a theory model.
 //
 // An operation has the domain and result that its theory states.
-// A curried operation represents several inputs.
+// A parenthesised list in a judgment opens its own port group. So an operation
+// of several inputs is the thunk of curried arrows.
 //
 // The checker reads builtin result types through the theory operation.
 // A model defines each operation as a function.

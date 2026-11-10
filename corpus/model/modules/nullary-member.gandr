@@ -1,8 +1,10 @@
 //! This source shows calls with no arguments.
 //!
-//! A module member and a suspension can receive an empty call.
+//! A module member and a suspension can receive an empty call. The call forces
+//! a thunk, after the call-by-push-value of Levy.
 //!
-//! The checker treats each empty call as a force of its head.
+//! The checker treats each empty call as a force of its head. The call answers
+//! at the call, as a call that applies arguments does.
 //!
 //! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
 //!

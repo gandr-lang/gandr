@@ -1,8 +1,11 @@
 //! This fixture applies a family to an operation result.
 //!
-//! A dependent arrow instantiates after the operation runs.
+//! The shape is a category with families. A dependent arrow instantiates after
+//! the operation runs.
 //!
-//! A record field reads its preceding family field.
+//! The arrow yields a type with the same written form. So the family at the
+//! result of a call converts with itself. A record field reads its preceding
+//! family field.
 //!
 //! - cites: [Dybjer-1996-internal_type_theory]
 //!

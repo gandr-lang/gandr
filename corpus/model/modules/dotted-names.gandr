@@ -2,7 +2,8 @@
 //
 // `Kit` contains a theory and a module through the same prefix.
 //
-// A path resolves the theory, the module and their members.
+// A path resolves the theory, the module and their members. The checker opens
+// each module of a prefix that the source does not declare.
 //
 // - see: #2687
 

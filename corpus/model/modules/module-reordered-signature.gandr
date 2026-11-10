@@ -12,7 +12,8 @@ module Ordered : *{third : Integer, first : Integer, second : Integer} where {
   def first = 1;
   /// `hidden` stays outside the signature.
   def hidden = 99;
-  /// `second` adds one to `first`.
+  /// `second` adds one to `first`. The call of the operator is pure, so the
+  /// value stands as what the call returns.
   @[checks]
   def second = first + 1;
   /// `third` adds one to `second`.

@@ -2,7 +2,10 @@
 //
 // The manifest sort distinguishes `Up` from `Flips`.
 //
-// The checker selects the model whose carrier matches the fixed sort.
+// The checker selects the model whose carrier matches the fixed sort. The slot
+// `[s : Model Dial with sort C = Integer]` binds no parameter for `C`. So no
+// argument forces the sort, and the fixed sort tells the modules in scope
+// apart.
 //
 // - see: #2317
 
