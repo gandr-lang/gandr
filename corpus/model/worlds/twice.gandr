@@ -1,8 +1,10 @@
 //! This fixture migrates twice to one seat.
 //!
-//! The second migration reads a value at the seat.
+//! The fixture witnesses an inbound capture. The second migration reads a value
+//! at the seat.
 //!
-//! Each crossing commits and dereferences its value.
+//! Each crossing commits and dereferences its value. In one process a handle is
+//! its content.
 //!
 //! - cites: [Vii-2007-typesafe_distributed_programming_ml5]
 //!
@@ -11,12 +13,14 @@
 // The operator and seat worlds define each entry.
 import "./seat-and-operator.gandr";
 
+/// The seat holds an integer. A second migration doubles it there.
 @[entry(*{operator, seat, seat}), runs("42")]
 def twice() -> Integer =
   let held : Integer at seat = migrate [seat] { (hold 21) };
   let n at seat = held
   migrate [seat] { pure (n * 2) }
 
+/// The seat holds a record. A second migration reads it there again.
 @[entry(*{operator, seat, seat}), runs("*{.done = 3, .left = 4}")]
 def reread() -> *{done : Integer, left : Integer} =
   let held : *{done : Integer, left : Integer} at seat = migrate [seat] {

@@ -1,8 +1,14 @@
-//! This fixture returns open values from a migration.
+//! This fixture returns open values from a migration. Each declaration
+//! migrates to the seat and returns to the operator.
 //!
-//! An open value has the same representation at each world.
+//! An open value crosses back from a migration as bytes. A crossing asks two
+//! judgements, mobility and openness. Mobility is authority. A mobile value
+//! holds nothing that means something only at the world that made it.
 //!
-//! Each declaration migrates to the seat and returns to the operator.
+//! Openness is representation. An open value names no location. So every
+//! world reads its bytes the same way. The two judgements agree on data and
+//! part at a handle. A handle is always mobile, and open when its content is
+//! open.
 //!
 //! - cites: [Vii-2007-typesafe_distributed_programming_ml5]
 //!
@@ -48,6 +54,7 @@ def heldCounts() -> -F (*{done : Integer, left : Integer} at seat) =
 def heldThunk() -> -F ((() -> Integer) at seat) =
   migrate [seat] { (hold thunk { pure 3 }) }
 
+/// A handle to a record that holds a closed thunk comes back, each field open.
 @[entry(*{operator, seat}), runs("*{.done = 3, .later = thunk { 4 }}")]
 def heldRecord() -> -F (*{done : Integer, later : () -> Integer} at seat) =
   migrate [seat] { (hold *{done = 3, later = thunk { pure 4 }}) }
