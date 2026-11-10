@@ -82,6 +82,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use core::fmt::Write as _;
 use std::io;
 use std::path::Component;
@@ -89,26 +90,37 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
-use gandr_core_incremental::content_keys;
+use gandr_core_fork::Fork;
+use gandr_core_incremental::ContentKey;
+use gandr_core_incremental::ItemOrdinal;
+use gandr_core_incremental::content_key;
+use gandr_core_term::CoreArena;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::Inertness;
+use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Visibility;
+use gandr_surface_lowering::coincide::Decisions;
 use gandr_surface_lowering::decode_escapes;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::label;
+use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::component;
+use crate::component::Given;
 use crate::component::Shadows;
-use crate::component::lay_out_shadowed;
+use crate::component::named_path;
 use crate::compose::Lowered;
 use crate::compose::LoweringCount;
 use crate::compose::item_program;
+use crate::compose::lower_prelude;
 use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
 use crate::evaluate::Program;
@@ -992,12 +1004,13 @@ pub struct Identity
 impl Package
 {
     /// The package's identity: each of its sources, its package source then its
-    /// modules in [`modules`] order, read as `shadows` holds it, laid out over
-    /// its imports and lowered, and each of the source's own items digested in
-    /// admission order as its path and its content key, a model's inert
-    /// component left out; then the
-    /// addresses `lock`'s pointers read back through `store`; and the paths the
-    /// package source exports, keyed.
+    /// modules in [`modules`] order, read as `shadows` holds it and grouped
+    /// into the import-connected components that [`component::group`] lays
+    /// out; each component lowered once, its sources' own items keyed on
+    /// `fork`; each source's own items digested in admission order as its
+    /// path and its content key, a model's inert component left out; then
+    /// the addresses `lock`'s pointers read back through `store`; and the
+    /// paths the package source exports, keyed.
     ///
     /// # Specification
     /// - requires: `grammar` is the grammar the package's sources are read
@@ -1008,59 +1021,171 @@ impl Package
     ///   item that is no [`Inertness::Inert`] declaration, as its path's dotted
     ///   spelling prefixed by its length and then its content key's bytes,
     ///   followed by each address of [`Lock::addresses`] read back through
-    ///   `store` in order, prefixed by `u64::MAX`. An item of an import is the
-    ///   importer's to leave out: only the declarations each source writes are
-    ///   digested, so each enters once. Equal content at equal paths over equal
-    ///   dependencies is one address, whatever the inert fields state and
-    ///   wherever and under whatever alias each dependency is found. The
-    ///   signature key is the BLAKE3 digest of each dotted path of a
-    ///   [`Visibility::Public`] item the package source digests, ascending,
-    ///   prefixed by its length.
+    ///   `store` in order, prefixed by `u64::MAX`. A source's own items are the
+    ///   items its component's lowering gives the bytes the source writes. An
+    ///   item of an import is the importer's to leave out, so each item enters
+    ///   once. The sources are grouped under [`component::Reading::Whole`],
+    ///   each import read as [`component::lay_out_shadowed`] reads it. Each
+    ///   component is lowered after the prelude's closure
+    ///   ([`ClosureLowering::resume`]) when its text lays after the prelude's,
+    ///   and whole otherwise, both answering what the whole lowering answers.
+    ///   The components are keyed on `fork`, and the calling thread digests
+    ///   their items in source order, so the address is the same at every
+    ///   width. Equal content at equal paths over equal dependencies is one
+    ///   address, whatever the inert fields state and wherever and under
+    ///   whatever alias each dependency is found. The signature key is the
+    ///   BLAKE3 digest of each dotted path of a [`Visibility::Public`] item the
+    ///   package source digests, ascending, prefixed by its length.
     /// - provides: the identity a dependent's lock commits to the store.
-    /// - fails: [`Unaddressed`] at the first source or item that has no key, or
-    ///   at the first dependency whose pointer `store` cannot read back.
+    /// - fails: [`Unaddressed`] at the first source, in that order, that does
+    ///   not read, whose component does not lower, or one of whose items has no
+    ///   key; or at the first dependency whose pointer `store` cannot read
+    ///   back.
     /// - panics: none.
     /// - executable: none — the address is a digest of the lowering's content,
     ///   which a predicate could only restate by lowering again; the witnesses
     ///   observe it moving and staying.
     ///
     /// # Errors
-    /// [`Unaddressed`]: a source that does not read or lower, a declaration of
-    /// the package the lowering refused, an item whose content holds an
-    /// unresolved node, or a dependency whose pointer `store` cannot read back.
+    /// [`Unaddressed`]: a source that does not read, a source whose component
+    /// does not lower, a declaration of the package the lowering refused, an
+    /// item whose content holds an unresolved node, or a dependency whose
+    /// pointer `store` cannot read back.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — in a two-source package, an edit to an inert field
     ///   leaves the address and every other item's key where they were, and an
     ///   edit to a content item moves the address; every corpus package's inert
-    ///   fields, each edited, leave its address unchanged; a dependency's
-    ///   content edit moves its dependent's address, and its inert edit does
-    ///   not; a lock whose pointer the store never held leaves the dependent
-    ///   unaddressed by the coordinate.
+    ///   fields, each edited, leave its address unchanged; every corpus
+    ///   package's address, at one thread and at every thread the host gives
+    ///   the process, is the digest of each source's own items lowered over the
+    ///   source's own closure; a dependency's content edit moves its
+    ///   dependent's address, and its inert edit does not; a lock whose pointer
+    ///   the store never held leaves the dependent unaddressed by the
+    ///   coordinate.
     /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
     /// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
+    /// - witness: `tests::package::every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406`
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
     /// - witness: `tests::package::a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157`
     #[inline]
-    pub fn identity(
+    pub fn identity<F>(
         &self,
-        grammar: &Pbg,
+        grammar: &Arc<Pbg>,
         shadows: &dyn Shadows,
         lock: &Lock,
         store: &gandr_storage_store::Store,
+        fork: &F,
     ) -> Result<Identity, Unaddressed>
+    where
+        F: Fork,
     {
+        let sources: Vec<PathBuf> = core::iter::once(self.source.clone())
+            .chain(modules(self.sources()).into_values())
+            .collect();
+        let mut given = Vec::with_capacity(sources.len());
+        // Each source's place among the sources read, or why it does not read.
+        let read: Vec<Result<usize, Unaddressed>> = sources
+            .iter()
+            .map(|source| {
+                let text = match shadows.shadowed(source) {
+                    Some(text) => String::from(text.as_ref()),
+                    None => {
+                        std::fs::read_to_string(source).map_err(|error| Unaddressed::Unread {
+                            source: source.clone(),
+                            message: error.to_string(),
+                        })?
+                    },
+                };
+                given.push(Given {
+                    path: named_path(source),
+                    root: classify(source),
+                    text,
+                });
+                Ok(given.len().saturating_sub(1))
+            })
+            .collect();
+        let grouped = component::group(
+            grammar,
+            given,
+            component::Reading::Whole,
+            &BTreeSet::new(),
+            shadows,
+        );
+        let mut keyings: Vec<Keying<'_>> = grouped
+            .components
+            .iter()
+            .map(|laid| Keying {
+                component: laid,
+                members: laid.members.iter().map(|_| None).collect(),
+                fault: None,
+            })
+            .collect();
+        // Only a member that some source is placed at is keyed.
+        for placed in &grouped.placed {
+            if let Some(slot) = keyings
+                .get_mut(placed.component)
+                .and_then(|keying| keying.members.get_mut(placed.member))
+            {
+                *slot = Some(Vec::new());
+            }
+        }
+        let prelude = lower_prelude(grammar);
+        fork.each(
+            &mut keyings,
+            || (),
+            |&mut (), keying| keying.key(grammar, prelude.as_ref()),
+        );
         let mut hasher = blake3::Hasher::new();
         let mut exported = BTreeSet::new();
-        digested(
-            grammar,
-            &self.source,
-            shadows,
-            &mut hasher,
-            Some(&mut exported),
-        )?;
-        for source in modules(self.sources()).into_values() {
-            digested(grammar, &source, shadows, &mut hasher, None)?;
+        for (position, (source, read)) in sources.iter().zip(read).enumerate() {
+            // `group` places every source it is given, at a member of a
+            // component it makes.
+            let Some(placed) = grouped.placed.get(read?)
+            else {
+                continue;
+            };
+            let Some(keying) = keyings.get(placed.component)
+            else {
+                continue;
+            };
+            if let Some(ref why) = keying.fault {
+                return Err(Unaddressed::Unlowered {
+                    source: source.clone(),
+                    why: why.clone(),
+                });
+            }
+            let own = keying
+                .members
+                .get(placed.member)
+                .and_then(Option::as_ref)
+                .into_iter()
+                .flatten();
+            for written in own {
+                let key = match written.key {
+                    Keyed::Present(key) => key,
+                    Keyed::Refused => {
+                        return Err(Unaddressed::Refused {
+                            source: source.clone(),
+                            item: written.path.clone(),
+                        });
+                    },
+                    Keyed::Opaque => {
+                        return Err(Unaddressed::Opaque {
+                            source: source.clone(),
+                            item: written.path.clone(),
+                        });
+                    },
+                };
+                let length = u64::try_from(written.path.len()).unwrap_or(u64::MAX);
+                let _digested = hasher
+                    .update(&length.to_le_bytes())
+                    .update(written.path.as_bytes());
+                key.digest_into(&mut hasher);
+                if position == 0 && written.visibility == Visibility::Public {
+                    let _fresh = exported.insert(written.path.clone());
+                }
+            }
         }
         for address in lock.addresses(store)? {
             let _digested = hasher.update(&u64::MAX.to_le_bytes()).update(&address.0);
@@ -1077,104 +1202,197 @@ impl Package
     }
 }
 
-/// Digest into `hasher` the own items of the source at `source`, as
-/// [`Package::identity`] states, filing each exported path into `exported`
-/// when it is given: the package source's.
+/// One component of a package's sources, lowered and keyed for its identity:
+/// the items each member that a source is placed at writes, or why the
+/// component does not lower.
 ///
 /// # Specification
-/// - requires: as [`Package::identity`].
-/// - ensures: as [`Package::identity`], for this one source.
-/// - fails: [`Unaddressed`] at the first item of this source that has no key;
-///   it reads no store.
-/// - panics: none.
-/// - executable: none — as [`Package::identity`].
-///
-/// # Errors
-/// [`Unaddressed`]: the source does not read or lower, a declaration of it the
-/// lowering refused, or an item whose content holds an unresolved node.
+/// - requires: `members` holds one slot per member of `component`, `Some` at
+///   each member a source of the package is placed at.
+/// - ensures: after [`Self::key`], `fault` holds why the component does not
+///   lower, or each `Some` slot holds its member's own items in admission
+///   order.
+/// - executable: none — a data type; [`Self::key`] carries the clauses.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Package::identity`].
-/// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
-fn digested(
-    grammar: &Pbg,
-    source: &Path,
-    shadows: &dyn Shadows,
-    hasher: &mut blake3::Hasher,
-    mut exported: Option<&mut BTreeSet<String>>,
-) -> Result<(), Unaddressed>
+/// - witness: `tests::package::every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406`
+#[derive(Debug)]
+struct Keying<'grouped>
 {
-    let unlowered = |why: String| Unaddressed::Unlowered {
-        source: source.to_path_buf(),
-        why,
-    };
-    let text = match shadows.shadowed(source) {
-        Some(text) => String::from(text.as_ref()),
-        None => std::fs::read_to_string(source).map_err(|error| Unaddressed::Unread {
-            source: source.to_path_buf(),
-            message: error.to_string(),
-        })?,
-    };
-    let laid = lay_out_shadowed(
-        grammar,
-        source,
-        classify(source),
-        SourceText::from(text.as_str()),
-        shadows,
-    );
-    let mut lowerings = LoweringCount::default();
-    let lowering = lower_unit_source(
-        grammar,
-        SourceText::from(laid.text.as_str()),
-        &laid.unit,
-        &mut lowerings,
+    /// The component.
+    component: &'grouped component::Component,
+    /// Each member's own items, by the member's place; `None` for a member no
+    /// source is placed at.
+    members: Vec<Option<Vec<Written>>>,
+    /// Why the component does not lower.
+    fault: Option<String>,
+}
+
+/// One item a source writes, as its component's lowering keys it.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Written
+{
+    /// Its dotted path.
+    path: String,
+    /// Its content key, or why it has none.
+    key: Keyed,
+    /// Whether it is public.
+    visibility: Visibility,
+}
+
+/// An item's content key, or why it has none.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Keyed
+{
+    /// The key.
+    Present(ContentKey),
+    /// The lowering refused the declaration.
+    Refused,
+    /// Its content holds an unresolved node.
+    Opaque,
+}
+
+impl Keying<'_>
+{
+    /// Lower the component once under `grammar`, after `prelude` when its text
+    /// lays after the prelude's and whole otherwise, and key each item that a
+    /// member wanted writes.
+    ///
+    /// # Specification
+    /// - requires: `prelude` is the prelude's closure under `grammar`.
+    /// - ensures: what [`lower_unit_source`] makes of the component: a refusal
+    ///   or a fault sets `fault` to its text; a module fills each wanted
+    ///   member's slot with each declaration whose bytes start in the member
+    ///   and that is no [`Inertness::Inert`] one unless refused, in admission
+    ///   order, keyed by [`content_key`] or marked refused or opaque.
+    /// - fails: never; a fault is held in `fault`.
+    /// - panics: none.
+    /// - executable: none — the lowering's answer is the clause, which a
+    ///   predicate could only restate by lowering again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Package::identity`].
+    /// - witness: `tests::package::every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406`
+    fn key(
+        &mut self,
+        grammar: &Pbg,
+        prelude: Option<&ClosureLowering>,
     )
-    .map_err(|fault| unlowered(fault.to_string()))?;
-    let (module, arena) = match lowering.into_lowered() {
-        Lowered::Module { module, arena } => (module, arena),
-        Lowered::Refused(refusal) => return Err(unlowered(refusal.to_string())),
-    };
-    let program = item_program(&module, arena).map_err(|fault| unlowered(fault.to_string()))?;
-    let mut keys = content_keys(&program).into_iter();
-    let mut path = String::new();
-    for declaration in module.declarations() {
-        let own = declaration.span().start() >= laid.base;
-        let refused = matches!(declaration.outcome(), DeclarationOutcome::Refused(_));
-        let key = if refused { None } else { keys.next() };
-        if !own || (!refused && declaration.inertness() == Inertness::Inert) {
-            continue;
-        }
-        path.clear();
-        for (index, segment) in module.path_of(declaration).iter().enumerate() {
-            if index > 0 {
-                path.push('.');
-            }
-            let segment: &str = segment.as_ref();
-            path.push_str(segment);
-        }
-        if refused {
-            return Err(Unaddressed::Refused {
-                source: source.to_path_buf(),
-                item: path,
-            });
-        }
-        let Some(Maybe::Present(key)) = key
-        else {
-            return Err(Unaddressed::Opaque {
-                source: source.to_path_buf(),
-                item: path,
-            });
-        };
-        let length = u64::try_from(path.len()).unwrap_or(u64::MAX);
-        let _digested = hasher.update(&length.to_le_bytes()).update(path.as_bytes());
-        key.digest_into(hasher);
-        if let Some(ref mut exported) = exported
-            && declaration.visibility() == Visibility::Public
+    {
+        let laid = self.component;
+        if let Some(closure) = prelude
+            && let Some(own) = laid.text.strip_prefix(<&str>::from(closure.text()))
+            && let Ok(alone) = parse(grammar, SourceText::from(own))
+            && let Ok(after) = alone.after(closure.tree(), SourceText::from(laid.text.as_str()))
         {
-            let _fresh = exported.insert(path.clone());
+            let tree = after.into_tree();
+            let mut arena = CoreArena::new();
+            match closure.resume(&tree, &laid.unit, &mut arena, &mut Decisions::none()) {
+                Ok(module) => self.file(&module, arena),
+                Err(refusal) => self.fault = Some(refusal.to_string()),
+            }
+            return;
+        }
+        match lower_unit_source(
+            grammar,
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            &mut LoweringCount::default(),
+        ) {
+            Ok(lowering) => match lowering.into_lowered() {
+                Lowered::Module { module, arena } => self.file(&module, arena),
+                Lowered::Refused(refusal) => self.fault = Some(refusal.to_string()),
+            },
+            Err(fault) => self.fault = Some(fault.to_string()),
         }
     }
-    Ok(())
+
+    /// Key each item of `module` over `arena` that a wanted member writes.
+    ///
+    /// # Specification
+    /// - requires: `module` and `arena` are the component's lowering.
+    /// - ensures: as [`Self::key`] for a module; a module whose positions do
+    ///   not ascend sets `fault` instead.
+    /// - fails: never; a fault is held in `fault`.
+    /// - panics: none.
+    /// - executable: none — as [`Self::key`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Package::identity`].
+    /// - witness: `tests::package::every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406`
+    fn file(
+        &mut self,
+        module: &LoweredModule<'_>,
+        arena: CoreArena,
+    )
+    {
+        let program = match item_program(module, arena) {
+            Ok(program) => program,
+            Err(fault) => {
+                self.fault = Some(fault.to_string());
+                return;
+            },
+        };
+        let laid = self.component;
+        let items = program.items().len();
+        // Each declaration the lowering did not refuse is the next item.
+        let mut ordinal = 0_usize;
+        for declaration in module.declarations() {
+            let refused = matches!(declaration.outcome(), DeclarationOutcome::Refused(_));
+            let item = ordinal;
+            if !refused {
+                ordinal = ordinal.saturating_add(1);
+            }
+            let start = declaration.span().start();
+            let Some(&mut Some(ref mut written)) = laid
+                .members
+                .partition_point(|member| member.start <= start)
+                .checked_sub(1)
+                .filter(|&own| {
+                    laid.members
+                        .get(own)
+                        .is_some_and(|member| start < member.end)
+                })
+                .and_then(|own| self.members.get_mut(own))
+            else {
+                continue;
+            };
+            if !refused && declaration.inertness() == Inertness::Inert {
+                continue;
+            }
+            let key = if refused {
+                Keyed::Refused
+            }
+            else if item < items
+                && let Maybe::Present(key) = content_key(&program, ItemOrdinal::from(item))
+            {
+                Keyed::Present(key)
+            }
+            else {
+                Keyed::Opaque
+            };
+            let mut path = String::new();
+            for (index, segment) in module.path_of(declaration).iter().enumerate() {
+                if index > 0 {
+                    path.push('.');
+                }
+                let segment: &str = segment.as_ref();
+                path.push_str(segment);
+            }
+            written.push(Written {
+                path,
+                key,
+                visibility: declaration.visibility(),
+            });
+        }
+    }
 }
 
 /// Why a package has no address.

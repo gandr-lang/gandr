@@ -1430,7 +1430,8 @@ enum Occupancy
 }
 
 /// What a walk is run as: its verb, the lints it reports, the packages whose
-/// manifests a `check` reconciles, and the store their exports commit to.
+/// locks and manifests a `check` reconciles, and the store their locks and
+/// exports commit to.
 #[derive(Debug)]
 struct Pass<'packages>
 {
@@ -1439,20 +1440,20 @@ struct Pass<'packages>
     /// The lints reported beyond their attributes.
     lints: Lints,
     /// The packages the walk's paths reached.
-    packages: &'packages [Packaged],
+    packages: &'packages [Package],
     /// The workspaces the walk's paths gathered.
     workspaces: &'packages [Gathered],
-    /// The store the packages were locked into, when any was reached.
+    /// The store the packages are locked into, when any was reached.
     store: Option<&'packages mut Store>,
 }
 
 /// A package a `check` reached, and what locking its dependencies came to
 /// before the walk.
 #[derive(Debug)]
-struct Packaged
+struct Packaged<'package>
 {
     /// The package.
-    package: Package,
+    package: &'package Package,
     /// What locking its dependencies came to.
     locking: Locking,
 }
@@ -1512,7 +1513,7 @@ fn opened() -> Result<Store, ExitCode>
 /// Resolve `package`'s dependencies into `store` and hold its lock to them,
 /// as `gandr check` does before it walks, so every import of a coordinate
 /// reads the lock from the walk's first source, and address the package over
-/// the lock.
+/// the lock, each identity forked on `pool`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1522,7 +1523,8 @@ fn opened() -> Result<Store, ExitCode>
 ///   lock and the package's address over it, read through `store`, as
 ///   [`Package::identity`] gives it; [`Locking::Refused`] with its fault, and
 ///   [`Locking::Unresolved`] for dependencies that do not resolve or a grammar
-///   that does not build.
+///   that does not build. Each identity forks on `pool`, and its address is the
+///   same at every width.
 /// - provides: the lock step of `gandr check`.
 /// - fails: never; each outcome is a variant.
 /// - panics: none.
@@ -1537,10 +1539,11 @@ fn opened() -> Result<Store, ExitCode>
 fn locking(
     package: &Package,
     store: &mut Store,
+    pool: &Pool,
 ) -> Locking
 {
     let grammar = match built_in() {
-        Ok(grammar) => grammar,
+        Ok(grammar) => Arc::new(grammar),
         Err(error) => {
             return Locking::Unresolved(Unresolved::Unread {
                 source: package.source().to_path_buf(),
@@ -1548,11 +1551,11 @@ fn locking(
             });
         },
     };
-    match package.resolve(&grammar, store, Revisions::Locked) {
+    match package.resolve(&grammar, store, Revisions::Locked, pool) {
         Ok(lock) => match reconcile_lock(package, &lock) {
             Ok(reconciled) => {
                 let address = package
-                    .identity(&grammar, &Unshadowed, &lock, store)
+                    .identity(&grammar, &Unshadowed, &lock, store, pool)
                     .map(|identity| identity.address);
                 Locking::Held(reconciled, lock, address)
             },
@@ -1569,7 +1572,8 @@ fn locking(
 /// - requires: nothing.
 /// - ensures: the packages [`packaged`] reaches from `paths`, each in order
 ///   resolved by [`Package::resolve`] under the built-in grammar into the store
-///   [`opened`] opens, asking the remote for a `gh:` revision its lock lacks
+///   [`opened`] opens, each identity forked on a pool of the host's performance
+///   cores, asking the remote for a `gh:` revision its lock lacks
 ///   ([`Revisions::Asked`]), and written by [`relock`]: `lock: <path>: <what>`
 ///   on standard output for each lock written, rewritten or unchanged, `gandr:
 ///   <root>: <why>` on standard error for dependencies that do not resolve,
@@ -1595,7 +1599,7 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let grammar = match built_in() {
-        Ok(grammar) => grammar,
+        Ok(grammar) => Arc::new(grammar),
         Err(error) => {
             let _written = writeln!(stderr, "gandr: {error}");
             return ExitCode::from(FAULTED);
@@ -1605,10 +1609,12 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
         Ok(store) => store,
         Err(exit) => return exit,
     };
+    let pool = Pool::new(Width::PerformanceCores);
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
         let path = package.lock();
-        let (written, reached) = match package.resolve(&grammar, &mut store, Revisions::Asked) {
+        let resolved = package.resolve(&grammar, &mut store, Revisions::Asked, &pool);
+        let (written, reached) = match resolved {
             Ok(lock) => match relock(package, &lock) {
                 Ok(reconciled) => (
                     writeln!(stdout, "lock: {}: {reconciled}", path.display()),
@@ -1831,9 +1837,9 @@ fn main() -> ExitCode
     );
     #[cfg(feature = "tracing")]
     let _span = tracing::info_span!("driver").entered();
-    // The packages a `check` reached, whose manifests it reconciles, and the
-    // store their locks and exports commit to.
-    let mut packages: Vec<Packaged> = Vec::new();
+    // The packages a `check` reached, whose locks and manifests it reconciles,
+    // and the store their locks and exports commit to.
+    let mut packages: Vec<Package> = Vec::new();
     // The workspaces that a `check` works on. It reconciles their manifests.
     let mut workspaces: Vec<Gathered> = Vec::new();
     // The network, bindings and migrations a `run` or `host` gives its program.
@@ -1882,18 +1888,11 @@ fn main() -> ExitCode
                 Ok((paths, reached, gathered)) => {
                     workspaces = gathered;
                     if !reached.is_empty() {
-                        let mut opened = match opened() {
+                        store = Some(match opened() {
                             Ok(store) => store,
                             Err(exit) => return exit,
-                        };
-                        packages = reached
-                            .into_iter()
-                            .map(|package| {
-                                let locking = locking(&package, &mut opened);
-                                Packaged { package, locking }
-                            })
-                            .collect();
-                        store = Some(opened);
+                        });
+                        packages = reached;
                     }
                     paths
                 },
@@ -3568,7 +3567,7 @@ fn doubled(doubled: Doubled) -> ExitCode
 fn render(
     outcome: Outcome,
     printing: Printing,
-    reached: (&[Packaged], &[Gathered]),
+    reached: (&[Package], &[Gathered]),
     hosting: Hosting,
     store: Option<&mut Store>,
     stdout: &mut dyn std::io::Write,
@@ -3962,18 +3961,20 @@ fn stage(
 ///   line to standard error. Under `check` measuring, each source step's
 ///   diagnostics are followed by its declarations' measures, as [`measured`]
 ///   states, and under `check --report cells` by its discharged cells, as
-///   [`discharged_cells`] states. Under `check`, each package of the pass first
-///   prints what locking its dependencies before the walk came to, as
-///   [`locked`] states; then each whose package source settled with no refusal
-///   has its manifest read from the package source's program and reconciled:
-///   each written, rewritten or unchanged is the line `manifest: <path>:
-///   <what>` on standard output, at the JSON level an object whose `level` is
-///   `manifest`; a package source that states no manifest, and a manifest
-///   refused as drift, are each `gandr: <path>: <why>` on standard error and
-///   unsettle the run, and one that cannot be read or written faults it. Each
-///   package whose lock is held and whose sources all settled then commits its
-///   export, the artifacts the walk admitted for its sources as [`Exporting`]
-///   keeps them, into the pass's store under its address's root, as
+///   [`discharged_cells`] states. Before the walk, each package of the pass is
+///   locked into the pass's store as [`locking`] states, its identity forked on
+///   `pool`. Under `check`, each package of the pass first prints what locking
+///   its dependencies came to, as [`locked`] states; then each whose package
+///   source settled with no refusal has its manifest read from the package
+///   source's program and reconciled: each written, rewritten or unchanged is
+///   the line `manifest: <path>: <what>` on standard output, at the JSON level
+///   an object whose `level` is `manifest`; a package source that states no
+///   manifest, and a manifest refused as drift, are each `gandr: <path>: <why>`
+///   on standard error and unsettle the run, and one that cannot be read or
+///   written faults it. Each package whose lock is held and whose sources all
+///   settled then commits its export, the artifacts the walk admitted for its
+///   sources as [`Exporting`] keeps them, into the pass's store under its
+///   address's root, as
 ///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) states,
 ///   printing nothing; a store that refuses the commit is `gandr: <root>:
 ///   <why>` on standard error and faults the run, and so is an artifact that
@@ -4042,6 +4043,19 @@ fn run(
         workspaces,
         mut store,
     } = pass;
+    // Each package is locked before the walk, so every import of a
+    // coordinate reads the lock from the walk's first source. The pass holds a
+    // store whenever it holds a package.
+    let packages: Vec<Packaged<'_>> = store.as_deref_mut().map_or_else(Vec::new, |held| {
+        packages
+            .iter()
+            .map(|package| Packaged {
+                package,
+                locking: locking(package, held, pool),
+            })
+            .collect()
+    });
+    let packages = packages.as_slice();
     let Printing {
         verbosity,
         spelling,
@@ -4162,7 +4176,7 @@ fn run(
         verdict = worse(verdict, reached);
         if let Some(manifest) = manifest {
             let reached = manifested(
-                &packaged.package,
+                packaged.package,
                 manifest,
                 address,
                 verbosity,
@@ -4172,7 +4186,7 @@ fn run(
             verdict = worse(verdict, reached);
         }
         if let (Some(&Ok(ref address)), Some(held)) = (address, store.as_deref_mut()) {
-            let reached = exported(&packaged.package, exporting, address, held, stderr)?;
+            let reached = exported(packaged.package, exporting, address, held, stderr)?;
             verdict = worse(verdict, reached);
         }
     }
@@ -4189,7 +4203,7 @@ fn run(
     if checking && let Some(held) = store.as_deref() {
         for packaged in packages {
             if let Locking::Held(_, ref lock, _) = packaged.locking {
-                let reached = depended(&packaged.package, lock, held, verbosity, stdout, stderr)?;
+                let reached = depended(packaged.package, lock, held, verbosity, stdout, stderr)?;
                 verdict = worse(verdict, reached);
             }
         }
@@ -4394,7 +4408,7 @@ fn discharged_cells(
 ///   as stated.
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
 fn locked<'packaged>(
-    packaged: &'packaged Packaged,
+    packaged: &'packaged Packaged<'_>,
     verbosity: Verbosity,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
@@ -4672,7 +4686,7 @@ struct Attributed
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
 fn attributed(
     step: &Step<'_>,
-    packages: &[Packaged],
+    packages: &[Packaged<'_>],
 ) -> Option<Attributed>
 {
     let (Step::Source { path, .. } | Step::Fault { path, .. }) = *step;
@@ -4712,7 +4726,7 @@ fn attributed(
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
 fn read_manifest(
     step: &mut Step<'_>,
-    packages: &[Packaged],
+    packages: &[Packaged<'_>],
     attributed: &Attributed,
     manifests: &mut [Option<Result<Manifest, Unmanifested>>],
 )
@@ -4735,7 +4749,7 @@ fn read_manifest(
         manifests.get_mut(attributed.place),
     ) && packaged.package.source() == attributed.canonical
     {
-        *slot = Some(Manifest::of(program, report, &packaged.package));
+        *slot = Some(Manifest::of(program, report, packaged.package));
     }
 }
 
@@ -4842,7 +4856,7 @@ fn deployed(
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
 fn file_export(
     step: &Step<'_>,
-    packages: &[Packaged],
+    packages: &[Packaged<'_>],
     attributed: &Attributed,
     exportings: &mut [Exporting],
 )

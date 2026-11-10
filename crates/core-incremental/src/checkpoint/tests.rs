@@ -17,7 +17,7 @@ use super::Candidate;
 use super::ItemCheckpoint;
 use super::Standing;
 use super::Supplied;
-use super::content_keys;
+use super::content_key;
 use super::touches;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::NodeIndex;
@@ -383,18 +383,21 @@ fn value_change_closure_handles_cycles_and_opaque_readers()
 #[test]
 fn an_item_s_content_key_moves_only_with_its_content_1547()
 {
-    let first = content_keys(&integers(CoreArena::new(), &[
+    let keys = |program: &Program| {
+        [0_usize, 1_usize].map(|index| content_key(program, ItemOrdinal::from(index)))
+    };
+    let first = keys(&integers(CoreArena::new(), &[
         (Key("one"), Digits("1")),
         (Key("two"), Digits("2")),
     ]));
-    let edited = content_keys(&integers(noisy(Noise(3)), &[
+    let edited = keys(&integers(noisy(Noise(3)), &[
         (Key("one"), Digits("1")),
         (Key("two"), Digits("20")),
     ]));
     let (
-        &[Maybe::Present(first_one), Maybe::Present(first_two)],
-        &[Maybe::Present(edited_one), Maybe::Present(edited_two)],
-    ) = (first.as_slice(), edited.as_slice())
+        [Maybe::Present(first_one), Maybe::Present(first_two)],
+        [Maybe::Present(edited_one), Maybe::Present(edited_two)],
+    ) = (first, edited)
     else {
         panic!("each integer item has a key: {first:?} {edited:?}");
     };
@@ -420,11 +423,16 @@ fn a_checkpoint_keeps_the_content_key_of_its_item_6286()
             .map(ItemCheckpoint::key)
             .collect::<vec::Vec<_>>()
     };
+    let keyed = |program: &Program| {
+        (0 .. program.items().len())
+            .map(|index| content_key(program, ItemOrdinal::from(index)))
+            .collect::<vec::Vec<_>>()
+    };
     let mut first = integers(CoreArena::new(), &[
         (Key("one"), Digits("1")),
         (Key("two"), Digits("2")),
     ]);
-    let keys = content_keys(&first);
+    let keys = keyed(&first);
     let checked = super::check_program(&mut first, gandr_core_checker::CheckBudget::DEFAULT)
         .expect("the program checks");
     assert_eq!(kept(&checked), keys, "a fresh pass keeps each item's key");
@@ -432,7 +440,7 @@ fn a_checkpoint_keeps_the_content_key_of_its_item_6286()
         (Key("one"), Digits("1")),
         (Key("two"), Digits("20")),
     ]);
-    let edited_keys = content_keys(&edited);
+    let edited_keys = keyed(&edited);
     let resumed = super::resume(checked, &mut edited).expect("the edit resumes");
     let resumed_keys = kept(&resumed);
     assert_eq!(

@@ -102,7 +102,8 @@ struct Suspended<'closure>
 {
     /// The lowering's state.
     lowerer: Lowerer<'closure, 'closure>,
-    /// The arena the closure's sources minted into.
+    /// The arena the closure's sources minted into, frozen: each copy that a
+    /// resumed lowering takes shares its nodes.
     arena: CoreArena,
     /// Where each node they minted came from, and, when finishing the closure
     /// alone answers, where each of its declarations was introduced.
@@ -858,6 +859,9 @@ fn suspend<'closure>(
             let (finished, origins) = Finished::of(module);
             (Some(finished), origins)
         });
+    // Each lowering resumed after the closure copies this arena. Frozen, a
+    // copy shares the closure's nodes and pays for the document's alone.
+    arena.freeze();
 
     Prefix::Suspended {
         rooted,

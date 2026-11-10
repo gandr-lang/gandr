@@ -302,7 +302,7 @@ INSERT INTO purpose VALUES('core-incremental','checkpoint::Resume','struct','Hol
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ResumeCensus','struct','Counts the work a resume did, per item and per edge, so a witness pins its linearity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::ResumeError','enum','Names why a resume could not complete, the order-maintenance structure''s refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::check_program','function','Judges every item of a program under a budget, the batch run at the memo that recalls nothing.','sharing','fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','checkpoint::content_keys','function','Gives each item its content key, in order, so a pool keys its work on an item by content.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','checkpoint::content_key','function','Gives one item its content key, so a pool keys its work on an item by content.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::lead','function','Runs the batch pass over a program, keeping the leading state a later revision resumes after.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::resume','function','Recalls each item''s checkpoint by content and adopts it where its support still holds, judging the rest.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','checkpoint::resume_after','function','Resumes onto an edited program after a leading state, judging only the items it lays after the leading ones.',NULL,'fits','sound',NULL);

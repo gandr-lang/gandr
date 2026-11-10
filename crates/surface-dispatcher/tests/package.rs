@@ -6,15 +6,19 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use core::convert::Infallible;
+use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_fork::Serial;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::ItemKey;
-use gandr_core_incremental::content_keys;
+use gandr_core_incremental::ItemOrdinal;
+use gandr_core_incremental::content_key;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationBuilder;
@@ -44,6 +48,7 @@ use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Revisions;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Unaddressed;
 use gandr_surface_dispatcher::Unexported;
 use gandr_surface_dispatcher::Unmanifested;
@@ -51,6 +56,7 @@ use gandr_surface_dispatcher::Unmembered;
 use gandr_surface_dispatcher::Unpathed;
 use gandr_surface_dispatcher::Unreadmitted;
 use gandr_surface_dispatcher::Unresolved;
+use gandr_surface_dispatcher::Unshadowed;
 use gandr_surface_dispatcher::Unstated;
 use gandr_surface_dispatcher::WORKSPACE_LOCK;
 use gandr_surface_dispatcher::Walk;
@@ -72,6 +78,8 @@ use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationCount;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Inertness;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -1169,11 +1177,14 @@ fn keyed(
     program
         .items()
         .iter()
-        .map(|item| item.key().clone())
-        .zip(content_keys(&program).into_iter().map(|key| match key {
-            Maybe::Present(key) => Some(key),
-            Maybe::Absent(_) => None,
-        }))
+        .enumerate()
+        .map(|(index, item)| {
+            let key = match content_key(&program, ItemOrdinal::from(index)) {
+                Maybe::Present(key) => Some(key),
+                Maybe::Absent(_) => None,
+            };
+            (item.key().clone(), key)
+        })
         .collect()
 }
 
@@ -1214,11 +1225,11 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
     else {
         panic!("the package is found");
     };
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let store = stored(Path::new("inert"));
     let address = |held: &Held| {
         package
-            .identity(&grammar, held, &Lock::default(), &store)
+            .identity(&grammar, held, &Lock::default(), &store, &Serial)
             .expect("the package addresses")
             .address
     };
@@ -1289,12 +1300,12 @@ fn an_edit_to_an_inert_definition_leaves_the_address_6141()
     else {
         panic!("the package is found");
     };
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let store = stored(Path::new("inert-definition"));
     let address = |mark: &str, note: &str| {
         let held = Held(BTreeMap::from([(library.clone(), stated(mark, note))]));
         package
-            .identity(&grammar, &held, &Lock::default(), &store)
+            .identity(&grammar, &held, &Lock::default(), &store, &Serial)
             .expect("the package addresses")
             .address
     };
@@ -1457,7 +1468,7 @@ fn swept(
 #[test]
 fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let fields = inert_fields();
     assert!(
         fields.len() >= 6,
@@ -1480,7 +1491,7 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
         };
         let address = |held: &Held| {
             package
-                .identity(&grammar, held, &Lock::default(), &store)
+                .identity(&grammar, held, &Lock::default(), &store, &Serial)
                 .map(|identity| identity.address)
         };
         let before = address(&Held::default()).expect("the package addresses");
@@ -1527,6 +1538,171 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
             address(&added),
             Ok(before),
             "`{}`'s address moves with its content",
+            library.display()
+        );
+    }
+}
+
+/// The address of `package` over no dependency, as each of its sources digests
+/// when it is laid out over its own imports and lowered alone: its package
+/// source and then each module by its module path, each source's own items in
+/// admission order as their dotted paths and content keys, a model's inert
+/// component left out.
+///
+/// # Specification
+/// - requires: every source of the package reads and lowers to a module under
+///   `grammar`, and no declaration of it is refused or opaque.
+/// - ensures: the digest [`Package::identity`] states over an empty lock,
+///   computed one source's closure at a time.
+/// - fails: never on the admitted domain.
+/// - panics: a source that does not read or lower, or an item with no key,
+///   violates the precondition.
+/// - executable: none — the digest is the lowering's, which a predicate could
+///   only restate by lowering again; the case compares it with the identity.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the closure of each source is the reference that the
+///   identity's components are compared against, on every corpus package.
+/// - witness: `tests::package::every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406`
+fn closure_address(
+    grammar: &Pbg,
+    package: &Package,
+) -> blake3::Hash
+{
+    let mut modules = BTreeMap::new();
+    let mut pending = Vec::from([package.sources().to_path_buf()]);
+    while let Some(directory) = pending.pop() {
+        for path in std::fs::read_dir(&directory)
+            .expect("the directory lists")
+            .map(|entry| entry.expect("the entry reads").path())
+        {
+            if path.is_dir() {
+                pending.push(path);
+            }
+            else if path
+                .extension()
+                .is_some_and(|extension| extension == "gandr")
+                && path != package.source()
+            {
+                let relative = path
+                    .strip_prefix(package.sources())
+                    .expect("the module is under the sources");
+                let mut module = String::new();
+                for segment in relative
+                    .parent()
+                    .into_iter()
+                    .flat_map(Path::iter)
+                    .chain(relative.file_stem())
+                {
+                    if !module.is_empty() {
+                        module.push('.');
+                    }
+                    module.push_str(segment.to_str().expect("the path spells"));
+                }
+                let _fresh = modules.insert(module, path);
+            }
+        }
+    }
+    let mut hasher = blake3::Hasher::new();
+    let mut dotted = String::new();
+    for source in core::iter::once(package.source().to_path_buf()).chain(modules.into_values()) {
+        let text = std::fs::read_to_string(&source).expect("the source reads");
+        let laid = lay_out_shadowed(
+            grammar,
+            &source,
+            classify(&source),
+            SourceText::from(text.as_str()),
+            &Unshadowed,
+        );
+        let lowering = lower_unit_source(
+            grammar,
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            &mut LoweringCount::default(),
+        )
+        .expect("the closure lowers");
+        let Lowered::Module { module, arena } = lowering.into_lowered()
+        else {
+            panic!("the closure is read as a module");
+        };
+        let program = item_program(&module, arena).expect("positions ascend");
+        let declarations = module
+            .declarations()
+            .iter()
+            .filter(|declaration| !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)));
+        for (ordinal, declaration) in declarations.enumerate() {
+            if declaration.span().start() < laid.base || declaration.inertness() == Inertness::Inert
+            {
+                continue;
+            }
+            dotted.clear();
+            for (index, segment) in module.path_of(declaration).iter().enumerate() {
+                if index > 0 {
+                    dotted.push('.');
+                }
+                let segment: &str = segment.as_ref();
+                dotted.push_str(segment);
+            }
+            let Maybe::Present(key) = content_key(&program, ItemOrdinal::from(ordinal))
+            else {
+                panic!("`{dotted}` has a key");
+            };
+            let length = u64::try_from(dotted.len()).expect("the length fits");
+            let _digested = hasher
+                .update(&length.to_le_bytes())
+                .update(dotted.as_bytes());
+            key.digest_into(&mut hasher);
+        }
+    }
+    hasher.finalize()
+}
+
+/// #6406: every corpus package's address, at one thread and at every thread
+/// the host gives the process, is the digest of each source's own items
+/// lowered over the source's own closure, though the identity lowers each
+/// import-connected component once.
+#[test]
+fn every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406()
+{
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let store = stored(Path::new("closure-address"));
+    let widest = Pool::new(Width::Threads(Threads::from(
+        std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+    )));
+    for library in [
+        "corpus/model/projects/hello/package.gandr",
+        "corpus/model/projects/tools/package.gandr",
+        "library/std/package.gandr",
+    ] {
+        let library = tree
+            .join(library)
+            .canonicalize()
+            .expect("the library exists");
+        let Maybe::Present(package) = Package::discover(&library)
+        else {
+            panic!("`{}` roots a package", library.display());
+        };
+        let reference = closure_address(&grammar, &package);
+        let serial = package
+            .identity(&grammar, &Unshadowed, &Lock::default(), &store, &Serial)
+            .expect("the package addresses");
+        let forked = package
+            .identity(&grammar, &Unshadowed, &Lock::default(), &store, &widest)
+            .expect("the package addresses");
+        assert_eq!(
+            (serial.address.to_string(), forked.address.to_string()),
+            (
+                reference.to_hex().to_string(),
+                reference.to_hex().to_string()
+            ),
+            "`{}`'s address is its closures' digest at one thread and at the widest pool",
+            library.display()
+        );
+        assert_eq!(
+            serial,
+            forked,
+            "`{}`'s identity is one at every width",
             library.display()
         );
     }
@@ -1662,7 +1838,7 @@ fn rooted(root: &Path) -> Package
 #[test]
 fn a_workspace_s_packages_share_one_lock_4921()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = siblings(Path::new("shared-lock"), Hello {
         version: "0.1.0",
         welcome: "hello",
@@ -1697,7 +1873,7 @@ fn a_workspace_s_packages_share_one_lock_4921()
     );
     let mut store = stored(Path::new("shared-lock"));
     let lock = sibling
-        .resolve(&grammar, &mut store, Revisions::Locked)
+        .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
         .expect("the dependencies resolve");
     let coordinate = Coordinate::Path(String::from("../hello"));
     assert!(
@@ -1795,7 +1971,7 @@ fn a_workspace_s_packages_share_one_lock_4921()
 #[test]
 fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = siblings(Path::new("lock"), Hello {
         version: "0.1.0",
         welcome: "hello",
@@ -1809,16 +1985,28 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "the coordinate both sources import is collected once, before any lock stands"
     );
     let mut store = stored(Path::new("lock"));
-    let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default(), &store);
+    let unlocked = sibling.identity(
+        &grammar,
+        &Held::default(),
+        &Lock::default(),
+        &store,
+        &Serial,
+    );
     assert!(
         matches!(unlocked, Err(Unaddressed::Refused { ref item, .. }) if item == "greeting"),
         "with no lock, the use through the alias is refused, and only it: {unlocked:?}"
     );
     let lock = sibling
-        .resolve(&grammar, &mut store, Revisions::Locked)
+        .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
         .expect("the dependencies resolve");
     let own = hello
-        .identity(&grammar, &Held::default(), &Lock::default(), &store)
+        .identity(
+            &grammar,
+            &Held::default(),
+            &Lock::default(),
+            &store,
+            &Serial,
+        )
         .expect("hello addresses");
     let pointer = store.commit(&own).expect("hello's identity commits");
     assert_eq!(
@@ -1851,7 +2039,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     );
     assert_eq!(
         sibling
-            .resolve(&grammar, &mut store, Revisions::Locked)
+            .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
             .as_ref(),
         Ok(&lock),
         "a second resolution is the same lock"
@@ -1869,7 +2057,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "the lock stands byte for byte"
     );
     let locked = sibling
-        .identity(&grammar, &Held::default(), &lock, &store)
+        .identity(&grammar, &Held::default(), &lock, &store, &Serial)
         .expect("with the lock, the use reads `hello.welcome`");
     let elsewhere = siblings(Path::new("lock-elsewhere"), Hello {
         version: "0.1.0",
@@ -1878,7 +2066,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     let other = rooted(&elsewhere.join("sibling"));
     let mut fresh = stored(Path::new("lock-elsewhere"));
     let relocked = other
-        .resolve(&grammar, &mut fresh, Revisions::Locked)
+        .resolve(&grammar, &mut fresh, Revisions::Locked, &Serial)
         .expect("the copy resolves");
     assert_eq!(
         relocked.render(),
@@ -1894,7 +2082,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     );
     assert_eq!(
         other
-            .identity(&grammar, &Held::default(), &relocked, &fresh)
+            .identity(&grammar, &Held::default(), &relocked, &fresh, &Serial)
             .map(|identity| identity.address),
         Ok(locked.address),
         "the dependent's address is the same from another directory"
@@ -1915,7 +2103,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
 #[test]
 fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = scratch(Path::new("aliased-path"), &[
         Path::new("hello/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
@@ -1957,13 +2145,19 @@ fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715
     let sibling = rooted(&directory.join("sibling"));
     let coordinate = Coordinate::Path(String::from("../hello"));
     let mut store = stored(Path::new("aliased-path"));
-    let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default(), &store);
+    let unlocked = sibling.identity(
+        &grammar,
+        &Held::default(),
+        &Lock::default(),
+        &store,
+        &Serial,
+    );
     assert!(
         matches!(unlocked, Err(Unaddressed::Refused { .. })),
         "with no lock, the module path through the alias is refused: {unlocked:?}"
     );
     let lock = sibling
-        .resolve(&grammar, &mut store, Revisions::Locked)
+        .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
         .expect("the dependencies resolve");
     assert_eq!(
         lock.coordinates().collect::<Vec<_>>(),
@@ -1977,17 +2171,17 @@ fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715
         ),
         "the lock is written"
     );
-    let locked = sibling.identity(&grammar, &Held::default(), &lock, &store);
+    let locked = sibling.identity(&grammar, &Held::default(), &lock, &store, &Serial);
     assert!(
         locked.is_ok(),
         "with the lock, the listed name and the qualified path read hello's module: {locked:?}"
     );
     let stray = rooted(&directory.join("stray"));
     let lock = stray
-        .resolve(&grammar, &mut store, Revisions::Locked)
+        .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
         .expect("the stray's dependencies resolve");
     let _written = reconcile(&stray.root().join(LOCK), &lock).expect("the stray's lock is written");
-    let refused = stray.identity(&grammar, &Held::default(), &lock, &store);
+    let refused = stray.identity(&grammar, &Held::default(), &lock, &store, &Serial);
     assert!(
         matches!(refused, Err(Unaddressed::Refused { ref item, .. }) if item == "stray"),
         "a head that is neither the alias nor a source stays refused: {refused:?}"
@@ -2003,7 +2197,7 @@ fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715
 #[test]
 fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = siblings(Path::new("drift"), Hello {
         version: "0.1.0",
         welcome: "hello",
@@ -2012,7 +2206,7 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
     let path = directory.join("sibling").join(LOCK);
     let mut store = stored(Path::new("drift"));
     let lock = sibling
-        .resolve(&grammar, &mut store, Revisions::Locked)
+        .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
         .expect("the dependencies resolve");
     assert!(
         matches!(
@@ -2031,7 +2225,7 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
             reconcile(
                 &sibling.root().join(LOCK),
                 &sibling
-                    .resolve(&grammar, &mut store, Revisions::Locked)
+                    .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
                     .expect("it resolves")
             ),
             Ok(Reconciled::Unchanged)
@@ -2043,7 +2237,7 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         welcome: "howdy",
     });
     let moved = sibling
-        .resolve(&grammar, &mut store, Revisions::Locked)
+        .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
         .expect("it resolves");
     let coordinate = Coordinate::Path(String::from("../hello"));
     let address = |lock: &Lock| {
@@ -2108,7 +2302,7 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
 #[test]
 fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = siblings(Path::new("unstored"), Hello {
         version: "0.1.0",
         welcome: "hello",
@@ -2116,7 +2310,7 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
     let sibling = rooted(&directory.join("sibling"));
     let mut committed = stored(Path::new("unstored"));
     let lock = sibling
-        .resolve(&grammar, &mut committed, Revisions::Locked)
+        .resolve(&grammar, &mut committed, Revisions::Locked, &Serial)
         .expect("the dependencies resolve");
     assert!(
         matches!(
@@ -2128,7 +2322,7 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
     let coordinate = Coordinate::Path(String::from("../hello"));
     let pointer = lock.locked(&coordinate).expect("hello is locked");
     let mut empty = stored(Path::new("unstored-empty"));
-    let unaddressed = sibling.identity(&grammar, &Held::default(), &lock, &empty);
+    let unaddressed = sibling.identity(&grammar, &Held::default(), &lock, &empty, &Serial);
     assert_eq!(
         unaddressed,
         Err(Unaddressed::Unstored {
@@ -2150,17 +2344,17 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
     );
     assert_eq!(
         sibling
-            .resolve(&grammar, &mut empty, Revisions::Locked)
+            .resolve(&grammar, &mut empty, Revisions::Locked, &Serial)
             .as_ref(),
         Ok(&lock),
         "resolving into the empty store commits the same pointer"
     );
     assert_eq!(
         sibling
-            .identity(&grammar, &Held::default(), &lock, &empty)
+            .identity(&grammar, &Held::default(), &lock, &empty, &Serial)
             .map(|identity| identity.address),
         sibling
-            .identity(&grammar, &Held::default(), &lock, &committed)
+            .identity(&grammar, &Held::default(), &lock, &committed, &Serial)
             .map(|identity| identity.address),
         "and the Path.step(store, answers) it alike"
     );
@@ -2176,7 +2370,7 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
 #[test]
 fn a_dependency_cycle_is_refused_by_its_paths_3072()
 {
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = scratch(Path::new("cycle"), &[
         Path::new("a/package.gandr"),
         Path::new("b/package.gandr"),
@@ -2192,6 +2386,7 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
         &grammar,
         &mut stored(Path::new("cycle")),
         Revisions::Locked,
+        &Serial,
     );
     assert_eq!(
         resolved,
@@ -2329,9 +2524,15 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
     let (export, admitted) = exported_walk(&directory, &directory.join("src"), &kept);
     let export = export.expect("every source settles");
     let mut store = stored(Path::new("export"));
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let address = rooted(&directory.join("src"))
-        .identity(&grammar, &Held::default(), &Lock::default(), &store)
+        .identity(
+            &grammar,
+            &Held::default(),
+            &Lock::default(),
+            &store,
+            &Serial,
+        )
         .expect("the package addresses")
         .address;
     let pointer = export
@@ -2432,9 +2633,15 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
     let (export, admitted) = exported_walk(&directory, &directory.join("src"), &kept);
     let export = export.expect("every source settles");
     let mut store = stored(Path::new("readmit"));
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let address = rooted(&directory.join("src"))
-        .identity(&grammar, &Held::default(), &Lock::default(), &store)
+        .identity(
+            &grammar,
+            &Held::default(),
+            &Lock::default(),
+            &store,
+            &Serial,
+        )
         .expect("the package addresses")
         .address;
     let _pointer = export
@@ -2612,7 +2819,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
     use gandr_surface_dispatcher::Hydration;
     use gandr_surface_dispatcher::install_hydration;
 
-    let grammar = built_in().expect("the built-in grammar builds");
+    let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
     let directory = scratch(Path::new("gh"), &[
         Path::new("hello/package.gandr"),
         Path::new("sibling/package.gandr"),
@@ -2663,7 +2870,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
     );
     let mut store = stored(Path::new("gh"));
     assert_eq!(
-        sibling.resolve(&grammar, &mut store, Revisions::Locked),
+        sibling.resolve(&grammar, &mut store, Revisions::Locked, &Serial),
         Err(Unresolved::Unrevisioned {
             coordinate: coordinate.clone(),
             root: sibling.root().to_path_buf(),
@@ -2671,7 +2878,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
         "a check with no lock fetches nothing"
     );
     let lock = sibling
-        .resolve(&grammar, &mut store, Revisions::Asked)
+        .resolve(&grammar, &mut store, Revisions::Asked, &Serial)
         .expect("locking asks the remote's `HEAD` and fetches it");
     assert_eq!(
         lock.revision(&coordinate)
@@ -2705,7 +2912,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
     });
     assert_eq!(
         sibling
-            .resolve(&grammar, &mut store, Revisions::Asked)
+            .resolve(&grammar, &mut store, Revisions::Asked, &Serial)
             .as_ref(),
         Ok(&lock),
         "locking keeps the revision the lock records as the remote moves"
@@ -2713,7 +2920,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
     std::fs::remove_dir_all(&checkout).expect("the checkout is removed");
     assert_eq!(
         sibling
-            .resolve(&grammar, &mut store, Revisions::Locked)
+            .resolve(&grammar, &mut store, Revisions::Locked, &Serial)
             .as_ref(),
         Ok(&lock),
         "a check fetches the recorded revision again"
@@ -2724,7 +2931,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
     );
     assert!(
         sibling
-            .identity(&grammar, &Held::default(), &lock, &store)
+            .identity(&grammar, &Held::default(), &lock, &store, &Serial)
             .is_ok(),
         "with the lock, the use reads `hello.welcome` from the checkout"
     );
