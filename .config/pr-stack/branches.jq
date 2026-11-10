@@ -22,13 +22,15 @@
 # `{name, worktree}`s no open pull request accounts for, and the `wip/`
 # branch names, local or remote, no open issue names; each sorted.
 
+include "accounted";
+
 def wip: startswith("wip/");
 def named($issues): . as $name | any($issues[]; test("(^|[^A-Za-z0-9_./-])\($name | gsub("[.]"; "\\."))($|[^A-Za-z0-9_./-])"));
 
 (.kept // []) as $kept
 | (.heads // []) as $heads
 | (.issues // []) as $issues
-| def stray: (IN($kept[]) or startswith("gh-readonly-queue/") or wip or IN($heads[])) | not;
+| def stray: (accounted($kept; $heads) or wip) | not;
 {
   remote: [(.remote // [])[] | select(stray)] | sort,
   local: [(.local // [])[] | select(.name | stray)] | sort_by(.name),

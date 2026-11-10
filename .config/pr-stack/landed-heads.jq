@@ -19,15 +19,19 @@
 # Output: an array of `{name, oid, action, reason}`, one per head, `action`
 # `delete` or `keep`. A merge queue branch (`gh-readonly-queue/`) stays:
 # GitHub makes and deletes it, and the queue reads it while it lives.
+include "accounted";
+
 .kept as $kept
 | .used as $used
 | [
     .heads[]
     | .name as $name
     | {name, oid} + (
-      if any($kept[]; . == $name) then {action: "keep", reason: "a branch that outlives every unit"}
-      elif ($name | startswith("gh-readonly-queue/")) then {action: "keep", reason: "a merge queue branch, which GitHub deletes"}
-      elif any($used[]; . == $name) then {action: "keep", reason: "the head or base of an open pull request"}
+      if ($name | accounted($kept; $used)) then
+        if any($kept[]; . == $name) then {action: "keep", reason: "a branch that outlives every unit"}
+        elif ($name | startswith("gh-readonly-queue/")) then {action: "keep", reason: "a merge queue branch, which GitHub deletes"}
+        else {action: "keep", reason: "the head or base of an open pull request"}
+        end
       elif .commits == null then {action: "keep", reason: "its commits could not be read"}
       elif (.commits | length) > 0 and all(.commits[]; .on_trunk) then {action: "delete", reason: "its commits stand on the trunk"}
       elif (.commits | length) > 0 then {action: "keep", reason: "a commit is not on the trunk"}

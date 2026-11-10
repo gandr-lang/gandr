@@ -4571,5 +4571,15 @@
       ]
     },
     "output": "[{\"number\":20,\"act\":\"unrun\"}]"
+  },
+  {
+    "name": "#6212: kept, merge queue, and named branches are accounted once",
+    "program": "accounted-cases.jq",
+    "input": {
+      "kept": ["landing"],
+      "named": ["stack-base"],
+      "branches": ["landing", "gh-readonly-queue/landing/pr-1", "stack-base", "stray"]
+    },
+    "output": "[{\"branch\":\"landing\",\"accounted\":true},{\"branch\":\"gh-readonly-queue/landing/pr-1\",\"accounted\":true},{\"branch\":\"stack-base\",\"accounted\":true},{\"branch\":\"stray\",\"accounted\":false}]"
   }
 ]

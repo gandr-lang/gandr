@@ -33,7 +33,7 @@ branch_reading() {
       '{name: $name, oid: $oid, commits: $commits, ahead: $ahead}'
   done | jq -cs --argjson kept "$(printf '%s\n' "$@" | jq -R . | jq -cs 'map(select(. != ""))')" \
     --argjson used "$(jq -R . < "$used" | jq -cs 'map(select(. != ""))')" \
-    '{kept: $kept, used: $used, heads: .}' | jq -c -f "$pr_stack_dir/landed-heads.jq"
+    '{kept: $kept, used: $used, heads: .}' | jq -L "$pr_stack_dir" -c -f "$pr_stack_dir/landed-heads.jq"
 }
 
 # Deletes from the remote `$1` each head that the decisions `$2` mark
