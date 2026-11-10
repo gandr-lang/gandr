@@ -189,13 +189,14 @@ impl Instrument for Silent
 /// - hypothesis: L3 — as [`Instrument`].
 /// - witness: `tests::instrument::a_judgement_tells_its_sink_each_phase_and_count`
 #[inline]
-pub fn within<Sink, Out>(
+pub fn within<Sink, Work, Out>(
     sink: &mut Sink,
     phase: Phase,
-    work: impl FnOnce() -> Out,
+    work: Work,
 ) -> Out
 where
     Sink: Instrument,
+    Work: FnOnce() -> Out,
 {
     sink.entered(phase);
     let out = work();
