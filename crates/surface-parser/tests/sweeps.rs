@@ -65,14 +65,15 @@ const RECOVERY: Sample = Sample {
 const RECOVERY_STRIDE: usize = 16;
 
 /// The nights the nightly recovery sweep takes to check every row of the
-/// corpus: each night it checks every source whole and every thirteenth row
-/// of each, so each night costs about a thirteenth of the whole. Thirteen is
-/// the fewest that keep its night within half the nightly sweeps' test wall
-/// (#3013). A thirty-second took 65 s with specifications enforced on the
-/// nightly runner (run 40602657172), the whole about 2,080 s. The rows rotate
-/// and the sources do not, since one source, `buddy-pop.gandr`, costs more
-/// than a thirteenth of the whole alone (#4668).
-const RECOVERY_NIGHTS: Nights = Nights(13);
+/// corpus: each night it checks every source whole and every twenty-sixth
+/// row of each, so each night costs about a twenty-sixth of the whole. A
+/// thirteenth ran to the 240 s limit with specifications enforced on the
+/// nightly runner (run 42811839385) and took 57 s on a workstation (#6238).
+/// That run's other sweeps took 2.5 to 4.4 times their workstation time, so
+/// a twenty-sixth stays near 130 s. The rows rotate and the sources do not,
+/// since one source, `buddy-pop.gandr`, costs more than a thirteenth of the
+/// whole alone (#4668).
+const RECOVERY_NIGHTS: Nights = Nights(26);
 
 /// The most tab-separated fields a recovery record row holds, with room
 /// to spare: a row with more is read as its first this many.
@@ -88,11 +89,11 @@ const TABLES: Sample = Sample {
     size: SampleSize(12),
 };
 
-/// The nights the nightly table sweep takes to visit the corpus: a seventh a
-/// night, the count the nightly's sweeps share (#3013). A sixteenth took 68 s
-/// with specifications enforced on the nightly runner (run 40602657172), and
-/// an eighth 95 s before it.
-const TABLES_NIGHTS: Nights = Nights(7);
+/// The nights the nightly table sweep takes to visit the corpus: a
+/// fourteenth a night. A seventh took 181 s with specifications enforced on
+/// the nightly runner (run 42811839385), past the 170 s that one sweep's
+/// night may take, and 74 s on a workstation (#6238).
+const TABLES_NIGHTS: Nights = Nights(14);
 
 /// The step between the token rows the table sample molds over its stated
 /// size.

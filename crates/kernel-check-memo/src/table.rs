@@ -419,8 +419,9 @@ impl HashIndex
     /// # Specification
     /// - requires: every filed position was filed under its key's hash.
     /// - ensures: each position filed under `hash` once, and none filed under
-    ///   another hash; the walk stops at the first vacant slot, which every
-    ///   probe sequence reaches, and never passes the capacity.
+    ///   another hash. The walk stops at the first vacant slot. The half-load
+    ///   bound puts a vacant slot on every probe sequence. Thus the walk never
+    ///   passes the capacity.
     /// - provides: the candidates a consumer decides among when more than one
     ///   key filed under one hash may answer it.
     /// - panics: none.
@@ -440,13 +441,10 @@ impl HashIndex
     ) -> impl Iterator<Item = TablePosition>
     {
         let mut slot = self.home(hash);
-        let mut remaining = self.slots.len();
         core::iter::from_fn(move || {
-            while remaining > 0 {
-                remaining = remaining.saturating_sub(1);
+            loop {
                 let stored = self.slots.get(slot.0)?;
                 if stored.position == VACANT {
-                    remaining = 0;
                     return None;
                 }
                 slot = self.next(slot);
@@ -454,7 +452,6 @@ impl HashIndex
                     return Some(stored.position);
                 }
             }
-            None
         })
     }
 
@@ -466,16 +463,26 @@ impl HashIndex
     ///   `slot` is the vacant slot that probe returned with no insertion since.
     /// - ensures: one more position is filed, and a probe under `hash` whose
     ///   comparison accepts `position` finds it; at most half the slots stay
-    ///   occupied.
+    ///   occupied. The table grows only when the new count fills more than half
+    ///   its slots. Then the capacity doubles, or becomes the minimum for an
+    ///   empty table. Otherwise the capacity does not change.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — growth across several doublings distinguishes a lost
-    ///   entry and an overfull table.
+    ///   entry and an overfull table. A table filled to exactly half, then one
+    ///   past it, distinguishes growth at half load from growth past it.
     /// - witness: `table::tests::growth_keeps_every_position`
+    /// - witness: `table::tests::insertion_grows_only_past_half_load`
     #[inline]
-    #[spec(captures: before = self.len, ensures: self.len == before.saturating_add(1)
-        && self.len.saturating_mul(2) <= self.slots.len())]
+    #[spec(captures: [before = self.len, capacity = self.slots.len()],
+        ensures: self.len == before.saturating_add(1)
+            && self.len.saturating_mul(2) <= self.slots.len()
+            && self.slots.len() == if self.len.saturating_mul(2) > capacity {
+                capacity.saturating_mul(2).max(MINIMUM)
+            } else {
+                capacity
+            })]
     pub fn insert(
         &mut self,
         slot: TableSlot,
@@ -552,8 +559,11 @@ impl HashIndex
     ///   left open, an entry shifted past its home and a removal that forgets
     ///   the wrong position. Linear probing keeps every record in the run from
     ///   its hash's home slot to the first vacant slot, so under the
-    ///   requirement the predicate reads that run alone, before and after.
+    ///   requirement the predicate reads that run alone, before and after. A
+    ///   run that holds a key at its own home after the removed key
+    ///   distinguishes a shift that moves that key before its home.
     /// - witness: `table::tests::removal_keeps_every_other_position`
+    /// - witness: `table::tests::removal_leaves_a_key_at_its_own_home`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -869,5 +879,60 @@ mod tests
             live.len(),
             "removing a forgotten position is a no-op"
         );
+    }
+
+    #[test]
+    fn insertion_grows_only_past_half_load()
+    {
+        let mut index = HashIndex::new();
+        let mut entries = Vec::new();
+        let half = MINIMUM.checked_div(2).unwrap();
+        for key in (0 .. u64::try_from(half).unwrap()).map(Key) {
+            let _filed = intern(&mut index, &mut entries, TableHash::of(&key), key);
+        }
+        assert_eq!(index.len, half);
+        assert_eq!(
+            index.slots.len(),
+            MINIMUM,
+            "a table filled to exactly half keeps its capacity"
+        );
+        let past = Key(u64::try_from(half).unwrap());
+        let _filed = intern(&mut index, &mut entries, TableHash::of(&past), past);
+        assert_eq!(
+            index.slots.len(),
+            MINIMUM.checked_mul(2).unwrap(),
+            "the entry past half load doubles the capacity"
+        );
+    }
+
+    #[test]
+    fn removal_leaves_a_key_at_its_own_home()
+    {
+        let mut index = HashIndex::new();
+        let mut entries = Vec::new();
+        // Slot 0 holds the key to remove, slot 1 a key at its own home, and
+        // slot 2 a key whose home is slot 0.
+        let hashes = [
+            TableHash::from(0_u32),
+            TableHash::from(1_u32),
+            TableHash::from(0_u32),
+        ];
+        for (key, hash) in hashes.iter().enumerate() {
+            let key = Key(u64::try_from(key).unwrap());
+            let _filed = intern(&mut index, &mut entries, *hash, key);
+        }
+        index.remove(hashes[0], TablePosition::try_from(0_usize).unwrap());
+        assert_eq!(index.len, 2);
+        for position in [1_usize, 2] {
+            assert_eq!(
+                find(&index, &entries, hashes[position], entries[position]),
+                at(position),
+                "position {position} stays where a probe from its home finds it"
+            );
+        }
+        assert!(matches!(
+            find(&index, &entries, hashes[0], entries[0]),
+            Probe::Vacant(_)
+        ));
     }
 }
