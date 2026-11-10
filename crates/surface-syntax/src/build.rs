@@ -714,6 +714,7 @@ mod tests
     use crate::tree::NodeCount;
     use crate::tree::NodeIndex;
     use crate::tree::SyntaxTree;
+    use crate::tree::TreeSlice;
 
     /// The position at `$offset` in layout block `$block`.
     macro_rules! position {
@@ -1346,6 +1347,165 @@ mod tests
                 before: grammar(),
                 after: GrammarFingerprint::from(0xf00d_u64),
             })
+        );
+    }
+
+    #[test]
+    fn a_tree_cut_into_slices_assembles_to_itself()
+    {
+        let text = "def a = x ; def b = y ;def c = z ; def d = w ;";
+        let tree = four_forms(SourceText::from(text));
+        let tops = tree.top_level();
+        assert_eq!(tops.len(), 6_usize, "four forms and two layout children");
+        // Each subset of the five gaps between top-level children is a split.
+        for split in 0_u32 .. 32 {
+            let mut bounds = Vec::from([0_usize]);
+            bounds.extend((1_usize .. tops.len()).filter(|&gap| {
+                u32::try_from(gap.saturating_sub(1))
+                    .ok()
+                    .and_then(|bit| split.checked_shr(bit))
+                    .is_some_and(|bits| bits & 1 == 1)
+            }));
+            bounds.push(tops.len());
+            let slices: Vec<(TreeSlice, ByteOffset)> = bounds
+                .windows(2)
+                .map(|pair| {
+                    let (&from, &to) = (pair.first().unwrap(), pair.last().unwrap());
+                    let anchor = tops.get(from).map(|top| top.span().start()).unwrap();
+                    let ordinals = ChildCount::from(from) .. ChildCount::from(to);
+                    (tree.slice(ordinals, &[], anchor).unwrap(), anchor)
+                })
+                .collect();
+            let pieces: Vec<(&TreeSlice, ByteOffset)> = slices
+                .iter()
+                .map(|&(ref piece, anchor)| (piece, anchor))
+                .collect();
+            let assembled =
+                SyntaxTree::assembled(SourceText::from(text), grammar(), &pieces).unwrap();
+            assert_eq!(assembled, tree, "split {split:#07b}");
+        }
+    }
+
+    #[test]
+    fn a_slice_moves_with_its_anchor()
+    {
+        let first = "def a = x ; def b = y ;";
+        let second = "def c = z ; def d = w ;";
+        let whole = format!("{first}{second}");
+        let before = two_forms(SourceText::from(first));
+        let after = two_forms(SourceText::from(second));
+        let zero = ByteOffset::from(0_usize);
+        let moved = ByteOffset::from(first.len());
+        let three = || ChildCount::from(0_usize) .. ChildCount::from(3_usize);
+        let head = before.slice(three(), &[], zero).unwrap();
+        let tail = after.slice(three(), &[], zero).unwrap();
+        assert_eq!(
+            SyntaxTree::assembled(SourceText::from(whole.as_str()), grammar(), &[
+                (&head, zero),
+                (&tail, moved)
+            ]),
+            Ok(four_forms(SourceText::from(whole.as_str()))),
+            "the second text's forms are the four-form tree's last two"
+        );
+        assert_eq!(
+            SyntaxTree::assembled(SourceText::from(first), grammar(), &[
+                (&head, zero),
+                (&tail, moved)
+            ]),
+            Err(SyntaxError::SpanOutsideSource {
+                span: span(moved, ByteOffset::from(whole.len())),
+                source_end: moved,
+            }),
+            "a piece past the text is refused"
+        );
+        assert_eq!(
+            after.slice(
+                ChildCount::from(0_usize) .. ChildCount::from(1_usize),
+                &[],
+                ByteOffset::from(1_usize)
+            ),
+            Err(SyntaxError::SpanBeforeAnchor {
+                span: span(zero, ByteOffset::from(11_usize)),
+                anchor: ByteOffset::from(1_usize),
+            }),
+            "a node before the anchor is refused"
+        );
+        let forms = before
+            .slice(three(), &[ChildCount::from(1_usize)], zero)
+            .unwrap();
+        assert_eq!(
+            forms.children().iter().map(Node::span).collect::<Vec<_>>(),
+            [
+                span(zero, ByteOffset::from(11_usize)),
+                span(ByteOffset::from(12_usize), moved)
+            ],
+            "a slice passes over the child it is told to"
+        );
+    }
+
+    #[test]
+    fn a_slice_names_the_comments_its_first_form_leads_with()
+    {
+        let text =
+            include_str!("fixtures/a-slice-names-the-comments-its-first-form-leads-with.gandr");
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut builder = TreeBuilder::new(SourceText::from(text), grammar()).unwrap();
+        let line = builder.node(NodeLabel::Space, at(0, 5), &[]).unwrap();
+        let doc = builder.node(NodeLabel::Doc, at(0, 5), &[line]).unwrap();
+        let name = builder.node(word(), at(10, 11), &[]).unwrap();
+        let value = builder.node(word(), at(14, 15), &[]).unwrap();
+        let form = builder
+            .node(definition(), at(6, 16), &[doc, name, value])
+            .unwrap();
+        let gap = builder.node(NodeLabel::Space, at(5, 6), &[]).unwrap();
+        let close = builder.node(NodeLabel::Space, at(16, 17), &[]).unwrap();
+        let root = builder
+            .node(NodeLabel::Wald, at(0, 17), &[gap, form, close])
+            .unwrap();
+        let tree = builder.finish(root).unwrap();
+        let zero = ByteOffset::from(0_usize);
+        let documented = tree
+            .slice(
+                ChildCount::from(1_usize) .. ChildCount::from(2_usize),
+                &[],
+                zero,
+            )
+            .unwrap();
+        assert_eq!(
+            documented
+                .leading(ByteOffset::from(6_usize))
+                .iter()
+                .map(|node| (node.label(), node.span()))
+                .collect::<Vec<_>>(),
+            [(NodeLabel::Doc, at(0, 5))],
+            "the documentation before the form's start leads it"
+        );
+        assert!(
+            documented.leading(ByteOffset::from(4_usize)).is_empty(),
+            "a bound inside the documentation passes over it"
+        );
+        let layout = tree
+            .slice(
+                ChildCount::from(0_usize) .. ChildCount::from(1_usize),
+                &[],
+                ByteOffset::from(5_usize),
+            )
+            .unwrap();
+        let last = tree
+            .slice(
+                ChildCount::from(2_usize) .. ChildCount::from(3_usize),
+                &[],
+                ByteOffset::from(16_usize),
+            )
+            .unwrap();
+        assert_eq!(
+            SyntaxTree::assembled(SourceText::from(text), grammar(), &[
+                (&layout, ByteOffset::from(5_usize)),
+                (&documented, zero),
+                (&last, ByteOffset::from(16_usize))
+            ]),
+            Ok(tree),
+            "a form whose documentation lies before its own start assembles whole"
         );
     }
 
