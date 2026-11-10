@@ -97,7 +97,7 @@ impl<'source> Lowerer<'_, 'source>
         let stated = self.opened_declared(opened, frame)?;
         let _first = self.opened_models.insert(opened.node, stated);
         let name = self.name_at(binder);
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         let _result = self.results.insert(opened.node);
         self.read(opened.node, Reading::Computation(frame));
         self.statements.push(Statement {

@@ -8,9 +8,11 @@ use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::Resolution;
+use gandr_surface_lowering::Shadow;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
@@ -89,6 +91,7 @@ fn resolved(
         .map(|&(span, resolution)| {
             let site = match resolution {
                 Resolution::Binder(named) | Resolution::Constructor { named, .. } => named,
+                Resolution::Builtin => span,
                 Resolution::Declaration(constant) => {
                     declared.get(&constant).copied().unwrap_or(span)
                 },
@@ -286,5 +289,59 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         resolved(SourceText::from(joined), SourceText::from("match n"))
             .contains(&(String::from("n"), String::from("n"))),
         "the parameter the refused block's scrutinee names keeps its binder"
+    );
+}
+
+/// A pattern binder over a parameter, a parameter over an earlier
+/// declaration, a `let` over a member an opened module exports, and a
+/// parameter over a declaration written after it.
+const SHADOWING: &str =
+    include_str!("scopes/fixtures/each-shadowing-binder-keeps-the-binding-it-hides.gandr");
+
+/// #6270: each written binder that hides a binding keeps what it hides, and a
+/// binder that hides nothing keeps nothing.
+#[test]
+fn each_shadowing_binder_keeps_the_binding_it_hides_6270()
+{
+    let module = lowered(SourceText::from(SHADOWING));
+    // The name that ends the first occurrence of `needle`, `length` bytes long.
+    let ending = |needle: &str, length: usize| {
+        let start = SHADOWING.find(needle).expect("the needle occurs");
+        let end = start.saturating_add(needle.len());
+        ByteSpan::new(
+            ByteOffset::from(end.saturating_sub(length)),
+            ByteOffset::from(end),
+        )
+        .expect("the name is a span")
+    };
+    let declared = |needle: &str, length: usize| {
+        let named = ending(needle, length);
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.named() == named)
+            .map(LoweredDeclaration::constant)
+            .expect("the declaration is lowered")
+    };
+    let mut shadows = module.shadows().to_vec();
+    shadows.sort_unstable();
+    assert_eq!(
+        shadows,
+        [
+            Shadow {
+                binder: ending("Succ(n", 1_usize),
+                hidden: Resolution::Binder(ending("shadowed(n", 1_usize)),
+            },
+            Shadow {
+                binder: ending("hides(answer", 6_usize),
+                hidden: Resolution::Declaration(declared("def answer", 6_usize)),
+            },
+            Shadow {
+                binder: ending("let two", 3_usize),
+                hidden: Resolution::Declaration(declared("def two", 3_usize)),
+            },
+        ],
+        "a pattern binder hides the parameter, a parameter the earlier declaration, a `let` \
+         the opened member; a parameter over a later declaration hides nothing"
     );
 }

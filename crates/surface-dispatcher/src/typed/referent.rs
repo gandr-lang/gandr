@@ -558,6 +558,7 @@ impl Referents
                         named,
                         extent: family.extent,
                     }),
+                Resolution::Builtin => None,
             };
             keep(span, referent, false);
         }

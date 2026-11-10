@@ -938,14 +938,17 @@ impl Recognition
     }
 
     /// Report one binder named `name`, written at `site`, that collides with
-    /// an outermost root, changing nothing.
+    /// an outermost root, changing nothing, and give where that root is
+    /// declared.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the scope is unchanged whatever the outcome; a binder whose
     ///   one-segment path is bound to a builtin is one shadow event, recorded
-    ///   at `site`; a binder over a source root or over nothing is none.
-    /// - provides: the outermost report on a lambda, function or `let` binder.
+    ///   at `site`; a binder over a source root or over nothing is none. The
+    ///   answer is [`Self::site`] of the one-segment path before the call.
+    /// - provides: the outermost report on a lambda, function or `let` binder,
+    ///   and the root a binder hides, read once.
     /// - fails: under [`ShadowPolicy::Reject`] on a builtin root.
     /// - panics: none.
     ///
@@ -992,19 +995,17 @@ impl Recognition
         &mut self,
         name: Segment,
         site: ByteSpan,
-    ) -> Result<(), EventRejection>
+    ) -> Result<Maybe<RecognitionSite, binding::Absent>, EventRejection>
     {
         let path = NamePath::from(Vec::from([name]));
-        let Maybe::Present(former) = self.scope.resolve(&path).map(Clone::clone)
-        else {
-            return Ok(());
+        let former = match self.scope.resolve(&path) {
+            Maybe::Present(former) if former.tag == RecognitionSite::Builtin => *former,
+            Maybe::Present(former) => return Ok(Maybe::Present(former.tag)),
+            Maybe::Absent(absent) => return Ok(Maybe::Absent(absent)),
         };
-        if former.tag != RecognitionSite::Builtin {
-            return Ok(());
-        }
         let latter = Binding::new(Recognized::Definition, RecognitionSite::Source(site));
         let _survivor = self.handler.shadow(&path, Collision { former, latter })?;
-        Ok(())
+        Ok(Maybe::Present(RecognitionSite::Builtin))
     }
 
     /// Bind a declaration carried from an earlier submission, recording and

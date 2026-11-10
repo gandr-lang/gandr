@@ -1674,7 +1674,7 @@ impl<'source> Lowerer<'_, 'source>
         exhausted(site, &cursor)?;
         let subject = self.keyword_one(site, operand)?;
         let endpoint = self.endpoint(frame, subject)?;
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         self.statements.push(Statement {
             origin: statement.at.node,
             bound: bound.node,
@@ -1756,8 +1756,8 @@ impl<'source> Lowerer<'_, 'source>
         let child = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         let child_name = self.name_at(child_end);
-        self.note_binder(child_end, child_name)?;
-        self.note_binder(binder, name)?;
+        self.note_binder(child_end, frame, child_name)?;
+        self.note_binder(binder, frame, name)?;
         self.read(protocol.node, Reading::ValueType(frame));
         let held = self
             .scope

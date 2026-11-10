@@ -3563,7 +3563,9 @@ fn unused_binders(
                 .iter()
                 .filter_map(|resolution| match resolution.1 {
                     Resolution::Binder(binder) => Some(binder),
-                    Resolution::Declaration(_) | Resolution::Constructor { .. } => None,
+                    Resolution::Declaration(_)
+                    | Resolution::Constructor { .. }
+                    | Resolution::Builtin => None,
                 })
                 .filter(|&binder| own(binder)),
         )

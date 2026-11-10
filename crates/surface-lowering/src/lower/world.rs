@@ -344,7 +344,7 @@ impl<'source> Lowerer<'_, 'source>
         exhausted(statement, &cursor)?;
         let world = self.world_named(statement, frame, written)?;
         let name = self.binder_name(statement, binder)?;
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         self.read(value.node, Reading::Value(frame));
         self.statements.push(Statement {
             origin: statement.at.node,
