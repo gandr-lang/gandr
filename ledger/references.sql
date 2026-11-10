@@ -563,6 +563,7 @@ INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surfa
 INSERT INTO reference VALUES('vault:01a178aa-e578-7e31-8903-9f223de2dd91','surface-lowering','description','anchor','9c69093bd6aa7636622a7efb9b6e3b3ffaa60bf6','2026-11-06','e13d3fb39f8f7fe56f23ff5743148a1ee632395e');
 INSERT INTO reference VALUES('vault:01a178aa-f8ad-73d0-bbe7-c395c922e4f9','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb','core-nbe','traced','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb','kernel-core','replay','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','5630fb4598d9bfdaafb4ddf50a51da4d99bc1bb6','2026-10-27','e18d7dd7526358fee7a1b74909f23cbf4c6580e3');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
@@ -672,6 +673,7 @@ INSERT INTO reference VALUES('vault:01a1b53e-d768-7e62-8825-088be647563b','theor
 INSERT INTO reference VALUES('vault:01a1b567-b34b-77a2-9ace-075796f0eb3e','core-checker','divergence','exemplar','4a92e372fd0ce78fd4e257276266d7c97b0d8c38','2026-11-07','5e292eca6ae863067b2f03cb2d34ab7d50ebf993');
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','tier','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-render-remote','visual','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','instrument','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-tui','','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the

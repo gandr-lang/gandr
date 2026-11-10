@@ -31,6 +31,8 @@ mod goals;
 #[cfg(test)]
 mod incremental;
 #[cfg(test)]
+mod instrument;
+#[cfg(test)]
 mod items;
 #[cfg(test)]
 mod live_match;

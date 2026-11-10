@@ -205,6 +205,7 @@ use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::Detached;
 use gandr_surface_session::FormCensus;
+use gandr_surface_session::Instrument;
 use gandr_surface_session::JudgedParse;
 use gandr_surface_session::Laying;
 use gandr_surface_session::Ran;
@@ -218,6 +219,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::inline::Forms;
+use crate::instrument::Job;
 use crate::position::Range;
 use crate::protocol::CodeDescription;
 use crate::protocol::Diagnostic;
@@ -731,7 +733,8 @@ impl Rechecked
 /// it checks, before their settle and before each item the incremental pass
 /// adopts or judges; read its diagnostics off the judgement at `verbosity`,
 /// their types in `spelling`, and find the form holding `caret` in the tree the
-/// judgement parsed, the wall measured from `started`.
+/// judgement parsed, the wall measured from `started`, telling `sink` what the
+/// judgement does.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; `laid` is [`lay`] of `text`; any
@@ -770,7 +773,8 @@ impl Rechecked
 ///   an item, [`Polled::Retired`], the session left as
 ///   [`Session::judge_reading_retiring`] leaves it. The reading is
 ///   [`Reading::of_tree`] of the document's own tree when `readings` keeps one
-///   and the judgement parsed the document alone, and none otherwise.
+///   and the judgement parsed the document alone, and none otherwise. `sink` is
+///   told what [`Session::judge_reading_retiring`] tells it.
 /// - provides: the one judgement every synchronisation publishes, on whatever
 ///   thread runs it.
 /// - fails: never; a fault is a diagnostic.
@@ -809,7 +813,7 @@ impl Rechecked
 })]
 #[must_use]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-pub fn judge_laid<Poll>(
+pub fn judge_laid<Poll, Sink>(
     uri: &DocumentUri,
     session: &mut DocumentSession,
     (text, mut laid): (SourceText<'_>, Maybe<Laid, laid::Absent>),
@@ -819,9 +823,11 @@ pub fn judge_laid<Poll>(
         Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
     ),
     (started, retirement, readings): (Instant, &Poll, Readings),
+    sink: &mut Sink,
 ) -> Polled<Rechecked, Poll::Retired, ()>
 where
     Poll: Retirement,
+    Sink: Instrument,
 {
     let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>, laid| {
         Polled::Whole(Rechecked {
@@ -905,9 +911,9 @@ where
             (&laid.unit, laid.base),
             &slot,
             read,
-            retirement,
+            (retirement, sink),
         ),
-        Maybe::Absent(_) => session.judge_reading_retiring(text, read, retirement),
+        Maybe::Absent(_) => session.judge_reading_retiring(text, read, (retirement, sink)),
     };
     let mut submission = match outcome {
         Ok(Polled::Whole(submission)) => submission,
@@ -1099,6 +1105,7 @@ pub fn recheck(
             &gandr_surface_dispatcher::Unretired,
             Readings::Unkept,
         ),
+        &mut gandr_surface_session::Silent,
     )
     .whole()
 }
@@ -1256,7 +1263,7 @@ pub enum Taken
 impl Admitting
 {
     /// Run the admission, polling `retirement` before each declaration it
-    /// offers the kernel.
+    /// offers the kernel and telling `sink` what it does.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1278,15 +1285,17 @@ impl Admitting
             Polled::Retired(..) => true,
         },
     )]
-    pub fn run<Poll>(
+    pub fn run<Poll, Sink>(
         self,
         retirement: &Poll,
+        sink: &mut Sink,
     ) -> Polled<Finished, Poll::Retired, ()>
     where
         Poll: Retirement,
+        Sink: Instrument,
     {
         let started = Instant::now();
-        match self.detached.run(retirement) {
+        match self.detached.run(retirement, sink) {
             Polled::Whole(ran) => Polled::Whole(Finished {
                 ran,
                 timing: self.timing,
@@ -1294,6 +1303,30 @@ impl Admitting
             }),
             Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
         }
+    }
+}
+
+impl<Poll> Job for (Admitting, &Poll)
+where
+    Poll: Retirement,
+{
+    type Out = Polled<Finished, Poll::Retired, ()>;
+
+    /// [`Admitting::run`], polling the second half and telling `sink` what
+    /// the admission does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run<Sink>(
+        self,
+        sink: &mut Sink,
+    ) -> Self::Out
+    where
+        Sink: Instrument,
+    {
+        let (admitting, retirement) = self;
+        admitting.run(retirement, sink)
     }
 }
 
@@ -2825,7 +2858,12 @@ mod tests
         };
         let admission = settle(
             &mut session,
-            admitting.run(&gandr_surface_dispatcher::Unretired).whole(),
+            admitting
+                .run(
+                    &gandr_surface_dispatcher::Unretired,
+                    &mut gandr_surface_session::Silent,
+                )
+                .whole(),
         );
         assert!(
             matches!(admission.fault, Maybe::Absent(_)),

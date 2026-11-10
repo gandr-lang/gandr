@@ -131,6 +131,10 @@ hotpath = [
   "hotpath/hotpath-alloc",
   "hotpath/hotpath-cloud",
 ]
+# The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
+# instrument layer its client chose. Off, as in `gandr check` and every
+# artifact a recipe builds, no recording sink is compiled.
+instrument = ["gandr-surface-lsp/instrument"]
 # On macOS, serve every allocation from one private malloc zone rather than
 # the default zone; off, and on every other target, the system allocator.
 # Off by default: it missed its kill line. README § The global allocator.

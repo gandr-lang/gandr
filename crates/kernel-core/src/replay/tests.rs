@@ -4798,6 +4798,73 @@ fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
 }
 
 #[test]
+fn a_bind_over_a_link_on_a_named_univalence_runs_it_6321()
+{
+    // #6321: `boolPathN(2)` in miniature, `y ← tr(Q, k, k); tr(Q, k, y)` in the
+    // link `Q = y. Path[.A = U](c, y)`, with `k` a definition whose body is
+    // `ua(e)` over an opaque `e`. The evaluator's append runs the inner link
+    // it holds. The run unfolds `k`, records no decision, and returns the held
+    // transport. So the composite reads as `tr(Q, k, ⟨tr(Q, ua(e), k)⟩)` with
+    // no step of the trace.
+    let mut arena = TermArena::new();
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let unit_type = arena.value_type_unit();
+    let code = arena.value_quote(unit_type);
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let link = arena.value_type_path(universe, code, binder);
+    let opaque = arena.value_constant(ConstantIndex::from(0_usize));
+    let univalence = arena.value_univalence(opaque);
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Opaque,
+        Unfoldable::Body(univalence),
+        Unfoldable::Body(opaque),
+    ]));
+    let composite = |arena: &mut TermArena, named: usize| {
+        let path = arena.value_constant(ConstantIndex::from(named));
+        let inner = arena.computation_path_transport(link, path, path);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let outer = arena.computation_path_transport(link, path, bound);
+        arena.computation_bind(inner, outer)
+    };
+    let holding = |arena: &mut TermArena, named: usize, unfolded: ValueId| {
+        let path = arena.value_constant(ConstantIndex::from(named));
+        let inner = arena.computation_path_transport(link, unfolded, path);
+        let inner = arena.value_returned(inner);
+        arena.computation_path_transport(link, path, inner)
+    };
+    let along_univalence = composite(&mut arena, 1);
+    let held = holding(&mut arena, 1, univalence);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(along_univalence, held),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "the inner link's path unfolds to the univalence with no decision"
+    );
+    // The definition unfolds to the opaque `e` instead: the evaluator's run
+    // sticks there and keeps the operand as it was, so the bind stands.
+    let along_opaque = composite(&mut arena, 2);
+    let unheld = holding(&mut arena, 2, opaque);
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Computations(along_opaque, unheld),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::default(),
+        }),
+        "a path that unfolds to no held path keeps the bind over the stuck link"
+    );
+}
+
+#[test]
 fn stuck_transports_read_their_motives_endpoints_by_unfolding_4179()
 {
     // #4179: over `[x, y, q, v]`, `tr(t. Path[.A = Unit](⟨same x⟩, t), q, v)`
