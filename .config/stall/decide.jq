@@ -36,7 +36,7 @@
    elif .kind == "pile-up" then
      ["\($hold), which cuts it to the top of its stack", "once the stack watcher cuts it, its seat fixes it and runs `mise run pr:open`", $reassign]
    elif (.kind | IN("conflicting", "base-blocked", "queued-off-trunk")) then ["order the rebase", $hold, $reassign]
-   elif .kind == "verdict-unfiled" then ["file it: `mise run refactor:file \($finding.number)`"]
+   elif .kind == "verdict-unfiled" then []
    elif .kind == "seat-idle" then (if .work == null then ["assign its next work, as the claim gives none"] else [] end)
    else error("decide.jq: no decisions for the kind `\(.kind)`")
    end) as $decisions

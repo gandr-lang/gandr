@@ -2630,7 +2630,7 @@
     "output": "STALL base-blocked #52 core 15m: its base #51 conflicts with its own base. Decide: order the rebase; hold it: `mise run pr:hold 52 \"<what it waits on>\"`; reassign it"
   },
   {
-    "name": "#4655: an unfiled verdict pages the coordinator to file it, and a merged pull request is never held",
+    "name": "#6214: a verdict-unfiled coordinator page contains no decision",
     "program": "decide.jq",
     "input": {
       "kind": "verdict-unfiled",
@@ -2640,7 +2640,7 @@
       "age": 20,
       "line": "STALL verdict-unfiled #60 surface 20m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #60`; run `mise run refactor:file 60`"
     },
-    "output": "STALL verdict-unfiled #60 surface 20m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #60`; run `mise run refactor:file 60`. Decide: file it: `mise run refactor:file 60`"
+    "output": "STALL verdict-unfiled #60 surface 20m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #60`; run `mise run refactor:file 60`"
   },
   {
     "name": "#5996: an idle seat whose claim gives work pages the coordinator its line and its last line, with no decision",
