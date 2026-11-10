@@ -1,0 +1,61 @@
+//! This source supplies the declarations that the Brunerie ladder's length
+//! benchmarks share.
+//!
+//! Each benchmark must state the same terms as cctt's files. So the
+//! benchmarks share one copy of cctt's numerals and its integer reader.
+//!
+//! The numerals are products of ten, as cctt's `tests/bench/nat.cctt` states
+//! them. A numeral is a call, so a run computes it before it uses it.
+//! `forceInt` reads an integer to its last constructor, as the `forceℤ` of
+//! `tests/bench/int.cctt` does. `loops` writes the loop word of a length, one
+//! letter at a time.
+//!
+//! - see: #6309
+import "./circle-base.gandr";
+
+/// The type with one element is cctt's `Top`.
+pub data Top : Type where
+  /// The one element.
+  | Tt : Top
+
+/// `natPlus` recurses on its first argument, as cctt's `add` does.
+pub def rec natPlus(x : Nat, y : Nat) -> Nat =
+  match x where
+    | Zero => y
+    | Succ(k) => Succ (natPlus[<] k y)
+
+/// `natTimes` recurses on its first argument, as cctt's `mul` does.
+pub def rec natTimes(x : Nat, y : Nat) -> Nat =
+  match x where
+    | Zero => Zero
+    | Succ(k) => natPlus y (natTimes[<] k y)
+
+/// Ten is cctt's `n10`.
+pub def n10 : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))))));
+
+/// A hundred is cctt's `n100`.
+pub def n100 : Nat = natTimes n10 n10;
+
+/// A thousand is cctt's `n1k`.
+pub def n1k : Nat = natTimes n10 n100;
+
+/// Ten thousand is cctt's `n10k`.
+pub def n10k : Nat = natTimes n10 n1k;
+
+/// A hundred thousand is cctt's `n100k`.
+pub def n100k : Nat = natTimes n10 n10k;
+
+/// The function reads an integer to its last constructor and gives `Tt`.
+/// Each cancellation rule keeps the result, so the function respects the
+/// rules by conversion.
+pub def rec forceInt(n : Int) -> Top =
+  match n where
+    | Z => Tt
+    | S(x) => forceInt[<] x
+    | P(x) => forceInt[<] x
+
+/// The loop word of `n` letters puts each new loop before the others.
+pub def rec loops(n : Nat) -> Path[.A = Circle](Base, Base) =
+  match n where
+    | Zero => Path.here Base
+    | Succ(k) => loop ∷ loops[<] k

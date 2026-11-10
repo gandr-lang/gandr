@@ -11,6 +11,8 @@
 //! | `prelude resolve` | `gandr check` of one component whose `==` and `<` resolve at the integers, the strings and a point whose `Eq` member is derived | the prelude's lowering and judgement (`lower_closure`, `judge_closure`), the candidates a model slot collects (`Lowerer::model_candidates`), each candidate's packing, an include's among them (`Lowerer::packed_structure`), the include's reduct maps (`Lowerer::mint_reducts`), the checker's trial of each candidate (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`) |
 //! | `many candidates` | `gandr check` of one body calling a function sixteen times, each call leaving out a model implicit sixteen modules in scope answer | each candidate's trial against the one solver store all sixteen slots share (`tried`), and the slots' resolution (`Deferrals::resolve`) |
 //! | `many outputs` | `gandr check` of an operation of two outputs defined by rules, and of a definition that binds both outputs of its call and runs | the operation's lowering, the kernel's link of its rules to its body, and the run of the call, which return both outputs with no product |
+//! | `winding lengths` | `gandr check` of the loop words of 100, 10³ and 10⁵ letters, each wound and forced by a run, as cctt's `tests/bench/s1.cctt` winds them | the run machine's reduction of each word, and the checker's and the kernel's judgement of the source |
+//! | `negation lengths` | `gandr check` of the transport of `true` along composites of 101, 10³ + 1 and 10⁵ + 1 negation paths, as cctt's `tests/bench/negPath.cctt` transports it | the run machine's application of each path's map, and the checker's and the kernel's judgement of the source |
 //! | `lsp first keystroke` | a language-server session that opens the same source, waits for the open's judgement, then erases one line; only the change is timed | the server's first recheck, which also builds the closure's lowering and judgement once |
 //! | `lsp keystroke` | the same session after its first keystroke, erasing the next line; only this change is timed | the server's recheck with the closure warm, the cost each later keystroke pays |
 //! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per content change, every change carried by one notification; only the burst is timed | the server's recheck, once per burst |
@@ -104,6 +106,14 @@ const MANY: &str = "../../corpus/model/modules/model-resolution-many.gandr";
 /// of two outputs, and a run that binds both outputs of its call.
 const MANY_OUTPUTS: &str = "../../corpus/model/desc/many-out-op.gandr";
 
+/// The source the winding lengths check: three loop words, each wound by a
+/// run (#6309).
+const WINDING: &str = "../../corpus/model/identity/winding-lengths.gandr";
+
+/// The source the negation lengths check: three negation composites, each
+/// transported along by a run (#6309).
+const NEGATION: &str = "../../corpus/model/identity/negation-lengths.gandr";
+
 /// How many one-definition components the component floor checks.
 const FLOOR: usize = 64;
 
@@ -169,6 +179,24 @@ fn many_candidates()
 fn many_outputs()
 {
     check(vec![corpus(MANY_OUTPUTS)]);
+}
+
+/// Check [`WINDING`]: each loop word built, wound and forced by a run.
+///
+/// # Specification
+/// trivial.
+fn winding_lengths()
+{
+    check(vec![corpus(WINDING)]);
+}
+
+/// Check [`NEGATION`]: each composite built and transported along by a run.
+///
+/// # Specification
+/// trivial.
+fn negation_lengths()
+{
+    check(vec![corpus(NEGATION)]);
 }
 
 /// Check [`FLOOR`] components of one definition each, written under a
@@ -320,6 +348,8 @@ fn main()
     hotpath::measure_block!("prelude resolve", prelude_resolve());
     hotpath::measure_block!("many candidates", many_candidates());
     hotpath::measure_block!("many outputs", many_outputs());
+    hotpath::measure_block!("winding lengths", winding_lengths());
+    hotpath::measure_block!("negation lengths", negation_lengths());
     lsp_keystrokes();
     lsp_burst();
     lsp_comment_edit();
