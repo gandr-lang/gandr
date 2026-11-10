@@ -27,10 +27,11 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order.
 - `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, constructors and matches (`lower::native`).
 - `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: each match's syntax origins ([`origin`](src/origin.rs)).
-- `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint (`lower::native`), `Insertion::Fixpoint` marking it.
+- `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint ([`lower::native`](src/lower/native.rs)).
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
-- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame numbered within the form that pushed it ([`resolve`](src/resolve.rs)).
-- `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.
+- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through ([`resolve`](src/resolve.rs)).
+- `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map ([`origin`](src/origin.rs)).
+- `Shadow` and `LoweredModule::shadows`: each binder that hides a binding, and the binding it hides.
 - `former_of`, `Former`, `FormName` and `Repair`: the named-kind dispatch and the names a diagnostic writes forms as.
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
 - `LoweringRefusal::classify` and `FailureClass`, re-exported from `gandr-core-term`: the classifier every producer of refusals in the core pipeline classifies into.
@@ -39,13 +40,13 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
 - Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
-- `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit a tail written without `return` or `become` takes by its polarity, listed at the tail's bytes for a face and the `explicit-exits` lint.
+- `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit each tail written without `return` or `become` takes.
 - `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: each run inferred where a value is read ([`lower::runs`](src/lower/runs.rs)).
 - `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`.
 - `lower_unit`, `Unit`, `SourceIndex`, `ImportTarget` and the `Import*` types: sources lowered into one arena ([`unit`](src/unit.rs)); `ClosureLowering`, `alone`, `resume_onto` and `Onto`: a closure lowered once ([`lower::closure`](src/lower/closure.rs)).
 - `LoweredStructure`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names; [`module`](src/module.rs) names the types they are read through.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
-- `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
+- `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>`, its abstract types and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from a theory, checked and packed, and type members with parameters.
 - Binary sessions: session types, actions and the statements binding them, lowered to core session actions ([`lower::session`](src/lower/session.rs)).
 - Worlds: `world`, `requires`, `offers`, `at`, `hold`, `migrate`, `mobile` and `@[ entry(…) ]` ([`module::world`](src/module/world.rs)).
@@ -132,6 +133,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
 - `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
+- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
 
 ## License
 

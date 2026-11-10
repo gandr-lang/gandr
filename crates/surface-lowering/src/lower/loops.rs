@@ -723,7 +723,7 @@ impl<'source> Lowerer<'_, 'source>
         let own = Frame::Inner(self.scope.extend(frame, iteration(), unwritten));
         let listed = Frame::Inner(self.scope.extend(own, SurfaceName::from(""), unwritten));
         let name = self.name_at(binder);
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, listed, name)?;
         let element = Frame::Inner(self.scope.extend(listed, name, Maybe::Present(binder.span)));
         let held = Frame::Inner(self.scope.extend(element, remaining(), unwritten));
         let body = self.block(site, &mut cursor, held)?;

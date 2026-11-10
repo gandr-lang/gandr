@@ -1084,7 +1084,7 @@ impl<'source> Lowerer<'_, 'source>
         let ordinal = u32::try_from(binders.len()).map_err(|_wide| misplaced)?;
         let region = gandr_core_term::effect::capability::RegionBinder::from(ordinal);
         let _shadowed = binders.insert(entry.name, region);
-        self.note_binder(entry.binder, entry.name)?;
+        self.note_binder(entry.binder, frame, entry.name)?;
         let bound =
             self.scope
                 .extend_instance(frame, entry.name, Maybe::Present(entry.binder.span));
@@ -2398,7 +2398,7 @@ impl<'source> Lowerer<'_, 'source>
                             unwritten(),
                         );
                         let name = self.name_at(minted);
-                        self.note_binder(minted, name)?;
+                        self.note_binder(minted, Frame::Inner(placed), name)?;
                         let live = self.scope.extend_linear(
                             Frame::Inner(placed),
                             name,
@@ -2700,7 +2700,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<crate::resolve::ScopeId, LoweringRefusal<'source>>
     {
         let name = self.name_at(binder);
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
 
         Ok(self.scope.extend(frame, name, Maybe::Present(binder.span)))
     }

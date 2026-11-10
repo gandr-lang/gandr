@@ -97,6 +97,9 @@
 //! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence
 //!   design (§ The trust story) — the translation is the importer's to supply,
 //!   and an import it fails refuses every declaration of the importer.
+//! - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: a shadow is an
+//!   event a diagnostic reports, never a prohibition, so the table answers each
+//!   binder's hidden binding and refuses nothing for it.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -188,7 +191,9 @@ use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::PatternSpan;
 use gandr_surface_lowering::Provenance;
+use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Role;
+use gandr_surface_lowering::Shadow;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Stratum;
@@ -318,6 +323,19 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The lowering read the source.
             Lowered,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a written binder hides nothing in the table.
+    pub mod shadowing {
+        /// The reason no hidden binding is answered.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No binder of the source's own text that hides a binding has its
+            /// name written at the span.
+            Unshadowing,
         }
     }
 }
@@ -1018,6 +1036,9 @@ pub struct TypeTable
     /// The binders in scope at each offset of the unit's text the lowering
     /// read under one.
     in_scope: InScope,
+    /// Each binder of the source's own text that hides a binding, with what
+    /// it hides, ascending by where the binder's name is written.
+    shadows: Vec<Shadow>,
     /// The lowering's refusal of the source as a whole, as it reads, when the
     /// lowering refused it: the table then holds nothing else.
     refused: Option<String>,
@@ -2763,7 +2784,7 @@ impl TypeTable
         // names, answers at the session type its first action finds it at,
         // which is the type it is bound at.
         for &(span, resolution) in module.resolutions() {
-            let gandr_surface_lowering::Resolution::Binder(binder) = resolution
+            let Resolution::Binder(binder) = resolution
             else {
                 continue;
             };
@@ -3300,6 +3321,26 @@ impl TypeTable
             .iter()
             .map(|(&source, written)| (source, written.text().clone()))
             .collect();
+        // A binder hides a binder of its own source only, so both spans move
+        // to the own text together.
+        let mut shadows: Vec<Shadow> = module
+            .shadows()
+            .iter()
+            .filter_map(|shadow| {
+                let hidden = match shadow.hidden {
+                    Resolution::Binder(span) => Resolution::Binder(own(span, base)?),
+                    hidden @ (Resolution::Declaration(_)
+                    | Resolution::Constructor { .. }
+                    | Resolution::Builtin) => hidden,
+                };
+                Some(Shadow {
+                    binder: own(shadow.binder, base)?,
+                    hidden,
+                })
+            })
+            .collect();
+        shadows.sort_unstable();
+        shadows.dedup_by_key(|shadow| shadow.binder);
         Self {
             entries,
             declared,
@@ -3320,6 +3361,7 @@ impl TypeTable
             referents,
             readings,
             in_scope: module.into_in_scope(),
+            shadows,
             refused: None,
             documented,
             runs,
@@ -3603,6 +3645,67 @@ impl TypeTable
             .uses_of(source, named)
             .iter()
             .map(|&(_, span)| span)
+    }
+
+    /// Each binder of the source's own text that hides a binding, with what
+    /// it hides, strictly ascending by where the binder's name is written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per written binder of the table's own text whose
+    ///   name an enclosing binder, a member of an opened module, an earlier
+    ///   declaration, an import or a builtin answers where the binder stands,
+    ///   as [`LoweredModule::shadows`] states, with each span in the table's
+    ///   own text; strictly ascending by the binder.
+    /// - provides: the shadow index a view marks each shadowing binder by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the shadowing binders of an importer's own text are
+    ///   kept at its own offsets, ascending, and its sibling's are not.
+    /// - witness: `typed::tests::each_shadowing_binder_of_the_own_text_is_kept_ascending_6270`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [first, second] if first.binder < second.binder)))]
+    #[inline]
+    #[must_use]
+    pub fn shadows(&self) -> &[Shadow]
+    {
+        &self.shadows
+    }
+
+    /// What the binder whose name is written at `binder` of the table's own
+    /// text hides.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the hidden binding of the entry of [`Self::shadows`] at
+    ///   `binder`; absent as [`shadowing::Absent::Unshadowing`] when no entry
+    ///   is at `binder`.
+    /// - provides: the hidden binding a view names at one binder.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause searches [`Self::shadows`] again, and a
+    ///   clause may not search the receiver's state. The witness reads an entry
+    ///   and a binder with no entry back through this.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shadowing binder answers what it hides, and a
+    ///   binder that hides nothing answers absent.
+    /// - witness: `typed::tests::each_shadowing_binder_of_the_own_text_is_kept_ascending_6270`
+    #[inline]
+    pub fn hidden_at(
+        &self,
+        binder: ByteSpan,
+    ) -> Maybe<Resolution, shadowing::Absent>
+    {
+        let at = self
+            .shadows
+            .binary_search_by_key(&binder, |shadow| shadow.binder);
+        at.ok()
+            .and_then(|at| self.shadows.get(at))
+            .map_or(Maybe::Absent(shadowing::Absent::Unshadowing), |shadow| {
+                Maybe::Present(shadow.hidden)
+            })
     }
 
     /// Each span of the source's own text a written binder or term, or a
@@ -7822,6 +7925,87 @@ mod tests
                 .spans()
                 .all(|span| usize::from(span.end()) <= <&str>::from(importer).len()),
             "no entry of the sibling is kept"
+        );
+    }
+
+    /// #6270: a table over an importer's unit keeps each shadowing binder of
+    /// the importer's own text at its own offset, ascending, and none of the
+    /// sibling's; a binder that hides nothing answers absent.
+    #[test]
+    fn each_shadowing_binder_of_the_own_text_is_kept_ascending_6270()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::Resolution;
+        use gandr_surface_lowering::Shadow;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = include_str!(
+            "typed/fixtures/each-shadowing-binder-of-the-own-text-is-kept-ascending-6270-sibling.gandr"
+        );
+        let importer = include_str!(
+            "typed/fixtures/each-shadowing-binder-of-the-own-text-is-kept-ascending-6270-importer.gandr"
+        );
+        let laid = format!(
+            include_str!("typed/unformatted/an-imported-name-types-at-its-use-laid.gandr"),
+            importer,
+            sibling = sibling
+        );
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        // The name that ends the first occurrence of `needle` in the importer.
+        let ending = |needle: &str, length: usize| {
+            let end = importer
+                .find(needle)
+                .expect("the needle occurs")
+                .saturating_add(needle.len());
+            ByteSpan::new(
+                ByteOffset::from(end.saturating_sub(length)),
+                ByteOffset::from(end),
+            )
+            .expect("the name is a span")
+        };
+        let (parameter, rebound) = (ending("kept(here", 4_usize), ending("let here", 4_usize));
+        let sibling_here = |constant| {
+            matches!(table.declared_at(constant), Maybe::Present(referent)
+                if referent.source() == SourceIndex::from(0_usize)
+                    && sibling.get(usize::from(referent.named().start()) .. usize::from(referent.named().end())) == Some("here"))
+        };
+        assert!(
+            matches!(
+                *table.shadows(),
+                [
+                    Shadow {
+                        binder: first,
+                        hidden: Resolution::Declaration(imported),
+                    },
+                    Shadow {
+                        binder: second,
+                        hidden: Resolution::Binder(hidden),
+                    },
+                ] if first == parameter && second == rebound && hidden == parameter && sibling_here(imported)
+            ),
+            "the parameter hides the sibling's declaration and the `let` the parameter, at the \
+             importer's own offsets, ascending; the sibling's own binder is not kept: {:?}",
+            table.shadows()
+        );
+        assert_eq!(
+            table.hidden_at(rebound),
+            Maybe::Present(Resolution::Binder(parameter)),
+            "the `let` answers the parameter it hides"
+        );
+        assert_eq!(
+            table.hidden_at(ending("fresh", 5_usize)),
+            Maybe::Absent(super::shadowing::Absent::Unshadowing),
+            "a parameter that hides nothing answers absent"
         );
     }
 

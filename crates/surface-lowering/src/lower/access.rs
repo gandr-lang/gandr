@@ -299,7 +299,7 @@ impl<'source> Lowerer<'_, 'source>
         let value = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         let name = self.name_at(binder);
-        self.note_binder(binder, name)?;
+        self.note_binder(binder, frame, name)?;
         self.read(value.node, Reading::Value(frame));
         if let Maybe::Present(stated) = stated {
             self.read(stated.node, Reading::ValueType(frame));
@@ -754,7 +754,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let (held, _) = self.linear_slot(frame, lent, FragmentBoundary::Held)?;
         let name = self.name_at(viewer);
-        self.note_binder(viewer, name)?;
+        self.note_binder(viewer, frame, name)?;
         let viewed = self
             .scope
             .extend_linear(frame, name, Maybe::Present(viewer.span));
