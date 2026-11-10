@@ -4,7 +4,7 @@
 import std.list (List);
 
 /// The first element of a list, or zero for the empty list.
-@[ checks ]
+@[checks]
 def head(xs : List Integer) -> -F Integer =
   match xs where
     | #[x, ..rest] => return x

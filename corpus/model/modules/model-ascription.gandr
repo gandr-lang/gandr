@@ -36,7 +36,7 @@ module Sealed :> Model(Counter) where
   def step(n : Integer) -> Integer { n + 1 }
 
 /// `openTwice` reads two transparent steps.
-@[ runs("2") ]
+@[runs("2")]
 def openTwice() -> Integer { let s = Open.start (); Open.step (Open.step s) }
 
 /// `sealedTwice` returns two sealed steps.
@@ -63,7 +63,7 @@ module Bits : Model(Toggle) where {
       | High => Low
 
   /// `twice` proves the law by cases.
-  @[ checks ]
+  @[checks]
   def twice(b : Bit) -> Path(flip (flip b), b) =
     match b where
       | Low => Path.here Low
@@ -71,5 +71,5 @@ module Bits : Model(Toggle) where {
 }
 
 /// `flippedTwice` runs the toggle twice.
-@[ runs("Low") ]
+@[runs("Low")]
 def flippedTwice() -> Bit { Bits.flip (Bits.flip Low) }

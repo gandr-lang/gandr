@@ -12,23 +12,23 @@
 import "../data/data-base.gandr";
 
 /// The `always` family returns naturals.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 def always(n : Nat) -> -F Type { return Nat }
 
 /// The `idAlways` function uses the constant family.
-@[ checks ]
+@[checks]
 def idAlways(x : Nat) -> -F always(x) { return x }
 
 /// The `viaArrow` declaration uses the converted plain arrow.
-@[ checks ]
+@[checks]
 def viaArrow : +U (Nat -> -F Nat);
 def viaArrow = idAlways;
 
 /// The `viaFamily` declaration uses the dependent arrow.
-@[ checks ]
+@[checks]
 def viaFamily : +U ((x : Nat) -> -F always(x));
 def viaFamily = viaArrow;
 
 /// The `appliedArrow` function applies the plain arrow.
-@[ runs("Succ Zero") ]
+@[runs("Succ Zero")]
 def appliedArrow() -> -F Nat { viaArrow (Succ Zero) }

@@ -13,7 +13,7 @@ import "./cancel-base.gandr";
 import std.process;
 
 /// A scope cancelled at its exit answers nine, not one hundred and one.
-@[ runs("9") ]
+@[runs("9")]
 def answered() -> Integer =
   handle c : std.process.Exit.Eff {
     c.exit 1;

@@ -15,7 +15,7 @@ theory Pointed where
 module ZeroPointed : Model(Pointed) where {
   type T = Integer;
   /// `z` gives the point.
-  @[ runs("0") ]
+  @[runs("0")]
   def z = 0;
 }
 
@@ -32,7 +32,7 @@ module Sevens : Model(Based) where
   def double = 14;
 
 /// `seven` reads `Sevens.base`.
-@[ runs("7") ]
+@[runs("7")]
 def seven() -> Integer { Sevens.base }
 
 /// `Unital` states a unit, a product and a law.
@@ -46,11 +46,11 @@ theory Unital where
 module Additive : Model(Unital) where {
   type M = Integer;
   /// `e` gives the additive unit.
-  @[ runs("0") ]
+  @[runs("0")]
   def e = 0;
   /// `mul` adds two integers.
   def mul(x : Integer, y : Integer) -> Integer { x + y }
   /// `unitL` states the left unit law.
-  @[ owes(1) ]
+  @[owes(1)]
   def unitL : (x : Integer) -> Path[.A = Integer](mul e x, x);
 }

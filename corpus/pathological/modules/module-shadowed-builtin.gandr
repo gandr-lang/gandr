@@ -5,5 +5,5 @@
 def list = *{each = 7};
 
 /// The record's field `each`, not the builtin's member.
-@[ runs("7") ]
+@[runs("7")]
 def each() -> Integer { list.each }

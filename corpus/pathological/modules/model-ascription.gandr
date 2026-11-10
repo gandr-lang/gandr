@@ -20,9 +20,9 @@ module Sealed :> Model(Counter) where
   def step(n : Integer) -> Integer { n + 1 }
 
 /// An integer where the sealed carrier is asked.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def stepOne() -> Sealed.C { Sealed.step 1 }
 
 /// The sealed start read as an integer.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def leaked() -> Integer { Sealed.start () }

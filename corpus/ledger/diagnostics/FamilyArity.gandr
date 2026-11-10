@@ -1,8 +1,9 @@
-/// `FamilyArity`: a type operator applied to more arguments than its static Pis take.
-@[ checks ]
-def twice : Type -> Type ;
-def twice = fun (Y) { type(Y * Y) } ;
+/// `FamilyArity`: a type operator applied to more arguments than its
+/// static Pis take.
+@[checks]
+def twice : Type -> Type;
+def twice = fun (Y) { type(Y * Y) };
 
-@[ refuses("FamilyArity") ]
+@[refuses("FamilyArity")]
 def over(p : twice(Integer, Integer)) -> -F Integer =
   return 1

@@ -3,7 +3,7 @@
 
 /// `loop : Base --> Base` is a directed cell between two terms, refused by
 /// name: only an invertible cell `<->` at a point mints its words.
-@[ refuses("DirectedCell") ]
+@[refuses("DirectedCell")]
 data Circle : Type where
   | Base : Circle
   | loop : Base --> Base

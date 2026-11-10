@@ -1,7 +1,7 @@
 error[UndescribedMember.IllSorted]: this member equates two terms whose sorts differ, even modulo the laws at earlier sorts
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.IllSorted.gandr:17:3
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.IllSorted.gandr:20:3
    │
-17 │   rule tmId : subTm t (id g) ==> t;
+20 │   rule tmId : subTm t (id g) ==> t;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `TermIdentity` is refused with UndescribedMember.IllSorted, as its expectation states

@@ -1,15 +1,15 @@
 error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
-  ╭▸ corpus/ledger/diagnostics/FunextUnsupported.gandr:7:3
+  ╭▸ corpus/ledger/diagnostics/FunextUnsupported.gandr:8:3
   │
-3 │   def open(f : Unit + Unit -> Unit + Unit) -> -F Path(
+4 │   def open(f : Unit + Unit -> Unit + Unit) -> -F Path(
   │   │        ┬   ────────────────────────── the type it synthesises
   │   │        │
   │ ┌─┘        checked against `(a : Bool -> Bool) -> -F Path[.A = Bool -> Bool](a, a)`; while checking the body of this function; binds f : Bool -> Bool
   │ │
-4 │ │   f,
-5 │ │   f
-6 │ │ ) =
-7 │ │   Path.funext f f
+5 │ │   f,
+6 │ │   f
+7 │ │ ) =
+8 │ │   Path.funext f f
   │ │   ┯━━━━━━━━━━━━━│
   │ └───│─────────────┤
   │     │             checked against `(a : Bool -> Bool) -> Path[.A = Bool -> Bool](a, a)`; while checking the body of this thunk

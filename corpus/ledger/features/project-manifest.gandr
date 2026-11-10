@@ -1,5 +1,17 @@
 /// `project-manifest`: A package, its root and its manifest.
-/// Implemented: a package is its `package.gandr` at its root and the modules under the directory its `sources` names, found from any path in it, and `gandr check` writes `package.gandr.toml` beside it from the package source's `Package` model, the modules its sources make, its `[toolchain]` table and, when its `spelling` names one, its `[presentation]` table, refusing a hand edit as drift, and prints the package's address on the manifest's line; a language server opened on the package writes in that spelling over the user's; `import text.greet ;` names a module by its path and binds it qualified, a type reading through a path of any length, and `import text.greet (greeting) ;` binds the names it lists by their own names as well; a `workspace.gandr` names its member packages and states what they share as a model of `Gandr.Workspace`, and `gandr check` in it checks every member.
+/// Implemented: a package is its `package.gandr` at its root and the modules
+/// under the directory its `sources` names, found from any path in it, and
+/// `gandr check` writes `package.gandr.toml` beside it from the package
+/// source's `Package` model, the modules its sources make, its `[toolchain]`
+/// table and, when its `spelling` names one, its `[presentation]` table,
+/// refusing a hand edit as drift, and prints the package's address on the
+/// manifest's line; a language server opened on the package writes in that
+/// spelling over the user's; `import text.greet ;` names a module by its path
+/// and binds it qualified, a type reading through a path of any length, and
+/// `import text.greet (greeting) ;` binds the names it lists by their own names
+/// as well; a `workspace.gandr` names its member packages and states what they
+/// share as a model of `Gandr.Workspace`, and `gandr check` in it
+/// checks every member.
 ///
 /// - see: #3029 — `Package`
 
@@ -10,7 +22,7 @@ import std.build (Gandr);
 /// inert: only the manifest step reads them.
 pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
-  @[ runs("\"hello\"") ]
+  @[runs("\"hello\"")]
   def name = "hello";
   /// The version the manifest records.
   def version = "0.1.0";

@@ -4,6 +4,6 @@
 // - see: #2279 — `main`
 
 /// An entry whose row names `Clock`, which no host declares.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def main() -> -F [Clock] Unit =
   Clock.print "hello, world!"

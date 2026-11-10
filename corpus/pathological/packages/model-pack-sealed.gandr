@@ -19,6 +19,6 @@ module Hidden :> Model(Counter) where
   def incr(n : Integer) -> Integer { n + 1 }
 
 /// The sealed counter packed at its models.
-@[ refuses("OutOfFragment.pack_model_expression") ]
+@[refuses("OutOfFragment.pack_model_expression")]
 def hidden : Model Counter;
 def hidden = pack Hidden at Model Counter;

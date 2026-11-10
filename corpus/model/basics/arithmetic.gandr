@@ -10,7 +10,7 @@
 /// The operators' precedence groups `2 * 3` first. An operator is a
 /// computation, and a definition with no stated type reads its value where
 /// nothing infers that computation's type.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def total = 1 + 2 * 3;
 
 /// One number at each integer width a suffix states.
@@ -18,10 +18,10 @@ def sized_atoms = *{1u32, *{2u64, *{3i32, 4i64}}};
 
 /// This fixture writes each floating width.
 /// The lowering accepts `f64` and does not yet accept `f32`.
-@[ refuses("OutOfFragment.typed_number") ]
+@[refuses("OutOfFragment.typed_number")]
 def floating_atoms = *{1.5f32, 2.5f64};
 
 /// `summed` names the refused `total` declaration.
 /// Its type is unknown.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def summed = total;

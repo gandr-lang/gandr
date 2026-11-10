@@ -41,13 +41,13 @@ import "./translated-newer.gandr" as published : Legacy via downgrade;
 import "./translated-newer.gandr" as counted : Scaling via scaling;
 
 /// `relayed` reads the published answer.
-@[ runs("42") ]
+@[runs("42")]
 def relayed() -> Integer { published.answer }
 
 /// `recounted` reads the local-flow answer.
-@[ runs("42") ]
+@[runs("42")]
 def recounted() -> Integer { counted.answer }
 
 /// `doubled` scales two by the count.
-@[ runs("6") ]
+@[runs("6")]
 def doubled() -> Integer { counted.scaled 2 }

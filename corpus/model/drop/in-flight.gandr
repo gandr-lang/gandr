@@ -18,7 +18,7 @@ import std.process;
 
 /// The handler abandons the continuation that would receive a submitted read's
 /// completion.
-@[ runs("*{}") ]
+@[runs("*{}")]
 def inFlight() -> Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {

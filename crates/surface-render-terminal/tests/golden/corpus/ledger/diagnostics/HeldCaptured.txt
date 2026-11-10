@@ -1,10 +1,10 @@
 error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
-  ╭▸ corpus/ledger/diagnostics/HeldCaptured.gandr:5:9
+  ╭▸ corpus/ledger/diagnostics/HeldCaptured.gandr:6:9
   │
-3 │ ┌ def stash() -> -F Integer =
-4 │ │   var c = 0
+4 │ ┌ def stash() -> -F Integer =
+5 │ │   var c = 0
   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-5 │ │   force thunk { pure c }
+6 │ │   force thunk { pure c }
   │ │   ┬─────┯━━━━━━━━━━━━━━│
   │ └───│─────│──────────────┤
   │     │     │              checked against `() -> Integer`; while checking the body of this thunk

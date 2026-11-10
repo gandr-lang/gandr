@@ -31,11 +31,11 @@ module Squaring(S : Model(Mag)) where
 module TimesSquared = Squaring(Times);
 
 /// `nine` squares three.
-@[ runs("9") ]
+@[runs("9")]
 def nine() -> Integer { TimesSquared.square 3 }
 
 /// `Plus` provides the magma signature over integer addition.
-module Plus : *{ type M, mul : (M, M) -> M } where
+module Plus : *{type M, mul : (M, M) -> M} where
   type M = Integer;
 
   def mul(a : Integer, b : Integer) -> Integer { a + b }
@@ -44,7 +44,7 @@ module Plus : *{ type M, mul : (M, M) -> M } where
 module PlusSquared = Squaring(Plus);
 
 /// `six` doubles three.
-@[ runs("6") ]
+@[runs("6")]
 def six() -> Integer { PlusSquared.square 3 }
 
 /// `Semi` adds associativity to `Mag`.

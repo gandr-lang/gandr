@@ -26,7 +26,7 @@ pub def rec spinWords(n : Int) -> Words =
     | P(x) => Unloop (spinWords[<] x)
 
 /// The sample spins two successors to two loops.
-@[ runs("Loop (Loop Nil)") ]
+@[runs("Loop (Loop Nil)")]
 def spun() -> Words { spinWords (S (S Z)) }
 
 /// Conversion spins two successors to two loops.
@@ -63,7 +63,7 @@ def wound_spun_respelled : Path[.A = Int](
 ) = Path.here (P Z);
 
 /// The loop round trip does not return the empty word.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def spun_wound_lost : Path[.A = Words](spinWords (windWords (Loop Nil)), Nil) = Path.here Nil;
 
 /// The `unaround` function adds an inverse loop.

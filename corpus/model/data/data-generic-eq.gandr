@@ -40,64 +40,64 @@ def eqMark = Eq.generic Mark;
 /// `EqPoint` derives every member for `Point`.
 module EqPoint : Model(Eq) with sort Carrier = Point where {
   /// Field by field.
-  @[ checks ]
+  @[checks]
   def eq = Eq.generic Point;
   /// Each coordinate by the host's reflexivity.
-  @[ checks ]
+  @[checks]
   def refl = Eq.generic.refl Point;
   /// Each coordinate by the host's symmetry.
-  @[ checks ]
+  @[checks]
   def sym = Eq.generic.sym Point;
 }
 
 /// One point is itself.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def samePoint() -> Bool { eqPoint (Point 1 2) (Point 1 2) }
 
 /// Two points with their coordinates swapped differ.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def swappedPoint() -> Bool { eqPoint (Point 1 2) (Point 2 1) }
 
 /// Two is two.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def samePeano() -> Bool { eqPeano (Next (Next Nought)) (Next (Next Nought)) }
 
 /// One is not two: the recursion reaches the nought on one side only.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def shorterPeano() -> Bool { eqPeano (Next Nought) (Next (Next Nought)) }
 
 /// Two marks alike in every field.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def sameMark() -> Bool =
   eqMark
     (Mark (Next Nought) (Point 3 4) true "here")
     (Mark (Next Nought) (Point 3 4) true "here")
 
 /// Two marks apart in their point alone.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def movedMark() -> Bool =
   eqMark
     (Mark (Next Nought) (Point 3 4) true "here")
     (Mark (Next Nought) (Point 3 5) true "here")
 
 /// Two marks apart in their flag alone.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def hiddenMark() -> Bool =
   eqMark
     (Mark (Next Nought) (Point 3 4) true "here")
     (Mark (Next Nought) (Point 3 4) false "here")
 
 /// Two marks apart in their label alone.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def relabelledMark() -> Bool =
   eqMark
     (Mark (Next Nought) (Point 3 4) true "here")
     (Mark (Next Nought) (Point 3 4) true "there")
 
 /// One point is itself under `==`.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def samePointUnderEq() -> Bool { Point 1 2 == Point 1 2 }
 
 /// Two points apart in one coordinate under `==`.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def movedPointUnderEq() -> Bool { Point 1 2 == Point 1 3 }

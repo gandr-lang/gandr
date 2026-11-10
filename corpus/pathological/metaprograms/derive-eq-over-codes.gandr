@@ -17,24 +17,24 @@ data List(a : Type) : Type where
 /// sort, each naming the other in a leaf.
 rec {
   /// Even naturals, built from an odd one.
-  @[ checks ]
+  @[checks]
   data Even : Type where {
     | Nought : Even
     | AfterOdd : (o : Odd) --> Even
   }
 
   /// Odd naturals, built from an even one.
-  @[ checks ]
+  @[checks]
   data Odd : Type where
     | AfterEven : (e : Even) --> Odd
 }
 
 /// No equality for a code with a parameter, whose element equality the
 /// derivation would need supplied, yet.
-@[ refuses("GenericUncovered") ]
+@[refuses("GenericUncovered")]
 def eqList = Eq.generic List;
 
 /// No equality for a pair whose codes name each other, which needs a code of
 /// two sorts and one mutual fixpoint, yet.
-@[ refuses("GenericUncovered") ]
+@[refuses("GenericUncovered")]
 def eqEven = Eq.generic Even;

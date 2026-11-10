@@ -1,7 +1,7 @@
 error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
    ╭▸ corpus/pathological/modules/model-laws.gandr:25:3
    │
-25 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+25 │ ┏   @[refuses("UnprovenLaw.Admitted")]
 26 │ ┃   law refl = ~admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) -> Path[.A = Bool](Overadmitted.alike a a, true)`
    │
@@ -11,7 +11,7 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
 error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
    ╭▸ corpus/pathological/modules/model-laws.gandr:34:3
    │
-34 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
+34 │ ┏   @[refuses("UnprovenLaw.Admitted")]
 35 │ ┃   law refl = ~admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : f64) -> Path[.A = Bool](FloatEqAdmitted.eq a a, true)`
    │

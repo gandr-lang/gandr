@@ -3,6 +3,6 @@
 module Counter where
   type Pair(a : Type) = *{a, a};
   def same(a : Type) -> Type { return a }
-@[ checks ]
-def twin : Counter.same(Counter.Pair(Integer)) ;
-def twin = *{1, 2} ;
+@[checks]
+def twin : Counter.same(Counter.Pair(Integer));
+def twin = *{1, 2};

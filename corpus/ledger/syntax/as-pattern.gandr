@@ -1,6 +1,6 @@
 /// `as_pattern`: an as-pattern binds a name to the value its pattern matches,
 /// the name first, `x @ p`, or through the dotted alias, `x .@ p`.
-@[ checks ]
+@[checks]
 def same(n : Integer) -> -F Integer =
   match n where
     | zero @ 0 => return zero

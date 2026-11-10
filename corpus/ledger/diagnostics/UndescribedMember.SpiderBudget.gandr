@@ -1,9 +1,11 @@
-/// `UndescribedMember.SpiderBudget`: a member the description does not read: a circuit rule whose tied spider legs need more trials than the budget holds.
+/// `UndescribedMember.SpiderBudget`: a member the description does not read: a
+/// circuit rule whose tied spider legs need more trials than the budget holds.
 ///
-/// The wire `x` splits into seven equal nodes. Seven tied legs need 5,040 trials, and the budget holds 720.
-@[ refuses("UndescribedMember.SpiderBudget") ]
+/// The wire `x` splits into seven equal nodes. Seven tied legs need 5,040
+/// trials, and the budget holds 720.
+@[refuses("UndescribedMember.SpiderBudget")]
 theory Fan where
-  @[ frobenius ]
+  @[frobenius]
   sort Q : Type;
   oper f : (a : Q) --> (b : Q);
 

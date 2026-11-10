@@ -8,21 +8,21 @@
 // - see: #1106
 
 /// `caps` extracts a file stem and extension by name.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def caps = regex.extract "^(?<stem>.*)\\.(?<ext>gandr)$" "examples/demo.gandr";
 
 /// `demo_path` joins a directory and file name.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def demo_path = path.join "examples" "demo.gandr";
 
 /// `leaf` reads the joined path's final component.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def leaf = path.basename demo_path;
 
 /// `suffix` reads the joined path's extension.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def suffix = path.extension demo_path;
 
 /// `gathered` groups the rejected declarations. Its type is unknown.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def gathered = *{capture = caps, leaf = leaf, path_ext = suffix};

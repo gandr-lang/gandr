@@ -12,5 +12,5 @@ def answer(u : Unit) -> Integer =
     | *{} => 42
 
 /// The unit takes its arm.
-@[ runs("42") ]
+@[runs("42")]
 def answerOfUnit() -> Integer { answer *{} }

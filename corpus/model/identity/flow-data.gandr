@@ -35,38 +35,38 @@ pub data Figure : Type where
 /// The `Rename` module moves one field to another constructor.
 module Rename where {
   /// The translator moves the field to the target constructor.
-  @[ checks ]
+  @[checks]
   def toOther(old : Old) -> Other =
     match old where
       | Mk(n) => Make n
   /// The translator defines the flow from `Old` to `Other`.
-  @[ checks ]
+  @[checks]
   def renamed : Flow[.A = Type](Old, Other) = Flow.into toOther;
   /// The flow rides one source value to the target type.
-  @[ checks ]
+  @[checks]
   def moved(old : Old) -> Other =
     Flow.ride (fun (X) { X }) renamed old
   /// The run migrates one value.
-  @[ runs("Make 3") ]
+  @[runs("Make 3")]
   def one : () -> Other = moved (Mk 3);
 }
 
 /// The `Shapes` module moves each shape to its figure.
 pub module Shapes where {
   /// The translator swaps rectangle sides.
-  @[ checks ]
+  @[checks]
   def toFigure(shape : Shape) -> Figure =
     match shape where
       | Circle(r) => Round r
       | Rect(w, h) => Box h w
   /// The translator defines the flow from shapes to figures.
-  @[ checks ]
+  @[checks]
   def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure;
   /// The flow rides a shape list through the list family.
-  @[ checks ]
+  @[checks]
   def all(shapes : List Shape) -> List Figure =
     Flow.ride (fun (X) { List X }) redrawn shapes
   /// The run migrates two shapes.
-  @[ runs("cons (Round 1) (cons (Box 3 2) nil)") ]
+  @[runs("cons (Round 1) (cons (Box 3 2) nil)")]
   def two : () -> List Figure = all (cons (Circle 1) (cons (Rect 2 3) nil));
 }

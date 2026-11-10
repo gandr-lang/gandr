@@ -1,14 +1,14 @@
-@[ runs("42") ]
+@[runs("42")]
 def answer : Integer = 42;
 
-@[ runs("\"hello, gandr\"") ]
+@[runs("\"hello, gandr\"")]
 def greeting : String = "hello, gandr";
 
-@[ runs("*{}") ]
+@[runs("*{}")]
 def nothing : Unit = *{};
 
-@[ runs("42") ]
+@[runs("42")]
 def copy = answer;
 
-@[ runs("42") ]
+@[runs("42")]
 def echo : Integer = copy;

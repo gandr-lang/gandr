@@ -52,7 +52,7 @@ def carried(x : Int, f : Path[.A = Int](S (P (S x)), S x) -> Int) -> Path[.A = P
   Path.here (fun (d) { f d })
 
 /// The carried consumer transports `S(Z)` along a join certificate.
-@[ runs("S Z") ]
+@[runs("S Z")]
 def carriedRun() -> Int =
   let g = Path.walk (fun (X) { X -> Int }) (certificates Z) (fun (c) {
     Path.walk (fun (y) { Int }) c (S Z)

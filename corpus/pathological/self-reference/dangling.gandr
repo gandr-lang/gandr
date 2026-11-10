@@ -11,7 +11,7 @@
 import std.process;
 
 /// `dangling` returns a thunk that captures the access view.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def dangling() -> Integer =
   var x = 5
   let r : Integer = handle c : std.process.Exit.Eff {

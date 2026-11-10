@@ -14,13 +14,13 @@ import std.fs;
 /// second `std.fs.Eff` is
 /// refused as a label defined twice, as a record's second field of one label
 /// is.
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
 
 /// Sequencing joins the rows: the computation reads through
 /// `std.fs.Eff`, which the
 /// row `[Partial]` does not hold.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def narrowedRow(c : Cap { read }) -> [Partial] Integer =
   let _ = peek c
   once 2

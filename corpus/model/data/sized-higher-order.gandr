@@ -44,7 +44,7 @@ def rec helped(n : Nat) -> Nat =
     | Succ(p) => Succ (applyAt helped[<] p)
 
 /// `helpedTwo` evaluates two through `applyAt`.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def helpedTwo : () -> Nat = helped (Succ (Succ Zero));
 
 /// `predAt` computes a predecessor at stage `i` and returns zero for zero.
@@ -63,7 +63,7 @@ def rec halvedAt(n : Nat) -> Nat =
     | Succ(p) => { let q = predAt p; Succ (halvedAt[<] q) }
 
 /// Half of four: two.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def halvedAtFour : () -> Nat = halvedAt (Succ three);
 
 /// `boundedAt` returns a number below stage `j` without a returner.
@@ -79,7 +79,7 @@ def rec boundedHelped(n : Nat) -> Nat =
     | Succ(p) => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
 
 /// `boundedTwo` evaluates two through `boundedAt`.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def boundedTwo : () -> Nat = boundedHelped (Succ (Succ Zero));
 
 /// `sameAt` applies a function and number at the same stage.
@@ -94,7 +94,7 @@ def rec agreed(n : Nat) -> Nat =
     | Succ(p) => Succ (sameAt agreed[<] p)
 
 /// `agreedTwo` evaluates two through `sameAt`.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def agreedTwo : () -> Nat = agreed (Succ (Succ Zero));
 
 /// `appliedAt` applies a function at the named stage `j`.

@@ -20,7 +20,7 @@ def stall[r : Row](s : String) -> [Partial | r] Unit { pure *{} }
 
 /// `log` suspended and ignored: nothing reads its row, so nothing determines
 /// its `r`, and the call is refused naming the slot `log[.r = …]`.
-@[ refuses("ImplicitUnsolved") ]
+@[refuses("ImplicitUnsolved")]
 def unread() -> Unit { ignored (thunk { log "unread" }) }
 
 /// `log` and `stall` made to share a row nothing reads:
@@ -28,10 +28,10 @@ def unread() -> Unit { ignored (thunk { log "unread" }) }
 /// against `[Partial | r′]`, each open row holding an interface
 /// the other lacks,
 /// is never decided.
-@[ refuses("ImplicitUnsolved") ]
+@[refuses("ImplicitUnsolved")]
 def undecided() -> Unit =
   ignored (thunk { either (thunk { log "one" }) (thunk { stall "other" }) })
 
 /// A row without `std.io.Console.Eff` is not `log`'s row, whatever its `r`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def narrowed() -> [Partial] Unit { log "narrowed" }

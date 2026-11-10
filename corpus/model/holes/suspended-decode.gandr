@@ -13,15 +13,15 @@
 //! [Slattery-2026-bidirectional_elaborators_carte]: https://arxiv.org/abs/2607.09564 "Slattery and Sterling, Bidirectional Elaborators à la Carte"
 
 /// This declaration owes a code to name later.
-@[ owes(1) ]
+@[owes(1)]
 def code : Type;
 
 /// This declaration owes the comparison of `Integer` with `code`.
-@[ owes(1) ]
+@[owes(1)]
 def three : code = 3;
 
 /// This declaration waits on the hole that `three` owes.
-@[ owes(1) ]
+@[owes(1)]
 def again : code = three;
 
 /// This declaration checks without a hole.

@@ -1,7 +1,7 @@
 /// `tuple_pattern`: a group of patterns that receives a call's outputs.
-@[ checks ]
+@[checks]
 def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
 
 /// The second output of `divmod`, bound by the group.
-@[ checks ]
+@[checks]
 def second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod a b; r }

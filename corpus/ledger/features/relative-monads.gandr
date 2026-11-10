@@ -1,6 +1,11 @@
 /// `relative-monads`: Monads relative to the shift.
-/// Implemented: a monad relative to `-F` as a theory, its unit and extension over a family of computation types; the carrier as a theory's sort into the computation types, which the option monad's carrier models; the option monad's operations and code polymorphic in the carrier; and the left unit, the right unit and associativity, which join as one theory.
-/// Not implemented: a handler's return clause from a value to the carrier, the unit of the handler reading.
+/// Implemented: a monad relative to `-F` as a theory, its unit and extension
+/// over a family of computation types; the carrier as a theory's sort into the
+/// computation types, which the option monad's carrier models; the option
+/// monad's operations and code polymorphic in the carrier; and the left unit,
+/// the right unit and associativity, which join as one theory.
+/// Not implemented: a handler's return clause from a value to the carrier, the
+/// unit of the handler reading.
 ///
 /// - owes: #4383
 /// - see: #2115 — `MonadRightUnit`
@@ -22,50 +27,50 @@
 //! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]: https://doi.org/10.1145/3720434 "Jiang, Xue and New, Notions of Stack-Manipulating Computation and Relative Monads"
 
 // `Maybe`, the option monad's values.
-import "../../model/data/data-maybe.gandr" ;
+import "../../model/data/data-maybe.gandr";
 
 /// The left unit: returning a value to an extension runs its continuation at
 /// that value, a second-order rule over values `V` and computations `C`.
-@[ checks ]
+@[checks]
 theory MonadLeftUnit where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitL : ext (ret a) k <=> k a;
 
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
 /// it at its port of the sort `V`.
-@[ checks ]
+@[checks]
 theory MonadRightUnit where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
-  rule unitR : ext m (bind x . (ret x)) <=> m;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitR : ext m (bind x. (ret x)) <=> m;
 
 /// The three laws together. Associativity's inner `ext(m, k)` is an instance
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
 /// unification, and its two reducts normalize to one term.
-@[ checks ]
+@[checks]
 theory RelativeMonad where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitL : ext (ret a) k <=> k a;
-  rule unitR : ext m (bind x . (ret x)) <=> m;
-  rule assoc : ext (ext m k) l <=> ext m (bind x . (ext (k x) l));
+  rule unitR : ext m (bind x. (ret x)) <=> m;
+  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
 
 /// The option monad's unit: the value, present.
-@[ checks ]
+@[checks]
 def ret(A : Type, a : A) -> Maybe(A) { Some a }
 
 /// The option monad's extension: run the computation once, first, then pass
 /// a present value to the continuation and stop at an absent one.
-@[ checks ]
+@[checks]
 def ext(A : Type, B : Type, m : () -> Maybe(A), k : A -> Maybe(B)) -> Maybe(B) =
   let r = force m
   match r where
@@ -73,7 +78,7 @@ def ext(A : Type, B : Type, m : () -> Maybe(A), k : A -> Maybe(B)) -> Maybe(B) =
     | Some(x) => k x
 
 /// One, then its successor, through the extension: the value read back.
-@[ runs("2") ]
+@[runs("2")]
 def two() -> Integer =
   let r = ext
     Integer
@@ -86,7 +91,7 @@ def two() -> Integer =
 
 /// Code polymorphic in the carrier: a computation of any family of
 /// computation types, run again.
-@[ checks ]
+@[checks]
 def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }
 
 /// The carrier as a theory's sort: a family from the host's types into the

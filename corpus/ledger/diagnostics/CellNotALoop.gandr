@@ -1,5 +1,5 @@
 /// `CellNotALoop`: a cell `<->` of a `data` block between two distinct terms.
-@[ refuses("CellNotALoop") ]
+@[refuses("CellNotALoop")]
 data Interval : Type where
   | Start : Interval
   | End : Interval

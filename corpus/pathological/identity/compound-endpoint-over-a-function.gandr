@@ -1,6 +1,6 @@
 def constantly(x : Integer, y : Integer) -> Integer =
   x
 
-@[ refuses("CompoundEndpoint") ]
+@[refuses("CompoundEndpoint")]
 def refuted(x : Integer) -> Path(constantly x, x) =
   Path.here x

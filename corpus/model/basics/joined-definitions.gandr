@@ -25,5 +25,5 @@ def joinedSix : Integer = 6;
 def apartFive = 5;
 
 /// The checker reads each joined or separate value where it expects a value.
-@[ runs("18") ]
+@[runs("18")]
 def joinedSum() -> Integer { joinedThree + apartFour + apartFive + joinedSix }

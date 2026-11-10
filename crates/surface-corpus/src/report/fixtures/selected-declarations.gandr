@@ -1,6 +1,6 @@
 def hidden_record = 3;
-@[ owes(1) ]
+@[owes(1)]
 def fixture_hole : Integer;
 def plain_hole : Integer;
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def fixture_refusal = missing;

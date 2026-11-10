@@ -1,5 +1,6 @@
-/// `match_expression`: a case analysis. In layout form, it writes `where` between its scrutinee and its arms.
-@[ checks ]
+/// `match_expression`: a case analysis. In layout form, it writes `where`
+/// between its scrutinee and its arms.
+@[checks]
 def sign(b : Bool) -> -F Integer =
   match b where
     | true => return 1

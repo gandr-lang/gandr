@@ -20,10 +20,10 @@ pub theory Marks where
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
-  rule dropped : flush (mark k) <=> k where { | under [Sink | r] };
-  rule kept : flush (mark k) <=> mark k where { | under [State.Eff | r] };
-  rule erased : mark k <=> k where { | under [State.Eff, Sink | r] };
-  rule flushed : flush k <=> k where { | under [Sink, State.Eff | r] };
+  rule dropped : flush (mark k) <=> k where {| under [Sink | r]};
+  rule kept : flush (mark k) <=> mark k where {| under [State.Eff | r]};
+  rule erased : mark k <=> k where {| under [State.Eff, Sink | r]};
+  rule flushed : flush k <=> k where {| under [Sink, State.Eff | r]};
 
 /// `ExactMarks` defines the rules under closed rows.
 /// No row holds both rules, so their overlap owes no join and no rule erases.
@@ -31,5 +31,5 @@ theory ExactMarks where
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
-  rule dropped : flush (mark k) <=> k where { | under [Sink] };
-  rule kept : flush (mark k) <=> mark k where { | under [State.Eff] };
+  rule dropped : flush (mark k) <=> k where {| under [Sink]};
+  rule kept : flush (mark k) <=> mark k where {| under [State.Eff]};

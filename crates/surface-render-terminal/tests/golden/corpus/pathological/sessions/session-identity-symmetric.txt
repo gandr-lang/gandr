@@ -1,7 +1,7 @@
 error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it would be produced
    ╭▸ corpus/pathological/sessions/session-identity-symmetric.gandr:15:5
    │
-13 │ ┌   @[ refuses("NonCovariantMotive") ]
+13 │ ┌   @[refuses("NonCovariantMotive")]
 14 │ │   def reversed() -> Flow[.A = Type](SeatEnd′, SeatEnd) =
 15 │ │     Flow.ride (fun (X) { type(Flow[.A = Type](X, SeatEnd)) }) sub (Flow.stay SeatEnd)
    │ │     ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│

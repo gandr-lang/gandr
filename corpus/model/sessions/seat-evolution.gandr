@@ -42,16 +42,16 @@ pub module Evolution where {
     handoff : !Handoff. end
   };
   /// The old protocol flows to the one with the pause, by simulation.
-  @[ checks ]
+  @[checks]
   def sub : Flow[.A = Type](SeatEnd, SeatEnd′) = Flow.sim SeatEnd SeatEnd′;
   /// The protocol and its one-step unrolling are one type, by bisimulation.
-  @[ checks ]
+  @[checks]
   def eq : Path[.A = Type](SeatEnd, SeatEnd2) = Path.bisim SeatEnd SeatEnd2;
   /// The stationary flow at the old protocol.
-  @[ checks ]
+  @[checks]
   def kept : Flow[.A = Type](SeatEnd, SeatEnd) = Flow.stay SeatEnd;
   /// The stationary flow, then the simulation.
-  @[ checks ]
+  @[checks]
   def widened() -> Flow[.A = Type](SeatEnd, SeatEnd′) =
     Flow.then kept sub
 }
@@ -69,7 +69,7 @@ def forward(receipt : Run Seat.SeatEnd) -> Run Evolution.SeatEnd′ =
   Flow.ride (fun (X) { Run X }) Evolution.sub receipt
 
 /// The old run ridden forward by a run: the record is unchanged.
-@[ runs("recorded (received \"task\") (selected report) (sent \"progress\") (offered retire) (closed)") ]
+@[runs("recorded (received \"task\") (selected report) (sent \"progress\") (offered retire) (closed)")]
 def moved() -> Run Evolution.SeatEnd′ { forward served }
 
 /// A run of the new protocol that takes the pause.
@@ -82,7 +82,7 @@ def paused : Run Evolution.SeatEnd′ = recorded
   closed;
 
 /// The same record is no run of the old protocol, which has no pause.
-@[ refuses("RunNotAdmitted") ]
+@[refuses("RunNotAdmitted")]
 def backward : Run Seat.SeatEnd = recorded
   (received Seat.task)
   (selected pause)

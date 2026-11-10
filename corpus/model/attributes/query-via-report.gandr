@@ -10,5 +10,5 @@
 //! - see: https://doc.rust-lang.org/reference/
 
 // A greeting, its documentation given by the attribute alone.
-@[ doc("Returns a fixed greeting.") ]
+@[doc("Returns a fixed greeting.")]
 def greet = "hello";

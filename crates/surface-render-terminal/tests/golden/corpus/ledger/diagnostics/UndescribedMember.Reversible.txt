@@ -1,7 +1,7 @@
 error[UndescribedMember.Reversible]: this member writes `<->`, which is reserved for reversible maps
-  ╭▸ corpus/ledger/diagnostics/UndescribedMember.Reversible.gandr:5:27
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.Reversible.gandr:6:27
   │
-5 │   oper negate : (b : Bit) <-> (c : Bit);
+6 │   oper negate : (b : Bit) <-> (c : Bit);
   │                           ━━━ a member the description does not read
   │
   ├ note: `Reserved` is refused with UndescribedMember.Reversible, as its expectation states

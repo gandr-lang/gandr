@@ -1,2 +1,2 @@
-theory Monoid where { sort M : Type; }
+theory Monoid where {sort M : Type;}
 def held : Theory = Monoid;

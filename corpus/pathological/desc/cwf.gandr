@@ -22,7 +22,7 @@ import "../../model/desc/cwf.gandr";
 
 /// A term substituted twice is the term substituted along the composite, but
 /// a law on types rewrites the index of the outer substitution.
-@[ refuses("UndescribedMember.RewrittenIndex") ]
+@[refuses("UndescribedMember.RewrittenIndex")]
 theory CwFTermComposite where
   /// The sorts, operations and laws of a category with families.
   include CwF;

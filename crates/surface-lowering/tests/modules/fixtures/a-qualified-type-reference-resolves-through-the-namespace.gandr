@@ -1,5 +1,5 @@
 module Shapes where { type Side = Integer; module Inner where { type Label = String; } }
-module Box : *{ type Item = Integer, item : Item } where { def item = 1; }
+module Box : *{type Item = Integer, item : Item} where { def item = 1; }
 def side : Shapes.Side = 3;
 def label : Shapes.Inner.Label = "l";
 def boxed : Box.Item = Box.item;

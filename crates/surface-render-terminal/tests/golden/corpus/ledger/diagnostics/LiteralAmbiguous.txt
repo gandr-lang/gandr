@@ -1,7 +1,7 @@
 error[LiteralAmbiguous]: more than one model of `FromNat`, `FromNeg` or `FromDecimal` reads a literal at this type; apply the meant model's reader to it by name
-   ╭▸ corpus/ledger/diagnostics/LiteralAmbiguous.gandr:24:27
+   ╭▸ corpus/ledger/diagnostics/LiteralAmbiguous.gandr:25:27
    │
-24 │ def ambiguous() -> Expr { 4 }
+25 │ def ambiguous() -> Expr { 4 }
    │ ┬──────────────────┬──────┯──
    │ │                  │      │
    │ │                  │      a literal two readers answer: expected `Expr`

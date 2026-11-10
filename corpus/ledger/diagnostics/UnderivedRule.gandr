@@ -1,9 +1,10 @@
-/// `UnderivedRule`: a derived rule whose two sides the theory's rules rewrite to different normal forms.
-@[ checks ]
+/// `UnderivedRule`: a derived rule whose two sides the theory's rules rewrite
+/// to different normal forms.
+@[checks]
 theory Involution where
   sort G : Type;
   oper inv : (x : G) --> G;
   rule invInv : inv (inv x) <=> x;
 
-@[ refuses("UnderivedRule") ]
+@[refuses("UnderivedRule")]
 rule Involution.fixed : inv x <=> x;

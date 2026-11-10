@@ -29,5 +29,5 @@ def carried(play : Prefix Seat.SeatEnd) -> Prefix Evolution.SeatEnd′ =
   Flow.ride (fun (X) { Prefix X }) Evolution.sub play
 
 /// `upgraded` transports the open record to the wider protocol.
-@[ runs("recorded (received \"task\") (selected report) (sent \"progress\")") ]
+@[runs("recorded (received \"task\") (selected report) (sent \"progress\")")]
 def upgraded() -> Prefix Evolution.SeatEnd′ { carried reporting }

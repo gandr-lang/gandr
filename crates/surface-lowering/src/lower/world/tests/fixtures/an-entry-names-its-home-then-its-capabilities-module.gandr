@@ -1,7 +1,7 @@
 world operator;
 world seat;
-@[ entry(*{operator, seat}) ]
+@[entry(*{operator, seat})]
 def entered() -> Integer { pure 1 }
-@[ entry(operator) ]
+@[entry(operator)]
 def homed() -> Integer { pure 1 }
 def placed() -> Integer { pure 1 }

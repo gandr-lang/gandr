@@ -1,6 +1,10 @@
-/// `linear-function`: The linear function `(x : A) ⊸ C`, whose body takes its parameter once.
-/// Implemented: a linear function takes each parameter of its own list once, at the multiplicity one. A type reads the parameter through its shadow, and the body draws its one copy.
-/// Not implemented: a multiplicity other than one is refused, and a definition half ignores the linear arrows of a signature written apart.
+/// `linear-function`: The linear function `(x : A) ⊸ C`, whose body takes
+/// its parameter once.
+/// Implemented: a linear function takes each parameter of its own list once, at
+/// the multiplicity one. A type reads the parameter through its shadow, and the
+/// body draws its one copy.
+/// Not implemented: a multiplicity other than one is refused, and a definition
+/// half ignores the linear arrows of a signature written apart.
 ///
 /// - owes: #5867
 /// - owes: #5923
@@ -14,29 +18,31 @@
 // - see: `../diagnostics/ShadowCaptured.gandr`
 
 /// The identity, its type supplied by the argument.
-@[ checks ]
-def id[a : Type](x : a) ⊸ a = x ;
+@[checks]
+def id[a : Type](x : a) ⊸ a = x;
 
 /// `id` at the integers.
-@[ runs("7") ]
+@[runs("7")]
 def seven() -> Integer { id 7 }
 
-/// The result type reads the parameter through its shadow, and the body takes its copy once.
-@[ checks ]
-def itself(x : Integer) ⊸ Path(x, x) = Path.here x ;
+/// The result type reads the parameter through its shadow, and the body takes
+/// its copy once.
+@[checks]
+def itself(x : Integer) ⊸ Path(x, x) = Path.here x;
 
 /// A function of linear type, applied once.
-@[ checks ]
-def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f(a) ;
+@[checks]
+def apply(f : (x : Integer) ⊸ Integer, a : Integer) -> Integer = f (a);
 
-/// A `let` line binds the parameter's one copy, and the last line reads the name once.
-@[ checks ]
+/// A `let` line binds the parameter's one copy, and the last line reads
+/// the name once.
+@[checks]
 def letBound(x : Integer) ⊸ Integer =
   let r = x
   r
 
 /// The same body under the ASCII spelling `-o`.
-@[ checks ]
+@[checks]
 def letBoundAscii(x : Integer) -o Integer =
   let r = x
   r

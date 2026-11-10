@@ -1,7 +1,7 @@
 def a = missing;
 def b : Natural;
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def c : Integer * Integer;
 def d : Integer;
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def e() -> Integer { 3 }

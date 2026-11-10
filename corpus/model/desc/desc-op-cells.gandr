@@ -11,7 +11,7 @@
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
 /// Natural numbers with addition as an operation.
-@[ normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
+@[normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))")]
 data NatAdd : Type where {
   | Zero : NatAdd
   | Succ : (n : NatAdd) --> NatAdd
@@ -21,5 +21,5 @@ data NatAdd : Type where {
 }
 
 /// Two plus one runs to three.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def two_plus_one() -> NatAdd { add (Succ (Succ Zero)) (Succ Zero) }

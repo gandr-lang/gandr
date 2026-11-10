@@ -1,5 +1,6 @@
-/// `UndescribedMember.ResultArity`: a member the description does not read: a rule returning other than its operation's output count.
-@[ refuses("UndescribedMember.ResultArity") ]
+/// `UndescribedMember.ResultArity`: a member the description does not read: a
+/// rule returning other than its operation's output count.
+@[refuses("UndescribedMember.ResultArity")]
 theory Divide where
   sort Nat : Type;
   oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);

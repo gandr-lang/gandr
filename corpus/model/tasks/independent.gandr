@@ -12,7 +12,7 @@
 import "./task-base.gandr";
 
 /// A parent joins two tasks in reverse fork order.
-@[ runs("*{}"), traces(primes scout 0), traces(primes scribe 0) ]
+@[runs("*{}"), traces(primes scout 0), traces(primes scribe 0)]
 def independent() -> Unit =
   let scouted = fork (scout : Task.Join) {
     send scout Task.notes;

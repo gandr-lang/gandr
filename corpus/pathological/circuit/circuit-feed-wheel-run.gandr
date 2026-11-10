@@ -15,12 +15,12 @@ def step(s : Integer, x : Integer) -> Integer { s + x }
 
 /// The trace the wheel would run over `1, 2, 3` from zero, unrolled by hand:
 /// each tick's output is the next tick's `s`, reading `1`, `3`, then `6`.
-@[ runs("6") ]
+@[runs("6")]
 def unrolled() -> Integer =
   step (step (step 0 1) 2) 3
 
 /// The wheel as a running sum, `Nat` the integers and `emit` the step, so
 /// `spin` over `1, 2, 3` answers what `unrolled` does. `Model(Wheel)` cannot
 /// state `spin`, a circuit rule.
-@[ refuses("UnstatedComponent.Circuit") ]
+@[refuses("UnstatedComponent.Circuit")]
 def summing : Model Wheel;

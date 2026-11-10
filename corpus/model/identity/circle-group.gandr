@@ -81,9 +81,9 @@ def comm(
   )
 
 /// Spinning and winding three loops returns three.
-@[ runs("S (S (S Z))") ]
+@[runs("S (S (S Z))")]
 def windThree : () -> Int = wind (spin (S (S (S Z))));
 
 /// Spinning and winding two inverse loops returns minus two.
-@[ runs("P (P Z)") ]
+@[runs("P (P Z)")]
 def windMinusTwo : () -> Int = wind (spin (P (P Z)));

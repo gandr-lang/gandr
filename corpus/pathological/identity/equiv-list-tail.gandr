@@ -15,5 +15,5 @@ def emptied(xs : List Bool) -> List Bool =
 
 /// To the empty list and back by the identity: the empty pattern returns,
 /// the first cell does not, refused at that cell.
-@[ refuses("UncertifiedStratum") ]
+@[refuses("UncertifiedStratum")]
 def collapsed = equiv emptied keep;

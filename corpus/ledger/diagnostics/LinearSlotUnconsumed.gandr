@@ -1,3 +1,4 @@
-/// `LinearSlotUnconsumed`: a linear function's body that ends with its parameter's copy unread.
-@[ refuses("LinearSlotUnconsumed") ]
-def dropped(x : Integer) ⊸ Integer = 0 ;
+/// `LinearSlotUnconsumed`: a linear function's body that ends with its
+/// parameter's copy unread.
+@[refuses("LinearSlotUnconsumed")]
+def dropped(x : Integer) ⊸ Integer = 0;

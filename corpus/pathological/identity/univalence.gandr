@@ -21,7 +21,7 @@ import "../../model/identity/circle.gandr";
 /// The collapse made a path between `Two` and `One`, refused at the left
 /// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
 /// reflexivity at `x` does not reach it.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def collapsedPath : Path[.A = Type](Two, One) = ua (*{
   collapse,
   *{*{pick, thunk { fun (x) { Path.here x } }}, *{pick, single}}
@@ -30,7 +30,7 @@ def collapsedPath : Path[.A = Type](Two, One) = ua (*{
 /// A transport along `ua` of a bi-invertible map from `Type` to itself,
 /// refused at the code `ua` reads off the record: `Type` is a code of
 /// `Type[1]`, not of `Type`.
-@[ refuses("LevelMismatch") ]
+@[refuses("LevelMismatch")]
 def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type =
   Path.walk (fun (X) { X }) (ua e) x
 
@@ -38,7 +38,7 @@ def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type =
 /// the `ua`: away from `Path[.A = Type](a, b)` the record's own type names the
 /// codes, and a literal synthesises a product of its parts' types, not the
 /// dependent pair `a ≃ b` is.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def alongLiteral(
   a : Type,
   b : Type,
@@ -54,7 +54,7 @@ def alongLiteral(
 /// `ua` after `idtoequiv` converted with the path, refused even at
 /// reflexivity: no rule relates `ua` of the packaged transport to the path it
 /// packages, so the model source owes it as `uaEta`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
   ua (idtoequiv a a (Path.here a)),
   Path.here a
@@ -64,7 +64,7 @@ def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
 /// The loops' path to the integers ascribed a type whose right end is a
 /// wildcard, declared to end at the unit type: `ua(winding)` forces the
 /// wildcard to the integers, which the unit type is not.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def loopsAreUnit : Path[.A = Type](
   Path[.A = Circle](Base, Base),
   Unit

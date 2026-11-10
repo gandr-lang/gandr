@@ -1,4 +1,4 @@
 /// `binary_expression.or`: a disjunction.
-@[ checks ]
+@[checks]
 def either() -> -F Bool =
   return true || false

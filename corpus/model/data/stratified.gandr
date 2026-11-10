@@ -38,9 +38,9 @@ def rec chainLength(c : Chain) -> Nat =
     | Link(prev, test) => Succ (chainLength[<] prev)
 
 /// The outer link's test of the inner link.
-@[ runs("R") ]
+@[runs("R")]
 def judged : () -> Two = judge twice;
 
 /// The chain's two links.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def measured : () -> Nat = chainLength twice;

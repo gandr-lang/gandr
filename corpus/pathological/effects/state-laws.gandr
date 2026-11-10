@@ -7,7 +7,7 @@ import "../../model/effects/state.gandr";
 
 /// Every read answers four whatever was stored, so put-get's left side
 /// continues at four and its right side at the stored value.
-@[ refuses("HandlerUnlawful") ]
+@[refuses("HandlerUnlawful")]
 def forgetful() -> Integer =
   handle st : StatePutGet with sort S = Integer {
     st.put 1;
@@ -22,7 +22,7 @@ def forgetful() -> Integer =
 /// A store adds the value to the state rather than replacing it, so a read
 /// after it sees the sum: put-get's left side continues at the sum and its
 /// right side at the stored value.
-@[ refuses("HandlerUnlawful") ]
+@[refuses("HandlerUnlawful")]
 def accumulating() -> (Integer -> Integer) =
   handle st : StatePutLaws with sort S = Integer {
     st.put 1;

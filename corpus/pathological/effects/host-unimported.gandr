@@ -11,12 +11,12 @@
 // - see: #4523
 
 /// Prints a line through a capability with no import of `std.io`.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def say(c : Cap { print }) -> [std.io.Console.Eff] Unit =
   c.print "said"
 
 /// Handles an exit at once with no import of `std.process`.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def quit() -> Unit =
   handle c : std.process.Exit.Eff {
     c.exit 1

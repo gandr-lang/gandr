@@ -1,5 +1,5 @@
 /// `EndpointUsedTwice`: an endpoint named twice in one action.
-@[ refuses("EndpointUsedTwice") ]
+@[refuses("EndpointUsedTwice")]
 def seat_sent_over_itself() -> -F Unit =
   let desk = fork (seat : !String. end) { send seat seat; close seat };
   let task = recv desk

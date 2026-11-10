@@ -25,13 +25,13 @@ def counter() -> (Integer -> Integer) =
   }
 
 /// `counted` runs `counter` from zero.
-@[ runs("2") ]
+@[runs("2")]
 def counted() -> Integer =
   let f = counter ()
   f 0
 
 /// `readTwice` handles two reads as one read.
-@[ runs("8") ]
+@[runs("8")]
 def readTwice() -> Integer =
   handle st : StateGetGet with sort S = Integer {
     let a = st.get ();
@@ -43,7 +43,7 @@ def readTwice() -> Integer =
   }
 
 /// `storeTwice` keeps the second stored value.
-@[ runs("3") ]
+@[runs("3")]
 def storeTwice() -> Integer =
   handle st : StatePutPut with sort S = Integer {
     st.put 1;

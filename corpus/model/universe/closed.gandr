@@ -12,14 +12,14 @@
 import "../data/data-base.gandr";
 
 /// The `U` codes name the naturals and the functions between two coded types.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 data U : Type where
   | NatC : U
   | Arrow : (a : U, b : U) --> U
 
 /// The `el` decoder returns the value type of each code. Its arrow arm returns
 /// the function type between the decodes of the two sides.
-@[ checks ]
+@[checks]
 def rec el(u : U) -> -F Type =
   match u where
     | NatC => return Nat
@@ -27,100 +27,100 @@ def rec el(u : U) -> -F Type =
 
 /// The `endo` function quotes the arrow from `a` to itself after two more
 /// parameters. The quote reads `a`, not `v`.
-@[ checks ]
+@[checks]
 def endo(a : Type, n : Nat, v : a) -> -F Type { return (+U (a -> -F a)) }
 
 /// The `endoBare` function quotes the same arrow after one more parameter. Its
 /// signature prints as `Type -> Nat -> -F Type` and reads back to itself.
 ///
 /// - see: #547 — the signature that reads back to itself
-@[ checks ]
+@[checks]
 def endoBare(a : Type, n : Nat) -> -F Type { return (+U (a -> -F a)) }
 
 /// The `loopAt` function quotes the loops at a value of a decoded type. The
 /// carrier `el(u)` reads as the type of its call.
-@[ checks ]
+@[checks]
 def loopAt(u : U, x : el(u)) -> -F Type { return (Path x x) }
 
 /// The `byCode` function quotes the Π over a code `c` into its decode `el(c)`.
 /// The codomain names the binder of the arrow.
-@[ checks ]
+@[checks]
 def byCode(n : Nat) -> -F Type { return (+U ((c : U) -> -F el(c))) }
 
 /// The `onType` function quotes the functions on the type `t`. The arrow labels
 /// its binder with the parameter `t` of the telescope.
-@[ checks ]
+@[checks]
 def onType(t : Type) -> -F Type { return (+U ((x : t) -> -F t)) }
 
 /// The `one` value stands at `el(NatC)`. That decode runs to `Nat`.
-@[ checks ]
+@[checks]
 def one : el(NatC);
 def one = Succ Zero;
 
 /// The `idAt` function is the identity at each code. Over the binder `c`, the
 /// decode `el(c)` is one neutral type.
-@[ checks ]
+@[checks]
 def idAt(c : U, v : el(c)) -> -F el(c) { v }
 
 /// The `kept` run applies the identity at the natural code to one.
-@[ runs("Succ Zero") ]
+@[runs("Succ Zero")]
 def kept() -> -F Nat { idAt NatC one }
 
 /// The `succ` value is the successor at the decode of the arrow
 /// from naturals to
 /// naturals. That decode runs to `Nat => Nat`.
-@[ checks ]
+@[checks]
 def succ : el(Arrow NatC NatC);
 def succ = thunk { fun (n) { Succ n } };
 
 /// The `applyAt` function applies `f` to `v` at each pair of codes. The decode
 /// of `Arrow(a, b)` reads through the arrow arm of the decoder to
 /// `el(a) => el(b)`.
-@[ checks ]
+@[checks]
 def applyAt(a : U, b : U, f : el(Arrow a b), v : el(a)) -> -F el(b) { f v }
 
 /// The `stepped` run applies the successor at its decoded type.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def stepped() -> -F Nat { succ one }
 
 /// The `applied` run applies `applyAt` at the arrow from naturals to naturals.
 /// It returns the successor of one.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def applied() -> -F Nat { applyAt NatC NatC succ one }
 
 /// The `atOne` value stands at the decode of an arrow from an arrow code. It
 /// applies its argument to one.
-@[ checks ]
+@[checks]
 def atOne : el(Arrow (Arrow NatC NatC) NatC);
 def atOne = thunk { fun (g) { g one } };
 
 /// The `appliedAbove` run applies `atOne` to the successor, one code higher.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def appliedAbove() -> -F Nat { applyAt (Arrow NatC NatC) NatC atOne succ }
 
 /// The `Coded` type packs a value with its code. The type of the
 /// second field is
 /// the decode of the first field.
-@[ checks ]
+@[checks]
 data Coded : Type where
   | Pack : (c : U, v : el(c)) --> Coded
 
 /// The `packedOne` value packs one at the natural code.
-@[ checks ]
+@[checks]
 def packedOne : Coded;
 def packedOne = Pack NatC one;
 
 /// The `packedSucc` value packs the successor at its arrow code.
-@[ checks ]
+@[checks]
 def packedSucc : Coded;
 def packedSucc = Pack (Arrow NatC NatC) succ;
 
 /// The `codeOf` function returns the code of a packed value.
-@[ checks ]
+@[checks]
 def codeOf(p : Coded) -> -F U =
   match p where
     | Pack(c, v) => return c
 
 /// The `unpacked` run reads the code of the successor back from its pack.
-@[ runs("Arrow NatC NatC") ]
+@[runs("Arrow NatC NatC")]
 def unpacked() -> -F U { codeOf packedSucc }

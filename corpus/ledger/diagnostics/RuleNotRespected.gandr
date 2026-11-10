@@ -1,5 +1,6 @@
-/// `RuleNotRespected`: a case over a presented type is not shown to respect one of the type's rules.
-@[ checks ]
+/// `RuleNotRespected`: a case over a presented type is not shown to respect one
+/// of the type's rules.
+@[checks]
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
@@ -8,7 +9,7 @@ data Int : Type where {
   rule : P (S x) ==> x;
 }
 
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec tell(n : Int) -> -F Int =
   match n where
     | Z => Z

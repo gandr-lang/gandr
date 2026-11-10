@@ -1,13 +1,23 @@
 /// `cut-schedules` sums a complete tree with every recursive call under a cut.
 ///
-/// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does; a thunk a run returns runs from the store on another thread, with its captures on that run's heap and a shared capture counted twice, and answers as forcing it in place does.
-/// A cut's writer runs on the driver's pool as the left half of one join, and its reader reads the writer's sum through a host's reply and answers as the sequential schedule does.
+/// Implemented: two cuts of the tree sum run by hand on two threads, each with
+/// its own heap, and answer as the sequential schedule does; a thunk a run
+/// returns runs from the store on another thread, with its captures on that
+/// run's heap and a shared capture counted twice, and answers as forcing it
+/// in place does.
+/// A cut's writer runs on the driver's pool as the left half of one join, and
+/// its reader reads the writer's sum through a host's reply and answers as the
+/// sequential schedule does.
 /// Not implemented: the rule that spawns a writer at each independent cut.
 ///
-/// The sequential schedule runs each cut's writer and then its reader, so `sum` answers as under call by value.
-/// At depth 18 a half, the cut on the driver's pool finishes 2.02 times faster on the executor and 1.91 times natively.
-/// In the same run, the two cuts by hand on two threads finish 1.98 and 1.92 times faster.
-/// The measuring machine has a 16-core Ryzen 9 9950X3D at load 25 on 32 hardware threads.
+/// The sequential schedule runs each cut's writer and then its reader, so `sum`
+/// answers as under call by value.
+/// At depth 18 a half, the cut on the driver's pool finishes 2.02 times faster
+/// on the executor and 1.91 times natively.
+/// In the same run, the two cuts by hand on two threads finish 1.98 and
+/// 1.92 times faster.
+/// The measuring machine has a 16-core Ryzen 9 9950X3D at load 25 on
+/// 32 hardware threads.
 ///
 /// - see: crates/surface-dispatcher/src/evaluate.rs
 /// - see: crates/runtime-emitter/src/run.rs
@@ -28,7 +38,8 @@ data Tree : Type where
   /// A node over the subtrees `l` and `r`.
   | Node : (l : Tree, r : Tree) --> Tree
 
-/// The complete tree of depth `d` with a one at every leaf, each subtree built under a cut.
+/// The complete tree of depth `d` with a one at every leaf, each subtree built
+/// under a cut.
 def rec full(d : Depth) -> Tree =
   match d where
     | Zero => Leaf 1
@@ -45,6 +56,6 @@ def rec sum(t : Tree) -> Integer =
     }
 
 /// The sum over the complete tree of depth three, eight leaves of one each.
-@[ runs("8") ]
+@[runs("8")]
 def small() -> Integer =
   sum (full (Succ (Succ (Succ Zero))))

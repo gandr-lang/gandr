@@ -1,4 +1,4 @@
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Theory where
   sort Nat : Type;
   oper add(m : Nat, n : Nat) -> Nat;

@@ -15,7 +15,7 @@ data Two : Type where
   | R : Two
 
 /// A data type whose rule has an ill-formed description.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 data FixedShfy : Type where {
   /// A return from the carrier.
   | FixedRet : (v : Two) --> FixedShfy

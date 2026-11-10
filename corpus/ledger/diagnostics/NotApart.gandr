@@ -1,4 +1,5 @@
-/// `NotApart`: a case of no branches over a path type whose endpoints are not shown apart.
+/// `NotApart`: a case of no branches over a path type whose endpoints are
+/// not shown apart.
 data Empty : Type where {}
 
 data Int : Type where {
@@ -9,6 +10,6 @@ data Int : Type where {
   rule : P (S x) <=> x;
 }
 
-@[ refuses("NotApart") ]
+@[refuses("NotApart")]
 def agree(e : Path(S (P Z), Z)) -> -F Empty =
   match e {}

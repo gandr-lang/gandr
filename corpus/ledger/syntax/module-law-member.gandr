@@ -1,4 +1,5 @@
-/// `module_law_member`: a module body admitting its model's law at a host primitive.
+/// `module_law_member`: a module body admitting its model's law at
+/// a host primitive.
 theory Reflexive where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;

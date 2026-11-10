@@ -2,17 +2,17 @@ def anon = ?;
 
 def named = ?goal;
 
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def in_infix = ? + 1;
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def named_infix = ?lhs + ?rhs;
 
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def in_call = f (?) 2;
 
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def in_thunk = thunk { ? };
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def seeded = thunk { return ?seed };
 
 def pair_hole = *{?, ?slot};

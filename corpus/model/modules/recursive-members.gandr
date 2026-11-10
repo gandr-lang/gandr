@@ -23,7 +23,7 @@ module Counting where {
       | Succ(k) => Succ (Succ (double[<] k))
 
   /// `half` rounds a natural number down.
-  @[ checks ]
+  @[checks]
   def rec half(n : Nat) -> Nat =
     match n where
       | Zero => Zero
@@ -33,11 +33,11 @@ module Counting where {
 }
 
 /// `twoDoubled` calls `Counting.double`.
-@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
 def twoDoubled : () -> Nat = Counting.double (Succ (Succ Zero));
 
 /// `halved` calls `Counting.half`.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def halved : () -> Nat = Counting.half (Succ (Succ (Succ (Succ Zero))));
 
 /// `Stepping` states a carrier and a step.
@@ -67,5 +67,5 @@ module Up : Model(Stepping) where
 module UpIterated = Iterating(Up);
 
 /// `threeStepsUp` iterates the step three times.
-@[ runs("7") ]
+@[runs("7")]
 def threeStepsUp() -> Integer { UpIterated.times (Succ (Succ (Succ Zero))) 4 }

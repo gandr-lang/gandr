@@ -22,7 +22,7 @@ theory UnitalMagma where
   include Magma;
 
 /// `MagmaWithUnit` adds an incomparable second join.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory MagmaWithUnit where
   include Pointed;
   include Magma;

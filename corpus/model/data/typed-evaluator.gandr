@@ -56,5 +56,5 @@ def rec evalInt(e : Expr TInt) -> Integer =
 
 /// The integer evaluator at a choice between a sum and a literal. It runs the
 /// sum.
-@[ runs("3") ]
+@[runs("3")]
 def evalSample() -> Integer { evalInt (If TInt (BoolLit true) (Add (Lit 1) (Lit 2)) (Lit 0)) }

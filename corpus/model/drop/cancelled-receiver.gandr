@@ -21,7 +21,7 @@
 import std.process;
 
 /// The peer waits for a payload after it sends its first payload.
-@[ runs("7") ]
+@[runs("7")]
 def parked() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : !Integer. ?Integer. end) {
@@ -40,7 +40,7 @@ def parked() -> Integer =
   }
 
 /// The root abandons its continuation before the peer receives a payload.
-@[ runs("7") ]
+@[runs("7")]
 def late() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : ?Integer. end) {
@@ -58,7 +58,7 @@ def late() -> Integer =
 
 /// The root abandons its continuation before it receives the
 /// worker's queued end.
-@[ runs("7") ]
+@[runs("7")]
 def forwarded() -> Integer =
   handle c : std.process.Exit.Eff {
     let r = fork (relay : !(!Integer. end). end) {

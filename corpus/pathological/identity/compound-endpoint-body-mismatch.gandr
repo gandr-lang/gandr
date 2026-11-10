@@ -1,6 +1,6 @@
 def dbl(x : Integer) -> Integer =
   x + x
 
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def refuted(x : Integer) -> Path(dbl x, x) =
   5

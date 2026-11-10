@@ -1,8 +1,8 @@
 /// `manifest_sort`: the binding a `with` fixes, a sort and the type it is.
-@[ checks ]
+@[checks]
 theory Counter where
   sort C : Type;
   oper zero : C;
-@[ checks ]
+@[checks]
 def countersOn(x : Type) -> -F Type =
   return type(Model Counter with sort C = x)

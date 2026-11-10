@@ -34,21 +34,21 @@ pub theory Magma where
   oper mul : (x : M, y : M) --> M;
 
 /// A world requiring an interface nothing declares.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 pub world lost requires [Missing];
 
 /// A world requiring a theory under no label: nothing performs it.
-@[ refuses("UnlabelledRequirement") ]
+@[refuses("UnlabelledRequirement")]
 pub world bare requires [std.io.Console.Eff, Store with sort V = String];
 
 /// A world requiring a theory whose operations are no effects.
-@[ refuses("UninterfacedMember") ]
+@[refuses("UninterfacedMember")]
 pub world modelled requires [m : Magma];
 
 /// A world requiring a store whose values no sort fixes.
-@[ refuses("UninterfacedMember") ]
+@[refuses("UninterfacedMember")]
 pub world unfixed requires [store : Store];
 
 /// A world requiring one label twice.
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 pub world twice requires [store : Store with sort V = String, store : Store with sort V = Integer];

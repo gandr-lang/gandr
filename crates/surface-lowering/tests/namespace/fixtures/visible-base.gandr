@@ -2,7 +2,7 @@ pub def shown : Integer = 2;
 def hidden : Integer;
 pub def hidden = 1;
 pub def checked : Integer = 4;
-pub @[ checks ]
+pub @[checks]
 def early : Integer = 5;
 def secret = 3;
 pub data Bit : Type where { | O : Bit }

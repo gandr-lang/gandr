@@ -3,5 +3,5 @@
 
 /// `true` where the declaration states an integer: the literal is a `Bool`, and
 /// a `Bool` is no `Integer`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def counted : Integer = true;

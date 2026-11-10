@@ -1,8 +1,9 @@
-/// `extern_block`: an extern block: foreign declarations from a library, under a calling convention named as a value of `Abi`.
+/// `extern_block`: an extern block: foreign declarations from a library, under
+/// a calling convention named as a value of `Abi`.
 /// The checker does not reach this form yet.
 ///
 /// - owes: #327
-@[ refuses("OutOfFragment.extern_block") ]
+@[refuses("OutOfFragment.extern_block")]
 extern C from "sensor" {
   def read(channel : i32) -> i64;
 }

@@ -1,4 +1,4 @@
 /// Names nothing.
-@[ refuses("MissingPayload") ]
-@[ doc ]
+@[refuses("MissingPayload")]
+@[doc]
 def f = 42;

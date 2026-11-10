@@ -1,8 +1,8 @@
 /// `CodataUndeclared`: a type names a codata declaration the checker refused.
-@[ refuses("CodataKindNotUniverse") ]
+@[refuses("CodataKindNotUniverse")]
 codata Scaled : Type where
   doubled : Integer;
 
-@[ refuses("CodataUndeclared") ]
+@[refuses("CodataUndeclared")]
 def read(s : +U Scaled) -> -F Integer =
   s.doubled

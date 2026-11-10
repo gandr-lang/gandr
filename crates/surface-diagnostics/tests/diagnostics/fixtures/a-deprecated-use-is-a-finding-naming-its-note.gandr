@@ -1,8 +1,8 @@
-@[ deprecated(*{since = "0.2", note = "use cube"}) ]
+@[deprecated(*{since = "0.2", note = "use cube"})]
 def square = 1;
-@[ deprecated(*{note = "use one"}) ]
+@[deprecated(*{note = "use one"})]
 def single = 1;
-@[ deprecated ]
+@[deprecated]
 def old = 2;
 def cube = 3;
 def a = square;

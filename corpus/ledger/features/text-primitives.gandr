@@ -1,6 +1,8 @@
 /// `text-primitives`: Text, pattern and path primitives.
-/// Implemented: `string.append`, interpolation `"…${ e }…"`, `string.eq` behind `EqString`, and `string.lt` behind `OrdString`, run on both executors.
-/// Not implemented: string escaping and scanning, regular-expression extraction and path primitives.
+/// Implemented: `string.append`, interpolation `"…${ e }…"`, `string.eq` behind
+/// `EqString`, and `string.lt` behind `OrdString`, run on both executors.
+/// Not implemented: string escaping and scanning, regular-expression extraction
+/// and path primitives.
 ///
 /// - owes: #318
 /// - see: #1170 — `quotientOf`
@@ -15,21 +17,21 @@
 
 /// Integer division with its type stated, which checks; the namespace `int`
 /// qualifies the path, and the path answers for it.
-@[ checks ]
+@[checks]
 def quotientOf(c : Integer) -> Integer =
   let lead = int.div c 64
   lead
 
 /// Two strings appended with the type stated, which checks and runs: the
 /// first string's characters, then the second's.
-@[ runs("\"types are machines\"") ]
+@[runs("\"types are machines\"")]
 def stated() -> String =
   let joined = string.append "types are " "machines"
   joined
 
 /// Two strings compared with the type stated, which checks and runs: equal
 /// exactly when their bytes are, which these are not.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def compared() -> Bool =
   let equal = string.eq "types are " "machines"
   equal

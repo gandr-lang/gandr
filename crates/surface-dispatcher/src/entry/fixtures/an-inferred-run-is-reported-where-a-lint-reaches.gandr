@@ -1,6 +1,6 @@
 def id(n : Integer) -> Integer { n }
-@[ explicit_runs("effects") ]
+@[explicit_runs("effects")]
 def effects(n : Integer) -> Integer { id (id n) }
-@[ explicit_runs ]
+@[explicit_runs]
 def every(n : Integer) -> Integer { id (id n) }
 def unasked(n : Integer) -> Integer { id (id n) }

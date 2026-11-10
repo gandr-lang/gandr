@@ -54,21 +54,21 @@ def rec cView(bs : List Integer) -> CView =
     }
 
 /// `hi` builds an owned `hi` string with a zero.
-@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
 def hi() -> List Integer { terminated (Cons 104 (Cons 105 Nil) : List Integer) }
 
 /// `hiForC` lets C borrow the stored `hi` bytes.
-@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
 def hiForC() -> List Integer { let bs = force hi; let v = cView bs; match v {
   | Borrowed(t) => t
   | Interior => Nil
 } }
 
 /// This test refuses a string with an interior zero.
-@[ runs("Interior") ]
+@[runs("Interior")]
 def cut() -> CView =
   cView (terminated (Cons 104 (Cons 0 (Cons 105 Nil)) : List Integer))
 
 /// This test refuses bytes without a final zero.
-@[ runs("Interior") ]
+@[runs("Interior")]
 def unterminated() -> CView { cView (Cons 104 (Cons 105 Nil) : List Integer) }

@@ -9,5 +9,5 @@ import "../../model/identity/circle-base.gandr";
 
 /// The loop beside the reflexivity at the point, refused: they are two
 /// certificates of one boundary that no rule identifies.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def loopIsHere : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base) = Path.here loop;

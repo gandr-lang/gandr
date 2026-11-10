@@ -1,4 +1,5 @@
-/// `ShadowedBuiltin`: a declared name or binder over a builtin, under the reject policy.
-@[ refuses("ShadowedBuiltin") ]
+/// `ShadowedBuiltin`: a declared name or binder over a builtin, under
+/// the reject policy.
+@[refuses("ShadowedBuiltin")]
 data Unit : Type where
   | Pt : Unit

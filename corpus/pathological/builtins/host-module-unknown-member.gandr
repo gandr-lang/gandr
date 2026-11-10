@@ -5,5 +5,5 @@
 // - see: #1106 — `copied`
 
 /// `fs.copy`, an operation `fs` does not have.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def copied = fs.copy "/a" "/b";

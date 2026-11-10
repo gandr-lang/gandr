@@ -1,6 +1,9 @@
 /// `circuit-algebras`: Circuit algebras.
-/// Implemented: a circuit rule's body read as a monogamous acyclic wiring, matched by embedding with a convexity check and compared by its diagram normal form; a wheel's feed kept beside its cut-open wiring.
-/// Not implemented: a model of a theory holding a circuit rule, which is refused, so no wheel runs.
+/// Implemented: a circuit rule's body read as a monogamous acyclic wiring,
+/// matched by embedding with a convexity check and compared by its diagram
+/// normal form; a wheel's feed kept beside its cut-open wiring.
+/// Not implemented: a model of a theory holding a circuit rule, which is
+/// refused, so no wheel runs.
 ///
 /// - owes: #1323
 //! A circuit rule in a `theory` block: a rule whose inputs are a rewrite and
@@ -13,7 +16,7 @@
 //! [Lafont-1990-interaction_nets]: https://doi.org/10.1145/96709.96718 "Lafont, Interaction Nets"
 
 /// A data family whose constructors are written with the circuit arrow.
-@[ checks ]
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat

@@ -9,7 +9,7 @@
 // - see: #525
 
 /// Mapping twice fused into mapping once, over the `def`.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory MapLaws where
   sort L : Type;
 

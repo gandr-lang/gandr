@@ -1,9 +1,9 @@
 error[CrossBlockReference]: the datatype's field 0 of constructor 0 refers to a declaration written after it
-  ╭▸ corpus/ledger/diagnostics/CrossBlockReference.gandr:4:3
+  ╭▸ corpus/ledger/diagnostics/CrossBlockReference.gandr:5:3
   │
-4 │ ┏   data Front : Type where {
-5 │ ┃     | Hold : (b : Back) --> Front
-6 │ ┃   }
+5 │ ┏   data Front : Type where {
+6 │ ┃     | Hold : (b : Back) --> Front
+7 │ ┃   }
   │ ┗━━━┛ names a later declaration
   │
   ├ note: `Front` is refused with CrossBlockReference, as its expectation states

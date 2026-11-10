@@ -31,7 +31,7 @@ pub def covered : String = "4758525001000600000000000000200001000000000000000000
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
-@[ runs("\"holds\"") ]
+@[runs("\"holds\"")]
 def coveredModelled() -> String =
   handle r : std.reals.Eff {
     decided covered 16

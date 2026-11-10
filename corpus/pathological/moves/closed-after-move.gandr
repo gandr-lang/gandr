@@ -13,7 +13,7 @@
 import "../../model/moves/file-base.gandr";
 
 /// `closedAfterMove` closes a handle that its send already consumed.
-@[ refuses("UsedAfterClose") ]
+@[refuses("UsedAfterClose")]
 def closedAfterMove() -> Unit =
   let file = fork (owner : File.Handle) { close owner };
   let task = fork (closer : File.Closer) {

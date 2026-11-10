@@ -29,7 +29,7 @@ import "./reals-base.gandr";
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
-@[ runs("\"holds\"") ]
+@[runs("\"holds\"")]
 def witnessedModelled() -> String =
   handle r : std.reals.Eff {
     decided witnessed 32

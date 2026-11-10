@@ -1,7 +1,7 @@
 error[NonUniformResult]: this generator's result does not apply its family to the family's parameters, then one term for each index
-  ╭▸ corpus/ledger/diagnostics/NonUniformResult.gandr:4:10
+  ╭▸ corpus/ledger/diagnostics/NonUniformResult.gandr:5:10
   │
-4 │   | Mk : Fixed(Integer)
+5 │   | Mk : Fixed(Integer)
   │          ━━━━━━━━━━━━━━ a result off the family's parameters
   │
   ├ note: `Fixed` is refused with NonUniformResult, as its expectation states

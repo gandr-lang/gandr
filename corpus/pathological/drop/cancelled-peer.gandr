@@ -19,7 +19,7 @@
 import std.process;
 
 /// The peer ends before the handler abandons the root continuation.
-@[ runs("7") ]
+@[runs("7")]
 def cancelled() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : !Integer. !Integer. end) {

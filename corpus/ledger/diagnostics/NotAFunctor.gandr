@@ -1,9 +1,9 @@
 /// `NotAFunctor`: a module binding applies a module that is no functor.
-@[ checks ]
+@[checks]
 module Plain where {
-  @[ runs("1") ]
+  @[runs("1")]
   def one = 1;
 }
 
-@[ refuses("NotAFunctor") ]
-module Applied = Plain(Plain) ;
+@[refuses("NotAFunctor")]
+module Applied = Plain(Plain);

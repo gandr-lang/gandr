@@ -8,5 +8,5 @@
 //! - see: #1057 — `escaped`
 
 /// `escaped` gives a host escape an integer.
-@[ refuses("OutOfFragment.shell_block") ]
+@[refuses("OutOfFragment.shell_block")]
 def escaped() -> -F Unit { #!{ printf '%s' $(1); } }

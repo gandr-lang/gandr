@@ -22,7 +22,7 @@
 import std.rand (lcg);
 
 /// A word of four bits: two draws of two bits, the first draw high.
-@[ distributes((
+@[distributes((
   "1/16 0",
   "1/16 1",
   "1/16 2",
@@ -39,20 +39,20 @@ import std.rand (lcg);
   "1/16 13",
   "1/16 14",
   "1/16 15"
-)) ]
+))]
 pub def word() -> [std.rand.Eff] Integer =
   let high = std.rand.draw 2
   let low = std.rand.draw 2
   high * 4 + low
 
 /// `word` under the generator of width 8 from the seed 0.
-@[ runs("4") ]
+@[runs("4")]
 def replayed() -> [std.rand.Eff] Integer =
   lcg 8 0 (word ())
 
 /// The first output of the generator over a uniform seed of 8 bits: its top
 /// two bits take each value at `1/4`.
-@[ distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3")) ]
+@[distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3"))]
 def firstOutput() -> [std.rand.Eff] Integer =
   let seed = std.rand.draw 8
   lcg 8 seed (std.rand.draw 2)

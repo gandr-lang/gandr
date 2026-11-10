@@ -17,11 +17,11 @@ def rounded(figure : Figure) -> Shape =
 
 /// To the figures and back as circles: the circle returns, the rectangle does
 /// not, refused at that pattern.
-@[ refuses("RoundTripDistinct") ]
+@[refuses("RoundTripDistinct")]
 def flattened = equiv Shapes.toFigure rounded;
 
 /// A type holding itself would be covered as a list is, its own field
 /// read as a tail; the coverage does not read one yet, so no equivalence
 /// decides it.
-@[ refuses("EquivUnsupported") ]
+@[refuses("EquivUnsupported")]
 def renumbering = equiv Renumber.step Renumber.step;

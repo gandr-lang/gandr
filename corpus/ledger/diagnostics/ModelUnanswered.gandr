@@ -1,14 +1,15 @@
-/// `ModelUnanswered`: a call omitting a model implicit no module in scope answers at the types its arguments force.
+/// `ModelUnanswered`: a call omitting a model implicit no module in scope
+/// answers at the types its arguments force.
 ///
 /// A unit: a carrier and its one element.
-@[ checks ]
+@[checks]
 theory Pointed where
   sort C : Type;
   oper point : C;
 
 /// The point, over any pointed type the slot names.
-@[ checks ]
+@[checks]
 def pointOf[p : Model Pointed](c : p.C) -> p.C { p.point }
 
-@[ refuses("ModelUnanswered") ]
+@[refuses("ModelUnanswered")]
 def unanswered() -> Integer { pointOf 3 }

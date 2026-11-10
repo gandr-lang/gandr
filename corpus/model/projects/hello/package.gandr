@@ -42,13 +42,13 @@ pub module Package : Model(Gandr.Package) where
 
 /// The greeting, read from the module `text.greet` by its path, at the type
 /// an import at a signature matches it by.
-@[ runs("\"hello, world\"") ]
+@[runs("\"hello, world\"")]
 pub def welcome : String = text.greet.greeting;
 
 /// The greeting again, by the name the import lists.
-@[ runs("\"hello, world\"") ]
+@[runs("\"hello, world\"")]
 pub def hello : String = greeting;
 
 /// The tone, its type read through the module's whole path.
-@[ runs("Warm") ]
+@[runs("Warm")]
 pub def tone : text.tone.kind.Tone = text.tone.kind.warm;

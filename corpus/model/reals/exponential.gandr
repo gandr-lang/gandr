@@ -44,7 +44,7 @@ pub def eBounds() -> [std.reals.Eff] String =
 
 /// `eBounds` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
-@[ runs("\"holds holds\"") ]
+@[runs("\"holds holds\"")]
 def eBoundsModelled() -> String =
   handle r : std.reals.Eff {
     eBounds ()

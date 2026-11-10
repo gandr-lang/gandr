@@ -5,7 +5,7 @@ error[NotInverse]: the `ua` translators are not inverse to each other
    │ ┏━━━━━━━━━━━━━━━━┛
 29 │ ┃   1,
 30 │ ┃   4
-31 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep}) ;
+31 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep});
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ translators that are not inverse
    │
    ├ note: `lopsided` is refused with NotInverse, as its expectation states

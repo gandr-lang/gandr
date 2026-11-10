@@ -5,6 +5,6 @@ import std.list (List);
 
 /// A list's first element, as a method's place.
 module Places where {
-  @[ checks ]
+  @[checks]
   def first[m : Mode](self : m List Integer) -> -F View[m](Integer) { self.#[0] }
 }

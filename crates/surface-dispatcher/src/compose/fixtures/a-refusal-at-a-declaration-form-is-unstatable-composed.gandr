@@ -1,6 +1,6 @@
-@[ refuses("ImplicitTelescope") ]
+@[refuses("ImplicitTelescope")]
 def f[a : Type] = 1;
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def g = missing;
 def h = 1;
-module M : *{ x : Integer, z : Integer } where { def x = 1; }
+module M : *{x : Integer, z : Integer} where { def x = 1; }

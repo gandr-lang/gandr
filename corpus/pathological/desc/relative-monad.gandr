@@ -8,7 +8,7 @@ import std.list (List);
 /// Extending an extension by `l` is extending by `l` alone: the inner
 /// continuation `k` is lost. Against the left unit law at `ext(ext(ret(a), k),
 /// l)`, one rule leaves `l(a)` and the other `ext(k(a), l)`.
-@[ refuses("RulesOverlapSecondOrder") ]
+@[refuses("RulesOverlapSecondOrder")]
 theory MonadLossy where
   sort V : Type+;
   sort C : Type;
@@ -26,7 +26,7 @@ theory Carrier where
 /// not classify.
 module ValueCarrier : Model(Carrier) where {
   /// The lists at each type, a value type.
-  @[ refuses("FamilyTelescope") ]
+  @[refuses("FamilyTelescope")]
   type T(a : Type) = List a;
 }
 
@@ -39,6 +39,6 @@ theory ValueSort where
 /// `Type` does not classify.
 module ComputationCarrier : Model(ValueSort) where {
   /// A computation returning a list at each type.
-  @[ refuses("FamilyTelescope") ]
+  @[refuses("FamilyTelescope")]
   type T(a : Type) = -F List a;
 }

@@ -1,7 +1,7 @@
 /// An unwind that performs an operation: an abort runs the unwind while the
 /// access is torn down, under the empty row, so no handler may be asked for
 /// anything there.
-@[ refuses("UnwindEffect") ]
+@[refuses("UnwindEffect")]
 def noisy(p : Cap { exit }) -> Integer =
   var c = 0
   access c as v { abort v } unwind { p.exit 1 };

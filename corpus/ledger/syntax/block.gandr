@@ -4,7 +4,7 @@
 import std.list (List);
 
 /// A block's value bound, then read with a local beside it.
-@[ checks ]
+@[checks]
 def answer() -> -F Integer =
   let n = { pure 40 };
   let one = 1
@@ -12,25 +12,25 @@ def answer() -> -F Integer =
   return m + one
 
 /// A name a `let` binds reads as the value itself.
-@[ checks ]
+@[checks]
 def three() -> -F Path(3, 3) =
   let x = 3
   return Path.here x
 
 /// The checker checks the value a `let` binds at the `let`, read or not.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def unread() -> -F Integer =
   let y = (1 : Bool)
   return 2
 
 /// The block holds the value a `let` binds once, and each use reads it.
-@[ runs("42") ]
+@[runs("42")]
 def doubled() -> -F Integer =
   let x = 20 + 1
   return x + x
 
 /// A `var` holds a value over the rest of its block; an access writes it.
-@[ checks ]
+@[checks]
 def counted() -> -F Integer =
   var c = 1
   access c as v { resume v (v + 1) };
@@ -39,7 +39,7 @@ def counted() -> -F Integer =
 /// An assignment writes a held place. `=` writes the right side's value, and
 /// `+=`, `-=` and `*=` write the operator over the place's value and it. The
 /// right side runs before the assignment lends the place.
-@[ checks ]
+@[checks]
 def assigned() -> -F Integer =
   var n = 1
   n = n + 1
@@ -48,7 +48,7 @@ def assigned() -> -F Integer =
   return n
 
 /// A `var` may state its value's type, and a list needs one.
-@[ checks ]
+@[checks]
 def listed() -> -F Integer =
   var xs : List Integer = #[1, 2]
   xs.#[0] += 1
@@ -56,7 +56,7 @@ def listed() -> -F Integer =
 
 /// A loop, an `if` or an access closing on its block, followed by another
 /// statement, needs no `;`.
-@[ checks ]
+@[checks]
 def looped() -> -F [Partial] Integer =
   var n = 0
   while n < 3 { n += 1; }

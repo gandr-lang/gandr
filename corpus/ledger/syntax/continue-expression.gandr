@@ -1,4 +1,4 @@
 /// `continue_expression`: a continue to the next iteration.
-@[ checks ]
+@[checks]
 def skip(n : Integer) -> -F [Partial] Integer =
   loop { continue }

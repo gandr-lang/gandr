@@ -43,7 +43,7 @@ def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> Integer =
   m.c
 
 /// The last entry of `triple`, observed.
-@[ runs("3") ]
+@[runs("3")]
 def tripled() -> Integer { third triple }
 
 /// The one entry of a lazy product of one is its one projection.
@@ -51,7 +51,7 @@ def only(m : +U &{get : -F Integer}) -> Integer =
   m.get
 
 /// The only entry of `single`, observed.
-@[ runs("1") ]
+@[runs("1")]
 def singled() -> Integer { only single }
 
 /// A lazy record written at its labels answers each label's entry. The
@@ -59,7 +59,7 @@ def singled() -> Integer { only single }
 def signed : +U &{get : -F Integer, put : -F String} = &{.put => "s", .get => 9};
 
 /// `observe` reads the entry `signed` writes at `get`. It runs to that entry.
-@[ runs("9") ]
+@[runs("9")]
 def signed_got() -> Integer { observe signed }
 
 /// `co` is an ordinary name. The lazy record takes its labels from its
@@ -67,7 +67,7 @@ def signed_got() -> Integer { observe signed }
 def co : +U &{get : -F Integer} = &{.get => 4};
 
 /// The entry the record named `co` writes at `get`.
-@[ runs("4") ]
+@[runs("4")]
 def co_got() -> Integer { only co }
 
 /// An entry observed by its position, counted from zero, is the entry its
@@ -80,7 +80,7 @@ def last(m : +U (-F Integer & -F String & -F Integer)) -> Integer =
   m.2
 
 /// The last component of `chained`, observed by its position.
-@[ runs("3") ]
+@[runs("3")]
 def lasted() -> Integer { last chained }
 
 /// A positional lazy record names no entry either, so each is observed by its
@@ -90,12 +90,12 @@ def spread(m : +U (-F Integer & -F String)) -> String =
 
 /// A position past a lazy product's last entry names nothing, and is refused
 /// as the unresolved name it is.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def beyond(m : +U (-F Integer & -F String)) -> -F String =
   m.2
 
-@[ refuses("OutOfFragment.WrongSort") ]
+@[refuses("OutOfFragment.WrongSort")]
 def unthunked : -F Integer & -F Integer;
 
-@[ refuses("OutOfFragment.WrongSort") ]
+@[refuses("OutOfFragment.WrongSort")]
 def menu : +U &{get : !Integer. end, put : ?Integer. end};

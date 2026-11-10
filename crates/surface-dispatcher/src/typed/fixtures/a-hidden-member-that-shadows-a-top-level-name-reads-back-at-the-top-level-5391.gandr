@@ -1,4 +1,4 @@
-theory Fam where { sort Con : Type; oper base : Con; }
+theory Fam where {sort Con : Type; oper base : Con;}
 def first(_n : Integer) -> Type { return Integer }
 def wrap(x : first(1)) -> first(1) { x }
 module Left : Model(Fam) where

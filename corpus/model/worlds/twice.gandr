@@ -11,13 +11,13 @@
 // The operator and seat worlds define each entry.
 import "./seat-and-operator.gandr";
 
-@[ entry(*{operator, seat, seat}), runs("42") ]
+@[entry(*{operator, seat, seat}), runs("42")]
 def twice() -> Integer =
   let held : Integer at seat = migrate [seat] { (hold 21) };
   let n at seat = held
   migrate [seat] { pure (n * 2) }
 
-@[ entry(*{operator, seat, seat}), runs("*{.done = 3, .left = 4}") ]
+@[entry(*{operator, seat, seat}), runs("*{.done = 3, .left = 4}")]
 def reread() -> *{done : Integer, left : Integer} =
   let held : *{done : Integer, left : Integer} at seat = migrate [seat] {
     (hold *{done = 3, left = 4})

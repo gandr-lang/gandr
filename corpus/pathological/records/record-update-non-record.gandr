@@ -6,5 +6,5 @@ def n = 5;
 
 /// The integer updated as if a record: a shape mismatch at `n`, wanting a
 /// record.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def updated = *{n | x = 1};

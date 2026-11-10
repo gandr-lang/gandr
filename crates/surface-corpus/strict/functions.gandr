@@ -1,17 +1,17 @@
-@[ runs("fun (a) { a }") ]
+@[runs("fun (a) { a }")]
 def identity(x : Integer) -> Integer { x }
 
-@[ runs("fun (a) { fun (b) { a } }") ]
+@[runs("fun (a) { fun (b) { a } }")]
 def first(x : Integer, y : Integer) -> Integer { x }
 
-@[ runs("42") ]
+@[runs("42")]
 def answer : Integer = 42;
 
-@[ runs("42") ]
+@[runs("42")]
 def applied() -> Integer { become (force identity) answer }
 
-@[ runs("42") ]
+@[runs("42")]
 def chosen() -> Integer { become (force first) answer 7 }
 
-@[ runs("\"later\"") ]
+@[runs("\"later\"")]
 def delayed() -> String { "later" }

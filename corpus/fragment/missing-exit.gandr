@@ -1,32 +1,32 @@
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ checks ]
+@[checks]
 def rec down(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
     | Succ(p) => become down[<] p
 
-@[ checks ]
+@[checks]
 def produced(n : Nat) -> -F Nat { pure n }
 
-@[ checks ]
+@[checks]
 def called(n : Nat) -> -F Nat { down n }
 
-@[ checks ]
+@[checks]
 def one_arm(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
     | Succ(p) => pure p
 
-@[ checks ]
+@[checks]
 def sequenced(n : Nat) -> -F Nat =
   let m = down n
   pure m
 
-@[ checks ]
+@[checks]
 def nested(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
@@ -37,13 +37,13 @@ def nested(n : Nat) -> -F Nat =
       pure q
     }
 
-@[ checks ]
+@[checks]
 def thunked() -> -F Nat { pure Zero }
 
-@[ checks ]
+@[checks]
 def lambda(n : Nat) -> -F Nat { pure n }
 
-@[ checks ]
+@[checks]
 def bound(n : Nat) -> -F Nat =
   let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p };
   return m

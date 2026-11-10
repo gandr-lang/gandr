@@ -78,7 +78,7 @@ pub module Endo : Model(Monoid) where
     Path.here f
 
 /// `composed` adds one, then doubles `3`.
-@[ runs("8") ]
+@[runs("8")]
 def composed() -> Integer =
   let h = Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 })
   h 3

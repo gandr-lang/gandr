@@ -24,60 +24,60 @@ module ByHand where {
   type Tel = Unit * (+{Unit} * Bool);
 
   /// `opposite` derives the path from the binary corolla swap.
-  @[ checks ]
+  @[checks]
   def opposite = ua[
     1,
     4
   ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
   /// `opposite_by_hand` writes the same path by hand.
-  @[ checks ]
+  @[checks]
   def opposite_by_hand : Path[.A = Type](Tel, Tel) = Path.product
     (Path.here (Unit))
     (Path.product (equiv keep keep) (equiv exchange exchange));
 
   /// `same` proves that the derived and hand paths convert.
-  @[ checks ]
+  @[checks]
   def same : Path[.A = Path[.A = Type](Tel, Tel)](opposite, opposite_by_hand) = Path.here opposite;
 
   /// `moves` transports the binary corolla boolean along the hand path.
-  @[ checks ]
+  @[checks]
   def moves : Path[.A = Tel](
     Path.walk (fun (X) { X }) opposite_by_hand (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
     *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
   ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
   /// `alike` gives the same telescope from either path.
-  @[ checks ]
+  @[checks]
   def alike : Path[.A = Tel](
     Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
     Path.walk (fun (X) { X }) opposite_by_hand (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})
   ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
   /// `opposite_dir_by_hand` writes the directed twin by hand.
-  @[ checks ]
+  @[checks]
   def opposite_dir_by_hand : Flow[.A = Type](Tel, Tel) = Flow.product
     (Flow.stay (Unit))
     (Flow.product (Flow.into keep) (Flow.into exchange));
 
   /// `forth` rides a telescope along the directed twin.
-  @[ checks ]
+  @[checks]
   def forth(t : Tel) -> Tel =
     Flow.ride (fun (X) { X }) opposite_dir_by_hand t
 
   /// `ridden` runs the forward ride on one telescope.
-  @[ runs("*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}") ]
+  @[runs("*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}")]
   def ridden : () -> Tel = forth (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
 
   /// `rides` equates a directed ride with the transport result.
-  @[ checks ]
+  @[checks]
   def rides : Path[.A = Tel](
     Flow.ride (fun (X) { X }) opposite_dir_by_hand (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
     *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
   ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
   /// `reversed` refuses a contravariant directed ride.
-  @[ refuses("NonCovariantMotive") ]
+  @[refuses("NonCovariantMotive")]
   def reversed() -> Flow[.A = Type](Tel, Tel) =
     Flow.ride (fun (X) { type(Flow[.A = Type](X, Tel)) }) opposite_dir_by_hand (Flow.stay Tel)
 }

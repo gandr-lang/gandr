@@ -8,7 +8,7 @@ import "../../model/tasks/task-base.gandr";
 import std.process;
 
 /// A task exiting through its scope's capability after closing its end.
-@[ refuses("CapabilityEscaped") ]
+@[refuses("CapabilityEscaped")]
 def outlived() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Task.Join) {

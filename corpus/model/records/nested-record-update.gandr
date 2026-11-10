@@ -11,6 +11,6 @@
 def outer = *{tag = "t", inner = *{x = 1, y = 2}};
 
 /// `updated` rebuilds `outer` after it changes `inner.y`.
-@[ runs("*{.inner = *{.x = 1, .y = 9}, .tag = \"t\"}") ]
+@[runs("*{.inner = *{.x = 1, .y = 9}, .tag = \"t\"}")]
 def updated() -> *{tag : String, inner : *{x : Integer, y : Integer}} =
   *{outer | inner = *{outer.inner | y = 9}}

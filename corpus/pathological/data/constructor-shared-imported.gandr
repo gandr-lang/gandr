@@ -16,5 +16,5 @@ import "../../model/data/constructor-shared-name.gandr";
 def stop : Light = Light.Red;
 
 /// The red lamp, written bare.
-@[ refuses("AmbiguousConstructor") ]
+@[refuses("AmbiguousConstructor")]
 def lamp : Light = Red;

@@ -18,19 +18,19 @@ codata Stream : Type[-] where
   tail : Stream;
 
 /// Point is refused because its kind is a value universe.
-@[ refuses("CodataKindNotUniverse") ]
+@[refuses("CodataKindNotUniverse")]
 codata Point : Type where
   x : Integer;
   depth : Integer;
 
 /// Swap is refused because its recursive occurrence reverses its parameters.
-@[ refuses("CodataOccurrence") ]
+@[refuses("CodataOccurrence")]
 codata Swap(a : Type, b : Type) : Type[-] where
   head : a;
   tail : Swap b a;
 
 /// Twisted is refused because its recursive occurrence nests its own argument.
-@[ refuses("CodataOccurrence") ]
+@[refuses("CodataOccurrence")]
 codata Twisted(a : Type) : Type[-] where
   head : a;
   tail : Twisted (Twisted a);
@@ -42,12 +42,12 @@ codata Spot : Type[-] where
   depth : Integer;
 
 /// shallow is refused because it leaves depth unanswered.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 def shallow(n : Integer) -> Spot =
   &{.x => return n, .y => return n}
 
 /// stray is refused because it answers no declared z observation.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def stray(n : Integer) -> Spot =
   &{.x => return n, .y => return n, .z => return n}
 
@@ -67,7 +67,7 @@ def rec sums(s : +U Stream, t : +U Stream) -> Stream =
   }
 
 /// fibs is refused because sums hides its recursive call from the guard.
-@[ refuses("UnguardedCorecursion") ]
+@[refuses("UnguardedCorecursion")]
 def rec fibs(n : Integer) -> Stream =
   &{
     .head => return n,
@@ -75,12 +75,12 @@ def rec fibs(n : Integer) -> Stream =
   }
 
 /// deferred is refused because its productive call stands under become.
-@[ refuses("UnguardedCorecursion") ]
+@[refuses("UnguardedCorecursion")]
 def rec deferred(n : Integer) -> Stream =
   &{.head => return n, .tail => become deferred[>] n}
 
 /// bare is refused because its productive call stands outside
 /// a copattern block.
-@[ refuses("UnguardedCorecursion") ]
+@[refuses("UnguardedCorecursion")]
 def rec bare(n : Integer) -> Stream =
   bare[>] n

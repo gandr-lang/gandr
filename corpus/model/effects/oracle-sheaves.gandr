@@ -74,11 +74,11 @@ def asked : Tree Two branches Nat = Node
 def right(a : Two) -> Two { R }
 
 /// The run follows the right answer.
-@[ runs("Succ Zero") ]
+@[runs("Succ Zero")]
 def ran : () -> Nat = answer Two branches Nat right asked;
 
 /// Bind adds one at the leaf, and the run follows the right answer.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def bound : () -> Nat = answer
   Two
   branches

@@ -1,4 +1,5 @@
-/// `boundary`: names the row each member of an `extern "rust"` block is admitted against.
+/// `boundary`: names the row each member of an `extern "rust"` block
+/// is admitted against.
 data Scalar : Type where
   | U32 : Scalar
 data Code : Type where
@@ -21,8 +22,8 @@ data Admission : Type where
 def admitBlock(ss : Signatures, rs : Rows) -> Admission =
   Admitted
 def addRow : Row = Row (Plain U32);
-@[ boundary(addRow) ]
-@[ checks ]
+@[boundary(addRow)]
+@[checks]
 extern "rust" from "adder" as Adder {
   def add(x : u32) -> u32;
 }

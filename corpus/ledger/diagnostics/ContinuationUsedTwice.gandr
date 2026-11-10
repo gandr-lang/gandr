@@ -1,4 +1,5 @@
-/// `ContinuationUsedTwice`: a continuation holding an obligation resumed or abandoned a second time.
+/// `ContinuationUsedTwice`: a continuation holding an obligation resumed or
+/// abandoned a second time.
 
 // Early exit's host interface.
 import std.process;
@@ -19,14 +20,14 @@ module Ring :> *{
   type Sqe = String;
   type Cqe = Integer;
   /// The entry a read submits.
-  @[ checks ]
+  @[checks]
   def read = "read";
   /// The result its completion posts.
-  @[ checks ]
+  @[checks]
   def done = 0;
 }
 
-@[ refuses("ContinuationUsedTwice") ]
+@[refuses("ContinuationUsedTwice")]
 def resumedTwice() -> -F Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
@@ -40,5 +41,5 @@ def resumedTwice() -> -F Unit =
     close ring
   } with {
     | pure(x) => pure x
-    | oper exit(code, k) => { let first = k *{} ; k *{} }
+    | oper exit(code, k) => { let first = k *{}; k *{} }
   }

@@ -57,7 +57,7 @@ def alongParameter(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Cir
   Path.here (Path.ap invLooper p)
 
 /// The flip's image of the loop is not the loop.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def alongFlippedApart : Path[.A = Path[.A = Circle](Base, Base)](
   carry Circle Circle invLooper Base Base loop,
   loop

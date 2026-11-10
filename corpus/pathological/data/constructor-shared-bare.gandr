@@ -23,11 +23,11 @@ data Light : Type where
   | Amber : Light
 
 /// The red lamp, written bare.
-@[ refuses("AmbiguousConstructor") ]
+@[refuses("AmbiguousConstructor")]
 def lamp : Light = Red;
 
 /// The pause that a lamp asks for. The match writes the red lamp bare.
-@[ refuses("AmbiguousConstructor") ]
+@[refuses("AmbiguousConstructor")]
 def pause(l : Light) -> Integer =
   match l where
     | Red => 2

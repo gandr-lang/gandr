@@ -13,5 +13,5 @@ def answered() -> Integer { handle st : Store.Eff with sort S = Integer { read (
 theory Marks where {
   sort C : Type;
   oper mark : (k : C) --> C;
-  rule kept : mark (mark k) <=> mark k where { | under [Store.Eff | r] };
+  rule kept : mark (mark k) <=> mark k where {| under [Store.Eff | r]};
 }

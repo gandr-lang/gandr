@@ -17,7 +17,7 @@ data N : Type where
   | S : (n : N) --> N
 
 /// An indexed family with a rule over its constructors is refused.
-@[ refuses("OutOfFragment.Indexed") ]
+@[refuses("OutOfFragment.Indexed")]
 data Prog : N -> Type where {
   /// The program that stops, at index zero.
   | Stop : Prog Z

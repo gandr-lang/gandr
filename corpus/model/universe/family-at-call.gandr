@@ -11,7 +11,7 @@
 /// The `useAtExtension` function applies a family to the result of an
 /// operation. The term `q(g)` stands at `tm(extend(g))`, the second domain of
 /// `use` at `extend(g)`.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 def useAtExtension(
   con : Type,
   tm : +U (con -> -F Type),
@@ -24,7 +24,7 @@ def useAtExtension(
 
 /// The `useAtVariable` function applies the family to a variable. It needs no
 /// call before it.
-@[ checks ]
+@[checks]
 def useAtVariable(
   con : Type,
   tm : +U (con -> -F Type),
@@ -36,7 +36,7 @@ def useAtVariable(
 
 /// The `fieldAt` function states the law of `useAtExtension` as a record field.
 /// Each later field type reads the family field by its label.
-@[ checks ]
+@[checks]
 def fieldAt(
   m : *{
     con : Type,
@@ -51,7 +51,7 @@ def fieldAt(
 
 /// The `familyRecord` value holds a family and an operation into it. The
 /// constant family gives the operation field the type `Unit => Unit`.
-@[ checks ]
+@[checks]
 def familyRecord : *{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
 def familyRecord = *{Unit, *{thunk { fun (g) { return Unit } }, thunk { fun (g) { return *{} } }}};
 
@@ -62,11 +62,11 @@ def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type { post x }
 /// The `appliedWrittenOut` function returns `post(x)` at the type
 /// `appliedVia(post, x)`. The unfolded definition converts with the call of the
 /// variable.
-@[ checks ]
+@[checks]
 def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post(x)) -> appliedVia(post, x) =
   h
 
 /// The `appliedFolded` function converts in the other direction. It returns
 /// `appliedVia(post, x)` at the type `post(x)`.
-@[ checks ]
+@[checks]
 def appliedFolded(post : +U (Unit -> -F Type), x : Unit, h : appliedVia(post, x)) -> post(x) { h }

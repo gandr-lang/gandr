@@ -19,17 +19,17 @@ pub theory Counter where
 pub module Up : Model(Counter) where {
   type C = Unit + (Unit + Unit);
   /// Zero.
-  @[ checks ]
+  @[checks]
   def zero = +{.0 = *{}};
   /// One count more.
-  @[ checks ]
+  @[checks]
   def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
     match c where
       | +{.0 = u} => +{.1 = +{.0 = u}}
       | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
       | +{.1 = +{.1 = u}} => +{.0 = u}
   /// The count as an integer.
-  @[ checks ]
+  @[checks]
   def read(c : Unit + (Unit + Unit)) -> Integer =
     match c where
       | +{.0 = u} => 0
@@ -41,17 +41,17 @@ pub module Up : Model(Counter) where {
 module Down : Model(Counter) where {
   type C = Unit + (Unit + Unit);
   /// Zero.
-  @[ checks ]
+  @[checks]
   def zero = +{.0 = *{}};
   /// One count less.
-  @[ checks ]
+  @[checks]
   def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
     match c where
       | +{.0 = u} => +{.1 = +{.1 = u}}
       | +{.1 = +{.0 = u}} => +{.0 = u}
       | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
   /// The negated count as an integer.
-  @[ checks ]
+  @[checks]
   def read(c : Unit + (Unit + Unit)) -> Integer =
     match c where
       | +{.0 = u} => 0
@@ -102,11 +102,11 @@ pub def observe(m : Model Counter) -> Integer =
     | *{.zero = z, .incr = i, .read = r} => r (i z)
 
 /// The consumer reads the upward counter.
-@[ runs("1") ]
+@[runs("1")]
 def observedUp() -> Integer { observe upModel }
 
 /// The consumer reads the downward counter.
-@[ runs("1") ]
+@[runs("1")]
 def observedDown() -> Integer { observe downModel }
 
 /// The consumer gives equal readings for related models.

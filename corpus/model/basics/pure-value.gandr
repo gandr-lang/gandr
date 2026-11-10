@@ -25,12 +25,12 @@ def flip(p : Parity) -> Parity =
     | Odd => Even
 
 /// A call as the definition's own value.
-@[ runs("Odd") ]
+@[runs("Odd")]
 def odd : Parity = flip Even;
 
 /// This definition value pairs two calls.
 /// Each call runs before the pair.
-@[ runs("*{Odd, Even}") ]
+@[runs("*{Odd, Even}")]
 def flipped : Parity * Parity = *{flip Even, flip Odd};
 
 /// The definition identified with the constructor its call computes.

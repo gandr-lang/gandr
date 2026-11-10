@@ -3,10 +3,10 @@
 // a module
 module M where {
   /// one
-  @[ checks ]
+  @[checks]
   def one = 1;
   def two = 2;
-  @[ checks ]
+  @[checks]
   def three = 3;
 }
 

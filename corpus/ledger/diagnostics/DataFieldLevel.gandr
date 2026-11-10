@@ -1,4 +1,4 @@
 /// `DataFieldLevel`: a constructor field exceeds the declared universe.
-@[ refuses("DataFieldLevel") ]
+@[refuses("DataFieldLevel")]
 data Small : Type where
   | Pick : (a : Type, f : +U (a -> -F Small)) --> Small

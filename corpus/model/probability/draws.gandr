@@ -27,7 +27,7 @@ import std.rand;
 
 /// The sum of two integers, each a draw of two bits: 0 and 6 come from one
 /// pair each, 3 from four pairs.
-@[ distributes(("1/16 0", "1/8 1", "3/16 2", "1/4 3", "3/16 4", "1/8 5", "1/16 6")) ]
+@[distributes(("1/16 0", "1/8 1", "3/16 2", "1/4 3", "3/16 4", "1/8 5", "1/16 6"))]
 pub def summed() -> [std.rand.Eff] Integer =
   let first = std.rand.draw 2
   let second = std.rand.draw 2
@@ -63,7 +63,7 @@ def summedFrom() -> (List Integer -> Integer) =
   }
 
 /// `summedFrom` over `#[3, 2]`: the sum is 5.
-@[ runs("5") ]
+@[runs("5")]
 def summedModelled() -> Integer =
   let answer = summedFrom ()
   answer #[3, 2]

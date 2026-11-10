@@ -2932,20 +2932,20 @@ fn static_operators_spell_as_the_grammar_writes_them()
         ),
         (
             Root::Value(CoreNode::Value(squaring)),
-            "fun (a) { type(-F *{a, a}) }",
+            "fun (a) {type(-F *{a, a})}",
         ),
         (
             Root::Value(CoreNode::Value(nested)),
-            "fun (a) { fun (b) { type(*{a, b}) } }",
+            "fun (a) {fun (b) {type(*{a, b})}}",
         ),
         (Root::Value(CoreNode::Value(once)), "t Integer"),
         (
             Root::Value(CoreNode::Value(applied)),
-            "t (fun (a) { type(-F *{a, a}) }) Integer Integer",
+            "t (fun (a) {type(-F *{a, a})}) Integer Integer",
         ),
         (
             Root::Type(CoreNode::ValueType(decoded)),
-            "t(fun (a) { type(-F *{a, a}) }, Integer, Integer)",
+            "t(fun (a) {type(-F *{a, a})}, Integer, Integer)",
         ),
     ] {
         assert_eq!(

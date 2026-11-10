@@ -54,7 +54,7 @@ def throughBoth(b : Circle) -> Path[.A = Circle](second Base (first b Base), b) 
 
 /// The checker refuses `twisted` because transport maps reflexivity to
 /// the loop inverse.
-@[ refuses("LoopNotRespected") ]
+@[refuses("LoopNotRespected")]
 def twisted(b : Circle) -> Path[.A = Circle](first b Base, Base) =
   match b where
     | Base => Path.here Base

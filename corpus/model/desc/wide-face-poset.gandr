@@ -76,5 +76,5 @@ def placed_replicas(d : Deploy[
 /// `wide_deployment` stands at the system by the coercion in: each
 /// of its fields
 /// converts with the value that the system fixes.
-@[ runs("3") ]
+@[runs("3")]
 def local_replicas : Integer = placed_replicas (wide_deployment);

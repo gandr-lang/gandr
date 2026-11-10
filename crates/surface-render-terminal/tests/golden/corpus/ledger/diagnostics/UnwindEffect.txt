@@ -1,7 +1,7 @@
 error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an effect
   ╭▸ corpus/ledger/diagnostics/UnwindEffect.gandr:5:38
   │
-3 │   def noisy(p : Cap {exit}) -> -F Integer =
+3 │   def noisy(p : Cap { exit }) -> -F Integer =
   │   │         ─ checked against `Cap {exit} -> -F Integer`; while checking the body of this function; binds p : Cap {exit}
   │ ┌─┘
   │ │

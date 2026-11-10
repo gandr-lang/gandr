@@ -1,6 +1,6 @@
 /// `OutOfFragment.WrongSort.declaration`: a stray, a form at the root that is
 /// no declaration and no expression: here an arm outside any match.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[refuses("OutOfFragment.WrongSort.declaration")]
 | x => 1 ;
 
 /// The definition after it.

@@ -28,7 +28,7 @@ def keptPair(a : Type, b : Type, p : a * b) -> a * b =
   x
 
 /// A computation returning an `a` is not ascribed a `b`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def misnamed(a : Type, b : Type, y : a) -> a =
   let x : b = same a y
   y

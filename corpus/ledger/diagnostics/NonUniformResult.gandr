@@ -1,4 +1,5 @@
-/// `NonUniformResult`: a generator's result instantiates a parameter of its family.
-@[ refuses("NonUniformResult") ]
+/// `NonUniformResult`: a generator's result instantiates a parameter
+/// of its family.
+@[refuses("NonUniformResult")]
 data Fixed(a : Type) : Type where
   | Mk : Fixed(Integer)

@@ -2,5 +2,5 @@ def answer = 42;
 def broken = missing;
 def wrong : Integer;
 def wrong = "text";
-@[ owes(1) ]
+@[owes(1)]
 def later : Integer;

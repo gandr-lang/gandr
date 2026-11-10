@@ -72,13 +72,13 @@ def failing : Prog (Either ExnOp Void) Integer = Op (Left (Raise 4)) (fun (_r) {
 });
 
 /// `handled` removes exceptions and state from `guarded`.
-@[ runs("Returned 50") ]
+@[runs("Returned 50")]
 def handled() -> Outcome Integer =
   let p = runExn (Either StateOp Void) Integer guarded
   pureOf (Outcome Integer) (runState Void (Outcome Integer) p 4)
 
 /// `handledRaise` returns the exception from `raising`.
-@[ runs("Raised 4") ]
+@[runs("Raised 4")]
 def handledRaise() -> Outcome Integer =
   let p = runExn (Either StateOp Void) Integer raising
   pureOf (Outcome Integer) (runState Void (Outcome Integer) p 4)

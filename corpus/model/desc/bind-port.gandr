@@ -53,7 +53,7 @@ def rec abstracting(chain : Theory) -> Integer =
     | _ => 0
 
 /// Only `nu` abstracts in the restriction signature.
-@[ runs("1") ]
+@[runs("1")]
 def abstractions() -> Integer { match Restriction {
   | Presents(sorts, opers, rules) => abstracting opers
   | _ => 0

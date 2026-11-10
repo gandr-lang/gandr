@@ -3,5 +3,5 @@
 /// that width; `f32` is not admitted yet.
 ///
 /// - see: #1109
-@[ checks ]
-def half = 0.5f64 ;
+@[checks]
+def half = 0.5f64;

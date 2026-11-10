@@ -12,7 +12,7 @@ module FirstOrder : Model(State.Eff) with sort S = Integer where {
   /// The carrier.
   type C = Integer;
   /// A continuation at the carrier, not a function of the state.
-  @[ refuses("TypeMismatch") ]
+  @[refuses("TypeMismatch")]
   def get(k : Integer) -> Integer { k }
   /// Storing is forgotten.
   def put(_s : Integer, k : Integer) -> Integer { k }
@@ -21,7 +21,7 @@ module FirstOrder : Model(State.Eff) with sort S = Integer where {
 /// Put-get relates terms at `get`'s port, a path between host functions the
 /// model signature does not state: refused by the law's name at the
 /// module, even admitted.
-@[ refuses("UnstatedComponent.Binding") ]
+@[refuses("UnstatedComponent.Binding")]
 module PutGet : Model(StatePutGet) with sort S = Integer where
   /// A computation awaiting the current state.
   type C = +U (Integer -> -F Integer);

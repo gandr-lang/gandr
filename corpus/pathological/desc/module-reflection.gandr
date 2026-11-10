@@ -17,20 +17,20 @@ import std.string (concat);
 
 /// An encoder for the model of any theory. `Model(T)` over the variable `T`
 /// is refused, because `Model` reads a theory's name and not a value.
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def encodeAny(T : Theory, m : Model T) -> String = "";
 
 /// The `[package]` lines of a model. `name` and `version` are inert, so this
 /// function is refused at its first read of them.
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def manifest(m : Model (Gandr.Package)) -> String =
   concat (concat "name = " m.name) (concat "\nversion = " m.version)
 
 /// A package's entries, read by a declaration with no `@[ inert ]`. The
 /// entries hold the model's inert fields, so this is refused.
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) { packageEntries m }
 
 /// A package's lines, written by a declaration with no `@[ inert ]`.
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def written(m : Model (Gandr.Package)) -> String { render m }

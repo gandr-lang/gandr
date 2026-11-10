@@ -14,7 +14,7 @@ import "../data/data-base.gandr";
 rec {
   /// The `UL` codes name the naturals, the lists over a coded element, and the
   /// dependent functions.
-  @[ checks, form(explicit) ]
+  @[checks, form(explicit)]
   pub data UL : Type where {
     | NatL : UL
     | ListL : (a : UL) --> UL
@@ -23,7 +23,7 @@ rec {
 
   /// The `elL` decoder returns the value type of each code. It recurses below
   /// the code.
-  @[ checks ]
+  @[checks]
   pub def rec elL(u : UL) -> -F Type =
     match u where
       | NatL => return Nat
@@ -51,7 +51,7 @@ def rec total(c : UL) -> +U (elL(c) -> -F Nat) =
 
 /// The `countBeside` function counts a value beside its code. The arm of the
 /// natural code finds the value at `Nat`.
-@[ checks ]
+@[checks]
 def rec countBeside(c : UL, v : elL(c)) -> Nat =
   match c where
     | NatL => v
@@ -64,7 +64,7 @@ def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
 
 /// The `summed` run sums `lists` at the code of lists of lists. Its
 /// sum is three.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def summed() -> Nat =
   let sum = total (ListL (ListL NatL))
   sum lists

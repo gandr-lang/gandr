@@ -1,8 +1,8 @@
 error[LinearSlotConsumed]: the linear parameter is used a second time, and the function holds one copy of it
-  ╭▸ corpus/ledger/diagnostics/LinearSlotConsumed.gandr:3:40
+  ╭▸ corpus/ledger/diagnostics/LinearSlotConsumed.gandr:4:40
   │
-3 │ def twice(x : Integer) ⊸ Integer = x + x ;
-  │ ┬─────────┬────────────────────────┬───┯──
+4 │ def twice(x : Integer) ⊸ Integer = x + x;
+  │ ┬─────────┬────────────────────────┬───┯─
   │ │         │                        │   │
   │ │         │                        │   a linear parameter already used
   │ │         │                        checked against `-F Integer`; while checking the arguments of this operation

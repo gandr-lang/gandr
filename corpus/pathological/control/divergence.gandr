@@ -9,7 +9,7 @@
 
 /// A diverging loop's function, typed as if it returned: the loop's fixpoint
 /// is refused, its type named with `Partial` in the row.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def spinPure(x : Bool) -> Bool =
   let y = loop {
     let below = 1 < 0;
@@ -31,7 +31,7 @@ def spin(x : Bool) -> [Partial] Bool =
 
 /// A caller at the empty row of a function whose row holds `Partial`: the call
 /// synthesises the row, which the caller's does not include.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def spinFirst(x : Bool) -> Bool =
   spin x
 
@@ -39,7 +39,7 @@ def spinFirst(x : Bool) -> Bool =
 /// its subject, which
 /// may still run forever: it leaves `Partial` in its row, which the empty row
 /// does not include.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def tamed(x : Bool) -> Bool =
   handle c : Partial {
     spin x
@@ -49,7 +49,7 @@ def tamed(x : Bool) -> Bool =
 
 /// An unread call whose row holds `Partial` may run forever, so it is not the
 /// computation that follows it: the endpoints stay apart.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def unreadDiv(
   a : Type,
   b : Type,

@@ -6,14 +6,14 @@
 // - see: #577
 
 /// Natural numbers, free: every constructor term is its own value.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
 /// A family that reads its argument: the naturals at zero, and the functions
 /// on them at every successor.
-@[ checks ]
+@[checks]
 def pick(n : Nat) -> -F Type =
   match n where
     | Zero => return Nat
@@ -21,5 +21,5 @@ def pick(n : Nat) -> -F Type =
 
 /// A function over `pick` is no function to the naturals: `pick(x)` names
 /// `x`, so the dependent arrow is not the plain one.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) { return f }

@@ -1,7 +1,7 @@
 error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it would be produced
    ╭▸ corpus/pathological/identity/flow-back.gandr:12:5
    │
-10 │ ┌   @[ refuses("NonCovariantMotive") ]
+10 │ ┌   @[refuses("NonCovariantMotive")]
 11 │ │   def downgrade() -> Flow[.A = Type](New, Old) =
 12 │ │     Path.back upgrade
    │ │     ┯━━━━━━━━━━━━━━━│

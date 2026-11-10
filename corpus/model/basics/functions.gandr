@@ -17,7 +17,7 @@ def twice(x : Integer) -> Integer =
 
 /// This call nests an argument and then makes sixteen calls.
 /// The lowering runs the remainder in one region.
-@[ runs("18") ]
+@[runs("18")]
 def chained() -> Integer =
   let a = inc (inc 0)
   let b = inc a
@@ -37,5 +37,5 @@ def chained() -> Integer =
   inc (inc o)
 
 /// A call of `twice`.
-@[ runs("42") ]
+@[runs("42")]
 def answer() -> Integer { twice 40 }

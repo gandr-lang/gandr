@@ -21,29 +21,29 @@ def gate(q : Qubit) ⊸ Qubit = q;
 def thrice(q : Qubit) ⊸ Qubit = gate (gate (gate (q)));
 
 /// A copy of the qubit spends its one copy twice.
-@[ refuses("LinearSlotConsumed") ]
+@[refuses("LinearSlotConsumed")]
 def twice(q : Qubit) ⊸ Qubit * Qubit = *{q, q};
 
 /// A discard of the qubit leaves its one copy unread.
-@[ refuses("LinearSlotUnconsumed") ]
+@[refuses("LinearSlotUnconsumed")]
 def discard(q : Qubit) ⊸ Integer = 0;
 
 /// A binder at `->` may use the qubit any number of times.
-@[ refuses("ComonoidAbsent") ]
+@[refuses("ComonoidAbsent")]
 def keep(q : Qubit) -> Qubit = q;
 
 /// A program may use a declaration any number of times.
-@[ refuses("ComonoidAbsent") ]
+@[refuses("ComonoidAbsent")]
 def zero : Qubit = ?;
 
 /// A data field holds its value as a binder at `->` does.
-@[ refuses("ComonoidAbsent") ]
+@[refuses("ComonoidAbsent")]
 data Box : Type where
   /// The box that holds the qubit `q`.
   | MkBox : (q : Qubit) --> Box
 
 /// A data parameter holds its value in types only, and a qubit has no discard.
-@[ refuses("ComonoidAbsent") ]
+@[refuses("ComonoidAbsent")]
 data Tagged(q : Qubit) : Type where
   /// The one tag at the qubit `q`.
   | Tag : Tagged q

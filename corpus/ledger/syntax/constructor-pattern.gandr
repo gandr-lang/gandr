@@ -1,9 +1,9 @@
 /// `constructor_pattern`: a constructor pattern with its fields.
-@[ checks ]
+@[checks]
 data Stack : Type where
   | Empty : Stack
   | Push : (x : Integer, rest : Stack) --> Stack
-@[ checks ]
+@[checks]
 def first(xs : Stack) -> -F Integer =
   match xs where
     | Push(x, rest) => return x

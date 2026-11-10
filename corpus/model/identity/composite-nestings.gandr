@@ -121,7 +121,7 @@ def aroundTheLoop(
   Path.here (Path.step p (Path.step loop q))
 
 /// The checker refuses a composite whose paths use another order.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def reordered(
   A : Type,
   x : A,

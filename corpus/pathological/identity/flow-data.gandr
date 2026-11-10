@@ -28,7 +28,7 @@ module Repack where {
       | Boxed(x) => Boxed x
   /// A field naming a parameter is covered at the parameters' instance only
   /// once that cover lands, so no flow forwards by it yet.
-  @[ refuses("ForwardUnsupported") ]
+  @[refuses("ForwardUnsupported")]
   def repacked : Flow[.A = Type](Box Integer, Box Integer) = Flow.into rebox;
 }
 
@@ -41,6 +41,6 @@ pub module Renumber where {
       | Succ(m) => Succ m
   /// A type holding itself is covered as a list is, its own field a tail,
   /// only once that cover lands, so no flow forwards by it yet.
-  @[ refuses("ForwardUnsupported") ]
+  @[refuses("ForwardUnsupported")]
   def renumbered : Flow[.A = Type](Nat, Nat) = Flow.into step;
 }

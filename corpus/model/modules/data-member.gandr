@@ -27,11 +27,11 @@ def open(b : M.Box) -> Integer =
   match b { | M.B(x) => x }
 
 /// `five` builds and opens a box.
-@[ runs("5") ]
+@[runs("5")]
 def five() -> Integer =
   open (M.B 5)
 
 /// `own_box` opens `M.one`.
-@[ runs("1") ]
+@[runs("1")]
 def own_box() -> Integer =
   open M.one

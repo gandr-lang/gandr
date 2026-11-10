@@ -79,7 +79,7 @@ def beacon(seat : mu open. !Integer. open) -> Unit =
   }
 
 /// `followed` sends two reports and a retirement to a forked desk.
-@[ runs("*{}") ]
+@[runs("*{}")]
 def followed() -> Unit =
   let seat = fork (operator : mu open. &{
     report : ?Integer. open,

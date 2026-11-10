@@ -1,15 +1,15 @@
 error[BufferUnreturned]: the buffer placed live here is not handed back before its body ends
-   ╭▸ corpus/ledger/diagnostics/BufferUnreturned.gandr:10:5
+   ╭▸ corpus/ledger/diagnostics/BufferUnreturned.gandr:11:5
    │
- 8 │ ┌  def neverFreed() -> -F Unit =
- 9 │ │┌   handle r : std.io.Ring.Eff {
-10 │ ││     let b = r.alloc 4096;
+ 9 │ ┌  def neverFreed() -> -F Unit =
+10 │ │┌   handle r : std.io.Ring.Eff {
+11 │ ││     let b = r.alloc 4096;
    │ ││     ━━━ a buffer never handed back
-11 │ ││     pure *{}
-12 │ ││   } with {
+12 │ ││     pure *{}
+13 │ ││   } with {
    ┆ ┆┆
-15 │ ││     | oper free(b, k) => k *{}
-16 │ ││   }
+16 │ ││     | oper free(b, k) => k *{}
+17 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk

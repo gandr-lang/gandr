@@ -1,11 +1,11 @@
 def single = *{1,};
 
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def single_is_not_its_member : Integer = *{1,};
 
 def triple : Integer * Unit * String = *{1, *{}, "a"};
 
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def nesting_is_written : (Integer * Unit) * String = *{1, *{}, "a"};
 
 def nested : (Integer * Unit) * String = *{*{1, *{}}, "a"};

@@ -10,7 +10,7 @@ import "../../model/identity/circle-base.gandr";
 /// The accumulating sum with a predecessor moved onto the accumulator as a
 /// successor: at `S(P(x))` it computes `count(S(S(acc)), x)`, which no rule
 /// reads as `count(acc, x)`, so the case is refused at the first rule.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec count(acc : Int, b : Int) -> Int =
   match b where
     | Z => acc

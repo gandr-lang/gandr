@@ -1,7 +1,7 @@
 error[OutOfFragment.match_expression]: the match expression is not supported yet
-  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Unadmitted.gandr:3:49
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.Unadmitted.gandr:4:49
   │
-3 │ def stated(x : Void) -> -F Integer { match x -> -F Integer {} }
+4 │ def stated(x : Void) -> -F Integer { match x -> -F Integer {} }
   │                                                 ━━━━━━━━━━ a form the fragment does not admit
   │
   ├ note: `stated` is refused with OutOfFragment.match_expression, as its expectation states

@@ -39,7 +39,7 @@ module Written : Model(Monoid) where {
           | Plus => Path.here Plus
           | Minus => Path.here Minus
   /// The associator of four, refused: the derivation fills it.
-  @[ refuses("DerivedComponent") ]
+  @[refuses("DerivedComponent")]
   def assoc4(a : Sign, b : Sign, c : Sign, d : Sign) -> Path(
     mul (mul (mul a b) c) d,
     mul a (mul b (mul c d))

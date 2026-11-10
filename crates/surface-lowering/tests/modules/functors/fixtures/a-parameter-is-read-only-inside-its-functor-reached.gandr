@@ -1,2 +1,2 @@
-module Reach(S : *{ type T, seed : T }) where { def other = Seed.next; }
+module Reach(S : *{type T, seed : T}) where { def other = Seed.next; }
 module R = Reach(Seed);

@@ -1,6 +1,6 @@
 /// `break_expression`: a break out of a loop.
-@[ checks ]
+@[checks]
 def once(n : Integer) -> -F Integer {
-  loop { break; } ;
+  loop { break; };
   return n
 }

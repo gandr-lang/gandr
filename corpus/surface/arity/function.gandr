@@ -1,14 +1,14 @@
-@[ runs("1") ]
+@[runs("1")]
 def none() -> Integer { 1 }
 
-@[ runs("fun (a) { a }") ]
+@[runs("fun (a) { a }")]
 def one(x : Integer) -> Integer { x }
 
-@[ runs("fun (a) { fun (b) { a } }") ]
+@[runs("fun (a) { fun (b) { a } }")]
 def two(x : Integer, y : String) -> Integer { x }
 
-@[ runs("fun (a) { fun (b) { b } }") ]
+@[runs("fun (a) { fun (b) { b } }")]
 def dependent(a : Type, x : a) -> a { x }
 
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 def twice : (x : Integer, x : String) -> Integer;

@@ -18,7 +18,7 @@ data Chosen : Type where
 
 /// `Green` reaches the hole between `Red` and `Blue`: possibly covered, and
 /// refused.
-@[ refuses("UndecidedCoverage") ]
+@[refuses("UndecidedCoverage")]
 def classify(c : Color) -> Integer =
   match c where
     | Red => 0
@@ -26,7 +26,7 @@ def classify(c : Color) -> Integer =
     | Blue => 2
 
 /// A hole in a constructor's field leaves the arm for `Chose` undecided too.
-@[ refuses("UndecidedCoverage") ]
+@[refuses("UndecidedCoverage")]
 def unwrap(m : Chosen) -> Integer =
   match m where
     | Unchosen => 0

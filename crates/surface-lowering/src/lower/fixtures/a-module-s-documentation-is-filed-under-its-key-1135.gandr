@@ -6,5 +6,5 @@ module A where {
   module B where { def y = 2; }
 }
 /// An attribute decorates this module. See [gone].
-@[ explicit_exits ]
+@[explicit_exits]
 module C where { def z = 3; }

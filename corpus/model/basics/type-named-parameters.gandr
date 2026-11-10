@@ -12,7 +12,7 @@
 def idAt(A : Type, x : A) -> A { x }
 
 /// `idAt` at `Integer`, handed `3`.
-@[ runs("3") ]
+@[runs("3")]
 def idAtThree() -> Integer { idAt Integer 3 }
 
 /// The first of two values, each of its own type, one parameter named as a
@@ -20,7 +20,7 @@ def idAtThree() -> Integer { idAt Integer 3 }
 def firstAt(A : Type, b : Type, x : A, y : b) -> A { x }
 
 /// `firstAt` receives two types and one value of each.
-@[ runs("5") ]
+@[runs("5")]
 def firstAtFive() -> Integer { firstAt Integer Unit 5 *{} }
 
 /// `idAt`'s type as a telescope, its binder named as a type: the spelling a

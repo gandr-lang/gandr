@@ -10,13 +10,13 @@ module Kit where
   def width = 4;
 
 /// A theory declared through the written module's name.
-@[ refuses("DuplicateDefinition") ]
+@[refuses("DuplicateDefinition")]
 theory Kit.Labelled where
   /// The label.
   oper label : String;
 
 /// A model of a theory the path names in no module.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 module Tag : Model(Kit.Missing) where
   /// Its label.
   def label : String = "tag";

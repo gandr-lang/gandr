@@ -1,7 +1,8 @@
-/// `UnstatedComponent.Circuit`: a model component the derivation cannot state: a circuit rule, whose sphere the model does not read yet.
+/// `UnstatedComponent.Circuit`: a model component the derivation cannot state:
+/// a circuit rule, whose sphere the model does not read yet.
 ///
 /// The theory the model derives from.
-@[ refuses("UndescribedMember.NestedOperation") ]
+@[refuses("UndescribedMember.NestedOperation")]
 theory T where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
@@ -10,5 +11,5 @@ theory T where
     node : f(m) --> (o);
   };
 
-@[ refuses("UnstatedComponent.Circuit") ]
-def model : Model T ;
+@[refuses("UnstatedComponent.Circuit")]
+def model : Model T;

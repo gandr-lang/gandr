@@ -11,15 +11,15 @@
 def nest = *{tag = "t", inner = *{x = 1, y = 2}};
 
 /// `innerOf` returns `nest`'s inner record.
-@[ runs("*{.x = 1, .y = 2}") ]
+@[runs("*{.x = 1, .y = 2}")]
 def innerOf() -> *{x : Integer, y : Integer} { nest.inner }
 
 /// `deepField` returns `y` from `nest`'s inner record.
-@[ runs("2") ]
+@[runs("2")]
 def deepField() -> Integer { nest.inner.y }
 
 /// `boundField` reads `x` from the bound inner record.
-@[ runs("1") ]
+@[runs("1")]
 def boundField() -> Integer =
   let held = nest.inner
   held.x

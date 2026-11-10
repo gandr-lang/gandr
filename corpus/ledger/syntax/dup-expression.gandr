@@ -2,7 +2,7 @@
 /// The checker does not reach this form yet.
 ///
 /// - owes: #1501
-@[ refuses("OutOfFragment.dup_expression") ]
+@[refuses("OutOfFragment.dup_expression")]
 def duplicated() -> -F Unit =
   let desk = fork (seat : end) { close seat };
   dup desk

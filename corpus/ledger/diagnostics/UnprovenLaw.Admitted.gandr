@@ -1,20 +1,21 @@
-/// `UnprovenLaw.Admitted`: a law of a module's model admitted at a carrier the host does not provide.
+/// `UnprovenLaw.Admitted`: a law of a module's model admitted at a carrier the
+/// host does not provide.
 ///
 /// The theory the model derives from.
-@[ checks ]
+@[checks]
 theory Reflexive where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
   law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
 
 /// One value, of a type the source writes.
-@[ checks ]
+@[checks]
 data Lone : Type where
   | Alone : Lone
 
 /// The model at `Lone`.
 module Admitting : Model(Reflexive) with sort Carrier = Lone where {
   def alike(a : Lone, b : Lone) -> Bool { true }
-  @[ refuses("UnprovenLaw.Admitted") ]
+  @[refuses("UnprovenLaw.Admitted")]
   law refl = ~admitted;
 }

@@ -1,12 +1,13 @@
-/// `CapabilityForged`: a term standing at a capability type that is no capability hypothesis.
+/// `CapabilityForged`: a term standing at a capability type that is
+/// no capability hypothesis.
 
 // The filesystem's host interface.
 import std.fs;
 
 /// Reads a file through a capability that grants reading.
-def peek(c : Cap {read}) -> -F [std.fs.Eff] String =
+def peek(c : Cap { read }) -> -F [std.fs.Eff] String =
   c.read "notes"
 
-@[ refuses("CapabilityForged") ]
+@[refuses("CapabilityForged")]
 def forged() -> -F [std.fs.Eff] String =
   peek "fs"

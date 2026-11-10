@@ -45,17 +45,17 @@ def rec digits(n : Nat) -> Nat =
     | Succ(p) => { let h = halvedUp p; Succ (digits[<] h) }
 
 /// Three less one: two.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def difference : () -> Nat = minus three (Succ Zero);
 
 /// Four divided by two: two.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def quotient : () -> Nat = divided (Succ three) (Succ Zero);
 
 /// The ceiling half of three is two.
-@[ runs("Succ (Succ Zero)") ]
+@[runs("Succ (Succ Zero)")]
 def halvedThree : () -> Nat = halvedUp three;
 
 /// Four is `100` in binary: three digits.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def digitsOfFour : () -> Nat = digits (Succ three);

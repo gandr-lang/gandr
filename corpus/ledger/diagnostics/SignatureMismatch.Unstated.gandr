@@ -1,5 +1,6 @@
-/// `SignatureMismatch.Unstated`: an import at a signature that states a member its source declares with no type.
-@[ refuses("SignatureMismatch.Unstated") ]
+/// `SignatureMismatch.Unstated`: an import at a signature that states a member
+/// its source declares with no type.
+@[refuses("SignatureMismatch.Unstated")]
 theory Greeted where
   oper greeting : String;
 
@@ -7,5 +8,5 @@ theory Greeted where
 // for it.
 import "../features/package-address.gandr" as addressed : Greeted;
 
-@[ refuses("SignatureMismatch.Unstated") ]
+@[refuses("SignatureMismatch.Unstated")]
 def relayed = addressed.greeting;

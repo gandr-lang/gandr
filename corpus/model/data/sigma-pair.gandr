@@ -21,7 +21,7 @@ def tag_of(p : *{n : Integer, w : Ix n}) -> Integer =
     | *{m, w} => m
 
 /// The tag of `tagged`.
-@[ runs("3") ]
+@[runs("3")]
 def tag() -> Integer { tag_of tagged }
 
 /// The first component of a dependent pair, selected by its label.
@@ -29,7 +29,7 @@ def index_of(p : *{n : Integer, w : Ix n}) -> Integer =
   p.n
 
 /// The index of `tagged`.
-@[ runs("3") ]
+@[runs("3")]
 def index() -> Integer { index_of tagged }
 
 /// A pair whose second component is a loop at its first.
@@ -45,7 +45,7 @@ def lap_by_position(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.
   p.1
 
 /// A pair has two positions, so a third names nothing.
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def third(p : Integer * String) -> -F String =
   return p.2
 

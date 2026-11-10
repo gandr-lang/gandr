@@ -1,12 +1,14 @@
-/// `OutOfFragment.NonUniform`: a form out of the fragment: the form is a recursive call passing, where one of the definition's unchanging parameters stands, something other than that parameter.
+/// `OutOfFragment.NonUniform`: a form out of the fragment: the form is a
+/// recursive call passing, where one of the definition's unchanging parameters
+/// stands, something other than that parameter.
 ///
 /// The naturals.
-@[ checks ]
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("OutOfFragment.NonUniform") ]
+@[refuses("OutOfFragment.NonUniform")]
 def rec shadowed(n : Nat, m : Nat) -> -F Nat =
   match m where
     | Zero => return n

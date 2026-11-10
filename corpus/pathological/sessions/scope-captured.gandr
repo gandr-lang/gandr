@@ -10,7 +10,7 @@ import std.process;
 
 /// A seat's end closed inside a scope after an operation whose clause drops
 /// its continuation: the close never runs and the end is left open.
-@[ refuses("CapturedEndpoint") ]
+@[refuses("CapturedEndpoint")]
 def closedInScope() -> Unit =
   let desk = fork (seat : end) { close seat };
   handle c : std.process.Exit.Eff {

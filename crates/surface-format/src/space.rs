@@ -51,13 +51,6 @@ const BINDINGS: [&str; 5] = [
     "receive_session_type",
 ];
 
-/// What a face's `{` follows in a theory: its `=`, the one `{` of the rule
-/// written there. The face lists the names it holds, hugged by its braces:
-/// `face left = {tl, bl}`.
-const FACE: &[RCtxStep] = &[RCtxStep {
-    crossed: StepSym::Tile("="),
-}];
-
 /// The rules whose `*{` opens a module signature, padded by its braces; any
 /// other `*{` opens a record, hugged by them.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
@@ -142,7 +135,7 @@ impl Context
             {
                 Self::Operand
             },
-            "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
+            "{" if rule == "theory_declaration" => Self::Telescope,
             "*{" if SIGNATURES.contains(&rule) => Self::Signature,
             "-" | "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
@@ -195,8 +188,8 @@ impl Padding
 /// trivial.
 pub fn padding(open: Token<'_>) -> Padding
 {
-    match <&str>::from(open.text) {
-        "@[" | "@![" | "{" => match open.context {
+    if <&str>::from(open.text) == "{" {
+        return match open.context {
             Context::Telescope | Context::Written => Padding::Hug,
             Context::Operand
             | Context::Prefix
@@ -205,20 +198,9 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Plain
             | Context::TypeGlue
             | Context::CallGlue => Padding::Pad,
-        },
-        "*{" => match open.context {
-            Context::Signature => Padding::Pad,
-            Context::Operand
-            | Context::Prefix
-            | Context::Binding
-            | Context::Telescope
-            | Context::Plain
-            | Context::Written
-            | Context::TypeGlue
-            | Context::CallGlue => Padding::Hug,
-        },
-        _ => Padding::Hug,
+        };
     }
+    Padding::Hug
 }
 
 /// One neighbour of a space, as [`join`] reads it.

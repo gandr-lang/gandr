@@ -6,7 +6,7 @@ def once(x : Integer) -> [Partial] Integer =
   y
 
 /// The seed runs the loop in a definition's value.
-@[ refuses("UnenclosedRun") ]
+@[refuses("UnenclosedRun")]
 def seed : Integer;
 
 def seed = once 40;

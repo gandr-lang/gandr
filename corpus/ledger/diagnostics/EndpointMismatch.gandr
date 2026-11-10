@@ -1,4 +1,5 @@
-/// `EndpointMismatch`: reflexivity met a path type whose endpoints its point does not both convert to.
-@[ refuses("EndpointMismatch") ]
+/// `EndpointMismatch`: reflexivity met a path type whose endpoints its point
+/// does not both convert to.
+@[refuses("EndpointMismatch")]
 def etaSwapped(e : Integer * Integer) -> -F Path(*{e.1, e.0}, e) =
   Path.here e

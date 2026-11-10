@@ -1,4 +1,5 @@
-/// `module_definition_member`: a definition inside a module body, its linear tail written with its glyph and in ASCII.
+/// `module_definition_member`: a definition inside a module body, its linear
+/// tail written with its glyph and in ASCII.
 module Kept where {
   def kept(x : Integer) ⊸ Integer = x;
 }

@@ -1,26 +1,26 @@
 error[MalformedForm]: a keyword or symbol of this attribute is out of place
-   ╭▸ corpus/pathological/modules/inert-field.gandr:56:6
+   ╭▸ corpus/pathological/modules/inert-field.gandr:56:5
    │
-56 │   @[ inert ]
-   │      ━━━━━ out of place
+56 │   @[inert]
+   │     ━━━━━ out of place
    │
    ├ note: `kept` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the attribute
 
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/modules/inert-field.gandr:64:6
+   ╭▸ corpus/pathological/modules/inert-field.gandr:64:5
    │
-64 │   @[ inert ]
-   │      ━━━━━ out of place
+64 │   @[inert]
+   │     ━━━━━ out of place
    │
    ├ note: `Sorted` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/modules/inert-field.gandr:72:6
+   ╭▸ corpus/pathological/modules/inert-field.gandr:72:5
    │
-72 │   @[ checks ]
-   │      ━━━━━━ out of place
+72 │   @[checks]
+   │     ━━━━━━ out of place
    │
    ├ note: `Checked` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value

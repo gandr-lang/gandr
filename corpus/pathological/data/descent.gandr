@@ -14,7 +14,7 @@ data Nat : Type where
 
 /// A call at the matched parameter itself rather than a field of it: not
 /// below the stage the match took it apart at.
-@[ refuses("StageNotBelow") ]
+@[refuses("StageNotBelow")]
 def rec again(n : Nat) -> Nat =
   match n where
     | Zero => Zero
@@ -22,7 +22,7 @@ def rec again(n : Nat) -> Nat =
 
 /// One claim under a match on `n`, another under the match on `m`: the
 /// definition would descend on both, a measure the sized rung states.
-@[ refuses("DescentOnSeveralParameters") ]
+@[refuses("DescentOnSeveralParameters")]
 def rec both(m : Nat, n : Nat) -> -F Nat =
   match m where
     | Zero => match n where

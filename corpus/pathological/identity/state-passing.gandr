@@ -9,7 +9,7 @@ import "../../model/identity/state-passing.gandr";
 
 /// The count of stores past an accumulator: at `Store(s, Store(u, k))` it
 /// counts two onto the accumulator and at `Store(u, k)` one.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec storesCounted(p : Stores, n : Integer) -> Integer =
   match p where
     | End(_x) => n
@@ -17,7 +17,7 @@ def rec storesCounted(p : Stores, n : Integer) -> Integer =
 
 /// The count of stores with no accumulator, one more at the law's left side
 /// than at its right.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec storeCount(p : Stores) -> Integer =
   match p where
     | End(_x) => 0

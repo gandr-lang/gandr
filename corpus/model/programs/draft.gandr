@@ -10,5 +10,5 @@
 import "./entry.gandr";
 
 /// `draft` counts no arguments, then reaches the `rest` hole.
-@[ runs("reached a hole") ]
+@[runs("reached a hole")]
 def draft() -> Integer { let n = count (#[]); ?rest }

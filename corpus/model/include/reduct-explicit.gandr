@@ -11,6 +11,6 @@ import "./monoid.gandr";
 import "./reduct.gandr";
 
 /// `asSemigroupWritten` writes the reduct before it reads the semigroup.
-@[ runs("0"), form(explicit) ]
+@[runs("0"), form(explicit)]
 def asSemigroupWritten() -> -F Integer =
   become multiplies (Monoid.Semigroup endoMonoid)

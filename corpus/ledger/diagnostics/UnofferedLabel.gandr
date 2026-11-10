@@ -1,6 +1,7 @@
-/// `UnofferedLabel`: a selection of a label the endpoint's state does not offer.
-@[ refuses("UnofferedLabel") ]
+/// `UnofferedLabel`: a selection of a label the endpoint's state
+/// does not offer.
+@[refuses("UnofferedLabel")]
 def desk_selects_no_offered_label() -> -F Unit =
-  let desk = fork (seat : &{ next : end }) { offer seat { | next => close seat } };
+  let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } };
   select desk retire
   close desk

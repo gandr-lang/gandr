@@ -12,7 +12,7 @@ def next(n : Nat) -> Nat =
   Succ m
 
 /// The bind runs: `next` binds the successor and returns the next one.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def three() -> Nat { next (Succ Zero) }
 
 /// A suspended function is named at its written type and called.
@@ -21,7 +21,7 @@ def apply(n : Nat) -> Nat =
   f n
 
 /// A computation that returns a `Nat` is no `Unit`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def mistyped(n : Nat) -> Nat =
   let m : Unit = Succ n
   n

@@ -17,29 +17,29 @@ module ReaderSchema where {
   type Old = String * Integer;
   type New = Integer * String;
   /// The translator swaps the old record fields.
-  @[ checks ]
+  @[checks]
   def toNew(old : Old) -> New =
     match old where
       | *{name, age} => *{age, name}
   /// The translator defines the schema upgrade flow.
-  @[ checks ]
+  @[checks]
   def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
   /// The reader flow maps a new-schema reader to an old-schema reader.
-  @[ checks ]
+  @[checks]
   def reader : Flow[.A = Type](New -> Integer, Old -> Integer) = Flow.arrow
     upgrade
     (Flow.stay Integer);
   /// The new-schema reader returns the age field.
-  @[ checks ]
+  @[checks]
   def age(record : New) -> Integer =
     match record where
       | *{years, name} => years
   /// The legacy reader rides the age reader to the old schema.
-  @[ checks ]
+  @[checks]
   def legacy(record : Old) -> Integer =
     let read = Flow.ride (fun (X) { X }) reader age
     read record
   /// The run reads an old record through the ridden reader.
-  @[ runs("30") ]
+  @[runs("30")]
   def aged : () -> Integer = legacy (*{"ada", 30});
 }

@@ -10,7 +10,7 @@ import "../../model/desc/relative-monad.gandr";
 /// The monad's laws beside the order: right unit rewrites an extension whose
 /// continuation returns, an operation nested in producer position, which the
 /// description does not read beside an indexed sort yet.
-@[ refuses("UndescribedMember.NestedOperation") ]
+@[refuses("UndescribedMember.NestedOperation")]
 theory LawfulSpecificationMonad where
   sort V : Type+;
   sort C : Type;
@@ -25,7 +25,7 @@ theory LawfulSpecificationMonad where
 /// The monad's laws included beside the order: the included right unit is
 /// refused as the written one is, at the `include` that brings it, in the
 /// block that includes it rather than in `RelativeMonad`, which checks alone.
-@[ refuses("UndescribedMember.NestedOperation") ]
+@[refuses("UndescribedMember.NestedOperation")]
 theory IncludedSpecificationMonad where
   include RelativeMonad;
   sort Below(w : C, v : C) : Type;

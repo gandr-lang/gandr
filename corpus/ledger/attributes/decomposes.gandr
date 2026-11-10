@@ -3,13 +3,15 @@
 /// so it sits beside the right endpoint's receipt and close.
 
 // The native session formers.
-import std.session (Dialogue) ;
+import std.session (Dialogue);
 
 /// A protocol that sends one string and ends.
 module Ask where
   type Asking = !String. end;
 
-@[ decomposes(series (event left 0) (parallel (event left 1) (series (event right 0) (event right 1)))) ]
-def asked : Dialogue Ask.Asking ;
+@[decomposes(series
+  (event left 0)
+  (parallel (event left 1) (series (event right 0) (event right 1))))]
+def asked : Dialogue Ask.Asking;
 
-def asked = dialogue (left (sent "yes")) (right (received "yes")) (left closed) (right closed) ;
+def asked = dialogue (left (sent "yes")) (right (received "yes")) (left closed) (right closed);

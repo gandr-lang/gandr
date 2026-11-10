@@ -4,9 +4,9 @@
 /// last root expression is no exception.
 ///
 /// - see: #2572
-@[ refuses("OutOfFragment.TopLevel") ]
+@[refuses("OutOfFragment.TopLevel")]
 1 + 2;
 
 /// The program, which runs the expression's like.
-@[ runs("3") ]
+@[runs("3")]
 def main() -> Integer { 1 + 2 }

@@ -1,7 +1,7 @@
 error[SessionCodeExpected]: a session identity relates two session types
-  ╭▸ corpus/ledger/diagnostics/SessionCodeExpected.gandr:4:27
+  ╭▸ corpus/ledger/diagnostics/SessionCodeExpected.gandr:5:27
   │
-4 │ def notSession = Flow.sim Integer Integer ;
+5 │ def notSession = Flow.sim Integer Integer;
   │                  ┬────────┯━━━━━━────────
   │                  │        │
   │                  │        not a session code

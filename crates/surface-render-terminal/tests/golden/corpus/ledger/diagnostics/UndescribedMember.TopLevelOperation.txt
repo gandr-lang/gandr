@@ -1,7 +1,7 @@
 error[UndescribedMember.TopLevelOperation]: this member is an operation declared outside a theory, which no signature reads yet
-  ╭▸ corpus/ledger/diagnostics/UndescribedMember.TopLevelOperation.gandr:3:1
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.TopLevelOperation.gandr:4:1
   │
-3 │ oper split : (b : Bit) --> (_ : Bit, _ : Bit)
+4 │ oper split : (b : Bit) --> (_ : Bit, _ : Bit)
   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
   │
   ├ note: `split` is refused with UndescribedMember.TopLevelOperation, as its expectation states

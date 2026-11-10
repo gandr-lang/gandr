@@ -13,7 +13,7 @@ import std.process;
 def read[r : Region](k : (() -> Integer) at r) -> Integer { force k }
 
 /// `lent` passes a handler-held view to `read`.
-@[ runs("3") ]
+@[runs("3")]
 def lent() -> Integer =
   var s = 3
   handle c : std.process.Exit.Eff {

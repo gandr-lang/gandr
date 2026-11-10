@@ -1,7 +1,8 @@
-/// `ModelAmbiguous`: a call omitting a model implicit more than one module in scope answers at the types its arguments force.
+/// `ModelAmbiguous`: a call omitting a model implicit more than one module in
+/// scope answers at the types its arguments force.
 ///
 /// A unit: a carrier and its one element.
-@[ checks ]
+@[checks]
 theory Pointed where
   sort C : Type;
   oper point : C;
@@ -10,7 +11,7 @@ theory Pointed where
 module Zero : Model(Pointed) where {
   type C = Integer;
   /// Zero.
-  @[ checks ]
+  @[checks]
   def point = 0;
 }
 
@@ -18,13 +19,13 @@ module Zero : Model(Pointed) where {
 module One : Model(Pointed) where {
   type C = Integer;
   /// One.
-  @[ checks ]
+  @[checks]
   def point = 1;
 }
 
 /// The point, over any pointed type the slot names.
-@[ checks ]
+@[checks]
 def pointOf[p : Model Pointed](c : p.C) -> p.C { p.point }
 
-@[ refuses("ModelAmbiguous") ]
+@[refuses("ModelAmbiguous")]
 def ambiguous() -> Integer { pointOf 3 }

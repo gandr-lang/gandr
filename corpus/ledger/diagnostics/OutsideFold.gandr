@@ -1,3 +1,4 @@
-/// `OutsideFold`: a bridge at a code the bridge fold has no clause for, a sum of three summands.
-@[ refuses("OutsideFold") ]
+/// `OutsideFold`: a bridge at a code the bridge fold has no clause for, a sum
+/// of three summands.
+@[refuses("OutsideFold")]
 def threeWay : Bridge(+{.0 = *{}}, +{.0 = *{}}) = *{};

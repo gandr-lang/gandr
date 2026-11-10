@@ -8,7 +8,7 @@
 
 /// An operation whose two overlapping rules swap the arguments of the call
 /// they leave.
-@[ refuses("RulesUncompleted") ]
+@[refuses("RulesUncompleted")]
 data NatSwapped : Type where {
   | Zero : NatSwapped
   | Succ : (n : NatSwapped) --> NatSwapped

@@ -22,18 +22,18 @@ import std.list (List);
 /// A list's places, each at the mode its call asks.
 pub module Places where {
   /// The first element.
-  @[ checks ]
+  @[checks]
   def first[m : Mode](self : m List Integer) -> View[m](Integer) { self.#[0] }
   /// The element at an index.
-  @[ checks ]
+  @[checks]
   def nth[m : Mode](self : m List Integer, i : Integer) -> View[m](Integer) { self.#[i] }
   /// The element after an index: the index is any value, here a sum.
-  @[ checks ]
+  @[checks]
   def after[m : Mode](self : m List Integer, i : Integer) -> View[m](Integer) { self.#[i + 1] }
 }
 
 /// The first element, read by a call without a block.
-@[ runs("1") ]
+@[runs("1")]
 def head() -> Integer =
   var xs = pair
   let h = xs.first ()
@@ -41,7 +41,7 @@ def head() -> Integer =
 
 /// `later` reads the element after the first.
 /// A sum provides its index.
-@[ runs("2") ]
+@[runs("2")]
 def later() -> Integer =
   var xs = pair
   let y = xs.after 0
@@ -49,7 +49,7 @@ def later() -> Integer =
 
 /// A read of an element of a held list, without a method. The index lends
 /// its place shared to a view without a block.
-@[ runs("2") ]
+@[runs("2")]
 def element() -> Integer =
   var xs = pair
   let y = xs.#[1]
@@ -62,13 +62,13 @@ def elementAt(i : Integer) -> Integer =
   pure y
 
 /// A call of that read at the first index.
-@[ runs("1") ]
+@[runs("1")]
 def elementFirst() -> Integer =
   elementAt 0
 
 /// A read of an element of a list no var holds. The read holds the list for
 /// itself, as `element` holds it by hand.
-@[ runs("2") ]
+@[runs("2")]
 def unheldElement() -> Integer =
   let y = pair.#[1]
   pure y
@@ -79,27 +79,27 @@ def unheldAt(ys : List Integer, i : Integer) -> Integer =
   pure y
 
 /// A call of that read at the first index.
-@[ runs("1") ]
+@[runs("1")]
 def unheldFirst() -> Integer =
   unheldAt pair 0
 
 /// The first element read through a view the block lends shared: the block
 /// only reads it.
-@[ runs("2") ]
+@[runs("2")]
 def readTwice() -> Integer =
   var xs = pair
   (xs.first ()) as w { pure w + w }
 
 /// The element at an index written back through a view the block lends
 /// exclusively: the resume asks it, and only that element moved.
-@[ runs("cons 1 (cons 5 nil)") ]
+@[runs("cons 1 (cons 5 nil)")]
 def raised() -> List Integer =
   var xs = pair
   (xs.nth 1) as w { resume w (w + 3) };
   pure xs
 
 /// An abort asks an exclusive lend as well and writes nothing back.
-@[ runs("cons 1 (cons 2 nil)") ]
+@[runs("cons 1 (cons 2 nil)")]
 def abandonedView() -> List Integer =
   var xs = pair
   (xs.first ()) as w { abort w };

@@ -10,7 +10,7 @@ import "../../model/cancellation/cancel-base.gandr";
 import std.process;
 
 /// A scope whose exit clause abandons the rest from inside an unwind.
-@[ refuses("UnwindEffect") ]
+@[refuses("UnwindEffect")]
 def shielded() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {

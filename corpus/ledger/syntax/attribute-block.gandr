@@ -1,4 +1,5 @@
-/// `attribute_block`: an attribute block: attributes decorating the declaration after it.
-@[ doc("The answer.") ]
-@[ checks ]
-def answer = 42 ;
+/// `attribute_block`: an attribute block: attributes decorating the
+/// declaration after it.
+@[doc("The answer.")]
+@[checks]
+def answer = 42;

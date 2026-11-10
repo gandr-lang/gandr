@@ -1,11 +1,11 @@
-module Counter :> *{ type T, zero : T } where {
+module Counter :> *{type T, zero : T} where {
   type T = Integer;
-  @[ runs("0") ]
+  @[runs("0")]
   def zero = 0;
 }
 
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def leaked : Integer = Counter.zero;
 
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def forged : Counter.T = 7;

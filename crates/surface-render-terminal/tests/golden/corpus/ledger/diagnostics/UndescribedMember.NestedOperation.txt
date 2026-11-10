@@ -1,7 +1,7 @@
 error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NestedOperation.gandr:16:3
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NestedOperation.gandr:20:3
    │
-16 │   rule unitR : ext m (bind x. (ret x)) <=> m;
+20 │   rule unitR : ext m (bind x. (ret x)) <=> m;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `BelowMonad` is refused with UndescribedMember.NestedOperation, as its expectation states

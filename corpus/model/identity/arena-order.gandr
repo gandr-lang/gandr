@@ -90,11 +90,11 @@ def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Intege
     }
 
 /// The consumer reaches `c` in the first order.
-@[ runs("3") ]
+@[runs("3")]
 def walkedABC() -> Integer { walk builtABC }
 
 /// The consumer reaches `c` in the second order.
-@[ runs("3") ]
+@[runs("3")]
 def walkedBAC() -> Integer { walk builtBAC }
 
 /// The arena path makes both consumer results equal.
@@ -102,5 +102,5 @@ def walkedAlike() -> Path(walk builtABC, walk builtBAC) =
   Path.ap walk oneArena
 
 /// The checker refuses labels without their allocation relabelling.
-@[ refuses("PointwiseDistinct") ]
+@[refuses("PointwiseDistinct")]
 def labelsUnrelabelled : Path(labelABC, labelBAC) = Path.funext labelABC labelBAC;

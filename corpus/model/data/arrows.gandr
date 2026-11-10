@@ -14,7 +14,7 @@
 /// `IntOp` has two constructors, two rules and one operation.
 /// The rules reduce both compositions to `x`, and the operation unfolds
 /// to a predecessor.
-@[ normalizes("pred(S(S(Z))) ~> S(Z)") ]
+@[normalizes("pred(S(S(Z))) ~> S(Z)")]
 data IntOp : Type where {
   | Z : IntOp
   | S : (x : IntOp) --> IntOp
@@ -45,7 +45,7 @@ def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
 
 /// A cell is not a rule: no rule identifies the loop with the empty word, so
 /// reflexivity does not prove it.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def notARule : Path[.A = Path[.A = Circle](Base, Base)](
   loop,
   Path.here Base

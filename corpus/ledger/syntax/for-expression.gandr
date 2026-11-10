@@ -4,9 +4,9 @@
 import std.list (List);
 
 /// A step that does nothing with its integer.
-@[ checks ]
+@[checks]
 def tick(n : Integer) -> -F Unit =
   *{}
-@[ checks ]
+@[checks]
 def each(xs : List Integer) -> -F Unit =
   for x in xs { tick x; }

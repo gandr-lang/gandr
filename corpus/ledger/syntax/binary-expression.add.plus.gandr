@@ -1,4 +1,4 @@
 /// `binary_expression.add.plus`: addition.
-@[ checks ]
+@[checks]
 def sum() -> -F Integer =
   return 1 + 2

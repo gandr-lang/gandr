@@ -1,6 +1,12 @@
 /// `specification-monads`: Specification monads.
-/// Implemented: state's weakest-precondition observation as a handler of state into the predicate transformers, checked as a model of state's laws, and as a fold of the program's tree, so the normaliser computes a precondition, the increment pairs with its evidence at one postcondition and at every postcondition, and the stopped program with its evidence below the return specification at every postcondition.
-/// Not implemented: the order named as a definition, `refines(v, w)`, a precondition through a scope, and the monad's laws beside its order.
+/// Implemented: state's weakest-precondition observation as a handler of state
+/// into the predicate transformers, checked as a model of state's laws, and as
+/// a fold of the program's tree, so the normaliser computes a precondition, the
+/// increment pairs with its evidence at one postcondition and at every
+/// postcondition, and the stopped program with its evidence below the return
+/// specification at every postcondition.
+/// Not implemented: the order named as a definition, `refines(v, w)`, a
+/// precondition through a scope, and the monad's laws beside its order.
 ///
 /// - owes: #2759 — the order named as a definition
 /// - owes: #2754 — a precondition through a scope
@@ -20,15 +26,15 @@
 //! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
 // `StateLaws`.
-import "../../model/effects/state.gandr" ;
+import "../../model/effects/state.gandr";
 
 // `Either`, `StateOp` and `Prog`.
-import "../../model/effects/tree.gandr" ;
+import "../../model/effects/tree.gandr";
 
 /// The increment observed: read the counter, store one more, and answer the
 /// unit. A read hands the initial state to what runs after, and a store runs
 /// what follows from the stored value.
-@[ checks ]
+@[checks]
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
     let n = st.get ();
@@ -45,7 +51,7 @@ def incrTree : Prog (Either StateOp Void) Unit = Op (Left Get) (fun (n) {
   (Op (Left (Put (n + 1))) (fun (_u) {
     (Done (*{}) : Prog (Either StateOp Void) Unit)
   }) : Prog (Either StateOp Void) Unit)
-}) ;
+});
 
 /// The observation as a fold of the tree.
 def rec wp(
@@ -69,20 +75,20 @@ def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`.
-@[ checks ]
+@[checks]
 def incrSpecified : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
-} = *{incrTree, fun (s) { fun (h) { h } }} ;
+} = *{incrTree, fun (s) { fun (h) { h } }};
 
 /// The increment paired with evidence at every postcondition: the
 /// specification's call over the successor computed first and the fold's
 /// over the successor held read as one call.
-@[ checks ]
+@[checks]
 def incrSpecifiedEverywhere : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
-} = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }} ;
+} = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.
@@ -90,8 +96,8 @@ def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s 
 
 /// The stopped program paired with evidence below the return specification
 /// at every postcondition.
-@[ checks ]
+@[checks]
 def doneSpecified : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
-} = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }} ;
+} = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }};

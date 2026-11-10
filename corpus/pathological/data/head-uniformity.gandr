@@ -10,13 +10,13 @@
 // - see: #3404
 
 /// A family whose generator fixes its parameter at `Integer`.
-@[ refuses("NonUniformResult") ]
+@[refuses("NonUniformResult")]
 data Bad(a : Type) : Type where
   /// The value at `Integer`, where the header binds `a`.
   | Mk : Bad(Integer)
 
 /// A generator whose result reorders the family's parameters.
-@[ refuses("NonUniformResult") ]
+@[refuses("NonUniformResult")]
 data Swap(a : Type, b : Type) : Type where
   /// The values `x` and `y`, at the parameters in the reverse order.
   | MkSwap : (x : a, y : b) --> Swap(b, a)

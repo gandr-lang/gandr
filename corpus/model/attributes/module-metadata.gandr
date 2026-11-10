@@ -10,8 +10,8 @@
 //! - see: https://doc.rust-lang.org/cargo/
 
 // A unit value carrying a package's metadata.
-@[ refuses("UnknownAttribute") ]
-@[ package(*{name = "acme/parser", version = "1.4.0"}) ]
-@[ dependency(*{name = "acme/lexer", alias = "lexer", constraint = "^2.1"}) ]
-@[ toolchain(*{gandr = ">=0.9"}) ]
+@[refuses("UnknownAttribute")]
+@[package(*{name = "acme/parser", version = "1.4.0"})]
+@[dependency(*{name = "acme/lexer", alias = "lexer", constraint = "^2.1"})]
+@[toolchain(*{gandr = ">=0.9"})]
 def parser_unit = *{};

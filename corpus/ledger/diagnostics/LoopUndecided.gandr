@@ -1,4 +1,5 @@
-/// `LoopUndecided`: a case over a sort its words loop at whose answer costs more to carry along a loop than the machine's fuel allows.
+/// `LoopUndecided`: a case over a sort its words loop at whose answer costs
+/// more to carry along a loop than the machine's fuel allows.
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
@@ -17,7 +18,7 @@ data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
 
-@[ refuses("LoopUndecided") ]
+@[refuses("LoopUndecided")]
 def costly(x : Circle) -> -F Path[.A = Circle](x, x) =
   match x where
     | Base => match power (power (Succ (Succ (Succ Zero)))) where

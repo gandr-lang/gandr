@@ -13,7 +13,7 @@ import "../../model/regions/natural.gandr";
 import std.process;
 
 /// `backwards` reverses the valid outer-to-inner widening.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def backwards() -> Integer =
   var s = 5
   handle outer : std.process.Exit.Eff {
@@ -34,7 +34,7 @@ def backwards() -> Integer =
   }
 
 /// `unequal` compares `pass` and `touch` as path endpoints.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def unequal() -> Integer =
   var s = 5
   handle outer : std.process.Exit.Eff {

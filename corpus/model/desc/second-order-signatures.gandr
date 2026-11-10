@@ -54,14 +54,14 @@ def rec bound(chain : Theory) -> Integer =
     | _ => 0
 
 /// The identity-return signature declares one representable sort, `VTm`.
-@[ runs("1") ]
+@[runs("1")]
 def representableSorts() -> Integer { match IdentityReturn {
   | Presents(sorts, opers, rules) => representable sorts
   | _ => 0
 } }
 
 /// The λ-calculus's first operation, `lam`, binds over its one input.
-@[ runs("1") ]
+@[runs("1")]
 def boundInputs() -> Integer { match Lambda {
   | Presents(sorts, opers, rules) => match opers where
     | Oper(name, inputs, outputs, rest) => bound inputs

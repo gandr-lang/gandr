@@ -1,13 +1,14 @@
-/// `DialogueUnmatched`: a receipt in a dialogue that no send of the other endpoint matches.
+/// `DialogueUnmatched`: a receipt in a dialogue that no send of the
+/// other endpoint matches.
 
 // The native session formers.
-import std.session (Dialogue) ;
+import std.session (Dialogue);
 
 /// A protocol that sends one string and ends.
 module Ask where
   type Asking = !String. end;
 
-@[ refuses("DialogueUnmatched") ]
-def misheard : Dialogue Ask.Asking ;
+@[refuses("DialogueUnmatched")]
+def misheard : Dialogue Ask.Asking;
 
-def misheard = dialogue (left (sent "yes")) (right (received "no")) (left closed) (right closed) ;
+def misheard = dialogue (left (sent "yes")) (right (received "no")) (left closed) (right closed);

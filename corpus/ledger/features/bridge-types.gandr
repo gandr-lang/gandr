@@ -1,5 +1,6 @@
 /// `bridge-types`: Bridge types by the identity recursion.
-/// Implemented: `Bridge[.A = A](a, b)` relates two points of `A` at the fibre the bridge fold reads. The core checks it and the kernel replays it.
+/// Implemented: `Bridge[.A = A](a, b)` relates two points of `A` at the fibre
+/// the bridge fold reads. The core checks it and the kernel replays it.
 /// Not implemented: the model laws of the fold.
 ///
 /// - owes: #3519
@@ -8,11 +9,11 @@
 import std.list (List);
 
 /// The total relation between the unit type and the string type.
-@[ checks ]
+@[checks]
 def unitString : Bridge[.A = Type](Unit, String) = thunk {
   fun (x : Unit) { fun (y : String) { return Unit } }
 };
 
 /// Two equal lists of integers, related cell by cell.
-@[ checks ]
+@[checks]
 def sameDigits : Bridge[.A = List Integer](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};

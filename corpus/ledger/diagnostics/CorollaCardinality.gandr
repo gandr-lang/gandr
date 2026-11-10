@@ -1,4 +1,5 @@
-/// `CorollaCardinality`: two species with different numbers of elements at a corolla.
+/// `CorollaCardinality`: two species with different numbers of elements
+/// at a corolla.
 theory Rig where
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
@@ -8,13 +9,13 @@ theory Semi where
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 
-@[ checks ]
+@[checks]
 def widen(b : Bool) -> -F (Unit + Unit + Unit + Unit) =
   match b where
     | true => +{.0 = *{}}
     | false => +{.1 = *{}}
 
-@[ checks ]
+@[checks]
 def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool =
   match e where
     | +{.0 = u} => +{.0 = u}
@@ -22,5 +23,5 @@ def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool =
     | +{.2 = u} => +{.0 = u}
     | +{.3 = u} => +{.1 = u}
 
-@[ refuses("CorollaCardinality") ]
-def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow}) ;
+@[refuses("CorollaCardinality")]
+def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow});

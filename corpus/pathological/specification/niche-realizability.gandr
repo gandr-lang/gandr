@@ -25,7 +25,7 @@ def derefWp(w : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
 
 /// `Option<&int>` passed to `deref`: at null and the empty heap the niche
 /// holds, and `deref` asks what no heap gives.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) -> derefWp(w, keptOpt, h) =
   match w where
     | Zero => match h where

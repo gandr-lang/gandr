@@ -4,5 +4,5 @@ data Flag : Type where
   | On : Flag
   | Off : Flag
 
-@[ reads(Flag) ]
-def on : Flag = On ;
+@[reads(Flag)]
+def on : Flag = On;

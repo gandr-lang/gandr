@@ -1,2 +1,2 @@
-@[ owes(pure 1) ]
+@[owes(pure 1)]
 def f : Integer;

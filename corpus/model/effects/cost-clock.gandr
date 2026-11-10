@@ -87,7 +87,7 @@ def countedOnce() -> [Partial] ((Nat -> Nat) -> Nat) =
 
 /// The loop that ends is within one, as its run reports it: one when the bound
 /// holds, zero when it does not.
-@[ runs("1") ]
+@[runs("1")]
 def onceWithin() -> [Partial] Integer =
   let r = countedOnce ()
   if Count.le (countOf r) (1 : Nat) { pure 1 } else { pure 0 }

@@ -1,14 +1,14 @@
 error[StageNotCarried]: the transport moves a value of the recursion along a path whose type is not a set, so the value loses its stage
-   ╭▸ corpus/ledger/diagnostics/StageNotCarried.gandr:14:38
+   ╭▸ corpus/ledger/diagnostics/StageNotCarried.gandr:15:38
    │
-11 │    def rec alongLoop(n : Nat, q : Path(Base, Base)) -> Nat =
+12 │    def rec alongLoop(n : Nat, q : Path(Base, Base)) -> Nat =
    │    │                 ┬        ─ checked against `Path[.A = Circle](Base, Base) -> -F Nat`; while checking the body of this function; binds q : Path[.A = Circle](Base, Base)
    │    │                 │
    │ ┌──┘                 checked against `Nat -> Path[.A = Circle](Base, Base) -> -F Nat`; while checking the body of this function; binds n : Nat
    │ │
-12 │ │┌   match n where
-13 │ ││     | Zero => Zero
-14 │ ││     | Succ(m) => Succ (alongLoop[<] (Path.walk (fun (x) { Nat }) q m) q)
+13 │ │┌   match n where
+14 │ ││     | Zero => Zero
+15 │ ││     | Succ(m) => Succ (alongLoop[<] (Path.walk (fun (x) { Nat }) q m) q)
    │ ││                  ┬─────┬─────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───│
    │ └│──────────────────│─────│─────────────│─────────────────────────────────│
    │  └──────────────────│─────│─────────────│─────────────────────────────────checked against `(Nat, Path[.A = Circle](Base, Base)) -> Nat`; while checking the body of this function; binds alongLoop : (Nat, Path[.A = Circle](Base, Base)) -> Nat

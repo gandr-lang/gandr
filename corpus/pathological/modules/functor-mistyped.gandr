@@ -7,7 +7,7 @@
 import "../../model/modules/functor-pair.gandr";
 
 /// A counter whose zero is an integer rather than its own abstract type.
-module Integral :> *{ type T, zero : Integer, next : T -> T, read : T -> Integer } where
+module Integral :> *{type T, zero : Integer, next : T -> T, read : T -> Integer} where
   type T = Integer;
   /// The counter's zero, sealed as an integer.
   def zero = 0;
@@ -18,5 +18,5 @@ module Integral :> *{ type T, zero : Integer, next : T -> T, read : T -> Integer
 
 /// The functor applied to that counter, refused at the witness for `zero`:
 /// the parameter states a `T`, and `Integral` seals its zero at `Integer`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 module Mistyped = MkCounter(Integral);

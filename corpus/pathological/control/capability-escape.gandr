@@ -11,7 +11,7 @@
 // Early exit's host interface.
 import std.process;
 
-@[ refuses("CapabilityEscaped") ]
+@[refuses("CapabilityEscaped")]
 def leak() -> Cap { exit } {
   handle c : std.process.Exit.Eff {
     return c

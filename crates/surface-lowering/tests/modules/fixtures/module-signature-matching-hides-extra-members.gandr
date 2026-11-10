@@ -1,3 +1,3 @@
-module M : *{ visible : Integer } where { def hidden = 1; def visible = 2; }
+module M : *{visible : Integer} where { def hidden = 1; def visible = 2; }
 def shown = M.visible;
 def hid = M.hidden;

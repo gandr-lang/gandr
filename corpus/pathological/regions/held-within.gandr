@@ -11,7 +11,7 @@
 import std.process;
 
 /// `keptPastHold` forces a view after its hold ends.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def keptPastHold() -> Integer =
   handle inner : std.process.Exit.Eff {
     var l = 42;
@@ -23,7 +23,7 @@ def keptPastHold() -> Integer =
   }
 
 /// `keptPastNestedHold` does the same with nested handlers.
-@[ refuses("ViewEscaped") ]
+@[refuses("ViewEscaped")]
 def keptPastNestedHold() -> Integer =
   handle outer : std.process.Exit.Eff {
     let x : Integer = handle inner : std.process.Exit.Eff {

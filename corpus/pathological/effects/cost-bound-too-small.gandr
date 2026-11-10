@@ -30,5 +30,5 @@ def countedSteps() -> (Nat -> Nat) -> Nat =
 
 /// The bound two is one step too small: the count of the steps is three, so
 /// `Count.le` answers `false`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def boundTwo : Path(Count.le (countOf (countedSteps ())) (2 : Nat), true) = Path.here true;

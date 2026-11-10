@@ -10,7 +10,7 @@ import "../../model/cancellation/cancel-base.gandr";
 import std.process;
 
 /// A scope whose exit clause drops the rest while its task's end is open.
-@[ refuses("ContinuationUnspent") ]
+@[refuses("ContinuationUnspent")]
 def dropped() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {

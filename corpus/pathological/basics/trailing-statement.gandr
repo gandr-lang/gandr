@@ -5,6 +5,6 @@
 
 /// A body answering an integer that ends in a statement: it answers the unit
 /// instead.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def unitAnswered() -> Integer =
   pure *{};

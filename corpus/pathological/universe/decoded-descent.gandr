@@ -19,7 +19,7 @@ import "../../model/universe/decoded-descent.gandr";
 /// the element code, the list code's field, but the tail's stands at the list
 /// code `ListL(a)` itself. The tail is below the value, and the value is no
 /// parameter the fixpoint stages.
-@[ refuses("StageNotBelow") ]
+@[refuses("StageNotBelow")]
 def rec totalDirect(c : UL) -> elL(c) -> Nat =
   match c where
     | NatL => thunk { fun (v) { v } }
@@ -36,6 +36,6 @@ def rec totalDirect(c : UL) -> elL(c) -> Nat =
 
 /// A stage on a decode: `elL(c)` is the decoder's result, no data type, so
 /// the signature's mark places nothing.
-@[ refuses("OutOfFragment.Stage") ]
+@[refuses("OutOfFragment.Stage")]
 def decodedAt[i : Size](c : UL, v : elL(c)[i]) -> Nat =
   Zero

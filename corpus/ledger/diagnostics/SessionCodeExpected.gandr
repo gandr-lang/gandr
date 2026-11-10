@@ -1,4 +1,5 @@
-/// `SessionCodeExpected`: a session statement over operands that are no session codes.
-@[ refuses("SessionCodeExpected") ]
-def notSession : Flow[.A = Type](Integer, Integer) ;
-def notSession = Flow.sim Integer Integer ;
+/// `SessionCodeExpected`: a session statement over operands that are
+/// no session codes.
+@[refuses("SessionCodeExpected")]
+def notSession : Flow[.A = Type](Integer, Integer);
+def notSession = Flow.sim Integer Integer;

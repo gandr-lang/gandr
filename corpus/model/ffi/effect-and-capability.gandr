@@ -8,12 +8,12 @@
 //! - see: #327 — `gandr_test_strlen`, `measured`
 //! - see: #1106 — `measured`
 /// The sensor library's reading of one channel.
-@[ refuses("OutOfFragment.extern_block") ]
+@[refuses("OutOfFragment.extern_block")]
 extern "c" from "sensor" {
   def read(channel : i32) -> i64;
 }
 
 /// `reading` names channel zero through the `sensor` extern block before the
 /// current lowering reaches its projection.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[refuses("OutOfFragment.projection_expression")]
 def reading = sensor.read 0i32;

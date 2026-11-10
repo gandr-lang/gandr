@@ -14,13 +14,13 @@
 //   admitted
 
 /// The dependent pairs over a family of types.
-@[ builtin(irPair) ]
+@[builtin(irPair)]
 data Pair(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
   | MkPair : (x : a, y : b(x)) --> Pair a b
 
 /// The codes over a type of decodes `d`.
-@[ builtin(irSignature) ]
+@[builtin(irSignature)]
 data Codes(d : Type) : Type[+, 1] where
   /// No argument, the decode `e`.
   | Stop : (e : d) --> Codes d
@@ -31,7 +31,7 @@ data Codes(d : Type) : Type[+, 1] where
 
 /// The arguments a code asks for, with a `δ` case that asks for a function
 /// from the family into `a`.
-@[ builtin(irArgs), refuses("BuiltinNotCanonical") ]
+@[builtin(irArgs), refuses("BuiltinNotCanonical")]
 def rec fields(d : Type, c : Codes d, x : Type, t : x -> d) -> Type =
   match c where
     | Stop(e) => return Unit

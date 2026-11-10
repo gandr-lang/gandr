@@ -1,10 +1,11 @@
-/// `CapabilityCaptured`: a migration under a former that may run it other than once.
+/// `CapabilityCaptured`: a migration under a former that may run it
+/// other than once.
 module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
   type SeatEnd = ?Dispatch. mu turn. +{
-    report : !Report. &{ next : turn, retire : end },
+    report : !Report. &{next : turn, retire : end},
     handoff : !Handoff. end
   },
   task : Dispatch,
@@ -15,23 +16,23 @@ module Seat :> *{
   type Report = String;
   type Handoff = String;
   /// The dispatch a seat receives.
-  @[ checks ]
+  @[checks]
   def task = "task";
   /// A report it sends.
-  @[ checks ]
+  @[checks]
   def progress = "progress";
   /// The notes it hands off.
-  @[ checks ]
+  @[checks]
   def notes = "notes";
 }
 
-@[ checks ]
-world operator ;
+@[checks]
+world operator;
 
-@[ checks ]
-world seat ;
+@[checks]
+world seat;
 
-@[ refuses("CapabilityCaptured") ]
-@[ entry(*{operator, seat}) ]
+@[refuses("CapabilityCaptured")]
+@[entry(*{operator, seat})]
 def suspended() -> -F (() -> Seat.Report) =
   pure thunk { migrate [seat] { pure Seat.progress } }

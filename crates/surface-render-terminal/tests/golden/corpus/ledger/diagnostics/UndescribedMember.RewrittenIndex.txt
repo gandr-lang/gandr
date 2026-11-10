@@ -1,7 +1,7 @@
 error[UndescribedMember.RewrittenIndex]: this member holds an index that a law at an earlier sort rewrites, whose peak the decision does not join yet
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.RewrittenIndex.gandr:18:3
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.RewrittenIndex.gandr:21:3
    │
-18 │   rule tmComp : subTm (subTm t s) u ==> subTm t (comp s u);
+21 │   rule tmComp : subTm (subTm t s) u ==> subTm t (comp s u);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `TermComposite` is refused with UndescribedMember.RewrittenIndex, as its expectation states

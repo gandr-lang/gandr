@@ -1,14 +1,15 @@
-/// `UnstatedComponent.Unbound`: a model component the derivation cannot state: a stated law naming a variable its statement does not bind once.
+/// `UnstatedComponent.Unbound`: a model component the derivation cannot state:
+/// a stated law naming a variable its statement does not bind once.
 ///
 /// The theory refuses the law at its member, and the model derived
 /// from it refuses at its signature.
 ///
 /// - see: #4115
-@[ refuses("UnstatedComponent.Unbound") ]
+@[refuses("UnstatedComponent.Unbound")]
 theory Loose where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
   law loose : (a : Carrier) -> Path[.A = Bool](alike a b, true);
 
-@[ refuses("UnstatedComponent.Unbound") ]
-def model : Model Loose ;
+@[refuses("UnstatedComponent.Unbound")]
+def model : Model Loose;

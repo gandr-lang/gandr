@@ -1,5 +1,13 @@
 /// `indexed-data`: Indexed data families.
-/// Implemented: data families over value indices, written as the kind `Nat -> Type` or as a named telescope whose later index types read the earlier ones, whose case checks each arm at its constructor's fields with one equation per index. A generator's result applies the family to its parameters, then to its indices, by head uniformity. A constructor written at an index takes the index's type. The solution of an equation with a variable side refines its arm. The case omits an arm whose constructor is apart at one of its indices. An equation between two applications of one constructor splits into one equation for each field.
+/// Implemented: data families over value indices, written as the kind `Nat ->
+/// Type` or as a named telescope whose later index types read the earlier ones,
+/// whose case checks each arm at its constructor's fields with one equation per
+/// index. A generator's result applies the family to its parameters, then to
+/// its indices, by head uniformity. A constructor written at an index takes the
+/// index's type. The solution of an equation with a variable side refines its
+/// arm. The case omits an arm whose constructor is apart at one of its indices.
+/// An equation between two applications of one constructor splits into one
+/// equation for each field.
 /// Not implemented: the split at a dependent field.
 ///
 /// - owes: #1314 — the split at a dependent field
@@ -15,21 +23,21 @@
 //! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
 
 // The naturals the lengths count in.
-import "../../model/data/data-base.gandr" ;
+import "../../model/data/data-base.gandr";
 
 /// Vectors of elements of `a`, indexed by their length.
-@[ checks ]
+@[checks]
 data Vec(a : Type) : Nat -> Type where
   | VNil : Vec a Zero
   | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec(a, Succ n)
 
 /// The vector of one integer, one long.
-@[ checks ]
+@[checks]
 def single() -> Vec Integer (Succ Zero) =
   VCons Zero 3 (VNil : Vec Integer Zero)
 
 /// A vector of two integers, two long: each `VCons` one past its tail.
-@[ checks ]
+@[checks]
 def pair() -> Vec Integer (Succ (Succ Zero)) =
   VCons
     (Succ Zero)
@@ -38,22 +46,22 @@ def pair() -> Vec Integer (Succ (Succ Zero)) =
 
 /// A vector of `a` marked at its length: the indices a named telescope, the
 /// type of the vector reading the length before it.
-@[ checks ]
+@[checks]
 data Sized(a : Type) : (n : Nat, v : Vec a n) --> Type where
   | Measured : (n : Nat, v : Vec a n) --> Sized a n v
 
 /// A vector of integers, marked at its length.
-@[ checks ]
+@[checks]
 def measured(n : Nat, v : Vec Integer n) -> Sized Integer n v =
   Measured n v
 
 /// A vector of `a` marked empty: the generator states `VNil` at the vector's
 /// index, typed by that index over the length stated before it.
-@[ checks ]
+@[checks]
 data Cleared(a : Type) : (n : Nat, v : Vec a n) --> Type where
   | Clear : Cleared a Zero VNil
 
 /// The empty vector of integers, marked: `VNil` stands at the vector's index.
-@[ checks ]
+@[checks]
 def cleared() -> Cleared Integer Zero VNil =
   Clear

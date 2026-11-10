@@ -1,6 +1,10 @@
 /// `second-order-rules`: Second-order rules.
-/// Implemented: a rule over a binding operation, instantiation `t(u)`, the abstraction `bind x . t` at a port, sorted at its binders, oriented by HORPO's metavariable case, its critical pairs joined in the second-order reading, and an inspected call fired in that reading.
-/// Not implemented: two binders at one port, which waits on the grammar; completing a parting pair; a law relating a term at its port.
+/// Implemented: a rule over a binding operation, instantiation `t(u)`, the
+/// abstraction `bind x . t` at a port, sorted at its binders, oriented by
+/// HORPO's metavariable case, its critical pairs joined in the second-order
+/// reading, and an inspected call fired in that reading.
+/// Not implemented: two binders at one port, which waits on the grammar;
+/// completing a parting pair; a law relating a term at its port.
 ///
 /// - owes: #2347
 /// - owes: #1324
@@ -28,7 +32,7 @@
 
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.
-@[ checks ]
+@[checks]
 theory Let where
   sort Tm : Type+;
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
@@ -36,7 +40,7 @@ theory Let where
 
 /// A body binding two terms is instantiated at two arguments, outermost
 /// binder first.
-@[ checks ]
+@[checks]
 theory LetPair where
   sort Tm : Type+;
   oper let2 : (u : Tm, v : Tm, t : (x : Tm) -> (y : Tm) -> Tm) --> Tm;
@@ -44,7 +48,7 @@ theory LetPair where
 
 /// ζ beside first-order rules whose pair parts: completion joins `f`'s two
 /// rules as it would without ζ, which overlaps neither.
-@[ checks ]
+@[checks]
 theory LetBeside where
   sort Tm : Type+;
   oper zero : () --> Tm;
@@ -59,7 +63,7 @@ theory LetBeside where
 /// the root, both reducts are `t(zero())`, and an inspected call
 /// fires both by substitution, the inner `let` at `x` and the outer at
 /// `zero()`.
-@[ normalizes("let(zero, bind x . let(x, bind y . y)) ~> zero") ]
+@[normalizes("let(zero, bind x . let(x, bind y . y)) ~> zero")]
 theory LetOverlap where
   sort Tm : Type+;
   oper zero : () --> Tm;
@@ -69,7 +73,7 @@ theory LetOverlap where
 
 /// ζ's right side is the instantiation of `t`, which the presentation keeps
 /// as an `Inst` node.
-@[ runs("1") ]
+@[runs("1")]
 def instantiates() -> Integer { match Let {
   | Presents(sorts, opers, rules) => match rules where
     | Rule(name, left, right, rest) => match right where

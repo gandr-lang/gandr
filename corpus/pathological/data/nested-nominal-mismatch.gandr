@@ -16,10 +16,10 @@ data Fahrenheit : Type where
 
 /// A list of one Celsius value ascribed a list of Fahrenheit: its element
 /// keeps its own family.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def listed = (#[Cel 20] : List Fahrenheit);
 
 /// The same list again, judged as every declaration is before anything runs
 /// it.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def again = (#[Cel 20] : List Fahrenheit);

@@ -1,7 +1,7 @@
 error[UndescribedMember.HigherCell]: this member is a rule between rules, a higher cell with no circuit body
-  ╭▸ corpus/ledger/diagnostics/UndescribedMember.HigherCell.gandr:6:3
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.HigherCell.gandr:7:3
   │
-6 │   rule involutive : (b : Bit) <=> (c : Bit);
+7 │   rule involutive : (b : Bit) <=> (c : Bit);
   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
   │
   ├ note: `Invertible` is refused with UndescribedMember.HigherCell, as its expectation states

@@ -9,7 +9,7 @@
 //
 // - see: #640
 /// `cutLeft` chooses a cut-grade left branch over a failure.
-@[ normalizes("orBot(cut, fail) ~> cut") ]
+@[normalizes("orBot(cut, fail) ~> cut")]
 theory GradedCut where
   sort Grade : Type;
   sort M(g : Grade) : Type;
@@ -23,7 +23,7 @@ theory GradedCut where
   rule cutLeft : orBot x y ==> x;
 
 /// The outer `cutLeft` law chooses the nested inner cut.
-@[ normalizes("orBot(orBot(cut, fail), fail) ~> cut") ]
+@[normalizes("orBot(orBot(cut, fail), fail) ~> cut")]
 theory NestedCut where
   sort Grade : Type;
   sort M(g : Grade) : Type;

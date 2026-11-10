@@ -16,9 +16,9 @@ def identity(x : Integer) -> Integer =
 def wide = 1u32;
 
 /// A number one past the greatest `u32` does not fit the width it states.
-@[ refuses("MalformedLiteral") ]
+@[refuses("MalformedLiteral")]
 def wider = 4294967296u32;
 
 /// The string, named again.
-@[ runs("\"the value zone\"") ]
+@[runs("\"the value zone\"")]
 def shown = greeting;

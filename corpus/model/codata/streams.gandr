@@ -55,20 +55,20 @@ def add(x : Integer, y : Integer) -> Integer =
   x + y
 
 /// `three` observes the head of integers from three.
-@[ runs("3") ]
+@[runs("3")]
 def three : () -> Integer = first (upward 3);
 
 /// `four` observes the next integer after three.
-@[ runs("4") ]
+@[runs("4")]
 def four() -> Integer { second (upward 3) }
 
 /// `nine` observes the next sum of the streams from one and seven.
-@[ runs("9") ]
+@[runs("9")]
 def nine() -> Integer =
   second (zipWith add (upward 1) (always 7))
 
 /// `unfolded` observes the next value from the corecursive ones constant.
-@[ runs("1") ]
+@[runs("1")]
 def unfolded() -> Integer { second (ones ()) }
 
 /// The function observes the tail by its zero-based declaration position.
@@ -76,19 +76,19 @@ def onward(s : +U (Stream Integer)) -> Integer =
   first s.1
 
 /// `fourth` observes integers from three by position.
-@[ runs("4") ]
+@[runs("4")]
 def fourth : () -> Integer = onward (upward 3);
 
 /// The function observes the head from a stream call.
-@[ runs("3") ]
+@[runs("3")]
 def headOfCall() -> Integer { (upward 3).head }
 
 /// The function observes a call's tail by position, then its head.
-@[ runs("4") ]
+@[runs("4")]
 def tailOfCall() -> Integer { first ((upward 3).1) }
 
 /// The function compares a call's head with one.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def headAbove() -> Bool { (upward 3).head >= 1 }
 
 /// The function observes the head of a stream's tail through one chain.
@@ -96,14 +96,14 @@ def secondInline(s : +U (Stream Integer)) -> Integer =
   s.tail.head
 
 /// The function observes two tails and then a head from a call.
-@[ runs("5") ]
+@[runs("5")]
 def chained() -> Integer { (upward 3).tail.tail.head }
 
 /// The function observes the same chain by declaration positions.
-@[ runs("5") ]
+@[runs("5")]
 def chainedByPosition() -> Integer { (upward 3).1.tail.0 }
 
 /// `eight` observes the next sum of the ones and sevens streams.
-@[ runs("8") ]
+@[runs("8")]
 def eight() -> Integer =
   secondInline (zipWith add (ones ()) (always 7))

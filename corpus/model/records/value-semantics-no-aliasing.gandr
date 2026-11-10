@@ -13,5 +13,5 @@ def r = *{x = 1, y = 2};
 def r2 = *{r | x = 9};
 
 /// `original` returns `r` with `x` unchanged.
-@[ runs("*{.x = 1, .y = 2}") ]
+@[runs("*{.x = 1, .y = 2}")]
 def original = r;

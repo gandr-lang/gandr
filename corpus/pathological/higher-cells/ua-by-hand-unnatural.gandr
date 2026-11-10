@@ -11,7 +11,7 @@ theory Rig where
 module Unnatural where {
   type Tel = Unit * (Unit + Unit + Unit + Unit);
 
-  @[ checks ]
+  @[checks]
   def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
     match e where
       | +{.0 = u} => +{.2 = u}
@@ -19,11 +19,11 @@ module Unnatural where {
       | +{.2 = u} => +{.0 = u}
       | +{.3 = u} => +{.3 = u}
 
-  @[ checks ]
+  @[checks]
   def crossed_by_hand : Path[.A = Type](Tel, Tel) = Path.product
     (Path.here (Unit))
     (equiv cross cross);
 
-  @[ refuses("NotNatural") ]
+  @[refuses("NotNatural")]
   def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
 }

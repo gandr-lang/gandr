@@ -9,18 +9,18 @@
 //! - see: corpus/pathological/attributes/unknown-attribute.gandr
 
 // A colour, its block's second entry unknown.
-@[ refuses("UnknownAttribute"), note("a colour, named by its constructors") ]
+@[refuses("UnknownAttribute"), note("a colour, named by its constructors")]
 data Color : Type where
   | Red : Color
   | Green : Color
 
 // An answer stated before its definition, its block's second entry unknown.
-@[ refuses("UnknownAttribute"), note("the answer, stated before its definition") ]
+@[refuses("UnknownAttribute"), note("the answer, stated before its definition")]
 def answer : Integer;
 def answer = 42;
 
 // The first of two integers, its block's second entry unknown.
-@[ refuses("UnknownAttribute"), note("the first of two integers") ]
+@[refuses("UnknownAttribute"), note("the first of two integers")]
 def first(x : Integer, y : Integer) -> -F Integer =
   return x
 
@@ -28,7 +28,7 @@ def first(x : Integer, y : Integer) -> -F Integer =
 // module, so its member states the check the block asks for.
 module Counter where {
   // The inner block, which asks each member for its check.
-  @![ checks ]
+  @![checks]
   // Zero, whose check the inner block asks for.
   def zero = 0;
 }
@@ -37,7 +37,7 @@ module Counter where {
 // theory, so the theory states the check the block asks for.
 theory Marks where {
   // The inner block, which asks the theory for its check.
-  @![ checks ]
+  @![checks]
   sort C : Type;
   // A mark that takes a `C` to a `C`.
   oper mark : (k : C) --> C;

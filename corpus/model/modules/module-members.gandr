@@ -10,31 +10,31 @@
 def seed = 40;
 
 /// `Facts` exports `inner.answer` and `total`.
-module Facts : *{ inner : *{answer : Integer}, total : Integer } where {
+module Facts : *{inner : *{answer : Integer}, total : Integer} where {
   /// `hidden_reply` tests a refused shell block.
-  @[ refuses("OutOfFragment.shell_block") ]
+  @[refuses("OutOfFragment.shell_block")]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
   /// `base` tests an unsynthesised operator result.
-  @[ refuses("NotSynthesisable") ]
+  @[refuses("NotSynthesisable")]
   def base = seed + hidden_reply.exit_code + 1;
   /// `inner` hides one member.
-  module inner : *{ answer : Integer } where {
+  module inner : *{answer : Integer} where {
     /// `hidden` reads the refused `base`.
-    @[ refuses("UnknownConstant") ]
+    @[refuses("UnknownConstant")]
     def hidden = base;
     /// `answer` depends on the refused `base`.
-    @[ refuses("UnknownConstant") ]
+    @[refuses("UnknownConstant")]
     def answer = base + 1;
   }
   /// `total` reads the nested answer.
-  @[ checks ]
+  @[checks]
   def total = inner.answer + 1;
 }
 
 /// `after` tests an unsynthesised exported total.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def after = Facts.total + 1;
 
 /// `gathered` tests a record that names refused `after`.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def gathered = *{after = after, total = Facts.total};

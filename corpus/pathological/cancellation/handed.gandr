@@ -15,7 +15,7 @@ def resume_stack(j : Stack (-F Unit) (-F Unit)) -> Unit =
 
 /// A scope whose exit clause hands the rest to `resume_stack` while its task's
 /// end is open.
-@[ refuses("ContinuationAsValue") ]
+@[refuses("ContinuationAsValue")]
 def handed() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {

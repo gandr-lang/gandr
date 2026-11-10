@@ -1,5 +1,5 @@
 module Bad where {
-  @[ refuses("DuplicateDefinition") ]
+  @[refuses("DuplicateDefinition")]
   def x = 1;
   def x = 2;
 }

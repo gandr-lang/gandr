@@ -17,5 +17,5 @@ import "../../model/data/signal.gandr";
 def stop : Signal = Signal.Red;
 
 /// The red signal, written bare.
-@[ refuses("ImportShadows") ]
+@[refuses("ImportShadows")]
 def halt : Signal = Red;

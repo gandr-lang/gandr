@@ -1,10 +1,11 @@
-/// `UnguardedCorecursion`: a productivity claim standing outside a copattern arm.
-@[ checks ]
+/// `UnguardedCorecursion`: a productivity claim standing outside
+/// a copattern arm.
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("UnguardedCorecursion") ]
+@[refuses("UnguardedCorecursion")]
 def rec ahead(n : Nat) -> -F Nat =
   match n where
     | Zero => return n

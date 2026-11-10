@@ -17,18 +17,18 @@ data Sign : Type where
   | Minus : Sign
 
 /// `Point` seals a type and its point.
-module Point :> *{ type T, z : T } where {
+module Point :> *{type T, z : T} where {
   type T = Integer;
   /// `z` gives the point.
-  @[ runs("0") ]
+  @[runs("0")]
   def z = 0;
 }
 
 /// `Square` reads only its argument type in its static member.
-module Square(S : *{ type T, z : T }) :> *{ type U, w : U } where {
+module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
   type U = S.T * S.T;
   /// `w` pairs the argument point with itself.
-  @[ checks ]
+  @[checks]
   def w = *{S.z, S.z};
 }
 
@@ -45,9 +45,9 @@ module Fixed where {
   /// `Positive` names a plus-sign path.
   type Positive = Path(Plus, Plus);
   /// `three` gives the constant path.
-  @[ checks ]
+  @[checks]
   def three : Three = Path.here 3;
   /// `positive` gives the plus-sign path.
-  @[ checks ]
+  @[checks]
   def positive : Positive = Path.here Plus;
 }

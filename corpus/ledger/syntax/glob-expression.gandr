@@ -3,9 +3,9 @@
 /// it to answer, so the signature is refused first.
 ///
 /// - owes: #1207
-@[ refuses("UnresolvedTypeHead") ]
+@[refuses("UnresolvedTypeHead")]
 def path_glob(A : Type) -> Glob =
   glob {
     cells = A;
-    hom(x, y) = path_glob (Path x y);
+    hom (x, y) = path_glob (Path x y);
   }

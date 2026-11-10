@@ -14,19 +14,19 @@
 //! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
 /// A conditional over a boolean value: the true branch runs.
-@[ runs("1") ]
+@[runs("1")]
 def pick() -> Integer =
   if true { 1 } else { 2 }
 
 /// A conditional over a comparison, which is a computation: the case binds
 /// its result, and the false branch runs.
-@[ runs("20") ]
+@[runs("20")]
 def above() -> Integer =
   if 3 < 2 { 10 } else { 20 }
 
 /// `statedAnswer` writes the conditional answer type.
 /// The checker reads each branch at that type.
-@[ runs("7") ]
+@[runs("7")]
 def statedAnswer() -> Integer =
   if false -> -F Integer { 5 } else { 7 }
 
@@ -35,13 +35,13 @@ def sign(n : Integer) -> Integer =
   if n < 0 { 0 } else if n < 1 { 1 } else { 2 }
 
 /// The middle case of `sign`: its first condition fails and its second holds.
-@[ runs("1") ]
+@[runs("1")]
 def zero() -> Integer =
   sign 0
 
 /// `early` returns from the true branch.
 /// The false branch continues the block.
-@[ runs("9") ]
+@[runs("9")]
 def early() -> Integer =
   if 1 < 0 { return 4 } else { pure *{} };
   9

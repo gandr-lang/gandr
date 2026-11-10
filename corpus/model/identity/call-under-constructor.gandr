@@ -20,7 +20,7 @@ def rec underSuccessor(b : Int) -> Path[.A = Int](S (plus Z b), S b) =
     | P(x) => Path.ap down (underSuccessor[<] x)
 
 /// The checker refuses the zero arm because `S(Z)` has no path to `Z`.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def rec offByOne(b : Int) -> Path[.A = Int](S (plus Z b), b) =
   match b where
     | Z => Path.here (S Z)

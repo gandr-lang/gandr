@@ -1,3 +1,4 @@
-/// `pub_declaration`: a visibility mark: the declaration after it exported to every source importing this one.
-@[ checks ]
-pub def answer : Integer = 42 ;
+/// `pub_declaration`: a visibility mark: the declaration after it exported to
+/// every source importing this one.
+@[checks]
+pub def answer : Integer = 42;

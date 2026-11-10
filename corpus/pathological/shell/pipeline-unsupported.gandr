@@ -8,5 +8,5 @@
 //! - see: #1057 — `piped`
 
 /// `piped` puts a pipe between two commands.
-@[ refuses("OutOfFragment.shell_block") ]
+@[refuses("OutOfFragment.shell_block")]
 def piped() -> -F Unit { #!{ printf 'x' | cat; } }

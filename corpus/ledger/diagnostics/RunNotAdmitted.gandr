@@ -1,28 +1,32 @@
 /// `RunNotAdmitted`: a recorded run the protocol does not admit.
 
 // The native session formers.
-import std.session (Run) ;
+import std.session (Run);
 
 /// The seat's protocol and one that no longer offers `retire`, related by
 /// simulation.
 module Evolution where {
   type SeatEnd = ?String. mu turn. +{
-    report : !String. &{ next : turn, retire : end },
+    report : !String. &{next : turn, retire : end},
     handoff : !String. end
   };
-  type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
-  @[ checks ]
-  def keep : Flow[.A = Type](SeatEnd, Kept) ;
-  def keep = Flow.sim SeatEnd Kept ;
+  type Kept = ?String. mu turn. +{report : !String. &{next : turn}, handoff : !String. end};
+  @[checks]
+  def keep : Flow[.A = Type](SeatEnd, Kept);
+  def keep = Flow.sim SeatEnd Kept;
 }
 
-@[ checks ]
-def served : Run Evolution.SeatEnd ;
+@[checks]
+def served : Run Evolution.SeatEnd;
 
-def served = recorded (received "task") (selected report) (sent "progress") (offered retire)
-  closed ;
+def served = recorded
+  (received "task")
+  (selected report)
+  (sent "progress")
+  (offered retire)
+  closed;
 
-@[ refuses("RunNotAdmitted") ]
-def retired : () -> Run Evolution.Kept ;
+@[refuses("RunNotAdmitted")]
+def retired : () -> Run Evolution.Kept;
 
-def retired = thunk { Flow.ride (fun (X) { Run X }) Evolution.keep served } ;
+def retired = thunk { Flow.ride (fun (X) { Run X }) Evolution.keep served };

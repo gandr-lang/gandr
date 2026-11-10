@@ -36,5 +36,5 @@ def realiser(c : Code, w : Nat, h : Heap) -> Type =
 /// The first argument's realisers read through the layout: the niche's by the
 /// run, undecided by the checker. It holds the layout program's integer
 /// comparisons as neutrals (`native-primitives`).
-@[ refuses("Undecided") ]
+@[refuses("Undecided")]
 def throughLayout(x : Nat, h : Heap, r : realiser(optRef, x, h)) -> vOpt(vInt, x, h) { r }

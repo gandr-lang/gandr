@@ -1,4 +1,4 @@
 module Plain where { type T = Integer; def seed = 1; }
-module Over(S : *{ type T, seed : T }) where { def get = S.seed; }
+module Over(S : *{type T, seed : T}) where { def get = S.seed; }
 module O = Over(Plain);
 module O = Over(Plain);

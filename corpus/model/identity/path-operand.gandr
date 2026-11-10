@@ -53,7 +53,7 @@ def unthrice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](B
   Path.back (thrice p)
 
 /// The `stay` declaration gives a path at a natural number.
-@[ owes(1) ]
+@[owes(1)]
 def stay : (a : Nat) -> Path[.A = Nat](a, a);
 
 /// The `stayUp` proof reads the result of the `stay` declaration.
@@ -93,6 +93,6 @@ def mappedInto(
   Path.here (Path.ap g q)
 
 /// A non-path parameter gives no path type to read.
-@[ refuses("OutOfFragment.Unannotated") ]
+@[refuses("OutOfFragment.Unannotated")]
 def pointed(c : Circle) -> -F Path[.A = Circle](Base, Base) =
   Path.step (Path.back c) loop

@@ -51,7 +51,7 @@ def nested : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
 ) = Path.funext applied_twice twice_bound;
 
 /// The calls at truth and falsity give different results for some function.
-@[ refuses("PointwiseDistinct") ]
+@[refuses("PointwiseDistinct")]
 def elsewhere : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
   at_truth,
   at_falsity

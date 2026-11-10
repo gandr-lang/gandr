@@ -1,16 +1,21 @@
 error[GeneratorFamilyUnsupported]: `fill` lifts its generator along paths only
-   ╭▸ corpus/ledger/diagnostics/GeneratorFamilyUnsupported.gandr:21:3
+   ╭▸ corpus/ledger/diagnostics/GeneratorFamilyUnsupported.gandr:36:3
    │
-20 │   def alongFlow(A : Type, x : A, y : A, fm : Path(x, y), fp : Path(x, y), fa : Flow[.A = Path(x, y)](fm, fp)) -> Path[.A = Path[.A = A…
-   │   │             ┬         ┬      ┬      ┬─               ┬─               ── checked against `Flow[.A = Path[.A = A](x, y)](fm, fp) -> -F Path[.A = Path[.A = A](x, y)](fm, fp)`; while checking the body of this function; binds fa : Flow[.A = Path[.A = A](x, y)](fm, fp)
-   │   │             │         │      │      │                │
-   │   │             │         │      │      │                checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
-   │   │             │         │      │      checked; while checking the body of this function; binds fm : Path[.A = A](x, y)
-   │   │             │         │      checked; while checking the body of this function; binds y : A
-   │   │             │         checked; while checking the body of this function; binds x : A
-   │ ┌─┘             checked; while checking the body of this function; binds A : Type
-   │ │
-21 │ │   fill[1, 3] (chain 1) (selfLoop A x y) fa
+28 │ ┌ def alongFlow(
+29 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+30 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+31 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+32 │ │   fm : Path(x, y),
+   │ │   ── checked; while checking the body of this function; binds fm : Path[.A = A](x, y)
+33 │ │   fp : Path(x, y),
+   │ │   ── checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
+34 │ │   fa : Flow[.A = Path(x, y)](fm, fp)
+   │ │   ── checked against `Flow[.A = Path[.A = A](x, y)](fm, fp) -> -F Path[.A = Path[.A = A](x, y)](fm, fp)`; while checking the body of this function; binds fa : Flow[.A = Path[.A = A](x, y)](fm, fp)
+35 │ │ ) -> Path[.A = Path[.A = A](x, y)](fm, fp) =
+36 │ │   fill[1, 3] (chain 1) (selfLoop A x y) fa
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┬│
    │ └───│─────────────────────────────────────│┤
    │     │                                     │checked; while checking the body of this thunk

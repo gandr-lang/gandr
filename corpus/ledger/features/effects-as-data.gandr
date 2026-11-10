@@ -1,6 +1,14 @@
 /// `effects-as-data`: Effects as data, replayed by the kernel.
-/// Implemented: a program over a row of operations written as a tree, the free model of its operations, each handler a fold, so the kernel replays the declaration whole; a native deep handler crosses by this translation, its effect's free model one constructor per operation, whether a capability scope writes its clauses, names a model or leaves them to the one model in scope (`corpus/model/effects/exit.gandr`, `corpus/model/effects/state-handler.gandr`).
-/// Not implemented: native handlers past that form crossing by this translation: a request off the bind spine, a reset, a shallow handler and control are not replayed.
+/// Implemented: a program over a row of operations written as a tree, the free
+/// model of its operations, each handler a fold, so the kernel replays the
+/// declaration whole; a native deep handler crosses by this translation, its
+/// effect's free model one constructor per operation, whether a capability
+/// scope writes its clauses, names a model or leaves them to the one model in
+/// scope (`corpus/model/effects/exit.gandr`,
+/// `corpus/model/effects/state-handler.gandr`).
+/// Not implemented: native handlers past that form crossing by this
+/// translation: a request off the bind spine, a reset, a shallow handler and
+/// control are not replayed.
 ///
 /// - owes: #2742
 /// - see: #2512 — `runExnAt`
@@ -12,7 +20,7 @@
 // error.
 
 // `Either`, `StateOp` and `Prog`.
-import "../../model/effects/tree.gandr" ;
+import "../../model/effects/tree.gandr";
 
 /// Exceptions' operation: raise a code.
 data ExnOp : Type where
@@ -60,20 +68,24 @@ def guarded : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right (Lef
       (Done (b * 10) : Prog (Either ExnOp (Either StateOp Void)) Integer)
     }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
   }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
-}) ;
+});
 
 /// Over the same row: read, then raise what was read.
 def raising : Prog (Either ExnOp (Either StateOp Void)) Integer = Op (Right (Left Get)) (fun (a) {
   (Op (Left (Raise a)) (fun (_r) {
     (Done 0 : Prog (Either ExnOp (Either StateOp Void)) Integer)
   }) : Prog (Either ExnOp (Either StateOp Void)) Integer)
-}) ;
+});
 
 /// Over state alone: read, and answer what was read.
-def quiet : Prog (Either StateOp Void) Integer = Op (Left Get) (fun (a) { (Done a : Prog (Either StateOp Void) Integer) }) ;
+def quiet : Prog (Either StateOp Void) Integer = Op
+  (Left Get)
+  (fun (a) { (Done a : Prog (Either StateOp Void) Integer) });
 
 /// Over exceptions alone: raise four.
-def failing : Prog (Either ExnOp Void) Integer = Op (Left (Raise 4)) (fun (_r) { (Done 0 : Prog (Either ExnOp Void) Integer) }) ;
+def failing : Prog (Either ExnOp Void) Integer = Op
+  (Left (Raise 4))
+  (fun (_r) { (Done 0 : Prog (Either ExnOp Void) Integer) });
 
 /// `runExn` at the front of the two-effect row. An applied type cannot yet
 /// stand as a type argument, so the runs below use the handlers at
@@ -88,7 +100,10 @@ def rec runExnAt(p : Prog (Either ExnOp (Either StateOp Void)) Integer) -> Prog 
       }) : Prog (Either StateOp Void) (Outcome Integer))
 
 /// `runState` at the row exceptions leave.
-def rec runStateAt(p : Prog (Either StateOp Void) (Outcome Integer), s : Integer) -> Prog Void (Outcome Integer) =
+def rec runStateAt(
+  p : Prog (Either StateOp Void) (Outcome Integer),
+  s : Integer
+) -> Prog Void (Outcome Integer) =
   match p where
     | Done(x) => (Done x : Prog Void (Outcome Integer))
     | Op(o, k) => match o where
@@ -104,13 +119,13 @@ def pureAt(p : Prog Void (Outcome Integer)) -> Outcome Integer =
 
 /// Exceptions peeled, then state from four, then nothing left: the second
 /// read sees the stored five.
-@[ runs("Returned 50") ]
+@[runs("Returned 50")]
 def handled() -> Outcome Integer =
   let p = runExnAt guarded
   pureAt (runStateAt p 4)
 
 /// The raise ends the program with the state it read.
-@[ runs("Raised 4") ]
+@[runs("Raised 4")]
 def handledRaise() -> Outcome Integer =
   let p = runExnAt raising
   pureAt (runStateAt p 4)

@@ -24,7 +24,7 @@ pub data Pair : Type where
 /// A pair's methods.
 pub module Pairs where {
   /// The pair, taken out of its hold.
-  @[ checks ]
+  @[checks]
   def take(self : consumed Pair) -> Pair { pure self }
 }
 
@@ -39,14 +39,14 @@ pub def first(q : Pair) -> Integer =
     | Pair(a, b) => a
 
 /// A pair held once, its first component bumped through the exclusive view.
-@[ runs("Pair 2 2") ]
+@[runs("Pair 2 2")]
 def heldOnce() -> Pair =
   var[1] p = Pair 1 2
   access p as v { let q = bump v; resume v q };
   p.take ()
 
 /// The same update at the default grade answers the same.
-@[ runs("Pair 2 2") ]
+@[runs("Pair 2 2")]
 def heldMany() -> Pair =
   var p = Pair 1 2
   access p as v { let q = bump v; resume v q };
@@ -54,7 +54,7 @@ def heldMany() -> Pair =
 
 /// A copy taken before the update keeps its value: the copy's first component
 /// is still one where the held pair's is two.
-@[ runs("Pair 1 2") ]
+@[runs("Pair 1 2")]
 def copyKept() -> Pair =
   var p = Pair 1 2
   let keep = p

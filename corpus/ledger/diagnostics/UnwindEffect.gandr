@@ -1,6 +1,6 @@
 /// `UnwindEffect`: an access's unwind performing an effect.
-@[ refuses("UnwindEffect") ]
-def noisy(p : Cap {exit}) -> -F Integer =
+@[refuses("UnwindEffect")]
+def noisy(p : Cap { exit }) -> -F Integer =
   var c = 0
   access c as v { abort v } unwind { p.exit 1 };
   pure c

@@ -1,10 +1,10 @@
 error[UndescribedMember.LhsNotOperation]: this member rewrites from something other than an operation application
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.LhsNotOperation.gandr:7:3
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.LhsNotOperation.gandr:8:3
    │
- 7 │ ┏   rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
- 8 │ ┃     node : p(x) ==> (m);
- 9 │ ┃     node : f(m) --> (n);
-10 │ ┃   };
+ 8 │ ┏   rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
+ 9 │ ┃     node : p(x) ==> (m);
+10 │ ┃     node : f(m) --> (n);
+11 │ ┃   };
    │ ┗━━━┛ a member the description does not read
    │
    ├ note: `Shared` is refused with UndescribedMember.LhsNotOperation, as its expectation states

@@ -1,8 +1,8 @@
 /// `NotADataType`: a type names a data declaration the checker refused.
-@[ refuses("DataKindNotUniverse") ]
+@[refuses("DataKindNotUniverse")]
 data Odd : Integer where
   | Z : Odd
 
-@[ refuses("NotADataType") ]
+@[refuses("NotADataType")]
 def held(x : Odd) -> -F Integer =
   return 1

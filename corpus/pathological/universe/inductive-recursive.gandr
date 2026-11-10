@@ -21,20 +21,20 @@ import "../../model/data/data-base.gandr";
 /// block is refused whole.
 rec {
   /// A family consuming the next one: `right` stands left of the arrow.
-  @[ refuses("NegativeOccurrence"), form(explicit) ]
+  @[refuses("NegativeOccurrence"), form(explicit)]
   data Left : Type where {
     | MkL : (f : +U (right -> -F Two)) --> Left
   }
 
   /// The family `Left` consumes: its own field is positive, and it is
   /// refused with its block.
-  @[ refuses("NegativeOccurrence") ]
+  @[refuses("NegativeOccurrence")]
   data Right : Type where {
     | MkR : (l : Left) --> Right
   }
 
   /// `Right`, named by a definition of the block, refused with it.
-  @[ refuses("NegativeOccurrence") ]
+  @[refuses("NegativeOccurrence")]
   def right : Type;
   def right = Right;
 }
@@ -44,7 +44,7 @@ rec {
 rec {
   /// Codes whose function code decodes a code it was not built from,
   /// refused with their decoder.
-  @[ refuses("StageNotBelow") ]
+  @[refuses("StageNotBelow")]
   data Odd : Type where {
     | TwoC : Odd
     | Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd
@@ -52,7 +52,7 @@ rec {
 
   /// The decoder, recursing on the code below: the field's decode does not
   /// stand below the code it was read from.
-  @[ refuses("StageNotBelow") ]
+  @[refuses("StageNotBelow")]
   def rec decode(u : Odd) -> -F Type {
     match u where
       | TwoC => return Two
@@ -60,7 +60,7 @@ rec {
   }
 
   /// The code the field decodes, a definition of the block, refused with it.
-  @[ refuses("StageNotBelow") ]
+  @[refuses("StageNotBelow")]
   def base : Odd;
   def base = TwoC;
 }
@@ -69,14 +69,14 @@ rec {
 rec {
   /// The codes: one base code, and the dependent functions over a code,
   /// refused with their decoder.
-  @[ refuses("StageNotBelow") ]
+  @[refuses("StageNotBelow")]
   data Loop : Type where {
     | Base : Loop
     | PiL : (a : Loop, b : +U (unloop(a) -> -F Loop)) --> Loop
   }
 
   /// The decoder decoding a function code again where its domain is wanted.
-  @[ refuses("StageNotBelow") ]
+  @[refuses("StageNotBelow")]
   def rec unloop(u : Loop) -> -F Type =
     match u where
       | Base => return Two
@@ -86,14 +86,14 @@ rec {
 /// A type read off a call that returns no code: `g(L)` is a function still
 /// waiting for its second argument, and only a pure returner's call stands
 /// where a type is read.
-@[ refuses("CompoundEndpoint") ]
+@[refuses("CompoundEndpoint")]
 def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two =
   return L
 
 /// A hierarchy of universes by level, and its decoder, in one block.
 rec {
   /// The codes at each level. They share their decoder's refusal.
-  @[ refuses("NegativeOccurrence") ]
+  @[refuses("NegativeOccurrence")]
   data ULevel : Nat -> Type where {
     /// The naturals, at every level.
     | NatV : (n : Nat) --> ULevel n
@@ -105,7 +105,7 @@ rec {
 
   /// The decoder at each level. Its arm for `TypeV` returns the family
   /// itself, at the level under `n`.
-  @[ refuses("NegativeOccurrence") ]
+  @[refuses("NegativeOccurrence")]
   def rec elLevel(n : Nat, u : ULevel n) -> -F Type =
     match u where
       | NatV(m) => return Nat

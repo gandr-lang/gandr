@@ -1,4 +1,4 @@
-@[ refuses("RulesUnoriented") ]
+@[refuses("RulesUnoriented")]
 data Marks : Type where {
   | Aye : Marks
   | Nay : Marks

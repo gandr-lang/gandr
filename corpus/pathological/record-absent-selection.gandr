@@ -3,6 +3,6 @@
 /// so the printer's selection reads back to the same refusal.
 ///
 /// - see: #815
-@[ refuses("AbsentRecordField") ]
+@[refuses("AbsentRecordField")]
 def absent_selected(r : *{n : Integer, s : String}) -> Integer =
   r.z

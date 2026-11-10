@@ -1,2 +1,2 @@
 /// First.
-@[ doc("Second.") ] def x = 1;
+@[doc("Second.")] def x = 1;

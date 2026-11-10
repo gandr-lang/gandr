@@ -7,6 +7,6 @@ data Int : Type where {
   rule : P (S x) <=> x;
 }
 
-@[ refuses("NonExhaustiveMatch") ]
+@[refuses("NonExhaustiveMatch")]
 def unmatched(n : Int) -> -F Empty =
   match n {}

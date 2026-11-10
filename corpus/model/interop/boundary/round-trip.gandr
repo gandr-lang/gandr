@@ -33,7 +33,7 @@ pub def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32
 
 /// The Rust caller's adder, `add(x: u32, n: u32) -> u32`. Its check admits it
 /// against `addRow`.
-@[ boundary(addRow) ]
+@[boundary(addRow)]
 extern "rust" from "boundary" as Boundary {
   def add(x : u32, n : u32) -> u32;
 }
@@ -54,15 +54,15 @@ def adder(n : Integer) -> Integer -> Integer =
   thunk { fun (x) { x + n } }
 
 /// `double` at 21, as the Rust test calls it.
-@[ runs("42") ]
+@[runs("42")]
 def doubled() -> Integer { double 21 }
 
 /// `less` at 19 and 7, as the Rust test calls it.
-@[ runs("12") ]
+@[runs("12")]
 def lessened() -> Integer { less 19 7 }
 
 /// `adder` at 5, applied to 7.
-@[ runs("12") ]
+@[runs("12")]
 def added() -> Integer =
   let add = adder 5
   add 7

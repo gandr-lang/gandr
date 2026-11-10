@@ -17,7 +17,7 @@ data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("UnmarkedSelfReference") ]
+@[refuses("UnmarkedSelfReference")]
 def rec bare(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
@@ -39,7 +39,7 @@ def rec varied(n : Nat, m : Nat) -> Nat =
 
 /// A productive claim outside a copattern block: nothing is observed before
 /// the function runs again.
-@[ refuses("UnguardedCorecursion") ]
+@[refuses("UnguardedCorecursion")]
 def rec ahead(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
@@ -51,5 +51,5 @@ def rec constant() -> Nat { Zero }
 
 /// A descent claimed by a recursive definition of no parameter: its fixpoint
 /// stands at no arrow, so the call has nothing to descend on.
-@[ refuses("ShapeMismatch") ]
+@[refuses("ShapeMismatch")]
 def rec spin() -> Nat { spin[<] () }

@@ -1,4 +1,4 @@
-@[ checks, ]
+@[checks,]
 data Either(a : Type, b : Type,) : Type where
   | Left : (x : a,) --> Either a b
   | Right : (y : b,) --> Either a b
@@ -21,10 +21,10 @@ def warm(c : Color) -> Integer =
 def cool(c : Color) -> Integer =
   match c { | Red | Green => 0 | Blue => 1 }
 
-@[ runs("fun (a) { fun (b) { a } }") ]
+@[runs("fun (a) { fun (b) { a } }")]
 def first(x : Integer, y : Integer) -> Integer { x }
 
-@[ runs("42") ]
+@[runs("42")]
 def chosen() -> Integer { become (force first) 42 7 }
 
 def pick(x : Integer, y : Integer,) -> Integer =

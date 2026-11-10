@@ -1,5 +1,6 @@
-/// `RulesDiverge`: two rules of a block rewriting one term to two constructor terms.
-@[ refuses("RulesDiverge") ]
+/// `RulesDiverge`: two rules of a block rewriting one term to
+/// two constructor terms.
+@[refuses("RulesDiverge")]
 data Circle : Type where {
   | Base : Circle
   | Loop : (x : Circle) --> Circle

@@ -1,9 +1,10 @@
-/// `UnfixedParameter`: a `let` with no type binds a constructor of a family with a parameter, and no field fixes the parameter.
+/// `UnfixedParameter`: a `let` with no type binds a constructor of a family
+/// with a parameter, and no field fixes the parameter.
 pub data Box(a : Type) : Type where
   /// The box that holds `x`.
   | Full : (x : a) --> Box a
 
-@[ refuses("UnfixedParameter") ]
+@[refuses("UnfixedParameter")]
 pub def full() -> Box Integer =
   let b = Full 3
   b

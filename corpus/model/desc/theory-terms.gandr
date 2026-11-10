@@ -36,7 +36,7 @@ def cancelled : Path(
 ) = Path.here Mag.one;
 
 /// A term a function builds, which runs to itself.
-@[ runs("Mag.mul Mag.one Mag.one") ]
+@[runs("Mag.mul Mag.one Mag.one")]
 def built() -> Terms Mag { Mag.mul Mag.one Mag.one }
 
 /// Counts: no tick, then one more.
@@ -75,12 +75,12 @@ module Counts : Model(Mag) where
   def unitR(x : Ticks) -> Path(mul x (one ()), x) { noTickRight x }
 
 /// The fold into the counts, which respects the counts' laws.
-@[ respects(*{Counts.unitL, Counts.unitR}) ]
+@[respects(*{Counts.unitL, Counts.unitR})]
 def rec intoCounts(t : Terms Mag) -> Ticks =
   match t where
     | Mag.one => Counts.one ()
     | Mag.mul(x, y) => Counts.mul (intoCounts[<] x) (intoCounts[<] y)
 
 /// A closed term folded into the counts.
-@[ runs("NoTick") ]
+@[runs("NoTick")]
 def folded() -> Ticks { intoCounts (Mag.mul Mag.one (Mag.mul Mag.one Mag.one)) }

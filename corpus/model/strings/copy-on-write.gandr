@@ -73,19 +73,19 @@ pub def written(w : Written) -> Repr =
 pub def long() -> [Partial] Repr { own (repeatOnto 97 24 (Nil : List Integer)) }
 
 /// `alone` appends `!` to an unshared long string and copies no buffer.
-@[ runs("0") ]
+@[runs("0")]
 def alone() -> [Partial] Integer { let s = force long; copies (push s 33) }
 
 /// `shared` appends `!` to a copied long string.
 /// The write copies one buffer.
-@[ runs("1") ]
+@[runs("1")]
 def shared() -> [Partial] Integer =
   let s = force long
   let c = copy s
   copies (push c 33)
 
 /// `untouched` preserves the original bytes after a copy receives `!`.
-@[ runs("25") ]
+@[runs("25")]
 def untouched() -> [Partial] Integer =
   let s = force long
   let c = copy s
@@ -93,7 +93,7 @@ def untouched() -> [Partial] Integer =
   count (bytes s)
 
 /// `grown` counts the copied string after it receives `!`.
-@[ runs("26") ]
+@[runs("26")]
 def grown() -> [Partial] Integer =
   let s = force long
   let c = copy s
@@ -102,14 +102,14 @@ def grown() -> [Partial] Integer =
   count (bytes t)
 
 /// `shout` writes `hi!` to inline bytes.
-@[ runs("Inside") ]
+@[runs("Inside")]
 def shout() -> Place =
   let s = own (Cons 104 (Cons 105 Nil) : List Integer)
   let w = push s 33
   place (written w)
 
 /// `spill` moves a full inline string to the heap.
-@[ runs("1") ]
+@[runs("1")]
 def spill() -> [Partial] Integer =
   let cs = repeatOnto 97 23 (Nil : List Integer)
   let s = own cs

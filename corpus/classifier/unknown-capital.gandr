@@ -2,5 +2,5 @@
 /// lowercase name naming nothing is.
 ///
 /// - see: #2653
-@[ refuses("UnresolvedName") ]
+@[refuses("UnresolvedName")]
 def hue = Green;

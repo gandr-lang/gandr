@@ -46,5 +46,5 @@ def ticked(c : Model Ticker, n : c.C) -> c.C =
   step n
 
 /// `upTicked` passes `Up` as a ticker value.
-@[ runs("2") ]
+@[runs("2")]
 def upTicked() -> Integer { ticked Up 1 }

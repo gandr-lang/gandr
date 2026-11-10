@@ -11,7 +11,7 @@
 /// β substitutes `lam`'s body, which stands under `lam` rather than as an
 /// argument of `app`: the order does not put `t(u)` below the redex, so the
 /// rule is not known to end.
-@[ refuses("RulesUnoriented") ]
+@[refuses("RulesUnoriented")]
 theory Beta where
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
@@ -21,7 +21,7 @@ theory Beta where
 /// β's first-order shadow passes `lam`'s body to `app`, whose port binds
 /// nothing: the binding is lost, and the description check refuses the rule
 /// by the variable's name.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory BetaShadow where
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
@@ -30,7 +30,7 @@ theory BetaShadow where
 
 /// An instantiation takes one argument per variable its port binds, and `t`
 /// binds one.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory LetTwice where
   sort Tm : Type+;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
@@ -39,7 +39,7 @@ theory LetTwice where
 /// `putPut` applies `f`, which no operation declares, once on each side: the
 /// description check refuses the rule once, and its refusal is the theory's
 /// alone, with no overlap check run over the rule it refused.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory Undeclared where
   sort S : Type+;
   sort C : Type;
@@ -49,7 +49,7 @@ theory Undeclared where
 
 /// ζ beside a rule rewriting `let` at `zero()` to `zero()`: their left sides
 /// overlap at the root, and the reducts `t(zero())` and `zero()` part.
-@[ refuses("RulesOverlapSecondOrder") ]
+@[refuses("RulesOverlapSecondOrder")]
 theory LetToZero where
   sort Tm : Type+;
   oper zero : () --> Tm;

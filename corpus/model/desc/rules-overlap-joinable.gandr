@@ -13,7 +13,7 @@
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
 /// Addition has a left and right zero unit.
-@[ normalizes("add(Zero, Zero) ~> Zero") ]
+@[normalizes("add(Zero, Zero) ~> Zero")]
 data NatUnits : Type where {
   | Zero : NatUnits
   | Succ : (n : NatUnits) --> NatUnits
@@ -24,15 +24,15 @@ data NatUnits : Type where {
 }
 
 /// At zero plus zero, the two unit rules overlap.
-@[ runs("Zero") ]
+@[runs("Zero")]
 def zero_plus_zero() -> NatUnits { add Zero Zero }
 
 /// At one plus zero, the right unit and recursion overlap.
-@[ runs("Succ Zero") ]
+@[runs("Succ Zero")]
 def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
 
 /// The recursive rule alone evaluates two plus one.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
 
 /// Associativity overlaps with itself at the nested product.

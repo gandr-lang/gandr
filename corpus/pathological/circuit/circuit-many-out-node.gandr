@@ -1,4 +1,4 @@
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Wide where
   sort Nat : Type;
   oper tee : (a : Nat) --> (b : Nat, c : Nat);

@@ -12,6 +12,6 @@ data NatSub : Type where {
   | Succ : (n : NatSub) --> NatSub
   oper minus : (m : NatSub, n : NatSub) --> NatSub;
   /// The rule matches one variable twice, so it is held apart.
-  @[ refuses("RulesNonLinear") ]
+  @[refuses("RulesNonLinear")]
   rule : minus x x ==> Zero;
 }

@@ -1,4 +1,4 @@
 /// `f_type`: a computation type returning a value type.
-@[ checks ]
+@[checks]
 def answer() -> -F Integer =
   return 42

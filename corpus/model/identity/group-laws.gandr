@@ -14,7 +14,7 @@
 //! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
 
 /// The `Group` theory states laws for units, association and inverses.
-@[ normalizes("inv(mul(a, b)) ~> mul(inv(b), inv(a))") ]
+@[normalizes("inv(mul(a, b)) ~> mul(inv(b), inv(a))")]
 pub theory Group where
   sort G : Type;
 

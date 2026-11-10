@@ -22,7 +22,7 @@ import "../../../model/interop/thir/buddy-pop.gandr";
 
 /// A part of the root cannot write the heads, so the claim from a listed
 /// head is refused.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def popShared(
   blocks : Vals,
   heads : Vals,
@@ -49,7 +49,7 @@ def popShared(
 
 /// At a listed head `pop` answers that block, so its claim to answer
 /// `None` is refused.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def popListedAsEmpty(
   blocks : Vals,
   heads : Vals,

@@ -16,7 +16,7 @@
 
 /// A parameter at a session type that nothing acts on: the body ends with the
 /// endpoint unspent.
-@[ refuses("LinearResidue") ]
+@[refuses("LinearResidue")]
 def leaky(seat : end) -> Unit =
   *{}
 
@@ -29,19 +29,19 @@ def counted(amount : Integer) -> Integer =
   amount
 
 /// A fork's child that closes its end once `finish` holds it.
-@[ refuses("UsedAfterClose") ]
+@[refuses("UsedAfterClose")]
 def reused() -> Unit =
   let desk = fork (seat : end) { finish seat; close seat };
   close desk
 
 /// A fork's child that hands its end where a number stands.
-@[ refuses("EndpointAsValue") ]
+@[refuses("EndpointAsValue")]
 def miscounted() -> Unit =
   let desk = fork (seat : end) { let total = counted seat; close seat };
   close desk
 
 /// A recursive protocol followed by calling itself on the same endpoint.
-@[ refuses("StageNotBelow") ]
+@[refuses("StageNotBelow")]
 def rec follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> Unit =
   offer operator {
     | report => { let next = recv operator; become follow[<] operator }

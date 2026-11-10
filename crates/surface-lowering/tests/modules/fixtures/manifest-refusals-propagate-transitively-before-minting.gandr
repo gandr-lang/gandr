@@ -1,2 +1,2 @@
-module M : *{ type A = Missing, type B = A, value : B } where { def value = unbound; }
+module M : *{type A = Missing, type B = A, value : B} where { def value = unbound; }
 def after = 2;

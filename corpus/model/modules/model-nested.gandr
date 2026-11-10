@@ -21,16 +21,16 @@ module Facts : Model(Faceted) where {
   /// The nested model.
   module inner : Model(Answering) where {
     /// The answer.
-    @[ checks ]
+    @[checks]
     def answer = 41;
   }
   /// The total.
-  @[ checks ]
+  @[checks]
   def total = 42;
 }
 
 /// The nested answer, read through the outer model.
-@[ runs("41") ]
+@[runs("41")]
 def nested_answer() -> Integer { Facts.inner.answer }
 
 /// A theory with an abstract sort, the carrier a sealed model hides.

@@ -16,9 +16,9 @@ import "../higher-cells/magma-base.gandr";
 import "./generic-arity.gandr";
 
 /// `arity` counts `Monoid` through `Magma`'s presentation.
-@[ runs("2") ]
+@[runs("2")]
 def counted_behind() -> Integer { arity Monoid }
 
 /// `arity` counts `Magma` through the generic program.
-@[ runs("2") ]
+@[runs("2")]
 def counted_across() -> Integer { arity Magma }

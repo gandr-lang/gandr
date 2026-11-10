@@ -1,4 +1,5 @@
-/// `flow_declaration`: a flow: one theory's members, defined over another's, written with its glyph and in ASCII.
+/// `flow_declaration`: a flow: one theory's members, defined over another's,
+/// written with its glyph and in ASCII.
 theory Older where
   oper answer : Integer;
 

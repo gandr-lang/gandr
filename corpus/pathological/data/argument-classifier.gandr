@@ -19,7 +19,7 @@ def first(xs : List Integer) -> Integer =
 
 /// A string where the parameter takes integers is refused by the checker,
 /// not as unannotated.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def mistyped() -> Integer { first (Cons "no" Nil) }
 
 /// How many elements a list of any type holds.
@@ -34,5 +34,5 @@ def rec size(a : Type, xs : List a) -> Integer =
 /// A list of strings passed where `xs : List(a)` takes it at `a = Integer`:
 /// its type reads the argument before it, and the checker refuses the
 /// strings.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def mistypedAt() -> Integer { size Integer (Cons "no" Nil) }

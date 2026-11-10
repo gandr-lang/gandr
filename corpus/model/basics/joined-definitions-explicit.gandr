@@ -8,10 +8,10 @@
 // - see: #2228
 
 /// Three, its signature and definition apart.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 def pairedThree : Integer;
 def pairedThree = 3;
 
 /// `pairedAgain` reads the explicit pair.
-@[ runs("3") ]
+@[runs("3")]
 def pairedAgain() -> -F Integer { return pairedThree }

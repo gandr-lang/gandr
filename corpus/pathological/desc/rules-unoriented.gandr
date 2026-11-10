@@ -1,4 +1,4 @@
-@[ refuses("RulesUnoriented") ]
+@[refuses("RulesUnoriented")]
 data NatGrow : Type where {
   | Zero : NatGrow
   | Succ : (n : NatGrow) --> NatGrow

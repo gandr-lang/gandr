@@ -32,6 +32,6 @@ def nineteen() -> Nat =
 
 /// The two definitions agree at nineteen, but the conversion spends its
 /// step budget before it shows it.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def agree() -> Path(fib (nineteen ()), fibFrom (nineteen ()) Zero (Succ Zero)) =
   Path.here (fib (nineteen ()))

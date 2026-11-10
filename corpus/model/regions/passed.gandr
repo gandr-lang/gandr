@@ -14,7 +14,7 @@ import std.process;
 pub def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) { pure k }
 
 /// `passed` forces the thunk that `pass` returns.
-@[ runs("4") ]
+@[runs("4")]
 def passed() -> Integer =
   var s = 4
   handle c : std.process.Exit.Eff {

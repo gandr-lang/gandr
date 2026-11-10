@@ -27,7 +27,7 @@ def showBool(b : Bool, x : boolType(b)) -> String =
     | false => ""
 
 /// `showBool` at `true` returns its argument.
-@[ runs("\"a\"") ]
+@[runs("\"a\"")]
 def shown() -> String { showBool true "a" }
 
 /// Each arm returns a value of the type that its flag selects.

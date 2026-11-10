@@ -7,7 +7,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │                               an endpoint the point does not convert to
    │                               an endpoint the point does not convert to
    ┆
-34 │ ┌   @[ refuses("EndpointMismatch") ]
+34 │ ┌   @[refuses("EndpointMismatch")]
 35 │ │   def chargeTwice(
 36 │ │     a : Nat -> Nat,
    │ │     ─ checked; while checking the body of this function; binds a : Nat -> Nat

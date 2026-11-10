@@ -28,7 +28,7 @@ import "./reals-base.gandr";
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
-@[ runs("\"holds\"") ]
+@[runs("\"holds\"")]
 def decidedModelled() -> String =
   handle r : std.reals.Eff {
     decided belowThreeHalves 16

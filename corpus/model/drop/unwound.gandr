@@ -21,12 +21,12 @@ import std.list (List);
 import std.process;
 
 /// A run reports blame when it calls the owed `later` declaration.
-@[ owes(1) ]
+@[owes(1)]
 def later : Integer -> Unit;
 
 /// Cleanup calls `later` after a handler abandons an open access.
 /// The blame shows that the abandonment runs the cleanup.
-@[ runs("blame: `later` is owed its body") ]
+@[runs("blame: `later` is owed its body")]
 def unwound() -> Integer =
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
@@ -44,7 +44,7 @@ def built(a : Integer) -> List Integer =
 
 /// Cleanup reads a list before the enclosing scope reads it again.
 /// Both retain the list.
-@[ runs("cons 9 (cons 1 (cons 2 nil))") ]
+@[runs("cons 9 (cons 1 (cons 2 nil))")]
 def unwound_kept() -> List Integer =
   let ys = built 1
   var x = 1

@@ -26,7 +26,7 @@ pub data Packed : (s : Sig) --> Type where
 
 /// The arm binds `Pack(m, w) = Pack(n, v)`, where the type of `w` reads `m`.
 /// The checker does not split that equation, so the arm does not learn `m`.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def first(n : Nat, v : Pred (Succ n), h : Packed (Pack n v)) -> At n =
   match h where
     | Hold(m, w) => A m

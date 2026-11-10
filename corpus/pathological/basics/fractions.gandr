@@ -7,20 +7,20 @@
 // - see: #1109
 
 /// A bare fraction.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def low = 0.2;
 
 /// A fraction in an exponent's form, bare as well.
-@[ refuses("NotSynthesisable") ]
+@[refuses("NotSynthesisable")]
 def small = 1e-3;
 
 /// A number at a width the lowering does not admit yet.
-@[ refuses("OutOfFragment.typed_number") ]
+@[refuses("OutOfFragment.typed_number")]
 def single = 0.5f32;
 
 /// The annotated fraction checks.
 def stated = (0.2 : f64);
 
 /// The annotated fraction, named again.
-@[ runs("0.2f64") ]
+@[runs("0.2f64")]
 def shown = stated;

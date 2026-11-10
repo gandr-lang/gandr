@@ -43,7 +43,7 @@ def quiet[r : Row](s : String) -> [r] Unit =
   }
 
 /// `quietRun` handles the printed line.
-@[ runs("*{}") ]
+@[runs("*{}")]
 def quietRun() -> Unit { quiet "handled" }
 
 /// `quiet` beside `Partial`: the variable carries `Partial`

@@ -1,2 +1,2 @@
-@[ explicit_exits ]
+@[explicit_exits]
 def kept(n : Integer) -> -F Integer { n }

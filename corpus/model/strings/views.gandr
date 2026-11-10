@@ -28,7 +28,7 @@ import std.process;
 /// This test reads `hi` through a view.
 
 // The access restores the unchanged string.
-@[ runs("3") ]
+@[runs("3")]
 def readThrough() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { resume v v };
@@ -36,7 +36,7 @@ def readThrough() -> Integer =
 
 /// `writeThrough` appends `!` through a view.
 /// The access writes the changed string back.
-@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
+@[runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))")]
 def writeThrough() -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { let w = push v 33; let t = written w; resume v t };
@@ -45,7 +45,7 @@ def writeThrough() -> List Integer =
 /// This test aborts an access.
 
 // The held string remains unchanged.
-@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
 def abandoned() -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { abort v } unwind { pure *{} };
@@ -53,7 +53,7 @@ def abandoned() -> List Integer =
 
 /// `twiceThrough` performs two accesses in sequence.
 /// The second access reads the first write.
-@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))") ]
+@[runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))")]
 def twiceThrough() -> List Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { let w = push v 33; let t = written w; resume v t };
@@ -62,7 +62,7 @@ def twiceThrough() -> List Integer =
 
 /// `keptInRegion` retains a view in the enclosing region.
 /// The view reads an unchanged string after its access ends.
-@[ runs("3") ]
+@[runs("3")]
 def keptInRegion() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   handle c : std.process.Exit.Eff {

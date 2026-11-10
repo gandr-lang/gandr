@@ -65,7 +65,7 @@ def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int](plus a b, plus b a) =
 
 /// The `turned` recursion maps integers to circle loops.
 /// At `S(P(x))`, the checker refuses unequal loops.
-@[ refuses("RuleNotRespected") ]
+@[refuses("RuleNotRespected")]
 def rec turned(b : Int) -> Path[.A = Circle](Base, Base) =
   match b where
     | Z => Path.here Base

@@ -1,6 +1,19 @@
 /// `nested-operation-laws`: Operations nested in a law or a call.
-/// Implemented: a theory's call nesting an operation where a value is read normalizes over terms under the block's oriented rules, each operation over an indexed sort carrying the indices its sorting fixes, and an ill-sorted call refused; a law nesting an operation over an indexed sort is read, completed and decided with those indices, an index at a sort the laws rewrite left off, so a whisker's laws read over objects; a carried index applying an operation with indices of its own carries them, and a law's sides sort modulo the laws at earlier sorts; a family's rule nesting an operation is a law of the family, its operation running by its other rules and the kernel deciding the whole system converges.
-/// Not implemented: the checker refuses a law whose carried index applies an operation that a law at an earlier sort rewrites as `UndescribedMember.RewrittenIndex`. Two more laws are refused `UndescribedMember.NestedOperation`. One instantiates a variable beside an indexed sort, and one applies an operation whose indices no port fixes.
+/// Implemented: a theory's call nesting an operation where a value is read
+/// normalizes over terms under the block's oriented rules, each operation over
+/// an indexed sort carrying the indices its sorting fixes, and an ill-sorted
+/// call refused; a law nesting an operation over an indexed sort is read,
+/// completed and decided with those indices, an index at a sort the laws
+/// rewrite left off, so a whisker's laws read over objects; a carried index
+/// applying an operation with indices of its own carries them, and a law's
+/// sides sort modulo the laws at earlier sorts; a family's rule nesting an
+/// operation is a law of the family, its operation running by its other rules
+/// and the kernel deciding the whole system converges.
+/// Not implemented: the checker refuses a law whose carried index applies an
+/// operation that a law at an earlier sort rewrites as
+/// `UndescribedMember.RewrittenIndex`. Two more laws are refused
+/// `UndescribedMember.NestedOperation`. One instantiates a variable beside an
+/// indexed sort, and one applies an operation whose indices no port fixes.
 ///
 /// - owes: #4128
 /// - owes: #5117
@@ -13,7 +26,7 @@
 
 /// Choice with cut over a grade-indexed sort: `cutLeft` commits to the left
 /// branch whatever grade the right one stands at.
-@[ normalizes("orBot(cut, fail) ~> cut") ]
+@[normalizes("orBot(cut, fail) ~> cut")]
 theory GradedCut where
   sort Grade : Type;
   sort M(g : Grade) : Type;
@@ -76,7 +89,7 @@ theory EditedViews where
 
 /// Addition with its associativity: the law nests `add` in a call, so `add`
 /// runs by its two other rules, and the kernel decides the three converge.
-@[ normalizes("add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
+@[normalizes("add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))")]
 data NatAssoc : Type where {
   | Zero : NatAssoc
   | Succ : (n : NatAssoc) --> NatAssoc
@@ -87,5 +100,5 @@ data NatAssoc : Type where {
 }
 
 /// One plus one, plus one, runs to three.
-@[ runs("Succ (Succ (Succ Zero))") ]
+@[runs("Succ (Succ (Succ Zero))")]
 def three() -> NatAssoc { add (add (Succ Zero) (Succ Zero)) (Succ Zero) }

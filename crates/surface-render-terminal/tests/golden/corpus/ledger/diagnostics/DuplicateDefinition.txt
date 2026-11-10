@@ -1,7 +1,7 @@
 error[DuplicateDefinition]: `x` is defined twice
   ╭▸ corpus/ledger/diagnostics/DuplicateDefinition.gandr:5:3
   │
-3 │ ┌   @[ refuses("DuplicateDefinition") ]
+3 │ ┌   @[refuses("DuplicateDefinition")]
 4 │ │   def x = 1;
   │ └────────────┘ first written here
 5 │     def x = 2;

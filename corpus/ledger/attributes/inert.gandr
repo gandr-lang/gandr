@@ -1,4 +1,5 @@
-/// `inert`: a top-level definition that only the manifest step and another inert declaration read.
-@[ inert ]
-@[ runs("\"0.1.0\"") ]
+/// `inert`: a top-level definition that only the manifest step and another
+/// inert declaration read.
+@[inert]
+@[runs("\"0.1.0\"")]
 def version = "0.1.0";

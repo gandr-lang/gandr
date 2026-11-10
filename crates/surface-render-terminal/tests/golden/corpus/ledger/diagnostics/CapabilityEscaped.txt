@@ -1,7 +1,7 @@
 error[CapabilityEscaped]: a capability its scope introduced would outlive the scope here
    ╭▸ corpus/ledger/diagnostics/CapabilityEscaped.gandr:10:12
    │
- 8 │ ┌  def leak() -> -F Cap {exit} {
+ 8 │ ┌  def leak() -> -F Cap { exit } {
  9 │ │┌   handle c : std.process.Exit.Eff {
 10 │ ││     return c
    │ ││     ┬──────┯

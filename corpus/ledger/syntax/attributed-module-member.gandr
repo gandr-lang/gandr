@@ -1,7 +1,8 @@
-/// `attributed_module_member`: an attributed definition inside a module body, its linear tail written with its glyph and in ASCII.
+/// `attributed_module_member`: an attributed definition inside a module body,
+/// its linear tail written with its glyph and in ASCII.
 module Kept where {
-  @[ doc("The parameter, taken once.") ] def kept(x : Integer) ⊸ Integer = x;
+  @[doc("The parameter, taken once.")] def kept(x : Integer) ⊸ Integer = x;
 }
 module KeptAscii where {
-  @[ doc("The parameter, taken once.") ] def keptAscii(x : Integer) -o Integer = x;
+  @[doc("The parameter, taken once.")] def keptAscii(x : Integer) -o Integer = x;
 }

@@ -33,7 +33,7 @@ module Passing : Model(State.Eff) with sort S = Integer where
     thunk { fun (_old) { k s } }
 
 /// `putThenGet` stores four and reads it twice.
-@[ runs("44") ]
+@[runs("44")]
 def putThenGet() -> Integer =
   let read = Passing.get (fun (s) { pure fun (t) { pure s * 10 + t } })
   let program = Passing.put 4 read
@@ -93,7 +93,7 @@ def putGet(m : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = 
     }
 
 /// `direct` runs `putGet` through `passing`.
-@[ runs("11") ]
+@[runs("11")]
 def direct() -> Integer { putGet passing }
 
 /// `carried` runs `putGet` through `negated`.

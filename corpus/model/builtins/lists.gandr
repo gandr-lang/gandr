@@ -14,5 +14,5 @@ import std.list (List);
 def xs = (#[1, 2, 3] : List Integer);
 
 /// `prefixed` adds zero at the front. The lowering does not yet admit `++`.
-@[ refuses("OutOfFragment.binary_expression") ]
+@[refuses("OutOfFragment.binary_expression")]
 def prefixed = #[0] ++ xs;

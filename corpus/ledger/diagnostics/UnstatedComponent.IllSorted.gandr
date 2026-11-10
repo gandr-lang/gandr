@@ -1,7 +1,8 @@
-/// `UnstatedComponent.IllSorted`: a model component the derivation cannot state: a term whose sort disagrees with the sort its position reads.
+/// `UnstatedComponent.IllSorted`: a model component the derivation cannot
+/// state: a term whose sort disagrees with the sort its position reads.
 ///
 /// The theory the model derives from.
-@[ checks ]
+@[checks]
 theory T where
   sort Nat : Type;
   sort Bit : Type;
@@ -9,5 +10,5 @@ theory T where
   oper low : (n : Nat) --> Bit;
   rule crossed : low (zero ()) ==> zero ();
 
-@[ refuses("UnstatedComponent.IllSorted") ]
-def model : Model T ;
+@[refuses("UnstatedComponent.IllSorted")]
+def model : Model T;

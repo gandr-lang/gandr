@@ -8,14 +8,14 @@
 //! - see: streams.gandr — current surface spelling
 
 /// Point is refused because its kind is a value universe.
-@[ refuses("CodataKindNotUniverse") ]
+@[refuses("CodataKindNotUniverse")]
 codata Point : Type where
   x : Integer;
   y : Integer;
 
 /// `origin` supplies three and four with bare copatterns.
 /// The checker refuses it without a copattern block.
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 def rec origin() -> Point {
   .x => 3,
   .y => 4
@@ -23,5 +23,5 @@ def rec origin() -> Point {
 
 /// `coordinates` sums the rejected origin coordinates.
 /// It is refused because origin has no known type.
-@[ refuses("UnknownConstant") ]
+@[refuses("UnknownConstant")]
 def coordinates() -> Integer { origin.x + origin.y }

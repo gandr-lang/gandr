@@ -33,7 +33,7 @@ def moves : Path[.A = Unit * (+{Unit} * Bool)](
 ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
 /// `stays` refuses the unchanged boolean as the transport result.
-@[ refuses("EndpointMismatch") ]
+@[refuses("EndpointMismatch")]
 def stays : Path[.A = Unit * (+{Unit} * Bool)](
   Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
   *{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}
@@ -46,5 +46,5 @@ def reopposite = ua[1, 4] Magma Magma (*{.mul = flip, .one = keep}) (*{.mul = fl
 def agree : Path[.A = Bool -> Bool](exchange, flip) = Path.funext exchange flip;
 
 /// `disagree` refuses `exchange` and `boolId` as pointwise equal.
-@[ refuses("PointwiseDistinct") ]
+@[refuses("PointwiseDistinct")]
 def disagree : Path[.A = Bool -> Bool](exchange, boolId) = Path.funext exchange boolId;

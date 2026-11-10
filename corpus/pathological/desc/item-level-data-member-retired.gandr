@@ -1,4 +1,4 @@
-@[ refuses("MalformedForm") ]
+@[refuses("MalformedForm")]
 theory Stale where
   sort Nat : Type;
   data Zero : Nat;

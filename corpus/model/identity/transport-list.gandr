@@ -24,7 +24,7 @@ def moved_list(xs : List Bool) -> List Bool =
   Path.walk (fun (X) { List X }) negation xs
 
 /// The `both` value contains truth and falsity.
-@[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
+@[runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)")]
 def both : List Bool = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil);
 
 /// The `flipped_beta` path reverses the Boolean order through negation.
@@ -34,12 +34,12 @@ def flipped_beta : Path(
 ) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil));
 
 /// A run maps `both` through negation at every element.
-@[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
+@[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
 def flipped_list() -> List Bool { moved_list both }
 
 /// The `flipped_value` declaration stores a value from list transport.
 /// The runtime evaluates its transport when a run reads the declaration.
-@[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
+@[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
 def flipped_value : List Bool = Path.walk (fun (X) { List X }) negation both;
 
 /// The `moved_inline` function states list transport with
@@ -49,11 +49,11 @@ def moved_inline(xs : List Bool) -> List Bool =
   Path.walk (fun (X) { List X }) (equiv not not) xs
 
 /// A run maps `both` through an inline negation equivalence.
-@[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
+@[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
 def flipped_inline() -> List Bool { moved_inline both }
 
 /// Negation and the identity are no equivalence: their round trips differ.
-@[ refuses("RoundTripDistinct") ]
+@[refuses("RoundTripDistinct")]
 def collapse_bool : Path[.A = Type](Bool, Bool) = equiv not same;
 
 /// The identity on lists of booleans.
@@ -75,5 +75,5 @@ def flip_flag(entry : Bool * List Bool) -> Bool * List Bool =
 def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool) = equiv flip_flag flip_flag;
 
 /// A run maps truth beside `both` through the flag path.
-@[ runs("*{+{.1 = *{}}, cons +{.0 = *{}} (cons +{.1 = *{}} nil)}") ]
+@[runs("*{+{.1 = *{}}, cons +{.0 = *{}} (cons +{.1 = *{}} nil)}")]
 def flagged_run() -> Bool * List Bool { Path.walk (fun (X) { X }) flagged (*{+{.0 = *{}}, both}) }

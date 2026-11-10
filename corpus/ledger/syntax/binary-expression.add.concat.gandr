@@ -2,5 +2,5 @@
 /// The checker does not reach this form yet.
 ///
 /// - owes: #1997
-@[ refuses("OutOfFragment.binary_expression") ]
-def joined = #[1] ++ #[2] ;
+@[refuses("OutOfFragment.binary_expression")]
+def joined = #[1] ++ #[2];

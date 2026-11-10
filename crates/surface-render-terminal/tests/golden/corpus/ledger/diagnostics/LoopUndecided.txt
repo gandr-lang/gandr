@@ -1,14 +1,14 @@
 error[LoopUndecided]: deciding whether this case respects its sort's loops ran past the checker's budget: unfolding what the loop's obligation calls did not settle it
-   ╭▸ corpus/ledger/diagnostics/LoopUndecided.gandr:22:3
+   ╭▸ corpus/ledger/diagnostics/LoopUndecided.gandr:23:3
    │
-21 │    def costly(x : Circle) -> -F Path[.A = Circle](x, x) =
+22 │    def costly(x : Circle) -> -F Path[.A = Circle](x, x) =
    │    │          ─ checked against `(x : Circle) -> -F Path[.A = Circle](x, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-22 │ │┏   match x where
-23 │ │┃     | Base => match power (power (Succ (Succ (Succ Zero)))) where
-24 │ │┃       | Zero => Path.here Base
-25 │ │┃       | Succ(p) => Path.here Base
+23 │ │┏   match x where
+24 │ │┃     | Base => match power (power (Succ (Succ (Succ Zero)))) where
+25 │ │┃       | Zero => Path.here Base
+26 │ │┃       | Succ(p) => Path.here Base
    │ │┃                                 ╿
    │ └┃─────────────────────────────────│
    │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(x : Circle) -> Path[.A = Circle](x, x)`; while checking the body of this thunk

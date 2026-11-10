@@ -1,10 +1,13 @@
 /// `invertible-cells`: Invertible cells between distinct points.
-/// Implemented: a free invertible cell at a point, its loop space the words over the cell and its inverse with the cancellations as rules (the circle).
-/// Not implemented: a cell between two distinct points, which would present a segment and is refused by name.
+/// Implemented: a free invertible cell at a point, its loop space the words
+/// over the cell and its inverse with the cancellations as rules (the circle).
+/// Not implemented: a cell between two distinct points, which would present a
+/// segment and is refused by name.
 ///
 /// - owes: #2712
 // The circle as the book states it: one point, one loop at it, and the loops
-// at the point equivalent to the integers, `Path[.A = Circle](Base, Base) ≃ Int`.
+// at the point equivalent to the integers, `Path[.A = Circle](Base,
+// Base) ≃ Int`.
 // The loop is a free invertible cell at the point, so the paths from the
 // point to itself are the words over the loop and its inverse, with the two
 // cancellations as rules: the lowering mints them, and `Path[.A = Circle](Base,
@@ -26,64 +29,64 @@
 
 // The circle, the presented integers, the winding number and spinning with
 // their round trips.
-import "../../model/identity/circle-base.gandr" ;
+import "../../model/identity/circle-base.gandr";
 // The quasi-inverse made bi-invertible, which the equivalence is.
-import "../../model/identity/equivalence.gandr" ;
+import "../../model/identity/equivalence.gandr";
 
 /// The loop's word: one letter before the empty word.
-@[ runs("loop ∷ Path.here Base") ]
+@[runs("loop ∷ Path.here Base")]
 def once() -> Path[.A = Circle](Base, Base) { loop }
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion, which
 /// `Path.back(loop)` converts to.
-@[ checks ]
+@[checks]
 def unwound : Path[.A = Path[.A = Circle](Base, Base)](
   Path.back loop,
   back loop ∷ Path.here Base
-) = Path.here (back loop ∷ Path.here Base) ;
+) = Path.here (back loop ∷ Path.here Base);
 
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
-@[ checks ]
+@[checks]
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
   Path.step loop (Path.back loop),
   Path.here Base
-) = Path.here (Path.here Base) ;
+) = Path.here (Path.here Base);
 
 /// Winding twice around and spinning the count back gives the word the
 /// composite is, by conversion.
-@[ checks ]
+@[checks]
 def round : Path[.A = Path[.A = Circle](Base, Base)](
   spin (wind (Path.step loop loop)),
   loop ∷ loop ∷ Path.here Base
-) = Path.here (loop ∷ loop ∷ Path.here Base) ;
+) = Path.here (loop ∷ loop ∷ Path.here Base);
 
 /// The composite the round trip gives: the loop twice, by conversion.
-@[ checks ]
+@[checks]
 def twice : Path[.A = Path[.A = Circle](Base, Base)](
   Path.step loop loop,
   loop ∷ loop ∷ Path.here Base
-) = Path.here (loop ∷ loop ∷ Path.here Base) ;
+) = Path.here (loop ∷ loop ∷ Path.here Base);
 
 /// Spinning two successors and winding the word counts two.
-@[ runs("S (S Z)") ]
-def counted : () -> Int = wind (spin (S (S Z))) ;
+@[runs("S (S Z)")]
+def counted : () -> Int = wind (spin (S (S Z)));
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.
-@[ checks ]
-def windingIso : Path[.A = Circle](Base, Base) ≅ Int = *{wind, *{spin, *{sect, retr}}} ;
+@[checks]
+def windingIso : Path[.A = Circle](Base, Base) ≅ Int = *{wind, *{spin, *{sect, retr}}};
 
 /// The loops at the point and the presented integers are equivalent: the
 /// book's `Path[.A = Circle](Base, Base) ≃ Int`, the quasi-inverse made
 /// bi-invertible, `spin` serving as both inverses. A value is a record, never
 /// a call, so the equivalence is written as the record `isoToEquiv` builds.
-@[ checks ]
-def winding : Path[.A = Circle](Base, Base) ≃ Int = *{wind, *{*{spin, sect}, *{spin, retr}}} ;
+@[checks]
+def winding : Path[.A = Circle](Base, Base) ≃ Int = *{wind, *{*{spin, sect}, *{spin, retr}}};
 
 /// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
-@[ checks ]
+@[checks]
 def windingByIso : Path[.A = Path[.A = Circle](Base, Base) ≃ Int](
   winding,
   isoToEquiv (type(Path[.A = Circle](Base, Base))) Int windingIso
-) = Path.here winding ;
+) = Path.here winding;

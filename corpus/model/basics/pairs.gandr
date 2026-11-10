@@ -14,13 +14,13 @@ def point = *{1, 2};
 def triple : Integer * String * Integer = *{3, "three", 4};
 
 /// The middle of the three, selected by its place.
-@[ runs("\"three\"") ]
+@[runs("\"three\"")]
 def middle() -> String { triple.1 }
 
 /// The last of the three, selected by its place.
-@[ runs("4") ]
+@[runs("4")]
 def last() -> Integer { triple.2 }
 
 /// The pair, named again.
-@[ runs("*{1, 2}") ]
+@[runs("*{1, 2}")]
 def point_again = point;

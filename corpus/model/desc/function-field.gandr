@@ -37,5 +37,5 @@ def answered(x : Integer) -> Program { Done x }
 def overwritten : Program = Put 1 (Put 2 (Get answered));
 
 /// The read sees the second store. The second store replaces the first store.
-@[ runs("2") ]
+@[runs("2")]
 def readBack : () -> Integer = final overwritten 0;

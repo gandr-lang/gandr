@@ -16,6 +16,6 @@ module Schema where {
     match old where
       | *{name, age} => *{age, "anonymous"}
   /// A literal is no image of a source leaf, so no flow forwards by it.
-  @[ refuses("ForwardUnsupported") ]
+  @[refuses("ForwardUnsupported")]
   def scrub : Flow[.A = Type](Old, New) = Flow.into anonymise;
 }

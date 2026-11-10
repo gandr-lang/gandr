@@ -4,7 +4,7 @@
 /// `model/circuit/circuit-feed-wheel.gandr`.
 ///
 /// - see: #1031
-@[ refuses("BareFeedback") ]
+@[refuses("BareFeedback")]
 theory Wheel where
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);

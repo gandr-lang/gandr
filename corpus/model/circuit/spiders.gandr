@@ -16,7 +16,7 @@
 /// `Qubit` marks its sort, so a circuit rule may merge and split its wires.
 theory Qubit where
   /// A wire that merges and splits.
-  @[ frobenius ]
+  @[frobenius]
   sort Q : Type;
   /// A node with one input and one output.
   oper f : (a : Q) --> (b : Q);

@@ -5,29 +5,29 @@
 // cannot live in it. Shared with `../../model/universe/v-infinity.gandr`.
 
 /// Sets: a type of members, and the member at each of its elements.
-@[ checks, form(explicit) ]
+@[checks, form(explicit)]
 data Vinf : Type[+, 1] where
   | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
 
 /// Ordinals of the same shape: the limit of a family of smaller ordinals.
-@[ checks ]
+@[checks]
 data Ord : Type[+, 1] where
   | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
 
 /// The member itself where its rank is expected: the limit's family wants
 /// ordinals, and `f(x)` is a set.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def rec unranked(v : Vinf) -> -F Ord =
   match v where
     | Sup(a, f) => Lim a (thunk { fun (x) { f x } })
 
 /// The set itself where a member is expected: it is not below its own stage.
-@[ refuses("StageNotBelow") ]
+@[refuses("StageNotBelow")]
 def rec circular(v : Vinf) -> -F Ord =
   match v where
     | Sup(a, f) => Lim a (thunk { fun (x) { circular[<] (Sup a f) } })
 
 /// Sets over the types of a universe, placed in that same universe.
-@[ refuses("DataFieldLevel") ]
+@[refuses("DataFieldLevel")]
 data Small : Type where
   | Pick : (a : Type, f : +U (a -> -F Small)) --> Small

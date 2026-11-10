@@ -1,5 +1,6 @@
-/// `NotAModel`: a module statement opens a name no binder or definition declares at a model type.
-@[ refuses("NotAModel") ]
+/// `NotAModel`: a module statement opens a name no binder or definition
+/// declares at a model type.
+@[refuses("NotAModel")]
 def opened(n : Integer) -> Integer =
   module m = n
   n

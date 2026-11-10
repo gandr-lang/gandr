@@ -1,7 +1,7 @@
 error[ComonoidAbsent]: this binder may use its value any number of times (grade ω), but its type holds a qubit, which has no copy and no discard
-  ╭▸ corpus/ledger/diagnostics/ComonoidAbsent.gandr:8:10
+  ╭▸ corpus/ledger/diagnostics/ComonoidAbsent.gandr:9:10
   │
-8 │ def keep(q : Qubit) -> Qubit = q ;
+9 │ def keep(q : Qubit) -> Qubit = q;
   │          ━ a binder over a qubit
   │
   ├ note: `keep` is refused with ComonoidAbsent, as its expectation states

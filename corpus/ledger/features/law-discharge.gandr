@@ -1,8 +1,15 @@
 /// `law-discharge`: a law a model leaves out, discharged by the checker.
 ///
-/// Implemented: the lowering states a law the model leaves out at the law's type with no body. The checker mints `Path.here` at the law's left side under its binders and judges it as a written body, and the kernel replays it. A law whose sides part is refused `NoFiller.Omitted` by its name. `gandr check --report cells` prints `Omitting.refl: Path.here` and the other two cells.
+/// Implemented: the lowering states a law the model leaves out at the law's
+/// type with no body. The checker mints `Path.here` at the law's left side
+/// under its binders and judges it as a written body, and the kernel replays
+/// it. A law whose sides part is refused `NoFiller.Omitted` by its name. `gandr
+/// check --report cells` prints `Omitting.refl: Path.here` and the
+/// other two cells.
 ///
-/// Not implemented: the derived source, a law completion's derivation proves inside the module, and the generated source at the stratum the theory certifies.
+/// Not implemented: the derived source, a law completion's derivation proves
+/// inside the module, and the generated source at the stratum
+/// the theory certifies.
 ///
 /// - see: corpus/ledger/diagnostics/NoFiller.Omitted.gandr
 /// - see: corpus/model/modules/model-laws.gandr
@@ -27,10 +34,12 @@ theory Equivalence where
 data Single : Type where
   | Only : Single
 
-/// Every two values are alike, so each law's sides convert, and the checker discharges all three.
+/// Every two values are alike, so each law's sides convert, and the checker
+/// discharges all three.
 module Omitting : Model(Equivalence) with sort Carrier = Single where
   /// Every two values are alike.
   def alike(a : Single, b : Single) -> Bool { true }
 
-/// The discharged law is a component as a written one is: `Omitting.refl` reads at a value.
+/// The discharged law is a component as a written one is: `Omitting.refl` reads
+/// at a value.
 def reflexive(a : Single) -> Path(Omitting.alike a a, true) { Omitting.refl a }

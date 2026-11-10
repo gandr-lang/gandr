@@ -1,18 +1,18 @@
 error[MarkUnfounded]: this type is marked `mobile`, but its representation cannot cross to another world
-  ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:7:17
+  ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:8:17
   │
-7 │   type Report = +U (Integer -> -F Integer);
+8 │   type Report = +U (Integer -> -F Integer);
   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━ a representation that does not cross
   │
   ├ note: `Report` is refused with MarkUnfounded, as its expectation states
   ╰ help: remove `mobile` or use a representation that crosses
 
 error[NotAnAbstractType]: this names an abstract type that was not admitted
-  ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:8:3
-  │
-8 │ ┏   @[ refuses("NotAnAbstractType") ]
-9 │ ┃   def progress = thunk { fun (x) { return x } };
-  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ not an abstract type
-  │
-  ├ note: `progress` is refused with NotAnAbstractType, as its expectation states
-  ╰ help: admit the abstract type before using it
+   ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:9:3
+   │
+ 9 │ ┏   @[refuses("NotAnAbstractType")]
+10 │ ┃   def progress = thunk { fun (x) { return x } };
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ not an abstract type
+   │
+   ├ note: `progress` is refused with NotAnAbstractType, as its expectation states
+   ╰ help: admit the abstract type before using it

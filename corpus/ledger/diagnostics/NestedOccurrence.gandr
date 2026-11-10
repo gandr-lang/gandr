@@ -1,13 +1,14 @@
-/// `NestedOccurrence`: a data declaration's own family occurs nested where no stage reaches it.
-@[ checks ]
+/// `NestedOccurrence`: a data declaration's own family occurs nested where no
+/// stage reaches it.
+@[checks]
 data Two : Type where
   | L : Two
   | R : Two
 
-@[ checks ]
+@[checks]
 data Test(a : Type) : Type where
   | MkTest : (probe : a -> Two) --> Test a
 
-@[ refuses("NestedOccurrence") ]
+@[refuses("NestedOccurrence")]
 data Rose : Type where
   | Node : (kids : Test Rose) --> Rose

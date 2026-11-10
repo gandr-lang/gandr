@@ -5,7 +5,7 @@
 /// Once an operation returns the stored sort, a term of it can call an
 /// operation. Instantiating the continuation at the stored value is then no
 /// branch selection, and put-get does not descend.
-@[ refuses("RulesUnoriented") ]
+@[refuses("RulesUnoriented")]
 theory StateObserved where
   sort S : Type+;
   sort C : Type;
@@ -17,7 +17,7 @@ theory StateObserved where
 /// Put-put keeping the first value, beside put-get: put-put's continuation
 /// can be a `get`, and the read after the two puts sees `s` by one rule and
 /// `u` by the other, so the pair parts.
-@[ refuses("RulesOverlapSecondOrder") ]
+@[refuses("RulesOverlapSecondOrder")]
 theory StatePutKeepsFirst where
   sort S : Type+;
   sort C : Type;
@@ -29,7 +29,7 @@ theory StatePutKeepsFirst where
 /// The four laws of global state. Get-put holds only where its continuation
 /// does not read the state it drops, a condition on its instance, and its
 /// overlap with put-get is not decided under that condition yet.
-@[ refuses("RulesOverlapCondition") ]
+@[refuses("RulesOverlapCondition")]
 theory StateAllLaws where
   sort S : Type+;
   sort C : Type;

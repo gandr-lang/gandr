@@ -1,7 +1,7 @@
 error[PathCode]: a universe path needs a quoted, closed, first-order code at each end
   ╭▸ corpus/ledger/diagnostics/PathCode.gandr:4:40
   │
-4 │ def thunked = Path.product (Path.here (+U (-F Integer))) (Path.here Unit) ;
+4 │ def thunked = Path.product (Path.here (+U (-F Integer))) (Path.here Unit);
   │               ┬────────────────────────┯━━━━━━━━━━━━━━───────────────────
   │               │                        │
   │               │                        not a quoted closed first-order code

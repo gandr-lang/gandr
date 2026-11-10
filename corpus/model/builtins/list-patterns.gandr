@@ -27,12 +27,12 @@ def rec compose(grades : List Grade) -> Grade =
       | Met => compose[<] rest
 
 /// `failing` has one unmet grade.
-@[ runs("Unmet") ]
+@[runs("Unmet")]
 def failing() -> Grade =
   compose (#[Met, Unmet, Met])
 
 /// Met grades alone pass it.
-@[ runs("Met") ]
+@[runs("Met")]
 def passing() -> Grade =
   compose (#[Met, Met])
 
@@ -45,12 +45,12 @@ def shortLength(xs : List Integer) -> Integer =
     | _ => 3
 
 /// `two` matches the two-element pattern.
-@[ runs("2") ]
+@[runs("2")]
 def two() -> Integer =
   shortLength (#[7, 8])
 
 /// `many` reaches the catch-all after every written length.
-@[ runs("3") ]
+@[runs("3")]
 def many() -> Integer =
   shortLength (#[7, 8, 9, 10])
 
@@ -61,7 +61,7 @@ def secondOf(xs : List Integer) -> Integer =
     | _ => 0
 
 /// `eight` reads the second element of three.
-@[ runs("8") ]
+@[runs("8")]
 def eight() -> Integer =
   secondOf (#[7, 8, 9])
 
@@ -76,6 +76,6 @@ def headed(xs : List Integer) -> Integer =
     | #[] => 0
 
 /// `seven` reads five and the two elements it heads.
-@[ runs("7") ]
+@[runs("7")]
 def seven() -> Integer =
   headed (#[5, 6])

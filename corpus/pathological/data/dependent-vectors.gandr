@@ -29,5 +29,5 @@ def head[a : Type, n : Nat](v : Vec(a, Succ n)) -> a =
 
 /// The head of the vector two long. The solver does not take apart the `Succ`
 /// that `n` stands under in `head`'s parameter.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def firstOfPair() -> Integer { head (pair ()) }

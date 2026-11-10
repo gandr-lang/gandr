@@ -1,8 +1,8 @@
 error[BoundaryUnrealised.Size]: a type a member of the block declares differs in size from its row's
-  ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Size.gandr:9:4
-  │
-9 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
-  │    ━━━━━━━━━━━━━━━━ a row the block's members do not realise
-  │
-  ├ note: `Counted` is refused with BoundaryUnrealised.Size, as its expectation states
-  ╰ help: make each member type have the size its boundary row states
+   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Size.gandr:10:3
+   │
+10 │ @[boundary(addRow), refuses("BoundaryUnrealised.Size")]
+   │   ━━━━━━━━━━━━━━━━ a row the block's members do not realise
+   │
+   ├ note: `Counted` is refused with BoundaryUnrealised.Size, as its expectation states
+   ╰ help: make each member type have the size its boundary row states

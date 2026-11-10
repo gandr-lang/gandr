@@ -1,4 +1,4 @@
-@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }") ]
+@[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
 def comp(
   a : Type,
   b : Type,
@@ -9,7 +9,7 @@ def comp(
 ) -> c =
   g (f x)
 
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def captured(
   a : Type,
   b : Type,

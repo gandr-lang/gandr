@@ -43,6 +43,6 @@ def packed() -> Packed =
 
 /// A string where the field takes integers is refused by the checker, not
 /// as unannotated.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def mistyped() -> Box Integer =
   Wrap (Cons "no" Nil)

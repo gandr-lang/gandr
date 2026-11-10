@@ -7,7 +7,7 @@ import "../../model/desc/bind-term.gandr";
 /// `par` abstracts nothing at its ports, so the atom `bind a . nil()`
 /// abstracts would escape: the description check refuses the abstraction as
 /// misplaced, an ill-formed description.
-@[ refuses("IllFormedDescription") ]
+@[refuses("IllFormedDescription")]
 theory Escape where
   sort Name : Atom;
   sort Proc : Type;

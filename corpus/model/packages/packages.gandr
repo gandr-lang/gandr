@@ -42,5 +42,5 @@ def consume(p : Model Seeded) -> Integer =
   m.read m.seed
 
 /// `total` sums both counter readings.
-@[ runs("49") ]
+@[runs("49")]
 def total() -> Integer { consume Ints + consume Texts }

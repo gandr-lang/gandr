@@ -12,7 +12,7 @@
 // - see: `pathological/modules/translated.gandr` — a source off the domain
 
 /// The older signature with a member no flow of the newer source produces.
-@[ refuses("SignatureMismatch.Missing") ]
+@[refuses("SignatureMismatch.Missing")]
 theory Wider where
   /// The answer.
   oper answer : Integer;
@@ -23,5 +23,5 @@ theory Wider where
 import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
 
 /// The answer, which is refused with its import.
-@[ refuses("SignatureMismatch.Missing") ]
+@[refuses("SignatureMismatch.Missing")]
 def widened() -> Integer { newer.answer }

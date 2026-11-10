@@ -1,2 +1,2 @@
-@[ traces(decomposes a (event left 0)), traces(primes b 1) ]
+@[traces(decomposes a (event left 0)), traces(primes b 1)]
 def a : Integer;

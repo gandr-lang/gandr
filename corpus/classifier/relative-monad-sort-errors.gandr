@@ -1,4 +1,4 @@
-@[ refuses("SortMismatch") ]
+@[refuses("SortMismatch")]
 def a_negative_type_in_an_eager_product_is_a_sort_mismatch : (Type -> Type[-]) -> Type -> Type = fun (T) {
   fun (A) { type(T A * A) }
 };
@@ -9,7 +9,7 @@ def a_thunked_negative_type_in_an_eager_product_forms : (Type -> Type[-]) -> Typ
 
 def a_negative_family_of_a_product_forms : Type -> Type[-] = fun (X) { type(-F (X * X)) };
 
-@[ refuses("SortMismatch") ]
+@[refuses("SortMismatch")]
 def a_negative_type_under_a_returner_is_a_sort_mismatch : (Type -> Type[-]) -> Type -> Type[-] = fun (T) {
   fun (A) { -F T A }
 };

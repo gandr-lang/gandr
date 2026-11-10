@@ -55,7 +55,7 @@ module LawfulInteger : Model(Lawful) with sort Carrier = Integer where
   law trans = ~admitted;
 
 /// `threeIsThree` uses the admitted integer model.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def threeIsThree() -> Bool { LawfulInteger.alike 3 3 }
 
 /// `LawfulOrder` adds order to `Lawful`.
@@ -72,5 +72,5 @@ module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where
 def decide[l : Model Lawful](a : l.Carrier, b : l.Carrier) -> Bool { l.alike a b }
 
 /// `twoIsNotThree` passes the order model as a lawful model.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def twoIsNotThree() -> Bool { decide[.l = LawfulOrderInteger] 2 3 }

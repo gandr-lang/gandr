@@ -1,4 +1,4 @@
-@[ refuses("RuleNotPresentable") ]
+@[refuses("RuleNotPresentable")]
 data Tally : Type where {
   | Empty : Tally
   | Mark : (n : Integer) --> Tally

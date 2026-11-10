@@ -1,5 +1,5 @@
 theory Gen where {
-  boundary Two { p, q };
+  boundary Two {p, q};
   face left = {p};
   sort Val : Type;
   sort Cell : Type;

@@ -7,16 +7,16 @@
 // - see: #2917
 
 /// `Ordered` uses a signature with reordered members.
-module Ordered : *{ third : Integer, first : Integer, second : Integer } where {
+module Ordered : *{third : Integer, first : Integer, second : Integer} where {
   /// `first` gives one.
   def first = 1;
   /// `hidden` stays outside the signature.
   def hidden = 99;
   /// `second` adds one to `first`.
-  @[ checks ]
+  @[checks]
   def second = first + 1;
   /// `third` adds one to `second`.
-  @[ checks ]
+  @[checks]
   def third = second + 1;
 }
 

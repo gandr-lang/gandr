@@ -1,14 +1,20 @@
-/// `effect-theories`: effects as theories with laws, handled by capability scopes and named in rows.
+/// `effect-theories`: effects as theories with laws, handled by capability
+/// scopes and named in rows.
 ///
 /// State's laws are the rules of global state, each oriented by the path order.
 /// Put-get descends by branch selection, and put-put by its subterm.
 /// Overlapping laws join in the second-order reading.
 ///
-/// A theory lives in its module, `State.Eff`, and a row, a scope, a model type and a rule's `under` row each name it by that path.
-/// A capability scope takes a theory as its interface and is checked as a model of it, its subject normalised by the laws.
-/// A returner's row names the theory at the sorts it fixes, and a scope at those sorts discharges the call.
-/// A fixed type may name a parameter, and each scope and exercise reads it where it stands.
-/// A fixed type may name an implicit the call omits, and the checker reads it at the implicit's solution, which a scope may supply.
+/// A theory lives in its module, `State.Eff`, and a row, a scope, a model type
+/// and a rule's `under` row each name it by that path.
+/// A capability scope takes a theory as its interface and is checked as a model
+/// of it, its subject normalised by the laws.
+/// A returner's row names the theory at the sorts it fixes, and a scope at
+/// those sorts discharges the call.
+/// A fixed type may name a parameter, and each scope and exercise reads it
+/// where it stands.
+/// A fixed type may name an implicit the call omits, and the checker reads it
+/// at the implicit's solution, which a scope may supply.
 ///
 /// - cites: [e.k.Cooper-2023-marriage_effects_rewrites], § 2.1 — the laws of
 ///   global state
@@ -22,76 +28,80 @@
 /// [e.k.Cooper-2023-marriage_effects_rewrites]: https://arxiv.org/abs/2302.02462 "Cooper, The marriage of effects and rewrites"
 
 /// The operations alone, reading and storing a state of sort `S`, with no law.
-@[ checks ]
+@[checks]
 theory State.Eff where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
 
 /// State with the put-get law alone.
-@[ checks ]
+@[checks]
 theory StatePutGet where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
-  /// Storing then reading continues at the stored value, a branch selection because no operation returns `S`.
-  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
+  /// Storing then reading continues at the stored value, a branch selection
+  /// because no operation returns `S`.
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
 
 /// State with the put-put law alone.
-@[ checks ]
+@[checks]
 theory StatePutPut where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing twice keeps the second value.
   rule putPut : put s (put u k) <=> put u k;
 
-/// State with put-get and put-put, whose overlap joins because both reducts store the second value and continue at it.
-@[ checks ]
+/// State with put-get and put-put, whose overlap joins because both reducts
+/// store the second value and continue at it.
+@[checks]
 theory StatePutLaws where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing then reading continues at the stored value.
-  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
   /// Storing twice keeps the second value.
   rule putPut : put s (put u k) <=> put u k;
 
-/// State with the get-get law, which overlaps itself through its pattern and joins.
-@[ checks ]
+/// State with the get-get law, which overlaps itself through its
+/// pattern and joins.
+@[checks]
 theory StateGetGet where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
   sort C : Type;
   /// Reading passes the current state to what runs after.
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   /// Reading twice reads once and continues at that state for both reads.
-  rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
 
-/// A scope over get-get reads once, because its subject normalises to one read before it runs.
+/// A scope over get-get reads once, because its subject normalises to one read
+/// before it runs.
 /// The handler answers four, so the scope runs to eight.
-@[ runs("8") ]
+@[runs("8")]
 def readTwice() -> Integer =
   handle st : StateGetGet with sort S = Integer {
     let a = st.get ();
@@ -102,13 +112,15 @@ def readTwice() -> Integer =
     | oper get(k) => k 4
   }
 
-/// A returner whose row names `State.Eff` at `Integer`, its instance `st` a capability over `get` and `put`.
-@[ checks ]
+/// A returner whose row names `State.Eff` at `Integer`, its instance `st` a
+/// capability over `get` and `put`.
+@[checks]
 def readState() -> [st : State.Eff with sort S = Integer] Integer =
   st.get ()
 
-/// A scope over `State.Eff` at `Integer` discharges the row and answers the read with seven.
-@[ runs("7") ]
+/// A scope over `State.Eff` at `Integer` discharges the row and answers the
+/// read with seven.
+@[runs("7")]
 def readUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
     readState ()
@@ -118,8 +130,9 @@ def readUnderScope() -> Integer =
     | oper put(v, k) => k ()
   }
 
-/// A scope over `State.Eff` fixes `S` to the parameter `a` and answers a read with `x`.
-@[ checks ]
+/// A scope over `State.Eff` fixes `S` to the parameter `a` and answers a
+/// read with `x`.
+@[checks]
 def readGiven[a : Type](x : a) -> a =
   handle s : State.Eff with sort S = a {
     s.get ()
@@ -130,17 +143,19 @@ def readGiven[a : Type](x : a) -> a =
   }
 
 /// The scope at `Integer` answers the read with the seven it is given.
-@[ runs("7") ]
+@[runs("7")]
 def readGivenSeven() -> Integer =
   readGiven 7
 
-/// A returner whose row fixes `S` to the parameter `a`, its instance `st` a capability at that type.
-@[ checks ]
+/// A returner whose row fixes `S` to the parameter `a`, its instance `st` a
+/// capability at that type.
+@[checks]
 def readAt(a : Type) -> [st : State.Eff with sort S = a] a =
   st.get ()
 
-/// A scope over `State.Eff` at `Integer` discharges the row at `Integer` and answers the read with seven.
-@[ runs("7") ]
+/// A scope over `State.Eff` at `Integer` discharges the row at `Integer` and
+/// answers the read with seven.
+@[runs("7")]
 def readAtUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
     readAt Integer
@@ -150,13 +165,15 @@ def readAtUnderScope() -> Integer =
     | oper put(v, k) => k ()
   }
 
-/// A returner whose row fixes `S` to the implicit `a`, which a call's argument solves.
-@[ checks ]
+/// A returner whose row fixes `S` to the implicit `a`, which a
+/// call's argument solves.
+@[checks]
 def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a =
   st.get ()
 
-/// The argument solves `a` as `Integer`, so the scope at `Integer` discharges the row and answers the read with seven.
-@[ runs("7") ]
+/// The argument solves `a` as `Integer`, so the scope at `Integer` discharges
+/// the row and answers the read with seven.
+@[runs("7")]
 def readGivenAtUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
     readGivenAt 0
@@ -166,13 +183,15 @@ def readGivenAtUnderScope() -> Integer =
     | oper put(v, k) => k ()
   }
 
-/// A returner whose row fixes `S` to the implicit `a`, which no argument solves.
-@[ checks ]
+/// A returner whose row fixes `S` to the implicit `a`, which
+/// no argument solves.
+@[checks]
 def readSolved[a : Type]() -> [st : State.Eff with sort S = a] a =
   st.get ()
 
-/// The scope at `Integer` solves `a` as `Integer` and answers the read with seven.
-@[ runs("7") ]
+/// The scope at `Integer` solves `a` as `Integer` and answers the
+/// read with seven.
+@[runs("7")]
 def readSolvedUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
     readSolved ()

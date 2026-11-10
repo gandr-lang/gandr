@@ -1,9 +1,10 @@
-/// `instantiation_expression`: an instantiation: a callee with its instantiation arguments.
-@[ checks ]
+/// `instantiation_expression`: an instantiation: a callee with
+/// its instantiation arguments.
+@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-@[ checks ]
+@[checks]
 def rec countdown(n : Nat) -> -F Nat =
   match n where
     | Zero => return n

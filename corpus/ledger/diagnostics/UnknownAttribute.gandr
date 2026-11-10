@@ -1,4 +1,4 @@
 /// `UnknownAttribute`: an attribute name the registry does not hold.
-@[ refuses("UnknownAttribute") ]
+@[refuses("UnknownAttribute")]
 @[dco("oops")]
 def f = 42;

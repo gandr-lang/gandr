@@ -2,14 +2,14 @@
 ///
 /// - see: #3029
 theory Labelled where {
-  @[ inert ]
+  @[inert]
   oper label : String;
 }
 
 module Box : Model(Labelled) where {
-  @[ runs("\"box\"") ]
+  @[runs("\"box\"")]
   def label = "box";
 }
 
-@[ refuses("InertRead") ]
+@[refuses("InertRead")]
 def shown = Box.label;

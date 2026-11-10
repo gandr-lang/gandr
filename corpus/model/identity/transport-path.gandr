@@ -16,12 +16,12 @@ def moved_end : Path[.A = Path[.A = Integer](2, 2)](
 
 /// A reflexive transport at a path-type motive returns its path, by a run: the
 /// path runs as its two maps, both the identity.
-@[ runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}") ]
+@[runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}")]
 def moved_end_run() -> Path(2, 2) =
   Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2)
 
 /// A transported unit is no path between integers.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def unit_end : Path[.A = Path[.A = Integer](2, 2)](
   Path.walk (fun (x) { Unit }) (Path.here 2) (*{}),
   Path.here 2
@@ -46,5 +46,5 @@ def along_returned(
 def along_here : Path(Path.walk (fun (X) { X }) (Path.here Integer) 2, 2) = Path.here 2;
 
 /// Transport along reflexivity in the universe keeps the value, by a run.
-@[ runs("2") ]
+@[runs("2")]
 def along_here_run() -> Integer { Path.walk (fun (X) { X }) (Path.here Integer) 2 }

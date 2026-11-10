@@ -11,7 +11,7 @@ import std.process;
 
 /// A scope whose exit clause resumes the rest inside a thunk while its task's
 /// end is open.
-@[ refuses("ContinuationCaptured") ]
+@[refuses("ContinuationCaptured")]
 def leaked() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {

@@ -1,4 +1,5 @@
-/// `StageNotCarried`: a transport moves a value of a recursion along a path whose carrier is not a set.
+/// `StageNotCarried`: a transport moves a value of a recursion along a path
+/// whose carrier is not a set.
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
@@ -7,7 +8,7 @@ data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[ refuses("StageNotCarried") ]
+@[refuses("StageNotCarried")]
 def rec alongLoop(n : Nat, q : Path(Base, Base)) -> Nat =
   match n where
     | Zero => Zero

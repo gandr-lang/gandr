@@ -45,7 +45,7 @@ pub def verdicts(plan : String) -> [std.reals.Eff] String =
 
 /// `verdicts` under a handler of this source, a second model of
 /// `std.reals.Eff` whose each budget ends `exhausted`.
-@[ runs("\"exhausted exhausted exhausted\"") ]
+@[runs("\"exhausted exhausted exhausted\"")]
 def verdictsModelled() -> String =
   handle r : std.reals.Eff {
     verdicts againstItself

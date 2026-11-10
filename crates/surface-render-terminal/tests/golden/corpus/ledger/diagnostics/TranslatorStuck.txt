@@ -1,11 +1,11 @@
 error[TranslatorStuck]: a `ua` translator returns no element of its target code
-   ╭▸ corpus/ledger/diagnostics/TranslatorStuck.gandr:16:18
+   ╭▸ corpus/ledger/diagnostics/TranslatorStuck.gandr:17:18
    │
-16 │   def postulated = ua[
+17 │   def postulated = ua[
    │ ┏━━━━━━━━━━━━━━━━━━┛
-17 │ ┃   1,
-18 │ ┃   4
-19 │ ┃ ] Magma Magma (*{.mul = opaque, .one = keep}) (*{.mul = opaque, .one = keep}) ;
+18 │ ┃   1,
+19 │ ┃   4
+20 │ ┃ ] Magma Magma (*{.mul = opaque, .one = keep}) (*{.mul = opaque, .one = keep});
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a translator that returns no element
    │
    ├ note: `postulated` is refused with TranslatorStuck, as its expectation states

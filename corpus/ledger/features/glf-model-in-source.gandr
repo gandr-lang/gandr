@@ -1,6 +1,10 @@
-/// `glf-model-in-source`: A model of a signature written in source; the shape parameter.
-/// Implemented: a first-order model of a signature written as a record type in source, its syntax model inhabiting it, and the finite shape a theory block's cells are over.
-/// Not implemented: the λ-calculus single-substitution model as a record, and its syntax model.
+/// `glf-model-in-source`: A model of a signature written in source;
+/// the shape parameter.
+/// Implemented: a first-order model of a signature written as a record type in
+/// source, its syntax model inhabiting it, and the finite shape a theory
+/// block's cells are over.
+/// Not implemented: the λ-calculus single-substitution model as a record, and
+/// its syntax model.
 ///
 /// - owes: #640
 //! A first-order model of `theory Nat` written in gandr source. For a
@@ -17,11 +21,11 @@
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
 // The naturals' signature, `theory Nat`.
-import "../../model/desc/second-order-signatures.gandr" ;
+import "../../model/desc/second-order-signatures.gandr";
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
-@[ checks ]
+@[checks]
 data N : Type where
   | Z : N
   | S : (n : N) --> N
@@ -35,20 +39,20 @@ module SyntaxNat : Model(Nat) where
 
 /// The module packed into the record type of `Nat`'s models: its carrier and
 /// its two operations, in the order `Model(Nat)` mints them.
-@[ checks ]
+@[checks]
 def syntaxModel : *{nat : Type, zero : () -> nat, succ : nat -> nat} = *{
   N,
   *{SyntaxNat.zero, SyntaxNat.succ}
-} ;
+};
 
 /// A second model, on the integers: zero is `0` and the successor adds one.
-@[ checks ]
+@[checks]
 def countingModel : *{nat : Type, zero : () -> nat, succ : nat -> nat} = *{
   Integer,
   *{thunk { 0 }, thunk { fun (n) { n + 1 } }}
-} ;
+};
 
 /// The syntax model's successor at its zero builds the data's one: the
 /// module's operations run.
-@[ runs("S Z") ]
+@[runs("S Z")]
 def one() -> N { SyntaxNat.succ (SyntaxNat.zero ()) }

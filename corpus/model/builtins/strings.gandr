@@ -16,34 +16,34 @@ def slogan = "types are machines";
 
 /// The top level accepts declarations only. `string.contains` must run inside
 /// a declaration, `main` or another block.
-@[ refuses("OutOfFragment.TopLevel") ]
+@[refuses("OutOfFragment.TopLevel")]
 (string.contains slogan "machine");
 
 /// `same` compares `slogan` with itself through `EqString`.
-@[ runs("+{.0 = *{}}") ]
+@[runs("+{.0 = *{}}")]
 def same() -> Bool { slogan == "types are machines" }
 
 /// `different` compares `slogan` with another string.
-@[ runs("+{.1 = *{}}") ]
+@[runs("+{.1 = *{}}")]
 def different() -> Bool { slogan == "types are types" }
 
 /// `across` refuses equality between an integer and a string.
 /// The integer fixes the carrier of `==`, and a string is not in that carrier.
-@[ refuses("TypeMismatch") ]
+@[refuses("TypeMismatch")]
 def across() -> Bool { 3 == "three" }
 
 /// `has_prefix` asks whether `slogan` starts with a word.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def has_prefix = string.starts_with slogan "types";
 
 /// `has_suffix` asks whether `slogan` ends with a word.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def has_suffix = string.ends_with slogan "machines";
 
 /// `escaped` asks to escape a path's special characters.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def escaped = string.escape "a+b.txt";
 
 /// `halves` asks to split a string at a comma.
-@[ refuses("UnknownMember") ]
+@[refuses("UnknownMember")]
 def halves = string.split "alpha,beta" ",";
