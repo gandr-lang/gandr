@@ -931,8 +931,11 @@ pub enum LoweringRefusal<'source>
     /// A type head no table entry answers at the arity it was written with.
     UnresolvedTypeHead
     {
-        /// The bytes the head covers.
+        /// The bytes of the form the lowering judged: the application the
+        /// head is written in, or the head alone where it stands alone.
         span: ByteSpan,
+        /// The bytes the head covers, inside `span`.
+        head: ByteSpan,
         /// The identifier as it was written.
         name: SurfaceName<'source>,
         /// How many arguments the head was written with, which selects the
@@ -2864,6 +2867,7 @@ mod tests
             },
             LoweringRefusal::UnresolvedTypeHead {
                 span: s(3_usize, 4_usize),
+                head: s(3_usize, 4_usize),
                 name: SurfaceName::from("Intgr"),
                 arity: HeadArity::Nullary,
             },

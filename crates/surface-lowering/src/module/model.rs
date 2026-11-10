@@ -363,6 +363,7 @@ impl<'source> Collected<'source>
             .and_then(|position| self.presentation_of(position))
             .ok_or(LoweringRefusal::UnresolvedTypeHead {
                 span,
+                head: span,
                 name,
                 arity: HeadArity::Nullary,
             })
@@ -454,6 +455,7 @@ impl<'source> Collected<'source>
         self.presentation_of(position)
             .ok_or(LoweringRefusal::UnresolvedTypeHead {
                 span,
+                head: span,
                 name,
                 arity: HeadArity::Nullary,
             })
@@ -773,6 +775,7 @@ impl<'source> Collector<'_, 'source>
         if named.as_ref() != "Model" {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span: former.span,
+                head: former.span,
                 name: named,
                 arity: HeadArity::Unary,
             });
