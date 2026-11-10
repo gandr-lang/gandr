@@ -14874,6 +14874,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) => {
                 return Err(LoweringRefusal::UnresolvedTypeHead {
                     span: site.at.span,
+                    head: site.at.span,
                     name,
                     arity: HeadArity::Nullary,
                 });
@@ -15515,6 +15516,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             PathResolution::Ungoverned => Err(LoweringRefusal::UnresolvedTypeHead {
                 span: head.span,
+                head: head.span,
                 name: self.name_at(head),
                 arity: HeadArity::Nullary,
             }),
@@ -16516,23 +16518,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.relation_of(site, Relation::Isomorphism, written);
         }
         let former = self.former(name);
-        // A head that spells a former is applied at an arity it does not take:
-        // the fault is the application's, and the arguments are marked with
-        // it, where one left out was written.
-        let spelled = matches!(former, Maybe::Present(_))
-            || [
-                TileName::PATH.as_ref(),
-                TileName::BRIDGE.as_ref(),
-                identity::FLOW,
-                STACK,
-                identity::ISO,
-                MODEL,
-                TERMS,
-            ]
-            .contains(&name.as_ref());
-        let marked = if spelled { site.at.span } else { head.span };
+        // The refusal marks the application it judged, head and arguments,
+        // and names the head inside it. A near miss of a tile can turn
+        // another form into this application, so the mistake can lie in the
+        // arguments and not at the head.
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
-            span: marked,
+            span: site.at.span,
+            head: head.span,
             name,
             arity,
         };
@@ -17375,6 +17367,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span: at.span,
+                head: at.span,
                 name,
                 arity: HeadArity::Unary,
             });
@@ -28148,7 +28141,8 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def x : Integer +U Integer ;")),
             LoweringRefusal::UnresolvedTypeHead {
-                span: span(ByteOffset::from(8_usize), ByteOffset::from(15_usize)),
+                span: span(ByteOffset::from(8_usize), ByteOffset::from(26_usize)),
+                head: span(ByteOffset::from(8_usize), ByteOffset::from(15_usize)),
                 name: SurfaceName::from("Integer"),
                 arity: HeadArity::Unary,
             },
@@ -28267,11 +28261,13 @@ mod tests
             assert_eq!(
                 refusal(SourceText::from(source)),
                 LoweringRefusal::UnresolvedTypeHead {
-                    span: at(8_usize, 9_usize),
+                    span: at(8_usize, source.len().saturating_sub(2_usize)),
+                    head: at(8_usize, 9_usize),
                     name: SurfaceName::from(name),
                     arity,
                 },
-                "the bridges are `+U` and `-F`, so `{source}` names a type nothing declares"
+                "the bridges are `+U` and `-F`, so `{source}` names a type nothing declares, \
+                 marked over the form that writes it"
             );
         }
     }
@@ -28925,7 +28921,8 @@ mod tests
         assert_eq!(
             refusal(SourceText::from(body)),
             LoweringRefusal::UnresolvedTypeHead {
-                span: at(9_usize, 13_usize),
+                span: at(9_usize, 22_usize),
+                head: at(9_usize, 13_usize),
                 name: SurfaceName::from("List"),
                 arity: HeadArity::Unary,
             },
@@ -29014,6 +29011,7 @@ mod tests
             refusal(SourceText::from("def keep(b : Buf) -> Buf { b }")),
             LoweringRefusal::UnresolvedTypeHead {
                 span: at(13_usize, 16_usize),
+                head: at(13_usize, 16_usize),
                 name: SurfaceName::from("Buf"),
                 arity: HeadArity::Nullary,
             },
@@ -31177,6 +31175,7 @@ mod tests
             refused,
             LoweringRefusal::UnresolvedTypeHead {
                 span: at(8_usize, 13_usize),
+                head: at(8_usize, 13_usize),
                 name: SurfaceName::from("Intgr"),
                 arity: HeadArity::Nullary,
             },
@@ -31197,12 +31196,13 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def a : Unit Integer ;")),
             LoweringRefusal::UnresolvedTypeHead {
-                span: at(8_usize, 12_usize),
+                span: at(8_usize, 20_usize),
+                head: at(8_usize, 12_usize),
                 name: SurfaceName::from("Unit"),
                 arity: HeadArity::Unary,
             },
             "a type a second type follows applies to it (#5326), and no unary former is \
-             named `Unit`"
+             named `Unit`; the refusal marks the application and names its head"
         );
     }
 
@@ -31214,7 +31214,8 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def a : Foo(Integer) ;")),
             LoweringRefusal::UnresolvedTypeHead {
-                span: at(8_usize, 11_usize),
+                span: at(8_usize, 20_usize),
+                head: at(8_usize, 11_usize),
                 name: SurfaceName::from("Foo"),
                 arity: HeadArity::Unary,
             },
@@ -31223,7 +31224,8 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def a : Foo(Integer, String) ;")),
             LoweringRefusal::UnresolvedTypeHead {
-                span: at(8_usize, 11_usize),
+                span: at(8_usize, 28_usize),
+                head: at(8_usize, 11_usize),
                 name: SurfaceName::from("Foo"),
                 arity: HeadArity::Polyadic(OperandCount::from(2_usize)),
             },
@@ -34113,6 +34115,7 @@ mod tests
                 }),
                 DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead {
                     span: at(64_usize, 69_usize),
+                    head: at(64_usize, 69_usize),
                     name: SurfaceName::from("Intgr"),
                     arity: HeadArity::Nullary,
                 }),

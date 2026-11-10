@@ -89,3 +89,8 @@ sites = [
 sites = [
   { file = "crates/core-checker/src/judgement/native.rs", pattern = '^\s*Ok\(_\) => CheckRefusal::FixedFieldDiffers \{$' },
 ]
+
+[refusal.UnresolvedTypeHead]
+sites = [
+  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*return Err\(unresolved\(HeadArity::' },
+]

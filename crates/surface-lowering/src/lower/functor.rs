@@ -623,6 +623,7 @@ impl<'source> Lowerer<'_, 'source>
                 .map_or_else(
                     || LoweringRefusal::UnresolvedTypeHead {
                         span: origin.span(),
+                        head: origin.span(),
                         name: argument.name,
                         arity: crate::resolve::HeadArity::Nullary,
                     },
@@ -630,6 +631,7 @@ impl<'source> Lowerer<'_, 'source>
                         Maybe::Present((_, refusal)) => refusal,
                         Maybe::Absent(_) => LoweringRefusal::UnresolvedTypeHead {
                             span: held.named.span,
+                            head: held.named.span,
                             name: argument.name,
                             arity: crate::resolve::HeadArity::Nullary,
                         },

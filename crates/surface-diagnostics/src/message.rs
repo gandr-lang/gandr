@@ -1857,6 +1857,7 @@ pub mod tests
             LoweringRefusal::UnresolvedDocLink { span, name },
             LoweringRefusal::UnresolvedTypeHead {
                 span,
+                head: span,
                 name,
                 arity: HeadArity::Nullary,
             },

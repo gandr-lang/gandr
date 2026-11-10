@@ -918,6 +918,7 @@ mod tests
             LoweringRefusal::UnresolvedDocLink { span: at, name },
             LoweringRefusal::UnresolvedTypeHead {
                 span: at,
+                head: at,
                 name,
                 arity: HeadArity::Nullary,
             },

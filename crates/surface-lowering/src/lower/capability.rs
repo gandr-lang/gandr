@@ -1060,6 +1060,7 @@ impl<'source> Lowerer<'_, 'source>
             if !self.collected.reaches(path.start(), &interface).0 {
                 return Err(LoweringRefusal::UnresolvedTypeHead {
                     span: path,
+                    head: path,
                     name: named,
                     arity: crate::resolve::HeadArity::Nullary,
                 });
@@ -2542,6 +2543,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(_) = gandr_core_term::effect::host::home(&named) {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span,
+                head: span,
                 name: handled,
                 arity: crate::resolve::HeadArity::Nullary,
             });
@@ -2565,6 +2567,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span,
+                head: span,
                 name: handled,
                 arity: crate::resolve::HeadArity::Nullary,
             });

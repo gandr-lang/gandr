@@ -597,6 +597,7 @@ fn a_model_of_an_undeclared_theory_is_refused_by_name()
             Role::Held,
             Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
                 span: span_of(source, "Nowhere", 0_usize),
+                head: span_of(source, "Nowhere", 0_usize),
                 name: name("Nowhere"),
                 arity: gandr_surface_lowering::HeadArity::Nullary,
             })
@@ -1427,6 +1428,7 @@ fn a_model_type_of_an_undeclared_theory_is_refused()
             Role::Declared,
             Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
                 span: span_of(source, "Nowhere", 0_usize),
+                head: span_of(source, "Nowhere", 0_usize),
                 name: name("Nowhere"),
                 arity: gandr_surface_lowering::HeadArity::Nullary,
             })

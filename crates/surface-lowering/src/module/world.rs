@@ -315,6 +315,7 @@ impl<'source> Collector<'_, 'source>
                 if let Maybe::Absent(_) = table.named(&EffectName::from(name.as_ref())) {
                     return Err(LoweringRefusal::UnresolvedTypeHead {
                         span: interface.span(),
+                        head: interface.span(),
                         name,
                         arity: HeadArity::Nullary,
                     });
@@ -452,6 +453,7 @@ impl<'source> Collector<'_, 'source>
                 .0)
                 .then_some(LoweringRefusal::UnresolvedTypeHead {
                     span: interface.span(),
+                    head: interface.span(),
                     name,
                     arity: HeadArity::Nullary,
                 })

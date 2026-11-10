@@ -7,8 +7,11 @@
 //! mutants of every token that is a literal tile of the grammar (a keyword, a
 //! punctuation tile, a string's quote): the tile written as its near miss, and
 //! the tile deleted. Each mutant is checked as `gandr check` checks it, and the
-//! first error it reports must mark the mutation: its primary span must touch
-//! the mutation's site. A near miss's site is the bytes written in the tile's
+//! first error it reports must mark the mutation: one location it names, its
+//! primary span or a context location, must touch the mutation's site. The
+//! judgement that refuses an admitted form names the whole form it judged,
+//! so a near miss that turns one form into another is marked inside it. A
+//! near miss's site is the bytes written in the tile's
 //! place. A deletion's is the layout between the tokens either side, since a
 //! tile found missing can only be reported at the end of what came before it
 //! or the start of what comes after. A mutant whose first error marks other
@@ -197,6 +200,9 @@ struct Reported
     message: String,
     /// Its primary span, measured in the mutant's own text, when it has one.
     span: Option<Site>,
+    /// Every location it names in the mutant's own text, the primary span
+    /// first, then the context locations its refusal names.
+    loci: Vec<Site>,
     /// Whether the mutant was well formed: the lowering read every
     /// declaration and refused none but for what a well-formed form means
     /// where it stands, so the first error is a meaning's, not a form's.
@@ -691,10 +697,10 @@ fn mutants(
 ///   error does not mark the site, counted closed early when its first error
 ///   does not mark the site but marks a lone closer, exactly one `}`, `)` or
 ///   `]`, or, for a deleted `{`, `(` or `[`, refuses a remainder at the top
-///   level after the site, and a finding otherwise when its first error's
-///   primary span neither overlaps nor touches the mutation's site, or the
-///   error has none. The scratch directory the mutants are written under is
-///   removed.
+///   level after the site, and a finding otherwise when no location of its
+///   first error, primary or context, overlaps or touches the mutation's site,
+///   or the error names none. The scratch directory the mutants are written
+///   under is removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -714,13 +720,15 @@ fn mutants(
 ///   outside a recursive group or a `return` where no body passes, are counted
 ///   well formed, not filed; a closer doubled or an opener deleted, leaving a
 ///   closer with nothing to close, and an opener deleted, leaving the rest of
-///   its body at the top level, are counted closed early, not filed.
+///   its body at the top level, are counted closed early, not filed; a near
+///   miss that makes an application is marked by the application's location.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
 /// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
 /// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
 /// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
+/// - witness: `ledger::recovery::tests::an_application_a_near_miss_makes_marks_its_mutation_6235`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
@@ -846,6 +854,14 @@ pub(super) fn sweep(
                             }),
                             Maybe::Absent(_) => None,
                         },
+                        loci: diagnostic
+                            .annotations
+                            .iter()
+                            .map(|annotation| Site {
+                                start: usize::from(annotation.locus.span.start()),
+                                end: usize::from(annotation.locus.span.end()),
+                            })
+                            .collect(),
                         formed,
                         remainder,
                     });
@@ -862,9 +878,13 @@ pub(super) fn sweep(
             report.accepted = report.accepted.saturating_add(1);
             continue;
         };
+        // The judgement that refuses names the whole form it judged, and the
+        // parts it involves. The mutation is marked when one location of the
+        // first error, primary or context, overlaps or touches it.
         let marked = first
-            .span
-            .is_some_and(|span| span.start <= mutant.site.end && mutant.site.start <= span.end);
+            .loci
+            .iter()
+            .any(|locus| locus.start <= mutant.site.end && mutant.site.start <= locus.end);
         // A closer doubled, or one an opener's deletion leaves, closes a form
         // legally; the closer left over has nothing to close, and the first
         // error marks it, never the mutation, which the tree does not show.
@@ -1006,6 +1026,7 @@ mod tests
                 name: name.map(str::to_owned),
                 message: "a message".to_owned(),
                 span: Some(Site { start: 9, end: 9 }),
+                loci: Vec::from([Site { start: 9, end: 9 }]),
                 formed: false,
                 remainder: false,
             },
@@ -1212,8 +1233,10 @@ mod tests
 
     /// #2340: `Integer` deleted from `-> -F +{Integer}` leaves the empty sum,
     /// a well-formed type, and the checker's first refusal is the body's
-    /// injection at a summand the empty sum lacks. No mistake of form is left
-    /// to mark, so the mutant is counted well formed and not filed.
+    /// injection at a summand the empty sum lacks. The refusal names the empty
+    /// sum as the type the injection is checked against, and that location
+    /// marks the deletion. So the mutant is not filed, and it is counted where
+    /// it was made, not well formed.
     #[test]
     fn a_deletion_leaving_a_well_formed_source_is_no_finding_2340()
     {
@@ -1236,7 +1259,7 @@ mod tests
             ),
             "the empty sum the deletion leaves is well formed: {report}"
         );
-        assert_eq!(report.formed, 1_usize, "{report}");
+        assert_eq!(report.formed, 0_usize, "{report}");
         assert!(
             report.findings.len()
                 < report
@@ -1464,5 +1487,54 @@ mod tests
             }),
             "binary-expression.add.concat.gandr:184: `++` deleted is reported at its mutation: {report}"
         );
+    }
+
+    /// #6235: `at` written as `a` turns `Integer at seat` into the application
+    /// `Integer a seat`, and a doubled `≃` or a short `<~>` turns an
+    /// equivalence into an application too. No type head answers the
+    /// application. Its refusal marks the whole application and names the head
+    /// inside it, so each mutant is reported at its mutation.
+    #[test]
+    fn an_application_a_near_miss_makes_marks_its_mutation_6235()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-application",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (name, text) in [
+            (
+                "at-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/at-type.gandr"),
+            ),
+            (
+                "equivalence-type.gandr",
+                include_str!("../../../../corpus/ledger/syntax/equivalence-type.gandr"),
+            ),
+        ] {
+            std::fs::write(folder.join(name), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        let missed = [
+            ("at-type.gandr", 99_usize, "at", "a"),
+            ("at-type.gandr", 123, "at", "a"),
+            ("equivalence-type.gandr", 115, "≃", "≃≃"),
+            ("equivalence-type.gandr", 190, "<~>", "<~"),
+        ];
+        for &(exemplar, at, tile, miss) in &missed {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == tile
+                        && finding.mutation == Mutation::Missed(String::from(miss))
+                }),
+                "{exemplar}:{at}: `{tile}` written as `{miss}` is reported at its mutation: \
+                 {report}"
+            );
+        }
     }
 }

@@ -1804,6 +1804,7 @@ fn manifest_refusals_propagate_transitively_before_minting()
     let lowered = lower(source);
     let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
         span: span_of(source, "Missing", 0_usize),
+        head: span_of(source, "Missing", 0_usize),
         name: name("Missing"),
         arity: gandr_surface_lowering::HeadArity::Nullary,
     });
@@ -2278,7 +2279,8 @@ fn a_type_component_arity_mismatch_is_refused_by_name()
             "N.bad",
             Role::Declared,
             Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
-                span: span_of(over, "T", 1_usize),
+                span: span_of(over, "T(Integer)", 0_usize),
+                head: span_of(over, "T", 1_usize),
                 name: name("T"),
                 arity: gandr_surface_lowering::HeadArity::Unary,
             })
@@ -2911,6 +2913,7 @@ fn a_type_member_names_a_computation_member_or_application_3089()
         "module Forward where { type E = C; type C = -F Integer; def one() -> E { return 1 } }";
     let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
         span: span_of(early, "C", 0_usize),
+        head: span_of(early, "C", 0_usize),
         name: name("C"),
         arity: gandr_surface_lowering::HeadArity::Nullary,
     });
@@ -2966,6 +2969,7 @@ fn a_type_member_is_named_only_after_it_is_written()
             Role::Declared,
             Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
                 span: span_of(early, "T", 0_usize),
+                head: span_of(early, "T", 0_usize),
                 name: name("T"),
                 arity: gandr_surface_lowering::HeadArity::Nullary,
             })
@@ -2982,6 +2986,7 @@ fn a_sealed_component_over_a_refused_member_is_refused_with_it()
     );
     let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
         span: span_of(source, "Missing", 0_usize),
+        head: span_of(source, "Missing", 0_usize),
         name: name("Missing"),
         arity: gandr_surface_lowering::HeadArity::Nullary,
     });
@@ -3942,6 +3947,7 @@ fn an_unbound_type_path_is_refused_by_name()
                 Role::Declared,
                 Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
                     span: span_of(source, "Nowhere", 0_usize),
+                    head: span_of(source, "Nowhere", 0_usize),
                     name: name("Nowhere"),
                     arity: gandr_surface_lowering::HeadArity::Nullary,
                 })
