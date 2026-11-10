@@ -3210,6 +3210,10 @@ INSERT INTO purpose VALUES('surface-parser','parse::Unlayable','enum','Why a par
 INSERT INTO purpose VALUES('surface-parser','parse::gap::Juxtaposition','struct','Names the repair a refusal of an application whose head is no function names: the bytes it replaces and the text written there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::gap::Separation','enum','Names what separates an operand from a head that is no function, so the help says whether a `,` or a new statement repairs it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::gap::juxtaposed','function','The repair the refusal of an application whose head is no function names: a `,` between two items of a group, or the operand''s line moved to its block''s column.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::laid::JoinPiece','struct','Holds one run''s unit as a laid join takes it: the parked unit, the unit when this revision molded it, and the region laid for it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::laid::LaidJoin','struct','Holds a laid join''s parse, the region it laid for each run, and how many runs it took up whole.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::laid::LaidUnit','struct','Holds what a parse laid out for one run, the slice of its region and the region''s obligations, so a later parse takes the run''s forms up whole.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::laid::RunCount','struct','Counts the runs of one split, so a laid join says how many it took up whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::parse','function','Batch-parse `source` over the checked grammar `pbg`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::parse_by_form','function','Batch-parse `source` by its top-level forms: split, mold each form run apart, join.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','DEPTH_LIMIT','constant','Names the depth a value''s presentation is bounded at, so a value deeper than the limit is elided.',NULL,'fits','sound',NULL);
@@ -3455,6 +3459,7 @@ INSERT INTO purpose VALUES('surface-syntax','tree::NodeIndex','struct','The posi
 INSERT INTO purpose VALUES('surface-syntax','tree::NodeIndices','struct','A forward walk over a contiguous run of offsets in one layout block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::Positions','struct','A forward walk over every position of a tree, block after block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::SyntaxTree','struct','A concrete syntax tree: its source, its grammar, and its nodes laid out by form.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::slice::TreeSlice','struct','Holds some top-level children of a tree with the blocks of their descendants, counted from an anchor, so a later tree takes them up whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::App','struct','Holds the face''s state over one read-evaluate loop, so the loop''s transcript and the line being edited are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Handled','enum','Names what a key leaves the face to do, so the key''s handling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Key','enum','Names one key the face acts on, so the key''s action is read.',NULL,'fits','sound',NULL);

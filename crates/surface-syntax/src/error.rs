@@ -96,6 +96,16 @@ pub enum SyntaxError
         /// first's: the first source's length.
         at: ByteOffset,
     },
+
+    /// A node was offered to a slice whose anchor lies after the node's
+    /// start, so the slice cannot count the node's span from the anchor.
+    SpanBeforeAnchor
+    {
+        /// The node's span.
+        span: ByteSpan,
+        /// The anchor the slice counts its spans from.
+        anchor: ByteOffset,
+    },
 }
 
 impl fmt::Display for SyntaxError
@@ -159,6 +169,9 @@ impl fmt::Display for SyntaxError
                     f,
                     "the text does not lay the joined sources end to end at offset {at}"
                 )
+            },
+            Self::SpanBeforeAnchor { span, anchor } => {
+                write!(f, "span {span} starts before the slice anchor {anchor}")
             },
         }
     }
@@ -236,6 +249,10 @@ mod tests
                 after: GrammarFingerprint::from(2_u64),
             },
             SyntaxError::SourcesDisagree { at: zero },
+            SyntaxError::SpanBeforeAnchor {
+                span: empty,
+                anchor: ByteOffset::from(1_usize),
+            },
         ] {
             assert!(
                 crate::test_support::RefusingSink
@@ -281,6 +298,13 @@ mod tests
                     at: ByteOffset::from(41_usize),
                 },
                 ["41", "41"],
+            ),
+            (
+                SyntaxError::SpanBeforeAnchor {
+                    span: span(ByteOffset::from(2_usize), ByteOffset::from(6_usize)),
+                    anchor: ByteOffset::from(4_usize),
+                },
+                ["2..6", "4"],
             ),
         ];
         let exhausted = format!("{}", SyntaxError::BuilderIdExhausted);
