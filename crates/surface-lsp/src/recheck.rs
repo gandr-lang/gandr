@@ -201,18 +201,21 @@ use gandr_surface_lowering::Unit;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::AccountRow;
 use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::Detached;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::Instrument;
 use gandr_surface_session::JudgedParse;
+use gandr_surface_session::KernelState;
 use gandr_surface_session::Laying;
 use gandr_surface_session::Ran;
 use gandr_surface_session::Session;
 use gandr_surface_session::SessionFault;
 use gandr_surface_session::Submission;
 use gandr_surface_session::Tables;
+use gandr_surface_session::unrowed;
 use gandr_surface_syntax::ByteOffset as SyntaxOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -633,6 +636,10 @@ pub struct Declared
     pub span: ByteSpan,
     /// Whether the checker refused it.
     pub checked: Checked,
+    /// Its row in the session's account, by its content key: the kernel tier
+    /// an earlier admission settled for the same content and verdict, or
+    /// pending; none when it has no content key.
+    pub row: Maybe<AccountRow, unrowed::Absent>,
 }
 
 /// What one recheck produced: the diagnostics to publish, the binders left
@@ -1012,6 +1019,7 @@ where
                                 _,
                             ) => Checked::Refused,
                         },
+                        row: session.account().row_at(declaration.constant()),
                     }),
                     Maybe::Absent(_) => None,
                 },
@@ -1130,9 +1138,10 @@ pub struct Admitted
         )
     )]
     pub declined: Vec<(usize, Declined)>,
-    /// Each declaration the admission judged with its kernel tier, by its
-    /// admission position, in admission order: none when the admission did
-    /// not run, and the one it stopped at when the kernel disagreed.
+    /// Each declaration of the document's own text with the kernel tier the
+    /// admission settled in the session's account, by its admission position,
+    /// in admission order: none when the admission did not run, and the one
+    /// it stopped at when the kernel disagreed.
     pub tiers: Vec<(ConstantIndex, Tier)>,
 }
 
@@ -1398,10 +1407,13 @@ pub fn settle(
                             )
                         })
                         .collect(),
-                    admitted
-                        .tiers
-                        .iter()
-                        .map(|&(constant, tier)| (constant, Tier::Settled(tier)))
+                    session
+                        .account()
+                        .rows()
+                        .filter_map(|(constant, _, row)| match row.kernel() {
+                            KernelState::Settled(tier) => Some((constant, Tier::Settled(tier))),
+                            KernelState::Pending => None,
+                        })
                         .collect(),
                 )
             },

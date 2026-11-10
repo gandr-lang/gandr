@@ -1,0 +1,7 @@
+def z : Integer;
+def z = 0;
+def a : Integer;
+def a = 3;
+def b : Integer;
+def b = 2;
+def c = b;

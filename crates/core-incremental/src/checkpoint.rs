@@ -389,6 +389,10 @@ struct CheckpointParts
 {
     /// The item's content.
     content: ItemContent,
+    /// The item's content key, read once off the content's digest when the
+    /// checkpoint is made: a function of the content, so equal content has an
+    /// equal key.
+    key: Maybe<ContentKey, recall::Absent>,
     /// The item's footprint, carried for inspection; never an adoption input.
     footprint: Footprint,
     /// The answers the judgement consulted, ascending by reference.
@@ -434,9 +438,11 @@ impl ItemCheckpoint
         typing: Typing,
     ) -> Self
     {
+        let key = content_key_of(&content);
         Self {
             parts: Arc::new(CheckpointParts {
                 content,
+                key,
                 footprint,
                 support: canonical_support(support),
                 typing,
@@ -453,6 +459,36 @@ impl ItemCheckpoint
     pub fn content(&self) -> &ItemContent
     {
         &self.parts.content
+    }
+
+    /// The item's content key: the digest of its canonical content, read once
+    /// when the checkpoint was made, so no reader hashes the content again.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the key [`content_keys`] gives the item, or
+    ///   [`recall::Absent::Opaque`] for content that holds an unresolved node.
+    /// - provides: the key a reader files the item's outcomes under, which a
+    ///   later revision keeps exactly when it keeps the item's content.
+    /// - fails: [`recall::Absent::Opaque`], for content with no canonical
+    ///   bytes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checkpoint's key is the key [`content_keys`] reads
+    ///   off its item, and moves only with its content. The attribute checks
+    ///   the opaque rejection, not a second hash.
+    /// - witness: `checkpoint::tests::a_checkpoint_keeps_the_content_key_of_its_item_6286`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(_) => self.parts.content.opacity() == Opacity::Transparent,
+            | Maybe::Absent(reason) => reason == recall::Absent::Opaque,
+        },
+    )]
+    #[inline]
+    pub fn key(&self) -> Maybe<ContentKey, recall::Absent>
+    {
+        self.parts.key
     }
 
     /// The item's footprint.
@@ -1869,6 +1905,57 @@ impl ContentKey
     }
 }
 
+/// The content key of `content`: its digest, unless it is opaque.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the digest [`identity_of`] reads off `content`, as a key, or its
+///   absence.
+/// - provides: the one place a key is read off content, which a checkpoint does
+///   once when it is made.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ItemCheckpoint::key`]. The attribute checks the
+///   opaque rejection, not a second hash.
+/// - witness: `checkpoint::tests::a_checkpoint_keeps_the_content_key_of_its_item_6286`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(_) => content.opacity() == Opacity::Transparent,
+        | Maybe::Absent(reason) => reason == recall::Absent::Opaque,
+    },
+)]
+#[inline]
+fn content_key_of(content: &ItemContent) -> Maybe<ContentKey, recall::Absent>
+{
+    identity_of(content).map(|identity| ContentKey(identity.digest))
+}
+
+/// The memo identity of `content` under `key`, the key read off it.
+///
+/// # Specification
+/// - requires: `key` is [`content_key_of`] of `content`.
+/// - ensures: the identity [`identity_of`] gives `content`, read off its key
+///   with no second hash.
+/// - panics: none.
+/// - executable: none — a check of `key` against `content` hashes the content
+///   again, and the function exists to avoid that hash.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`ItemCheckpoint::key`].
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+#[inline]
+const fn keyed(
+    content: &ItemContent,
+    key: ContentKey,
+) -> ItemIdentity<'_>
+{
+    ItemIdentity {
+        content,
+        digest: key.0,
+    }
+}
+
 /// The content key of each of `program`'s items, in order: what a pool keys
 /// the work on an item by, so that work whose item's key a newer revision
 /// keeps need not be retired.
@@ -1892,7 +1979,7 @@ pub fn content_keys(program: &Program) -> Vec<Maybe<ContentKey, recall::Absent>>
     (0 .. program.items().len())
         .map(|index| {
             let encoded = encode_item(program.arena(), program.layout(), ItemOrdinal::from(index));
-            identity_of(&encoded.content).map(|identity| ContentKey(identity.digest))
+            content_key_of(&encoded.content)
         })
         .collect()
 }
@@ -1960,12 +2047,14 @@ impl MemoChoice for HashedMemoChoice
 {
     type Memo<'id> = HashedMemo<ItemIdentity<'id>, ItemOrdinal>;
 
-    /// Every transparent base item, under its identity.
+    /// Every transparent base item, under its identity, read off the key its
+    /// checkpoint keeps.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the memo answers each transparent base item's content with
-    ///   its ordinal; of two items of equal content, the later one.
+    ///   its ordinal; of two items of equal content, the later one. No base
+    ///   item's content is hashed again.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1985,8 +2074,10 @@ impl MemoChoice for HashedMemoChoice
     {
         let mut memo = HashedMemo::new();
         for (index, checkpoint) in base.iter().enumerate() {
-            if let Maybe::Present(identity) = identity_of(checkpoint.content())
-                && memo.remember(identity, ItemOrdinal::from(index)).is_err()
+            if let Maybe::Present(key) = checkpoint.key()
+                && memo
+                    .remember(keyed(checkpoint.content(), key), ItemOrdinal::from(index))
+                    .is_err()
             {
                 // economy: a memo whose accounting is at its ceiling records
                 // nothing more; later items are judged, which costs reuse only.
@@ -2356,13 +2447,20 @@ where
     let encoded: Vec<Encoded> = (skip .. count)
         .map(|index| encode_item(edited.arena(), edited.layout(), ItemOrdinal::from(index)))
         .collect();
+    // economy: each edited item's content is hashed once here; the pass
+    // recalls by the key and the checkpoint keeps it. Each item after the
+    // leading ones is hashed at each pass, and #4369 bounds the pass by the
+    // edit.
+    let keys: Vec<Maybe<ContentKey, recall::Absent>> = encoded
+        .iter()
+        .map(|item| content_key_of(&item.content))
+        .collect();
     census.items = ItemCount::from(count);
     let passed = {
         let memo = Choice::build(base);
         pass::<Choice::Memo<'_>, Kept, Poll>(
-            base,
-            &memo,
-            &encoded,
+            (base, &memo),
+            (&encoded, &keys),
             edited,
             start,
             &mut census,
@@ -2380,11 +2478,12 @@ where
         adoptions.resize(skip, Adoption::Adopted);
         census.adopted = ItemCount::from(usize::from(census.adopted).saturating_add(skip));
     }
-    for (encoded, outcome) in encoded.into_iter().zip(outcomes) {
+    for ((encoded, key), outcome) in encoded.into_iter().zip(keys).zip(outcomes) {
         adoptions.push(outcome.adoption);
         items.push(ItemCheckpoint {
             parts: Arc::new(CheckpointParts {
                 content: encoded.content,
+                key,
                 footprint: outcome.footprint,
                 support: outcome.support,
                 typing: outcome.typing,
@@ -2467,6 +2566,7 @@ type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, 
 )]
 #[spec(
     requires: encoded.len().checked_add(usize::from(start.leading())) == Some(edited.items().len())
+        && keys.len() == encoded.len()
         && encoded
             .iter()
             .map(|item| item.content.reference())
@@ -2514,9 +2614,8 @@ type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, 
     },
 )]
 fn pass<'id, Memo, Kept, Poll>(
-    base: &'id [ItemCheckpoint],
-    memo: &Memo,
-    encoded: &'id [Encoded],
+    (base, memo): (&'id [ItemCheckpoint], &Memo),
+    (encoded, keys): (&'id [Encoded], &[Maybe<ContentKey, recall::Absent>]),
     edited: &mut Program,
     start: Start<'_>,
     census: &mut ResumeCensus,
@@ -2536,9 +2635,9 @@ where
         Vec::with_capacity(encoded.len());
     let mut value_changed = BTreeSet::new();
     if active {
-        for item in encoded {
+        for (item, &key) in encoded.iter().zip(keys) {
             bump(&mut census.recalled);
-            let candidate = match identity_of(&item.content) {
+            let candidate = match key.map(|key| keyed(&item.content, key)) {
                 Maybe::Present(identity) => {
                     memo.recall(&identity)
                         .map_or(Maybe::Absent(recall::Absent::Missed), |hit| {

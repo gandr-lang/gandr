@@ -13,6 +13,8 @@ mod generate;
 mod large;
 
 #[cfg(test)]
+mod account;
+#[cfg(test)]
 mod checkpoint;
 #[cfg(test)]
 mod corpus;
