@@ -47,6 +47,8 @@ mod session;
 #[cfg(test)]
 mod specification;
 #[cfg(test)]
+mod timings;
+#[cfg(test)]
 mod trial;
 #[cfg(test)]
 mod written;

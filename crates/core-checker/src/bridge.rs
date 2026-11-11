@@ -982,8 +982,8 @@ pub struct Readmitted
     /// The certificates the kernel replayed before the declaration was
     /// offered, in the order the erasure met the unfoldings.
     certificates: Vec<Replayed>,
-    /// How long the kernel's admission of it took, or why no time was read.
-    took: AdmissionTime,
+    /// What the kernel's admission of it spent, or why no time was read.
+    took: AdmissionCost,
 }
 
 impl Readmitted
@@ -1033,14 +1033,14 @@ impl Readmitted
         &self.certificates
     }
 
-    /// How long [`Environment::add_decl`] took to admit or reject the
+    /// What [`Environment::add_decl`] spent to admit or reject the
     /// declaration, by the readmission's [`Stopwatch`], or why no time was
     /// read.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn took(&self) -> AdmissionTime
+    pub const fn took(&self) -> AdmissionCost
     {
         self.took
     }
@@ -1063,31 +1063,160 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// How long the kernel's admission of one declaration took, or why no time
-/// was read.
-pub type AdmissionTime = Maybe<Duration, timed::Absent>;
+quenchant_shape::reason_enum! {
+    /// Why a timed span of work carries no allocation count.
+    pub mod metered {
+        /// The reason none was counted.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A clock timed the span, and no meter counted its allocations.
+            Unmetered,
+        }
+    }
+}
 
-/// The time of a declaration the kernel was never offered.
-const UNOFFERED: AdmissionTime = Maybe::Absent(timed::Absent::Unoffered);
+/// How many allocations one thread made: its running count, or the count of
+/// one span of its work.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AllocationCount(u64);
+
+impl From<u64> for AllocationCount
+{
+    /// The count of `allocations` allocations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(allocations: u64) -> Self
+    {
+        Self(allocations)
+    }
+}
+
+impl From<AllocationCount> for u64
+{
+    /// The count as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: AllocationCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl AllocationCount
+{
+    /// The allocations made between the running count `earlier` and this one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn since(
+        self,
+        earlier: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_sub(earlier.0))
+    }
+}
+
+/// What one span of work spent: its wall, and its thread's allocations.
+///
+/// The allocations hold a count only when a meter counts them. A readmission
+/// keeps one for the kernel's admission of each declaration, and the editor's
+/// timings layer keeps one for each phase it samples. The wall keeps its
+/// nanoseconds in one word, so a [`Readmitted`] that a fault carries stays
+/// within 128 bytes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Spent
+{
+    /// How long the span took, in nanoseconds.
+    nanos: u64,
+    /// How many allocations its thread made, or why none were counted.
+    allocations: Maybe<AllocationCount, metered::Absent>,
+}
+
+impl Spent
+{
+    /// `wall`, with the allocations `allocations`. A wall past `u64::MAX`
+    /// nanoseconds, some 584 years, keeps that many.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        wall: Duration,
+        allocations: Maybe<AllocationCount, metered::Absent>,
+    ) -> Self
+    {
+        Self {
+            nanos: u64::try_from(wall.as_nanos()).unwrap_or(u64::MAX),
+            allocations,
+        }
+    }
+
+    /// How long the span took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn wall(&self) -> Duration
+    {
+        Duration::from_nanos(self.nanos)
+    }
+
+    /// How many allocations the span's thread made, or why none were
+    /// counted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn allocations(&self) -> Maybe<AllocationCount, metered::Absent>
+    {
+        self.allocations
+    }
+}
+
+/// What the kernel's admission of one declaration spent, or why no time was
+/// read.
+pub type AdmissionCost = Maybe<Spent, timed::Absent>;
+
+/// The cost of a declaration the kernel was never offered.
+const UNOFFERED: AdmissionCost = Maybe::Absent(timed::Absent::Unoffered);
 
 /// How a readmission times the kernel's admission of each declaration: by a
-/// [`Clock`] the caller supplies, or not at all.
+/// [`Clock`] the caller supplies, beside a [`Meter`] when it counts the
+/// allocations too, or not at all.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Self::stop`] answers the time since the [`Self::start`] it is
-///   given, or why it read none.
+///   given, with the allocations since then when the stopwatch meters them, or
+///   why it read no time.
 /// - provides: the seam a measured walk times the kernel through; the checker
-///   reads no clock of its own, and an untimed readmission reads none.
+///   reads no clock and no meter of its own, and an untimed readmission reads
+///   none.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the trait has no body, and each reading is the clock's.
+/// - executable: none — the trait has no body, and each reading is the clock's
+///   or the meter's.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a readmission under a ticking clock times each
 ///   declaration it admits alone and none it does not, and an untimed one times
-///   none.
+///   none; under a ticking meter it counts the allocations of each one it
+///   admits.
 /// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+/// - witness: `bridge::tests::a_metered_readmission_counts_the_allocations_of_each_admission`
 pub trait Stopwatch
 {
     /// What a start leaves for its stop to read against.
@@ -1106,7 +1235,7 @@ pub trait Stopwatch
     fn stop(
         &mut self,
         started: Self::Started,
-    ) -> AdmissionTime;
+    ) -> AdmissionCost;
 }
 
 /// The stopwatch that reads no clock: every admission untimed.
@@ -1134,7 +1263,7 @@ impl Stopwatch for Untimed
     fn stop(
         &mut self,
         (): (),
-    ) -> AdmissionTime
+    ) -> AdmissionCost
     {
         Maybe::Absent(timed::Absent::Untimed)
     }
@@ -1175,11 +1304,12 @@ where
         self.0.now()
     }
 
-    /// The time since `started`, zero if the clock went back.
+    /// The time since `started`, zero if the clock went back, with no
+    /// allocation count.
     ///
     /// # Specification
     /// - ensures: present, the difference of a fresh reading and `started`,
-    ///   zero if the clock went back.
+    ///   zero if the clock went back, and [`metered::Absent::Unmetered`].
     /// - panics: none.
     /// - executable: none — the fresh reading is the clock's.
     ///
@@ -1190,9 +1320,95 @@ where
     fn stop(
         &mut self,
         started: Duration,
-    ) -> AdmissionTime
+    ) -> AdmissionCost
     {
-        Maybe::Present(self.0.now().saturating_sub(started))
+        Maybe::Present(Spent::new(
+            self.0.now().saturating_sub(started),
+            Maybe::Absent(metered::Absent::Unmetered),
+        ))
+    }
+}
+
+/// The running count of the allocations the calling thread made, which a
+/// metered stopwatch reads around each admission. The checker counts no
+/// allocation of its own, so the caller supplies the meter.
+pub trait Meter
+{
+    /// The calling thread's allocations so far.
+    ///
+    /// # Specification
+    /// trivial.
+    fn allocations(&mut self) -> AllocationCount;
+}
+
+/// The stopwatch that reads its clock and its meter around each admission.
+#[derive(Clone, Copy, Debug)]
+pub struct Metered<C, M>
+{
+    /// The clock it reads.
+    clock: C,
+    /// The meter it reads.
+    meter: M,
+}
+
+impl<C, M> Metered<C, M>
+{
+    /// A stopwatch reading `clock` and `meter`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn by(
+        clock: C,
+        meter: M,
+    ) -> Self
+    {
+        Self { clock, meter }
+    }
+}
+
+impl<C, M> Stopwatch for Metered<C, M>
+where
+    C: Clock,
+    M: Meter,
+{
+    type Started = (Duration, AllocationCount);
+
+    /// The clock's and the meter's readings at the start.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn start(&mut self) -> (Duration, AllocationCount)
+    {
+        (self.clock.now(), self.meter.allocations())
+    }
+
+    /// The time and the allocations since `started`, each zero if its reading
+    /// went back.
+    ///
+    /// # Specification
+    /// - ensures: present, the difference of a fresh clock reading and the
+    ///   started one, and the difference of a fresh meter reading and the
+    ///   started one, each zero if its reading went back.
+    /// - panics: none.
+    /// - executable: none — the fresh readings are the clock's and the meter's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Stopwatch`].
+    /// - witness: `bridge::tests::a_metered_readmission_counts_the_allocations_of_each_admission`
+    #[inline]
+    fn stop(
+        &mut self,
+        (wall, allocations): (Duration, AllocationCount),
+    ) -> AdmissionCost
+    {
+        let wall = self.clock.now().saturating_sub(wall);
+        Maybe::Present(Spent::new(
+            wall,
+            Maybe::Present(self.meter.allocations().since(allocations)),
+        ))
     }
 }
 
@@ -2961,7 +3177,7 @@ fn cross<Vouch, Watch>(
     constant: ConstantIndex,
     offer: Offer<'_>,
     (vouch, stopwatch): (&Vouch, &mut Watch),
-) -> (Outcome, Vec<Replayed>, AdmissionTime)
+) -> (Outcome, Vec<Replayed>, AdmissionCost)
 where
     Vouch: Fn(Certificate) -> Certificate,
     Watch: Stopwatch,

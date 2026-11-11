@@ -2773,6 +2773,8 @@ where
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once.
     let types = crate::content::TypeMemo::default();
+    #[cfg(feature = "instrument")]
+    observer.opened();
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
         if let Demand::Retired(retired) = retirement.demand() {
             return Polled::Retired(retired, ());

@@ -172,6 +172,8 @@ mod ledger;
 mod manifold;
 mod measure;
 mod memo;
+#[cfg(feature = "instrument")]
+mod meter;
 mod package;
 mod pool;
 mod presentation;
@@ -356,6 +358,12 @@ pub use crate::measure::Measure;
 pub use crate::measure::measure;
 pub use crate::measure::measured;
 pub use crate::memo::Memo;
+#[cfg(feature = "instrument")]
+pub use crate::meter::Allocations;
+#[cfg(feature = "instrument")]
+pub use crate::meter::allocated;
+#[cfg(feature = "instrument")]
+pub use crate::meter::counting;
 pub use crate::package::Absence;
 pub use crate::package::Body;
 pub use crate::package::Differing;

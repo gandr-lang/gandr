@@ -950,13 +950,24 @@ impl Admission
         let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
         let leading = (boundary, crossed);
         // A measured admission times the kernel's admission of each
-        // declaration; any other reads no clock.
+        // declaration, and a metered one counts its allocations too; any other
+        // reads no clock.
         let polled = match self.positioning {
             Positioning::Positioned => readmitted(
                 &mut self.arena,
                 &self.verdicts,
                 leading,
                 (retirement, &mut bridge::Timed::by(Monotonic::started())),
+            ),
+            #[cfg(feature = "instrument")]
+            Positioning::Metered => readmitted(
+                &mut self.arena,
+                &self.verdicts,
+                leading,
+                (
+                    retirement,
+                    &mut bridge::Metered::by(Monotonic::started(), crate::meter::Allocations),
+                ),
             ),
             Positioning::Tallied | Positioning::Unpositioned => readmitted(
                 &mut self.arena,
@@ -978,6 +989,8 @@ impl Admission
                     Positioning::Positioned | Positioning::Tallied => {
                         Maybe::Present(ArtifactPositions::of(&readmission))
                     },
+                    #[cfg(feature = "instrument")]
+                    Positioning::Metered => Maybe::Present(ArtifactPositions::of(&readmission)),
                     Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
                 },
                 declined: declined(&readmission),
@@ -1063,6 +1076,11 @@ pub enum Positioning
     /// check charged and the time the kernel took to admit it, which a measure
     /// reads.
     Positioned,
+    /// It records what [`Positioning::Positioned`] records, and the
+    /// allocations of each crossed declaration's admission, which the timings
+    /// layer of the editor's instrument reads.
+    #[cfg(feature = "instrument")]
+    Metered,
     /// It records each crossed declaration's artifact position and the census
     /// its check charged, which the counts layer of the editor's instrument
     /// reads, and it reads no clock.
@@ -1332,8 +1350,8 @@ pub struct Placed
     position: ConstantIndex,
     /// What its check charged, goal by goal, or why no check was tallied.
     census: Maybe<ExpansionCensus, tallied::Absent>,
-    /// How long the kernel took to admit it, or why no time was read.
-    took: bridge::AdmissionTime,
+    /// What the kernel spent to admit it, or why no time was read.
+    took: bridge::AdmissionCost,
 }
 
 impl Placed
@@ -1361,13 +1379,13 @@ impl Placed
         self.census
     }
 
-    /// How long the kernel took to admit the declaration, or why no time was
+    /// What the kernel spent to admit the declaration, or why no time was
     /// read.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn took(&self) -> bridge::AdmissionTime
+    pub const fn took(&self) -> bridge::AdmissionCost
     {
         self.took
     }

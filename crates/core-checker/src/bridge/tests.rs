@@ -117,9 +117,12 @@ use proptest::prelude::proptest;
 use proptest::test_runner::TestCaseError;
 use quenchant_shape::shape::Maybe;
 
+use super::AllocationCount;
 use super::Erasure;
 use super::Frame;
 use super::LeadingCount;
+use super::Meter;
+use super::Metered;
 use super::Mode as Reading;
 use super::Outcome;
 use super::Positions;
@@ -129,10 +132,12 @@ use super::Recall;
 use super::Refusal;
 use super::Replayed;
 use super::Source;
+use super::Spent;
 use super::Timed;
 use super::Untimed;
 use super::crossed;
 use super::fault;
+use super::metered;
 use super::readmit;
 use super::readmit_resuming;
 use super::readmit_retiring;
@@ -1309,7 +1314,10 @@ fn a_timed_readmission_times_each_admission_it_makes()
     );
     for entry in timed.readmitted() {
         let expected = if offered(entry.outcome()) {
-            Maybe::Present(Duration::from_micros(1))
+            Maybe::Present(Spent::new(
+                Duration::from_micros(1),
+                Maybe::Absent(metered::Absent::Unmetered),
+            ))
         }
         else {
             Maybe::Absent(timed::Absent::Unoffered)
@@ -1366,12 +1374,68 @@ fn a_timed_readmission_times_each_admission_it_makes()
             .map(Readmitted::took)
             .collect::<Vec<_>>(),
         vec![
-            Maybe::Present(Duration::from_micros(1)),
-            Maybe::Present(Duration::from_micros(1)),
+            Maybe::Present(Spent::new(
+                Duration::from_micros(1),
+                Maybe::Absent(metered::Absent::Unmetered)
+            )),
+            Maybe::Present(Spent::new(
+                Duration::from_micros(1),
+                Maybe::Absent(metered::Absent::Unmetered)
+            )),
             Maybe::Absent(timed::Absent::Untimed),
             Maybe::Absent(timed::Absent::Untimed),
         ],
         "the two resumed declarations keep the timed run's ticks, and the two crossed again read no clock"
+    );
+}
+
+/// A meter three allocations past its last reading at each reading.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default)]
+struct Allocating(u64);
+
+impl Meter for Allocating
+{
+    /// Three allocations past the last reading.
+    ///
+    /// # Specification
+    /// trivial.
+    fn allocations(&mut self) -> AllocationCount
+    {
+        self.0 = self.0.saturating_add(3);
+        AllocationCount::from(self.0)
+    }
+}
+
+/// A readmission metered by a clock and a meter that each tick once per
+/// reading counts, for each declaration it offers the kernel, the one tick of
+/// each that its admission spans. A declaration it never offers reads neither.
+#[test]
+fn a_metered_readmission_counts_the_allocations_of_each_admission()
+{
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Integer, At(4));
+    let metered = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Metered::by(Ticking::default(), Allocating::default()),
+    )
+    .whole()
+    .0;
+    let costs: Vec<_> = metered.readmitted().iter().map(Readmitted::took).collect();
+    let spent = Maybe::Present(Spent::new(
+        Duration::from_micros(1),
+        Maybe::Present(AllocationCount::from(3_u64)),
+    ));
+    assert!(
+        costs.contains(&spent)
+            && costs.contains(&Maybe::Absent(timed::Absent::Unoffered))
+            && costs
+                .iter()
+                .all(|cost| *cost == spent || *cost == Maybe::Absent(timed::Absent::Unoffered)),
+        "each admission spans one tick and three allocations, and `Alias` is never offered: {costs:?}"
     );
 }
 
