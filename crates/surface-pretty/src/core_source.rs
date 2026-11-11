@@ -753,6 +753,9 @@ pub struct CoreSource<'arena>
     /// by its node: the binders' names and labels the source writes, and the
     /// relation, the model type and the type member each type is written as.
     forms: &'arena WrittenForms<Name<'arena>, Modelled<'arena>>,
+    /// The name the source writes for the binder each lambda and each bind
+    /// opens, ascending by the opener.
+    openers: &'arena [(ComputationId, Name<'arena>)],
     /// The theory each capability scope the source writes as `handle c : T
     /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
     /// ascending by the scope.
@@ -816,6 +819,7 @@ impl<'arena> CoreSource<'arena>
             regions: &[],
             binders: &[],
             forms: UNWRITTEN,
+            openers: &[],
             scopes: &[],
             answers: &[],
             rows: &[],
@@ -988,6 +992,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { forms, ..self }
+    }
+
+    /// This source, naming the binder each lambda and each bind of `openers`
+    /// opens as the source writes it, ascending by the opener.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn opening(
+        self,
+        openers: &'arena [(ComputationId, Name<'arena>)],
+    ) -> Self
+    {
+        Self { openers, ..self }
     }
 
     /// This source, writing each capability scope `scopes` records over the
@@ -3374,8 +3393,8 @@ impl Source for CoreSource<'_>
         self.binders
     }
 
-    /// The name the source writes for a dependent arrow's or a dependent
-    /// pair's binder.
+    /// The name the source writes for a dependent arrow's, a dependent
+    /// pair's, a lambda's or a bind's binder.
     ///
     /// # Specification
     /// trivial.
@@ -3388,7 +3407,8 @@ impl Source for CoreSource<'_>
         match self.restoration.restored(node) {
             CoreNode::CompType(id) => written(&self.forms.arrows, id),
             CoreNode::ValueType(id) => written(&self.forms.pairs, id),
-            CoreNode::Value(_) | CoreNode::Computation(_) => None,
+            CoreNode::Computation(id) => written(self.openers, id),
+            CoreNode::Value(_) => None,
         }
     }
 

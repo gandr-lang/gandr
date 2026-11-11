@@ -17,9 +17,9 @@
 //! lowering wrote each node, counted from the first byte of its declaration.
 //! An item that the pass adopts runs no judgement, and its key
 //! keeps the tree it holds from before. The account keeps each tree beside
-//! the program of the revision that judged it and the names of its
-//! constants, so a face prints a goal and its type on demand at the width it
-//! asks. The index stores no text.
+//! the program of the revision that judged it, the names of its constants and
+//! the names its source writes for its binders, so a face prints a goal and
+//! its type on demand at the width it asks. The index stores no text.
 //!
 //! The kernel's replay of a declaration marks each node of its tree: a node
 //! reads [`Warrant::Replayed`] while its row's kernel tier is
@@ -37,8 +37,9 @@
 //! # What it does not cover
 //!
 //! An item whose steps overflow the buffer keeps no tree, and its key says
-//! so. A goal under binders is printed with the names of the constants and
-//! with no names for the binders. A goal that the memo answered keeps no type
+//! so. The second run of a body over its elaboration judges copies that the
+//! lowering's scopes do not reach, so its goals print their binders by the
+//! printer's own names (#6745). A goal that the memo answered keeps no type
 //! that its rule handed, because the machine hands the memo's answer and not
 //! a rule's. An adopted item keeps the places of its tree: an edit inside its
 //! declaration that keeps its content, such as a comment, moves its text and
@@ -70,16 +71,23 @@ use gandr_core_checker::trace::untraced;
 use gandr_core_fork::activity::Nanos;
 use gandr_core_fork::activity::Slots;
 use gandr_core_incremental::Program;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::Scoped;
+use gandr_surface_diagnostics::named_forms;
 use gandr_surface_dispatcher::KernelTier;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Style;
+use gandr_surface_pretty::WrittenForms;
 use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
@@ -802,8 +810,8 @@ fn close(
 }
 
 /// What a face reads to print the goals of the trees one revision built: the
-/// program the revision's pass judged and the names of its constants, by
-/// admission position.
+/// program the revision's pass judged, the names of its constants, by
+/// admission position, and the names its source writes for its binders.
 ///
 /// # Specification
 /// trivial.
@@ -814,6 +822,8 @@ pub struct Printing
     program: Program,
     /// The name the printer writes for each constant, by admission position.
     names: Vec<String>,
+    /// Where the revision's source writes each binder and each use.
+    naming: Naming,
 }
 
 /// A shared [`Printing`], equal to another only when both are the same
@@ -828,16 +838,21 @@ pub struct Printed(Arc<Printing>);
 impl Printed
 {
     /// The printing of the revision that judged `program`, its constants
-    /// named by `names`.
+    /// named by `names` and its binders by `naming`.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn new(
         program: Program,
         names: Vec<String>,
+        naming: Naming,
     ) -> Self
     {
-        Self(Arc::new(Printing { program, names }))
+        Self(Arc::new(Printing {
+            program,
+            names,
+            naming,
+        }))
     }
 }
 
@@ -862,13 +877,16 @@ impl Eq for Printed
 }
 
 /// What the account keeps for one declaration's content: its tree, or why it
-/// has none, beside the printing of the revision that judged it.
+/// has none, beside its position and the printing of the revision that
+/// judged it.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Derived
 {
+    /// The declaration's position in the revision that judged it.
+    constant: ConstantIndex,
     /// The tree, or why the fold built none.
     tree: Maybe<DerivationTree, underived::Absent>,
     /// The printing of the revision that judged the declaration.
@@ -877,17 +895,22 @@ pub struct Derived
 
 impl Derived
 {
-    /// The tree `tree`, or why the fold built none, printed through
-    /// `printed`.
+    /// The tree `tree` of the declaration at `constant`, or why the fold
+    /// built none, printed through `printed`.
     ///
     /// # Specification
     /// trivial.
     pub(crate) const fn new(
+        constant: ConstantIndex,
         tree: Maybe<DerivationTree, underived::Absent>,
         printed: Printed,
     ) -> Self
     {
-        Self { tree, printed }
+        Self {
+            constant,
+            tree,
+            printed,
+        }
     }
 
     /// The derivation a face reads, under `kernel`, the kernel's standing on
@@ -902,6 +925,7 @@ impl Derived
     {
         match self.tree {
             Maybe::Present(ref tree) => Maybe::Present(Derivation {
+                constant: self.constant,
                 tree,
                 printing: &self.printed.0,
                 kernel,
@@ -919,8 +943,8 @@ impl Derived
 /// - requires: built by [`crate::Account::derivation_at`].
 /// - ensures: the tree that the account keeps for the declaration's content
 ///   key, with the kernel tier of its row.
-/// - provides: the nodes, their warrants, and their goals, types and rules
-///   printed on demand.
+/// - provides: the nodes, their warrants and their rules, and the printer of
+///   their goals and types.
 /// - panics: none.
 /// - executable: none — a borrow of the account's state.
 ///
@@ -930,6 +954,8 @@ impl Derived
 #[derive(Clone, Copy, Debug)]
 pub struct Derivation<'account>
 {
+    /// The declaration's position in the revision that built the tree.
+    constant: ConstantIndex,
     /// The tree.
     tree: &'account DerivationTree,
     /// The printing of the revision that built it.
@@ -975,73 +1001,32 @@ impl<'account> Derivation<'account>
         }
     }
 
-    /// The goal of `node`, printed at `page`.
+    /// The printer of the goals and the types of the tree's nodes, in the
+    /// names the revision's source writes. It reads the binders of the
+    /// declaration once, so a face that prints many nodes builds it once.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn goal(
-        &self,
-        node: &DerivationNode,
-        page: PageWidth,
-    ) -> Maybe<Presentation, unprinted::Absent>
+    #[must_use]
+    pub fn goals(&self) -> Goals<'account>
     {
-        let names = self.names();
-        let source = CoreSource::new(self.printing.program.arena(), &names);
-        let style = Style::from(Form::Sugared);
-        let printed = match node.node {
-            CoreNode::Term(TermNode::Value(id)) => gandr_surface_pretty::present_value(
-                &source,
-                gandr_surface_pretty::CoreNode::Value(id),
-                page,
-                style,
-            ),
-            CoreNode::Term(TermNode::Computation(id)) => gandr_surface_pretty::present_computation(
-                &source,
-                gandr_surface_pretty::CoreNode::Computation(id),
-                page,
-                style,
-            ),
-            CoreNode::Type(ty) => {
-                gandr_surface_pretty::present_type(&source, printed(ty), page, style)
-            },
-        };
-        printed.map_or(
-            Maybe::Absent(unprinted::Absent::Unpresentable),
-            Maybe::Present,
-        )
-    }
-
-    /// The type of `node`, printed at `page`: the type it is checked against,
-    /// or the type its rule synthesised.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn ty(
-        &self,
-        node: &DerivationNode,
-        page: PageWidth,
-    ) -> Maybe<Presentation, unprinted::Absent>
-    {
-        let ty = match (node.against, node.handed) {
-            (Maybe::Present(ty), _) => printed(ty),
-            (Maybe::Absent(_), Some(Handed::Value(ty))) => {
-                gandr_surface_pretty::CoreNode::ValueType(ty.node())
-            },
-            (Maybe::Absent(_), Some(Handed::Computation(ty))) => {
-                gandr_surface_pretty::CoreNode::CompType(ty)
-            },
-            (Maybe::Absent(_), Some(Handed::Checked) | None) => {
-                return Maybe::Absent(unprinted::Absent::Untyped);
-            },
-        };
-        let names = self.names();
-        let source = CoreSource::new(self.printing.program.arena(), &names);
-        gandr_surface_pretty::present_type(&source, ty, page, Style::from(Form::Sugared)).map_or(
-            Maybe::Absent(unprinted::Absent::Unpresentable),
-            Maybe::Present,
-        )
+        let printing = self.printing;
+        let arena = printing.program.arena();
+        let naming = &printing.naming;
+        Goals {
+            arena,
+            names: printing
+                .names
+                .iter()
+                .map(|name| Name::from(name.as_str()))
+                .collect(),
+            forms: named_forms(naming.forms(), naming.text()),
+            openers: naming.openers(),
+            scoped: naming
+                .roots(self.constant)
+                .map(|roots| naming.scoped(arena, &printing.names, roots)),
+        }
     }
 
     /// The short name of the rule that judged `node`: the name of the node's
@@ -1073,18 +1058,157 @@ impl<'account> Derivation<'account>
         name.truncate(end);
         Rule(name)
     }
+}
 
-    /// The constants' names as the printer reads them.
+/// The printer of one derivation's goals and types, in the source's names.
+///
+/// Each binder that a goal opens prints as the revision's source writes it,
+/// and each variable bound above a node by its binder's name.
+///
+/// # Specification
+/// - requires: built by [`Derivation::goals`].
+/// - ensures: a goal and a type print at the page a face asks, under the
+///   binders that the declaration's roots put around the node.
+/// - provides: the goal column and the type column of a derivation pane.
+/// - panics: none.
+/// - executable: none — a borrow of the account's state.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a goal under a binder that a generated name or a `?`
+///   spells changes the goals that the test reads.
+/// - witness: `tests::trace::a_goal_prints_its_binders_as_the_source_names_them_6717`
+#[derive(Debug)]
+pub struct Goals<'account>
+{
+    /// The arena each node's id names.
+    arena: &'account CoreArena,
+    /// The constants' names, by admission position.
+    names: Vec<Name<'account>>,
+    /// The forms the source writes that the core erases.
+    forms: WrittenForms<Name<'account>, Modelled<'account>>,
+    /// The name the source writes for the binder of each lambda and bind.
+    openers: Vec<(ComputationId, Name<'account>)>,
+    /// The binders of the declaration with their names; none when the
+    /// revision lowered no value declaration at its position.
+    scoped: Option<Scoped>,
+}
+
+impl Goals<'_>
+{
+    /// The goal of `node`, printed at `page`.
     ///
     /// # Specification
     /// trivial.
-    fn names(&self) -> Vec<Name<'account>>
+    #[inline]
+    pub fn goal(
+        &self,
+        node: &DerivationNode,
+        page: PageWidth,
+    ) -> Maybe<Presentation, unprinted::Absent>
     {
-        self.printing
-            .names
-            .iter()
-            .map(|name| Name::from(name.as_str()))
+        let context = self.context(node);
+        let source = self.source(&context);
+        let style = Style::from(Form::Sugared);
+        let printed = match node.node {
+            CoreNode::Term(TermNode::Value(id)) => gandr_surface_pretty::present_value(
+                &source,
+                gandr_surface_pretty::CoreNode::Value(id),
+                page,
+                style,
+            ),
+            CoreNode::Term(TermNode::Computation(id)) => gandr_surface_pretty::present_computation(
+                &source,
+                gandr_surface_pretty::CoreNode::Computation(id),
+                page,
+                style,
+            ),
+            CoreNode::Type(ty) => {
+                gandr_surface_pretty::present_type(&source, printed(ty), page, style)
+            },
+        };
+        printed.map_or(
+            Maybe::Absent(unprinted::Absent::Unpresentable),
+            Maybe::Present,
+        )
+    }
+
+    /// The type of `node`, printed at `page` under the binders of its goal:
+    /// the type it is checked against, or the type its rule synthesised.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn ty(
+        &self,
+        node: &DerivationNode,
+        page: PageWidth,
+    ) -> Maybe<Presentation, unprinted::Absent>
+    {
+        let ty = match (node.against, node.handed) {
+            (Maybe::Present(ty), _) => printed(ty),
+            (Maybe::Absent(_), Some(Handed::Value(ty))) => {
+                gandr_surface_pretty::CoreNode::ValueType(ty.node())
+            },
+            (Maybe::Absent(_), Some(Handed::Computation(ty))) => {
+                gandr_surface_pretty::CoreNode::CompType(ty)
+            },
+            (Maybe::Absent(_), Some(Handed::Checked) | None) => {
+                return Maybe::Absent(unprinted::Absent::Untyped);
+            },
+        };
+        let context = self.context(node);
+        gandr_surface_pretty::present_type(
+            &self.source(&context),
+            ty,
+            page,
+            Style::from(Form::Sugared),
+        )
+        .map_or(
+            Maybe::Absent(unprinted::Absent::Unpresentable),
+            Maybe::Present,
+        )
+    }
+
+    /// The names of the binders the goal of `node` stands under, outermost
+    /// first; none for a node the declaration's roots do not reach.
+    ///
+    /// # Specification
+    /// trivial.
+    fn context(
+        &self,
+        node: &DerivationNode,
+    ) -> Vec<Option<Name<'_>>>
+    {
+        let goal = match node.node {
+            CoreNode::Term(TermNode::Value(id)) => gandr_surface_pretty::CoreNode::Value(id),
+            CoreNode::Term(TermNode::Computation(id)) => {
+                gandr_surface_pretty::CoreNode::Computation(id)
+            },
+            CoreNode::Type(ty) => printed(ty),
+        };
+        self.scoped
+            .as_ref()
+            .and_then(|scoped| scoped.around(goal))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|binder| binder.name.map(Name::from))
             .collect()
+    }
+
+    /// The printer's source over the arena, under the binders `context`
+    /// names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn source<'goals>(
+        &'goals self,
+        context: &'goals [Option<Name<'goals>>],
+    ) -> CoreSource<'goals>
+    {
+        CoreSource::new(self.arena, &self.names)
+            .writing(&self.forms)
+            .opening(&self.openers)
+            .within(context)
     }
 }
 

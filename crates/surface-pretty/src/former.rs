@@ -1895,18 +1895,18 @@ pub trait Source
     }
 
     /// The name the source writes for the one binder `node` opens, when
-    /// `node` is a dependent arrow or a dependent pair whose binder the source
-    /// names, or the label of the field a product a dependent record nests
-    /// holds first (#3934): the core carries no name, so a source that keeps
-    /// one beside the node answers it here.
+    /// `node` is a dependent arrow, a dependent pair, a lambda or a bind whose
+    /// binder the source names, or the label of the field a product a
+    /// dependent record nests holds first (#3934): the core carries no name,
+    /// so a source that keeps one beside the node answers it here.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the written name, or none; the default names nothing, so
     ///   every binder takes a generated name.
-    /// - provides: the name a printed declared type spells its parameters by,
-    ///   and a dependent record each field's label by, as the source writes
-    ///   them.
+    /// - provides: the name a printed declared type spells its parameters by, a
+    ///   dependent record each field's label by, and a lambda or a bind its
+    ///   binder by, as the source writes them.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].

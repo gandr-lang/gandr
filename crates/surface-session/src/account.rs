@@ -687,7 +687,7 @@ impl Account
             {
                 let _replaced = self
                     .derived
-                    .insert(key, Derived::new(tree, printed.clone()));
+                    .insert(key, Derived::new(constant, tree, printed.clone()));
             }
         }
     }

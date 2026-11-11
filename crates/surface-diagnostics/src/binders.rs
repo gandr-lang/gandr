@@ -285,6 +285,25 @@ impl Naming
         &self.forms
     }
 
+    /// Each lambda and bind with the name the source writes for the binder
+    /// it opens, ascending by the opener, as a printer names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn openers(&self) -> Vec<(ComputationId, Name<'_>)>
+    {
+        self.openers
+            .iter()
+            .filter_map(|&(opener, span)| {
+                self.text
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .map(|name| (opener, Name::from(name)))
+            })
+            .collect()
+    }
+
     /// This record with each node in `carried` named as the node it copies:
     /// the copies a typed run's settling minted, which no origin records.
     ///
