@@ -27,12 +27,13 @@
 # `main` moves (#5438). The merge group on `landing` runs no test lane. So the
 # gate runs the light checks, which take seconds, and of the heavy checks
 # Clippy and the compiler policy (`check:landing`). It runs the enforcing
-# suite of the packages the change touches (#6595): #6563 broke two tests of
-# the checker, and no stage before `landing` ran them. The head watcher sets
-# `GATE_TEST_WHOLE` (#6725): its gate then runs the enforcing suite of the
-# whole workspace on every head, since no test lane runs after the merge
-# queue. It runs no sweep and no specification obligation. `gate:all` runs
-# every check over the whole workspace.
+# suite of the whole workspace (`.config/gate-scope/test-scope.bash`, #6738):
+# #6563 broke two tests of the checker, and no stage before `landing` ran
+# them (#6595), and the suite of the touched packages alone passed #6709 and
+# #6712, which each turned a test of an untouched package red. The head
+# watcher runs the same gate on each head. It runs no sweep and no
+# specification obligation. `gate:all` runs every check over the whole
+# workspace.
 #
 # It runs those checks that the change selects
 # (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
@@ -58,7 +59,7 @@
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
 [check]
-description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suite of the packages it touches, or of the whole workspace under GATE_TEST_WHOLE, in one of the host's gate slots"
+description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suite of the whole workspace, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -72,9 +73,6 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 tree=$(.config/gate-scope/passed.bash tree)
 selected=$(.config/gate-scope/select.bash --landing)
-if [[ -n ${GATE_TEST_WHOLE:-} ]]; then
-  selected=$(printf '%s\n%s\n' "$selected" check:tests-enforcing | awk 'NF' | sort -u)
-fi
 heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
 if (( heavy > 0 )); then
   hold_gate_slot "mise run check"
@@ -607,8 +605,9 @@ run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value
 # target-only or stale macro build. A loaded host lengthens the run and never
 # fails it: the profile kills only a hang past 5 minutes (#3912). A shard runs
 # the packages of `CI_SHARD_ARGS`. `mise run check` sets `GATE_TEST_SCOPE` to
-# the packages its change touches (#6595), as it sets `GATE_WITNESS_SCOPE`.
-# Without either, the suite runs over `GATE_SCOPE`, or the whole workspace.
+# the whole workspace (`.config/gate-scope/test-scope.bash`, #6738), as it
+# sets `GATE_WITNESS_SCOPE` to the touched packages. Without either, the
+# suite runs over `GATE_SCOPE`, or the whole workspace.
 ["check:tests-enforcing"]
 description = "Unit and integration tests over every target, specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
@@ -2115,8 +2114,8 @@ run = ".config/mise/host-lock-cases.bash"
 # a working change and a commit of 4000 paths, a list longer than one
 # argument holds, each select every check.
 # `.config/gate-scope/tests-cases.bash` builds scratch workspaces of two
-# packages (#6595): a change that breaks a test of the package it touches is
-# refused, and the suite of a change to one package keeps the other out.
+# packages (#6738): a change that breaks a test of the package it touches is
+# refused, and a change to one package is refused by a red test of the other.
 # `.config/gate-scope/comments-cases.bash` builds scratch repositories
 # (#6648): a `//` edit in a crate selects neither `check:doc` nor
 # `check:corpus`, a `///` edit, a blank line or one token of code beside a
@@ -2302,8 +2301,8 @@ run = ".config/landing/rebase-cases.bash"
 # (#6679): a red check that a newer head of landing holds green runs no
 # search, and a red there or an unmoved head runs it.
 # `.config/integration/environment-cases.bash` (#6739): `check:gate-scope`
-# on a green head reads no red check with the watcher's `GATE_TEST_WHOLE` on
-# and off.
+# on a green head reads no red check as the watcher's gate and as a lane's
+# gate run it.
 ["check:integration"]
 description = "The integration cycle's step, known-red list, brake and runner, and the head watcher's search, owner and gap, give each recorded case its output"
 tools.jq = "1.8.1"
