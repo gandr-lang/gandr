@@ -572,6 +572,21 @@ fn a_code_binds_only_the_graph_it_was_encoded_from()
     let selected = session(vec![select(&fork), Node::End, Node::End]);
     let run = [Move::Offer("keep".into()), Move::End];
     let chosen = [Move::Select("keep".into()), Move::End];
+    let nested = session(vec![
+        Node::Mu(NodeId(1)),
+        Node::Send(YIELD, NodeId(2)),
+        Node::Mu(NodeId(3)),
+        Node::Send(YIELD, NodeId(4)),
+        Node::Var(NodeId(2)),
+    ]);
+    let rebound = session(vec![
+        Node::Mu(NodeId(1)),
+        Node::Send(YIELD, NodeId(2)),
+        Node::Mu(NodeId(3)),
+        Node::Send(YIELD, NodeId(4)),
+        Node::Var(NodeId(0)),
+    ]);
+    let empty = [];
     for (encoded, local, moves, what) in [
         (
             &offered,
@@ -594,6 +609,12 @@ fn a_code_binds_only_the_graph_it_was_encoded_from()
             ]),
             run.as_slice(),
             "a label bound to another continuation",
+        ),
+        (
+            &nested,
+            rebound,
+            empty.as_slice(),
+            "a recursively bound variable bound to another binder",
         ),
     ] {
         let code = encode(&mut arena, encoded, &payloads).expect("the encoded graph");

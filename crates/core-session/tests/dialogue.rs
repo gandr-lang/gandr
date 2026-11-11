@@ -115,6 +115,10 @@ fn the_seat_and_operator_dialogue_is_one_linearization_of_its_web()
         WebRelation::Missing,
         web.relation(sent, event(Endpoint::Right, MoveIndex(5)))
     );
+    assert_eq!(
+        WebRelation::Missing,
+        web.relation(sent, event(Endpoint::Left, MoveIndex(5)))
+    );
     assert_eq!(WebRelation::Missing, web.relation(sent, sent));
 
     // A recorder that saw the operator close before the seat took its offer

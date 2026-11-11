@@ -177,6 +177,26 @@ fn choice_width_and_continuations_are_directional()
     );
 }
 
+#[test]
+fn matching_terminal_and_choice_states_relate()
+{
+    let ended = session(alloc::vec![Node::End]);
+    let selected = session(alloc::vec![
+        Node::Select([("next".into(), NodeId(1))].into()),
+        Node::End,
+    ]);
+    let offered = session(alloc::vec![
+        Node::Offer([("next".into(), NodeId(1))].into()),
+        Node::End,
+    ]);
+    for protocol in [&ended, &selected, &offered] {
+        assert_eq!(
+            decide(protocol, protocol, Relation::Equivalent),
+            Ok(Decision::Related)
+        );
+    }
+}
+
 /// Whether reference comparison observes matching or peer actions.
 #[derive(Clone, Copy)]
 enum Polarity
