@@ -2893,6 +2893,128 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.worlds.host(host);
     }
 
+    /// Admit the world declaration at `constant`, requiring `requirement`, as
+    /// its judgement admits it: a pass that adopts the declaration's earlier
+    /// verdict declares the world without judging it again.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` is admitted and declares a world, and code that
+    ///   runs at it performs in `requirement`.
+    /// - fails: admission out of source order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The ordinary admission-order refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — after the adopted worlds, an entry that migrates to
+    ///   one of them checks as on a fresh pass.
+    /// - witness: `worlds::tests::an_adopted_located_program_judges_as_a_fresh_pass_3381`
+    #[spec(ensures: |ret| ret.is_err() || self.worlds.declared().contains(&constant))]
+    #[inline]
+    pub fn adopt_world(
+        &mut self,
+        constant: ConstantIndex,
+        requirement: &gandr_core_term::effect::EffectRow,
+    ) -> Result<(), CheckRefusal>
+    {
+        self.admit(constant)?;
+        self.worlds.declare(constant, requirement);
+        Ok(())
+    }
+
+    /// Record what the register holds of `constant`'s declaration, as its
+    /// judgement settles it: a pass that adopts the declaration settles it
+    /// without judging it again.
+    ///
+    /// # Specification
+    /// - requires: `constant` is admitted.
+    /// - ensures: [`Self::located`] answers `located` for `constant`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an adopted entry settled as its judgement left it
+    ///   refuses its reader as a fresh pass does; settled at the host's world,
+    ///   unspent, the reader checks.
+    /// - witness: `worlds::tests::an_adopted_located_program_judges_as_a_fresh_pass_3381`
+    #[spec(ensures: self.located(constant) == located)]
+    #[inline]
+    pub fn settle_adopted(
+        &mut self,
+        constant: ConstantIndex,
+        located: crate::worlds::Located,
+    )
+    {
+        self.worlds
+            .settle(constant, located.home(), located.spending());
+    }
+
+    /// What the register holds of `constant`'s declaration: its home and
+    /// whether a run of it spent a capability.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn located(
+        &self,
+        constant: ConstantIndex,
+    ) -> crate::worlds::Located
+    {
+        self.worlds.located(constant)
+    }
+
+    /// The entry `declaration` is judged at under the host's entry, as its
+    /// judgement resolves it: the host's world with no capability for a
+    /// declaration with neither a signature nor a body, and for every
+    /// declaration that is no value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a value declaration with a signature or a body, the entry
+    ///   [`crate::worlds::Worlds::resolve`] gives; the default entry otherwise.
+    /// - fails: as [`crate::worlds::Worlds::resolve`] fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`crate::worlds::Worlds::resolve`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — with no host entry a stated entry resolves as stated
+    ///   and an unstated one to the host's world; within a host's entry the
+    ///   unstated one takes the host's.
+    /// - witness: `worlds::tests::an_adopted_located_program_judges_as_a_fresh_pass_3381`
+    #[spec(ensures: |ref ret| matches!(
+        *declaration.content(),
+        crate::DeclarationContent::Value { signature: Maybe::Present(_), .. }
+            | crate::DeclarationContent::Value { body: Maybe::Present(_), .. }
+    ) || ret.as_ref().is_ok_and(|entry| *entry == crate::worlds::Entry::default()))]
+    #[inline]
+    pub fn resolve_entry(
+        &self,
+        declaration: &crate::Declaration,
+    ) -> Result<crate::worlds::Entry, crate::worlds::LocatedDefect>
+    {
+        match *declaration.content() {
+            crate::DeclarationContent::Value {
+                signature: Maybe::Present(_),
+                ..
+            }
+            | crate::DeclarationContent::Value {
+                body: Maybe::Present(_),
+                ..
+            } => self
+                .worlds
+                .resolve(declaration.constant(), declaration.entry()),
+            crate::DeclarationContent::Value { .. }
+            | crate::DeclarationContent::Data(_)
+            | crate::DeclarationContent::Codata(_)
+            | crate::DeclarationContent::Abstract(_)
+            | crate::DeclarationContent::World(_) => Ok(crate::worlds::Entry::default()),
+        }
+    }
+
     /// The located state: the worlds declared, the homes and the entries.
     ///
     /// # Specification
@@ -3177,7 +3299,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the answer [`Self::signature`] gives; while a supported
-    ///   judgement runs, the answer is also appended to its log.
+    ///   judgement runs, the answer is also appended to its log, beside what
+    ///   the world register holds of the declaration.
     /// - provides: the one read of the table the judgement makes, so the
     ///   support is complete by construction.
     /// - panics: none.
@@ -3192,7 +3315,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         ensures: |ret| ret == self.signature(constant) && match (&self.support, before) {
             | (&SupportLog::Off, None) => true,
             | (&SupportLog::Recording { ref values,.. }, Some(count)) => values.len().checked_sub(1) == Some(count)
-                && values.last() == Some(&Consulted::new(constant, ret)),
+                && values.last() == Some(&Consulted::new(constant, ret, self.worlds.located(constant))),
             | _ => false,
         },
     )]
@@ -3203,7 +3326,11 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     {
         let answer = self.signature(constant);
         if let SupportLog::Recording { ref mut values, .. } = self.support {
-            values.push(Consulted::new(constant, answer));
+            values.push(Consulted::new(
+                constant,
+                answer,
+                self.worlds.located(constant),
+            ));
         }
         self.deferrals.read(constant);
         answer

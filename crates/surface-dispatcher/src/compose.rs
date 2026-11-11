@@ -221,7 +221,6 @@ use gandr_core_checker::worlds::Entry;
 use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
-use gandr_core_incremental::Locus;
 use gandr_core_incremental::SourceTag;
 use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
@@ -4983,9 +4982,9 @@ pub fn adapt(
 /// source's name ([`item_key`]), and its reference counts its occurrence
 /// within that source. A source is named by its standard library module or
 /// by its path within its package, never by a path of the host, so a key is
-/// the same wherever the package stands. An item is located when its own
-/// source, or a source that its own source reaches, declares a world or
-/// states an entry ([`located_sources`]).
+/// the same wherever the package stands. A located item persists as any other:
+/// its content names each world by reference, and its support records what
+/// the world register answers it.
 ///
 /// # Specification
 /// - requires: `module` was lowered into `arena`.
@@ -5092,20 +5091,11 @@ pub fn item_program(
             Maybe::Absent(_) => None,
         })
         .collect();
-    let kept: Vec<&LoweredDeclaration<'_>> = module
+    let declarations = adapt(module, &arena);
+    let items = module
         .declarations()
         .iter()
         .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
-        .collect();
-    let declarations = adapt(module, &arena);
-    let located = located_sources(
-        unit,
-        kept.iter()
-            .map(|lowered| lowered.introduced().source())
-            .zip(&declarations),
-    );
-    let items = kept
-        .into_iter()
         .zip(declarations)
         .map(|(lowered, declaration)| {
             let source = usize::from(lowered.introduced().source());
@@ -5115,13 +5105,7 @@ pub fn item_program(
                 || gandr_core_incremental::ItemKey::from(name),
                 |tag| gandr_core_incremental::ItemKey::from((tag, name)),
             );
-            let item = gandr_core_incremental::Item::new(key, declaration);
-            if located.get(source) == Some(&Locus::Located) {
-                item.located()
-            }
-            else {
-                item
-            }
+            gandr_core_incremental::Item::new(key, declaration)
         })
         .collect();
     let mut program = gandr_core_incremental::Program::new(arena, items)?;
@@ -5222,57 +5206,6 @@ fn item_key(
         },
         Some(Maybe::Absent(_)) | None => gandr_core_incremental::ItemKey::from(name),
     }
-}
-
-/// The locus of each source of `unit`: the source is located when it, or a
-/// source that it reaches, declares a world or states an entry among
-/// `declarations`, each beside its source. A source reaches the sources its
-/// path imports resolve to and the prelude.
-///
-/// # Specification
-/// - requires: imports point backward, as [`Unit::new`] checks.
-/// - ensures: one locus per source of `unit`; a source is located exactly when
-///   a declaration of it is a world or states an entry, or a source it reaches
-///   is located.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the corpus closures that declare a world beside a source
-///   that does not reach it.
-/// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
-#[spec(ensures: |ret| ret.len() == unit.sources().len())]
-fn located_sources<'declaration>(
-    unit: &Unit,
-    declarations: impl Iterator<
-        Item = (
-            gandr_surface_lowering::SourceIndex,
-            &'declaration Declaration,
-        ),
-    >,
-) -> Vec<Locus>
-{
-    let mut located = vec![Locus::Unlocated; unit.sources().len()];
-    for (source, declaration) in declarations {
-        let locates = matches!(
-            *declaration.content(),
-            gandr_core_checker::DeclarationContent::World(_)
-        ) || matches!(declaration.entry(), Maybe::Present(_));
-        if locates && let Some(locus) = located.get_mut(usize::from(source)) {
-            *locus = Locus::Located;
-        }
-    }
-    let prelude = unit.prelude().map(usize::from);
-    for (position, source) in unit.sources().iter().enumerate() {
-        let reached = prelude.is_some_and(|prelude| located.get(prelude) == Some(&Locus::Located))
-            || source.imports().iter().any(|target| {
-                matches!(*target, ImportTarget::Source(index)
-                    if located.get(usize::from(index)) == Some(&Locus::Located))
-            });
-        if reached && let Some(locus) = located.get_mut(position) {
-            *locus = Locus::Located;
-        }
-    }
-    located
 }
 
 /// The checker's abstract type for the sealing the lowering recorded: its

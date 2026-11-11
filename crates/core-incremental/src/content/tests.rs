@@ -996,36 +996,46 @@ fn an_unresolved_id_makes_the_item_opaque()
     assert_eq!(content.opacity(), Opacity::Opaque, "and the item is opaque");
 }
 
-/// #6522: an item is located by its own closure alone. Beside a world in a
-/// source it does not reach, the item is transparent, as it is alone; when
-/// its front end states its closure located, it is opaque and refused
-/// persistence by name. The world itself is located.
+/// #3381: a located program's items are transparent and persist. Beside a
+/// world in a source it does not reach, an item's content is as it is alone.
+/// An item that states an entry at the world keeps its nodes and carries the
+/// entry among its roots, by the world's reference; the world carries its
+/// row. Each has canonical bytes, and the entry changes the item's bytes.
 #[test]
-fn an_item_of_a_located_closure_is_opaque()
+fn an_item_of_a_located_program_is_transparent_3381()
 {
-    let item = |arena: &mut CoreArena, position: usize| {
+    let item = |arena: &mut CoreArena, position: usize, entered: bool| {
         let integer = arena.value_type_base(BaseType::Integer);
         let zero = arena.value_literal(Literal::Integer(IntegerLiteral::new(
             Sign::NonNegative,
             Magnitude::zero(),
         )));
+        let declaration = Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(integer),
+            Maybe::Present(zero),
+            OriginToken::from(position),
+        );
         Item::new(
             ItemKey::from("plain"),
-            Declaration::new(
-                ConstantIndex::from(position),
-                Maybe::Present(integer),
-                Maybe::Present(zero),
-                OriginToken::from(position),
-            ),
+            if entered {
+                declaration.entered(gandr_core_checker::worlds::Entry::new(
+                    gandr_core_term::world::World::Declared(ConstantIndex::from(0_usize)),
+                    Vec::new(),
+                ))
+            }
+            else {
+                declaration
+            },
         )
     };
     let mut arena = CoreArena::new();
-    let alone = vec![item(&mut arena, 0)];
+    let alone = vec![item(&mut arena, 0, false)];
     let alone = Program::new(arena, alone).expect("one item ascends");
     let alone = encode_item(alone.arena(), alone.layout(), ItemOrdinal::from(0_usize)).content;
-    let beside = |located: bool| {
+    let beside = |entered: bool| {
         let mut arena = CoreArena::new();
-        let plain = item(&mut arena, 1);
+        let plain = item(&mut arena, 1, entered);
         let items = vec![
             Item::new(
                 ItemKey::from("seat"),
@@ -1035,7 +1045,7 @@ fn an_item_of_a_located_closure_is_opaque()
                     OriginToken::from(0_usize),
                 ),
             ),
-            if located { plain.located() } else { plain },
+            plain,
         ];
         let program = Program::new(arena, items).expect("two items ascend");
         [0_usize, 1_usize].map(|ordinal| {
@@ -1048,22 +1058,21 @@ fn an_item_of_a_located_closure_is_opaque()
         })
     };
     let [world, unreached] = beside(false);
-    let [_, located] = beside(true);
+    let [_, entered] = beside(true);
     assert_eq!(
         (
             alone.opacity(),
             unreached.opacity(),
-            located.opacity(),
+            entered.opacity(),
             world.opacity()
         ),
         (
             Opacity::Transparent,
             Opacity::Transparent,
-            Opacity::Opaque,
-            Opacity::Opaque
+            Opacity::Transparent,
+            Opacity::Transparent
         ),
-        "the item is transparent alone and beside a world it does not reach, and opaque in a \
-         located closure; the world is located"
+        "every item of the located program is transparent"
     );
     assert_eq!(
         alone, unreached,
@@ -1071,16 +1080,41 @@ fn an_item_of_a_located_closure_is_opaque()
     );
     assert_eq!(
         alone.nodes(),
-        located.nodes(),
-        "its nodes are the same; the closure's locus is what differs"
+        entered.nodes(),
+        "its nodes are the same; the entry is what differs"
     );
-    let mut bytes = crate::codec::CheckpointBytes::default();
+    let seat = Reference::Item {
+        key: ItemKey::from("seat"),
+        occurrence: Occurrence::from(0_usize),
+    };
+    assert!(
+        matches!(
+            *entered.declaration(),
+            super::DeclarationRoots::Value {
+                entry: Maybe::Present(super::EntryRoots {
+                    ref home,
+                    ref capabilities,
+                }),
+                ..
+            } if *home == super::WorldContent::Declared(seat) && capabilities.is_empty()
+        ),
+        "the entry names its home by the world's reference"
+    );
     assert_eq!(
-        crate::codec::write_item_content(&mut bytes, &located),
-        Err(crate::codec::CodecError::Unsupported(
-            crate::codec::UnsupportedPersistence::Located
-        )),
-        "and it is refused persistence by name"
+        *world.declaration(),
+        super::DeclarationRoots::World(super::WorldRoots {
+            row: gandr_core_term::effect::EffectRow::EMPTY,
+        }),
+        "the world carries its row"
+    );
+    let bytes = |content: &super::ItemContent| {
+        let mut bytes = crate::codec::CheckpointBytes::default();
+        crate::codec::write_item_content(&mut bytes, content).map(|()| bytes.as_ref().to_vec())
+    };
+    assert!(bytes(&world).is_ok(), "the world has canonical bytes");
+    assert!(
+        bytes(&entered).is_ok_and(|entered| bytes(&alone).is_ok_and(|alone| alone != entered)),
+        "the entered item has canonical bytes, and its entry changes them"
     );
 }
 

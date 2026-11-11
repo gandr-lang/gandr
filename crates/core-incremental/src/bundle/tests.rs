@@ -1,11 +1,8 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use gandr_core_checker::Declaration;
-use gandr_core_checker::OriginToken;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
-use gandr_core_term::effect::EffectRow;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -35,8 +32,9 @@ enum Body
     Digits(Digits),
     /// The item at an earlier position.
     Names(Position),
-    /// A world, which locates the item and makes it opaque.
-    World,
+    /// A body naming an id the program's arena holds nothing at, which makes
+    /// the item opaque.
+    Dangling,
 }
 
 /// The program of `entries`, each an item's key and what it declares, at
@@ -61,11 +59,20 @@ fn program(entries: &[(Key, Body)]) -> Program
                     let constant = arena.value_constant(ConstantIndex::from(named.0));
                     declaration(Position(position), unsigned, Maybe::Present(constant))
                 },
-                Body::World => Declaration::world(
-                    ConstantIndex::from(position),
-                    EffectRow::EMPTY,
-                    OriginToken::from(position),
-                ),
+                Body::Dangling => {
+                    // An id past every node the program's arena mints.
+                    let mut larger = CoreArena::new();
+                    let foreign = (0_u32 .. 1024)
+                        .map(|index| {
+                            larger.value_variable(
+                                gandr_core_term::Zone::Intuitionistic,
+                                gandr_kernel_term::DeBruijnIndex::from(index),
+                            )
+                        })
+                        .last()
+                        .expect("the range is not empty");
+                    declaration(Position(position), unsigned, Maybe::Present(foreign))
+                },
             };
             Item::new(ItemKey::from(key.0), declared)
         })
@@ -178,14 +185,15 @@ fn a_source_s_key_moves_with_what_it_imports_6512()
     );
 }
 
-/// #6512: a world is opaque, so its source has no key, and the source that
-/// imports it has none. The bundle holds the run of the source beside them,
-/// and gives no set for a closure that holds the world.
+/// #6512: an item whose body names an id its arena holds nothing at is
+/// opaque, so its source has no key, and the source that imports it has none.
+/// The bundle holds the run of the source beside them, and gives no set for a
+/// closure that holds the opaque item.
 #[test]
 fn a_closure_with_an_opaque_source_restricts_to_nothing_6512()
 {
-    let mut located = program(&[
-        (Key("w"), Body::World),
+    let mut opaque = program(&[
+        (Key("w"), Body::Dangling),
         (Key("b"), Body::Digits(Digits("1"))),
         (Key("c"), Body::Digits(Digits("2"))),
     ]);
@@ -194,7 +202,7 @@ fn a_closure_with_an_opaque_source_restricts_to_nothing_6512()
         run(Position(1), &[Position(0)]),
         run(Position(1), &[]),
     ];
-    let keys = SourceKeys::of(&located, &laid).expect("the sources lay the program out");
+    let keys = SourceKeys::of(&opaque, &laid).expect("the sources lay the program out");
     let reasons: Vec<Maybe<(), unkeyed::Absent>> =
         keys.keys().iter().map(|key| key.map(|_| ())).collect();
     assert_eq!(reasons, vec![
@@ -202,7 +210,7 @@ fn a_closure_with_an_opaque_source_restricts_to_nothing_6512()
         Maybe::Absent(unkeyed::Absent::Reaches),
         Maybe::Present(()),
     ]);
-    let bundle = Bundle::of(&checked(&mut located), &laid).expect("the sources lay the set out");
+    let bundle = Bundle::of(&checked(&mut opaque), &laid).expect("the sources lay the set out");
     assert_eq!(
         bundle.restrict(&keys),
         Maybe::Absent(unheld::Absent::Unkeyed)
@@ -213,6 +221,6 @@ fn a_closure_with_an_opaque_source_restricts_to_nothing_6512()
     assert_eq!(
         bundle.restrict(&alone),
         Maybe::Present(checked(&mut beside)),
-        "the run beside the world restricts to its own fresh set"
+        "the run beside the opaque item restricts to its own fresh set"
     );
 }

@@ -1802,7 +1802,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 21, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 22, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1812,14 +1812,14 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 20;
+    *wrong_version.get_mut(7).expect("version byte") = 21;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
     );
     let mut program = CheckpointBytes::default();
     write_program::<_, crate::content::ItemContent>(&mut program, &[]).expect("empty program");
-    assert_eq!(program.as_ref(), b"GPROG\0\0\x0c\0\0\0\0\0\0\0\0");
+    assert_eq!(program.as_ref(), b"GPROG\0\0\x0d\0\0\0\0\0\0\0\0");
     assert_eq!(
         decode_checkpoints(Bytes(program.as_ref())),
         Err(CodecError::Corrupt)
@@ -1848,6 +1848,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &nodes,
         );
@@ -2090,6 +2091,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &nodes,
         );
@@ -2207,6 +2209,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2259,6 +2262,7 @@ fn every_refusal_holding_a_capped_level_is_refused_when_written_4451()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2310,6 +2314,7 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2391,6 +2396,7 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2510,6 +2516,7 @@ fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
                 stages,
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2574,6 +2581,7 @@ fn a_supplying_value_root_round_trips_and_its_supplies_are_content_1227()
                 stages: vec![StageBound::Unbounded, StageBound::Unbounded],
                 supplies,
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2654,6 +2662,7 @@ fn a_modelled_value_root_round_trips_and_its_candidates_are_content_739()
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models,
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             },
             &[
                 ContentNode::Tuple(vec![NodeIndex::from(3_usize)]),
@@ -3688,4 +3697,137 @@ fn supported_tables_round_trip_and_reject_forged_support()
         Err(CodecError::Corrupt),
         "the previous version is refused, not reinterpreted"
     );
+}
+
+/// #3381: each world former round trips under a tag of its own, at the
+/// host's world and at a declared one, and a world tag past one is refused.
+#[test]
+fn world_formers_round_trip_under_their_own_tags_3381()
+{
+    use crate::content::WorldContent;
+    let [a, b] = [1_usize, 2].map(NodeIndex::from);
+    let seat = WorldContent::Declared(Reference::Item {
+        key: ItemKey::from("seat"),
+        occurrence: Occurrence::from(0_usize),
+    });
+    let mut nodes = vec![ContentNode::Hold(a)];
+    for world in [WorldContent::Host, seat] {
+        nodes.extend([
+            ContentNode::Leta {
+                world: world.clone(),
+                value: a,
+                body: b,
+            },
+            ContentNode::Migrate {
+                world: world.clone(),
+                body: b,
+            },
+            ContentNode::HeldType {
+                inner: a,
+                world: world.clone(),
+            },
+            ContentNode::CapabilityType(world),
+        ]);
+    }
+    let mut encodings = BTreeSet::new();
+    for node in nodes {
+        let mut bytes = CheckpointBytes::default();
+        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("a portable node");
+        assert!(
+            encodings.insert(bytes.as_ref().to_vec()),
+            "{node:?} keeps its own encoding"
+        );
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_node(&mut reader),
+            Ok(node),
+            "the node reads back"
+        );
+        assert_eq!(reader.finish(), Ok(()), "and nothing is left over");
+    }
+    let mut bytes = CheckpointBytes::default();
+    let mut writer = Writer { sink: &mut bytes };
+    writer.tag(Tag(0x98));
+    writer.tag(Tag(2));
+    let mut reader = Reader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    };
+    assert_eq!(
+        super::read_node(&mut reader),
+        Err(CodecError::Corrupt),
+        "a world tag past one is refused"
+    );
+}
+
+/// #3381: a located answer and an entered one round trip, a refused entry
+/// among them; one that states the host's world, unspent, is refused as
+/// noncanonical, since no support records it.
+#[test]
+fn located_answers_round_trip_and_refuse_the_host_s_3381()
+{
+    use gandr_core_checker::worlds::Spending;
+
+    use crate::content::EntryRoots;
+    use crate::content::WorldContent;
+    let seat = WorldContent::Declared(Reference::Item {
+        key: ItemKey::from("seat"),
+        occurrence: Occurrence::from(0_usize),
+    });
+    let round_trip = |answer: &Answer| {
+        let mut bytes = CheckpointBytes::default();
+        super::write_answer(&mut Writer { sink: &mut bytes }, answer)
+            .expect("an answer with no table encodes");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        let read = super::read_answer(&mut reader)?;
+        reader.finish().map(|()| read)
+    };
+    for answer in [
+        Answer::Located {
+            home: seat.clone(),
+            spending: Spending::Unspent,
+        },
+        Answer::Located {
+            home: WorldContent::Host,
+            spending: Spending::Spent,
+        },
+        Answer::Entered {
+            entry: Some(EntryRoots {
+                home: seat.clone(),
+                capabilities: vec![WorldContent::Host, seat],
+            }),
+            spending: Spending::Spent,
+        },
+        Answer::Entered {
+            entry: None,
+            spending: Spending::Unspent,
+        },
+    ] {
+        assert_eq!(round_trip(&answer), Ok(answer), "the answer reads back");
+    }
+    for answer in [
+        Answer::Located {
+            home: WorldContent::Host,
+            spending: Spending::Unspent,
+        },
+        Answer::Entered {
+            entry: Some(EntryRoots {
+                home: WorldContent::Host,
+                capabilities: Vec::new(),
+            }),
+            spending: Spending::Unspent,
+        },
+    ] {
+        assert_eq!(
+            round_trip(&answer),
+            Err(CodecError::NonCanonical),
+            "the host's world, unspent, is what no answer states"
+        );
+    }
 }

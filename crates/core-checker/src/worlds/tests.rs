@@ -1423,3 +1423,113 @@ fn an_entry_reads_its_home_then_its_capabilities()
         "no name states no entry"
     );
 }
+
+/// Adopt the operator's and the seat's world declarations in `context`, as a
+/// pass that reuses their verdicts does.
+///
+/// # Specification
+/// trivial.
+fn adopt_worlds(context: &mut CheckingContext<'_>)
+{
+    for world in [OPERATOR, SEAT] {
+        context
+            .adopt_world(world.constant(), &EffectRow::EMPTY)
+            .expect("the worlds are adopted in order");
+    }
+}
+
+/// #3381: a pass that adopts a located program's earlier verdicts judges
+/// what follows as a fresh pass does. The worlds it adopts are declared, so
+/// an entry that migrates checks after them and settles its home and its
+/// spending. The register the pass settles for an adopted entry decides its
+/// reader: settled as the entry's judgement left it, the reader is refused as
+/// a fresh pass refuses it; settled at the host's world, unspent, it checks.
+#[test]
+fn an_adopted_located_program_judges_as_a_fresh_pass_3381()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let returned = arena.computation_return(report);
+    let migration = migrate(&mut arena, SEAT, returned);
+    let entry = entry_point(&mut arena, At(2), string, migration).entered(operating());
+    let DeclarationContent::Value {
+        signature: Maybe::Present(declared),
+        ..
+    } = *entry.content()
+    else {
+        panic!("the entry point states its type");
+    };
+    let named = arena.value_constant(At(2).constant());
+    let reader = Declaration::new(
+        At(3).constant(),
+        Maybe::Present(declared),
+        Maybe::Present(named),
+        At(3).origin(),
+    );
+    let [operator, seat] = worlds();
+    let module = [operator, seat, entry.clone(), reader.clone()];
+    let fresh = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    let refused = located(value(named), LocatedDefect::EntryNamed {
+        constant: At(2).constant(),
+    });
+    assert!(
+        matches!(fresh[2 ..], [Verdict::Checked { .. }, ref read] if *read == refused),
+        "a fresh pass checks the entry and refuses its reader: {fresh:?}"
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    adopt_worlds(&mut context);
+    let judged = crate::check_declaration(&mut context, &entry);
+    let settled = context.located(At(2).constant());
+    assert!(
+        matches!(judged, Verdict::Checked { .. }),
+        "after the adopted worlds the entry's migration checks: {judged:?}"
+    );
+    assert_eq!(
+        settled,
+        super::Located::new(world(OPERATOR), super::Spending::Spent),
+        "and the register holds it at its home, spent"
+    );
+    assert_eq!(
+        (
+            context.resolve_entry(&entry),
+            context.resolve_entry(&reader)
+        ),
+        (Ok(operating()), Ok(Entry::default())),
+        "with no host entry, a stated entry resolves as stated and an unstated one to the host's world"
+    );
+    context.enter_at(HostEntry::Within(operating()));
+    assert_eq!(
+        (
+            context.resolve_entry(&entry),
+            context.resolve_entry(&reader)
+        ),
+        (Ok(operating()), Ok(operating())),
+        "within the host's entry, a stated entry stays and an unstated one takes the host's"
+    );
+    let mut read_after = |located: super::Located| {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        adopt_worlds(&mut context);
+        context
+            .adopt_formed(
+                At(2).constant(),
+                declared,
+                Maybe::Absent(crate::unfolding::Absent::Rigid),
+            )
+            .expect("the entry is adopted in order");
+        context.settle_adopted(At(2).constant(), located);
+        crate::check_declaration(&mut context, &reader)
+    };
+    assert_eq!(
+        read_after(settled),
+        refused,
+        "a reader of the entry adopted as its judgement settled it is refused as on a fresh pass"
+    );
+    assert!(
+        matches!(
+            read_after(super::Located::default()),
+            Verdict::Checked { .. }
+        ),
+        "the register the pass settles is what decides the reader"
+    );
+}

@@ -548,6 +548,7 @@ INSERT INTO reference VALUES('vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a','surfa
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','core-checker','module','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','core-term','rewrite','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','surface-lowering','classify','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-b725-7820-9a4c-074e3f6d79b0','core-incremental','checkpoint','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','bridge','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-checker','ua::strata','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','core-incremental','record','lineage','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');

@@ -32,8 +32,10 @@ use quenchant_shape::shape::Maybe;
 use crate::context::signature_table;
 use crate::formation::FormedValueType;
 use crate::module::Verdict;
+use crate::worlds::Located;
 
-/// One answer a judgement read from the signature table.
+/// One answer a judgement read from the signature table, beside what the
+/// world register held of the same declaration: its home and its spending.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Consulted
 {
@@ -41,20 +43,29 @@ pub struct Consulted
     constant: ConstantIndex,
     /// The type the table held for it, or why it held none.
     answer: Maybe<FormedValueType, signature_table::Absent>,
+    /// The declaration's home and spending, which a located judgement reads
+    /// beside its type.
+    located: Located,
 }
 
 impl Consulted
 {
-    /// The answer `answer` the table gave for `constant`.
+    /// The answer `answer` the table gave for `constant`, the register
+    /// holding `located` of it.
     ///
     /// # Specification
     /// trivial.
     pub(crate) const fn new(
         constant: ConstantIndex,
         answer: Maybe<FormedValueType, signature_table::Absent>,
+        located: Located,
     ) -> Self
     {
-        Self { constant, answer }
+        Self {
+            constant,
+            answer,
+            located,
+        }
     }
 
     /// The admission position the judgement asked about.
@@ -76,6 +87,17 @@ impl Consulted
     pub const fn answer(&self) -> Maybe<FormedValueType, signature_table::Absent>
     {
         self.answer
+    }
+
+    /// The home and the spending the register held of the position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn located(&self) -> Located
+    {
+        self.located
     }
 }
 

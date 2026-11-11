@@ -278,13 +278,11 @@ pub struct Item
     key: ItemKey,
     /// The declaration the checker judges.
     declaration: Declaration,
-    /// Whether the front end states the item's own closure located.
-    reach: crate::content::Locus,
 }
 
 impl Item
 {
-    /// The item `declaration` under `key`, its own closure unlocated.
+    /// The item `declaration` under `key`.
     ///
     /// # Specification
     /// trivial.
@@ -295,25 +293,7 @@ impl Item
         declaration: Declaration,
     ) -> Self
     {
-        Self {
-            key,
-            declaration,
-            reach: crate::content::Locus::Unlocated,
-        }
-    }
-
-    /// The item, its own closure located: its own source, or a source that
-    /// its own source reaches, declares a world or states an entry. The front
-    /// end states it, because the front end alone knows the sources.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn located(mut self) -> Self
-    {
-        self.reach = crate::content::Locus::Located;
-        self
+        Self { key, declaration }
     }
 
     /// The front end's stable identity for the item.
@@ -336,44 +316,6 @@ impl Item
     pub const fn declaration(&self) -> &Declaration
     {
         &self.declaration
-    }
-
-    /// Whether the item is located: a world, an item that states an entry,
-    /// or an item whose own closure is located ([`Item::located`]). A
-    /// located item is opaque, and a source the item does not reach never
-    /// makes it located.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`crate::content::Locus::Located`] exactly when the front end
-    ///   states the item's closure located, the declaration is a world, or it
-    ///   states an entry.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a world, an item beside it that its front end marks
-    ///   and the same item unmarked separate the three answers.
-    /// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
-    #[spec(ensures: |ret| (ret == crate::content::Locus::Located)
-        == (self.reach == crate::content::Locus::Located
-            || matches!(*self.declaration.content(), gandr_core_checker::DeclarationContent::World(_))
-            || matches!(self.declaration.entry(), Maybe::Present(_))))]
-    #[inline]
-    #[must_use]
-    pub fn locus(&self) -> crate::content::Locus
-    {
-        if self.reach == crate::content::Locus::Located
-            || matches!(
-                *self.declaration.content(),
-                gandr_core_checker::DeclarationContent::World(_)
-            )
-            || matches!(self.declaration.entry(), Maybe::Present(_))
-        {
-            crate::content::Locus::Located
-        }
-        else {
-            crate::content::Locus::Unlocated
-        }
     }
 }
 
@@ -572,6 +514,8 @@ pub struct Program
     )>,
     /// The store each pass's context recalls strata from and keeps them to.
     strata: alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>,
+    /// The entry the host bounds every declaration of each pass by.
+    host: gandr_core_checker::worlds::HostEntry,
 }
 
 impl Program
@@ -678,6 +622,7 @@ impl Program
             },
             tier: None,
             strata: alloc::sync::Arc::new(gandr_core_checker::ua::NoStratumStore),
+            host: gandr_core_checker::worlds::HostEntry::Unbounded,
         })
     }
 
@@ -779,6 +724,42 @@ impl Program
     pub(crate) fn strata(&self) -> alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>
     {
         alloc::sync::Arc::clone(&self.strata)
+    }
+
+    /// Bound the entry of every declaration each later pass judges by
+    /// `host`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every later pass's context is handed `host`
+    ///   ([`gandr_core_checker::CheckingContext::enter_at`]); the last entry
+    ///   handed is the one kept.
+    /// - provides: the front end's hand-in of the host's grant to the
+    ///   incremental checker, whose passes make their own contexts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two passes over one located program under two grants
+    ///   judge again each declaration whose resolved entry moves, and adopt
+    ///   every other.
+    /// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+    #[spec(captures: host_before = host.clone(), ensures: self.host == host_before)]
+    #[inline]
+    pub fn enter_at(
+        &mut self,
+        host: gandr_core_checker::worlds::HostEntry,
+    )
+    {
+        self.host = host;
+    }
+
+    /// The entry each pass's context bounds its declarations by.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn host(&self) -> &gandr_core_checker::worlds::HostEntry
+    {
+        &self.host
     }
 
     /// The arena, mutably, beside the layout: a pass grows the one while it

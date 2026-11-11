@@ -1798,20 +1798,29 @@ mod sweeps
         path: &Path,
     ) -> Option<gandr_core_incremental::Program>
     {
+        let own = std::fs::read_to_string(path).expect("a corpus source reads");
+        lowered_text(grammar, path, SourceText::from(own.as_str()))
+    }
+
+    /// The item program that `own`, read as the source at `path`, lowers
+    /// to, laid out after its import closure; none for a text that lowers to
+    /// no module.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lowered_text(
+        grammar: &Pbg,
+        path: &Path,
+        own: SourceText<'_>,
+    ) -> Option<gandr_core_incremental::Program>
+    {
         use gandr_surface_dispatcher::Unshadowed;
         use gandr_surface_dispatcher::classify;
         use gandr_surface_dispatcher::item_program;
         use gandr_surface_dispatcher::lay_out_shadowed;
         use gandr_surface_dispatcher::lower_unit_source;
 
-        let own = std::fs::read_to_string(path).expect("a corpus source reads");
-        let laid = lay_out_shadowed(
-            grammar,
-            path,
-            classify(path),
-            SourceText::from(own.as_str()),
-            &Unshadowed,
-        );
+        let laid = lay_out_shadowed(grammar, path, classify(path), own, &Unshadowed);
         let lowering = lower_unit_source(
             grammar,
             SourceText::from(laid.text.as_str()),
@@ -1844,7 +1853,7 @@ mod sweeps
     /// fresh arena and encoded again, gives the table under that root: the
     /// mint inverts the encoding of each former the corpus holds. The mint
     /// refuses a root by name only when its table holds a node that content
-    /// keeps unresolved (a stage type, a world type, a codata application)
+    /// keeps unresolved (a stage type, a codata application)
     /// or names a declaration the program holds no item for.
     #[test]
     fn every_item_table_mints_back_to_itself()
@@ -1939,6 +1948,193 @@ mod sweeps
             )),
             "a root is refused only for an unresolved node or an unplaced reference: {refused:?}"
         );
+    }
+
+    /// #3381: `corpus/model/worlds/two-processes.gandr` persists its 53
+    /// items. Its set is stored at the address of its program, and the model
+    /// lowered again restores it. A resume from the restored set adopts each
+    /// item that no judgement elaborated. A change of the entry's capabilities
+    /// judges again `main` and the elaborated items, and no other item.
+    ///
+    /// The model then resumes under two grants in turn: `near` with a
+    /// capability for `far` twice, then thrice. Each resume judges again each
+    /// value declaration whose resolved entry moves, and each elaborated item.
+    /// It adopts each data, world, abstract and codata item. Each verdict is
+    /// the one a fresh pass under the grant gives.
+    #[test]
+    fn two_processes_persists_and_a_grant_judges_again_what_it_moves_3381()
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_checker::DeclarationContent;
+        use gandr_core_checker::Entered;
+        use gandr_core_checker::worlds::Entry;
+        use gandr_core_checker::worlds::HostEntry;
+        use gandr_core_incremental::Adoption;
+        use gandr_core_incremental::BackendArtifact;
+        use gandr_core_incremental::CheckpointObserver;
+        use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::Typing;
+        use gandr_core_incremental::address_of;
+        use gandr_core_incremental::check_program;
+        use gandr_core_incremental::persist;
+        use gandr_core_incremental::restore;
+        use gandr_core_incremental::resume;
+        use gandr_core_incremental::resume_from;
+        use gandr_core_term::world::World;
+        use quenchant_shape::shape::Maybe;
+
+        /// An observer that keeps nothing.
+        struct Quiet;
+
+        impl CheckpointObserver for Quiet
+        {
+        }
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/worlds/two-processes.gandr");
+        let source = std::fs::read_to_string(&path).expect("the model reads");
+        let lowered = |text: &str| {
+            lowered_text(&grammar, &path, SourceText::from(text))
+                .expect("the model lowers to a module")
+        };
+        let judged = |adoptions: &[Adoption]| {
+            adoptions
+                .iter()
+                .map(|&adoption| adoption != Adoption::Adopted)
+                .collect::<Vec<bool>>()
+        };
+        let mut base = lowered(&source);
+        assert_eq!(base.items().len(), 53, "the model's closure holds 53 items");
+        let checked = check_program(&mut base, CheckBudget::DEFAULT).expect("the pass runs");
+        let elaborated: Vec<bool> = checked
+            .checkpoints()
+            .items()
+            .iter()
+            .map(|checkpoint| checkpoint.entered() == Entered::Elaborated)
+            .collect();
+        let backend = BackendArtifact::from(b"core-checker".as_slice());
+        let mut store = MemoryCheckpointStore::default();
+        let address = persist(
+            &mut store,
+            &base,
+            backend,
+            checked.checkpoints(),
+            &mut Quiet,
+        )
+        .expect("each item persists");
+        let mut again = lowered(&source);
+        assert_eq!(
+            address_of(&again).expect("the model has an address"),
+            address,
+            "the model lowered again has the address its set is stored at"
+        );
+        let Maybe::Present(restored) =
+            restore(&mut store, &again, address, backend, &mut Quiet).expect("the store reads")
+        else {
+            panic!("the store holds the model's set");
+        };
+        assert_eq!(
+            restored,
+            *checked.checkpoints(),
+            "the restored set is the stored one"
+        );
+        let adopted = resume_from(&restored, &mut again).expect("the model resumes");
+        assert_eq!(
+            adopted.typings().collect::<Vec<&Typing>>(),
+            checked.typings().collect::<Vec<&Typing>>(),
+            "each verdict is the one the source check gives"
+        );
+        assert_eq!(
+            judged(adopted.adoptions()),
+            elaborated,
+            "the resume adopts each item that no judgement elaborated"
+        );
+
+        let edited = source.replace(
+            "@[entry(*{near, far, far})",
+            "@[entry(*{near, far, far, far})",
+        );
+        assert_ne!(
+            edited, source,
+            "the model states the entry the edit changes"
+        );
+        let mut capable = lowered(&edited);
+        let resumed = resume_from(&restored, &mut capable).expect("the edited model resumes");
+        let fresh =
+            check_program(&mut lowered(&edited), CheckBudget::DEFAULT).expect("the pass runs");
+        assert_eq!(
+            resumed.typings().collect::<Vec<&Typing>>(),
+            fresh.typings().collect::<Vec<&Typing>>(),
+            "each verdict after the edit is the one a fresh pass gives"
+        );
+        let expected: Vec<bool> = capable
+            .items()
+            .iter()
+            .zip(&elaborated)
+            .map(|(item, &elaborated)| elaborated || <&[u8]>::from(item.key().name()) == b"main")
+            .collect();
+        assert_eq!(
+            judged(resumed.adoptions()),
+            expected,
+            "the edit judges again `main` and the elaborated items, and no other item"
+        );
+
+        let world = |name: &str| {
+            base.items()
+                .iter()
+                .find(|item| {
+                    <&[u8]>::from(item.key().name()) == name.as_bytes()
+                        && matches!(item.declaration().content(), DeclarationContent::World(_))
+                })
+                .map(|item| World::Declared(item.declaration().constant()))
+                .expect("the model declares the world")
+        };
+        let (near, far) = (world("near"), world("far"));
+        let mut previous = checked;
+        for grant in [
+            HostEntry::Within(Entry::new(near, vec![far, far])),
+            HostEntry::Within(Entry::new(near, vec![far, far, far])),
+        ] {
+            let granted = || {
+                let mut granted = lowered(&source);
+                granted.enter_at(grant.clone());
+                granted
+            };
+            let mut moved = granted();
+            let resumed = resume(previous, &mut moved).expect("the granted model resumes");
+            let fresh = check_program(&mut granted(), CheckBudget::DEFAULT).expect("the pass runs");
+            assert_eq!(
+                resumed.typings().collect::<Vec<&Typing>>(),
+                fresh.typings().collect::<Vec<&Typing>>(),
+                "each verdict under {grant:?} is the one a fresh pass under it gives"
+            );
+            let expected: Vec<bool> = moved
+                .items()
+                .iter()
+                .zip(&elaborated)
+                .map(|(item, &elaborated)| {
+                    let declaration = item.declaration();
+                    match *declaration.content() {
+                        // One that states no entry takes the grant's, which moves.
+                        DeclarationContent::Value { .. } => {
+                            elaborated || matches!(declaration.entry(), Maybe::Absent(_))
+                        },
+                        DeclarationContent::Data(_)
+                        | DeclarationContent::Codata(_)
+                        | DeclarationContent::Abstract(_)
+                        | DeclarationContent::World(_) => false,
+                    }
+                })
+                .collect();
+            assert_eq!(
+                judged(resumed.adoptions()),
+                expected,
+                "{grant:?} judges again each value declaration whose entry it moves and each \
+                 elaborated item, and no other item"
+            );
+            previous = resumed;
+        }
     }
 
     /// The bytes of a step's `Debug` spelling, folded into one hash.

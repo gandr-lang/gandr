@@ -66,8 +66,8 @@
 //! name of the node up to alpha-equivalence and sharing: two terms that
 //! differ only in their bound names or in what their arena shares read one
 //! table. [`ItemContent::rooted`] reads the table under one root of an item.
-//! The mint refuses a table by name: an unresolved node (a stage type, a
-//! world type or a codata application, which content keeps opaque), a
+//! The mint refuses a table by name: an unresolved node (a stage type or a
+//! codata application, which content keeps opaque), a
 //! reference that the program holds no item for, or a child of the wrong
 //! sort. A table-typed native thunk keeps no body as content, and the mint
 //! builds its curried body again from its row.
@@ -159,10 +159,13 @@
 //! through the value-changed closure. Adoption forms it again and mints its
 //! atom in the new context.
 //!
-//! A located item — a world, an item stating an entry, or an item whose own
-//! closure declares a world or states an entry — is judged each time and
-//! never persisted: it is opaque (see [`Locus`]), and a world form or a world
-//! type in any item is listed by its sort, as a stage is.
+//! A located item is content like any other. A world form and a world type
+//! name their world by the reference of its declaration ([`WorldContent`]),
+//! a world declaration's roots are the row it requires, and a value
+//! declaration's roots carry the entry it states. What the world register
+//! answers a judgement beyond that is support: the home and the spending of
+//! each constant it reads, and the entry it resolves to under the host's
+//! grant.
 //!
 //! Support keys distinguish a value-signature query from a data-signature query
 //! at the same reference. A data answer contains the complete nominal schema or
@@ -979,6 +982,27 @@ pub enum ContentNode
     /// A memory form: a held or written-back value and the bodies as edges,
     /// the linear slots as written.
     Memory(gandr_core_term::memory::MemoryForm<NodeIndex, NodeIndex>),
+    /// `hold v`: the value held at the current world, as an edge.
+    Hold(NodeIndex),
+    /// `let x at w = v ; t`: the handle opened at the world its position
+    /// names, and the body beneath one intuitionistic binder.
+    Leta
+    {
+        /// The world the handle stands at.
+        world: WorldContent,
+        /// The handle opened.
+        value: NodeIndex,
+        /// The body, under one intuitionistic binder.
+        body: NodeIndex,
+    },
+    /// `migrate[w] { t }`: the body run at the world its position names.
+    Migrate
+    {
+        /// The world migrated to.
+        world: WorldContent,
+        /// The body run there.
+        body: NodeIndex,
+    },
     /// A base-type atom.
     Base(BaseType),
     /// A product type over its components, in order; the empty product is
@@ -1043,6 +1067,18 @@ pub enum ContentNode
     SessionType(gandr_core_term::session::SessionType<NodeIndex>),
     /// A sealed abstract type, by what its position names.
     Abstract(Reference),
+    /// `A at w`: a handle to a value of `inner`, meaningful at the world its
+    /// position names.
+    HeldType
+    {
+        /// The type of the value held.
+        inner: NodeIndex,
+        /// The world the value is meaningful at.
+        world: WorldContent,
+    },
+    /// `cap_w`: the authority to migrate once to the world its position
+    /// names.
+    CapabilityType(WorldContent),
     /// The unknown value type.
     UnknownType,
     /// The opaque buffer type a receive places live.
@@ -1543,6 +1579,9 @@ impl ContentNode
         | Self::ComputationMark { .. }
         | Self::Session(_)
         | Self::Memory(_)
+        | Self::Hold(_)
+        | Self::Leta { .. }
+        | Self::Migrate { .. }
         | Self::Fixpoint { .. } => matches!(ret, Sort::Computation),
         | Self::Data { .. }
         | Self::RecordType(_)
@@ -1567,6 +1606,8 @@ impl ContentNode
         | Self::TypeLift { .. }
         | Self::Element { .. }
         | Self::Abstract(_)
+        | Self::HeldType { .. }
+        | Self::CapabilityType(_)
         | Self::SessionType(_)
         | Self::StaticPi { .. }
         | Self::Sigma { .. }
@@ -1675,6 +1716,9 @@ impl ContentNode
             | Self::ComputationMark { .. }
             | Self::Session(_)
             | Self::Memory(_)
+            | Self::Hold(_)
+            | Self::Leta { .. }
+            | Self::Migrate { .. }
             | Self::Fixpoint { .. } => Sort::Computation,
             Self::Data { .. }
             | Self::RecordType(_)
@@ -1699,6 +1743,8 @@ impl ContentNode
             | Self::TypeLift { .. }
             | Self::Element { .. }
             | Self::Abstract(_)
+            | Self::HeldType { .. }
+            | Self::CapabilityType(_)
             | Self::SessionType(_)
             | Self::StaticPi { .. }
             | Self::Sigma { .. }
@@ -1762,13 +1808,16 @@ impl ContentNode
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
             | Self::Abandon(stack) => actual == Some(&[(stack, V)][..]),
             | Self::DependentSplit { scrutinee, motive, body, .. } => actual == Some(&[(scrutinee, V), (motive, C), (body, M)][..]),
-            | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
+            | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) | Self::Migrate { body, .. } => actual == Some(&[(body, M)][..]),
             | Self::With(ref components) => ret.iter().eq(components.iter().map(|&component| (component, M))),
             | Self::Ascribe { body, ty } => actual == Some(&[(body, M), (ty, C)][..]),
             | Self::ValueAscribe { value, ty } => actual == Some(&[(value, V), (ty, A)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::Session(ref action) => ret.iter().eq(action.value_types().map(|ty| (ty, A)).chain(action.values().map(|value| (value, V))).chain(action.computations().map(|body| (body, M)))),
             | Self::Memory(ref form) => ret.iter().eq(form.values().map(|value| (value, V)).chain(form.computations().map(|body| (body, M)))),
+            | Self::Hold(value) => actual == Some(&[(value, V)][..]),
+            | Self::Leta { value, body, .. } => actual == Some(&[(value, V), (body, M)][..]),
+            | Self::HeldType { inner, .. } => actual == Some(&[(inner, A)][..]),
             | Self::SessionType(ref session) => ret.iter().eq(session.payloads().iter().map(|&payload| (payload, A))),
             | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
@@ -1777,6 +1826,7 @@ impl ContentNode
             | Self::Base(_)
             | Self::Universe { .. }
             | Self::Abstract(_)
+            | Self::CapabilityType(_)
             | Self::Unresolved(_)
             | Self::Hole(_)
             | Self::ComputationHole(_)
@@ -2021,6 +2071,10 @@ impl ContentNode
                 MemoryForm::Resume { value, .. } => Children::of(&[(value, V)]),
                 MemoryForm::Abort { .. } | MemoryForm::Consume { .. } => Children::default(),
             },
+            Self::Hold(value) => Children::of(&[(value, V)]),
+            Self::Leta { value, body, .. } => {
+                Children::of(&[(value, V), (body, M)]).binding(ChildSlot(1), one)
+            },
             Self::SessionType(ref session) => {
                 Children::default().followed_by(session.payloads(), A)
             },
@@ -2086,6 +2140,7 @@ impl ContentNode
             | Self::Base(_)
             | Self::Universe { .. }
             | Self::Abstract(_)
+            | Self::CapabilityType(_)
             | Self::Unresolved(_)
             | Self::Hole(_)
             | Self::ComputationHole(_)
@@ -2150,7 +2205,8 @@ impl ContentNode
             | Self::Nested(body)
             | Self::Run(body)
             | Self::Reset(body)
-            | Self::Project(_, body) => Children::of(&[(body, M)]),
+            | Self::Project(_, body)
+            | Self::Migrate { body, .. } => Children::of(&[(body, M)]),
             Self::Lambda(body) | Self::LinearLambda(body) | Self::Fixpoint { body, .. } => {
                 Children::of(&[(body, M)]).binding(ChildSlot(0), one)
             },
@@ -2217,7 +2273,9 @@ impl ContentNode
                 effects: Some(effects),
                 ..Children::default().followed_by(results, A)
             },
-            Self::TypeLift { inner, .. } => Children::of(&[(inner, A)]),
+            Self::HeldType { inner, .. } | Self::TypeLift { inner, .. } => {
+                Children::of(&[(inner, A)])
+            },
             Self::Element { code, .. }
             | Self::ComputationElement { code, .. }
             | Self::RowTail(code) => Children::of(&[(code, V)]),
@@ -2240,13 +2298,14 @@ impl ContentNode
         }
     }
 
-    /// The reference a constant, abstract type or nominal datatype names.
+    /// The reference a constant, abstract type or nominal datatype names, or
+    /// the declared world a world former names.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the borrowed reference for Constant, Abstract or Data,
-    ///   otherwise `NotAReference`; the predicate checks the presence
-    ///   classification.
+    /// - ensures: the borrowed reference for Constant, Abstract or Data, and a
+    ///   world former's declared world; otherwise `NotAReference`. The
+    ///   predicate checks the presence classification.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2256,6 +2315,8 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
+        Self::Leta { ref world, .. } | Self::Migrate { ref world, .. } | Self::HeldType { ref world, .. } | Self::CapabilityType(ref world) => matches!(ret, Maybe::Present(_)) == matches!(*world, WorldContent::Declared(_)),
+        Self::Hold(_) => matches!(ret, Maybe::Absent(_)),
         Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
         Self::ReturnAll(_) | Self::BindAll(..) | Self::Returns { .. } |
         Self::Patched { .. } |
@@ -2270,6 +2331,10 @@ impl ContentNode
                 declaration: ref reference,
                 ..
             } => Maybe::Present(reference),
+            Self::Leta { ref world, .. }
+            | Self::Migrate { ref world, .. }
+            | Self::HeldType { ref world, .. }
+            | Self::CapabilityType(ref world) => world.reference(),
             Self::PathUniverse(..)
             | Self::RecordType(_)
             | Self::Patched { .. }
@@ -2297,6 +2362,7 @@ impl ContentNode
             | Self::ValueAscribe { .. }
             | Self::Session(_)
             | Self::Memory(_)
+            | Self::Hold(_)
             | Self::SessionType(_)
             | Self::Project(..)
             | Self::PrimitiveValue(_)
@@ -2590,34 +2656,108 @@ pub enum Opacity
     Opaque,
 }
 
-/// Whether an item is located: a world, an item that states an entry, or an
-/// item whose own closure declares a world or states an entry.
+/// A world as content: the host's unnamed world, or a declared one by what
+/// the admission position of its declaration names.
 ///
-/// A located judgement reads the world register and the home of every
-/// constant it names, and a home reaches a reader through a term position no
-/// footprint keeps as type support. The cache has no vocabulary for that, so
-/// a located item is opaque: judged each time, never persisted. A world in a
-/// source that the item's own source does not reach makes no item located,
-/// so the item's checkpoint depends on its own closure alone. **Reversal.** A
-/// home recorded in the support a reader consults, once an editor session over
-/// located code measures the recheck.
+/// A located judgement reads the world register: the worlds declared, the
+/// row of each, and the home and the spending of each constant it names.
+/// Content names a world by its declaration's reference, as it names a
+/// constant, so an item's content does not depend on where its program
+/// admits the world. The row of a world is the world item's own content; the
+/// home and the spending of a constant are answers that its reader's support
+/// records beside the constant's type.
 ///
 /// # Specification
-/// - executable: none — the tag holds no program; `Item::locus` decides it.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an item whose own closure is located is opaque and
-///   refused persistence by name, while the same item beside a world it does
-///   not reach is transparent.
-/// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Locus
+/// trivial.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum WorldContent
 {
-    /// No world is declared and no entry stated in the item's own closure.
+    /// The world a run stands at when its entry names none.
     #[default]
-    Unlocated,
-    /// The item's own closure declares a world or states an entry.
-    Located,
+    Host,
+    /// The world the declaration at this reference declares.
+    Declared(Reference),
+}
+
+impl WorldContent
+{
+    /// The content of `world`, its position resolved through `layout`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of(
+        layout: &Layout,
+        world: gandr_core_term::world::World,
+    ) -> Self
+    {
+        match world {
+            gandr_core_term::world::World::Host => Self::Host,
+            gandr_core_term::world::World::Declared(position) => {
+                Self::Declared(layout.resolve(position))
+            },
+        }
+    }
+
+    /// The reference a declared world names; none for the host's.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
+    {
+        match *self {
+            Self::Host => Maybe::Absent(referencing::Absent::NotAReference),
+            Self::Declared(ref reference) => Maybe::Present(reference),
+        }
+    }
+}
+
+/// A stated entry as content: its home, then the world of each capability in
+/// the order the entry names them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct EntryRoots
+{
+    /// The world the body is judged at.
+    pub home: WorldContent,
+    /// The world each capability migrates to.
+    pub capabilities: Vec<WorldContent>,
+}
+
+impl EntryRoots
+{
+    /// The content of `entry`, each position resolved through `layout`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of(
+        layout: &Layout,
+        entry: &gandr_core_checker::worlds::Entry,
+    ) -> Self
+    {
+        Self {
+            home: WorldContent::of(layout, entry.home()),
+            capabilities: entry
+                .capabilities()
+                .iter()
+                .map(|&world| WorldContent::of(layout, world))
+                .collect(),
+        }
+    }
+}
+
+/// A world declaration's roots: the row that code at the world performs in,
+/// its operation types in the table's indices.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct WorldRoots
+{
+    /// The row the world requires.
+    pub row: gandr_core_term::effect::EffectRow<NodeIndex>,
 }
 
 /// The roots of a nominal declaration in a discovery-numbered table, and the
@@ -2834,8 +2974,8 @@ pub enum DeclarationRoots
 {
     /// A value declaration's optional signature and body, the laws a fold
     /// rests on, the rules of the operation it lowered from, the stage
-    /// binders it is quantified over, the stages its calls supply and the
-    /// model slots they omit.
+    /// binders it is quantified over, the stages its calls supply, the
+    /// model slots they omit and the entry it states.
     Value
     {
         /// The signature classifier, or why it is absent.
@@ -2870,14 +3010,18 @@ pub enum DeclarationRoots
         /// decides the verdict without the body naming it, so a changed
         /// candidate is changed content.
         models: Vec<ModelRoots>,
+        /// The entry the declaration states, or why it states none. Its home
+        /// is the world its body is judged at, and its capabilities are the
+        /// migrations the body may make, so a changed entry is changed
+        /// content.
+        entry: Maybe<EntryRoots, gandr_core_checker::entry::Absent>,
     },
     /// A complete nominal signature.
     Data(DataRoots),
     /// A sealed abstract type.
     Abstract(AbstractRoots),
-    /// A world declaration: no roots. Its program is located, so its item is
-    /// opaque.
-    World,
+    /// A world declaration: the row that code at the world performs in.
+    World(WorldRoots),
     /// A codata declaration: no roots. A codata signature has no content
     /// form, so its item is opaque.
     Codata,
@@ -2946,8 +3090,8 @@ impl DeclarationRoots
     ///   codes and each of its candidates' components and codes, in slot and
     ///   candidate order, all nominal roots in order as [`DataRoots::sorted`]
     ///   sorts them, an abstract type's kind before its representation and both
-    ///   before its interface's relation, reflexivity and law, or none for a
-    ///   world or a codata declaration.
+    ///   before its interface's relation, reflexivity and law, each type of a
+    ///   world's row in the row's order, or none for a codata declaration.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Clause cost
@@ -2986,7 +3130,7 @@ impl DeclarationRoots
                 models.as_slice(),
             ),
             Self::Data(ref roots) => ([None; 5], Some(roots), [].as_slice()),
-            Self::World | Self::Codata => ([None; 5], None, [].as_slice()),
+            Self::World(_) | Self::Codata => ([None; 5], None, [].as_slice()),
             Self::Abstract(roots) => {
                 let (relation, reflexivity, law) = match roots.interface {
                     Maybe::Present(interface) => (
@@ -3012,6 +3156,12 @@ impl DeclarationRoots
                 )
             },
         };
+        let row = if let Self::World(ref roots) = *self {
+            Some(&roots.row)
+        }
+        else {
+            None
+        };
         values
             .into_iter()
             .flatten()
@@ -3022,6 +3172,10 @@ impl DeclarationRoots
                     .map(|&root| (root, Sort::Value)),
             )
             .chain(data.into_iter().flat_map(DataRoots::sorted))
+            .chain(
+                row.into_iter()
+                    .flat_map(|row| row.types().map(|root| (root, Sort::ValueType))),
+            )
     }
 
     /// The roots with every root index replaced by its image under `image`,
@@ -3060,6 +3214,7 @@ impl DeclarationRoots
                 ref stages,
                 ref supplies,
                 ref models,
+                ref entry,
             } => Self::Value {
                 signature: signature.map(&image),
                 body: body.map(&image),
@@ -3082,6 +3237,7 @@ impl DeclarationRoots
                             .collect(),
                     })
                     .collect(),
+                entry: entry.clone(),
             },
             Self::Data(ref roots) => Self::Data(roots.renumbered(&image)),
             Self::Abstract(roots) => Self::Abstract(AbstractRoots {
@@ -3094,7 +3250,14 @@ impl DeclarationRoots
                 }),
                 ..roots
             }),
-            Self::World => Self::World,
+            Self::World(ref roots) => Self::World(WorldRoots {
+                row: roots
+                    .row
+                    .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                        Ok::<_, core::convert::Infallible>(image(ty))
+                    })
+                    .unwrap_or_else(|never| match never {}),
+            }),
             Self::Codata => Self::Codata,
         }
     }
@@ -3483,8 +3646,6 @@ pub struct ItemContent
     /// Each root's support in the item's empty scope, in
     /// [`DeclarationRoots::iter`] order: empty for a closed root.
     placements: Vec<Thinning>,
-    /// Whether the item is located.
-    locus: Locus,
 }
 
 impl ItemContent
@@ -3630,19 +3791,7 @@ impl ItemContent
         }
     }
 
-    /// Whether the item is located ([`crate::region::Item::locus`]).
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn locus(&self) -> Locus
-    {
-        self.locus
-    }
-
-    /// The content of these parts, as the decoder reassembles it: content a
-    /// decoder reads was persisted, so it is unlocated.
+    /// The content of these parts, as the decoder reassembles it.
     ///
     /// # Specification
     /// trivial.
@@ -3658,41 +3807,35 @@ impl ItemContent
             declaration,
             nodes,
             placements,
-            locus: Locus::Unlocated,
         }
     }
 
-    /// Whether the item may be adopted and persisted: every node resolved, an
-    /// unlocated item, and no codata declaration.
+    /// Whether the item may be adopted and persisted: every node resolved,
+    /// and no codata declaration.
     ///
     /// # Specification
-    /// - ensures: [`Opacity::Opaque`] for a located item and for a codata
-    ///   declaration, else opaque exactly when a root carries an unresolved
-    ///   node beneath it.
+    /// - ensures: [`Opacity::Opaque`] for a codata declaration, else opaque
+    ///   exactly when a root carries an unresolved node beneath it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Locus`], and an unresolved id beneath the body
-    ///   makes its item opaque.
-    /// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
+    /// - hypothesis: L3 — an unresolved id beneath the body makes its item
+    ///   opaque, and an item of a located program is transparent.
+    /// - witness: `content::tests::an_item_of_a_located_program_is_transparent_3381`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-    #[spec(ensures: |ret| (ret == Opacity::Opaque
-            || (self.locus == Locus::Unlocated && !matches!(self.declaration, DeclarationRoots::Codata)))
-        && (self.locus == Locus::Located || matches!(self.declaration, DeclarationRoots::Codata) || (ret == Opacity::Opaque) == self.declaration.iter().any(|(root, _)|
+    #[spec(ensures: |ret| (ret == Opacity::Opaque)
+        == (matches!(self.declaration, DeclarationRoots::Codata) || self.declaration.iter().any(|(root, _)|
             self.nodes.get(usize::from(root)).is_some_and(|node| node.opacity() == Opacity::Opaque))))]
     #[inline]
     #[must_use]
     pub fn opacity(&self) -> Opacity
     {
-        let opaque = match self.locus {
-            Locus::Located => true,
-            Locus::Unlocated if matches!(self.declaration, DeclarationRoots::Codata) => true,
-            Locus::Unlocated => self.declaration.iter().any(|(root, _)| {
+        let opaque = matches!(self.declaration, DeclarationRoots::Codata)
+            || self.declaration.iter().any(|(root, _)| {
                 self.nodes
                     .get(usize::from(root))
                     .is_some_and(|node| node.opacity() == Opacity::Opaque)
-            }),
-        };
+            });
         if opaque {
             Opacity::Opaque
         }
@@ -3719,7 +3862,7 @@ impl ItemContent
         (&DeclarationRoots::Value { signature: Maybe::Present(root), .. }, Some(content)) =>
             content.nodes.first().map(SupportedNode::sort) == self.nodes.get(usize::from(root)).map(SupportedNode::sort),
         (&DeclarationRoots::Value { signature: Maybe::Present(_), .. }, None) => false,
-        (&(DeclarationRoots::Value { signature: Maybe::Absent(_), .. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World | DeclarationRoots::Codata), found) => found.is_none(),
+        (&(DeclarationRoots::Value { signature: Maybe::Absent(_), .. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World(_) | DeclarationRoots::Codata), found) => found.is_none(),
     })]
     pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
@@ -3734,7 +3877,7 @@ impl ItemContent
             }
             | DeclarationRoots::Data(_)
             | DeclarationRoots::Abstract(_)
-            | DeclarationRoots::World
+            | DeclarationRoots::World(_)
             | DeclarationRoots::Codata => None,
         }
     }
@@ -4135,9 +4278,9 @@ pub struct Encoded
 ///   hole under an unoccupied reference.
 /// - ensures: the item's reference, complete declaration roots, the shared
 ///   supported table numbered by discovery from them and each root's support;
-///   nominal roots follow parameter and constructor order; the program's locus.
-///   Every arena node the walk reached has a site, the supported node it
-///   became.
+///   nominal roots follow parameter and constructor order; a value
+///   declaration's stated entry and a world's row are content. Every arena node
+///   the walk reached has a site, the supported node it became.
 /// - provides: the item's identity, the sites its verdict is projected through,
 ///   and the roots its footprint is read from — one walk for all three.
 /// - panics: none.
@@ -4157,7 +4300,8 @@ pub struct Encoded
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
-if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages,supplies:ref actual_supplies,models:ref actual_models } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages,supplies:ref actual_supplies,models:ref actual_models,entry:ref actual_entry } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+                    && item.declaration().entry().map(|entry| EntryRoots::of(layout, entry)) == *actual_entry
                     && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some)
                     && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned())
                     && *actual_rules == rule_roots(layout, item.declaration().operation_rules())
@@ -4178,10 +4322,10 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                         (Maybe::Absent(_), Maybe::Absent(_)) => true,
                         (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
                     } }
- else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World(_), DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
-} && ret.content.locus == item.locus(),
+ else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World(_), DeclarationRoots::World(_)) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
+},
         None => ret.content.reference == Reference::Unoccupied
-            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies,ref models} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
+            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies,ref models,entry:Maybe::Absent(_)} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
             && ret.content.nodes.is_empty(),
     })]
 pub fn encode_item(
@@ -4201,6 +4345,7 @@ pub fn encode_item(
                 stages: Vec::new(),
                 supplies: Vec::new(),
                 models: Vec::new(),
+                entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
             })
         },
         |item| {
@@ -4221,6 +4366,10 @@ pub fn encode_item(
                     stages: item.declaration().stages().to_vec(),
                     supplies: Vec::new(),
                     models: Vec::new(),
+                    entry: item
+                        .declaration()
+                        .entry()
+                        .map(|entry| EntryRoots::of(layout, entry)),
                 },
                 gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))
@@ -4243,7 +4392,17 @@ pub fn encode_item(
                         }),
                     })
                 },
-                gandr_core_checker::DeclarationContent::World(_) => DeclarationRoots::World,
+                gandr_core_checker::DeclarationContent::World(ref requirement) => {
+                    DeclarationRoots::World(WorldRoots {
+                        row: requirement
+                            .try_relocate(|ty| {
+                                Ok::<_, core::convert::Infallible>(
+                                    encoder.discover(ArenaNode::ValueType(ty)),
+                                )
+                            })
+                            .unwrap_or_else(|never| match never {}),
+                    })
+                },
                 gandr_core_checker::DeclarationContent::Codata(_) => DeclarationRoots::Codata,
             };
             let reference = layout
@@ -4332,10 +4491,6 @@ pub fn encode_item(
             declaration: declaration.renumbered(|raw| tabled.of(raw)),
             placements: tabled.supports(&raw_roots),
             nodes: tabled.nodes,
-            locus: layout
-                .items
-                .get(usize::from(ordinal))
-                .map_or(Locus::Unlocated, crate::region::Item::locus),
         },
         sites: Sites(sites),
     }
@@ -4682,9 +4837,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - requires: nothing.
     /// - ensures: the corresponding former over its children's discovery
     ///   indices, the children discovered as [`gandr_core_term::children`]
-    ///   lists them; a world form has no content vocabulary, discovers no child
-    ///   and is listed by its sort, which makes the item opaque. The predicate
-    ///   bounds the sort and child indices.
+    ///   lists them, a world form's world by its declaration's reference. The
+    ///   predicate bounds the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4693,21 +4847,18 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::Computation
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*computation, Computation::World(_)))
+        && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_computation(
         &mut self,
         computation: &Computation,
     ) -> ContentNode
     {
+        let layout = self.layout;
         self.read_former(
             Sort::Computation,
-            |walk| {
-                if !matches!(*computation, Computation::World(_)) {
-                    gandr_core_term::children::of_computation(computation, walk);
-                }
-            },
-            |found| computation_content(computation, found),
+            |walk| gandr_core_term::children::of_computation(computation, walk),
+            |found| computation_content(layout, computation, found),
         )
     }
 
@@ -4718,8 +4869,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - ensures: the corresponding former over its children's discovery
     ///   indices, the children discovered as [`gandr_core_term::children`]
     ///   lists them; the predicate bounds the sort and child indices. A staged
-    ///   type, the judgement's own, and a world type discover no child and are
-    ///   the unresolved node.
+    ///   type, the judgement's own, discovers no child and is the unresolved
+    ///   node.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4728,7 +4879,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. }))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
         &mut self,
@@ -4739,7 +4890,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         self.read_former(
             Sort::ValueType,
             |walk| {
-                if !matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)) {
+                if !matches!(*value_type, ValueType::Staged { .. }) {
                     gandr_core_term::children::of_value_type(value_type, walk);
                 }
             },
@@ -5288,7 +5439,8 @@ fn value_content(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a computation former whose children of each sort are exactly that
-///   family's numbers, in order; a world form is the unresolved node.
+///   family's numbers, in order; a world form names the reference of its
+///   world's declaration.
 /// - fails: [`Short`] when a family runs out before the former's last slot.
 /// - panics: none.
 ///
@@ -5304,6 +5456,7 @@ fn value_content(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Computation && found.placed(node).0),
 )]
 fn computation_content(
+    layout: &Layout,
     computation: &Computation,
     found: &Discovered,
 ) -> Result<ContentNode, Short>
@@ -5340,10 +5493,22 @@ fn computation_content(
             |found, _| found.computation(),
             |found, _| found.value_type(),
         )?),
-        // A located judgement reads the world register and each constant's
-        // home, which no footprint records: content holding a world form
-        // has no identity to key on, and stays opaque.
-        Computation::World(_) => ContentNode::Unresolved(Sort::Computation),
+        Computation::World(gandr_core_term::world::WorldForm::Hold { .. }) => {
+            ContentNode::Hold(found.value()?)
+        },
+        Computation::World(gandr_core_term::world::WorldForm::Leta { world, .. }) => {
+            ContentNode::Leta {
+                world: WorldContent::of(layout, world),
+                value: found.value()?,
+                body: found.computation()?,
+            }
+        },
+        Computation::World(gandr_core_term::world::WorldForm::Migrate { world, .. }) => {
+            ContentNode::Migrate {
+                world: WorldContent::of(layout, world),
+                body: found.computation()?,
+            }
+        },
         Computation::Memory(ref form) => ContentNode::Memory(form.try_map(
             gandr_core_term::session::ChildOrder::Forward,
             found,
@@ -5512,8 +5677,9 @@ fn computation_content(
 /// - ensures: a value-type former whose children of each sort are exactly that
 ///   family's numbers, in order; a data type and an abstract type name the
 ///   reference `layout` resolves their position to; a patched type holds its
-///   base, then its fixed values in label order; a staged type and a world type
-///   are the unresolved node.
+///   base, then its fixed values in label order; a world type names the
+///   reference of its world's declaration; a staged type is the unresolved
+///   node.
 /// - fails: [`Short`] when a family runs out before the former's last slot.
 /// - panics: none.
 ///
@@ -5635,11 +5801,18 @@ fn value_type_content(
         ValueType::Qubit => ContentNode::QubitType,
         ValueType::Row => ContentNode::RowKind,
         ValueType::RowTail(_) => ContentNode::RowTail(found.value()?),
-        // A stage is minted by one judgement and names nothing past it,
-        // and a handle or a capability names a world, whose crossing
-        // decisions read what no footprint records: content naming
-        // either has no identity to key on, and stays opaque.
-        ValueType::Staged { .. } | ValueType::World(_) => ContentNode::Unresolved(Sort::ValueType),
+        ValueType::World(gandr_core_term::world::WorldType::At { world, .. }) => {
+            ContentNode::HeldType {
+                inner: found.value_type()?,
+                world: WorldContent::of(layout, world),
+            }
+        },
+        ValueType::World(gandr_core_term::world::WorldType::Capability(world)) => {
+            ContentNode::CapabilityType(WorldContent::of(layout, world))
+        },
+        // A stage is minted by one judgement and names nothing past it:
+        // content naming one has no identity to key on, and stays opaque.
+        ValueType::Staged { .. } => ContentNode::Unresolved(Sort::ValueType),
     })
 }
 
@@ -5751,6 +5924,28 @@ where
             declaration: declaration.clone(),
             arguments: arguments.iter().map(|&argument| image(argument)).collect(),
         },
+        ContentNode::Hold(value) => ContentNode::Hold(image(value)),
+        ContentNode::Leta {
+            ref world,
+            value,
+            body,
+        } => {
+            let value = image(value);
+            ContentNode::Leta {
+                world: world.clone(),
+                value,
+                body: image(body),
+            }
+        },
+        ContentNode::Migrate { ref world, body } => ContentNode::Migrate {
+            world: world.clone(),
+            body: image(body),
+        },
+        ContentNode::HeldType { inner, ref world } => ContentNode::HeldType {
+            inner: image(inner),
+            world: world.clone(),
+        },
+        ContentNode::CapabilityType(ref world) => ContentNode::CapabilityType(world.clone()),
         ContentNode::RecordType(ref fields) => ContentNode::RecordType(
             fields
                 .iter()
@@ -6744,7 +6939,7 @@ where
             reason == seating::Absent::Unresolved
         } else {
             reason == seating::Absent::IllSorted
-                || (matches!(*node, ContentNode::Abstract(_) | ContentNode::Data { .. } | ContentNode::Constant(_) | ContentNode::Constructor { .. })
+                || (matches!(*node, ContentNode::Abstract(_) | ContentNode::Data { .. } | ContentNode::Constant(_) | ContentNode::Constructor { .. } | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } | ContentNode::CapabilityType(_))
                     && reason == seating::Absent::Unplaced)
         },
     },
@@ -7139,6 +7334,37 @@ fn mint_node(
                 |&mut (), body| seat::<ComputationId>(states, body),
             )?))
         },
+        ContentNode::Hold(value) => ArenaNode::Computation(arena.computation_world(
+            gandr_core_term::world::WorldForm::Hold {
+                value: seat(states, value)?,
+            },
+        )),
+        ContentNode::Leta {
+            ref world,
+            value,
+            body,
+        } => ArenaNode::Computation(arena.computation_world(
+            gandr_core_term::world::WorldForm::Leta {
+                world: minted_world(world, &placed)?,
+                value: seat(states, value)?,
+                body: seat(states, body)?,
+            },
+        )),
+        ContentNode::Migrate { ref world, body } => ArenaNode::Computation(
+            arena.computation_world(gandr_core_term::world::WorldForm::Migrate {
+                world: minted_world(world, &placed)?,
+                body: seat(states, body)?,
+            }),
+        ),
+        ContentNode::HeldType { inner, ref world } => ArenaNode::ValueType(arena.value_type_world(
+            gandr_core_term::world::WorldType::At {
+                inner: seat(states, inner)?,
+                world: minted_world(world, &placed)?,
+            },
+        )),
+        ContentNode::CapabilityType(ref world) => ArenaNode::ValueType(arena.value_type_world(
+            gandr_core_term::world::WorldType::Capability(minted_world(world, &placed)?),
+        )),
         ContentNode::Perform {
             ref signature,
             ref operation,
@@ -7324,6 +7550,40 @@ fn mint_node(
         },
         ContentNode::Unresolved(_) => return Err(seating::Absent::Unresolved),
     })
+}
+
+/// The world `world` names, a declared one placed by `placed`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the host's world for [`WorldContent::Host`]; the world at the
+///   position `placed` gives a declared one.
+/// - fails: as `placed` fails.
+/// - panics: none.
+///
+/// # Errors
+/// As `placed`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mint_node`].
+/// - witness: `content::tests::an_item_of_a_located_program_is_transparent_3381`
+#[spec(ensures: |ref ret| match *world {
+    WorldContent::Host => matches!(*ret, Ok(gandr_core_term::world::World::Host)),
+    WorldContent::Declared(_) => !matches!(*ret, Ok(gandr_core_term::world::World::Host)),
+})]
+fn minted_world<Placed>(
+    world: &WorldContent,
+    placed: &Placed,
+) -> Result<gandr_core_term::world::World, seating::Absent>
+where
+    Placed: Fn(&Reference) -> Result<gandr_kernel_term::ConstantIndex, seating::Absent>,
+{
+    match *world {
+        WorldContent::Host => Ok(gandr_core_term::world::World::Host),
+        WorldContent::Declared(ref reference) => {
+            placed(reference).map(gandr_core_term::world::World::Declared)
+        },
+    }
 }
 
 /// The admission position the item `reference` names takes in `layout`.

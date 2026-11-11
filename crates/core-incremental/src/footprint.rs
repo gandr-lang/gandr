@@ -161,15 +161,42 @@ impl Footprint
     }
 }
 
+/// The declared worlds a value declaration's stated entry names: its home,
+/// then the world of each capability.
+///
+/// # Specification
+/// trivial.
+fn entered_worlds(content: &ItemContent) -> impl Iterator<Item = &Reference> + '_
+{
+    let entry = if let crate::content::DeclarationRoots::Value {
+        entry: Maybe::Present(ref entry),
+        ..
+    } = *content.declaration()
+    {
+        Some(entry)
+    }
+    else {
+        None
+    };
+    entry
+        .into_iter()
+        .flat_map(|entry| core::iter::once(&entry.home).chain(&entry.capabilities))
+        .filter_map(|world| match world.reference() {
+            Maybe::Present(reference) => Some(reference),
+            Maybe::Absent(_) => None,
+        })
+}
+
 /// The footprint of `content`.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the reads are every reference beneath a root, in value or type
 ///   position; the type reads are those beneath a type-sorted root and those
-///   beneath a type former under a term root. The item is opaque exactly when
-///   [`ItemContent::opacity`] says so; the hole mark is set exactly when the
-///   body is absent, a hole or a law the host asserts.
+///   beneath a type former under a term root, and each declared world a stated
+///   entry names. The item is opaque exactly when [`ItemContent::opacity`] says
+///   so; the hole mark is set exactly when the body is absent, a hole or a law
+///   the host asserts.
 /// - provides: the read relation the value-changed closure runs over.
 /// - panics: none.
 /// - intension: one union per root over the references the roots carry; no node
@@ -199,8 +226,9 @@ impl Footprint
         && node.type_reads().all(|read| ret.type_reads.contains(read))))
     && ret.hole == match *(content.declaration()) {
 crate::content::DeclarationRoots::Value { body:Maybe::Absent(_),.. } => HoleMark::Hole,
-crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) | crate::content::DeclarationRoots::World | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
-})]
+crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) | crate::content::DeclarationRoots::World(_) | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
+}
+    && entered_worlds(content).all(|world| ret.type_reads.contains(world)))]
 #[inline]
 #[must_use]
 pub fn footprint_of(content: &ItemContent) -> Footprint
@@ -215,6 +243,12 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
         reads.extend(node.value_reads().cloned());
         reads.extend(node.type_reads().cloned());
         type_reads.extend(node.type_reads().cloned());
+    }
+    // A stated entry's worlds type its body: the body is judged at the home
+    // and migrates to each capability's world.
+    for world in entered_worlds(content) {
+        let _fresh = reads.insert(world.clone());
+        let _also = type_reads.insert(world.clone());
     }
     Footprint {
         reads,
@@ -231,7 +265,7 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
             }
             | crate::content::DeclarationRoots::Data(_)
             | crate::content::DeclarationRoots::Abstract(_)
-            | crate::content::DeclarationRoots::World
+            | crate::content::DeclarationRoots::World(_)
             | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
         },
     }

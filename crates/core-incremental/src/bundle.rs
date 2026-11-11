@@ -219,7 +219,7 @@ impl SourceKeys
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a source under two imports that differ, a forward
-    ///   import, runs short of the program and a source beside a world.
+    ///   import, runs short of the program and a source beside an opaque item.
     /// - witness: `bundle::tests::a_source_s_key_moves_with_what_it_imports_6512`
     /// - witness: `bundle::tests::a_closure_with_an_opaque_source_restricts_to_nothing_6512`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |keys| keys.0.len() == sources.len()))]
@@ -324,7 +324,7 @@ impl Bundle
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a closure inside the checked one, a closure whose
-    ///   first source differs and a closure that holds a world.
+    ///   first source differs and a closure that holds an opaque item.
     /// - witness: `bundle::tests::a_set_restricts_to_the_fresh_set_of_a_closure_inside_it_6512`
     /// - witness: `bundle::tests::a_source_s_key_moves_with_what_it_imports_6512`
     /// - witness: `bundle::tests::a_closure_with_an_opaque_source_restricts_to_nothing_6512`
