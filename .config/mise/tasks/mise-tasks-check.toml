@@ -27,13 +27,14 @@
 # `main` moves (#5438). The merge group on `landing` runs no test lane. So the
 # gate runs the light checks, which take seconds, and of the heavy checks
 # Clippy and the compiler policy (`check:landing`). It runs the enforcing
-# suite of the whole workspace (`.config/gate-scope/test-scope.bash`, #6738):
-# #6563 broke two tests of the checker, and no stage before `landing` ran
-# them (#6595), and the suite of the touched packages alone passed #6709 and
-# #6712, which each turned a test of an untouched package red. The head
-# watcher runs the same gate on each head. It runs no sweep and no
-# specification obligation. `gate:all` runs every check over the whole
-# workspace.
+# suites of the packages the change touches and of `gandr-surface-dispatcher`
+# (`.config/gate-scope/test-scope.bash`, #6812): #6563 broke two tests of the
+# checker, and no stage before `landing` ran them (#6595), and #6709 and
+# #6712 each turned a test of the dispatcher red, a package they did not
+# touch. The whole suite (#6738) raised the median gate from 210 s to
+# 456.5 s. The head watcher runs the same gate on each head, over the whole
+# workspace (`GATE_TEST_EVERY_RED`). It runs no sweep and no specification
+# obligation. `gate:all` runs every check over the whole workspace.
 #
 # It runs those checks that the change selects
 # (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
@@ -59,7 +60,7 @@
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
 [check]
-description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suite of the whole workspace, in one of the host's gate slots"
+description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suites of the packages it touches and of the dispatcher, or of the whole workspace in the head watcher, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -605,9 +606,10 @@ run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value
 # target-only or stale macro build. A loaded host lengthens the run and never
 # fails it: the profile kills only a hang past 5 minutes (#3912). A shard runs
 # the packages of `CI_SHARD_ARGS`. `mise run check` sets `GATE_TEST_SCOPE` to
-# the whole workspace (`.config/gate-scope/test-scope.bash`, #6738), as it
-# sets `GATE_WITNESS_SCOPE` to the touched packages. Without either, the
-# suite runs over `GATE_SCOPE`, or the whole workspace.
+# the touched packages and the dispatcher, or to the whole workspace in the
+# head watcher (`.config/gate-scope/test-scope.bash`, #6812), as it sets
+# `GATE_WITNESS_SCOPE` to the touched packages. Without either, the suite runs
+# over `GATE_SCOPE`, or the whole workspace.
 ["check:tests-enforcing"]
 description = "Unit and integration tests over every target, specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
@@ -2119,9 +2121,10 @@ run = ".config/mise/host-lock-cases.bash"
 # `.config/gate-scope/select-cases.bash` builds scratch repositories (#5220):
 # a working change and a commit of 4000 paths, a list longer than one
 # argument holds, each select every check.
-# `.config/gate-scope/tests-cases.bash` builds scratch workspaces of two
-# packages (#6738): a change that breaks a test of the package it touches is
-# refused, and a change to one package is refused by a red test of the other.
+# `.config/gate-scope/tests-cases.bash` builds scratch workspaces of three
+# packages (#6812): a change that breaks a test of the package it touches is
+# refused, a change to one package runs its suite and the dispatcher's alone,
+# and the watcher's whole suite refuses it by a red test of another.
 # `.config/gate-scope/comments-cases.bash` builds scratch repositories
 # (#6648): a `//` edit in a crate selects neither `check:doc` nor
 # `check:corpus`, a `///` edit, a blank line or one token of code beside a

@@ -2,9 +2,9 @@
 # The head watcher's setting reaches no case of the gate (#6739, #6750), run
 # by `check:integration`. The watcher's whole-suite setting once reached
 # `.config/gate-scope/tests-cases.bash`, so `check:gate-scope` failed on every
-# head, the green head too, and the watcher filed nothing. Every gate now
-# runs the whole suite (#6738), and the watcher sets `GANDR_GATE_BACKGROUND`
-# and `GATE_TEST_EVERY_RED`. The case runs `check:gate-scope` on this
+# head, the green head too, and the watcher filed nothing. The watcher sets
+# `GANDR_GATE_BACKGROUND` and `GATE_TEST_EVERY_RED`, which also selects its
+# whole suite (#6812). The case runs `check:gate-scope` on this
 # checkout, a green head, as the watcher's gate runs it and as a lane's gate
 # runs it, and reads the failed checks of each log as the watcher reads them
 # (`watch_failed`).
