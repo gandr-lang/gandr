@@ -743,45 +743,64 @@ pub(crate) enum Returns
     Reflexivity,
 }
 
+/// Whether a map or a cell of `ua` is the identity, read by its syntax.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CellIdentity
+{
+    /// The identity map, or the identity cell.
+    Identity,
+    /// Any other map or cell.
+    Other,
+}
+
 /// Whether `map` is a thunk of the abstraction that returns what `returns`
 /// names at its bound point: a map or a law of the identity cell `ua` reads
 /// as reflexivity.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `true` exactly when `map` is a thunk of `λ. return v`, `v` the
-///   bound point `#0` or `here(#0)` as `returns` names.
+/// - ensures: [`CellIdentity::Identity`] exactly when `map` is a thunk of `λ.
+///   return v`, `v` the bound point `#0` or `here(#0)` as `returns` names.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `ua` of the identity record over the booleans replays as
 ///   reflexivity, and `ua` of the record of negation does not.
 /// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
-#[spec(ensures: |ret| !ret || matches!(arena.value(map), Some(&Value::Thunk(_))))]
+#[spec(ensures: |ret| ret == CellIdentity::Other || matches!(arena.value(map), Some(&Value::Thunk(_))))]
 pub(crate) fn identity_map(
     arena: &TermArena,
     map: ValueId,
     returns: Returns,
-) -> bool
+) -> CellIdentity
 {
     let Some(&Value::Thunk(lambda)) = arena.value(map)
     else {
-        return false;
+        return CellIdentity::Other;
     };
     let Some(&gandr_kernel_term::Computation::Lambda(body)) = arena.computation(lambda)
     else {
-        return false;
+        return CellIdentity::Other;
     };
     let Some(&gandr_kernel_term::Computation::Return(returned)) = arena.computation(body)
     else {
-        return false;
+        return CellIdentity::Other;
     };
     let point = match (returns, arena.value(returned)) {
         (Returns::Point, _) => returned,
         (Returns::Reflexivity, Some(&Value::Here { point, .. })) => point,
-        (Returns::Reflexivity, _) => return false,
+        (Returns::Reflexivity, _) => return CellIdentity::Other,
     };
-    matches!(arena.value(point), Some(&Value::Variable(index)) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32))
+    if matches!(arena.value(point), Some(&Value::Variable(index)) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32))
+    {
+        CellIdentity::Identity
+    }
+    else {
+        CellIdentity::Other
+    }
 }
 
 /// The identity `ua(e)` synthesises from the type `classifier` its cell

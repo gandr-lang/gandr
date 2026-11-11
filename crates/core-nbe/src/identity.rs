@@ -810,6 +810,19 @@ pub(crate) fn universe_cell(
     Ok(Some(point))
 }
 
+/// Whether a map or a cell of `ua` is the identity, read by its syntax.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CellIdentity
+{
+    /// The identity map, or the identity cell.
+    Identity,
+    /// Any other map or cell.
+    Other,
+}
+
 /// Whether `cell` is the identity cell, which `ua` reads as the empty word of
 /// the universe's paths: reflexivity.
 ///
@@ -820,9 +833,10 @@ pub(crate) fn universe_cell(
 ///
 /// # Specification
 /// - requires: `cell` is the cell a domain univalence holds.
-/// - ensures: `true` exactly when `cell` is a thunk of `λy. return here(y)`, or
-///   a pair of a thunk of `λy. return y` with a pair of two pairs, each a thunk
-///   of `λy. return y` beside a thunk of `λy. return here(y)`.
+/// - ensures: [`CellIdentity::Identity`] exactly when `cell` is a thunk of `λy.
+///   return here(y)`, or a pair of a thunk of `λy. return y` with a pair of two
+///   pairs, each a thunk of `λy. return y` beside a thunk of `λy. return
+///   here(y)`.
 /// - fails: [`DomainFault::Dangling`] for a node the arena does not hold.
 /// - panics: none.
 ///
@@ -830,53 +844,53 @@ pub(crate) fn universe_cell(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `ua` of the identity equivalence of the circle converts
-///   with reflexivity at the circle, and `ua` of the record whose section is
-///   `selfloop` does not.
+/// - hypothesis: L3 — `ua` of the identity record converts with reflexivity,
+///   and `ua` of the record of negation does not.
 /// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
 #[spec(ensures: |ret| ret.is_ok() || ret == Err(DomainFault::Dangling))]
 pub(crate) fn identity_cell(
     core: &CoreArena,
     domain: &DomainArena,
     cell: DomainValueId,
-) -> Result<bool, DomainFault>
+) -> Result<CellIdentity, DomainFault>
 {
+    let other = Ok(CellIdentity::Other);
     match *domain.value(cell).ok_or(DomainFault::Dangling)? {
         DomainValue::Thunk { .. } => identity_map(core, domain, cell, Returns::Reflexivity),
         DomainValue::Tuple { fields, .. } => {
             let &[map, inverses] = domain.fields(fields)?
             else {
-                return Ok(false);
+                return other;
             };
             let Some(&DomainValue::Tuple { fields: pair, .. }) = domain.value(inverses)
             else {
-                return Ok(false);
+                return other;
             };
             let &[left, right] = domain.fields(pair)?
             else {
-                return Ok(false);
+                return other;
             };
-            if !identity_map(core, domain, map, Returns::Point)? {
-                return Ok(false);
+            if identity_map(core, domain, map, Returns::Point)? == CellIdentity::Other {
+                return other;
             }
             for inverse in [left, right] {
                 let Some(&DomainValue::Tuple { fields: halves, .. }) = domain.value(inverse)
                 else {
-                    return Ok(false);
+                    return other;
                 };
                 let &[back, law] = domain.fields(halves)?
                 else {
-                    return Ok(false);
+                    return other;
                 };
-                if !identity_map(core, domain, back, Returns::Point)?
-                    || !identity_map(core, domain, law, Returns::Reflexivity)?
+                if identity_map(core, domain, back, Returns::Point)? == CellIdentity::Other
+                    || identity_map(core, domain, law, Returns::Reflexivity)? == CellIdentity::Other
                 {
-                    return Ok(false);
+                    return other;
                 }
             }
-            Ok(true)
+            Ok(CellIdentity::Identity)
         },
-        _ => Ok(false),
+        _ => other,
     }
 }
 
@@ -898,8 +912,9 @@ enum Returns
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `true` exactly when `map` is a thunk over a source computation
-///   `λy. return v`, `v` the bound point or `here` of it as `returns` names.
+/// - ensures: [`CellIdentity::Identity`] exactly when `map` is a thunk over a
+///   source computation `λy. return v`, `v` the bound point or `here` of it as
+///   `returns` names.
 /// - fails: [`DomainFault::Dangling`] for a closure the arena does not hold.
 /// - panics: none.
 ///
@@ -915,37 +930,44 @@ fn identity_map(
     domain: &DomainArena,
     map: DomainValueId,
     returns: Returns,
-) -> Result<bool, DomainFault>
+) -> Result<CellIdentity, DomainFault>
 {
+    let other = Ok(CellIdentity::Other);
     let Some(&DomainValue::Thunk { body, .. }) = domain.value(map)
     else {
-        return Ok(false);
+        return other;
     };
     let closure = domain.comp_closure(body).ok_or(DomainFault::Dangling)?;
     let crate::closure::CompBody::Source(lambda) = closure.body()
     else {
-        return Ok(false);
+        return other;
     };
     let Some(&gandr_core_term::Computation::Lambda(inner)) = core.computation(lambda)
     else {
-        return Ok(false);
+        return other;
     };
     let Some(&gandr_core_term::Computation::Return(returned)) = core.computation(inner)
     else {
-        return Ok(false);
+        return other;
     };
     let point = match (returns, core.value(returned)) {
         (Returns::Point, _) => returned,
         (Returns::Reflexivity, Some(&Value::Here(point))) => point,
-        (Returns::Reflexivity, _) => return Ok(false),
+        (Returns::Reflexivity, _) => return other,
     };
-    Ok(matches!(
+    let bound = matches!(
         core.value(point),
         Some(&Value::Variable {
             zone: Zone::Intuitionistic,
             index,
         }) if index == DeBruijnIndex::from(0_u32)
-    ))
+    );
+    Ok(if bound {
+        CellIdentity::Identity
+    }
+    else {
+        CellIdentity::Other
+    })
 }
 
 /// Whether a telescope motive's returned type reads either of its two

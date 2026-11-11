@@ -411,6 +411,7 @@ use crate::conv::pending_endpoints;
 use crate::descent::Descent;
 use crate::element_identity::BinderUse;
 use crate::encoding::ContentTable;
+use crate::path_universe::CellIdentity;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_computation;
@@ -6749,7 +6750,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             // from reflexivity, as core-nbe decides them.
             (&Value::Univalence(cell), &Value::Here { .. })
             | (&Value::Here { .. }, &Value::Univalence(cell)) => {
-                Structure::Leaf(if self.identity_cell(cell)? {
+                Structure::Leaf(if self.identity_cell(cell)? == CellIdentity::Identity {
                     Expect::Convertible
                 }
                 else {
@@ -6890,10 +6891,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Specification
     /// - requires: `cell` lives in the arena.
-    /// - ensures: `true` exactly when `cell` reads to a thunk of `λ. return
-    ///   here(#0)`, or to a pair of a thunk of `λ. return #0` with a pair of
-    ///   two pairs, each a thunk of `λ. return #0` beside a thunk of `λ. return
-    ///   here(#0)`.
+    /// - ensures: [`CellIdentity::Identity`] exactly when `cell` reads to a
+    ///   thunk of `λ. return here(#0)`, or to a pair of a thunk of `λ. return
+    ///   #0` with a pair of two pairs, each a thunk of `λ. return #0` beside a
+    ///   thunk of `λ. return here(#0)`.
     /// - fails: as [`Self::normalize_returned`].
     /// - panics: none.
     ///
@@ -6909,7 +6910,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     fn identity_cell(
         &mut self,
         cell: ValueId,
-    ) -> Result<bool, Stop>
+    ) -> Result<CellIdentity, Stop>
     {
         use crate::path_universe::Returns;
         use crate::path_universe::identity_map;
@@ -6929,32 +6930,32 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         }
         let Some((map, inverses)) = pair(self.arena, cell)
         else {
-            return Ok(false);
+            return Ok(CellIdentity::Other);
         };
         let map = read(self, map)?;
-        if !identity_map(self.arena, map, Returns::Point) {
-            return Ok(false);
+        if identity_map(self.arena, map, Returns::Point) == CellIdentity::Other {
+            return Ok(CellIdentity::Other);
         }
         let inverses = read(self, inverses)?;
         let Some((left, right)) = pair(self.arena, inverses)
         else {
-            return Ok(false);
+            return Ok(CellIdentity::Other);
         };
         for inverse in [left, right] {
             let inverse = read(self, inverse)?;
             let Some((back, law)) = pair(self.arena, inverse)
             else {
-                return Ok(false);
+                return Ok(CellIdentity::Other);
             };
             let back = read(self, back)?;
             let law = read(self, law)?;
-            if !identity_map(self.arena, back, Returns::Point)
-                || !identity_map(self.arena, law, Returns::Reflexivity)
+            if identity_map(self.arena, back, Returns::Point) == CellIdentity::Other
+                || identity_map(self.arena, law, Returns::Reflexivity) == CellIdentity::Other
             {
-                return Ok(false);
+                return Ok(CellIdentity::Other);
             }
         }
-        Ok(true)
+        Ok(CellIdentity::Identity)
     }
 
     /// Close a `ComparedShared` goal, or report that it decides nothing.
@@ -7053,7 +7054,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             && let (Some(&Value::Univalence(cell)), Some(&Value::Here { .. }))
             | (Some(&Value::Here { .. }), Some(&Value::Univalence(cell))) =
                 (self.arena.value(left), self.arena.value(right))
-            && self.identity_cell(cell)?
+            && self.identity_cell(cell)? == CellIdentity::Identity
         {
             return Ok(Compared::Equal);
         }

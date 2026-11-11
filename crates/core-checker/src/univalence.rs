@@ -207,11 +207,26 @@ fn derived(
     Ok(())
 }
 
-/// Whether `carrier` is, at its weak head, the level-zero value universe.
+/// What the carrier of an identity is at its weak head, for the `ua` rule.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Carrier
+{
+    /// The level-zero value universe `Type`.
+    Universe,
+    /// Any other type.
+    Other,
+}
+
+/// What `carrier` is at its weak head: the level-zero value universe or
+/// another type.
 ///
 /// # Specification
 /// - requires: `carrier` is a value type of the context's arena.
-/// - ensures: `true` exactly when the weak head of `carrier` is `Type`.
+/// - ensures: [`Carrier::Universe`] exactly when the weak head of `carrier` is
+///   `Type`.
 /// - fails: a weak-head or view refusal as those raise it.
 /// - panics: none.
 ///
@@ -221,17 +236,23 @@ fn derived(
 /// # Adequacy
 /// - hypothesis: L3 — as [`checked`].
 /// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
-#[spec(ensures: |ret| ret.is_ok() || ret.is_err())]
+#[spec(ensures: |ret| !matches!(ret, Ok(Carrier::Universe)) || context.arena().value_type(carrier).is_some())]
 fn at_type(
     context: &mut CheckingContext<'_>,
     carrier: ValueTypeId,
-) -> Result<bool, CheckRefusal>
+) -> Result<Carrier, CheckRefusal>
 {
     let head = context.whnf_value_type(carrier)?;
-    Ok(matches!(
+    let universe = matches!(
         value_type_view(context.arena(), head)?,
         ValueTypeView::Universe { sort: GroundSort::Value, level } if *level == Level::zero()
-    ))
+    );
+    Ok(if universe {
+        Carrier::Universe
+    }
+    else {
+        Carrier::Other
+    })
 }
 
 /// How `ua(e)` checks against `expected`: its cell against the bi-invertible
@@ -285,7 +306,7 @@ pub fn checked(
     else {
         return Ok(Reading::Synthesised);
     };
-    if at_type(context, carrier)? {
+    if at_type(context, carrier)? == Carrier::Universe {
         derived(context, (record, forward))?;
         let from = denoted(context, left)?;
         let to = denoted(context, right)?;
@@ -307,7 +328,7 @@ pub fn checked(
     else {
         return Ok(Reading::Synthesised);
     };
-    if !at_type(context, below)? {
+    if at_type(context, below)? == Carrier::Other {
         return Ok(Reading::Synthesised);
     }
     derived(context, (record, forward))?;

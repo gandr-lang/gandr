@@ -2934,6 +2934,7 @@ fn plan_values(
         | (DomainValue::Here { .. }, DomainValue::Univalence { record: cell, .. }) => {
             if crate::identity::identity_cell(core, domain, cell)
                 .map_err(ConversionFault::Domain)?
+                == crate::identity::CellIdentity::Identity
             {
                 Plan::Leaf(Settled::Convertible)
             }
