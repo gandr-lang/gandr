@@ -2214,18 +2214,19 @@ fn judge(
 /// - ensures: `body`, `direction`, `first` and no solution when the run met no
 ///   nominated hole, or refused with no type it compares holding a hole of a
 ///   slot of `models`; the resolution's refusal,
-///   [`CheckRefusal::ModelUnanswered`] or [`CheckRefusal::ModelAmbiguous`], at
-///   the first hole of the first slot it refuses, when the run checked or when
-///   it refused at a compared type holding such a hole; with `body`,
-///   `direction` and no solution in the second case; the refusal of the run
-///   that refused otherwise; the run's failure as
-///   [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver left
-///   unbound; otherwise the filled body, minted after `body`, the direction
-///   with its declared type filled and formed again ([`formed_filled`]), a
-///   fresh run of the one against the other, the pairs, stages and residue
-///   `first` left dropped as the nesting elaboration's second run drops them,
-///   and the solutions both were filled with. A filled type that does not form
-///   gives the failure forming it in place of the fresh run.
+///   [`CheckRefusal::ModelUnanswered`], [`CheckRefusal::ModelAmbiguous`] or
+///   [`CheckRefusal::Undecided`], at the first hole of the first slot it
+///   refuses, when the run checked or when it refused at a compared type
+///   holding such a hole; with `body`, `direction` and no solution in the
+///   second case; the refusal of the run that refused otherwise; the run's
+///   failure as [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver
+///   left unbound; otherwise the filled body, minted after `body`, the
+///   direction with its declared type filled and formed again
+///   ([`formed_filled`]), a fresh run of the one against the other, the pairs,
+///   stages and residue `first` left dropped as the nesting elaboration's
+///   second run drops them, and the solutions both were filled with. A filled
+///   type that does not form gives the failure forming it in place of the fresh
+///   run.
 /// - panics: none.
 ///
 /// # Adequacy
