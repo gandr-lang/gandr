@@ -1142,13 +1142,13 @@
       "head": "ffffffffffffffffffffffffffffffffffffffff",
       "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "lines": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"],
       "open": [],
       "pr": {
         "number": 6563,
         "branch": "reduction-6576-pair-tests",
         "title": "fix(core): read a declined pair"
-      }
+      },
+      "log": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"]
     },
     "output": {
       "lane": "reduction",
@@ -1166,7 +1166,6 @@
       "head": "ffffffffffffffffffffffffffffffffffffffff",
       "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "lines": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"],
       "open": [
         {
           "number": 7001,
@@ -1181,7 +1180,8 @@
         "number": 6563,
         "branch": "reduction-6576-pair-tests",
         "title": "fix(core): read a declined pair"
-      }
+      },
+      "log": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"]
     },
     "output": {
       "lane": "reduction",
@@ -1199,9 +1199,9 @@
       "head": "ffffffffffffffffffffffffffffffffffffffff",
       "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "lines": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"],
       "open": [],
-      "pr": null
+      "pr": null,
+      "log": ["[check:tests-enforcing]   FAIL gandr-core-checker judgement::tests::pair"]
     },
     "output": {
       "lane": "triage",
@@ -1409,6 +1409,134 @@
         "minutes": 50
       },
       "line": "main stands 50 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
+    }
+  },
+  {
+    "name": "#6659: a red check whose lines match no word of a failure gives the defect a block of its own last lines",
+    "program": "owner.jq",
+    "input": {
+      "check": "check:host-lock",
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "open": [],
+      "pr": {
+        "number": 6563,
+        "branch": "reduction-6576-pair-tests",
+        "title": "fix(core): read a declined pair"
+      },
+      "log": [
+        "[check] $ source .config/mise/gate.bash",
+        "[check:host-lock] $ .config/mise/host-lock-cases.bash",
+        "[check:claims] claims check OK: 9 cases",
+        "[check:host-lock] host-lock: #4911: a heavy check run alone held no slot: ",
+        "[check:host-lock] host-lock: #6638: a background gate at niceness 0 took no slot: exit 0, ",
+        "[check:host-lock] ERROR task failed",
+        "[check] ERROR task failed"
+      ]
+    },
+    "output": {
+      "lane": "reduction",
+      "title": "landing: `check:host-lock` fails from #6563 (c2aaaaaaa)",
+      "number": null,
+      "observation": "## Observation\n\n`landing:watch` runs `check:host-lock` on the head `fffffffff` of `landing`, and the check fails. It passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where the check fails. Pull request #6563, \"fix(core): read a declined pair\", brings it, so the claim goes to the lane `reduction`.\n\nThe failing lines:\n\n```text\n[check:host-lock] host-lock: #4911: a heavy check run alone held no slot: \n[check:host-lock] host-lock: #6638: a background gate at niceness 0 took no slot: exit 0, \n```",
+      "page": "FIX #{n}: `check:host-lock` fails on landing at fffffffff, and #6563 (c2aaaaaaa) brings it. Repair it on landing, never with a revert."
+    }
+  },
+  {
+    "name": "#6659: a check that prints more than 30 lines gives the defect its last 30, with no echo of a command and no Finished line",
+    "program": "owner.jq",
+    "input": {
+      "check": "check:corpus",
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "open": [],
+      "pr": {
+        "number": 6563,
+        "branch": "reduction-6576-pair-tests",
+        "title": "fix(core): read a declined pair"
+      },
+      "log": [
+        "[check:corpus] $ cargo run",
+        "[check:corpus] line 1",
+        "[check:corpus] line 2",
+        "[check:corpus] line 3",
+        "[check:corpus] line 4",
+        "[check:corpus] line 5",
+        "[check:corpus] line 6",
+        "[check:corpus] line 7",
+        "[check:corpus] line 8",
+        "[check:corpus] line 9",
+        "[check:corpus] line 10",
+        "[check:corpus] line 11",
+        "[check:corpus] line 12",
+        "[check:corpus] line 13",
+        "[check:corpus] line 14",
+        "[check:corpus] line 15",
+        "[check:corpus] line 16",
+        "[check:corpus] line 17",
+        "[check:corpus] line 18",
+        "[check:corpus] line 19",
+        "[check:corpus] line 20",
+        "[check:corpus] line 21",
+        "[check:corpus] line 22",
+        "[check:corpus] line 23",
+        "[check:corpus] line 24",
+        "[check:corpus] line 25",
+        "[check:corpus] line 26",
+        "[check:corpus] line 27",
+        "[check:corpus] line 28",
+        "[check:corpus] line 29",
+        "[check:corpus] line 30",
+        "[check:corpus] line 31",
+        "[check:corpus] line 32",
+        "[check:corpus] line 33",
+        "[check:corpus] line 34",
+        "[check:corpus] line 35",
+        "[check:corpus] line 36",
+        "[check:corpus] line 37",
+        "[check:corpus] line 38",
+        "[check:corpus] line 39",
+        "[check:corpus] line 40",
+        "[check:corpus] Finished in 3.2s",
+        "[check:corpus] ERROR task failed"
+      ]
+    },
+    "output": {
+      "lane": "reduction",
+      "title": "landing: `check:corpus` fails from #6563 (c2aaaaaaa)",
+      "number": null,
+      "observation": "## Observation\n\n`landing:watch` runs `check:corpus` on the head `fffffffff` of `landing`, and the check fails. It passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where the check fails. Pull request #6563, \"fix(core): read a declined pair\", brings it, so the claim goes to the lane `reduction`.\n\nThe failing lines:\n\n```text\n[check:corpus] line 11\n[check:corpus] line 12\n[check:corpus] line 13\n[check:corpus] line 14\n[check:corpus] line 15\n[check:corpus] line 16\n[check:corpus] line 17\n[check:corpus] line 18\n[check:corpus] line 19\n[check:corpus] line 20\n[check:corpus] line 21\n[check:corpus] line 22\n[check:corpus] line 23\n[check:corpus] line 24\n[check:corpus] line 25\n[check:corpus] line 26\n[check:corpus] line 27\n[check:corpus] line 28\n[check:corpus] line 29\n[check:corpus] line 30\n[check:corpus] line 31\n[check:corpus] line 32\n[check:corpus] line 33\n[check:corpus] line 34\n[check:corpus] line 35\n[check:corpus] line 36\n[check:corpus] line 37\n[check:corpus] line 38\n[check:corpus] line 39\n[check:corpus] line 40\n```",
+      "page": "FIX #{n}: `check:corpus` fails on landing at fffffffff, and #6563 (c2aaaaaaa) brings it. Repair it on landing, never with a revert."
+    }
+  },
+  {
+    "name": "#6659: a log with no line of the red check's prefix gives the defect a note that says so, never an empty block",
+    "program": "owner.jq",
+    "input": {
+      "check": "check:doc",
+      "head": "ffffffffffffffffffffffffffffffffffffffff",
+      "green": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "culprit": "c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "open": [],
+      "pr": {
+        "number": 6563,
+        "branch": "reduction-6576-pair-tests",
+        "title": "fix(core): read a declined pair"
+      },
+      "log": [
+        "[check] $ source .config/mise/gate.bash",
+        "[check:claims] claims check FAILED: 1 case",
+        "[check] ERROR task failed"
+      ]
+    },
+    "output": {
+      "lane": "reduction",
+      "title": "landing: `check:doc` fails from #6563 (c2aaaaaaa)",
+      "number": null,
+      "observation": "## Observation\n\n`landing:watch` runs `check:doc` on the head `fffffffff` of `landing`, and the check fails. It passes on `eeeeeeeee`, the last green head.\n\nThe search over the first parents names `c2aaaaaaa` as the first commit where the check fails. Pull request #6563, \"fix(core): read a declined pair\", brings it, so the claim goes to the lane `reduction`.\n\nThe failing lines:\n\n```text\n`check:doc` printed no line of its own\n```",
+      "page": "FIX #{n}: `check:doc` fails on landing at fffffffff, and #6563 (c2aaaaaaa) brings it. Repair it on landing, never with a revert."
     }
   }
 ]
