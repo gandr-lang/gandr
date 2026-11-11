@@ -38,6 +38,7 @@ path = "tests/lib.rs"
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-incremental.workspace = true
