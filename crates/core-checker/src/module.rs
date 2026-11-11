@@ -542,6 +542,9 @@ pub struct ModuleReport
     /// The types each handler and capability scope the run checked was judged
     /// at, by node.
     handled: BTreeMap<ComputationId, crate::handler::Handled>,
+    /// The computations the run checked or synthesised at a returner over a
+    /// row of operations, and the levels of those returners.
+    rows: crate::program::Rows,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's type conversions
@@ -822,6 +825,24 @@ impl ModuleReport
     pub const fn handled(&self) -> &BTreeMap<ComputationId, crate::handler::Handled>
     {
         &self.handled
+    }
+
+    /// The computations the run checked or synthesised at a returner over a
+    /// row of operations, and the levels of those returners.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration at a row crosses as a program of the
+    ///   row's model at the recorded types, so an emptied record leaves it
+    ///   refused.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    #[inline]
+    #[must_use]
+    pub const fn rows(&self) -> &crate::program::Rows
+    {
+        &self.rows
     }
 
     /// The reflexivities the run checked, by node, with the dialogues relating
@@ -2733,6 +2754,7 @@ fn entered(
     && &ret.motives == context.motives()
     && &ret.payloads == context.payloads()
     && &ret.handled == context.handled()
+    && &ret.rows == context.rows()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
     && &ret.restatements == context.restatements()
@@ -3101,6 +3123,7 @@ impl ModuleRun
             motives: context.motives().clone(),
             payloads: context.payloads().clone(),
             handled: context.handled().clone(),
+            rows: context.rows().clone(),
             reflexivities: context.reflexivities().clone(),
             relations: context.relations().clone(),
             restatements: context.restatements().clone(),
@@ -3278,6 +3301,7 @@ pub fn absorb(
             .iter()
             .map(|(&at, handled)| (at, handled.clone())),
     );
+    report.rows.absorb(context.rows());
     report.reflexivities.extend(
         context
             .reflexivities()

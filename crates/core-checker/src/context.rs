@@ -381,6 +381,9 @@ pub struct CheckingContext<'arena>
     /// The types each handler and capability scope the judgement checked was
     /// judged at, by node: its subject's result and its answer.
     handled: BTreeMap<ComputationId, crate::handler::Handled>,
+    /// The computations the judgement checked or synthesised at a returner
+    /// over a row of operations, and the levels of those returners.
+    rows: crate::program::Rows,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -660,6 +663,8 @@ pub struct Checkpoint
     payloads: BTreeMap<ComputationId, ValueTypeId>,
     /// [`CheckingContext::handled`].
     handled: BTreeMap<ComputationId, crate::handler::Handled>,
+    /// [`CheckingContext::rows`].
+    rows: crate::program::Rows,
     /// [`CheckingContext::reflexivities`].
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// [`CheckingContext::nesting`].
@@ -834,6 +839,7 @@ impl<'arena> CheckingContext<'arena>
             motives: BTreeMap::new(),
             payloads: BTreeMap::new(),
             handled: BTreeMap::new(),
+            rows: crate::program::Rows::default(),
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -926,6 +932,7 @@ impl<'arena> CheckingContext<'arena>
             ref motives,
             ref payloads,
             ref handled,
+            ref rows,
             ref reflexivities,
             ref nesting,
             ref crossings,
@@ -993,6 +1000,7 @@ impl<'arena> CheckingContext<'arena>
             motives: motives.clone(),
             payloads: payloads.clone(),
             handled: handled.clone(),
+            rows: rows.clone(),
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
             crossings: crossings.clone(),
@@ -1075,6 +1083,7 @@ impl<'arena> CheckingContext<'arena>
             motives,
             payloads,
             handled,
+            rows,
             reflexivities,
             nesting,
             crossings,
@@ -1134,6 +1143,7 @@ impl<'arena> CheckingContext<'arena>
             motives,
             payloads,
             handled,
+            rows,
             reflexivities,
             nesting,
             crossings,
@@ -4151,6 +4161,150 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         let _first = self.handled.entry(at).or_insert(handled);
+    }
+
+    /// The computations the judgement checked or synthesised at a returner
+    /// over a row of operations, and the levels of those returners.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ModuleReport::rows`], which a run copies from
+    ///   this record.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    ///
+    /// [`ModuleReport::rows`]: crate::ModuleReport::rows
+    #[inline]
+    #[must_use]
+    pub const fn rows(&self) -> &crate::program::Rows
+    {
+        &self.rows
+    }
+
+    /// Record that the judgement checks `at` against `expected`, when
+    /// `expected` is a returner over a row of operations.
+    ///
+    /// # Specification
+    /// - requires: `expected` is read in the context `at` is checked in.
+    /// - ensures: `at` reads `expected`, and `expected` reads the level of its
+    ///   result, when `expected` is such a returner whose level reads; the
+    ///   first record stands when one node is checked more than once; nothing
+    ///   changes otherwise.
+    /// - panics: none.
+    /// - executable: none — the record is the statement; the witness crosses
+    ///   it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration at a row crosses as a program of the
+    ///   row's model at the recorded returner.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    pub(crate) fn record_checked_row(
+        &mut self,
+        at: ComputationId,
+        expected: CompTypeId,
+    )
+    {
+        if let Maybe::Present(level) = self.row_level(expected) {
+            self.rows.check(at, (expected, level));
+        }
+    }
+
+    /// Record that `at` synthesised `synthesised`, when it is a returner over
+    /// a row of operations or `against` is one: the type `at` crosses to, or
+    /// the bound of the bind whose body `at` is.
+    ///
+    /// # Specification
+    /// - requires: `synthesised` is read in the context `at` is judged in.
+    /// - ensures: `at` reads `synthesised` when it is such a returner, with the
+    ///   level of its result when that level reads; `at` reads it without a
+    ///   level when `against` is such a returner and `synthesised` is not; the
+    ///   first record stands when one node is judged more than once; nothing
+    ///   changes otherwise.
+    /// - panics: none.
+    /// - executable: none — the record is the statement; the witness crosses
+    ///   it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a declaration at a row binds its program
+    ///   into the caller's, and a pure call at a row returns its value as a
+    ///   program.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    pub(crate) fn record_synthesised_row(
+        &mut self,
+        at: ComputationId,
+        (synthesised, against): (CompTypeId, Option<CompTypeId>),
+    )
+    {
+        match self.row_level(synthesised) {
+            Maybe::Present(level) => self.rows.synthesise(at, (synthesised, Some(level))),
+            Maybe::Absent(_)
+                if against.is_some_and(|ty| {
+                    matches!(
+                        crate::program::programmed(self.arena(), ty),
+                        Maybe::Present(_)
+                    )
+                }) =>
+            {
+                self.rows.synthesise(at, (synthesised, None));
+            },
+            Maybe::Absent(_) => {},
+        }
+    }
+
+    /// Record the level of `formed`'s result, when `formed` is a returner over
+    /// a row of operations.
+    ///
+    /// # Specification
+    /// - requires: `formed` is read in the context it is formed in.
+    /// - ensures: `formed` reads the level of its result when it is such a
+    ///   returner whose level reads; nothing changes otherwise.
+    /// - panics: none.
+    /// - executable: none — the record is the statement; the witness crosses
+    ///   it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declared type at a row crosses as a returner of the
+    ///   row's model at this level.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    pub(crate) fn record_formed_row(
+        &mut self,
+        formed: CompTypeId,
+    )
+    {
+        if let Maybe::Present(level) = self.row_level(formed) {
+            self.rows.form(formed, level);
+        }
+    }
+
+    /// The level of the result of `ty`, when `ty` is a returner over a row
+    /// of operations: the level recorded for it, or the level it reads at.
+    ///
+    /// # Specification
+    /// - ensures: present exactly when `ty` is such a returner and its level is
+    ///   recorded or reads.
+    /// - panics: none.
+    /// - executable: none — the level reads the judgement's records, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::record_formed_row`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn row_level(
+        &self,
+        ty: CompTypeId,
+    ) -> Maybe<Level, crate::program::unprogrammed::Absent>
+    {
+        if let Maybe::Absent(absent) = crate::program::programmed(self.arena(), ty) {
+            return Maybe::Absent(absent);
+        }
+        if let Some(level) = self.rows.level(ty) {
+            return Maybe::Present(level.clone());
+        }
+        level_of(self, TypeNode::Computation(ty)).map_or(
+            Maybe::Absent(crate::program::unprogrammed::Absent::NoReturner),
+            Maybe::Present,
+        )
     }
 
     /// The reflexivities the judgement checked, by node.

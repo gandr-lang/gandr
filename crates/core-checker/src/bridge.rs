@@ -350,15 +350,32 @@
 //! operation's clause, each resumption read as the rest folded again, so the
 //! fold handles deeply. The judgement's coverage leaves one clause for each
 //! operation, so the fold is total over the model. The free model is a data
-//! declaration the kernel admits ahead of the first declaration that handles
-//! its effect, named `effect.free.<n>` by its admission ordinal, and named in
-//! the core arena at a position counted down from the last, which no module
-//! declaration takes; a later handler of the same signature folds the same
-//! model. Its parameter ranges over the universe the subject's result
-//! inhabits, at the level the judgement recorded ([`crate::Handled`]), and the
-//! model stands at that level: a subject returning a type, as a handler into
-//! predicate transformers does, folds a model one level up, admitted beside
-//! the smaller one.
+//! declaration the kernel admits ahead of the first declaration that reads
+//! it, named `effect.free.<ℓ>.<row>` by its level and the names of its row's
+//! interfaces, and named in the core arena at a position counted down from
+//! the last, which no module declaration takes; a later handler of the same
+//! signature folds the same model. Its parameter ranges over the universe the
+//! subject's result inhabits, at the level the judgement recorded
+//! ([`crate::Handled`]), and the model stands at that level: a subject
+//! returning a type, as a handler into predicate transformers does, folds a
+//! model one level up, admitted beside the smaller one.
+//!
+//! A declaration at a row of operations crosses the same way, as a program of
+//! the row's free model (#6642). The row names its interfaces by their
+//! default labels, with no tail and no divergence ([`crate::program`]), and
+//! its model holds `Return` and one constructor for each operation of the
+//! row, interface by interface. `(F^ε A)•` is `F Free_ε(A)•`, so a host
+//! operation, such as a draw or a network call, is a constructor of the model
+//! and the kernel sees no host code. Each node the judgement checked at the
+//! row crosses one step at a time: a return returns `Return`, a request
+//! returns its operation's constructor around the rest of the spine, and a
+//! call of a declaration at the row, or at a smaller row, has its program
+//! folded into the rest by a structural fold over its own model, which
+//! injects one row into the other in the same pass
+//! ([`Erasure::programmed_reduct`]). The fold takes the call and the rest as
+//! thunks, so no node the judgement recorded is copied past a binder. Two
+//! declarations at one row read one model, and the row and the level fix its
+//! name, so every session names it alike.
 //!
 //! The checker decides a handled body's row by its sealed-set arithmetic, and
 //! the kernel re-derives it by typing the program: the program is a value of
@@ -368,13 +385,15 @@
 //! vouches for. The two can disagree only where the bridge leaves a request
 //! unread, which it then erases as it stands and refuses; it never drops one.
 //! Every form past this one — a request off the spine, a reset or a shallow
-//! handler, control and stacks, a returner row at a declaration's type — is
-//! refused `OutOfFragment` under [`TrackingIssue::KERNEL_EFFECTS`]. The
-//! witness
+//! handler, a handler inside a row (#6672), control and stacks, a row with a
+//! tail or with divergence — is refused `OutOfFragment` under
+//! [`TrackingIssue::KERNEL_EFFECTS`]. The witness
 //! `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
-//! crosses a handler that resumes and one that answers through one model, and
+//! crosses a handler that resumes and one that answers through one model,
 //! `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
-//! a handler of two operations through a model of three constructors.
+//! a handler of two operations through a model of three constructors, and
+//! `bridge::tests::two_declarations_at_one_row_read_one_model_6642` two
+//! declarations at one row through one model.
 //!
 //! The alternatives were a kernel effect former, which widens the trusted base
 //! by what a data type and a fold already express, and a fold fused into the
@@ -502,6 +521,7 @@ use core::time::Duration;
 use anodized::spec;
 use gandr_core_nbe::TraceNode;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -2475,6 +2495,7 @@ where
         motives: report.motives(),
         payloads: report.payloads(),
         handled: report.handled(),
+        rows: report.rows(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         restatements: report.restatements(),
@@ -2994,6 +3015,10 @@ struct Source<'source>
     /// judged at, by node: what its translation through its free model is
     /// checked at.
     handled: &'source BTreeMap<ComputationId, crate::handler::Handled>,
+    /// The computations the judgement checked or synthesised at a returner
+    /// over a row of operations: what each crosses as a program of the row's
+    /// free model by.
+    rows: &'source crate::program::Rows,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's conversions
@@ -3330,9 +3355,10 @@ enum Seed
 {
     /// The signature of a native operation.
     Native(gandr_core_term::primitive::Primitive),
-    /// The free model of an effect signature at the level of the universe
-    /// its programs' results inhabit.
-    Model(gandr_core_term::effect::EffectSig, Level),
+    /// The free model of a row of operations, its interfaces' signatures in
+    /// the row's label order, at the level of the universe its programs'
+    /// results inhabit.
+    Model(Vec<gandr_core_term::effect::EffectSig>, Level),
     /// The formation of a patched type, by its core node: the witnesses the
     /// kernel replays its fixed values and the meets of its faces by
     /// ([`formed`]).
@@ -3369,7 +3395,7 @@ enum Seed
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|unstaged| match *unstaged {
     Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
     Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
-    Unstaged::Unseeded(Seed::Model(..)) => !source.handled.is_empty(),
+    Unstaged::Unseeded(Seed::Model(..)) => !source.handled.is_empty() || *source.rows != crate::program::Rows::default(),
     Unstaged::Unseeded(Seed::Formation(at)) => !positions.formed.contains(&at),
 }))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -4047,38 +4073,38 @@ where
         Seed::Native(primitive) => positions
             .seed(environment, primitive)
             .map_err(Outcome::Rejected),
-        Seed::Model(ref signature, ref level) => modelled(
-            environment,
-            arena,
-            source,
-            positions,
-            (signature, level),
-            vouch,
-        ),
+        Seed::Model(ref row, ref level) => {
+            modelled(environment, arena, source, positions, (row, level), vouch)
+        },
         Seed::Formation(at) => formed(environment, arena, source, positions, at, vouch),
     }
 }
 
-/// Admit the free model of `signature` at `level`, the effect a handler of the
-/// declaration about to cross is the first to handle at that level: the data
-/// type of the programs over its operations.
+/// Admit the free model of `row` at `level`, the row of operations a handler
+/// or a declaration about to cross is the first to read at that level: the
+/// data type of the programs over the row's operations.
 ///
 /// # Specification
-/// - requires: as [`cross`]; `signature` has at least one operation, each
-///   operation's payload and reply mention no binder, `level` mentions no level
-///   variable, and no model admitted so far is `signature`'s at `level`.
-/// - ensures: one data declaration at the next kernel position, named
-///   `effect.free.<n>` for the `n` models admitted before it and appended to
-///   the exports: `Free(a : Typeₗ) : Typeₗ` at `level` `ℓ`, whose tag zero
+/// - requires: as [`cross`]; `row` holds one signature for each interface of a
+///   row of operations, in the row's label order, each operation's payload and
+///   reply mention no binder, `level` mentions no level variable, and no model
+///   admitted so far is `row`'s at `level`.
+/// - ensures: one data declaration at the next kernel position, appended to the
+///   exports: `Free(a : Typeₗ) : Typeₗ` at `level` `ℓ`, whose tag zero
 ///   `Return(a)` is a program that returns, and whose tag `i + 1`, for the
-///   `i`-th operation `opᵢ : Aᵢ ↠ Bᵢ` in the order [`EffectSig::operations`]
+///   `i`-th operation `opᵢ : Aᵢ ↠ Bᵢ` of the row, interface by interface in the
+///   row's order and each interface's in the order [`EffectSig::operations`]
 ///   enumerates them, `opᵢ(Aᵢ, U(Bᵢ → F Free(a)))` performs that operation and
-///   continues with its reply. The core arena names it at the position
+///   continues with its reply. Its name is `effect.free.<ℓ>` followed by the
+///   segments of each interface's name, an empty segment between two interfaces
+///   ([`model_name`]): the row and the level fix it, so every session names one
+///   model alike. The core arena names it at the position
 ///   [`Model::declaration`] reserves, which [`Positions::model`] answers for
-///   `signature` at `level`.
-/// - provides: the free model a handler is translated to a fold of: the kernel
-///   types the tree, so an operation outside the row is a kernel type error.
-/// - fails: [`Refusal::MachineInvariant`] for a signature of no operation; the
+///   `row` at `level`.
+/// - provides: the free model a handler is translated to a fold of, and a
+///   declaration at a row to a program of: the kernel types the tree, so an
+///   operation outside the row is a kernel type error.
+/// - fails: [`Refusal::MachineInvariant`] for a row of no operation; the
 ///   refused outcome when a payload or a reply does not erase, and
 ///   [`Outcome::Rejected`] when the kernel refuses the declaration.
 /// - panics: none.
@@ -4091,12 +4117,14 @@ where
 ///   ahead of the first as a data type over the subject's result with a
 ///   `Return` of one field and the operation of two; a model of two operations
 ///   carries one constructor of two fields for each, in the signature's order;
-///   a subject returning a type crosses through a model one level up. A model
-///   with another field count, another constructor count, at another level or
-///   admitted twice changes the export or is the kernel's rejection.
+///   a subject returning a type crosses through a model one level up; two
+///   declarations at one row share one model, named alike in two sessions. A
+///   model with another field count, another constructor count, at another
+///   level or admitted twice changes the export or is the kernel's rejection.
 /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
 /// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
 /// - witness: `bridge::tests::a_handled_subject_returning_a_type_crosses_through_a_larger_model_2750`
+/// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
 ///
 /// [`EffectSig::operations`]: gandr_core_term::effect::EffectSig::operations
 #[spec(captures: models = positions.models.len(), ensures: |ret| ret.is_err() || positions.models.len() == models.saturating_add(1))]
@@ -4105,16 +4133,19 @@ fn modelled<Vouch>(
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
-    (signature, level): (&gandr_core_term::effect::EffectSig, &Level),
+    (row, level): (&[gandr_core_term::effect::EffectSig], &Level),
     vouch: &Vouch,
 ) -> Result<(), Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    if signature.operations().len() == 0 {
+    let operations: usize = row
+        .iter()
+        .map(|signature| signature.operations().len())
+        .sum();
+    if operations == 0 {
         return Err(Outcome::Refused(Refusal::MachineInvariant));
     }
-    let ordinal = positions.models.len();
     let declaration = positions.reserved();
     let universe = arena.value_type_universe(
         gandr_core_term::Sort::Ground(GroundSort::Value),
@@ -4127,9 +4158,12 @@ where
     let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let tree = arena.value_type_data(declaration, Vec::from([parameter]));
     let rest = arena.comp_type_returner(tree);
-    let mut constructors = Vec::with_capacity(signature.operations().len().saturating_add(1));
+    let mut constructors = Vec::with_capacity(operations.saturating_add(1));
     constructors.push(Vec::from([returned]));
-    for operation in signature.operations() {
+    for operation in row
+        .iter()
+        .flat_map(gandr_core_term::effect::EffectSig::operations)
+    {
         let payload = gandr_core_term::shift_value_type(
             arena,
             operation.payload,
@@ -4161,23 +4195,66 @@ where
         Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
         Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
     };
-    let ordinal = crate::alloc::format!("{ordinal}");
-    let name = StructuredName::from(
-        ["effect", "free", ordinal.as_str()]
-            .into_iter()
-            .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
-            .collect::<Vec<_>>(),
-    );
-    let exported = staged.declaration.declaration().clone().named(name);
+    let exported = staged
+        .declaration
+        .declaration()
+        .clone()
+        .named(model_name(row, level));
     let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
     positions.models.push(Model {
-        signature: signature.clone(),
+        row: row.to_vec(),
         level: level.clone(),
         declaration,
         position: admitted.position(),
     });
     positions.exports.push(exported);
     Ok(())
+}
+
+/// The name of the free model of `row` at `level`: `effect.free.<ℓ>`, then
+/// the segments of each interface's name in the row's order, an empty
+/// segment between two interfaces.
+///
+/// # Specification
+/// - requires: `level` mentions no level variable.
+/// - ensures: two rows of the same interfaces at one level read one name, and
+///   rows of other interfaces or at other levels read other names: no
+///   interface's name holds an empty segment, so the empty segment parts two
+///   interfaces alone.
+/// - panics: none.
+/// - executable: none — the clause compares the names of two calls, and one
+///   call reads one row.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two declarations at one row read one model, named alike
+///   in two sessions.
+/// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+fn model_name(
+    row: &[gandr_core_term::effect::EffectSig],
+    level: &Level,
+) -> StructuredName
+{
+    let level = crate::alloc::format!("{}", u64::from(level.constant_part()));
+    let mut segments =
+        Vec::from(["effect", "free", level.as_str()].map(alloc::string::String::from));
+    for (index, signature) in row.iter().enumerate() {
+        if index != 0 {
+            segments.push(alloc::string::String::new());
+        }
+        segments.extend(
+            signature
+                .name()
+                .as_ref()
+                .split('.')
+                .map(alloc::string::String::from),
+        );
+    }
+    StructuredName::from(
+        segments
+            .into_iter()
+            .filter_map(gandr_kernel_term::NameSegment::from_text)
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// Admit the witnesses of the formation of the patched type `at`, the first
@@ -4545,15 +4622,16 @@ where
     Ok(admitted.position())
 }
 
-/// The free model of one effect signature at one level the kernel admitted.
+/// The free model of one row of operations at one level the kernel admitted.
 ///
 /// # Specification
 /// - executable: none — data declaration, not a callable boundary.
 #[derive(Clone, Debug)]
 struct Model
 {
-    /// The effect signature it models.
-    signature: gandr_core_term::effect::EffectSig,
+    /// The signatures of the row's interfaces it models, in the row's label
+    /// order: one for a handler's model.
+    row: Vec<gandr_core_term::effect::EffectSig>,
     /// The level of the universe its parameter, the programs' result, ranges
     /// over, and its own.
     level: Level,
@@ -4565,15 +4643,78 @@ struct Model
 }
 
 quenchant_shape::reason_enum! {
-    /// Why no free model answers an effect signature.
+    /// Why no free model answers a row of operations.
     mod model {
         /// The reason no model answers.
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         pub enum Absent {
-            /// No model admitted so far is of the signature.
+            /// No model admitted so far is of the row.
             Unadmitted,
         }
     }
+}
+
+/// How the image of a computation stands to a row of operations.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Debug)]
+enum Imaged
+{
+    /// Its image returns a value.
+    Pure,
+    /// Its image is a program of the free model of a row of operations.
+    Program(Programmed),
+}
+
+/// The program a returner over a row of operations stands for.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Debug)]
+struct Programmed
+{
+    /// The returner's result, in the context it was judged in.
+    result: ValueTypeId,
+    /// The signatures of its row's interfaces, in the row's label order.
+    row: Vec<gandr_core_term::effect::EffectSig>,
+    /// The level of the universe its result inhabits, and its model's.
+    level: Level,
+}
+
+/// The tag of the operation `operation` of the interface `interface` in the
+/// free model of `row`: one past the operations of the interfaces before
+/// it, and the operation's place in its interface.
+///
+/// # Specification
+/// - ensures: the tag of the constructor [`modelled`] gives the operation; none
+///   when `row` names no such operation.
+/// - panics: none.
+/// - executable: none — [`modelled`] mints the constructors elsewhere, so a
+///   predicate here restates the count the body makes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Erasure::programmed_reduct`].
+/// - witness: `bridge::tests::a_program_at_another_operation_is_the_kernels_refusal_6642`
+fn tag(
+    row: &[gandr_core_term::effect::EffectSig],
+    interface: &gandr_core_term::effect::EffectName,
+    operation: &gandr_core_term::effect::OperationName,
+) -> Option<gandr_kernel_term::ConstructorTag>
+{
+    let mut before = 1_usize;
+    for signature in row {
+        if signature.name() == interface {
+            let place = signature
+                .operations()
+                .position(|held| held.name == *operation)?;
+            return before
+                .checked_add(place)
+                .map(gandr_kernel_term::ConstructorTag::from);
+        }
+        before = before.checked_add(signature.operations().len())?;
+    }
+    None
 }
 
 /// The kernel position each module declaration that crossed took, and the
@@ -4645,27 +4786,30 @@ impl Positions
         ConstantIndex::from(usize::MAX.saturating_sub(self.models.len()))
     }
 
-    /// The free model admitted for `signature` at `level`, read in `arena`.
+    /// The free model admitted for `row` at `level`, read in `arena`.
     ///
     /// # Specification
-    /// - ensures: the model whose signature is `signature` by name, operations
-    ///   and type syntax ([`gandr_core_term::effect::EffectSig::inclusion`]),
-    ///   and whose level is `level`, the first admitted when several are;
-    ///   absent when none is.
+    /// - ensures: the model whose row holds as many signatures as `row`, each
+    ///   the signature at its place in `row` by name, operations and type
+    ///   syntax ([`gandr_core_term::effect::EffectSig::inclusion`]), and whose
+    ///   level is `level`, the first admitted when several are; absent when
+    ///   none is.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two handlers of one effect share one model, and a
-    ///   handler of it whose subject returns a type crosses through another.
+    ///   handler of it whose subject returns a type crosses through another;
+    ///   two declarations at one row share one model.
     /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
     /// - witness: `bridge::tests::a_handled_subject_returning_a_type_crosses_through_a_larger_model_2750`
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(model) => model.level == *level && model.signature.inclusion(signature, arena) == gandr_core_term::row::RowInclusion::Included,
+        Maybe::Present(model) => model.level == *level && model.row.len() == row.len(),
         Maybe::Absent(model::Absent::Unadmitted) => true,
     })]
     fn model(
         &self,
-        (signature, level): (&gandr_core_term::effect::EffectSig, &Level),
+        (row, level): (&[gandr_core_term::effect::EffectSig], &Level),
         arena: &CoreArena,
     ) -> Maybe<&Model, model::Absent>
     {
@@ -4673,8 +4817,11 @@ impl Positions
             .iter()
             .find(|model| {
                 model.level == *level
-                    && model.signature.inclusion(signature, arena)
-                        == gandr_core_term::row::RowInclusion::Included
+                    && model.row.len() == row.len()
+                    && model.row.iter().zip(row).all(|(held, wanted)| {
+                        held.inclusion(wanted, arena)
+                            == gandr_core_term::row::RowInclusion::Included
+                    })
             })
             .map_or(Maybe::Absent(model::Absent::Unadmitted), Maybe::Present)
     }
@@ -5874,6 +6021,11 @@ struct Erasure<'source, 'positions>
     /// Each case a hold's reduct rebuilt, beside the node rebuilt in its
     /// place: a derivation of the match crosses at the rebuilt case's image.
     rebuilt: BTreeMap<ComputationId, ComputationId>,
+    /// The program each node crosses as where the judgement recorded no
+    /// check: the body of a bind or a split whose reduct read it as a
+    /// program, beside the program the bind or the split stands for, past
+    /// their binders.
+    assigned: BTreeMap<ComputationId, Programmed>,
     /// The declaration the erasure met that the environment does not hold
     /// yet — a native operation's signature or a handled effect's free model
     /// — which stops it.
@@ -5909,6 +6061,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             pending: Vec::new(),
             bodies: BTreeMap::new(),
             rebuilt: BTreeMap::new(),
+            assigned: BTreeMap::new(),
             crossing: &[],
             restated: &[],
             unseeded: None,
@@ -5980,17 +6133,17 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         Ok(position)
     }
 
-    /// The core position of the free model of `signature` at `level`, the
-    /// effect a handler being erased handles and the level its subject's
-    /// result inhabits.
+    /// The core position of the free model of `row` at `level`: the effect a
+    /// handler being erased handles, or the row of operations a program
+    /// being erased stands at, and the level its result inhabits.
     ///
     /// # Specification
-    /// - ensures: the position [`Positions::model`] answers for `signature` at
+    /// - ensures: the position [`Positions::model`] answers for `row` at
     ///   `level`.
     /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
-    ///   model of `signature` at `level` yet; the erasure then names the two as
-    ///   the seed it stopped at, which [`stage`] reports so the crossing admits
-    ///   the model and stages again.
+    ///   model of `row` at `level` yet; the erasure then names the two as the
+    ///   seed it stopped at, which [`stage`] reports so the crossing admits the
+    ///   model and stages again.
     /// - panics: none.
     ///
     /// # Errors
@@ -5999,19 +6152,20 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// # Adequacy
     /// - hypothesis: L3 — a handler crosses through the model admitted at its
     ///   declaration's first staging, and a second handler of the effect
-    ///   through the same one.
+    ///   through the same one; two declarations at one row read one model.
     /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
     #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Model(..))))]
     fn free_model(
         &mut self,
-        signature: &gandr_core_term::effect::EffectSig,
+        row: &[gandr_core_term::effect::EffectSig],
         level: &Level,
     ) -> Result<ConstantIndex, Refusal>
     {
-        match self.positions.model((signature, level), self.arena) {
+        match self.positions.model((row, level), self.arena) {
             Maybe::Present(model) => Ok(model.declaration),
             Maybe::Absent(_) => {
-                self.unseeded = Some(Seed::Model(signature.clone(), level.clone()));
+                self.unseeded = Some(Seed::Model(row.to_vec(), level.clone()));
                 Err(Refusal::MachineInvariant)
             },
         }
@@ -7875,6 +8029,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             self.frames.push(Frame::Rewritten { at });
             return Ok(Step::Descend(CoreNode::Term(refined)));
         }
+        // A node that stands for a program of a row's free model crosses as
+        // one (#6642).
+        if let Some(reduct) = self.programmed_reduct(at)? {
+            self.memo().computations.insert(at, Image::Open);
+            self.frames.push(Frame::Rewritten { at });
+            return Ok(Step::Descend(CoreNode::Term(TermNode::Computation(reduct))));
+        }
         let Some(computation) = self.arena.computation(at)
         else {
             return Err(Refusal::DanglingNode { node });
@@ -8359,13 +8520,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         }
         let (frame, child) = match comp_type_view(self.arena, at)? {
             CompTypeView::Returner { result, effects } => {
-                if effects.purity() != gandr_core_term::effect::Purity::Pure {
-                    return Err(Refusal::OutOfFragment {
-                        at: CoreNode::Type(TypeNode::Computation(at)),
-                        former: UnadmittedFormer::EffectRow,
-                    });
+                // A returner over a row of operations returns a program of the
+                // row's free model: `(F^ε A)•` is `F Free_ε(A)•` (#6642).
+                if effects.purity() == gandr_core_term::effect::Purity::Pure {
+                    (Frame::Returner { at }, result)
                 }
-                (Frame::Returner { at }, result)
+                else {
+                    let Imaged::Program(program) = self.programmed(at)?
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    let model = self.free_model(&program.row, &program.level)?;
+                    let code = self.arena.value_quote(result);
+                    let tree = self.arena.value_type_data(model, Vec::from([code]));
+                    (Frame::Returner { at }, tree)
+                }
             },
             CompTypeView::Arrow { domain, codomain } => {
                 (Frame::ArrowDomain { at, codomain }, domain)
@@ -9860,7 +10029,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         at: ComputationId,
     ) -> Result<ComputationId, Refusal>
     {
-        use gandr_core_term::Binders;
         let node = CoreNode::Term(TermNode::Computation(at));
         let uncovered = Refusal::OutOfFragment {
             at: node,
@@ -9890,7 +10058,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             return Err(uncovered);
         };
         // The model stands at the top level, where no level variable is bound.
-        if signature.operations().len() == 0 || handled.level.atoms().next().is_some() {
+        // A handler whose answer stands at a row of operations folds a program
+        // inside that row, which the kernel does not replay yet (#6672).
+        if signature.operations().len() == 0
+            || handled.level.atoms().next().is_some()
+            || matches!(
+                crate::program::programmed(self.arena, handled.answer),
+                Maybe::Present(_)
+            )
+        {
             return Err(uncovered);
         }
         for operation in signature.operations() {
@@ -9919,7 +10095,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             };
             bodies.push(body);
         }
-        let model = self.free_model(&signature, &handled.level)?;
+        let model = self.free_model(core::slice::from_ref(&signature), &handled.level)?;
         let variable = |arena: &mut CoreArena, index: u32| {
             arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
         };
@@ -10005,6 +10181,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 _ => None,
             };
+            // A step whose image is a program, as a call of a declaration at a
+            // row is, binds into the subject's program: a handler inside a
+            // row, which the kernel does not replay yet (#6672).
+            if request.is_none() && !matches!(self.imaged(current), Ok(Imaged::Pure)) {
+                return Err(uncovered);
+            }
             let step = match request {
                 Some((index, payload)) => {
                     let tag = index.checked_add(1).ok_or(Refusal::MachineInvariant)?;
@@ -10117,6 +10299,598 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let bound = variable(self.arena, 0);
         let folded = self.arena.computation_application(fold, bound);
         Ok(self.arena.computation_bind(tree, folded))
+    }
+
+    /// How the image of `at` stands to a row of operations: a program of the
+    /// row's free model when the judgement checked `at` at a returner over a
+    /// row of operations, or synthesised one for it; a returned value
+    /// otherwise.
+    ///
+    /// # Specification
+    /// - ensures: the returner `at` was checked at, else the one it
+    ///   synthesised, read as [`Self::programmed`] reads it; [`Imaged::Pure`]
+    ///   when the judgement recorded neither.
+    /// - fails: as [`Self::programmed`].
+    /// - panics: none.
+    /// - executable: none — the image is the one [`Self::programmed`] reads, so
+    ///   a predicate restates the body.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn imaged(
+        &self,
+        at: ComputationId,
+    ) -> Result<Imaged, Refusal>
+    {
+        self.source
+            .rows
+            .checked(at)
+            .or_else(|| self.source.rows.synthesised(at))
+            .map_or(Ok(Imaged::Pure), |ty| self.programmed(ty))
+    }
+
+    /// The program `ty` stands for: its result, its row and its level, when
+    /// `ty` is a returner over a row of operations.
+    ///
+    /// # Specification
+    /// - ensures: [`Imaged::Program`] for a returner over a row of operations
+    ///   ([`crate::program::programmed`]) whose level the judgement recorded,
+    ///   mentions no level variable, and whose operations' payloads and replies
+    ///   mention no binder; [`Imaged::Pure`] for a pure returner.
+    /// - fails: [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::EffectRow`] at `ty` for any other type.
+    /// - panics: none.
+    /// - executable: none — the clause reads the judgement's level record and
+    ///   the binder reach of each operation, which a predicate recomputes as
+    ///   the body does.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn programmed(
+        &self,
+        ty: CompTypeId,
+    ) -> Result<Imaged, Refusal>
+    {
+        let outside = Refusal::OutOfFragment {
+            at: CoreNode::Type(TypeNode::Computation(ty)),
+            former: UnadmittedFormer::EffectRow,
+        };
+        let (result, row) = match crate::program::programmed(self.arena, ty) {
+            Maybe::Present(programmed) => programmed,
+            Maybe::Absent(crate::program::unprogrammed::Absent::Pure) => return Ok(Imaged::Pure),
+            Maybe::Absent(_) => return Err(outside),
+        };
+        let Some(level) = self.source.rows.level(ty)
+        else {
+            return Err(outside);
+        };
+        // The model stands at the top level, where no level variable and no
+        // binder is bound.
+        if level.atoms().next().is_some() {
+            return Err(outside);
+        }
+        for operation in row
+            .signatures()
+            .flat_map(gandr_core_term::effect::EffectSig::operations)
+        {
+            for ty in [operation.payload, operation.reply] {
+                let reach =
+                    loose_reach(self.arena, CoreNode::Type(TypeNode::Value(ty))).map_err(fault)?;
+                if reach != BinderDepth::default() {
+                    return Err(outside);
+                }
+            }
+        }
+        Ok(Imaged::Program(Programmed {
+            result,
+            row: row.signatures().cloned().collect(),
+            level: level.clone(),
+        }))
+    }
+
+    /// The request of the operation at `tag` of the model at `model`, with
+    /// `payload`, that continues with `continued`: `return opₜ(payload,
+    /// thunk(λy. continued))`, a program of the row `program` reads.
+    ///
+    /// # Specification
+    /// - requires: `payload` stands in the context of `program`, and
+    ///   `continued` beneath one binder more, the reply.
+    /// - ensures: the request above, minted into the source arena.
+    /// - panics: none.
+    /// - executable: none — the request is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn requested(
+        &mut self,
+        (model, program): (ConstantIndex, &Programmed),
+        (tag, payload): (gandr_kernel_term::ConstructorTag, ValueId),
+        continued: ComputationId,
+    ) -> ComputationId
+    {
+        let continued = self.arena.computation_lambda(continued);
+        let continued = self.arena.value_thunk(continued);
+        let datatype = self.answer(model, program, Binders::from(0_u32));
+        let requested =
+            self.arena
+                .value_constructor(model, datatype, tag, Vec::from([payload, continued]));
+        self.arena.computation_return(requested)
+    }
+
+    /// The fold that runs `step`, whose image is a program of the row `inner`
+    /// reads, and binds its value into `continued`, a program of the row
+    /// `program` reads: `((λc. λk. p ← force c; ((fix f. λt. case t of
+    /// Return(x) ⇒ force k x | opᵢ(v, κ) ⇒ return opⱼ(v, thunk(λy. t′ ←
+    /// force κ y; force f t′))) : Free'(A′) → F Free(A)) p) : U(F Free'(A′))
+    /// → U(A′ → F Free(A)) → F Free(A)) (thunk step) (thunk(λx.
+    /// continued))`, each operation of `inner`'s row at the tag `j` of the
+    /// same operation in `program`'s.
+    ///
+    /// # Specification
+    /// - requires: `step` stands in the context of `program`, and `continued`
+    ///   beneath one binder more, the value the program returns; `model` is the
+    ///   position of `program`'s model.
+    /// - ensures: the fold above, a structural recursion over `inner`'s model
+    ///   that the kernel replays: bind for one row, and the injection of a
+    ///   smaller row into a larger one, in one. `step` and `continued` stand in
+    ///   their own contexts, so the fold shifts neither, and each crosses at
+    ///   the records the judgement keeps for it.
+    /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
+    ///   model of `inner`'s row yet, which the erasure names as the seed it
+    ///   stopped at, or for an operation outside `program`'s row, which the
+    ///   judgement's row inclusion rules out.
+    /// - panics: none.
+    /// - executable: none — the fold is a new term, and the kernel's replay of
+    ///   the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a declaration at the row bound to the rest,
+    ///   and one at a smaller row at the end, each cross through their fold and
+    ///   the kernel admits them.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn fold(
+        &mut self,
+        (step, inner): (ComputationId, &Programmed),
+        continued: ComputationId,
+        (model, program): (ConstantIndex, &Programmed),
+    ) -> Result<ComputationId, Refusal>
+    {
+        let source = self.free_model(&inner.row, &inner.level)?;
+        let variable = |arena: &mut CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        // The case stands beneath the two parameters, the program's binder,
+        // the fold's and its argument's; its motive beneath the scrutinee
+        // too.
+        let answer = self.answer(model, program, Binders::from(6_u32));
+        let motive = self.arena.comp_type_returner(answer);
+        // Beneath the returned value, the continuation is the fifth binder.
+        let continuation = variable(self.arena, 4);
+        let continuation = self.arena.computation_force(continuation);
+        let returned = variable(self.arena, 0);
+        let returned = self.arena.computation_application(continuation, returned);
+        let operations = inner
+            .row
+            .iter()
+            .map(|signature| signature.operations().len())
+            .sum::<usize>();
+        let mut branches = Vec::with_capacity(operations.saturating_add(1));
+        let mut fields = Vec::with_capacity(operations.saturating_add(1));
+        branches.push(self.arena.computation_lambda(returned));
+        fields.push(gandr_kernel_term::FieldCount::from(1_usize));
+        for signature in &inner.row {
+            for operation in signature.operations() {
+                let tag = tag(&program.row, signature.name(), &operation.name)
+                    .ok_or(Refusal::MachineInvariant)?;
+                // Beneath the payload, the continuation and the reply: the
+                // continuation is one and the fold four; beneath the folded
+                // rest too, the fold is five.
+                let later = variable(self.arena, 1);
+                let later = self.arena.computation_force(later);
+                let reply = variable(self.arena, 0);
+                let resumed = self.arena.computation_application(later, reply);
+                let again = variable(self.arena, 5);
+                let again = self.arena.computation_force(again);
+                let rest = variable(self.arena, 0);
+                let again = self.arena.computation_application(again, rest);
+                let resumed = self.arena.computation_bind(resumed, again);
+                let resumed = self.arena.computation_lambda(resumed);
+                let resumed = self.arena.value_thunk(resumed);
+                let payload = variable(self.arena, 1);
+                let datatype = self.answer(model, program, Binders::from(7_u32));
+                let requested = self.arena.value_constructor(
+                    model,
+                    datatype,
+                    tag,
+                    Vec::from([payload, resumed]),
+                );
+                let requested = self.arena.computation_return(requested);
+                let requested = self.arena.computation_lambda(requested);
+                branches.push(self.arena.computation_lambda(requested));
+                fields.push(gandr_kernel_term::FieldCount::from(2_usize));
+            }
+        }
+        let scrutinee = variable(self.arena, 0);
+        let case = self
+            .arena
+            .computation_data_case(scrutinee, motive, branches, fields);
+        let fold = self.arena.computation_lambda(case);
+        let fold = self
+            .arena
+            .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+        // The fold's classifier stands beneath the two parameters and the
+        // program's binder.
+        let result = gandr_core_term::shift_value_type(
+            self.arena,
+            inner.result,
+            gandr_core_term::Binders::from(3_u32),
+        )
+        .settle(self.arena);
+        let code = self.arena.value_quote(result);
+        let domain = self.arena.value_type_data(source, Vec::from([code]));
+        let codomain = self.answer(model, program, Binders::from(3_u32));
+        let codomain = self.arena.comp_type_returner(codomain);
+        let classifier = self.arena.comp_type_arrow(domain, codomain);
+        let fold = self.arena.computation_ascribe(fold, classifier);
+        let tree = variable(self.arena, 0);
+        let folded = self.arena.computation_application(fold, tree);
+        // Beneath the continuation, the computation is the second binder.
+        let ran = variable(self.arena, 1);
+        let ran = self.arena.computation_force(ran);
+        let body = self.arena.computation_bind(ran, folded);
+        let body = self.arena.computation_lambda(body);
+        let body = self.arena.computation_lambda(body);
+        let code = self.arena.value_quote(inner.result);
+        let ran = self.arena.value_type_data(source, Vec::from([code]));
+        let ran = self.arena.comp_type_returner(ran);
+        let ran = self.arena.value_type_thunk(ran);
+        let answered = self.answer(model, program, Binders::from(0_u32));
+        let answered = self.arena.comp_type_returner(answered);
+        let continuation = self.arena.comp_type_arrow(inner.result, answered);
+        let continuation = self.arena.value_type_thunk(continuation);
+        let classifier = self.arena.comp_type_arrow(continuation, answered);
+        let classifier = self.arena.comp_type_arrow(ran, classifier);
+        let body = self.arena.computation_ascribe(body, classifier);
+        let step = self.arena.value_thunk(step);
+        let applied = self.arena.computation_application(body, step);
+        let continued = self.arena.computation_lambda(continued);
+        let continued = self.arena.value_thunk(continued);
+        Ok(self.arena.computation_application(applied, continued))
+    }
+
+    /// `Free(A)` of the model at `model`, `A` the result `program` reads,
+    /// `depth` binders past its context.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answer(
+        &mut self,
+        model: ConstantIndex,
+        program: &Programmed,
+        depth: Binders,
+    ) -> ValueTypeId
+    {
+        let result =
+            gandr_core_term::shift_value_type(self.arena, program.result, depth).settle(self.arena);
+        let code = self.arena.value_quote(result);
+        self.arena.value_type_data(model, Vec::from([code]))
+    }
+
+    /// `return Return(value)` of the model at `model`, `depth` binders past
+    /// the context of `program`: the program that returns `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn returning(
+        &mut self,
+        model: ConstantIndex,
+        program: &Programmed,
+        (value, depth): (ValueId, Binders),
+    ) -> ComputationId
+    {
+        let datatype = self.answer(model, program, depth);
+        let returned = self.arena.value_constructor(
+            model,
+            datatype,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            Vec::from([value]),
+        );
+        self.arena.computation_return(returned)
+    }
+
+    /// The node the judgement refined `at` to, or `at` itself.
+    ///
+    /// # Specification
+    /// - ensures: the refinement [`Erasure::restated`] holds for `at`, when it
+    ///   is a computation; `at` otherwise.
+    /// - panics: none.
+    /// - executable: none — the refinement is the judgement's record, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::a_call_folds_into_a_rest_that_reads_a_parameter_6642`
+    fn refined(
+        &self,
+        at: ComputationId,
+    ) -> ComputationId
+    {
+        match self
+            .restated
+            .binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node)
+            .ok()
+            .and_then(|place| self.restated.get(place))
+        {
+            Some(&(_, TermNode::Computation(refined))) => refined,
+            Some(_) | None => at,
+        }
+    }
+
+    /// The program `at` stands for, when it stands for one: the returner the
+    /// judgement checked it at, else the program a bind or a split assigned
+    /// it, else, for a bind, a request or a split at the ambient motive, the
+    /// returner the judgement synthesised it at as a bound computation.
+    ///
+    /// # Specification
+    /// - ensures: the program [`Self::programmed`] reads at the first of the
+    ///   records above that `at` holds; none at a pure returner, or when `at`
+    ///   holds none of them.
+    /// - fails: as [`Self::programmed`].
+    /// - panics: none.
+    /// - executable: none — the clause reads the judgement's records, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn program_of(
+        &self,
+        at: ComputationId,
+    ) -> Result<Option<Programmed>, Refusal>
+    {
+        let recorded = if let Some(checked) = self.source.rows.checked(at) {
+            checked
+        }
+        else {
+            if let Some(assigned) = self.assigned.get(&at) {
+                return Ok(Some(assigned.clone()));
+            }
+            let spine = matches!(
+                self.arena.computation(at),
+                Some(
+                    Computation::Bind(..)
+                        | Computation::Perform { .. }
+                        | Computation::Split {
+                            motive: SplitMotive::Ambient,
+                            ..
+                        }
+                )
+            );
+            match self.source.rows.synthesised(at) {
+                Some(synthesised) if spine => synthesised,
+                Some(_) | None => return Ok(None),
+            }
+        };
+        match self.programmed(recorded)? {
+            Imaged::Program(program) => Ok(Some(program)),
+            Imaged::Pure => Ok(None),
+        }
+    }
+
+    /// Assign `program`, past `binders` binders, to `body`, when the
+    /// judgement recorded no check of it.
+    ///
+    /// # Specification
+    /// - requires: `body` stands `binders` binders past the context of
+    ///   `program`.
+    /// - ensures: [`Self::program_of`] reads `program` at `body`'s refinement,
+    ///   its result shifted past `binders`, when the judgement checked that
+    ///   refinement at nothing; nothing changes otherwise.
+    /// - panics: none.
+    /// - executable: none — the clause reads the judgement's records, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::a_call_folds_into_a_rest_that_reads_a_parameter_6642`
+    fn assign(
+        &mut self,
+        body: ComputationId,
+        (program, binders): (&Programmed, Binders),
+    )
+    {
+        let body = self.refined(body);
+        if self.source.rows.checked(body).is_some() {
+            return;
+        }
+        let result = gandr_core_term::shift_value_type(self.arena, program.result, binders)
+            .settle(self.arena);
+        self.assigned.insert(body, Programmed {
+            result,
+            row: program.row.clone(),
+            level: program.level.clone(),
+        });
+    }
+
+    /// The program reduct of `at`, when `at` stands for a program of a row's
+    /// free model ([`Self::program_of`]) and does not cross as it stands.
+    ///
+    /// # Specification
+    /// - ensures: for the model `Free` of the program's row at its level, whose
+    ///   result is `A`, one step of `at` read as a program, its children left
+    ///   to cross at their own records: `return Return(v)` for `return v`;
+    ///   `return opᵢ(v, thunk(λy. return Return(y)))` for a request of the
+    ///   row's `i`-th operation; `return opᵢ(v, thunk(λx. K))` for `x ← opᵢ v;
+    ///   K`; the fold ([`Self::fold`]) of `M` into `K` for `x ← M; K` whose
+    ///   step `M` is a program of a row inside the row. For a call, a force or
+    ///   a native operation whose image the judgement synthesised at a pure
+    ///   returner or at a smaller row, a copy of `at`, which the judgement
+    ///   recorded nothing for, bound or folded into `return Return(x)`. None
+    ///   for a bind whose step returns a value and for a split at the ambient
+    ///   motive, whose body crosses at the program past their binders, and for
+    ///   any other node the judgement checked, whose children carry their own
+    ///   records. A node the judgement refined is read as its refinement. No
+    ///   original node is shifted, so each keeps its records.
+    /// - fails: [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::EffectRow`] for a node assigned a program whose
+    ///   image the judgement did not record, and for a returned composite;
+    ///   [`Refusal::MachineInvariant`] when the environment holds no model yet,
+    ///   which the erasure names as the seed it stopped at, or for a request of
+    ///   an operation outside the row, which the judgement rules out; as
+    ///   [`Self::program_of`] and [`Self::fold`].
+    /// - panics: none.
+    /// - executable: none — the reduct is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration that requests an operation, binds a
+    ///   call of another at the row and returns crosses and the kernel admits
+    ///   it; a program built at another operation's tag is the kernel's
+    ///   rejection instead; a declaration at a row whose body calls a
+    ///   declaration at a smaller row crosses through the fold that injects one
+    ///   row into the other.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `bridge::tests::a_program_at_another_operation_is_the_kernels_refusal_6642`
+    fn programmed_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<Option<ComputationId>, Refusal>
+    {
+        let Some(program) = self.program_of(at)?
+        else {
+            return Ok(None);
+        };
+        let outside = Refusal::OutOfFragment {
+            at: CoreNode::Term(TermNode::Computation(at)),
+            former: UnadmittedFormer::EffectRow,
+        };
+        let checked = self.source.rows.checked(at).is_some();
+        let model = self.free_model(&program.row, &program.level)?;
+        let returned = |this: &mut Self| {
+            let value = this
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            this.returning(model, &program, (value, Binders::from(1_u32)))
+        };
+        match self.arena.computation(at) {
+            Some(&Computation::Return(value)) => {
+                if matches!(self.arena.value(value), Some(Value::Compose { .. })) {
+                    return Err(outside);
+                }
+                return Ok(Some(self.returning(
+                    model,
+                    &program,
+                    (value, Binders::from(0_u32)),
+                )));
+            },
+            Some(&Computation::Perform {
+                ref signature,
+                ref operation,
+                payload,
+            }) => {
+                let tag = tag(&program.row, signature.name(), operation)
+                    .ok_or(Refusal::MachineInvariant)?;
+                let rest = returned(self);
+                return Ok(Some(self.requested(
+                    (model, &program),
+                    (tag, payload),
+                    rest,
+                )));
+            },
+            Some(&Computation::Bind(bound, body)) => {
+                self.assign(body, (&program, Binders::from(1_u32)));
+                let step = self.refined(bound);
+                if self.source.rows.checked(step).is_none()
+                    && let Some(&Computation::Perform {
+                        ref signature,
+                        ref operation,
+                        payload,
+                    }) = self.arena.computation(step)
+                {
+                    let tag = tag(&program.row, signature.name(), operation)
+                        .ok_or(Refusal::MachineInvariant)?;
+                    return Ok(Some(self.requested(
+                        (model, &program),
+                        (tag, payload),
+                        body,
+                    )));
+                }
+                return match self.imaged(step)? {
+                    Imaged::Pure => Ok(None),
+                    Imaged::Program(inner) => self
+                        .fold((bound, &inner), body, (model, &program))
+                        .map(Some),
+                };
+            },
+            Some(&Computation::Split {
+                arity,
+                motive: SplitMotive::Ambient,
+                body,
+                ..
+            }) => {
+                let binders = u32::try_from(usize::from(arity)).map_err(|_overflow| outside)?;
+                self.assign(body, (&program, Binders::from(binders)));
+                return Ok(None);
+            },
+            Some(
+                &(Computation::Force(_)
+                | Computation::Application(..)
+                | Computation::Primitive { .. }),
+            ) => {},
+            Some(_) | None if checked => return Ok(None),
+            Some(_) | None => return Err(outside),
+        }
+        let Some(synthesised) = self.source.rows.synthesised(at)
+        else {
+            return if checked { Ok(None) } else { Err(outside) };
+        };
+        let imaged = self.programmed(synthesised)?;
+        // A call at the row itself crosses as it stands.
+        if let Imaged::Program(ref inner) = imaged
+            && inner.row.len() == program.row.len()
+            && inner
+                .row
+                .iter()
+                .zip(&program.row)
+                .all(|(one, other)| one.name() == other.name())
+        {
+            return Ok(None);
+        }
+        let copy = match self.arena.computation(at) {
+            Some(&Computation::Force(value)) => self.arena.computation_force(value),
+            Some(&Computation::Application(head, argument)) => {
+                self.arena.computation_application(head, argument)
+            },
+            Some(&Computation::Primitive {
+                primitive,
+                arguments,
+            }) => self.arena.computation_primitive(primitive, arguments),
+            Some(_) | None => return Err(Refusal::MachineInvariant),
+        };
+        let rest = returned(self);
+        match imaged {
+            Imaged::Pure => Ok(Some(self.arena.computation_bind(copy, rest))),
+            Imaged::Program(inner) => self.fold((copy, &inner), rest, (model, &program)).map(Some),
+        }
     }
 
     /// The projection binds a split of `scrutinee` into `body` reduces to,

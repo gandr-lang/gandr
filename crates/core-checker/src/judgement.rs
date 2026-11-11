@@ -2348,6 +2348,8 @@ enum Frame
         at: ComputationId,
         /// The bound returner's type, in the ambient context.
         bound: CompTypeId,
+        /// The body the bind descends to, after any refinement.
+        body: ComputationId,
     },
     /// A bind of several values waits on the type its bound computation
     /// synthesises, which must be a returner of that many values; it then
@@ -6855,6 +6857,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         expected: CompTypeId,
     ) -> Result<Step, CheckRefusal>
     {
+        // A computation checked at a row of operations crosses the bridge as
+        // a program of the row's model at that returner.
+        self.context.record_checked_row(term, expected);
         // A case checked at its written motive with the result read at a stage
         // reads its branches there.
         if let &Computation::DataCase {
@@ -7358,6 +7363,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         let read = crate::codata::read(self.context, synthesised)?;
+        self.context.record_synthesised_row(bound, (read, None));
         let result = match matched_returner(self.context.arena_mut(), read) {
             Maybe::Present(result) => result,
             Maybe::Absent(absent) => {
@@ -7410,7 +7416,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Grade::Many,
         )?;
         self.context.open_copy(at);
-        self.wait(Frame::BindBody { at, bound: read });
+        self.wait(Frame::BindBody {
+            at,
+            bound: read,
+            body,
+        });
         Ok(Step::Descend(Goal::Computation {
             term: body,
             direction,
@@ -8728,6 +8738,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     frame: Frame::FormNext(TypeNode::Value(ty)),
                     owner,
                 }));
+                self.context.record_formed_row(at);
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(result))))
             },
             // The effects stand in the ambient context; each result stands
@@ -11120,7 +11131,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::CompType(synthesised),
             ) => self.bound(at, (bound, body), direction, synthesised),
-            (Frame::BindBody { at, bound }, Produced::CompType(synthesised)) => {
+            (Frame::BindBody { at, bound, body }, Produced::CompType(synthesised)) => {
+                // The body of a bind whose bound is a program ends that
+                // program, so the bridge reads the step it synthesises,
+                // beneath the binder it is judged under.
+                self.context
+                    .record_synthesised_row(body, (synthesised, Some(bound)));
                 let Maybe::Present(lowered) =
                     strengthen_comp_type(self.context.arena_mut(), synthesised)
                 else {
@@ -11170,6 +11186,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::CompBridge { at, expected }, Produced::CompType(synthesised)) => {
+                self.context
+                    .record_synthesised_row(at, (synthesised, Some(expected)));
                 comp_bridge(
                     self.context,
                     at,

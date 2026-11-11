@@ -1105,17 +1105,19 @@ mod kernel_corpus_partition
                 },
                 _ => None,
             };
-            // A handled effect crosses through its free model, a data
-            // declaration the readmission admits ahead of the first
-            // declaration that handles it, named `effect.free.<n>` with `n`
-            // its admission ordinal.
-            let free_model = |name: &StructuredName| match *name.segments() {
-                [ref effect, ref free, ref ordinal]
-                    if effect.as_ref() == "effect" && free.as_ref() == "free" =>
-                {
-                    ordinal.as_ref().parse::<usize>().ok()
-                },
-                _ => None,
+            // A handled effect, or a row of operations a declaration stands
+            // at, crosses through its free model, a data declaration the
+            // readmission admits ahead of the first declaration that reads
+            // it, named `effect.free.<ℓ>.<row>` after its level and the
+            // interfaces of its row.
+            let free_model = |name: &StructuredName| {
+                matches!(
+                    *name.segments(),
+                    [ref effect, ref free, ref level, _, ..]
+                        if effect.as_ref() == "effect"
+                            && free.as_ref() == "free"
+                            && level.as_ref().parse::<u64>().is_ok()
+                )
             };
             // A patched type's formation crosses as witness definitions the
             // readmission admits ahead of the first declaration whose type
@@ -1137,9 +1139,8 @@ mod kernel_corpus_partition
                 .iter()
                 .map(|marked| marked.declaration().name())
                 .partition(|&name| session_assumption(name).is_some());
-            let (models, held): (Vec<&StructuredName>, Vec<&StructuredName>) = held
-                .into_iter()
-                .partition(|&name| free_model(name).is_some());
+            let (models, held): (Vec<&StructuredName>, Vec<&StructuredName>) =
+                held.into_iter().partition(|&name| free_model(name));
             let (formations, held): (Vec<&StructuredName>, Vec<&StructuredName>) = held
                 .into_iter()
                 .partition(|&name| formation(name).is_some());
@@ -1150,13 +1151,13 @@ mod kernel_corpus_partition
                     "{path}: the session assumptions are numbered in admission order: {assumed:?}"
                 );
             }
-            for (ordinal, &name) in models.iter().enumerate() {
-                assert_eq!(
-                    free_model(name),
-                    Some(ordinal),
-                    "{path}: the free models are numbered in admission order: {models:?}"
-                );
-            }
+            assert!(
+                models
+                    .iter()
+                    .enumerate()
+                    .all(|(place, name)| models.iter().take(place).all(|before| before != name)),
+                "{path}: each free model is admitted once: {models:?}"
+            );
             let mut formed = 0_usize;
             for &name in &formations {
                 let ordinal = formation(name);
@@ -3534,11 +3535,12 @@ mod kernel_effect_handler_readmission
             );
         }
         // `Proc`'s model crosses ahead of its first handler, `Console`'s
-        // ahead of its own.
-        let model = position(&["effect", "free", "0"]);
+        // ahead of its own, each named by its level and its interface.
+        let model = position(&["effect", "free", "0", "std", "process", "Exit", "Eff"]);
+        let console = position(&["effect", "free", "0", "std", "io", "Console", "Eff"]);
         assert!(model < position(&["resumed"]));
-        assert!(position(&["summed"]) < position(&["effect", "free", "1"]));
-        assert!(position(&["effect", "free", "1"]) < position(&["printed"]));
+        assert!(position(&["summed"]) < console);
+        assert!(console < position(&["printed"]));
         let marked = &declarations[model];
         let DeclarationContent::Data {
             ref parameters,
@@ -3626,13 +3628,22 @@ mod kernel_effect_handler_readmission
                 "`{handler}` crosses as a definition"
             );
         }
-        let model = position(&["effect", "free", "0"]);
+        let models = declarations
+            .iter()
+            .enumerate()
+            .filter(|&(_, marked)| {
+                matches!(
+                    *marked.declaration().name().segments(),
+                    [ref effect, ref free, ..] if effect.as_ref() == "effect" && free.as_ref() == "free"
+                )
+            })
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>();
+        let [model] = models[..]
+        else {
+            panic!("the second handler of `State` folds the first's model: {models:?}");
+        };
         assert!(model < position(&["constant"]));
-        assert_eq!(
-            named(&["effect", "free", "1"]),
-            None,
-            "the second handler of `State` folds the first's model"
-        );
         let marked = &declarations[model];
         let DeclarationContent::Data {
             ref parameters,
@@ -3722,7 +3733,16 @@ mod kernel_effect_handler_readmission
         );
         // Its subject returns a predicate transformer, a type of types, so
         // the model it folds stands above the smallest universe.
-        let model = position(&["effect", "free", "0"]);
+        let model = declarations
+            .iter()
+            .position(|marked| {
+                matches!(
+                    *marked.declaration().name().segments(),
+                    [ref effect, ref free, ref level, ..]
+                        if effect.as_ref() == "effect" && free.as_ref() == "free" && level.as_ref() == "1"
+                )
+            })
+            .expect("`StateLaws`'s free model crosses, named at level one");
         assert!(model < position(&["incrObserved"]));
         let DeclarationContent::Data { kind, .. } = *declarations[model].declaration().content()
         else {
