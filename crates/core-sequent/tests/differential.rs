@@ -254,7 +254,7 @@ pub fn run_on_tiers(
         .iter()
         .map(|&tier| {
             let mut store = Store::new();
-            let fuel = gandr_runtime_emitter::Fuel::from(1_usize << 20_u32);
+            let fuel = gandr_runtime_emitter::Budget::from(1_usize << 20_u32);
             match evaluate_on(
                 tier,
                 arena,

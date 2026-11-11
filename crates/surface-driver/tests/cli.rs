@@ -5189,6 +5189,123 @@ fn a_run_past_its_memory_bound_names_the_region_that_asked_6324()
     assert_eq!(code(&malformed), Code(2_i32), "{}", stderr(&malformed));
 }
 
+/// #6325: a run holds its code-word jumps within `--run-budget`. A loop of a
+/// hundred thousand passes spends a budget of a thousand jumps. The stop
+/// names the declaration, the count, the flag and the remedy. Without the
+/// flag the run has no budget, and the loop halts. A count that does not
+/// read, and zero, are malformed invocations.
+#[test]
+fn a_run_past_its_budget_names_its_budget_and_its_origin_6325()
+{
+    use std::ffi::OsStr;
+
+    let scratch = Scratch::new(Path::new("run-budget"));
+    let path = scratch.file(
+        Path::new("loop.gandr"),
+        Text::from(
+            "def main() -> [Partial] Integer =\n  var left = 100000\n  while left > 0 {\n    \
+             access left as v { resume v (v - 1) }\n  };\n  pure 0\n",
+        ),
+    );
+    let under = |budget: &[&str]| {
+        let mut arguments: Vec<&OsStr> = budget.iter().map(OsStr::new).collect();
+        arguments.extend([OsStr::new("run"), path.as_os_str()]);
+        ran(gandr(&arguments))
+    };
+    let short = under(&["--run-budget", "1000"]);
+    assert_eq!(code(&short), Code(1_i32), "{}", stderr(&short));
+    assert!(
+        stderr(&short).contains(
+            "`main` unfinished: the run spent its budget of 1 000 jumps; the budget is \
+             --run-budget 1000; raise --run-budget"
+        ),
+        "the stop names the declaration, the count, the flag and the remedy: {}",
+        stderr(&short)
+    );
+    let unbounded = under(&[]);
+    assert_eq!(code(&unbounded), Code(0_i32), "{}", stderr(&unbounded));
+    for malformed in ["0", "x", "16M"] {
+        let refused = under(&["--run-budget", malformed]);
+        assert_eq!(
+            code(&refused),
+            Code(2_i32),
+            "{malformed}: {}",
+            stderr(&refused)
+        );
+    }
+}
+
+/// #6325: a language server bounds each run that its invocation leaves
+/// without a budget by the server's budget of 2^24 jumps. A session judges a
+/// run claim before it answers, so a loop that never halts must stop. The
+/// claim's diagnostic names the server's budget and its remedy.
+#[test]
+fn a_language_server_stops_a_loop_at_the_server_s_budget_6325()
+{
+    use std::io::BufReader;
+
+    let mut server = gandr(&["lsp", "--standalone"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the server starts");
+    let mut to_server = server.stdin.take().expect("standard input is piped");
+    let mut from_server = BufReader::new(server.stdout.take().expect("standard output is piped"));
+    let opened = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {"textDocument": {
+            "uri": "file:///tmp/spin.gandr",
+            "languageId": "gandr",
+            "version": 1_i32,
+            "text": "@[runs(\"0\")]\ndef spin() -> [Partial] Integer =\n  var left = 1\n  while left > \
+                     0 {\n    access left as v { resume v v }\n  };\n  pure 0\n",
+        }},
+    })
+    .to_string();
+    to_server
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+                Text::from(opened.as_str()),
+            ])
+            .as_ref(),
+        )
+        .expect("the session is written");
+    let published = loop {
+        let Maybe::Present(body) = read_frame(&mut from_server).expect("a frame")
+        else {
+            panic!("the server ended before it published the claim's diagnostic");
+        };
+        let message: serde_json::Value =
+            serde_json::from_slice(body.as_ref()).expect("a frame is JSON");
+        if message.get("method") == Some(&serde_json::json!("textDocument/publishDiagnostics")) {
+            break message;
+        }
+    };
+    to_server
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+                Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+            ])
+            .as_ref(),
+        )
+        .expect("the session is ended");
+    drop(to_server);
+    let ended = server.wait().expect("the server ends");
+    assert_eq!(ended.code(), Some(0_i32), "the session ends cleanly");
+    assert!(
+        published.to_string().contains(
+            "the run spent its budget of 16 777 216 jumps; the budget is the server's budget for \
+             an invocation that names none, 16 777 216 jumps; start the server with a larger \
+             --run-budget"
+        ),
+        "the claim's diagnostic names the server's budget: {published}"
+    );
+}
+
 /// #2279: `gandr run` of the hello-world exemplar prints its greeting as the
 /// whole of standard output and leaves with 0; a program whose row names an
 /// effect no host provides, the exemplar's twin without its expectation, is

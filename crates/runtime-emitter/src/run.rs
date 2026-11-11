@@ -116,6 +116,7 @@ use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::Word;
 use gandr_runtime_stencils::Words;
 
+use crate::budget::Budget;
 use crate::executor::Program;
 use crate::function::Unbound;
 use crate::host;
@@ -253,13 +254,13 @@ impl Choice
         self,
         lowered: &Lowered,
         source: (&CommandArena, &Definitions),
-        fuel: Fuel,
+        budget: Budget,
         inputs: RunInputs<'_, '_>,
     ) -> Result<Ran, Declined>
     {
         match self {
-            Self::Policy => by_policy(lowered, source, fuel, inputs),
-            Self::Tier(tier) => on_tier(tier, lowered, source, fuel, inputs),
+            Self::Policy => by_policy(lowered, source, budget, inputs),
+            Self::Tier(tier) => on_tier(tier, lowered, source, budget, inputs),
         }
     }
 }
@@ -285,7 +286,9 @@ pub enum Declined
     /// The run stopped stuck where nothing named why: a host call refused
     /// operands no well-formed command gives it.
     Stuck,
-    /// The run spent its fuel, or passed the frame region's bound.
+    /// The run spent its budget of code-word jumps.
+    Spent(Budget),
+    /// The run passed the frame region's bound.
     Exhausted(Status),
     /// The heap or the window region asked for a chunk that the memory bound,
     /// or the region's reservation, does not hold.
@@ -370,12 +373,13 @@ impl core::fmt::Display for Declined
             Self::Unbound => f.write_str("a label of the function is unbound"),
             Self::Uncached => f.write_str("the cache holds no code for the function"),
             Self::Stuck => f.write_str("the run stopped stuck where nothing named why"),
-            Self::Exhausted(Status::FuelExhausted) => f.write_str("the run spent its budget"),
+            Self::Spent(budget) => core::fmt::Display::fmt(&budget.spent(), f),
             Self::Exhausted(Status::FramesExhausted) => {
                 f.write_str("the frame region passed its bound")
             },
             Self::Exhausted(
                 Status::Running
+                | Status::FuelExhausted
                 | Status::Halted
                 | Status::Unmatched
                 | Status::Stuck
@@ -612,7 +616,7 @@ impl Ran
     }
 }
 
-/// What a run reads besides its program and its fuel.
+/// What a run reads besides its program and its budget.
 ///
 /// The store its outcome moves into, the store's values it is closed over,
 /// the host its unclaimed operations are offered to, and whether it records
@@ -792,15 +796,15 @@ pub fn evaluate(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    by_policy(&lowered, (arena, definitions), fuel, inputs)?.hostless()
+    by_policy(&lowered, (arena, definitions), budget, inputs)?.hostless()
 }
 
-/// Run `root` on `tier` with `fuel` code-word jumps and move its outcome into
+/// Run `root` on `tier` within `budget` and move its outcome into
 /// `inputs`' store; an operation no handler of the run claims stops it stuck.
 ///
 /// # Specification
@@ -827,12 +831,12 @@ pub fn evaluate_on(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    on_tier(tier, &lowered, (arena, definitions), fuel, inputs)?.hostless()
+    on_tier(tier, &lowered, (arena, definitions), budget, inputs)?.hostless()
 }
 
 /// As [`evaluate_on`], the command's unfused lowering run: every instruction
@@ -856,12 +860,12 @@ pub fn evaluate_unfused_on(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower_unfused(arena, definitions, root)?;
-    on_tier(tier, &lowered, (arena, definitions), fuel, inputs)?.hostless()
+    on_tier(tier, &lowered, (arena, definitions), budget, inputs)?.hostless()
 }
 
 /// Run `lowered` on the tier `choice` names over the values `environment` binds
@@ -906,7 +910,7 @@ pub fn closed_on_with_host<Host>(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
     environment: Environment,
-    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    (budget, inputs): (Budget, RunInputs<'_, '_>),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
@@ -920,7 +924,7 @@ where
         choice,
         lowered,
         source,
-        (fuel, inputs.closed_over(&captured)),
+        (budget, inputs.closed_over(&captured)),
         host,
     )
 }
@@ -957,7 +961,7 @@ pub fn evaluate_open(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Outcome, Declined>
 {
@@ -965,7 +969,7 @@ pub fn evaluate_open(
     by_policy(
         &lowered,
         (arena, definitions),
-        fuel,
+        budget,
         inputs.closed_over(&captured),
     )?
     .hostless()
@@ -989,7 +993,7 @@ pub fn evaluate_open_on(
     tier: Tier,
     (arena, definitions): (&CommandArena, &Definitions),
     root: CommandId,
-    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    (budget, inputs): (Budget, RunInputs<'_, '_>),
 ) -> Result<Outcome, Declined>
 {
     let (lowered, captured) = open(arena, definitions, root, &mut *inputs.store)?;
@@ -997,7 +1001,7 @@ pub fn evaluate_open_on(
         tier,
         &lowered,
         (arena, definitions),
-        fuel,
+        budget,
         inputs.closed_over(&captured),
     )?
     .hostless()
@@ -1055,7 +1059,7 @@ pub fn evaluate_with_host<Host>(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    (budget, inputs): (Budget, RunInputs<'_, '_>),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
@@ -1066,7 +1070,7 @@ where
         Choice::Policy,
         &lowered,
         (arena, definitions),
-        (fuel, inputs),
+        (budget, inputs),
         host,
     )
 }
@@ -1095,7 +1099,7 @@ where
 pub fn evaluate_on_with_host<Host>(
     tier: Tier,
     (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
-    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    (budget, inputs): (Budget, RunInputs<'_, '_>),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
@@ -1106,7 +1110,7 @@ where
         Choice::Tier(tier),
         &lowered,
         (arena, definitions),
-        (fuel, inputs),
+        (budget, inputs),
         host,
     )
 }
@@ -1125,7 +1129,7 @@ pub fn lowered_on_with_host<Host>(
     choice: Choice,
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
-    (fuel, inputs): (Fuel, RunInputs<'_, '_>),
+    (budget, inputs): (Budget, RunInputs<'_, '_>),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
@@ -1135,7 +1139,7 @@ where
         host,
         aborted: None,
     };
-    let ran = choice.ran(lowered, source, fuel, inputs.offered(&mut adapter))?;
+    let ran = choice.ran(lowered, source, budget, inputs.offered(&mut adapter))?;
     hosted(ran, adapter)
 }
 
@@ -1181,19 +1185,19 @@ where
 pub fn by_policy(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     mut inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     match *POLICY {
-        Policy::Always => match run_native(lowered, source, fuel, inputs.again()) {
-            Err(Declined::NoPatcher) => run_executor(lowered, source, fuel, inputs),
+        Policy::Always => match run_native(lowered, source, budget, inputs.again()) {
+            Err(Declined::NoPatcher) => run_executor(lowered, source, budget, inputs),
             #[cfg(gandr_patcher)]
-            Err(Declined::Emission(_)) => run_executor(lowered, source, fuel, inputs),
+            Err(Declined::Emission(_)) => run_executor(lowered, source, budget, inputs),
             ran => ran,
         },
-        Policy::Never => run_executor(lowered, source, fuel, inputs),
-        Policy::Cached => run_cached(lowered, source, fuel, inputs),
+        Policy::Never => run_executor(lowered, source, budget, inputs),
+        Policy::Cached => run_cached(lowered, source, budget, inputs),
     }
 }
 
@@ -1216,13 +1220,13 @@ pub fn on_tier(
     tier: Tier,
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     match tier {
-        Tier::Native => run_native(lowered, source, fuel, inputs),
-        Tier::Executor => run_executor(lowered, source, fuel, inputs),
+        Tier::Native => run_native(lowered, source, budget, inputs),
+        Tier::Executor => run_executor(lowered, source, budget, inputs),
     }
 }
 
@@ -1241,25 +1245,22 @@ pub fn on_tier(
 fn run_executor(
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     let program = Program::build(&lowered.function)?;
     let codes = Codes::Executor(&program, &lowered.function);
     let sites = Sites::new(lowered, codes);
-    run(
-        Code::Executor(&program),
-        Parts {
-            lowered,
-            codes,
-            sites: &sites,
-            arena,
-            definitions,
-            inputs,
-        },
-        fuel,
-    )
+    run(Code::Executor(&program), Parts {
+        lowered,
+        codes,
+        sites: &sites,
+        arena,
+        definitions,
+        budget,
+        inputs,
+    })
 }
 
 /// Run emitted code, emitting on a miss. A lowering run again serves the code
@@ -1281,12 +1282,12 @@ fn run_executor(
 fn run_native(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     if let Some(kept) = lowered.kept.code.get() {
-        return run_emitted(kept, lowered, source, fuel, inputs);
+        return run_emitted(kept, lowered, source, budget, inputs);
     }
     let emitted = {
         let mut cache = CACHE
@@ -1309,7 +1310,7 @@ fn run_native(
         }
     };
     let kept = lowered.kept.code.get_or_init(|| emitted);
-    run_emitted(kept, lowered, source, fuel, inputs)
+    run_emitted(kept, lowered, source, budget, inputs)
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -1323,11 +1324,11 @@ fn run_native(
 fn run_native(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
-    let _unrun = (lowered, source, fuel, inputs);
+    let _unrun = (lowered, source, budget, inputs);
     Err(Declined::NoPatcher)
 }
 
@@ -1347,14 +1348,14 @@ fn run_native(
 fn run_cached(
     lowered: &Lowered,
     source: (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
     #[cfg(gandr_patcher)]
     {
         if let Some(kept) = lowered.kept.code.get() {
-            return run_emitted(kept, lowered, source, fuel, inputs);
+            return run_emitted(kept, lowered, source, budget, inputs);
         }
         let held = CACHE
             .lock()
@@ -1364,10 +1365,10 @@ fn run_cached(
             .map(Arc::clone);
         if let Some(emitted) = held {
             let kept = lowered.kept.code.get_or_init(|| emitted);
-            return run_emitted(kept, lowered, source, fuel, inputs);
+            return run_emitted(kept, lowered, source, budget, inputs);
         }
     }
-    run_executor(lowered, source, fuel, inputs)
+    run_executor(lowered, source, budget, inputs)
 }
 
 /// Run code the cache served.
@@ -1388,7 +1389,7 @@ fn run_emitted(
     emitted: &Emitted,
     lowered: &Lowered,
     (arena, definitions): (&CommandArena, &Definitions),
-    fuel: Fuel,
+    budget: Budget,
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
@@ -1397,18 +1398,15 @@ fn run_emitted(
         stubs: &emitted.stubs,
     };
     let sites = Sites::new(lowered, codes);
-    run(
-        Code::Native(emitted.entry, emitted.halt),
-        Parts {
-            lowered,
-            codes,
-            sites: &sites,
-            arena,
-            definitions,
-            inputs,
-        },
-        fuel,
-    )
+    run(Code::Native(emitted.entry, emitted.halt), Parts {
+        lowered,
+        codes,
+        sites: &sites,
+        arena,
+        definitions,
+        budget,
+        inputs,
+    })
 }
 
 /// Run `code` once over a set of the calling thread's regions, and give the
@@ -1434,20 +1432,19 @@ fn run_emitted(
 fn run(
     code: Code<'_>,
     parts: Parts<'_, '_>,
-    fuel: Fuel,
 ) -> Result<Ran, Declined>
 {
     let memory = regions::bound();
     let mut buffers = BUFFERS
         .with_borrow_mut(Vec::pop)
         .unwrap_or_else(|| Buffers::reserved(memory.bytes().words()));
-    let ran = run_over(&mut buffers, code, parts, (fuel, memory));
+    let ran = run_over(&mut buffers, code, parts, memory);
     buffers.release();
     BUFFERS.with_borrow_mut(|idle| idle.push(buffers));
     ran
 }
 
-/// Run `code` once over `buffers` within `fuel` and the memory bound, the
+/// Run `code` once over `buffers` within its budget and the memory bound, the
 /// store's values `parts`' inputs are closed over laid out in the entry
 /// window's capture slots, and move how it ended into their store.
 ///
@@ -1470,9 +1467,11 @@ fn run_over(
     buffers: &mut Buffers,
     code: Code<'_>,
     parts: Parts<'_, '_>,
-    (fuel, memory): (Fuel, Memory),
+    memory: Memory,
 ) -> Result<Ran, Declined>
 {
+    let budget = parts.budget;
+    let fuel = budget.fuel();
     let lowered = parts.lowered;
     let captured = parts.inputs.captured;
     buffers.window.clear();
@@ -1645,6 +1644,7 @@ fn run_over(
                 (fuel, memory),
             )));
         },
+        Ok(Status::FuelExhausted) => return Err(Declined::Spent(budget)),
         Ok(status) => return Err(Declined::Exhausted(status)),
         Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
     };
@@ -1685,7 +1685,6 @@ mod tests
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::Magnitude;
     use gandr_kernel_term::Sign;
-    use gandr_runtime_stencils::Fuel;
     use gandr_runtime_stencils::Status;
 
     use super::Declined;
@@ -1695,6 +1694,7 @@ mod tests
     use super::closed_on_with_host;
     use super::evaluate_on;
     use crate::PATCHER;
+    use crate::budget::Budget;
     use crate::cut::Declining;
     use crate::function::Function;
     use crate::lower::Form;
@@ -1756,7 +1756,7 @@ mod tests
             Declined::from(unbound),
             Declined::Uncached,
             Declined::Stuck,
-            Declined::Exhausted(Status::FuelExhausted),
+            Declined::Spent(budget()),
             Declined::Memory(held),
             Declined::Exhausted(Status::FramesExhausted),
             Declined::Exhausted(Status::Running),
@@ -1807,7 +1807,13 @@ mod tests
             reasons[6].to_string(),
             "the memory stop is its report"
         );
+        assert_eq!(
+            budget().spent().to_string(),
+            reasons[5].to_string(),
+            "the budget's stop is its report"
+        );
         for status in [
+            Status::FuelExhausted,
             Status::Halted,
             Status::Unmatched,
             Status::Stuck,
@@ -1836,9 +1842,9 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn budget() -> Fuel
+    fn budget() -> Budget
     {
-        Fuel::from(1_usize << 20)
+        Budget::from(1_usize << 20)
     }
 
     /// The tiers this host runs: native where a patcher exists, the executor

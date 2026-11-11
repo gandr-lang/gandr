@@ -19,8 +19,9 @@
 //!   handler inside the body answers goes to the host of the caller's run, as
 //!   an operation of the caller goes. So a draw at a world takes the next bit
 //!   of the run's path (#5712).
-//! - **Fuel is the caller's.** The body runs on the fuel the caller's run has
-//!   left, so a divergent body stops; what it spends is not charged back.
+//! - **The budget is the caller's.** The body runs on the jumps that the
+//!   caller's run has left, under the same origin, so a divergent body stops.
+//!   The run does not charge back what the body spends.
 //! - **A far run that answers nothing declines.** A body whose run ends stuck
 //!   or declined, a value that does not cross, or a host's refusal, declines
 //!   the caller's run at the migration: a failing far run is no branch of the
@@ -54,12 +55,12 @@ use gandr_core_sequent::Store;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
-use gandr_runtime_stencils::Fuel;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_values::InMemoryChunkStore;
 
+use crate::budget::Budget;
 use crate::crossing::CrossingRefusal;
 use crate::crossing::commit;
 use crate::crossing::deref;
@@ -112,8 +113,8 @@ pub fn chunking() -> TypedChunkerParams
 ///   over as many captures as `captures` holds, innermost first.
 /// - ensures: on success a value freshly laid out in `store`, equal to the
 ///   value `body` halts with over a fresh store each capture crossed into, its
-///   operations offered to `offer`, on the fuel `fuel`; nothing when a capture
-///   or the answer does not cross, or the body's run ends with no value.
+///   operations offered to `offer`, within `budget`; nothing when a capture or
+///   the answer does not cross, or the body's run ends with no value.
 /// - executable: none — the answer is observed by running the body.
 ///
 /// # Adequacy
@@ -129,7 +130,7 @@ pub fn chunking() -> TypedChunkerParams
 pub(crate) fn migrate(
     tier: Tier,
     (arena, definitions, body): (&CommandArena, &Definitions, &Lowered),
-    fuel: Fuel,
+    budget: Budget,
     (store, captures): (&mut Store, &[HeapValueId]),
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Option<HeapValueId>
@@ -145,10 +146,10 @@ pub(crate) fn migrate(
             tier,
             body,
             (arena, definitions),
-            fuel,
+            budget,
             inputs.offered(offer),
         ),
-        None => on_tier(tier, body, (arena, definitions), fuel, inputs),
+        None => on_tier(tier, body, (arena, definitions), budget, inputs),
     };
     match ended {
         Ok(Ran::Ended(Outcome::Halted(answer))) => cross(&there, answer, store).ok(),
@@ -165,8 +166,8 @@ pub(crate) fn migrate(
 /// # Specification
 /// - requires: `captures` are the values the migration's body binds, in the
 ///   order its lowering binds them, as the shipping host gathered them.
-/// - ensures: on success, the value the body halts with over `store` on the
-///   fuel `fuel`; nothing runs unless `at` is a migration to `world` whose body
+/// - ensures: on success, the value the body halts with over `store` within
+///   `budget`; nothing runs unless `at` is a migration to `world` whose body
 ///   lowers closed over as many captures as `captures` holds.
 /// - fails: [`Unmigrated::Unheld`] when `at` is no migration or its body does
 ///   not lower over `captures`; [`Unmigrated::Unserved`] when it migrates to
@@ -187,7 +188,7 @@ pub(crate) fn migrate(
 pub fn arrive(
     (arena, definitions): (&CommandArena, &Definitions),
     (at, world): (CommandId, World),
-    fuel: Fuel,
+    budget: Budget,
     (store, captures): (&mut Store, &[HeapValueId]),
 ) -> Result<HeapValueId, Unmigrated>
 {
@@ -208,7 +209,7 @@ pub fn arrive(
     match by_policy(
         &lowered,
         (arena, definitions),
-        fuel,
+        budget,
         RunInputs::new(store).closed_over(captures),
     ) {
         Ok(Ran::Ended(Outcome::Halted(answer))) => Ok(answer),

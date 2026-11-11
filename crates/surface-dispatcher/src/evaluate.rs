@@ -189,7 +189,6 @@ use gandr_core_term::world::WorldForm;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Choice;
 use gandr_runtime_emitter::Declined;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::Play;
@@ -197,6 +196,7 @@ use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::TaskOrder;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::Trace;
+use gandr_runtime_emitter::budget;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
 use gandr_runtime_emitter::evaluate_scheduled_on;
@@ -329,12 +329,6 @@ quenchant_shape::reason_enum! {
         }
     }
 }
-
-/// The code-word jumps one run may spend: far past any run the fragment can
-/// write, whose only recursion descends structurally and so always halts,
-/// and the bound that keeps a run of a later fragment from looping
-/// unobserved.
-const RUN_BUDGET: usize = 1_usize << 24_u32;
 
 /// The engine a run takes.
 ///
@@ -2035,7 +2029,7 @@ impl<'source> Program<'source>
             &self.arena,
             &self.definitions,
             command,
-            (Fuel::from(RUN_BUDGET), RunInputs::new(store)),
+            (budget::bound(), RunInputs::new(store)),
             host,
         ) {
             Ok(HostOutcome::Completed(outcome)) => Ok(self.halted(store, outcome)),
@@ -2290,7 +2284,7 @@ impl<'source> Program<'source>
         (store, mut hosting): (&mut Store, Hosting<'_>),
     ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
     {
-        let fuel = Fuel::from(RUN_BUDGET);
+        let budget = budget::bound();
         let run = |root, store: &mut Store| {
             let (inputs, console, draws) = hosting.inputs(store);
             let Some(console) = console
@@ -2300,11 +2294,11 @@ impl<'source> Program<'source>
                         &self.arena,
                         &self.definitions,
                         root,
-                        fuel,
+                        budget,
                         inputs,
                     ),
                     Choice::Tier(tier) => {
-                        evaluate_on(tier, &self.arena, &self.definitions, root, fuel, inputs)
+                        evaluate_on(tier, &self.arena, &self.definitions, root, budget, inputs)
                     },
                 };
             };
@@ -2317,13 +2311,13 @@ impl<'source> Program<'source>
                     &self.arena,
                     &self.definitions,
                     root,
-                    (fuel, inputs),
+                    (budget, inputs),
                     &mut host,
                 ),
                 Choice::Tier(tier) => evaluate_on_with_host(
                     tier,
                     (&self.arena, &self.definitions, root),
-                    (fuel, inputs),
+                    (budget, inputs),
                     &mut host,
                 ),
             }?;
@@ -2352,7 +2346,7 @@ impl<'source> Program<'source>
         (store, console): (&mut Store, &mut Captured),
     ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
     {
-        let fuel = Fuel::from(RUN_BUDGET);
+        let budget = budget::bound();
         let mut host = console::PrintingHost::new(console);
         self.forced(
             roots,
@@ -2361,7 +2355,7 @@ impl<'source> Program<'source>
                 pool,
                 Choice::Policy,
                 (&self.arena, scheduled, root),
-                (fuel, store),
+                (budget, store),
                 &mut host,
             )? {
                 HostOutcome::Completed(outcome) => Ok(outcome),
@@ -3865,10 +3859,9 @@ mod tests
     use gandr_core_sequent::convert_all;
     use gandr_core_sequent::enter_all;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_runtime_emitter::Budget;
     use gandr_runtime_emitter::Declined;
-    use gandr_runtime_emitter::Fuel;
     use gandr_runtime_emitter::PATCHER;
-    use gandr_runtime_emitter::Status;
     use gandr_runtime_emitter::TaskOrder;
     use gandr_runtime_emitter::Tier;
     use gandr_surface_corpus::Bits;
@@ -3900,6 +3893,10 @@ mod tests
     use crate::compose::Composed;
     use crate::compose::LoweringCount;
     use crate::compose::compose;
+
+    /// The jumps that a test's run may take: far past every program that
+    /// these tests run to its end, and the count at which each loop stops.
+    const BUDGET: usize = 1_usize << 24_u32;
 
     /// The program `source` composes to under the fixture root.
     ///
@@ -4476,9 +4473,7 @@ mod tests
                 RunStatus::Failed,
             ),
             (
-                Evaluation::Unfinished(Unfinished::Declined(Declined::Exhausted(
-                    Status::FuelExhausted,
-                ))),
+                Evaluation::Unfinished(Unfinished::Declined(Declined::Spent(Budget::from(BUDGET)))),
                 RunStatus::Failed,
             ),
         ];
@@ -4673,7 +4668,7 @@ mod tests
             &commands,
             &goals.definitions,
             command,
-            Fuel::from(100_usize),
+            Budget::from(100_usize),
             gandr_runtime_emitter::RunInputs::new(&mut store),
         )
         .expect("the constructed terminal runs");
@@ -4782,29 +4777,23 @@ mod tests
         let (returned, forced) = program
             .entries(position, Reach::Value)
             .expect("the declaration focuses");
-        let run = |root, fuel| {
+        let run = |root, jumps| {
             gandr_runtime_emitter::evaluate_on(
                 tier,
                 &program.arena,
                 &program.definitions,
                 root,
-                Fuel::from(fuel),
+                Budget::from(jumps),
                 gandr_runtime_emitter::RunInputs::new(&mut Store::new()),
             )
         };
         assert!(
-            matches!(
-                run(returned, super::RUN_BUDGET),
-                Ok(super::Outcome::Halted(_))
-            ),
+            matches!(run(returned, BUDGET), Ok(super::Outcome::Halted(_))),
             "`{name}` is a thunk on {tier:?}"
         );
         let spent = run(forced, 1_usize << 25_u32);
         assert!(
-            matches!(
-                spent,
-                Err(Declined::Exhausted(Status::FuelExhausted) | Declined::Memory(_))
-            ),
+            matches!(spent, Err(Declined::Spent(_) | Declined::Memory(_))),
             "`{name}` holds no frame on {tier:?}: {spent:?}"
         );
     }
@@ -5147,7 +5136,7 @@ mod tests
                     &program.arena,
                     &program.definitions,
                     root,
-                    Fuel::from(super::RUN_BUDGET),
+                    Budget::from(BUDGET),
                     gandr_runtime_emitter::RunInputs::new(&mut store),
                 );
                 summed(&store, &outcome)
@@ -5279,7 +5268,7 @@ mod tests
             "the named writers are scheduled apart"
         );
         let program = &program;
-        let fuel = Fuel::from(super::RUN_BUDGET);
+        let budget = Budget::from(BUDGET);
         let wide =
             crate::pool::Pool::new(crate::width::Width::Threads(crate::width::Threads::from(
                 core::num::NonZeroUsize::new(4_usize).expect("four threads"),
@@ -5295,7 +5284,7 @@ mod tests
                 &program.arena,
                 &program.definitions,
                 sequential,
-                fuel,
+                budget,
                 gandr_runtime_emitter::RunInputs::new(&mut whole),
             );
             let answered = summed(&whole, &answered);
@@ -5310,7 +5299,7 @@ mod tests
                     pool,
                     Choice::Tier(tier),
                     (&program.arena, &definitions, scheduled),
-                    (fuel, &mut store),
+                    (budget, &mut store),
                     &mut Declining,
                 )
                 .map(|ended| match ended {
@@ -5416,7 +5405,7 @@ mod tests
             sequential, scheduled,
             "the named writers are scheduled apart"
         );
-        let fuel = Fuel::from(super::RUN_BUDGET);
+        let budget = Budget::from(BUDGET);
         let wide =
             crate::pool::Pool::new(crate::width::Width::Threads(crate::width::Threads::from(
                 core::num::NonZeroUsize::new(4_usize).expect("four threads"),
@@ -5432,7 +5421,7 @@ mod tests
                 &arena,
                 &Definitions::new(),
                 sequential,
-                fuel,
+                budget,
                 gandr_runtime_emitter::RunInputs::new(&mut whole),
             );
             let answered = summed(&whole, &answered);
@@ -5447,7 +5436,7 @@ mod tests
                     pool,
                     Choice::Tier(tier),
                     (&arena, &definitions, scheduled),
-                    (fuel, &mut store),
+                    (budget, &mut store),
                     &mut Declining,
                 )
                 .map(|ended| match ended {

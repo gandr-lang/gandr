@@ -20,7 +20,7 @@ use gandr_core_sequent::focus_definition;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
-use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::POLICY_VARIABLE;
 use gandr_runtime_emitter::Policy;
 use gandr_runtime_emitter::RunInputs;
@@ -66,7 +66,7 @@ fn the_named_programs_agree_on_both_executors()
                 &commands,
                 &definitions,
                 root,
-                Fuel::from(BUDGET),
+                Budget::from(BUDGET),
                 RunInputs::new(store),
             )
         });
@@ -127,7 +127,7 @@ fn the_cached_policy_child()
                 &commands,
                 &definitions,
                 root,
-                Fuel::from(BUDGET),
+                Budget::from(BUDGET),
                 RunInputs::new(store),
             )
         };
@@ -179,7 +179,7 @@ fn a_fused_program_answers_what_its_unfused_lowering_answers()
                 &commands,
                 &definitions,
                 root,
-                Fuel::from(BUDGET),
+                Budget::from(BUDGET),
                 RunInputs::new(store),
             )
         });
@@ -224,7 +224,7 @@ fn an_observed_opaque_constant_is_named_on_both_executors()
                 &commands,
                 &definitions,
                 root,
-                Fuel::from(BUDGET),
+                Budget::from(BUDGET),
                 RunInputs::new(store),
             )
         });
@@ -235,7 +235,7 @@ fn an_observed_opaque_constant_is_named_on_both_executors()
             &commands,
             &definitions,
             root,
-            Fuel::from(BUDGET),
+            Budget::from(BUDGET),
             RunInputs::new(&mut store),
         );
         let held = match outcome {
@@ -313,7 +313,7 @@ fn a_computed_constant_unfolds_once_to_its_answer()
             &commands,
             &definitions,
             twice,
-            Fuel::from(BUDGET),
+            Budget::from(BUDGET),
             RunInputs::new(&mut store),
         );
         let Ok(Outcome::Halted(pair)) = outcome

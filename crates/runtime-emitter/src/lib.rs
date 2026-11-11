@@ -87,7 +87,10 @@
 //! window. The heap and the window region reserve the invocation's memory
 //! bound and commit it in chunks ([`regions`]); the frame region is allocated
 //! at its bound. A run that would pass a bound takes that region's exit and
-//! is declined. A run enters through `enter` or `execute` with a fresh
+//! is declined. The record's fuel is the run's jump budget ([`budget`]): the
+//! invocation's count, or the widest count when the invocation names none. A
+//! run that spends it is declined, and the decline names the budget and its
+//! origin. A run enters through `enter` or `execute` with a fresh
 //! [`gandr_runtime_stencils::Runtime`] record and a halting sentinel frame
 //! under the base mark, and returns when an exit stencil writes its
 //! status. Emitted code carries no unwind tables and calls only the host
@@ -175,6 +178,7 @@
 
 extern crate alloc;
 
+pub mod budget;
 pub mod crossing;
 mod cut;
 mod executor;
@@ -194,6 +198,7 @@ pub mod world;
 pub use gandr_runtime_stencils::Fuel;
 pub use gandr_runtime_stencils::Status;
 
+pub use crate::budget::Budget;
 pub use crate::cut::evaluate_scheduled_on;
 pub use crate::function::Function;
 pub use crate::function::Position;

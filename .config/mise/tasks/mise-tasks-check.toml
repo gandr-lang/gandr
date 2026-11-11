@@ -1176,10 +1176,11 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # `normalizes` where it holds, `refuses` where the checker does not reach the
 # form yet or where a diagnostics exemplar shows the refusal.
 # `check:syntax-exemplars` refuses `owes` and `refuses` in a features exemplar,
-# which exhibits what holds.
+# which exhibits what holds. Each run takes the corpus's budget of 2^24 jumps
+# (#6325), so a run that loops stops and names the budget.
 ["check:exemplars"]
 description = "Every exemplar settles under `gandr test`"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/ledger"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- --run-budget 16777216 test corpus/ledger"
 
 # The site's two paragraphs the owner set down (#3993): the fat object and
 # one site serving two uses stand verbatim in the wreath's rustdoc and in the
@@ -1313,13 +1314,14 @@ echo "tracking check OK: $(jq length .config/tracking/cases.json) cases; $(jq le
 # tested by the corpus's gates); the fixture root under `test`, every fixture
 # settled and every pending source still pending; and both roots in the
 # sugared form, every source but those declaring `form(explicit)` written as
-# the formatter's sugared form writes it. A red root exits nonzero and fails
-# the gate.
+# the formatter's sugared form writes it. Each run takes the corpus's budget of
+# 2^24 jumps (#6325), so a run that loops stops and names the budget. A red
+# root exits nonzero and fails the gate.
 ["check:corpus"]
 description = "The strict root under `gandr check --recheck`, so the kernel checks every declaration whatever verdicts the host keeps, the fixture root under `gandr test`, and both in the sugared form"
 run = [
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check --recheck crates/surface-corpus/strict library/std",
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- --run-budget 16777216 check --recheck crates/surface-corpus/strict library/std",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- --run-budget 16777216 test corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface",
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std",
 ]
 

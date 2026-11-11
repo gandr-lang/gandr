@@ -19,8 +19,8 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_kernel_term::Component;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::Declined;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
@@ -84,7 +84,7 @@ fn runs(
                 tier,
                 (&arena, &definitions),
                 root,
-                (Fuel::from(BUDGET), RunInputs::new(&mut store)),
+                (Budget::from(BUDGET), RunInputs::new(&mut store)),
             );
             (tier, store, outcome)
         })

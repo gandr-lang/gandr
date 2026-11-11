@@ -16,9 +16,9 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_certificate_syntax;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Form;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
@@ -28,9 +28,9 @@ use gandr_runtime_emitter::evaluate_open_on;
 ///
 /// # Specification
 /// trivial.
-fn budget() -> Fuel
+fn budget() -> Budget
 {
-    Fuel::from(1_usize << 20)
+    Budget::from(1_usize << 20)
 }
 
 /// The tiers this host runs: native where a patcher exists, the executor

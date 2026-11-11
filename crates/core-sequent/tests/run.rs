@@ -71,9 +71,9 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Form;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Status;
@@ -95,9 +95,9 @@ struct Digits(&'static str);
 ///
 /// # Specification
 /// trivial.
-fn budget() -> Fuel
+fn budget() -> Budget
 {
-    Fuel::from(1_usize << 20)
+    Budget::from(1_usize << 20)
 }
 
 /// A run's outcome and the store its values were moved into.
@@ -296,7 +296,7 @@ fn ran(
     arena: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    fuel: Fuel,
+    budget: Budget,
 ) -> Result<Ran, Declined>
 {
     let mut runs: Vec<(Tier, Result<Ran, Declined>)> = tiers()
@@ -308,7 +308,7 @@ fn ran(
                 arena,
                 definitions,
                 root,
-                fuel,
+                budget,
                 RunInputs::new(&mut store),
             );
             (tier, outcome.map(|outcome| Ran { outcome, store }))
@@ -1874,11 +1874,16 @@ fn a_loop_holds_no_frame_across_its_iterations()
     );
     let unit = core.value_unit();
     let calling = core.computation_application(recursive, unit);
+    let spent = Budget::from(1_usize << 25_u32);
     for (program, shape, exhausted) in [
-        (plain, "a loop", Status::FuelExhausted),
-        (holding, "a loop holding a frame", Status::FramesExhausted),
-        (nested, "a nested loop", Status::FuelExhausted),
-        (calling, "a tail call inside a loop", Status::FuelExhausted),
+        (plain, "a loop", Declined::Spent(spent)),
+        (
+            holding,
+            "a loop holding a frame",
+            Declined::Exhausted(Status::FramesExhausted),
+        ),
+        (nested, "a nested loop", Declined::Spent(spent)),
+        (calling, "a tail call inside a loop", Declined::Spent(spent)),
     ] {
         let mut arena = CommandArena::new();
         let command = focus_computation(
@@ -1889,14 +1894,9 @@ fn a_loop_holds_no_frame_across_its_iterations()
             &gandr_core_sequent::Writers::NONE,
         )
         .expect("a closed term focuses");
-        let run = ran(
-            &arena,
-            &Definitions::new(),
-            command,
-            Fuel::from(1_usize << 25_u32),
-        );
+        let run = ran(&arena, &Definitions::new(), command, spent);
         assert!(
-            matches!(run, Err(Declined::Exhausted(status)) if status == exhausted),
+            matches!(run, Err(declined) if declined == exhausted),
             "{shape} runs out by {exhausted:?}: {}",
             fingerprint(&run)
         );
@@ -2039,14 +2039,14 @@ fn the_step_budget_bounds_a_run()
     )
     .expect("a closed term focuses");
     let definitions = Definitions::new();
-    let run = |jumps| ran(&arena, &definitions, command, Fuel::from(jumps));
+    let run = |jumps| ran(&arena, &definitions, command, Budget::from(jumps));
     let least = (0_usize ..= 64_usize)
         .find(|&jumps| run(jumps).is_ok())
         .expect("a bounded run halts");
     assert!(least > 0, "a run spends fuel");
     for jumps in 0 .. least {
         assert!(
-            matches!(run(jumps), Err(Declined::Exhausted(Status::FuelExhausted))),
+            matches!(run(jumps), Err(Declined::Spent(_))),
             "{jumps} jumps are short of {least}"
         );
     }

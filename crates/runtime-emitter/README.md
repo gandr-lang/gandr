@@ -71,6 +71,8 @@ GANDR_NATIVE=never cargo run -p gandr-lang -- test corpus/model
 
 `src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/fuse.rs` the superinstructions, their replay and their cost; `src/run.rs` the regions, the value representation against the LAM and the exclusivity conjecture's witnesses; `src/regions.rs` the memory bound; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `src/crossing.rs` the value plane's tag table, the sharing a crossing unfolds and what it refuses; `src/world.rs` a migration's far run, the process's chunk store and what a migration does not yet do; `build.rs` the stencil table and every refusal it makes.
 
+`src/budget.rs` states the jump budget of a run and its origin.
+
 ## Mutation backlog
 
 A standalone campaign over this crate's first landing should mutate the patch arithmetic in `src/native/aarch64.rs` and `src/native/x86_64.rs` (page offsets, displacements, addends, reach checks), the lowering's slot and label assignment, and the transfer's field order and capture binding. Hypotheses: the agreement suites reject a changed answer or a crash on either tier; the build script's refusals reject an unpatchable relocation. No mutation score is claimed.

@@ -51,7 +51,7 @@ use gandr_core_term::equal_shared_certificate_syntax;
 use gandr_kernel_core::AdmissionPolicy;
 use gandr_kernel_core::AdmittedCount;
 use gandr_kernel_term::ConstantIndex;
-use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::evaluate_open;
 use quenchant_shape::shape::Maybe;
@@ -199,7 +199,7 @@ impl Emitted
             &self.commands,
             &self.definitions,
             root,
-            Fuel::from(TIER_FUEL),
+            Budget::from(TIER_FUEL),
             RunInputs::new(&mut store),
         )
         .ok()?

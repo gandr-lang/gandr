@@ -44,8 +44,8 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::Declined;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
@@ -1015,7 +1015,7 @@ pub fn agree(
                 commands,
                 definitions,
                 root,
-                Fuel::from(BUDGET),
+                Budget::from(BUDGET),
                 RunInputs::new(store),
             )
         },
@@ -1052,7 +1052,7 @@ pub fn agree_with(
         commands,
         definitions,
         root,
-        Fuel::from(BUDGET),
+        Budget::from(BUDGET),
         RunInputs::new(&mut expected_store),
     );
     let mut store = Store::new();
@@ -1373,9 +1373,7 @@ fn a_differing_answer_is_named()
         ),
         "equal stops agree"
     );
-    let exhausted = Err(Declined::Exhausted(
-        gandr_runtime_emitter::Status::FuelExhausted,
-    ));
+    let exhausted = Err(Declined::Spent(Budget::from(BUDGET)));
     assert_eq!(
         Ok(()),
         same_outcome(&left, &exhausted, &right, &exhausted),
