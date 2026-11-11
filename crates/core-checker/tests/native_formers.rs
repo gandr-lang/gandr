@@ -3988,6 +3988,43 @@ fn a_returned_call_binds_as_written()
     );
 }
 
+/// `let x = v; return x` at a pair forty levels deep, where `v` shares each
+/// level twice: the two components of each level are one node. The bind
+/// refines its body only after it reads `v` for a computation. A walk that
+/// reads each path to a node reads 2^40 leaves, which no test run finishes;
+/// at thirty levels such a walk takes 9 s. The walk reads each node once, and
+/// the declaration checks.
+#[test]
+fn a_bound_pair_forty_deep_whose_levels_share_their_halves_checks_6579()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let leaf = three(&mut arena);
+    let (pair, value) = (0_u8 .. 40).fold((integer, leaf), |(ty, value), _| {
+        (
+            arena.value_type_product(&[ty, ty]),
+            arena.value_tuple(&[value, value]),
+        )
+    });
+    let returner = arena.comp_type_returner(pair);
+    let declared = arena.value_type_thunk(returner);
+    let bound = arena.computation_return(value);
+    let binder = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let body = arena.computation_return(binder);
+    let bind = arena.computation_bind(bound, body);
+    let body = arena.value_thunk(bind);
+    let declaration = definition(ConstantIndex::from(0_usize), declared, body);
+    let report = check_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &[declaration],
+    );
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { .. }),
+        "the bound pair checks after one read of each level: {:?}",
+        report.judged()[0].verdict()
+    );
+}
+
 #[test]
 fn a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631()
 {
