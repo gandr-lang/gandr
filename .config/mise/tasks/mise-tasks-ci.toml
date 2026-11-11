@@ -5832,3 +5832,42 @@ while :; do
 done
 {% endraw %}
 '''
+
+# `landing:watch` gives a red head of `landing` an owner (#6587,
+# `.config/integration/watch.bash`). Each minute it reads `landing` and
+# `main` by `git fetch`. A new head runs the landing's gate over the move
+# since the last green head, in a worktree of its own under the lane
+# `watch`. A red check files one defect, or comments on the open one,
+# for the pull request that the search over the first parents names. The
+# watcher claims the defect for that pull request's lane and pages the
+# lane's seat `FIX`. A gap of `main` behind `landing` past 45 minutes pages
+# the fixer once for each head of `main`. The page script and the seats
+# are the stall detector's configuration. `--once` reads once and ends.
+# `--install` runs it as a service beside `stall:watch`, on the triage
+# lane's host, and `--remove` stops and deletes that service.
+["landing:watch"]
+description = "Run the landing's gate on each new head of landing and give a red head an owner; --install runs it as a service"
+quiet = true
+tools.jq = "1.8.1"
+usage = '''
+flag "--once" help="read once and end"
+flag "--install" help="install and start the service that keeps landing:watch running from this checkout"
+flag "--remove" help="stop and delete that service"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/integration/watch.bash
+if [[ ${usage_remove:-false} == true ]]; then watch_service remove; exit; fi
+if [[ ${usage_install:-false} == true ]]; then watch_service install; exit; fi
+source .config/gh/repo.bash
+repo=$(repo_name)
+while :; do
+  # A reading that prints no state keeps the last one.
+  state=$(watch_once "$repo" | jq -c --argjson read "$(date +%s)" '.read = $read') || state=
+  [[ -z $state ]] || watch_remember "$state"
+  [[ ${usage_once:-false} == true ]] && break
+  sleep "$watch_interval"
+done
+{% endraw %}
+'''

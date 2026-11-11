@@ -2254,11 +2254,16 @@ run = ".config/landing/rebase-cases.bash"
 # `landing` lags by nothing. `runner.jq` decides the runner of the suite
 # (#5526): an online runner with the label `integration` takes it, busy or
 # not, and an offline runner, a runner without the label or a list the step
-# cannot read gives the hosted runner. Each case in
+# cannot read gives the hosted runner. The head watcher of `landing`
+# (#6587, `watch.bash`) reads three programs: `search.jq` halves the first
+# parents between a green head and a red head until one commit stays,
+# `owner.jq` writes the defect, the lane and the `FIX` page of a red check,
+# and `gap.jq` reads how long `main` stands behind `landing` and pages past
+# 45 minutes once for each head of `main`. Each case in
 # `.config/integration/cases.json` names its program, its input and the
 # compact JSON that the program gives.
 ["check:integration"]
-description = "The integration cycle's step, known-red list, brake and runner give each recorded case its output"
+description = "The integration cycle's step, known-red list, brake and runner, and the head watcher's search, owner and gap, give each recorded case its output"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash

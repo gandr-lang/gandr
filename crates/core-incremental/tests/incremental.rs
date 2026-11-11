@@ -1635,3 +1635,122 @@ fn corruption_selects_every_matching_name()
         .collect::<Vec<_>>();
     assert_eq!(corrupted, Checkpoints::new(CheckBudget::DEFAULT, expected));
 }
+
+/// The code picker `pick : U ((a : Type) -> El a -> F Type)`, its call
+/// `chosen : U (F Type) = thunk ((force pick) ?a) 0`, which omits the code its
+/// argument fixes, and under the item key `last` the path
+/// `Path(U (F Type), chosen, thunk (return Integer))` by `here`.
+///
+/// # Specification
+/// - ensures: three signed declarations; the path converts only once the call's
+///   implicit is filled with `Integer`.
+/// - panics: only if the ordered fixture is rejected by the program container.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the path checks freshly and, judged again under a new
+///   key, after the call resumes.
+/// - witness: `tests::incremental::a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549`
+#[spec(ensures: |ret| ret.items().len() == 3)]
+fn filled(last: ItemKey) -> Program
+{
+    use gandr_core_term::Sort;
+    use gandr_core_term::Zone;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
+
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(bound, Level::zero());
+    let returns_code = arena.comp_type_returner(universe);
+    let arrow = arena.comp_type_arrow(element, returns_code);
+    let polymorphic = arena.comp_type_pi(universe, arrow);
+    let picking = arena.value_type_thunk(polymorphic);
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let returned = arena.computation_return(code);
+    let inner = arena.computation_lambda(returned);
+    let outer = arena.computation_lambda(inner);
+    let pick = arena.value_thunk(outer);
+    let suspended = arena.value_type_thunk(returns_code);
+    let implicit = arena.value_hole(
+        HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name"),
+    );
+    let zero = arena.value_literal(integer(Natural(0)));
+    let picked = arena.value_constant(ConstantIndex::from(0_usize));
+    let head = arena.computation_force(picked);
+    let instantiated = arena.computation_application(head, implicit);
+    let applied = arena.computation_application(instantiated, zero);
+    let chosen = arena.value_thunk(applied);
+    let quoted = arena.value_quote(integer_type);
+    let answered = arena.computation_return(quoted);
+    let answered = arena.value_thunk(answered);
+    let call = arena.value_constant(ConstantIndex::from(1_usize));
+    let agrees = arena.value_type_path(suspended, call, answered);
+    let here = arena.value_here(call);
+    let items = [
+        (ItemKey::from("pick"), picking, pick),
+        (ItemKey::from("chosen"), suspended, chosen),
+        (last, agrees, here),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, (key, declared, body))| {
+        Item::new(
+            key,
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Present(declared),
+                Maybe::Present(body),
+                OriginToken::from(position),
+            ),
+        )
+    })
+    .collect();
+    Program::new(arena, items).expect("fixture positions ascend")
+}
+
+/// #6549: a call whose judgement filled its omitted implicit is judged again
+/// on a resume, so the path judged after it unfolds the filled body, as a
+/// fresh check does. An adopted call seats its written body, whose hole stays
+/// unsolved, and the path that compares it with `return Integer` then fails.
+#[test]
+fn a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549()
+{
+    use gandr_core_checker::Entered;
+
+    let original = check_program(&mut filled(ItemKey::from("agrees")), CheckBudget::DEFAULT)
+        .expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    let entered: Vec<_> = checkpoints
+        .items()
+        .iter()
+        .map(|item| (item.typing().clone(), item.entered()))
+        .collect();
+    assert!(
+        matches!(entered.as_slice(), [
+            (Typing::Checked { .. }, Entered::AsWritten),
+            (Typing::Checked { .. }, Entered::Elaborated),
+            (Typing::Checked { .. }, Entered::AsWritten),
+        ]),
+        "the call enters with its implicit filled, and the path converts: {entered:?}"
+    );
+    let renamed = resume_from(checkpoints, &mut filled(ItemKey::from("again")))
+        .expect("the call resumes under a renamed path");
+    let fresh = check_program(&mut filled(ItemKey::from("again")), CheckBudget::DEFAULT)
+        .expect("fresh checking succeeds");
+    assert_eq!(
+        renamed.checkpoints(),
+        fresh.checkpoints(),
+        "the path judged after a resumed call reads its filled body, as a fresh check does"
+    );
+    assert_eq!(
+        renamed.adoptions(),
+        [Adopted, Judged, Judged],
+        "the picker is adopted, the filled call is judged again, and the renamed path has no checkpoint"
+    );
+}

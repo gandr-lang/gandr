@@ -415,6 +415,13 @@ fn add_type_rules(
     // it is the same production under its own head tile. `Flow` is a type
     // application where it writes its endpoints alone, so its rule holds the
     // supplied forms alone.
+    //
+    // `Path` and `Bridge` are type names too, so `Path a b` applies `Path` to
+    // its two endpoints by juxtaposition. The endpoint list after a supplied
+    // carrier is optional in their two rules, so `Path[.A = C]` alone is a
+    // whole type that the juxtaposition applies, `Path[.A = C] a b`. The
+    // lowering reads the former and its carrier from that head. The flow
+    // type keeps its list.
     let universe = || {
         Regex::seq([
             tile(TileLabel("Type")),
@@ -438,7 +445,11 @@ fn add_type_rules(
             tile(TileLabel(")")),
         ])
     };
-    let supplied = || {
+    let supplied = |listed: Listed| {
+        let list = |sort: Sort| match listed {
+            Listed::Always => endpoints(sort),
+            Listed::Optionally => Regex::optional(endpoints(sort)),
+        };
         Regex::seq([
             tile(TileLabel("[")),
             tile(TileLabel(".")),
@@ -447,15 +458,15 @@ fn add_type_rules(
                 Regex::seq([
                     tile(TileLabel("=")),
                     Regex::alt([
-                        Regex::seq([universe(), tile(TileLabel("]")), endpoints(ty)]),
+                        Regex::seq([universe(), tile(TileLabel("]")), list(ty)]),
                         Regex::seq([
                             Regex::sort(ty),
                             tile(TileLabel("]")),
-                            endpoints(Sort::Expression),
+                            list(Sort::Expression),
                         ]),
                     ]),
                 ]),
-                Regex::seq([tile(TileLabel("]")), endpoints(Sort::Expression)]),
+                Regex::seq([tile(TileLabel("]")), list(Sort::Expression)]),
             ]),
         ])
     };
@@ -478,7 +489,7 @@ fn add_type_rules(
                         ])),
                         tile(TileLabel(")")),
                     ]),
-                    supplied(),
+                    supplied(Listed::Optionally),
                 ]),
             ]),
         ));
@@ -487,7 +498,7 @@ fn add_type_rules(
         RuleName("flow_type"),
         ty,
         type_application,
-        Regex::seq([tile(TileLabel("Flow")), supplied()]),
+        Regex::seq([tile(TileLabel("Flow")), supplied(Listed::Always)]),
     ));
     // A type application's head is a type name or a type variable: a
     // declaration's name is lowercase, so a type operator a declaration binds
@@ -1307,6 +1318,20 @@ fn add_shell_rules(
     ));
     rules.push(redirection_operator);
     Ok(())
+}
+
+/// Whether the endpoint list after a supplied carrier is part of the form.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Listed
+{
+    /// The form ends at its endpoint list, as `Flow[.A = C](a, b)` does.
+    Always,
+    /// The form can end at its carrier's `]`, as `Path[.A = C]` does where
+    /// the juxtaposition applies it to its endpoints.
+    Optionally,
 }
 
 /// Build a provenance-bearing rule whose name matches its source rule.

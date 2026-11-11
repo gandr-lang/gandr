@@ -197,6 +197,7 @@ use crate::retire::Polled;
 use crate::retire::Retirement;
 use crate::retire::Unretired;
 use crate::seal::SealTable;
+use crate::support::Entered;
 use crate::support::Supported;
 use crate::worlds::Entry;
 use crate::worlds::Mobility;
@@ -2213,18 +2214,19 @@ fn judge(
 /// - ensures: `body`, `direction`, `first` and no solution when the run met no
 ///   nominated hole, or refused with no type it compares holding a hole of a
 ///   slot of `models`; the resolution's refusal,
-///   [`CheckRefusal::ModelUnanswered`] or [`CheckRefusal::ModelAmbiguous`], at
-///   the first hole of the first slot it refuses, when the run checked or when
-///   it refused at a compared type holding such a hole; with `body`,
-///   `direction` and no solution in the second case; the refusal of the run
-///   that refused otherwise; the run's failure as
-///   [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver left
-///   unbound; otherwise the filled body, minted after `body`, the direction
-///   with its declared type filled and formed again ([`formed_filled`]), a
-///   fresh run of the one against the other, the pairs, stages and residue
-///   `first` left dropped as the nesting elaboration's second run drops them,
-///   and the solutions both were filled with. A filled type that does not form
-///   gives the failure forming it in place of the fresh run.
+///   [`CheckRefusal::ModelUnanswered`], [`CheckRefusal::ModelAmbiguous`] or
+///   [`CheckRefusal::Undecided`], at the first hole of the first slot it
+///   refuses, when the run checked or when it refused at a compared type
+///   holding such a hole; with `body`, `direction` and no solution in the
+///   second case; the refusal of the run that refused otherwise; the run's
+///   failure as [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver
+///   left unbound; otherwise the filled body, minted after `body`, the
+///   direction with its declared type filled and formed again
+///   ([`formed_filled`]), a fresh run of the one against the other, the pairs,
+///   stages and residue `first` left dropped as the nesting elaboration's
+///   second run drops them, and the solutions both were filled with. A filled
+///   type that does not form gives the failure forming it in place of the fresh
+///   run.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2557,18 +2559,21 @@ fn unenclosed_failure(run: ValueId) -> Failure
 }
 
 /// Judge one declaration in `context`, and report the signature answers the
-/// judgement consulted.
+/// judgement consulted and the form the table holds the declaration in.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
 ///   `context`; beside it, every answer the judgement read from the signature
 ///   table, once per position, ascending by position, and no answer read before
-///   this call.
+///   this call; and [`Entered::Elaborated`] exactly when the verdict defines a
+///   body and the table departs from the written declaration, as [`entered`]
+///   states.
 /// - provides: the support an incremental caller compares pointwise before it
 ///   reuses the verdict: equal answers mean an equal judgement, because the
 ///   signature table is the only input outside the declaration the judgement
-///   reads.
+///   reads. A caller that seats the written form in place of the judgement
+///   reuses only an [`Entered::AsWritten`] verdict.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -2576,9 +2581,12 @@ fn unenclosed_failure(run: ValueId) -> Failure
 /// - hypothesis: L3 — the surfaces are the log's span and its canonical form,
 ///   separated by an unsupported judgement before a supported one, a supported
 ///   one reading positions out of order and one twice, a read of an unadmitted
-///   position, and a refusal that stops the run before a later read.
+///   position, and a refusal that stops the run before a later read; a
+///   declaration whose omitted implicit is filled separates the two entered
+///   forms.
 /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
 /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
+/// - witness: `bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
 #[spec(ensures: |ret| {
     let entries = ret.support().consulted();
     entries.iter().zip(entries.iter().skip(1)).all(|(left, right)| left.constant() < right.constant())
@@ -2597,7 +2605,55 @@ pub fn check_declaration_supported(
 {
     context.start_support();
     let verdict = check_declaration(context, declaration);
-    Supported::new(verdict, context.finish_support())
+    let entered = entered(context, declaration, verdict);
+    Supported::new(verdict, context.finish_support(), entered)
+}
+
+/// The form the table holds `declaration` in after its judgement gave
+/// `verdict`.
+///
+/// # Specification
+/// - requires: `verdict` is the judgement of `declaration` that `context` has
+///   just entered.
+/// - ensures: [`Entered::AsWritten`] for a verdict that defines no body;
+///   otherwise [`Entered::Elaborated`] exactly when the verdict's body is not
+///   the written body, the table's type is not the written signature, or the
+///   table keeps a stage signature or a following position for the declaration.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`check_declaration_supported`].
+/// - witness: `bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
+#[spec(ensures: |ret| ret == Entered::AsWritten
+    || matches!(verdict, Verdict::Checked { .. } | Verdict::Synthesised { .. }))]
+fn entered(
+    context: &CheckingContext<'_>,
+    declaration: &Declaration,
+    verdict: Verdict,
+) -> Entered
+{
+    let constant = declaration.constant();
+    let (
+        &crate::DeclarationContent::Value { signature, body },
+        Verdict::Checked { body: judged, .. } | Verdict::Synthesised { body: judged, .. },
+    ) = (declaration.content(), verdict)
+    else {
+        return Entered::AsWritten;
+    };
+    let signed = match signature {
+        Maybe::Present(written) => {
+            matches!(context.signature(constant), Maybe::Present(formed) if formed.id() == written)
+        },
+        Maybe::Absent(_) => true,
+    };
+    let plain = matches!(context.following(constant), Maybe::Absent(_))
+        && !context.stage_signatures().contains_key(&constant);
+    if body == Maybe::Present(judged) && signed && plain {
+        Entered::AsWritten
+    }
+    else {
+        Entered::Elaborated
+    }
 }
 
 /// Judge every declaration of a module, in the order given.

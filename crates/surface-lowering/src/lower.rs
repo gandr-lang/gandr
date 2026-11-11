@@ -16267,17 +16267,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a type application in type position, or in value
     ///   position where a type is quoted or a constructor applied.
-    /// - ensures: an application standing where a value is read — an argument
-    ///   of a type-position call — whose head names a constructor of a data
-    ///   family declared strictly earlier stands as that constructor applied to
-    ///   the arguments, as [`Self::construct`] plans it. Otherwise a head
-    ///   naming a type family, as a component or a member, expands to the
-    ///   family's type over the arguments; a head naming a codata family stands
-    ///   as that family's computation type over the arguments; a head a binder
-    ///   or an earlier declaration answers is read as the static application of
-    ///   that code to the arguments, left to right, or, holding a function
-    ///   where a value is read, as its call; any other head is the type former
-    ///   [`Self::applied_head`] plans.
+    /// - ensures: a spine whose head is a path or bridge type that supplies its
+    ///   carrier, `Path[.A = C] a b`, is that type over the spine's operands,
+    ///   as [`Self::carried_path`] plans it. An application standing where a
+    ///   value is read — an argument of a type-position call — whose head names
+    ///   a constructor of a data family declared strictly earlier stands as
+    ///   that constructor applied to the arguments, as [`Self::construct`]
+    ///   plans it. Otherwise a head naming a type family, as a component or a
+    ///   member, expands to the family's type over the arguments; a head naming
+    ///   a codata family stands as that family's computation type over the
+    ///   arguments; a head a binder or an earlier declaration answers is read
+    ///   as the static application of that code to the arguments, left to
+    ///   right, or, holding a function where a value is read, as its call; any
+    ///   other head is the type former [`Self::applied_head`] plans.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -16293,7 +16295,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   written at two arguments, an operator a declaration and a binder name,
     ///   and a constructor applied in a type-position call's argument, each
     ///   asserted as the exact core node read back out of the arena or the
-    ///   exact refusal; a forward member applied, refused at its head.
+    ///   exact refusal; a forward member applied, refused at its head; a
+    ///   carried path head over its two endpoints.
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
     /// - witness: `lower::tests::a_run_bound_type_and_a_constructor_argument_stand_in_a_type`
@@ -16301,6 +16304,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `lower::tests::a_forward_member_applied_as_a_type_is_refused_at_its_head`
+    /// - witness: `lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -16316,6 +16320,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // A path or bridge type that supplies its carrier heads the spine
+        // that applies it to its endpoints, `Path[.A = C] a b`.
+        if let Maybe::Present(Piece::Operand(head)) = cursor.peek()
+            && let Some(named) = self.carried_head(head)?
+        {
+            let (name, relating) = named;
+            return self.carried_path(site, (name, head), cursor, relating);
+        }
         let Maybe::Present(head) = cursor.type_head()
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));

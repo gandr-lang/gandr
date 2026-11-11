@@ -79,6 +79,12 @@ site = [
   { file = ".config/issues/open.bash", scope = "open_issues", api = "rest", identity = "actions", calls = 1, points = 8, pages = 8, measured = "rest", hour = 1, schedule = "nightly.yml", trigger = "nightly.yml: issues:open once a day for report:deps and report:prose, 8 pages of 719 open on 2026-11-06" },
   { file = ".config/issues/open.bash", scope = "open_issues", api = "rest", identity = "read", calls = 1, points = 8, pages = 8, measured = "rest", hour = 4, trigger = "claim:next about once an hour, issue:labels --sweep by hand, and report:design, report:deps and report:prose by hand (#5671): 8 pages of 719 open on 2026-11-06" },
 
+  # The head watcher of landing (a host, #6587): git reads every head, and
+  # GitHub hears only of a red check.
+  { file = ".config/integration/watch.bash", scope = "watch_own", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "landing:watch: a red check of a new head of landing, the pull request of the commit the search names; a green or unmoved head calls nothing" },
+  { file = ".config/integration/watch.bash", scope = "watch_own", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "landing:watch: a red check of a new head, one search of the open landing: defects; 1 point (rateLimit, 2026-11-11)" },
+  { file = ".config/integration/watch.bash", scope = "watch_own", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "landing:watch: a red check whose defect is open, one comment on it; a new defect is issue:file's row, and its claim is claim:take's" },
+
   # The ledger check: a gate on a host and in CI.
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "check:ledger in a seat's gate: one aliased batch of the issues rows name" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:ledger in each pull request's CI run" },

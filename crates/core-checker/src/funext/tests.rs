@@ -684,3 +684,38 @@ fn what_the_rule_cannot_show_it_refuses_by_name()
         "{report:?}"
     );
 }
+
+/// #6550: a pointwise pair the machine declines is undecided at the function
+/// extensionality, and not a difference between the functions.
+#[test]
+fn a_pointwise_pair_the_machine_declines_is_undecided_6550()
+{
+    // `held(x) = return ⟨axiom(x)⟩` against the identity: at each boolean,
+    // the held call of the axiom meets the boolean itself. The call has no
+    // body to unfold, and the machine declines the pair.
+    let mut arena = CoreArena::new();
+    let functions = booleans(&mut arena);
+    let axiom = declaration(At(3), functions.function, Maybe::Absent(body::Absent::Hole));
+    let named = arena.value_constant(ConstantIndex::from(3_usize));
+    let argument = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(named);
+    let call = arena.computation_application(forced, argument);
+    let held = arena.value_returned(call);
+    let returned = arena.computation_return(held);
+    let held = closed(&mut arena, returned);
+    let (claim, at) = extensionality(&mut arena, functions.function, At(5), (At(4), At(2)));
+    let report = judged(&mut arena, &functions, &[
+        axiom,
+        declaration(At(4), functions.function, Maybe::Present(held)),
+        claim,
+    ]);
+    assert_eq!(
+        report.judged().get(5).map(Judged::verdict),
+        Some(Verdict::Refused(CheckRefusal::Undecided { at })),
+        "the extensionality is undecided, not pointwise distinct"
+    );
+    assert!(
+        report.funexts().is_empty(),
+        "an undecided funext records nothing"
+    );
+}

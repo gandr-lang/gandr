@@ -34,7 +34,9 @@
 //! [`CheckRefusal::PointwiseDistinct`]. That is the theorem, not a gap: two
 //! functions that do not agree at a covering input are not identified, and the
 //! rule admits what it shows and refutes nothing it cannot, as reflexivity's
-//! endpoint rule does.
+//! endpoint rule does. A pair the machine leaves undecided is
+//! [`CheckRefusal::Undecided`]: the machine shows neither agreement nor
+//! difference there, so the rule refutes nothing.
 //!
 //! [`CheckRefusal::FunextUnsupported`] is the first-order boundary. The
 //! description-code fragment is first order by a decidability choice: code
@@ -330,8 +332,9 @@ struct Stuck
 ///   boundary the module docs state; [`CheckRefusal::PointwiseDistinct`] at
 ///   `at` when at some step the two sides return values that do not convert,
 ///   apply their argument at inputs that do not convert, or neither return nor
-///   stick at a related application; a weak-head, view or machine refusal as
-///   those raise it.
+///   stick at a related application; [`CheckRefusal::Undecided`] at `at` when
+///   the machine leaves two returned values or two inputs undecided; a
+///   weak-head, view or machine refusal as those raise it.
 /// - panics: none.
 ///
 /// # Errors
@@ -350,10 +353,12 @@ struct Stuck
 ///   distinct; `λf. f(true)` relates to itself and to its bind form, and a body
 ///   applying its argument twice nests its steps; a body applying its argument
 ///   at another input refuses as distinct; an open function and a function
-///   argument whose own domain is a function refuse as unsupported.
+///   argument whose own domain is a function refuse as unsupported; a function
+///   returning a held call of an axiom against the identity is undecided.
 /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
 /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
 /// - witness: `funext::tests::what_the_rule_cannot_show_it_refuses_by_name`
+/// - witness: `funext::tests::a_pointwise_pair_the_machine_declines_is_undecided_6550`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::FunextUnsupported { at: site, .. } | CheckRefusal::PointwiseDistinct { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
@@ -411,7 +416,7 @@ pub fn decide(
             });
             match (context.read_claim(left)?, context.read_claim(right)?) {
                 (Reading::Returned(left), Reading::Returned(right)) => {
-                    if agreement(context, left.normal(), right.normal())? != Agreement::Agree {
+                    if agreement(context, at, left.normal(), right.normal())? != Agreement::Agree {
                         return Err(distinct);
                     }
                     steps.push(Step::Return { left, right });
@@ -432,7 +437,7 @@ pub fn decide(
                         return Err(distinct);
                     };
                     if coordinate.right != right_stuck.head
-                        || agreement(context, left_stuck.input, right_stuck.input)?
+                        || agreement(context, at, left_stuck.input, right_stuck.input)?
                             != Agreement::Agree
                     {
                         return Err(distinct);
@@ -481,8 +486,10 @@ pub fn decide(
 ///
 /// # Specification
 /// - ensures: [`Agreement::Agree`] exactly when the machine converts them;
-///   [`Agreement::Differ`] when it refutes, declines or leaves them undecided.
-/// - fails: a machine fault other than undecidedness, as it raises it.
+///   [`Agreement::Differ`] when it refutes them.
+/// - fails: [`CheckRefusal::Undecided`] at `at`, the function extensionality
+///   that compares them, when the machine leaves them undecided; another
+///   machine fault as it raises it.
 /// - panics: none.
 ///
 /// # Errors
@@ -491,12 +498,15 @@ pub fn decide(
 /// # Adequacy
 /// - hypothesis: L3 — two functions returning the same boolean agree, and
 ///   negation against the identity, or an argument applied at true against one
-///   applied at false, differ.
+///   applied at false, differ; a held call of an axiom against a boolean is
+///   undecided at the extensionality, and is no difference.
 /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
 /// - witness: `funext::tests::what_the_rule_cannot_show_it_refuses_by_name`
-#[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::Undecided { .. })))]
+/// - witness: `funext::tests::a_pointwise_pair_the_machine_declines_is_undecided_6550`
+#[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::Undecided { at: site }) if site != at))]
 fn agreement(
     context: &CheckingContext<'_>,
+    at: ValueId,
     left: ValueId,
     right: ValueId,
 ) -> Result<Agreement, CheckRefusal>
@@ -506,7 +516,8 @@ fn agreement(
         .convert_terms(context.arena(), left, right)
     {
         Ok(gandr_core_nbe::MachineVerdict::Convertible) => Ok(Agreement::Agree),
-        Ok(_) | Err(CheckRefusal::Undecided { .. }) => Ok(Agreement::Differ),
+        Ok(_) => Ok(Agreement::Differ),
+        Err(CheckRefusal::Undecided { .. }) => Err(CheckRefusal::Undecided { at }),
         Err(fault) => Err(fault),
     }
 }

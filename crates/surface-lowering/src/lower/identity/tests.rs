@@ -3486,3 +3486,38 @@ fn a_carrier_written_first_is_refused_5024()
         );
     }
 }
+
+#[test]
+fn a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121()
+{
+    // A path or bridge type that supplies its carrier and leaves its endpoint
+    // list out is the head that the juxtaposition applies to its endpoints:
+    // `Path[.A = Integer] 4 4` is `Path[.A = Integer](4, 4)`. A spine of one
+    // endpoint is refused as a form out of shape.
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/unformatted/a-carried-path-head-takes-its-endpoints-by-juxtaposition-6121-module.gandr"
+        )),
+        &mut arena,
+    );
+    for (spaced, listed) in [("spaced", "listed"), ("bridged", "called")] {
+        assert_eq!(
+            equal_type_syntax(
+                &arena,
+                declared_of(&module, spaced.into()),
+                declared_of(&module, listed.into())
+            ),
+            CertificateEquality::Equal,
+            "`{spaced}` lowers to the type its list form `{listed}` lowers to"
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "short".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm { .. })
+        ),
+        "a carried head over one endpoint is refused: {:?}",
+        outcome_of(&module, "short".into())
+    );
+}
