@@ -8018,7 +8018,7 @@ impl Workspace
     ///   list a run lens beside their references lens, and a function, a type
     ///   and a family none.
     /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
-    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517`
+    /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     /// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
@@ -12322,8 +12322,11 @@ mod tests
     /// a refreshing client for its lenses and notifies a drawing client each
     /// mark's warrant and its glyph twin. An edit's admission keeps every
     /// tier, and one range with one title draws one lens.
+    ///
+    /// #6662: the bridge reads the hold of `tally` as its reduct (#6634), so
+    /// its first form outside the fragment is its endpoint loop.
     #[test]
-    fn each_declaration_shows_its_kernel_tier_2517()
+    fn each_declaration_shows_its_kernel_tier_2517_6662()
     {
         // A first connection admits a module of its own: the prelude it
         // crosses then resumes in every later admission of the process, which
@@ -12448,7 +12451,7 @@ mod tests
             settled_lenses,
             [
                 "def follow+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
-                "def tally+0: kernel withheld: outside the fragment, Memory (#1626)",
+                "def tally+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
                 "def asking+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
                 "def serving+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
                 "def beacon+0: kernel withheld: outside the fragment, EndpointLoop (#6099)",
@@ -12486,7 +12489,7 @@ mod tests
             .filter(|message| message.contains("no kernel image: EndpointLoop"))
             .count();
         assert_eq!(
-            declines, 4_usize,
+            declines, 5_usize,
             "each endpoint loop's decline finds its declaration past the resumed prelude"
         );
         let tiers = sent.get(1).expect("the tiers are notified second");
