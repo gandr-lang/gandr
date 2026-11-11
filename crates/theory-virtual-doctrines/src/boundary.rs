@@ -83,11 +83,6 @@ copy_wrapper!(
     "Number of descriptions registered in a reflected VDC description table."
 );
 copy_wrapper!(
-    DirectedContextDeclaration,
-    bool,
-    "Whether a directed VDC context declares an object variable."
-);
-copy_wrapper!(
     DirectedObjectCovariance,
     bool,
     "Whether a directed reflected object is sorted covariantly."

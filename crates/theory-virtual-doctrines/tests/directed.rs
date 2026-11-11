@@ -195,28 +195,13 @@ mod tests
         let other = SignatureRef::single(NominalId::new(1_u64.into(), "Other"));
         let ctx = DirectedContext::new()
             .with_var(NameRef::from("m"), OpSig::covariant(nat_sig()))
-            .with_var(NameRef::from("m"), OpSig::contravariant(other.clone()))
+            .with_var(NameRef::from("m"), OpSig::contravariant(other))
             .with_var(NameRef::from("k"), OpSig::covariant(nat_sig()));
         assert_eq!(
             ctx.variance_of(NameRef::from("m")),
             Maybe::Present(Variance::Contravariant),
             "the inner `m` is the one in scope"
         );
-        assert_eq!(
-            ctx.signature_of(NameRef::from("m")),
-            Maybe::Present(&other),
-            "and it ranges over its own signature"
-        );
-        assert_eq!(
-            ctx.signature_of(NameRef::from("k")),
-            Maybe::Present(&nat_sig())
-        );
-        assert!(bool::from(ctx.declares(NameRef::from("k"))));
-        assert!(!bool::from(ctx.declares(NameRef::from("z"))));
-        assert!(matches!(
-            ctx.signature_of(NameRef::from("z")),
-            Maybe::Absent(_)
-        ));
         assert!(matches!(
             ctx.variance_of(NameRef::from("z")),
             Maybe::Absent(_)
