@@ -11,6 +11,7 @@ use anodized::spec;
 use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Reference;
+use gandr_core_incremental::WorldContent;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
@@ -127,6 +128,19 @@ fn key(reference: &Reference) -> Option<Name<'_>>
     }
 }
 
+/// The name `world` is written by: a declared world's key; none for the
+/// host's, which the surface never names.
+///
+/// # Specification
+/// trivial.
+fn world_key(world: &WorldContent) -> Option<Name<'_>>
+{
+    match *world {
+        WorldContent::Host => None,
+        WorldContent::Declared(ref reference) => key(reference),
+    }
+}
+
 impl Source for ContentSource<'_>
 {
     type Node = NodeIndex;
@@ -168,6 +182,8 @@ impl Source for ContentSource<'_>
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
             ContentNode::ReturnAll(_) | ContentNode::Returns { .. } => reason == Unreadable::SeveralResults,
             ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
+            ContentNode::CapabilityType(_) => reason == Unreadable::WorldCapability,
+            ContentNode::Hold(_) | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } |
             ContentNode::BindAll(..) | ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::BufferType | ContentNode::QubitType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::RowValue(_) | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::BridgeType { .. } | ContentNode::Patched { .. } |
             ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Lambda(_) | ContentNode::LinearLambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::LinearArrow { .. } | ContentNode::ComputationElement { .. } => false,
         },
@@ -408,6 +424,33 @@ impl Source for ContentSource<'_>
                 },
                 SessionAction::Place { payload, body } => Former::Place { payload, body },
             },
+            ContentNode::Hold(value) => Former::WorldHold(value),
+            ContentNode::Leta {
+                ref world,
+                value,
+                body,
+            } => Former::Leta {
+                world: world_key(world),
+                value,
+                body,
+            },
+            ContentNode::Migrate { ref world, body } => Former::Migrate {
+                world: world_key(world),
+                body,
+            },
+            ContentNode::HeldType { inner, ref world } => Former::Located {
+                inner,
+                world: world_key(world),
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a capability for a world: the surface writes a capability only as \
+                              an entry states it"
+                )
+            )]
+            ContentNode::CapabilityType(_) => Former::Unreadable(Unreadable::WorldCapability),
             ContentNode::Memory(ref form) => match *form {
                 MemoryForm::Hold { value, body, grade } => Former::Hold { value, body, grade },
                 MemoryForm::Access {
@@ -936,6 +979,11 @@ impl Source for ContentSource<'_>
             | ContentNode::ListCase { .. }
             | ContentNode::Session(_)
             | ContentNode::Memory(_)
+            | ContentNode::Hold(_)
+            | ContentNode::Leta { .. }
+            | ContentNode::Migrate { .. }
+            | ContentNode::HeldType { .. }
+            | ContentNode::CapabilityType(_)
             | ContentNode::Base(_)
             | ContentNode::BufferType
             | ContentNode::QubitType
@@ -1100,6 +1148,11 @@ impl Source for ContentSource<'_>
             | ContentNode::ListCase { .. }
             | ContentNode::Session(_)
             | ContentNode::Memory(_)
+            | ContentNode::Hold(_)
+            | ContentNode::Leta { .. }
+            | ContentNode::Migrate { .. }
+            | ContentNode::HeldType { .. }
+            | ContentNode::CapabilityType(_)
             | ContentNode::Base(_)
             | ContentNode::BufferType
             | ContentNode::QubitType

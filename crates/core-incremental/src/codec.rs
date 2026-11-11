@@ -148,13 +148,14 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x15` names each hole by its place among the holes of its table, and the
-/// sort of a type of words' cells by its reference.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x15";
+/// `0x16` persists a located program: a world declaration's row, a stated
+/// entry, the world formers, and the answers the world register and the
+/// host's grant give.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x16";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0c` reads its items' content as checkpoint version `0x15` writes it.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0c";
+/// `0x0d` reads its items' content as checkpoint version `0x16` writes it.
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
 /// The decoder's cap on a level atom's offset.
 ///
@@ -180,9 +181,6 @@ pub enum UnsupportedPersistence
     /// An id of this sort that the item's arena resolves to nothing: a fact
     /// about another arena, meaningless outside this process.
     Dangling(Sort),
-    /// An item of a program that declares a world, or that states an entry:
-    /// its judgement read homes no footprint records.
-    Located,
     /// A codata declaration: its signature has no content form.
     Codata,
 }
@@ -242,7 +240,6 @@ impl fmt::Display for UnsupportedPersistence
                 };
                 write!(f, "an unresolved {sort} id is process-local")
             },
-            Self::Located => f.write_str("a located item's judgements read homes no record keeps"),
             Self::Codata => f.write_str("a codata signature has no content form"),
         }
     }
@@ -976,6 +973,111 @@ fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
     }
 }
 
+/// Write a world: tag zero for the host's, tag one then the reference of a
+/// declared one.
+///
+/// # Specification
+/// - fails: as [`write_reference`].
+/// - panics: none.
+/// - executable: none — the bytes are the writer's own output; the witness
+///   reads them back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a migration to a declared world and a handle at one round
+///   trip, and the host's world reads back as itself.
+/// - witness: `codec::tests::world_formers_round_trip_under_their_own_tags_3381`
+fn write_world<Out>(
+    writer: &mut Writer<'_, Out>,
+    world: &crate::content::WorldContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *world {
+        crate::content::WorldContent::Host => writer.tag(Tag(0)),
+        crate::content::WorldContent::Declared(ref reference) => {
+            writer.tag(Tag(1));
+            write_reference(writer, reference)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a world.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag past one or a malformed
+///   reference.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_world`].
+/// - witness: `codec::tests::world_formers_round_trip_under_their_own_tags_3381`
+#[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_world(reader: &mut Reader<'_>) -> Result<crate::content::WorldContent, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(crate::content::WorldContent::Host),
+        1 => read_reference(reader).map(crate::content::WorldContent::Declared),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a stated entry: its home, then the count of its capabilities and the
+/// world of each.
+///
+/// # Specification
+/// - fails: as [`write_world`] and the writer's count.
+/// - panics: none.
+/// - executable: none — the bytes are the writer's own output; the witness
+///   reads them back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus model's entry round trips with its home and
+///   its capability.
+/// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+fn write_entry<Out>(
+    writer: &mut Writer<'_, Out>,
+    entry: &crate::content::EntryRoots,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_world(writer, &entry.home)?;
+    writer.count(Count(entry.capabilities.len()))?;
+    for world in &entry.capabilities {
+        write_world(writer, world)?;
+    }
+    Ok(())
+}
+
+/// Read a stated entry.
+///
+/// # Specification
+/// - fails: as [`read_world`] and the reader's count.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_entry`].
+/// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+#[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_entry(reader: &mut Reader<'_>) -> Result<crate::content::EntryRoots, CodecError>
+{
+    let home = read_world(reader)?;
+    let count = reader.count()?.0;
+    let mut capabilities = Vec::new();
+    for _capability in 0 .. count {
+        capabilities.push(read_world(reader)?);
+    }
+    Ok(crate::content::EntryRoots { home, capabilities })
+}
+
 /// Write a level: its constant, then its atoms ascending.
 ///
 /// # Specification
@@ -1565,6 +1667,34 @@ where
             writer.tag(Tag(0x50));
             write_reference(writer, declaration)?;
             write_indices(writer, arguments)?;
+        },
+        ContentNode::Hold(value) => {
+            writer.tag(Tag(0x94));
+            write_index(writer, value)?;
+        },
+        ContentNode::Leta {
+            ref world,
+            value,
+            body,
+        } => {
+            writer.tag(Tag(0x95));
+            write_world(writer, world)?;
+            write_index(writer, value)?;
+            write_index(writer, body)?;
+        },
+        ContentNode::Migrate { ref world, body } => {
+            writer.tag(Tag(0x96));
+            write_world(writer, world)?;
+            write_index(writer, body)?;
+        },
+        ContentNode::HeldType { inner, ref world } => {
+            writer.tag(Tag(0x97));
+            write_index(writer, inner)?;
+            write_world(writer, world)?;
+        },
+        ContentNode::CapabilityType(ref world) => {
+            writer.tag(Tag(0x98));
+            write_world(writer, world)?;
         },
         ContentNode::RecordType(ref fields) => {
             writer.tag(Tag(0x51));
@@ -4240,6 +4370,11 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                     | ContentNode::SessionType(_) => tag == 0x60,
                     | ContentNode::Session(_) => tag == 0x61,
                     | ContentNode::Memory(_) => tag == 0x7E,
+                    | ContentNode::Hold(_) => tag == 0x94,
+                    | ContentNode::Leta { .. } => tag == 0x95,
+                    | ContentNode::Migrate { .. } => tag == 0x96,
+                    | ContentNode::HeldType { .. } => tag == 0x97,
+                    | ContentNode::CapabilityType(_) => tag == 0x98,
                     | ContentNode::SessionRelated { .. } => tag == 0x62,
                     | ContentNode::Stay(_) => tag == 0x63,
                     | ContentNode::Then(..) => tag == 0x64,
@@ -4474,6 +4609,31 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         0x73 => ContentNode::WithType(read_indices(reader)?),
         0x60 => ContentNode::SessionType(read_session_type(reader)?),
         0x61 => ContentNode::Session(read_session_action(reader)?),
+        0x94 => ContentNode::Hold(read_index(reader)?),
+        0x95 => {
+            let world = read_world(reader)?;
+            let value = read_index(reader)?;
+            ContentNode::Leta {
+                world,
+                value,
+                body: read_index(reader)?,
+            }
+        },
+        0x96 => {
+            let world = read_world(reader)?;
+            ContentNode::Migrate {
+                world,
+                body: read_index(reader)?,
+            }
+        },
+        0x97 => {
+            let inner = read_index(reader)?;
+            ContentNode::HeldType {
+                inner,
+                world: read_world(reader)?,
+            }
+        },
+        0x98 => ContentNode::CapabilityType(read_world(reader)?),
         0x7E => {
             let kind = reader.tag()?.0;
             let slot = |reader: &mut Reader<'_>| {
@@ -5563,9 +5723,8 @@ where
 /// Write an item's content.
 ///
 /// # Specification
-/// - ensures: located content, which has no spelling, is refused before
-///   anything is written; an unsupported refusal names the first unresolved
-///   table node; metadata precedes the table.
+/// - ensures: an unsupported refusal names the first unresolved table node, or
+///   a codata declaration; metadata precedes the table.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — independently built programs have identical content
@@ -5575,15 +5734,10 @@ where
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(()) => content.locus() == crate::content::Locus::Unlocated
-            && content
+        | Ok(()) => content
                 .nodes()
                 .iter()
                 .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
-        | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
-            content.locus() == crate::content::Locus::Located
-                || matches!(*content.declaration(), crate::content::DeclarationRoots::World)
-        },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
             matches!(*content.declaration(), crate::content::DeclarationRoots::Codata)
         },
@@ -5604,9 +5758,6 @@ fn write_item_content_with<Out>(
 where
     Out: Sink,
 {
-    if content.locus() == crate::content::Locus::Located {
-        return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
-    }
     write_reference(writer, content.reference())?;
     match *(content.declaration()) {
         crate::content::DeclarationRoots::Value {
@@ -5617,6 +5768,7 @@ where
             ref stages,
             ref supplies,
             ref models,
+            ref entry,
         } => {
             // A value naming no law keeps its original tag; a lawful one
             // takes its own, with the laws after the body; a ruled one takes
@@ -5627,8 +5779,14 @@ where
             // bounds, however many, then each supply; one whose calls omit a
             // model slot takes its own, with the laws, the rules, the bounds
             // and the supplies, however many, then each slot: its holes, the
-            // codes it fixes, and each candidate's components and codes.
-            writer.tag(Tag(if !models.is_empty() {
+            // codes it fixes, and each candidate's components and codes; one
+            // that states an entry takes its own, with every count however
+            // many, then the entry.
+            let entered = matches!(*entry, Maybe::Present(_));
+            writer.tag(Tag(if entered {
+                11
+            }
+            else if !models.is_empty() {
                 10
             }
             else if !supplies.is_empty() {
@@ -5662,7 +5820,7 @@ where
                 Maybe::Absent(body::Absent::Hosted) => writer.tag(Tag(2)),
                 Maybe::Absent(body::Absent::Discharged) => writer.tag(Tag(3)),
             }
-            let supplied = !supplies.is_empty() || !models.is_empty();
+            let supplied = !supplies.is_empty() || !models.is_empty() || entered;
             let staged = !stages.is_empty() || supplied;
             if !laws.is_empty() || !rules.is_empty() || staged {
                 writer.count(Count(laws.len()))?;
@@ -5696,7 +5854,7 @@ where
                     write_stage(writer, stage)?;
                 }
             }
-            if !models.is_empty() {
+            if !models.is_empty() || entered {
                 writer.count(Count(models.len()))?;
                 for slot in models {
                     write_indices(writer, &slot.holes)?;
@@ -5708,6 +5866,9 @@ where
                         }
                     }
                 }
+            }
+            if let Maybe::Present(ref entry) = *entry {
+                write_entry(writer, entry)?;
             }
         },
         crate::content::DeclarationRoots::Data(ref roots) => {
@@ -5740,8 +5901,18 @@ where
                 }
             }
         },
-        crate::content::DeclarationRoots::World => {
-            return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
+        // A world's roots take their own tag: the row its code performs in,
+        // then the row's tail, as a row literal writes them.
+        crate::content::DeclarationRoots::World(ref roots) => {
+            writer.tag(Tag(12));
+            write_effect_row(writer, &roots.row)?;
+            match roots.row.tail() {
+                None => writer.tag(Tag(0)),
+                Some(tail) => {
+                    writer.tag(Tag(1));
+                    write_index(writer, tail)?;
+                },
+            }
         },
         crate::content::DeclarationRoots::Codata => {
             return Err(CodecError::Unsupported(UnsupportedPersistence::Codata));
@@ -5926,7 +6097,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
     let declaration = match reader.tag()?.0 {
-        tag @ (0 | 3 | 5 | 6 | 7 | 10) => {
+        tag @ (0 | 3 | 5 | 6 | 7 | 10 | 11) => {
             let signature = match reader.tag()?.0 {
                 0 => Maybe::Absent(signature::Absent::Unsigned),
                 1 => Maybe::Present(read_index(reader)?),
@@ -5979,7 +6150,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 }
             }
             let mut supplies = Vec::new();
-            if tag == 7 || tag == 10 {
+            if tag == 7 || tag == 10 || tag == 11 {
                 let count = reader.count()?.0;
                 if count == 0 && tag == 7 {
                     return Err(CodecError::NonCanonical);
@@ -5991,9 +6162,9 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 }
             }
             let mut models = Vec::new();
-            if tag == 10 {
+            if tag == 10 || tag == 11 {
                 let count = reader.count()?.0;
-                if count == 0 {
+                if count == 0 && tag == 10 {
                     return Err(CodecError::NonCanonical);
                 }
                 for _slot in 0 .. count {
@@ -6018,6 +6189,12 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                     });
                 }
             }
+            let entry = if tag == 11 {
+                Maybe::Present(read_entry(reader)?)
+            }
+            else {
+                Maybe::Absent(gandr_core_checker::entry::Absent::Unstated)
+            };
             crate::content::DeclarationRoots::Value {
                 signature,
                 body,
@@ -6026,6 +6203,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 stages,
                 supplies,
                 models,
+                entry,
             }
         },
         1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
@@ -6064,6 +6242,12 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                     gandr_core_checker::worlds::Mobility::Immobile
                 },
                 interface,
+            })
+        },
+        12 => {
+            let row = read_effect_row(reader)?;
+            crate::content::DeclarationRoots::World(crate::content::WorldRoots {
+                row: row.with_tail(read_row_tail(reader)?),
             })
         },
         _ => return Err(CodecError::Corrupt),
@@ -8359,6 +8543,7 @@ ContentNode::Unresolved(ref found) => Some(*found),
 ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } | ContentNode::Patched { .. } |
 ContentNode::LinearLambda(_) | ContentNode::LinearArrow { .. } |
+ContentNode::Hold(_) | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } | ContentNode::CapabilityType(_) |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::QubitType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
@@ -8384,6 +8569,25 @@ where
             writer.tag(Tag(1));
             write_type(writer, ty)?;
         },
+        Answer::Located { ref home, spending } => {
+            writer.tag(Tag(5));
+            write_world(writer, home)?;
+            write_spending(writer, spending);
+        },
+        Answer::Entered {
+            ref entry,
+            spending,
+        } => {
+            writer.tag(Tag(6));
+            match *entry {
+                None => writer.tag(Tag(0)),
+                Some(ref entry) => {
+                    writer.tag(Tag(1));
+                    write_entry(writer, entry)?;
+                },
+            }
+            write_spending(writer, spending);
+        },
     }
     Ok(())
 }
@@ -8393,16 +8597,19 @@ where
 /// # Specification
 /// - ensures: tags zero and one retain absent and present value-signature
 ///   answers; tags two and three retain absent and complete data signatures;
-///   tag four retains a codata answer.
+///   tag four retains a codata answer; tag five a located answer, and tag six
+///   an entered one. A located or an entered answer that states the host's
+///   world, unspent, is refused as noncanonical.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — persisted support contains structured typed answers and
 ///   preserves them on decoding. The predicate checks tag and root class, not
 ///   provenance from a checker. An unknown outer tag stops before the available
-///   payload.
+///   payload. A located answer of the host's world, unspent, is refused.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 /// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
+/// - witness: `codec::tests::located_answers_round_trip_and_refuse_the_host_s_3381`
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -8410,6 +8617,12 @@ where
         Ok(Answer::Data(Some(_))) => reader.bytes.get(before) == Some(&3),
         | Ok(Answer::Untyped) => reader.bytes.get(before) == Some(&0),
         | Ok(Answer::Codata) => reader.bytes.get(before) == Some(&4),
+        | Ok(Answer::Located { ref home, spending }) => {
+            reader.bytes.get(before) == Some(&5)
+                && (*home != crate::content::WorldContent::Host
+                    || spending == gandr_core_checker::worlds::Spending::Spent)
+        },
+        | Ok(Answer::Entered { .. }) => reader.bytes.get(before) == Some(&6),
         | Ok(Answer::Typed(ref ty)) => {
             reader.bytes.get(before) == Some(&1)
                 && matches!(
@@ -8436,6 +8649,77 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
             let ty = read_type(reader)?;
             Ok(Answer::Typed(ty))
         },
+        5 => {
+            let home = read_world(reader)?;
+            let spending = read_spending(reader)?;
+            // The host's world, unspent, is what no located answer states.
+            if home == crate::content::WorldContent::Host
+                && spending == gandr_core_checker::worlds::Spending::Unspent
+            {
+                return Err(CodecError::NonCanonical);
+            }
+            Ok(Answer::Located { home, spending })
+        },
+        6 => {
+            let entry = match reader.tag()?.0 {
+                0 => None,
+                1 => Some(read_entry(reader)?),
+                _ => return Err(CodecError::Corrupt),
+            };
+            let spending = read_spending(reader)?;
+            // The host's world with no capability, unspent, is what no
+            // entered answer states.
+            if spending == gandr_core_checker::worlds::Spending::Unspent
+                && entry.as_ref().is_some_and(|entry| {
+                    entry.home == crate::content::WorldContent::Host
+                        && entry.capabilities.is_empty()
+                })
+            {
+                return Err(CodecError::NonCanonical);
+            }
+            Ok(Answer::Entered { entry, spending })
+        },
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write whether a run spent a capability: tag zero for unspent, one for
+/// spent.
+///
+/// # Specification
+/// trivial.
+fn write_spending<Out>(
+    writer: &mut Writer<'_, Out>,
+    spending: gandr_core_checker::worlds::Spending,
+) where
+    Out: Sink,
+{
+    writer.tag(Tag(match spending {
+        gandr_core_checker::worlds::Spending::Unspent => 0,
+        gandr_core_checker::worlds::Spending::Spent => 1,
+    }));
+}
+
+/// Read whether a run spent a capability.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag past one.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a spent entry's answer round trips.
+/// - witness: `codec::tests::located_answers_round_trip_and_refuse_the_host_s_3381`
+#[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_spending(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_checker::worlds::Spending, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(gandr_core_checker::worlds::Spending::Unspent),
+        1 => Ok(gandr_core_checker::worlds::Spending::Spent),
         _ => Err(CodecError::Corrupt),
     }
 }
@@ -8465,10 +8749,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                     .each_content(&mut |content| first_unresolved(content.nodes()))
             });
         match ret {
-            | Ok(()) => checkpoint.content().locus() == crate::content::Locus::Unlocated && first.is_ok(),
-            | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
-                checkpoint.content().locus() == crate::content::Locus::Located
-            },
+            | Ok(()) => first.is_ok(),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
                 matches!(*checkpoint.content().declaration(), crate::content::DeclarationRoots::Codata)
             },
@@ -8840,8 +9121,8 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// # Specification
 /// - requires: `contents` are a program's items' contents, in order.
 /// - ensures: the magic, the count, then each item's content.
-/// - fails: [`CodecError::Unsupported`] naming a located item, a codata
-///   declaration, or the first unresolved node met.
+/// - fails: [`CodecError::Unsupported`] naming a codata declaration, or the
+///   first unresolved node met.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -8854,15 +9135,11 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(()) => contents.iter().map(Borrow::borrow).all(|content: &ItemContent| content.locus() == crate::content::Locus::Unlocated)
-            && contents
+        | Ok(()) => contents
                 .iter()
                 .map(Borrow::borrow)
                 .flat_map(ItemContent::nodes)
                 .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
-        | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
-            contents.iter().map(Borrow::borrow).any(|content: &ItemContent| content.locus() == crate::content::Locus::Located)
-        },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
             contents.iter().map(Borrow::borrow).any(|content: &ItemContent| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata))
         },

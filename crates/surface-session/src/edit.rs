@@ -3015,6 +3015,9 @@ enum Agreement
                     )
                 }
                 ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
+                ContentNode::Leta { world: ref left, .. } => matches!(*new, ContentNode::Leta { world: ref right, .. } if left == right),
+                ContentNode::Migrate { world: ref left, .. } => matches!(*new, ContentNode::Migrate { world: ref right, .. } if left == right),
+                ContentNode::HeldType { world: ref left, .. } => matches!(*new, ContentNode::HeldType { world: ref right, .. } if left == right),
                 ContentNode::KeptType { region: left, .. } => matches!(*new, ContentNode::KeptType { region: right, .. } if left == right),
                 ContentNode::Compose { composite: left, .. } => matches!(*new, ContentNode::Compose { composite: right, .. } if left == right),
                 ContentNode::Fill { composite: left, .. } => matches!(*new, ContentNode::Fill { composite: right, .. } if left == right),
@@ -3023,6 +3026,7 @@ enum Agreement
                 ContentNode::Recorded(ref left) => matches!(*new, ContentNode::Recorded(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.carrying(()) == right.carrying(()))),
                 ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
                 ContentNode::ReturnAll(_) |
+                ContentNode::Hold(_) | ContentNode::CapabilityType(_) |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::LinearLambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::QubitType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::LinearArrow { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
@@ -3315,6 +3319,30 @@ fn agreement(
         (&ContentNode::Memory(ref left), &ContentNode::Memory(ref right)) => {
             left.shape() == right.shape()
         },
+        (
+            &ContentNode::Leta {
+                world: ref left, ..
+            },
+            &ContentNode::Leta {
+                world: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::Migrate {
+                world: ref left, ..
+            },
+            &ContentNode::Migrate {
+                world: ref right, ..
+            },
+        )
+        | (
+            &ContentNode::HeldType {
+                world: ref left, ..
+            },
+            &ContentNode::HeldType {
+                world: ref right, ..
+            },
+        ) => left == right,
         (&ContentNode::Recorded(ref left), &ContentNode::Recorded(ref right)) => {
             left.len() == right.len()
                 && left
@@ -3913,7 +3941,9 @@ where
                 Computation::ListCase { .. } => matches!(ret, ContentNode::ListCase { .. }),
                 Computation::Session(ref action) => matches!(ret, ContentNode::Session(ref found) if found.shape() == action.shape()),
                 Computation::Memory(ref form) => matches!(ret, ContentNode::Memory(ref found) if found.shape() == form.shape()),
-                Computation::World(_) => ret == ContentNode::Unresolved(Sort::Computation),
+                Computation::World(gandr_core_term::world::WorldForm::Hold { .. }) => matches!(ret, ContentNode::Hold(_)),
+                Computation::World(gandr_core_term::world::WorldForm::Leta { world, .. }) => matches!(ret, ContentNode::Leta { world: ref found, .. } if *found == world_content(program, world)),
+                Computation::World(gandr_core_term::world::WorldForm::Migrate { world, .. }) => matches!(ret, ContentNode::Migrate { world: ref found, .. } if *found == world_content(program, world)),
             },
         )
 },
@@ -4223,9 +4253,45 @@ where
             )
             .unwrap_or_else(|never| match never {}),
         ),
-        // A located item is judged each time, never edited by node: its world
-        // forms, as incremental content lists them, stand by their sort.
-        Some(&Computation::World(_)) | None => ContentNode::Unresolved(Sort::Computation),
+        Some(&Computation::World(gandr_core_term::world::WorldForm::Hold { value })) => {
+            ContentNode::Hold(child(Root::Value(value)))
+        },
+        Some(&Computation::World(gandr_core_term::world::WorldForm::Leta {
+            world,
+            value,
+            body,
+        })) => {
+            let value = child(Root::Value(value));
+            ContentNode::Leta {
+                world: world_content(program, world),
+                value,
+                body: child(Root::Computation(body)),
+            }
+        },
+        Some(&Computation::World(gandr_core_term::world::WorldForm::Migrate { world, body })) => {
+            ContentNode::Migrate {
+                world: world_content(program, world),
+                body: child(Root::Computation(body)),
+            }
+        },
+        None => ContentNode::Unresolved(Sort::Computation),
+    }
+}
+
+/// The content of `world`, a declared world named by its item's reference.
+///
+/// # Specification
+/// trivial.
+fn world_content(
+    program: &Program,
+    world: gandr_core_term::world::World,
+) -> gandr_core_incremental::WorldContent
+{
+    match world {
+        gandr_core_term::world::World::Host => gandr_core_incremental::WorldContent::Host,
+        gandr_core_term::world::World::Declared(constant) => {
+            gandr_core_incremental::WorldContent::Declared(program.resolve(constant))
+        },
     }
 }
 
@@ -4319,7 +4385,9 @@ where
                 ValueType::Qubit => ret == ContentNode::QubitType,
                 ValueType::Row => ret == ContentNode::RowKind,
                 ValueType::RowTail(_) => matches!(ret, ContentNode::RowTail(_)),
-                ValueType::Staged { .. } | ValueType::World(_) => ret == ContentNode::Unresolved(Sort::ValueType),
+                ValueType::World(gandr_core_term::world::WorldType::At { world, .. }) => matches!(ret, ContentNode::HeldType { world: ref found, .. } if *found == world_content(program, world)),
+                ValueType::World(gandr_core_term::world::WorldType::Capability(world)) => ret == ContentNode::CapabilityType(world_content(program, world)),
+                ValueType::Staged { .. } => ret == ContentNode::Unresolved(Sort::ValueType),
             },
         )
 },
@@ -4482,9 +4550,17 @@ where
         Some(&ValueType::Qubit) => ContentNode::QubitType,
         Some(&ValueType::Row) => ContentNode::RowKind,
         Some(&ValueType::RowTail(code)) => ContentNode::RowTail(child(Root::Value(code))),
-        Some(&(ValueType::Staged { .. } | ValueType::World(_))) | None => {
-            ContentNode::Unresolved(Sort::ValueType)
+        Some(&ValueType::World(gandr_core_term::world::WorldType::At { inner, world })) => {
+            ContentNode::HeldType {
+                inner: child(Root::ValueType(inner)),
+                world: world_content(program, world),
+            }
         },
+        Some(&ValueType::World(gandr_core_term::world::WorldType::Capability(world))) => {
+            ContentNode::CapabilityType(world_content(program, world))
+        },
+        // A staged type has no content form, and stays opaque.
+        Some(&ValueType::Staged { .. }) | None => ContentNode::Unresolved(Sort::ValueType),
     }
 }
 

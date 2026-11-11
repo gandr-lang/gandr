@@ -127,6 +127,11 @@ fn recorded_answer_references_participate_in_value_invalidation()
         ordinal: ItemOrdinal::from(0_usize),
         value_changed: &no_change,
     };
+    let mut arena = program.arena().clone();
+    let context = gandr_core_checker::CheckingContext::new(
+        &mut arena,
+        gandr_core_checker::CheckBudget::DEFAULT,
+    );
     for (answer, expected) in [
         (Answer::Untyped, Standing::Stands),
         (Answer::Data(None), Standing::Stands),
@@ -138,7 +143,10 @@ fn recorded_answer_references_participate_in_value_invalidation()
         ),
     ] {
         assert_eq!(
-            super::support_holds(&input, &[Answered::new(Reference::Unoccupied, answer)]),
+            super::support_holds(&context, &input, &[Answered::new(
+                Reference::Unoccupied,
+                answer
+            )]),
             expected
         );
     }

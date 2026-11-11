@@ -379,9 +379,9 @@ impl<'part> Union<'part>
 /// - requires: `children` are the former's children in order, and `lookup`
 ///   yields every one of them; a child it does not yield contributes nothing.
 /// - ensures: the former's own reference, in a type position exactly when the
-///   former is a type; every child's type reads; every child's value reads,
-///   promoted to type reads beneath a type former. Opaque exactly when the
-///   former is unresolved or a child is opaque.
+///   former is a type or a world form; every child's type reads; every child's
+///   value reads, promoted to type reads beneath a type former. Opaque exactly
+///   when the former is unresolved or a child is opaque.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -413,11 +413,18 @@ where
         Opacity::Transparent
     };
     let in_type = matches!(former.sort(), Sort::ValueType | Sort::CompType);
+    // A world form's world is read in type position: its declaration's row
+    // types the body, so a changed world reaches the form's typing.
+    let own_in_type = in_type
+        || matches!(
+            *former,
+            ContentNode::Leta { .. } | ContentNode::Migrate { .. }
+        );
     let own = match former.reference() {
         Maybe::Present(reference) => Some(reference),
         Maybe::Absent(_) => None,
     };
-    let (mut value_reads, mut type_reads) = if in_type {
+    let (mut value_reads, mut type_reads) = if own_in_type {
         (Union::default(), Union::of(own))
     }
     else {

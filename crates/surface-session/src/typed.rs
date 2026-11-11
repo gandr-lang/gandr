@@ -170,9 +170,9 @@ fn spelled_type(
         Typing::Data => match *(content.declaration()) {
             DeclarationRoots::Data(ref roots) => laid_out(content.debruijn(roots.kind)),
             DeclarationRoots::Abstract(roots) => laid_out(content.debruijn(roots.kind)),
-            DeclarationRoots::Value { .. } | DeclarationRoots::World | DeclarationRoots::Codata => {
-                Maybe::Absent(spelled::Absent::Unpresentable)
-            },
+            DeclarationRoots::Value { .. }
+            | DeclarationRoots::World(_)
+            | DeclarationRoots::Codata => Maybe::Absent(spelled::Absent::Unpresentable),
         },
         Typing::Checked { .. } | Typing::Owed | Typing::Suspended => match *(content.declaration())
         {
@@ -186,7 +186,7 @@ fn spelled_type(
             } => Maybe::Absent(spelled::Absent::Unsigned),
             DeclarationRoots::Data(_)
             | DeclarationRoots::Abstract(_)
-            | DeclarationRoots::World
+            | DeclarationRoots::World(_)
             | DeclarationRoots::Codata => Maybe::Absent(spelled::Absent::Unpresentable),
         },
         Typing::Synthesised { ref produced, .. } => laid_out(produced.debruijn()),

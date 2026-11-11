@@ -590,14 +590,72 @@ pub enum WorldMove
 }
 
 /// Whether a run spent a capability of its entry.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub(crate) enum Spending
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Spending
 {
     /// No capability was spent.
     #[default]
     Unspent,
     /// At least one was.
     Spent,
+}
+
+/// What the register holds of one declaration after its judgement: the world
+/// it is homed at, and whether a run of it spent a capability. A judgement
+/// that reads the declaration reads both.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Located
+{
+    /// The world the declaration is homed at: the host's when it was judged
+    /// at none.
+    home: World,
+    /// Whether a run of it spent a capability, which makes it an entry.
+    spending: Spending,
+}
+
+impl Located
+{
+    /// The declaration homed at `home`, `spending` as its run spent.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        home: World,
+        spending: Spending,
+    ) -> Self
+    {
+        Self { home, spending }
+    }
+
+    /// The world the declaration is homed at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn home(&self) -> World
+    {
+        self.home
+    }
+
+    /// Whether a run of the declaration spent a capability.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn spending(&self) -> Spending
+    {
+        self.spending
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -816,6 +874,28 @@ impl Worlds
     ) -> World
     {
         self.homes.get(&constant).copied().unwrap_or_default()
+    }
+
+    /// What the register holds of `constant`'s declaration: its home and
+    /// whether it spent a capability, as [`Self::home`] and
+    /// [`Self::nameable`] read them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn located(
+        &self,
+        constant: ConstantIndex,
+    ) -> Located
+    {
+        Located::new(
+            self.home(constant),
+            if self.entries.contains(&constant) {
+                Spending::Spent
+            }
+            else {
+                Spending::Unspent
+            },
+        )
     }
 
     /// Whether `constant` may be named: it is not an entry, a declaration

@@ -48,6 +48,14 @@
 //! footprint over-approximates what an item could read; support records what it
 //! did read.
 //!
+//! **A located judgement reads the world register too.** It reads the home of
+//! each declaration it names and whether a run of it spent a capability. A
+//! value declaration's judgement also reads the entry that the host's grant
+//! resolves for it. The support records each such answer that is not the
+//! default: the host's world, unspent, and no entry. So the support of an
+//! unlocated item keeps its bytes. An adopted item settles its own home in
+//! the register, as its judgement settled it.
+//!
 //! **The entry answers one item.** The pass interleaves judging and adopting in
 //! source order through `CheckingContext::adopt` and
 //! `CheckingContext::adopt_data`. A signed value's signature forms in the
@@ -81,7 +89,8 @@
 //! 1. The item is transparent.
 //! 2. Every recorded answer equals the edited table's answer for the same
 //!    reference **and query kind** at this point of the pass: the answer the
-//!    preceding item supplied, or absence otherwise.
+//!    preceding item supplied, or absence otherwise. A recorded home, spending
+//!    or resolved entry equals the register's at that point.
 //! 3. No reference in a type position of the item, nor in the type of any
 //!    recorded answer, names a definition in the value-changed set. A type
 //!    former's own reference is in a type position, including an abstract type
@@ -102,6 +111,11 @@
 //! exactly those reuses. When the checker records the bodies it unfolds in the
 //! support, the closure can retire.
 //!
+//! **A filled hole is a body edit.** The pass judges the filled item again. It
+//! judges a reader again only when an answer that the reader consulted
+//! changes. So it adopts a reader of a declared type. It judges again a reader
+//! of the unknown type that an unsigned hole synthesises.
+//!
 //! **Linear by construction.** Each item is encoded once, recalled at most
 //! once, adopted or judged once; the closure crosses each read edge at most
 //! once; the splice is one map build and one patience walk. `ResumeCensus`
@@ -116,6 +130,13 @@
 //! | Derive supplied answers from the formed signature or seated cached type | store a second answer beside the typing | a consumer needs an independently certified answer |
 //! | Trust faithful checker results, then validate their applicability | re-judge every cached item; proof-carrying judgement certificates | checkpoints must be accepted from an untrusted producer |
 //! | Take each changed item's verdict and support from the revision's whole-module judgement | decide each changed item a second time in the pass; judge only the changed items and no whole module | a checkpoint differs from a deciding pass's, through `Verdicts::Decided` in the session |
+//!
+//! # References
+//!
+//! - `vault:01a178aa-b725-7820-9a4c-074e3f6d79b0` — anchor: §
+//!   arc-zero-drift-differential — the incremental-equals-batch law. So the
+//!   support records each register read of a located judgement, and a changed
+//!   home or grant judges again the items that read it.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -251,6 +272,28 @@ pub enum Answer
     /// never stands for a recorded one: a judgement that read a codata
     /// signature is judged afresh.
     Codata,
+    /// What the world register held of the declaration beside its value
+    /// answer: its home and whether a run of it spent a capability. Recorded
+    /// only when the home is a declared world or the run spent; a value
+    /// answer with no located one beside it read the host's world, unspent.
+    Located
+    {
+        /// The world the declaration is homed at.
+        home: crate::content::WorldContent,
+        /// Whether a run of it spent a capability.
+        spending: gandr_core_checker::worlds::Spending,
+    },
+    /// The entry the item's own judgement resolved under the host's grant,
+    /// or none where the grant refused it, and whether its run spent a
+    /// capability. Recorded under the item's own reference, only when the
+    /// entry is not the host's world with no capability or the run spent.
+    Entered
+    {
+        /// The resolved entry, or none for a refused one.
+        entry: Option<crate::content::EntryRoots>,
+        /// Whether a run of the body spent a capability.
+        spending: gandr_core_checker::worlds::Spending,
+    },
 }
 
 /// Which signature table a consultation reads.
@@ -263,6 +306,10 @@ pub enum Consultation
     Data,
     /// The codata-signature table.
     Codata,
+    /// The world register, beside the value-signature table.
+    Located,
+    /// The item's own entry, as the host's grant resolves it.
+    Entry,
 }
 
 impl Answer
@@ -277,6 +324,8 @@ impl Answer
             Self::Untyped | Self::Typed(_) => Consultation::Value,
             Self::Data(_) => Consultation::Data,
             Self::Codata => Consultation::Codata,
+            Self::Located { .. } => Consultation::Located,
+            Self::Entered { .. } => Consultation::Entry,
         }
     }
 
@@ -284,8 +333,8 @@ impl Answer
     ///
     /// # Specification
     /// - ensures: a typed answer's type table, a data answer's signature table,
-    ///   empty for an absence and for a codata answer.
-    /// - panics: none.
+    ///   empty for an absence, a codata answer, a located one and an entered
+    ///   one.
     /// - executable: none — the result is a field borrow chosen by variant.
     ///
     /// # Adequacy
@@ -295,7 +344,11 @@ impl Answer
     pub(crate) fn nodes(&self) -> &[crate::support::SupportedNode]
     {
         match *(self) {
-            Self::Untyped | Self::Data(None) | Self::Codata => &[],
+            Self::Untyped
+            | Self::Data(None)
+            | Self::Codata
+            | Self::Located { .. }
+            | Self::Entered { .. } => &[],
             Self::Typed(ref ty) => ty.nodes(),
             Self::Data(Some(ref signature)) => signature.nodes(),
         }
@@ -306,26 +359,42 @@ impl Answer
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a typed answer's root reads, a data answer's reads over its
-    ///   roots, nothing for an absence or a codata answer; ascending, each
-    ///   once.
+    ///   roots, the declared worlds of an entered answer's entry, nothing for
+    ///   an absence, a codata answer or a located one; ascending, each once.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — recorded answers naming a changed definition in a
     ///   type position, an abstract type or a code invalidate their reader; an
-    ///   untyped answer does not.
+    ///   untyped answer does not. A changed world the host's grant homes an
+    ///   entry at invalidates the entry.
     /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    /// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
     #[spec(ensures: |ret| match *self {
-        Self::Untyped | Self::Data(None) | Self::Codata => ret.is_empty(),
+        Self::Untyped | Self::Data(None) | Self::Codata | Self::Located { .. } => ret.is_empty(),
         Self::Typed(ref ty) => ty.reads().all(|read| ret.contains(read)),
         Self::Data(Some(ref signature)) => ret.eq(&signature.reads()),
+        Self::Entered { ref entry, .. } => entry.iter().flat_map(|entry| core::iter::once(&entry.home).chain(&entry.capabilities))
+            .all(|world| match world.reference() { Maybe::Present(world) => ret.contains(world), Maybe::Absent(_) => true }),
     })]
     pub(crate) fn reads(&self) -> alloc::collections::BTreeSet<&Reference>
     {
         match *(self) {
-            Self::Untyped | Self::Data(None) | Self::Codata => alloc::collections::BTreeSet::new(),
+            Self::Untyped | Self::Data(None) | Self::Codata | Self::Located { .. } => {
+                alloc::collections::BTreeSet::new()
+            },
             Self::Typed(ref ty) => ty.reads().collect(),
             Self::Data(Some(ref signature)) => signature.reads(),
+            // The worlds of a resolved entry type the body: it is judged at
+            // the home, and performs in its row.
+            Self::Entered { ref entry, .. } => entry
+                .iter()
+                .flat_map(|entry| core::iter::once(&entry.home).chain(&entry.capabilities))
+                .filter_map(|world| match world.reference() {
+                    Maybe::Present(reference) => Some(reference),
+                    Maybe::Absent(_) => None,
+                })
+                .collect(),
         }
     }
 }
@@ -2366,6 +2435,10 @@ quenchant_shape::reason_enum! {
             /// The judgement filled the declared type, so the table holds
             /// another type than the written signature.
             Filled,
+            /// The declaration resolves an entry other than the host's world
+            /// with no capability. The judgement keeps no record of whether
+            /// its run spent a capability, which the register holds.
+            Located,
             /// The verdict does not seat in the edited context.
             Unseated,
         }
@@ -2522,6 +2595,9 @@ impl<'judged> Judgement<'judged>
         {
             return Maybe::Absent(taken::Absent::Filled);
         }
+        if own_entry(context, declaration, (taking.item, taking.layout)).is_some() {
+            return Maybe::Absent(taken::Absent::Located);
+        }
         let projection = Projection {
             arena: self.arena,
             layout: taking.layout,
@@ -2555,7 +2631,12 @@ impl<'judged> Judgement<'judged>
         else {
             return Maybe::Absent(taken::Absent::Unseated);
         };
-        let support = answered(supported.support(), self.arena, taking.layout, taking.types);
+        let support = answered(
+            (supported.support(), None),
+            self.arena,
+            taking.layout,
+            taking.types,
+        );
         Maybe::Present((support, typing, answer))
     }
 }
@@ -3026,6 +3107,7 @@ where
     };
     let tier = edited.tier();
     let strata = edited.strata();
+    let host = edited.host().clone();
     let (arena, layout) = edited.parts_mut();
     let mut context = match start {
         Start::Fresh(budget) => CheckingContext::new(arena, budget),
@@ -3035,6 +3117,7 @@ where
         context.decide_endpoints_on(make(), policy);
     }
     context.keep_strata_in(strata);
+    context.enter_at(host);
     let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once; the judgement's arena has a memo of its own.
@@ -3165,8 +3248,8 @@ where
 /// # Specification
 /// - requires: `context` has admitted exactly the items before this one.
 /// - ensures: the verdict [`check_declaration_supported`] gives, projected,
-///   with its support, the answer the table then gives of the item, and the
-///   form the table holds it in.
+///   with its support and the item's own entered answer, the answer the table
+///   then gives of the item, and the form the table holds it in.
 /// - panics: none.
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
@@ -3191,7 +3274,8 @@ fn decided(
         types,
     };
     let typing = projection.typing(&supported.verdict());
-    let support = answered(supported.support(), arena, layout, types);
+    let own = own_entry(context, declaration, (item, layout));
+    let support = answered((supported.support(), own), arena, layout, types);
     let answer = match *(declaration.content()) {
         gandr_core_checker::DeclarationContent::Value { .. } => answer_of(
             context.signature(declaration.constant()),
@@ -3359,8 +3443,7 @@ enum Seat
         let derived = matches!(*input.candidate.checkpoint.typing(), Typing::Checked { .. } | Typing::Synthesised { .. })
             && matches!(*input.declaration.content(), gandr_core_checker::DeclarationContent::Value { body: Maybe::Present(held), .. }
                 if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..) | gandr_core_term::Value::Equiv(..))));
-        let supported =
-            support_holds(input, input.candidate.checkpoint.support()) == Standing::Stands;
+        let supported = answers_hold(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let marked = matches!(input.declaration.builtin(), Maybe::Present(_));
         let elaborated = input.candidate.checkpoint.entered() == Entered::Elaborated;
@@ -3376,28 +3459,32 @@ enum Seat
                     && typing == input.candidate.checkpoint.typing()
             },
             | Maybe::Absent(reason) => {
-                reason
-                    == if !transparent {
-                        recall::Absent::Opaque
-                    }
-                    else if !supported {
-                        recall::Absent::Outdated
-                    }
-                    else if !untouched {
-                        recall::Absent::ValueRead
-                    }
-                    else if marked {
-                        recall::Absent::Marked
-                    }
-                    else if elaborated {
-                        recall::Absent::Elaborated
-                    }
-                    else if derived {
-                        recall::Absent::Derived
-                    }
-                    else {
-                        recall::Absent::Unseated
-                    }
+                let rest = if !untouched {
+                    recall::Absent::ValueRead
+                }
+                else if marked {
+                    recall::Absent::Marked
+                }
+                else if elaborated {
+                    recall::Absent::Elaborated
+                }
+                else if derived {
+                    recall::Absent::Derived
+                }
+                else {
+                    recall::Absent::Unseated
+                };
+                if !transparent {
+                    reason == recall::Absent::Opaque
+                }
+                else if !supported {
+                    reason == recall::Absent::Outdated
+                }
+                else {
+                    // A located answer that falls refuses as an outdated one.
+                    // The register answers it, so this clause admits that reason.
+                    reason == recall::Absent::Outdated || reason == rest
+                }
             },
         }
     },
@@ -3411,7 +3498,7 @@ fn adopt(
     if input.item.content.opacity() == Opacity::Opaque {
         return Maybe::Absent(recall::Absent::Opaque);
     }
-    if support_holds(input, checkpoint.support()) == Standing::Falls {
+    if support_holds(context, input, checkpoint.support()) == Standing::Falls {
         return Maybe::Absent(recall::Absent::Outdated);
     }
     if touches(input, checkpoint.support()) == Standing::Falls {
@@ -3423,20 +3510,75 @@ fn adopt(
     if checkpoint.entered() == Entered::Elaborated {
         return Maybe::Absent(recall::Absent::Elaborated);
     }
-    seat(context, &Seating {
+    let answer = seat(context, &Seating {
         typing: checkpoint.typing(),
         item: input.item,
         declaration: input.declaration,
         layout: input.layout,
         minted: input.candidate.seat,
-    })
-    .map(|answer| {
+    });
+    if let Maybe::Present(_) = answer {
+        settle_home(context, input, checkpoint.support());
+    }
+    answer.map(|answer| {
         (
             checkpoint.support().to_vec(),
             checkpoint.typing().clone(),
             answer,
         )
     })
+}
+
+/// Settle the adopted item in the world register as its judgement settled
+/// it: at the home of the entry it resolves, spent as its entered answer in
+/// `support` records.
+///
+/// # Specification
+/// - requires: the item is seated in `context`, and its support holds.
+/// - ensures: the register holds the item at its resolved entry's home and the
+///   recorded spending, or unspent when no entered answer is recorded; an entry
+///   the grant refuses settles nothing, as its judgement does.
+/// - panics: none.
+/// - executable: none — a clause over the context after the settlement. Such a
+///   clause resolves the entry again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reader of an adopted located declaration is adopted
+///   against the home the earlier judgement settled.
+/// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+fn settle_home(
+    context: &mut CheckingContext<'_>,
+    input: &AdoptionInput<'_, '_>,
+    support: &[Answered],
+)
+{
+    let Ok(entry) = context.resolve_entry(input.declaration)
+    else {
+        return;
+    };
+    let reference = input.item.content.reference();
+    let spending = support
+        .binary_search_by(|answered| {
+            (&answered.reference, answered.answer.consultation())
+                .cmp(&(reference, Consultation::Entry))
+        })
+        .ok()
+        .and_then(|at| support.get(at))
+        .map_or(
+            gandr_core_checker::worlds::Spending::Unspent,
+            |answered| match answered.answer {
+                Answer::Entered { spending, .. } => spending,
+                Answer::Untyped
+                | Answer::Typed(_)
+                | Answer::Data(_)
+                | Answer::Codata
+                | Answer::Located { .. } => gandr_core_checker::worlds::Spending::Unspent,
+            },
+        );
+    context.settle_adopted(
+        input.declaration.constant(),
+        gandr_core_checker::worlds::Located::new(entry.home(), spending),
+    );
 }
 
 /// What seating one item's typing reads: the typing, the item and the program.
@@ -3568,10 +3710,19 @@ fn seat(
             }
             return Maybe::Present(Answer::Untyped);
         },
-        // A world declaration is located, and a codata declaration has no
-        // content form: both items are opaque and returned before this.
-        gandr_core_checker::DeclarationContent::World(_)
-        | gandr_core_checker::DeclarationContent::Codata(_) => {
+        gandr_core_checker::DeclarationContent::World(ref requirement) => {
+            if !matches!(*seating.typing, Typing::Data)
+                || context
+                    .adopt_world(seating.declaration.constant(), requirement)
+                    .is_err()
+            {
+                return Maybe::Absent(recall::Absent::Unseated);
+            }
+            return Maybe::Present(Answer::Untyped);
+        },
+        // A codata declaration has no content form: its item is opaque and
+        // returned before this.
+        gandr_core_checker::DeclarationContent::Codata(_) => {
             return Maybe::Absent(recall::Absent::Opaque);
         },
     };
@@ -3661,7 +3812,8 @@ fn seat(
     Maybe::Present(answer)
 }
 
-/// Whether every recorded answer equals the answer the edited table gives.
+/// Whether every recorded answer of the signature tables equals the answer the
+/// edited table gives.
 ///
 /// # Specification
 /// - requires: as [`adopt`].
@@ -3669,7 +3821,8 @@ fn seat(
 ///   reference names in the edited program precedes this one and supplied an
 ///   equal answer, or no such item precedes it and the recorded answer is
 ///   `Untyped`; a recorded codata answer, and a typed one whose content is
-///   opaque, never stands.
+///   opaque, never stands; a located and an entered answer stand here, and
+///   [`located_stands`] reads them.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3683,7 +3836,7 @@ fn seat(
     requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
         (ret == Standing::Stands)
-            == support.iter().all(|answered| {
+            == (support.iter().all(|answered| {
                 input
                     .layout
                     .references
@@ -3692,19 +3845,20 @@ fn seat(
                     .zip(input.supplied.iter())
                     .find(|&(reference, _)| *reference == answered.reference)
                     .map(|(_,current)| current).map_or_else(
-                        || matches!(answered.answer,Answer::Untyped | Answer::Data(None)),
+                        || matches!(answered.answer,Answer::Untyped | Answer::Data(None) | Answer::Located { .. } | Answer::Entered { .. }),
                         |current| match answered.answer {
                             Answer::Untyped => !matches!(current,Answer::Typed(_)),
                             Answer::Data(None) => !matches!(current,Answer::Data(Some(_))),
                             Answer::Typed(ref ty) => ty.nodes().first().is_none_or(|root| root.opacity() == Opacity::Transparent) && *current == answered.answer,
                             Answer::Data(Some(_)) => *current == answered.answer,
                             Answer::Codata => false,
+                            Answer::Located { .. } | Answer::Entered { .. } => true,
                         },
                     )
-            })
+            }))
     },
 )]
-fn support_holds(
+fn answers_hold(
     input: &AdoptionInput<'_, '_>,
     support: &[Answered],
 ) -> Standing
@@ -3727,9 +3881,126 @@ fn support_holds(
             },
             Answer::Data(Some(_)) => current == Some(&answered.answer),
             Answer::Codata => false,
+            // The register and the grant answer these; `located_stands` reads
+            // them.
+            Answer::Located { .. } | Answer::Entered { .. } => true,
         }
     });
     if holds {
+        Standing::Stands
+    }
+    else {
+        Standing::Falls
+    }
+}
+
+/// Whether `support` still answers: the signature tables as
+/// [`answers_hold`] reads them, and the register and the grant as
+/// [`located_stands`] reads them.
+///
+/// # Specification
+/// - requires: as [`adopt`].
+/// - ensures: `Stands` exactly when both stand.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`answers_hold`] and [`located_stands`].
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
+#[spec(
+    requires: input.supplied.next() == input.ordinal,
+    ensures: |ret| (ret == Standing::Stands)
+        == (answers_hold(input, support) == Standing::Stands
+            && located_stands(context, input, support) == Standing::Stands),
+)]
+fn support_holds(
+    context: &CheckingContext<'_>,
+    input: &AdoptionInput<'_, '_>,
+    support: &[Answered],
+) -> Standing
+{
+    if answers_hold(input, support) == Standing::Stands {
+        located_stands(context, input, support)
+    }
+    else {
+        Standing::Falls
+    }
+}
+
+/// Whether the world register and the host's grant answer as `support`
+/// records: each declaration a value answer names is homed and spent as the
+/// located answer beside it states, and the item's own entry resolves as its
+/// entered answer states.
+///
+/// # Specification
+/// - requires: `support` is canonical, as [`canonical_support`] leaves it.
+/// - ensures: true exactly when, for each recorded value answer, the item its
+///   reference names precedes this one and `context` holds it at the home and
+///   the spending the located answer beside it records, or at the host's world
+///   unspent when none is beside it, or no such item precedes it and none is
+///   beside it; and `context` resolves the item's entry to the one its entered
+///   answer records, or to the host's world with no capability when it records
+///   none.
+/// - panics: none.
+/// - executable: none — the walk itself, over the register and the grant of
+///   `context`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reader of a declaration whose home changes is judged
+///   again; under a changed grant, each declaration whose resolved entry moves
+///   is judged again and every other is adopted.
+/// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
+/// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+fn located_stands(
+    context: &CheckingContext<'_>,
+    input: &AdoptionInput<'_, '_>,
+    support: &[Answered],
+) -> Standing
+{
+    let recorded = |reference: &Reference, consultation: Consultation| {
+        support
+            .binary_search_by(|answered| {
+                (&answered.reference, answered.answer.consultation())
+                    .cmp(&(reference, consultation))
+            })
+            .ok()
+            .and_then(|at| support.get(at))
+            .map(|answered| &answered.answer)
+    };
+    let homed = support
+        .iter()
+        .filter(|answered| answered.answer.consultation() == Consultation::Value)
+        .all(|answered| {
+            let current = match input.layout.ordinal_of(&answered.reference) {
+                Maybe::Present(ordinal) if ordinal < input.ordinal => input
+                    .layout
+                    .items
+                    .get(usize::from(ordinal))
+                    .map(|item| context.located(item.declaration().constant())),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            };
+            match recorded(&answered.reference, Consultation::Located) {
+                Some(&Answer::Located { ref home, spending }) => current.is_some_and(|located| {
+                    crate::content::WorldContent::of(input.layout, located.home()) == *home
+                        && located.spending() == spending
+                }),
+                Some(_) | None => current.is_none_or(|located| {
+                    located == gandr_core_checker::worlds::Located::default()
+                }),
+            }
+        });
+    let resolved = context.resolve_entry(input.declaration).ok();
+    let entered = match recorded(input.item.content.reference(), Consultation::Entry) {
+        Some(&Answer::Entered { ref entry, .. }) => {
+            resolved
+                .map(|resolved| crate::content::EntryRoots::of(input.layout, &resolved))
+                .as_ref()
+                == entry.as_ref()
+        },
+        Some(_) | None => resolved
+            .is_some_and(|resolved| resolved == gandr_core_checker::worlds::Entry::default()),
+    };
+    if homed && entered {
         Standing::Stands
     }
     else {
@@ -3780,25 +4051,30 @@ fn touches(
     }
 }
 
-/// The consulted answers, canonical by reference and signature table.
+/// The consulted answers, with what the world register held of each
+/// declaration consulted and `own`, the item's own entered answer when it
+/// records one, canonical by reference and signature table.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each consulted position's reference beside its answer's content,
-///   ascending by reference and signature table. Unoccupied positions collapse
-///   into one absent answer per signature table.
+///   and beside a located answer when the register homed it at a declared world
+///   or its run spent; then `own`; ascending by reference and signature table.
+///   Unoccupied positions collapse into one absent answer per signature table.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — independent fresh judgements validate adopted support in
 ///   the differential suite; a dangling reader supplies an untyped answer. The
 ///   predicate bounds cardinality and canonical order, not a repeated
-///   judgement.
+///   judgement. L3 — a reader of a declaration whose home changes is judged
+///   again.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
+/// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
 #[spec(
     ensures: |ret| {
-        ret.len() <= support.consulted().len().saturating_add(support.data_consulted().len()).saturating_add(support.codata_consulted().len())
+        ret.len() <= support.consulted().len().saturating_mul(2).saturating_add(support.data_consulted().len()).saturating_add(support.codata_consulted().len()).saturating_add(1)
             && ret.windows(2).all(|pair| {
                 pair.first()
                     .zip(pair.last())
@@ -3807,20 +4083,37 @@ fn touches(
     },
 )]
 fn answered(
-    support: &Support,
+    (support, own): (&Support, Option<Answered>),
     arena: &CoreArena,
     layout: &Layout,
     types: &crate::content::TypeMemo,
 ) -> Vec<Answered>
 {
-    let mut answers: Vec<Answered> = support
-        .consulted()
-        .iter()
-        .map(|consulted| Answered {
-            reference: layout.resolve(consulted.constant()),
+    let mut answers: Vec<Answered> = Vec::with_capacity(
+        support
+            .consulted()
+            .len()
+            .saturating_add(support.data_consulted().len())
+            .saturating_add(support.codata_consulted().len())
+            .saturating_add(1),
+    );
+    for consulted in support.consulted() {
+        let reference = layout.resolve(consulted.constant());
+        let located = consulted.located();
+        if located != gandr_core_checker::worlds::Located::default() {
+            answers.push(Answered {
+                reference: reference.clone(),
+                answer: Answer::Located {
+                    home: crate::content::WorldContent::of(layout, located.home()),
+                    spending: located.spending(),
+                },
+            });
+        }
+        answers.push(Answered {
+            reference,
             answer: answer_of(consulted.answer(), arena, layout, types),
-        })
-        .collect();
+        });
+    }
     answers.extend(support.data_consulted().iter().map(|consulted| {
         Answered {
             reference: layout.resolve(consulted.constant()),
@@ -3835,7 +4128,53 @@ fn answered(
         reference: layout.resolve(consulted.constant()),
         answer: Answer::Codata,
     }));
+    answers.extend(own);
     canonical_support(answers)
+}
+
+/// The entered answer of `item`'s declaration, as `context` resolves its
+/// entry and holds its spending, or none for the host's world with no
+/// capability, unspent.
+///
+/// # Specification
+/// - requires: the declaration was judged or adopted in `context`, so the
+///   register holds its spending.
+/// - ensures: none exactly when the entry resolves to the host's world with no
+///   capability and the register holds the declaration unspent; otherwise the
+///   item's own reference beside the resolved entry, or none for a refused one,
+///   and the spending.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration stating no entry records none under no
+///   grant, and records the grant's entry under one.
+/// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|answered| {
+    answered.reference == *item.content.reference()
+        && matches!(answered.answer, Answer::Entered { .. })
+}))]
+fn own_entry(
+    context: &CheckingContext<'_>,
+    declaration: &gandr_core_checker::Declaration,
+    (item, layout): (&Encoded, &Layout),
+) -> Option<Answered>
+{
+    let spending = context.located(declaration.constant()).spending();
+    let entry = context.resolve_entry(declaration).ok();
+    if spending == gandr_core_checker::worlds::Spending::Unspent
+        && entry
+            .as_ref()
+            .is_some_and(|entry| *entry == gandr_core_checker::worlds::Entry::default())
+    {
+        return None;
+    }
+    Some(Answered {
+        reference: item.content.reference().clone(),
+        answer: Answer::Entered {
+            entry: entry.map(|entry| crate::content::EntryRoots::of(layout, &entry)),
+            spending,
+        },
+    })
 }
 
 /// `support` ascending by reference and signature table, each pair once.
@@ -3900,7 +4239,7 @@ fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
                     .is_some_and(|node| node.sort() == crate::content::Sort::ValueType)
         },
         | Answer::Untyped => !present,
-        Answer::Data(_) | Answer::Codata => false,
+        Answer::Data(_) | Answer::Codata | Answer::Located { .. } | Answer::Entered { .. } => false,
     },
 )]
 fn answer_of(

@@ -277,9 +277,11 @@ INSERT INTO purpose VALUES('core-checker','worlds::Crossed','enum','What crosses
 INSERT INTO purpose VALUES('core-checker','worlds::Crossing','enum','The decision on whether a type crosses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::Entry','struct','A declaration''s entry: the world it is judged at and the capabilities the host hands it, one migration each.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::HostEntry','enum','The entry the host names for every declaration of a run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','worlds::Located','struct','What the register holds of one declaration after its judgement: its home and whether a run of it spent a capability.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::LocatedDefect','enum','How a located judgement breaks.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::Mobility','enum','Whether a sealed abstract type crosses outside its seal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::Predicate','enum','Which of the two crossing predicates a former fails.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','worlds::Spending','enum','Whether a run of a body spent a capability.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldMove','enum','One move of the world register a typed run keeps: a migration''s push, with the linear zone before and after its capability was spent, and its pop.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','worlds::WorldName','struct','The name of a world, as a host names one before any source declares it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Deferred','struct','A job the serial spawner holds until its wait.','fork','fits','sound',NULL);
@@ -329,10 +331,10 @@ INSERT INTO purpose VALUES('core-incremental','content::CellsRoots','struct','Ho
 INSERT INTO purpose VALUES('core-incremental','content::ContentNode','enum','Names one node of a content table: a core former over table indices, or an unresolved id of its sort.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::DataContent','struct','Holds a complete nominal signature in arena-independent coordinates, its roots, table and root placements.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::DataRoots','struct','Names the roots of a nominal declaration: its parameters, indices, constructors, results, kind and rules.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','content::DeclarationRoots','enum','Names a declaration''s roots and its value-or-nominal category, world and codata declarations included.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','content::DeclarationRoots','enum','Names a declaration''s roots and its value-or-nominal category, a stated entry, a world''s row and codata declarations included.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','content::EntryRoots','struct','Holds a stated entry as content: its home and the world of each capability, a declared world by its reference.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::InterfaceRoots','struct','Holds the roots of a sealed atom''s interface: its relation, reflexivity and, when stated, its law.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::ItemContent','struct','Holds an item''s canonical declaration roots and one shared node table, free of arena ids and positions.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','content::Locus','enum','Says whether an item is located by its own closure, so a located item is opaque and never persisted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::ModelRoots','struct','Holds the roots of a model slot a call omits: its nominated holes, fixed sorts and candidates.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::Opacity','enum','Says whether a table holds an id another arena minted, which makes its item opaque.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::PresentationRoots','struct','Holds the rules that present a nominal type and the cells of a type of words, as content.',NULL,'fits','sound',NULL);
@@ -340,6 +342,8 @@ INSERT INTO purpose VALUES('core-incremental','content::RuleRoot','enum','Names 
 INSERT INTO purpose VALUES('core-incremental','content::RuleRoots','struct','Holds one operation rule as content: its left and right sides in pre-order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::Sort','enum','Names the four node sorts of the core vocabulary: value, computation, value type, computation type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::TypeContent','struct','Holds a node''s canonical content, a type''s or a term''s: every node reachable from it, numbered by discovery, with its root support.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','content::WorldContent','enum','Names a world as content: the host''s, or a declared world by its reference.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','content::WorldRoots','struct','Holds a world declaration''s roots: the row that code at the world performs in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::map_children','function','Copies a content node with every child index replaced by its image, applied left to right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::words::Absent','enum','Names why a nominal type''s presentation holds no free cells: the type is no type of words.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','footprint::Footprint','struct','Holds what an item''s terms mention, conservatively, its reads apart from its type reads.',NULL,'fits','sound',NULL);
