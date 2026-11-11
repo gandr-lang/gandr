@@ -1,4 +1,0 @@
-  let m = twice n ;
-  // between
-  let k = twice n ;
-  both m k
