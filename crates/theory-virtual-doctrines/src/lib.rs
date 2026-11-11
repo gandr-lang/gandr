@@ -39,7 +39,6 @@
 extern crate alloc;
 
 pub mod boundary;
-pub mod cartesian;
 pub mod check;
 pub mod directed;
 pub mod iso;
@@ -71,9 +70,6 @@ pub use crate::boundary::RewriteStepBudget;
 pub use crate::boundary::RoundTripIdentity;
 pub use crate::boundary::SigMorphismIdentity;
 pub use crate::boundary::VdcCellEquality;
-pub use crate::cartesian::CartesianLawError;
-pub use crate::cartesian::CartesianWitness;
-pub use crate::cartesian::WCartesianAction;
 pub use crate::check::CheckError;
 pub use crate::check::Checker;
 pub use crate::check::Context;

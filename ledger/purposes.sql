@@ -4636,9 +4636,6 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::RewriteStepBudg
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::RoundTripIdentity','struct','Whether an isomorphism round trip replays to the identity transformation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::SigMorphismIdentity','struct','Whether a reflected signature morphism is the identity renaming.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::VdcCellEquality','struct','Whether two reflected VDC cells are replay-equivalent.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','cartesian::CartesianLawError','enum','Failure reported by the checked W-cartesian action.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','cartesian::CartesianWitness','struct','The checked status of the three LAW-VDC-CARTESIAN obligations.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','cartesian::WCartesianAction','struct','A componentwise action on a finite product of VDC signatures.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','check::CheckError','enum','Why a protype or proterm failed to check.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','check::Checker','struct','The **checker** — an environment of embedded derivations and the cell store they replay against.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','check::Context','struct','The **two-sided object context** `Γ # Δ` — domain-side and codomain-side object variables with their signatures.',NULL,'fits','sound',NULL);
