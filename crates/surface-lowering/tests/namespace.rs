@@ -1546,7 +1546,13 @@ fn here_names_the_words_its_source_can_name_6722()
         .map(|declaration| {
             (
                 String::from(declaration.name().as_ref()),
-                matches!(declaration.outcome(), DeclarationOutcome::Refused(refusal) if format!("{refusal:?}").contains("Unannotated")),
+                matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                        boundary: FragmentBoundary::Unannotated,
+                        ..
+                    })
+                ),
             )
         })
         .collect();
