@@ -3618,17 +3618,17 @@ fn the_toolset_checks_a_corpus_as_the_command_line_does_6765()
     .to_string();
     // One counter orders the events: the read of the acknowledgement and the
     // arrival of each request that the toolset sends to the callback.
-    let order = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    // Each request that the toolset sends to the callback, stamped when it
-    // arrives and answered `200`, until the result.
-    let calls = std::thread::spawn({
-        let order = std::sync::Arc::clone(&order);
-        move || {
+    let order = core::sync::atomic::AtomicU64::new(0);
+    let stamped = &order;
+    let (acknowledged, acknowledgement, mut requests) = std::thread::scope(|scope| {
+        // Each request that the toolset sends to the callback, stamped when it
+        // arrives and answered `200`, until the result.
+        let calls = scope.spawn(move || {
             let mut requests: Vec<(u64, serde_json::Value)> = Vec::new();
             let mut bytes = Vec::new();
             loop {
                 let (mut delivery, _peer) = callback.accept().expect("the toolset calls back");
-                let stamp = order.fetch_add(1_u64, std::sync::atomic::Ordering::SeqCst);
+                let stamp = stamped.fetch_add(1_u64, core::sync::atomic::Ordering::SeqCst);
                 delivery
                     .set_read_timeout(Some(core::time::Duration::from_secs(60)))
                     .expect("the timeout is set");
@@ -3664,24 +3664,28 @@ fn the_toolset_checks_a_corpus_as_the_command_line_does_6765()
                     break requests;
                 }
             }
-        }
+        });
+        let mut stream = std::net::TcpStream::connect(&address).expect("the toolset accepts");
+        stream
+            .set_read_timeout(Some(core::time::Duration::from_secs(60)))
+            .expect("the timeout is set");
+        write!(
+            stream,
+            "POST /invoke HTTP/1.1\r\nhost: {address}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .expect("the toolset reads");
+        let mut acknowledged = String::new();
+        let _read = stream
+            .read_to_string(&mut acknowledged)
+            .expect("the toolset answers");
+        let acknowledgement = stamped.fetch_add(1_u64, core::sync::atomic::Ordering::SeqCst);
+        (
+            acknowledged,
+            acknowledgement,
+            calls.join().expect("the callback's thread ends"),
+        )
     });
-    let mut stream = std::net::TcpStream::connect(&address).expect("the toolset accepts");
-    stream
-        .set_read_timeout(Some(core::time::Duration::from_secs(60)))
-        .expect("the timeout is set");
-    write!(
-        stream,
-        "POST /invoke HTTP/1.1\r\nhost: {address}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
-        body.len()
-    )
-    .expect("the toolset reads");
-    let mut acknowledged = String::new();
-    let _read = stream
-        .read_to_string(&mut acknowledged)
-        .expect("the toolset answers");
-    let acknowledgement = order.fetch_add(1_u64, std::sync::atomic::Ordering::SeqCst);
-    let mut requests = calls.join().expect("the callback's thread ends");
     let checked = gandr(&[OsStr::new("check"), corpus.as_os_str()])
         .current_dir(&scratch.0)
         .output()
@@ -3693,12 +3697,12 @@ fn the_toolset_checks_a_corpus_as_the_command_line_does_6765()
         "the acknowledgement holds no result: {acknowledged}"
     );
     assert!(
-        requests.iter().all(|(stamp, ..)| *stamp > acknowledgement),
+        requests.iter().all(|&(stamp, ..)| stamp > acknowledgement),
         "the call is acknowledged before the toolset calls back: the acknowledgement at \
          {acknowledgement}, the callback's requests at {:?}",
         requests
             .iter()
-            .map(|(stamp, ..)| *stamp)
+            .map(|&(stamp, ..)| stamp)
             .collect::<Vec<_>>()
     );
     let (_stamp, result) = requests

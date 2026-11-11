@@ -1127,13 +1127,11 @@ impl Written
         mark: Mark,
     )
     {
-        let mut count = lock(&self.count);
-        while *count < mark {
-            count = self
-                .counted
-                .wait(count)
-                .unwrap_or_else(PoisonError::into_inner);
-        }
+        drop(
+            self.counted
+                .wait_while(lock(&self.count), |count| *count < mark)
+                .unwrap_or_else(PoisonError::into_inner),
+        );
     }
 }
 
