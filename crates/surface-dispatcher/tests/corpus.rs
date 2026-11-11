@@ -2017,6 +2017,7 @@ mod sweeps
         use gandr_core_incremental::Judgement;
         use gandr_core_incremental::MemoryCheckpointStore;
         use gandr_core_incremental::Program;
+        use gandr_core_incremental::Supply;
         use gandr_core_incremental::TypeContent;
         use gandr_core_incremental::decode_checkpoints;
         use gandr_core_incremental::elaborated;
@@ -2106,7 +2107,7 @@ mod sweeps
                 &mut program,
                 &mut Quiet,
                 &Unretired,
-                Some(Judgement::new(admission.arena(), admission.verdicts())),
+                Supply::Judged(Judgement::new(admission.arena(), admission.verdicts())),
             );
             let Maybe::Present(resume) = session.last()
             else {
@@ -2261,6 +2262,7 @@ mod sweeps
         use gandr_core_incremental::ItemOrdinal;
         use gandr_core_incremental::Judgement;
         use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::Supply;
         use gandr_core_incremental::decode_checkpoints;
         use gandr_core_incremental::encode_checkpoints;
         use gandr_core_incremental::reported;
@@ -2363,7 +2365,7 @@ mod sweeps
                 &mut program,
                 &mut Quiet,
                 &Unretired,
-                Some(Judgement::new(admission.arena(), admission.verdicts())),
+                Supply::Judged(Judgement::new(admission.arena(), admission.verdicts())),
             );
             let Maybe::Present(resume) = session.last()
             else {
@@ -2815,6 +2817,7 @@ mod sweeps
         use gandr_core_incremental::ItemOrdinal;
         use gandr_core_incremental::Judgement;
         use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::Supply;
         use gandr_core_incremental::Typing;
         use gandr_core_incremental::decode_checkpoints;
         use gandr_core_incremental::encode_checkpoints;
@@ -2948,7 +2951,7 @@ mod sweeps
                 &mut program,
                 &mut Quiet,
                 &Unretired,
-                Some(Judgement::new(admission.arena(), admission.verdicts())),
+                Supply::Judged(Judgement::new(admission.arena(), admission.verdicts())),
             );
             let Maybe::Present(resume) = session.last()
             else {

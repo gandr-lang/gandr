@@ -130,6 +130,7 @@
 //! | Derive supplied answers from the formed signature or seated cached type | store a second answer beside the typing | a consumer needs an independently certified answer |
 //! | Trust faithful checker results, then validate their applicability | re-judge every cached item; proof-carrying judgement certificates | checkpoints must be accepted from an untrusted producer |
 //! | Take each changed item's verdict and support from the revision's whole-module judgement | decide each changed item a second time in the pass; judge only the changed items and no whole module | a checkpoint differs from a deciding pass's, through `Verdicts::Decided` in the session |
+//! | When the session keeps no type table, take each standing item's verdict from its checkpoint, decide each changed item, and assemble the module's report from them; the admission judges the module whole | judge the whole module on each revision and take each changed item's verdict from it, which decides each standing item again | an assembled report settles or admits apart from the whole judgement's, through the corpus sweep of assembled reports |
 //!
 //! # References
 //!
@@ -192,6 +193,10 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
+use crate::assembly;
+use crate::assembly::Assembled;
+use crate::assembly::Started;
+use crate::assembly::Supply;
 use crate::boundary::ItemCount;
 use crate::boundary::ItemOrdinal;
 use crate::codec::write_item_content;
@@ -1585,7 +1590,7 @@ pub fn check_program(
         (order, &[]),
         program,
         Start::Fresh(budget),
-        (&Unretired, &mut Unobserved, None),
+        (&Unretired, &mut Unobserved, Supply::Decided),
     )
     .map(Polled::whole)
     .map(|advanced| advanced.resume)
@@ -1663,7 +1668,7 @@ pub fn resume(
         (order, &[]),
         edited,
         Start::Fresh(checkpoints.budget),
-        (&Unretired, &mut Unobserved, None),
+        (&Unretired, &mut Unobserved, Supply::Decided),
     )
     .map(Polled::whole)
     .map(|advanced| advanced.resume)
@@ -1734,7 +1739,7 @@ pub fn resume_from(
         (order, &[]),
         edited,
         Start::Fresh(base.budget),
-        (&Unretired, &mut Unobserved, None),
+        (&Unretired, &mut Unobserved, Supply::Decided),
     )
     .map(Polled::whole)
     .map(|advanced| advanced.resume)
@@ -1775,7 +1780,7 @@ pub fn lead(
         (order, &[]),
         program,
         Start::Fresh(budget),
-        (&Unretired, &mut Unobserved, None),
+        (&Unretired, &mut Unobserved, Supply::Decided),
     )?
     .whole();
     let leading = Leading {
@@ -1839,8 +1844,13 @@ pub fn resume_after(
     edited: &mut Program,
 ) -> Result<Resume, ResumeError>
 {
-    resume_after_retiring(base, leading, edited, (&Unretired, &mut Unobserved, None))
-        .map(Polled::whole)
+    resume_after_retiring(
+        base,
+        leading,
+        edited,
+        (&Unretired, &mut Unobserved, Supply::Decided),
+    )
+    .map(Polled::whole)
 }
 
 /// What a resume that polls retirement answers: the resume, or the retirement
@@ -1881,19 +1891,14 @@ pub fn resume_after_retiring<Poll, Observer>(
     base: Maybe<Resume, crate::session::submitted::Absent>,
     leading: &Arc<Leading>,
     edited: &mut Program,
-    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+    (retirement, observer, supply): (&Poll, &mut Observer, Supply<'_>),
 ) -> Result<Resuming<Poll::Retired>, ResumeError>
 where
     Poll: Retirement,
     Observer: CheckpointObserver,
 {
     if leading.leads(edited) == Leads::Departs {
-        return resume_or_check(
-            base,
-            edited,
-            leading.budget,
-            (retirement, observer, judgement),
-        );
+        return resume_or_check(base, edited, leading.budget, (retirement, observer, supply));
     }
     let count = leading.checkpoints.len();
     let polled = match base {
@@ -1915,10 +1920,10 @@ where
                         (order, before),
                         edited,
                         Start::After(leading),
-                        (retirement, observer, judgement),
+                        (retirement, observer, supply),
                     )?
                 },
-                _ => match fresh_after(leading, edited, (retirement, observer, judgement))? {
+                _ => match fresh_after(leading, edited, (retirement, observer, supply))? {
                     Polled::Whole(advanced) => Polled::Whole(advanced),
                     Polled::Retired(retired, _) => Polled::Retired(retired, order),
                 },
@@ -1939,7 +1944,7 @@ where
             }
         },
         other @ (Maybe::Present(_) | Maybe::Absent(_)) => {
-            match fresh_after(leading, edited, (retirement, observer, judgement))? {
+            match fresh_after(leading, edited, (retirement, observer, supply))? {
                 Polled::Whole(advanced) => Polled::Whole(advanced),
                 Polled::Retired(retired, _) => Polled::Retired(retired, other),
             }
@@ -2019,7 +2024,7 @@ pub fn resume_or_check<Poll, Observer>(
     previous: Maybe<Resume, crate::session::submitted::Absent>,
     edited: &mut Program,
     budget: CheckBudget,
-    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+    (retirement, observer, supply): (&Poll, &mut Observer, Supply<'_>),
 ) -> Result<Resuming<Poll::Retired>, ResumeError>
 where
     Poll: Retirement,
@@ -2039,7 +2044,7 @@ where
                 (order, &[]),
                 edited,
                 Start::Fresh(checkpoints.budget),
-                (retirement, observer, judgement),
+                (retirement, observer, supply),
             )? {
                 Polled::Whole(advanced) => Polled::Whole(advanced.resume),
                 Polled::Retired(retired, order) => Polled::Retired(
@@ -2063,7 +2068,7 @@ where
                     (order, &[]),
                     edited,
                     Start::Fresh(budget),
-                    (retirement, observer, judgement),
+                    (retirement, observer, supply),
                 )? {
                     Polled::Whole(advanced) => Polled::Whole(advanced.resume),
                     Polled::Retired(retired, _) => Polled::Retired(retired, Maybe::Absent(reason)),
@@ -2093,7 +2098,7 @@ where
 fn fresh_after<Poll, Observer>(
     leading: &Leading,
     edited: &mut Program,
-    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+    (retirement, observer, supply): (&Poll, &mut Observer, Supply<'_>),
 ) -> Result<Advancing<(), Poll::Retired>, ResumeError>
 where
     Poll: Retirement,
@@ -2105,7 +2110,7 @@ where
         (order, &handles),
         edited,
         Start::After(leading),
-        (retirement, observer, judgement),
+        (retirement, observer, supply),
     )
 }
 
@@ -3106,7 +3111,7 @@ fn advance<Choice, Kept, Poll, Observer>(
     ordered: (ItemOrder, &[ItemHandle]),
     edited: &mut Program,
     start: Start<'_>,
-    (retirement, observer, judgement): (&Poll, &mut Observer, Option<Judgement<'_>>),
+    (retirement, observer, supply): (&Poll, &mut Observer, Supply<'_>),
 ) -> Result<Advancing<Kept::Kept, Poll::Retired>, ResumeError>
 where
     Choice: MemoChoice,
@@ -3140,7 +3145,7 @@ where
             edited,
             start,
             &mut census,
-            (retirement, judgement),
+            (retirement, supply),
             observer,
         )
     };
@@ -3314,7 +3319,7 @@ fn pass<'id, Memo, Kept, Poll, Observer>(
     edited: &mut Program,
     start: Start<'_>,
     census: &mut ResumeCensus,
-    (retirement, judgement): (&Poll, Option<Judgement<'_>>),
+    (retirement, supply): (&Poll, Supply<'_>),
     #[cfg_attr(
         not(feature = "instrument"),
         expect(
@@ -3396,6 +3401,12 @@ where
     // projects is encoded once; the judgement's arena has a memo of its own.
     let types = crate::content::TypeMemo::default();
     let judged_types = crate::content::TypeMemo::default();
+    // Each item's verdict and parts, in order, while the pass assembles the
+    // report: a standing item's seated from its checkpoint, a decided one's
+    // from its decision.
+    let reporting = matches!(supply, Supply::Reported(_));
+    let mut parts: Vec<Assembled<'_>> =
+        Vec::with_capacity(if reporting { encoded.len() } else { 0 });
     #[cfg(feature = "instrument")]
     if let Maybe::Present(buffer) = observer.lend() {
         context.trace_into(buffer);
@@ -3473,6 +3484,14 @@ where
                     (item, declaration.constant()),
                     &report,
                 );
+                if reporting {
+                    parts.push(assembly::adopted(
+                        &mut context,
+                        (item, declaration, layout),
+                        (&typing, &failure, &report),
+                        &waiting,
+                    ));
+                }
                 (
                     Outcome {
                         footprint,
@@ -3500,21 +3519,25 @@ where
                     | recall::Absent::Mutual => {},
                 }
                 bump(&mut census.judged);
-                let taken = match (membership, judgement) {
-                    (Membership::Alone, Some(judgement)) => judgement.take(&mut context, &Taking {
-                        item,
-                        declaration,
-                        layout,
-                        types: &judged_types,
-                    }),
-                    (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
+                let taken = match (membership, &supply) {
+                    (Membership::Alone, &Supply::Judged(judgement)) => {
+                        judgement.take(&mut context, &Taking {
+                            item,
+                            declaration,
+                            layout,
+                            types: &judged_types,
+                        })
+                    },
+                    (Membership::Alone, &(Supply::Decided | Supply::Reported(_))) => {
+                        Maybe::Absent(taken::Absent::Unjudged)
+                    },
                     (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
                 };
                 let (support, typing, answer, (entered, entry), (failure, report)) = match taken {
                     Maybe::Present((support, typing, answer, (failure, report))) => {
                         bump(&mut census.taken);
                         #[cfg(feature = "instrument")]
-                        if let Some(judgement) = judgement {
+                        if let Supply::Judged(ref judgement) = supply {
                             consulted = judgement.consulted(declaration.constant());
                         }
                         wait_on(
@@ -3548,6 +3571,9 @@ where
                                     culprits.insert(declaration.constant(), failure.clone());
                             }
                             members.push((index, declaration.constant(), supported.verdict()));
+                        }
+                        if reporting {
+                            parts.push(assembly::decided(declaration, &supported, &waiting));
                         }
                         decision
                     },
@@ -3588,6 +3614,14 @@ where
         |&(_, constant, verdict)| (constant, verdict),
         |&mut (index, _, ref mut verdict), refusal, culprit| {
             *verdict = Verdict::Refused(refusal);
+            // The report gives a member its culprit's failure, as the module
+            // run gives it, and keeps its own where the culprit kept none.
+            if let Some(&mut Maybe::Present(ref mut part)) = parts.get_mut(index) {
+                part.verdict = Verdict::Refused(refusal);
+                if let Some(failure) = culprits.get(&culprit) {
+                    part.failure = Maybe::Present(failure.clone());
+                }
+            }
             if let (Some(outcome), Some(item)) = (outcomes.get_mut(index), encoded.get(index)) {
                 let projection = Projection {
                     arena: context.arena(),
@@ -3610,6 +3644,13 @@ where
             }
         },
     );
+    if let Supply::Reported(reporting) = supply {
+        let started = match start {
+            Start::Fresh(_) => Started::Whole,
+            Start::After(_) => Started::After,
+        };
+        assembly::assemble(reporting, (parts, started), &mut context);
+    }
     let kept = Kept::keep(&context);
     #[cfg(feature = "instrument")]
     if let Maybe::Present(buffer) = context.take_trace() {

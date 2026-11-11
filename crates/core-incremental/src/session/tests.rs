@@ -12,6 +12,7 @@ use quenchant_shape::shape::Maybe;
 use super::Handed;
 use super::IncrementalSession;
 use super::submitted;
+use crate::assembly::Supply;
 use crate::boundary::ItemCount;
 use crate::checkpoint::Resume;
 use crate::checkpoint::lead;
@@ -298,7 +299,7 @@ fn a_retired_submission_keeps_the_resume_it_held_1547()
         readings: core::cell::Cell::new(0),
     };
     let retired = session
-        .submit_retiring(&mut edited(), &mut Quiet, &poll, None)
+        .submit_retiring(&mut edited(), &mut Quiet, &poll, Supply::Decided)
         .expect("a retired submission does not fail");
     assert!(
         matches!(retired, Polled::Retired((), ())),

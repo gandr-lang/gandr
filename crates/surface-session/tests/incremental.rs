@@ -39,6 +39,7 @@ use quenchant_shape::shape::Maybe;
 use crate::common::GRAMMAR;
 use crate::common::Text;
 use crate::common::batch;
+use crate::common::faced_apart;
 use crate::common::resumed;
 use crate::common::session;
 use crate::common::submit;
@@ -105,8 +106,12 @@ fn gate<'text>(
     )
     .expect("the edited revision composes");
     assert_eq!(
-        *submission.composed(),
-        composed,
+        faced_apart(
+            (submission.composed(), &composed),
+            SourceRoot::Strict,
+            SourceText::from(edited)
+        ),
+        None,
         "the resumed submission reports what the batch pipeline reports\n base:   {base:?}\n edited: {edited:?}"
     );
     let program = SurfaceItems::new(grammar.clone())
@@ -282,6 +287,7 @@ fn a_taking_pass_keeps_the_checkpoints_of_a_deciding_pass_past_a_mutual_block_66
         "incremental/fixtures/a-taking-pass-keeps-the-checkpoints-of-a-deciding-pass-past-a-mutual-block-6693.gandr"
     );
     let mut taking = session(SourceRoot::Fixture);
+    taking.take(Verdicts::Taken);
     let mut deciding = session(SourceRoot::Fixture);
     deciding.take(Verdicts::Decided);
     let _taken = submit(&mut taking, source);
@@ -397,7 +403,16 @@ proptest! {
                 &mut lowerings,
             )
             .expect("a generated revision composes");
-            prop_assert_eq!(submission.composed(), &composed, "the report, for {:?}", text);
+            prop_assert_eq!(
+                faced_apart(
+                    (submission.composed(), &composed),
+                    SourceRoot::Fixture,
+                    SourceText::from(text.as_str())
+                ),
+                None,
+                "the report, for {:?}",
+                text
+            );
             let program = items
                 .items(&Revision::from(text.as_str()))
                 .expect("a generated revision is offered");
@@ -682,9 +697,18 @@ fn drift(
         }
         let again = submit(&mut editor, text);
         assert_eq!(
-            (again.composed(), again.kernel()),
-            (submission.composed(), submission.kernel()),
-            "the same text composes the same report and kernel manifest, for {text:?}"
+            faced_apart(
+                (again.composed(), submission.composed()),
+                SourceRoot::Fixture,
+                SourceText::from(text.as_str())
+            ),
+            None,
+            "the same text composes the same report, for {text:?}"
+        );
+        assert_eq!(
+            again.kernel(),
+            submission.kernel(),
+            "the same text composes the same kernel manifest, for {text:?}"
         );
         assert!(
             matches!(again.resumed(), Maybe::Present(unchanged)

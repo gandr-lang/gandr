@@ -618,6 +618,25 @@ pub struct Synthesised<Type>
 
 impl<Type: Copy> Synthesised<Type>
 {
+    /// The type `produced`, synthesised after `conversions` conversions: the
+    /// evidence a caller gives back when it takes a verdict that a judgement
+    /// gave before.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        produced: Type,
+        conversions: ConversionCount,
+    ) -> Self
+    {
+        Self {
+            produced,
+            conversions,
+        }
+    }
+
     /// The type synthesised.
     ///
     /// # Specification
@@ -652,6 +671,18 @@ pub struct Checked
 
 impl Checked
 {
+    /// The evidence of a check after `conversions` conversions, which a
+    /// caller gives back when it takes a verdict that a judgement gave before.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(conversions: ConversionCount) -> Self
+    {
+        Self { conversions }
+    }
+
     /// How many times the run crossed the conversion boundary.
     ///
     /// # Specification
