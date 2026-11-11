@@ -88,6 +88,16 @@
 //! ([`layered`]). The endpoint's layers come first, and the definitions give
 //! the rest.
 //!
+//! **A carried endpoint maps a cell by its family's endpoints.** The family a
+//! dependent case owes at a cell carries the answer along its binder, as the
+//! endpoint `⟨tr(x. Path[.A = C](l, r), y, b)⟩`. The transport of `b` along
+//! `q` there is `ap(l, q)⁻¹ · b · ap(r, q)`, so the endpoint's image of a cell
+//! is `l`'s image inverted, then `r`'s, each one `Path.ap` layer deeper
+//! ([`carried`]). The rule reduces the conjugation only where `b` is
+//! reflexivity: a `b` that holds a letter whiskers the two images, and the
+//! transport stays held. Each endpoint of the inner family is its binder,
+//! fixed, one call of one argument, or carried in turn.
+//!
 //! # References
 //!
 //! - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: § 2.2, the
@@ -129,6 +139,7 @@ use crate::closure::Conjugating;
 use crate::closure::Environment;
 use crate::closure::Mapping;
 use crate::closure::Orientation;
+use crate::closure::PathFamily;
 use crate::closure::Route;
 use crate::closure::ValueBody;
 use crate::domain::CompTermFace;
@@ -159,6 +170,10 @@ enum Action
     Moving,
     /// The endpoint runs the binder through a chain of calls.
     Through,
+    /// The endpoint carries a value along the binder in this path family,
+    /// whose endpoints act in turn: the inverse of the left one's image, then
+    /// the right one's, each one `Path.ap` layer deeper ([`carried`]).
+    Carried(ValueTypeId),
 }
 
 /// One call of an endpoint's reading: the function, every argument it
@@ -835,11 +850,13 @@ fn reads_through(
 /// reads it.
 ///
 /// # Specification
-/// - requires: `endpoint` is read under the family's one binder, and `scope` is
-///   the environment the family is closed over.
+/// - requires: `endpoint` is read under `under` binders inside `scope`, the
+///   innermost the family's own, and `scope` is the environment the motive's
+///   family is closed over.
 /// - ensures: [`Action::Moving`] for the binder; [`Action::Fixed`] for an
 ///   endpoint that never reads it; [`Action::Through`] for calls [`routes`]
-///   reads; `None` otherwise.
+///   reads; [`Action::Carried`] for a transport [`carried`] reads; `None`
+///   otherwise.
 /// - fails: the free-index walk's fault.
 /// - panics: none.
 ///
@@ -848,20 +865,23 @@ fn reads_through(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the point is fixed, `y` moving and the flip's call a
-///   chain in the witnesses' families; a misread action carries the operand
-///   elsewhere.
+///   chain in the witnesses' families, and the transport the family at the
+///   2-cell carries is carried; a misread action carries the operand elsewhere.
 /// - witness: `eval::words::tests::transport_along_the_loop_moves_the_endpoint`
 /// - witness: `eval::words::tests::the_loop_conjugates_a_loop_to_itself`
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| match *found {
     Some(Action::Moving) => matches!(core.value(endpoint), Some(&Value::Variable { .. })),
-    Some(Action::Through) => routes(core, scope, endpoint).is_ok_and(|found| found.is_some()),
+    Some(Action::Through) => routes(core, scope, (endpoint, under)).is_ok_and(|found| found.is_some()),
+    Some(Action::Carried(family)) => carried(core, scope, machine, (endpoint, under)).is_ok_and(|found| found == Some(family)),
     Some(Action::Fixed) | None => core.value(endpoint).is_some(),
 }))]
 fn action(
     core: &CoreArena,
     scope: Scope<'_>,
-    endpoint: ValueId,
+    machine: &Machine<'_>,
+    (endpoint, under): (ValueId, BinderDepth),
 ) -> Result<Option<Action>, EvalFault>
 {
     let bound = DeBruijnIndex::from(0_u32);
@@ -872,15 +892,178 @@ fn action(
     if reads_through(core, CoreTerm::Value(endpoint), bound)? == Reading::Ignores {
         return Ok(Some(Action::Fixed));
     }
-    Ok(routes(core, scope, endpoint)?.map(|_| Action::Through))
+    if routes(core, scope, (endpoint, under))?.is_some() {
+        return Ok(Some(Action::Through));
+    }
+    Ok(carried(core, scope, machine, (endpoint, under))?.map(Action::Carried))
+}
+
+/// The family an endpoint carries a value along the binder in, when every
+/// endpoint below it acts on a cell.
+///
+/// # Specification
+/// - requires: as [`action`].
+/// - ensures: `Some(family)` exactly when [`transported`] reads the endpoint as
+///   a transport in `family`, and each endpoint below it — the family's two,
+///   and in turn the two of each family read below — is its family's binder,
+///   never reads it, is one call of one argument as [`routes`] reads it, or is
+///   a transport [`transported`] reads; `None` otherwise.
+/// - fails: the free-index walk's fault.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while` takes one pending family per turn, each pending only
+///   the families its endpoints transport in, strict subterms.
+/// - measure: the endpoint's nodes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the family at the 2-sphere's cell carries the answer
+///   along its binder in `x. Path[.A = S2](x, x)`, and at the 3-sphere's cell
+///   the family one dimension below in turn; a carried transport left unread
+///   leaves the obligation stuck.
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|family| matches!(core.value_type(family), Some(&ValueType::Path { .. })))))]
+fn carried(
+    core: &CoreArena,
+    scope: Scope<'_>,
+    machine: &Machine<'_>,
+    (endpoint, under): (ValueId, BinderDepth),
+) -> Result<Option<ValueTypeId>, EvalFault>
+{
+    let Some(family) = transported(core, machine, endpoint)?
+    else {
+        return Ok(None);
+    };
+    let bound = DeBruijnIndex::from(0_u32);
+    let mut pending = Vec::from([(family, under)]);
+    while let Some((inner, outer)) = pending.pop() {
+        let Some(&ValueType::Path { left, right, .. }) = core.value_type(inner)
+        else {
+            return Ok(None);
+        };
+        let deeper = BinderDepth::from(usize::from(outer).saturating_add(1));
+        for side in [left, right] {
+            if matches!(core.value(side), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == bound)
+                || reads_through(core, CoreTerm::Value(side), bound)? == Reading::Ignores
+            {
+                continue;
+            }
+            // A cell maps through one call of one argument: the `Path.ap`
+            // layers act on a cell, and a chain's later calls act on a loop.
+            if let Some(read) = routes(core, scope, (side, deeper))? {
+                if let [ref node] = *read.nodes.as_slice()
+                    && let [_] = *node.arguments.as_slice()
+                {
+                    continue;
+                }
+                return Ok(None);
+            }
+            let Some(next) = transported(core, machine, side)?
+            else {
+                return Ok(None);
+            };
+            pending.push((next, deeper));
+        }
+    }
+    Ok(Some(family))
+}
+
+/// The family of a transport an endpoint carries along the binder.
+///
+/// The transport of `b` along `q` in `x. Path[.A = C](l, r)` is the
+/// conjugation `ap(l, q)⁻¹ · b · ap(r, q)` for every `b`. The rule reduces it
+/// only at reflexivity: a `b` that holds a letter whiskers the two images, and
+/// the transport stays held.
+///
+/// # Specification
+/// - requires: `endpoint` is read under its family's binder `y`.
+/// - ensures: `Some(A)` exactly when the endpoint is `⟨tr(A, y, b)⟩`, `A` is a
+///   path family `x. Path[.A = C](l, r)` that never reads `y` and whose carrier
+///   `C` reads neither `x` nor `y`, and `b` is reflexivity or the empty word of
+///   a type of words and never reads `y`; `None` otherwise.
+/// - fails: the free-index walk's fault.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the family at the 2-sphere's cell carries reflexivity at
+///   the point along its binder; read with any other operand, the conjugation
+///   would drop a whiskering.
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|family| matches!(core.value_type(family), Some(&ValueType::Path { .. })))))]
+fn transported(
+    core: &CoreArena,
+    machine: &Machine<'_>,
+    endpoint: ValueId,
+) -> Result<Option<ValueTypeId>, EvalFault>
+{
+    let binder = DeBruijnIndex::from(0_u32);
+    let Some(&Value::Returned(call)) = core.value(endpoint)
+    else {
+        return Ok(None);
+    };
+    let Some(&Computation::PathTransport {
+        motive: family,
+        path,
+        value,
+    }) = core.computation(call)
+    else {
+        return Ok(None);
+    };
+    if !matches!(core.value(path), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == binder)
+    {
+        return Ok(None);
+    }
+    let reflexive = match core.value(value) {
+        Some(&Value::Here(_)) => true,
+        Some(&Value::Constructor { datatype, tag, .. }) => {
+            tag == FreeCells::nil()
+                && matches!(core.value_type(datatype), Some(&ValueType::Data { declaration, .. })
+                    if machine.definitions.presented(declaration).and_then(crate::presented::Presented::cells).is_some())
+        },
+        _ => false,
+    };
+    if !reflexive || reads_through(core, CoreTerm::Value(value), binder)? == Reading::Reads {
+        return Ok(None);
+    }
+    let Some(&ValueType::Path { carrier, .. }) = core.value_type(family)
+    else {
+        return Ok(None);
+    };
+    // Inside the family, its own binder is index 0 and `y` index 1.
+    let carrying = DeBruijnIndex::from(1_u32);
+    let mut free = FreeIndices::default();
+    if free
+        .of_type(core, family)
+        .map_err(free_fault)?
+        .intuitionistic()
+        .holds(carrying)
+        == Membership::Held
+    {
+        return Ok(None);
+    }
+    if free
+        .of_type(core, carrier)
+        .map_err(free_fault)?
+        .intuitionistic()
+        .least()
+        .is_some_and(|least| least <= carrying)
+    {
+        return Ok(None);
+    }
+    Ok(Some(family))
 }
 
 /// The calls an endpoint runs the family's binder through, and a route per
 /// occurrence of the binder, the leftmost first.
 ///
 /// # Specification
-/// - requires: `endpoint` is read under the family's one binder, and `scope` is
-///   the environment the family is closed over.
+/// - requires: as [`action`].
 /// - ensures: `Some(routes)` exactly when the endpoint is `⟨c⟩` for a call `c`
 ///   of the shape `force f a₁ … aₙ` some of whose arguments read the binder,
 ///   each of those the binder itself or `⟨c'⟩` for such a call, or `x ← c';
@@ -913,7 +1096,7 @@ fn action(
 fn routes(
     core: &CoreArena,
     scope: Scope<'_>,
-    endpoint: ValueId,
+    (endpoint, under): (ValueId, BinderDepth),
 ) -> Result<Option<Routes>, EvalFault>
 {
     let Some(&Value::Returned(call)) = core.value(endpoint)
@@ -926,8 +1109,9 @@ fn routes(
         nodes: Vec::new(),
         leaves: Vec::new(),
     };
-    // The endpoint stands under the family's own binder.
-    let mut pending = Vec::from([Pending::Call(call, None, BinderDepth::from(1_usize))]);
+    // The endpoint stands under its family's own binder, and under the
+    // binders of the families it stands in.
+    let mut pending = Vec::from([Pending::Call(call, None, under)]);
     while let Some(next) = pending.pop() {
         let (call, parent, under) = match next {
             Pending::Leaf(node, position) => {
@@ -1541,7 +1725,7 @@ pub(super) fn transport(
         machine.values.extend([first, value]);
         return Ok(Moved::Stepped);
     }
-    let Some((left, right)) = family_actions(core, domain, motive)?
+    let Some((family, left, right)) = family_actions(core, domain, machine, motive)?
     else {
         return Ok(Moved::Unmoved);
     };
@@ -1554,7 +1738,12 @@ pub(super) fn transport(
     let static_image = |action: Action| match action {
         Action::Fixed => Some(rest),
         Action::Moving => Some(path),
-        Action::Through => None,
+        Action::Through | Action::Carried(_) => None,
+    };
+    let at = PathFamily {
+        motive,
+        family,
+        depth: Reflexivities::NONE,
     };
     match (static_image(left), static_image(right)) {
         (Some(left), Some(right)) => {
@@ -1575,12 +1764,7 @@ pub(super) fn transport(
                 stage: Conjugating::Left,
             });
             machine.tasks.push(Task::BindClosure(onward));
-            map(
-                core,
-                domain,
-                machine,
-                starting(motive, Side::Left, (path, rest)),
-            )?;
+            endpoint_image(core, domain, machine, (at, Side::Left), (path, rest))?;
             Ok(Moved::Stepped)
         },
         (Some(left), None) => {
@@ -1591,12 +1775,7 @@ pub(super) fn transport(
                 stage: Conjugating::Right(left),
             });
             machine.tasks.push(Task::BindClosure(onward));
-            map(
-                core,
-                domain,
-                machine,
-                starting(motive, Side::Right, (path, rest)),
-            )?;
+            endpoint_image(core, domain, machine, (at, Side::Right), (path, rest))?;
             Ok(Moved::Stepped)
         },
     }
@@ -1642,7 +1821,7 @@ pub(super) fn appended(
     (path, value): (DomainValueId, DomainValueId),
 ) -> Result<Moved, EvalFault>
 {
-    let Some((Action::Fixed, Action::Moving)) = family_actions(core, domain, motive)?
+    let Some((_, Action::Fixed, Action::Moving)) = family_actions(core, domain, machine, motive)?
     else {
         return Ok(Moved::Unmoved);
     };
@@ -1772,7 +1951,8 @@ pub(super) fn ran(
 ///
 /// # Specification
 /// - requires: `motive` suspends a value type under one binder.
-/// - ensures: the [`action`] of the left then the right endpoint.
+/// - ensures: the family `motive` suspends, and the [`action`] of its left then
+///   its right endpoint.
 /// - fails: [`EvalFault::Domain`] for a closure the arena does not hold;
 ///   [`EvalFault::MachineInvariant`] for a closure holding no value type; the
 ///   free-index walk's fault.
@@ -1788,12 +1968,13 @@ pub(super) fn ran(
 /// - witness: `eval::words::tests::transport_along_the_loop_moves_the_endpoint`
 /// - witness: `eval::words::tests::the_loop_conjugates_a_loop_to_itself`
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none() || domain.value_closure(motive).is_some_and(|closure| matches!(closure.body(), ValueBody::ValueType(family) if matches!(core.value_type(family), Some(&ValueType::Path { .. }))))))]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|(family, _, _)| domain.value_closure(motive).is_some_and(|closure| matches!(closure.body(), ValueBody::ValueType(held) if held == family)) && matches!(core.value_type(family), Some(&ValueType::Path { .. })))))]
 fn family_actions(
     core: &CoreArena,
     domain: &DomainArena,
+    machine: &Machine<'_>,
     motive: ValueClosureId,
-) -> Result<Option<(Action, Action)>, EvalFault>
+) -> Result<Option<(ValueTypeId, Action, Action)>, EvalFault>
 {
     let closure = domain
         .value_closure(motive)
@@ -1824,27 +2005,30 @@ fn family_actions(
         domain,
         environment: closure.environment(),
     };
-    let (Some(left), Some(right)) = (action(core, scope, left)?, action(core, scope, right)?)
+    // The endpoints stand under the family's own binder.
+    let under = BinderDepth::from(1_usize);
+    let (Some(left), Some(right)) = (
+        action(core, scope, machine, (left, under))?,
+        action(core, scope, machine, (right, under))?,
+    )
     else {
         return Ok(None);
     };
-    Ok(Some((left, right)))
+    Ok(Some((family, left, right)))
 }
 
-/// The state that maps `word` through the endpoint at `side` of `motive`'s
-/// family from its first route's innermost call, `empty` the word's empty
-/// end.
+/// The state that maps `word` through the endpoint at `side` of `family`
+/// from its first route's innermost call, `empty` the word's empty end.
 ///
 /// # Specification
 /// trivial.
 fn starting(
-    motive: ValueClosureId,
-    side: Side,
+    (family, side): (PathFamily, Side),
     (word, empty): (DomainValueId, DomainValueId),
 ) -> Mapping
 {
     Mapping {
-        motive,
+        family,
         side,
         route: Route::from(0_usize),
         call: Call::from(0_usize),
@@ -1856,15 +2040,19 @@ fn starting(
     }
 }
 
-/// The routes of the endpoint at `state.side` of `state.motive`'s path family,
-/// with the family's carrier and environment.
+/// The routes of the endpoint at `state.side` of `state.family`, with the
+/// family's carrier and the environment of the motive it stands in.
+///
+/// Each carried transport around the family is one `Path.ap` layer on the
+/// routes' calls, as a layer written in place is.
 ///
 /// # Specification
-/// - requires: `state.motive` suspends a value type under one binder.
-/// - ensures: the [`routes`] of that endpoint, the family's carrier, and the
-///   environment the family is closed over.
+/// - requires: `state.family` is a path family `depth` carried transports
+///   inside the family its motive suspends.
+/// - ensures: the [`routes`] of that endpoint, each call's layers raised by the
+///   depth, the family's carrier, and the environment the motive is closed
+///   over.
 /// - fails: [`EvalFault::Domain`] for a closure the arena does not hold;
-///   [`EvalFault::MachineInvariant`] for one holding no value type;
 ///   [`EvalFault::TransportedNonPath`] for a family that is no path type or an
 ///   endpoint no route reads; the free-index walk's fault.
 /// - panics: none.
@@ -1873,9 +2061,12 @@ fn starting(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`map`].
+/// - hypothesis: L3 — as [`map`]; and the call `sphereId(x)` in the family a
+///   carried endpoint transports in maps the 2-cell by one layer.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref read, _, _)| !read.leaves.is_empty()))]
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref read, _, _)| !read.leaves.is_empty()
+    && read.nodes.iter().all(|node| usize::from(node.layers) >= usize::from(state.family.depth))))]
 fn endpoint_routes(
     core: &CoreArena,
     domain: &DomainArena,
@@ -1884,17 +2075,13 @@ fn endpoint_routes(
 {
     let stuck = EvalFault::TransportedNonPath;
     let closure = domain
-        .value_closure(state.motive)
+        .value_closure(state.family.motive)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-    let ValueBody::ValueType(family) = closure.body()
-    else {
-        return Err(EvalFault::MachineInvariant);
-    };
     let Some(&ValueType::Path {
         carrier,
         left,
         right,
-    }) = core.value_type(family)
+    }) = core.value_type(state.family.family)
     else {
         return Err(stuck);
     };
@@ -1906,8 +2093,165 @@ fn endpoint_routes(
         domain,
         environment: closure.environment(),
     };
-    let read = routes(core, scope, endpoint)?.ok_or(stuck)?;
+    let depth = usize::from(state.family.depth);
+    let under = BinderDepth::from(depth.saturating_add(1));
+    let mut read = routes(core, scope, (endpoint, under))?.ok_or(stuck)?;
+    for node in &mut read.nodes {
+        node.layers = Reflexivities::from(usize::from(node.layers).saturating_add(depth));
+    }
     Ok((read, carrier, closure.environment().clone()))
+}
+
+/// Push the image of the one-letter word `along` under the endpoint at `side`
+/// of `at`'s family.
+///
+/// A fixed endpoint's image is `empty` and a moving one's `along`; an endpoint
+/// that runs the binder through calls maps the word through them ([`map`]).
+/// A carried endpoint's image is its own family's: the left endpoint's image
+/// first, one carried transport deeper, under a [`CompBody::Carrying`]
+/// continuation that runs the right one's next ([`carrying`]).
+///
+/// # Specification
+/// - requires: `empty` is `along`'s empty rest; the endpoint reads by
+///   [`action`].
+/// - ensures: the image returned, or the tasks that return it pushed.
+/// - fails: [`EvalFault::TransportedNonPath`] for an endpoint no rule reads;
+///   [`EvalFault::Domain`] for a closure the arena does not hold; as [`map`]
+///   otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `loop` steps one carried transport in per turn, never
+///   recursing.
+/// - measure: the carried transports left inside the endpoint.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the carried endpoint of the family at the 2-sphere's cell
+///   maps the cell by its family's two moving endpoints, to the cell's inverse
+///   then the cell; a misrouted stage maps it to the cell twice.
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
+#[spec(
+    captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || machine.comps.len() > entry_comps || machine.tasks.len() > entry_tasks,
+)]
+fn endpoint_image(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    (mut at, mut side): (PathFamily, Side),
+    (along, empty): (DomainValueId, DomainValueId),
+) -> Result<(), EvalFault>
+{
+    let stuck = EvalFault::TransportedNonPath;
+    loop {
+        let found = {
+            let closure = domain
+                .value_closure(at.motive)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let Some(&ValueType::Path { left, right, .. }) = core.value_type(at.family)
+            else {
+                return Err(stuck);
+            };
+            let endpoint = match side {
+                Side::Left => left,
+                Side::Right => right,
+            };
+            let scope = Scope {
+                domain,
+                environment: closure.environment(),
+            };
+            let under = BinderDepth::from(usize::from(at.depth).saturating_add(1));
+            action(core, scope, machine, (endpoint, under))?.ok_or(stuck)?
+        };
+        let image = match found {
+            Action::Fixed => empty,
+            Action::Moving => along,
+            Action::Through => {
+                return map(core, domain, machine, starting((at, side), (along, empty)));
+            },
+            Action::Carried(family) => {
+                at = PathFamily {
+                    motive: at.motive,
+                    family,
+                    depth: Reflexivities::from(usize::from(at.depth).saturating_add(1)),
+                };
+                side = Side::Left;
+                let onward = domain.native_continuation(CompBody::Carrying {
+                    family: at,
+                    along,
+                    stage: Conjugating::Left,
+                });
+                machine.tasks.push(Task::BindClosure(onward));
+                continue;
+            },
+        };
+        machine
+            .comps
+            .push(domain.comp_return(image, CompTermFace::Reduced));
+        return Ok(());
+    }
+}
+
+/// Gather a carried endpoint's image, bound by a [`CompBody::Carrying`]
+/// continuation: after its family's left endpoint's image, run the right
+/// one's; after the right one's, return the left image inverted, then the
+/// right image.
+///
+/// # Specification
+/// - requires: `image` is the image the stage names; `along` the one-letter
+///   word, whose rest is empty.
+/// - ensures: the carried endpoint's image returned, or the right endpoint's
+///   image pushed under a continuation at [`Conjugating::Right`].
+/// - fails: [`EvalFault::TransportedNonPath`] for images that do not splice; as
+///   [`endpoint_image`] otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the family at the 2-sphere's cell carries its answer in
+///   `x. Path[.A = S2](x, x)`, whose image of the cell is the cell's inverse
+///   then the cell, the empty word; uninverted, it is two letters.
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
+#[spec(
+    captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err() || machine.comps.len() > entry_comps || machine.tasks.len() > entry_tasks,
+)]
+pub(super) fn carrying(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    (family, along): (PathFamily, DomainValueId),
+    (stage, image): (Conjugating, DomainValueId),
+) -> Result<(), EvalFault>
+{
+    let Head::Letter { rest: empty, .. } = head(core, domain, machine, along)?
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    match stage {
+        Conjugating::Left => {
+            let onward = domain.native_continuation(CompBody::Carrying {
+                family,
+                along,
+                stage: Conjugating::Right(image),
+            });
+            machine.tasks.push(Task::BindClosure(onward));
+            endpoint_image(core, domain, machine, (family, Side::Right), (along, empty))
+        },
+        Conjugating::Right(left) => {
+            let carried = spliced(core, domain, machine, (left, empty, image))?
+                .ok_or(EvalFault::TransportedNonPath)?;
+            machine
+                .comps
+                .push(domain.comp_return(carried, CompTermFace::Reduced));
+            Ok(())
+        },
+    }
 }
 
 /// The point the words at `words` loop at, as a value of `carrier`, when the
@@ -2401,16 +2745,16 @@ pub(super) fn mapped(
 }
 
 /// Splice the transported path between the images a [`CompBody::Conjugated`]
-/// continuation gathers, running the right endpoint's chain first when it has
-/// one.
+/// continuation gathers, running the right endpoint's image first when it
+/// reads no letter at once.
 ///
 /// # Specification
 /// - requires: `image` is the image the stage names; `along` the one-letter
 ///   word, whose rest is empty.
-/// - ensures: the spliced path returned, or the right endpoint's mapping pushed
+/// - ensures: the spliced path returned, or the right endpoint's image pushed
 ///   under a continuation at [`Conjugating::Right`].
 /// - fails: [`EvalFault::TransportedNonPath`] for pieces that do not splice; as
-///   [`map`] otherwise.
+///   [`endpoint_image`] otherwise.
 /// - panics: none.
 ///
 /// # Errors
@@ -2440,11 +2784,11 @@ pub(super) fn conjugated(
     let (left, right) = match stage {
         Conjugating::Right(left) => (left, image),
         Conjugating::Left => {
-            let (_, right) = family_actions(core, domain, motive)?.ok_or(stuck)?;
+            let (family, _, right) = family_actions(core, domain, machine, motive)?.ok_or(stuck)?;
             match right {
                 Action::Fixed => (image, empty),
                 Action::Moving => (image, along),
-                Action::Through => {
+                Action::Through | Action::Carried(_) => {
                     let onward = domain.native_continuation(CompBody::Conjugated {
                         motive,
                         along,
@@ -2452,11 +2796,17 @@ pub(super) fn conjugated(
                         stage: Conjugating::Right(image),
                     });
                     machine.tasks.push(Task::BindClosure(onward));
-                    return map(
+                    let at = PathFamily {
+                        motive,
+                        family,
+                        depth: Reflexivities::NONE,
+                    };
+                    return endpoint_image(
                         core,
                         domain,
                         machine,
-                        starting(motive, Side::Right, (along, empty)),
+                        (at, Side::Right),
+                        (along, empty),
                     );
                 },
             }

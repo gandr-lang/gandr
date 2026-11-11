@@ -664,6 +664,18 @@ pub enum CompBody
         /// Which image the bound value is.
         stage: Conjugating,
     },
+    /// After the image of a letter under one endpoint of the family a carried
+    /// endpoint transports in ran, run the other's, or invert the first and
+    /// append the second: the carried endpoint's image.
+    Carrying
+    {
+        /// The family the carried endpoint transports in.
+        family: PathFamily,
+        /// The one-letter word mapped.
+        along: DomainValueId,
+        /// Which image the bound value is.
+        stage: Conjugating,
+    },
     /// After the image of a word's letter under one function of an
     /// endpoint's chain of calls ran, append it and map the next letter.
     Mapping(Mapping),
@@ -672,14 +684,33 @@ pub enum CompBody
     Selecting(Mapping),
 }
 
+/// A path family whose endpoints act on a word: the family a motive suspends,
+/// or the family of a transport along the binder that an endpoint carries,
+/// `depth` such transports in.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PathFamily
+{
+    /// The motive's path family, closed over its environment.
+    pub motive: crate::arena::ValueClosureId,
+    /// The family read: the motive's own at depth zero, otherwise a family
+    /// under the binders of the carried transports around it.
+    pub family: gandr_core_term::ValueTypeId,
+    /// How many carried transports stand around `family`, each one `Path.ap`
+    /// layer on the calls its endpoints make.
+    pub depth: gandr_kernel_term::Reflexivities,
+}
+
 /// The state of mapping a word through one endpoint's calls: the routes
 /// from each of the binder's occurrences to the endpoint, one after another,
 /// each route's functions innermost first.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Mapping
 {
-    /// The path family, closed over its environment.
-    pub motive: crate::arena::ValueClosureId,
+    /// The path family whose endpoint maps the word.
+    pub family: PathFamily,
     /// The endpoint whose calls map the word.
     pub side: gandr_kernel_term::Side,
     /// The route mapping the word now.

@@ -10,13 +10,21 @@
 /// It reduces to the case's arm at the cell, by the rule at dimension one.
 ///
 /// The checker converts each image to the arm, and the kernel replays each
-/// reduction.
+/// reduction. A dependent case into a path family owes no arm at the cell.
+/// The family at the cell carries the answer along the bound path.
+/// Transport along the cell reads that endpoint by the family's two
+/// endpoints, one `Path.ap` layer deeper. The checker converts the transport
+/// of the answer to the answer, and the kernel re-derives the same reading.
 ///
-/// Limits: the checker refuses a dependent case at a higher cell. Transport
-/// along the cell does not yet act on an answer carried along the bound path.
+/// Limits: the rule reads a path family alone, and it reduces the transport
+/// only where the answer at the point is reflexivity. An arm written at the
+/// cell of a dependent case is checked at the motive's own type, so it does
+/// not check.
 ///
-/// - see: #6458 — the dependent form at a higher cell
+/// - see: #6458 — `selfrefl2`, `throughName2`, `selfrefl3`, `flattenRefl`
 /// - see: #6477 — `apEmptyCell`
+/// - see: #6530 — the dependent form into the universe
+/// - see: #6531 — the answer at the point that holds a letter
 /// - see: corpus/model/identity/sphere.gandr
 /// - see: corpus/model/identity/circle-maps.gandr
 
@@ -102,11 +110,26 @@ def apSurfFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
   Path.here (Path.here Base2)
 ) = Path.here (Path.here (Path.here Base2));
 
-/// A dependent case at the 2-cell owes transport along the cell. That
-/// transport does not yet compute.
-///
-/// - see: #6458
-@[refuses("LoopNotRespected")]
+/// A dependent case at the 2-cell owes no arm there: carried along the cell,
+/// the answer at the point is that answer.
 def selfrefl2(x : S2) -> Path[.A = S2](x, x) =
+  match x where
+    | Base2 => Path.here Base2
+
+/// The family's left endpoint runs through a map, whose arm at the cell is the
+/// cell.
+def throughName2(b : S2) -> Path[.A = S2](sphereId b, b) =
+  match b where
+    | Base2 => Path.here Base2
+
+/// At the 3-cell the family carries the family at the 2-cell in turn.
+def selfrefl3(x : S3) -> Path[.A = S3](x, x) =
+  match x where
+    | Base3 => Path.here Base3
+
+/// A map with no arm at the cell moves the answer along the cell to the
+/// cell's inverse. The case owes an arm there.
+@[refuses("LoopNotRespected")]
+def flattenRefl(x : S2) -> Path[.A = S2](flatten x, x) =
   match x where
     | Base2 => Path.here Base2

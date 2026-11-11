@@ -390,6 +390,7 @@ INSERT INTO purpose VALUES('core-nbe','closure::EnvironmentDepth','struct','The 
 INSERT INTO purpose VALUES('core-nbe','closure::Mapping','struct','The state of mapping a word through one endpoint''s calls.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::Mover','enum','The eliminator a constructorwise continuation applies at the next part.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::Orientation','enum','Whether a letter''s image is read as written or inverted.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','closure::PathFamily','struct','A path family whose endpoints act on a word, with the motive it stands in and the carried transports around it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::Route','struct','A route''s position among an endpoint''s routes, the binder''s leftmost occurrence first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::RunPosition','struct','Where a walk of a recorded run against its session stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::ValueBody','enum','A source value or a native quotation of an already existing type root.',NULL,'fits','sound',NULL);

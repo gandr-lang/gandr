@@ -50,6 +50,13 @@
 //! δ-free, and the image of a loop under a map out of the circle exists only in
 //! its definition. A configuration no row reads sticks.
 //!
+//! **A carried endpoint maps a cell by its family's endpoints.** The endpoint
+//! `⟨tr(x. Path[.A = C](l, r), y, b)⟩`, for the family's binder `y` and `b`
+//! reflexivity, maps a cell as the evaluator reads it: `l`'s image inverted,
+//! then `r`'s, each one `Path.ap` layer deeper ([`carried`],
+//! [`carried_image`]). A `b` that holds a letter whiskers the images, and the
+//! transport sticks.
+//!
 //! **A named word is read silently.** `loop` is a constant whose body is the
 //! word of its letter, and a δ-free obligation meets it rigid. The reduct
 //! reads the body in place, as the evaluator does, rather than through an
@@ -93,6 +100,7 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::build_side;
+use quenchant_shape::shape::Maybe;
 
 use crate::element_identity::BinderUse;
 use crate::element_identity::ElementTransport;
@@ -145,6 +153,63 @@ enum Action
     /// The endpoint runs the binder through these calls, a route per
     /// occurrence of the binder.
     Through(Routes),
+    /// The endpoint carries a value along the binder in a path family whose
+    /// endpoints act in turn, read whole ([`carried`]).
+    Carried(Carrying),
+}
+
+/// A carried endpoint read whole: the endpoint first, then the two endpoints
+/// of each family a carried piece transports in, the left before the right,
+/// so every piece stands before the pieces below it.
+///
+/// # Specification
+/// - ensures: the first piece is [`Shape::Carried`]; each carried piece names
+///   two later pieces, each one carried transport deeper.
+/// - executable: none — the ids hold no arena to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the family at the 3-sphere's cell carries the family at
+///   the 2-cell, whose pieces stand one layer deeper again.
+/// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Carrying
+{
+    /// Every piece, each above the pieces it names.
+    pieces: Vec<Piece>,
+}
+
+/// One endpoint of a [`Carrying`]: how it acts on a cell, and how many
+/// carried transports stand around it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Piece
+{
+    /// The carried transports around the endpoint, each one `Path.ap` layer.
+    depth: Reflexivities,
+    /// How the endpoint acts on a cell.
+    shape: Shape,
+}
+
+/// How one endpoint of a [`Carrying`] acts on a cell.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Shape
+{
+    /// The endpoint never reads its family's binder: the empty word.
+    Fixed,
+    /// The endpoint is its family's binder: the cell itself.
+    Moving,
+    /// The endpoint is one call of one argument, its layers raised by the
+    /// piece's depth.
+    Call(Routes),
+    /// The endpoint carries a value along its family's binder: the inverse of
+    /// the left piece's image, then the right piece's.
+    Carried
+    {
+        /// The position of the left endpoint's piece.
+        left: usize,
+        /// The position of the right endpoint's piece.
+        right: usize,
+    },
 }
 
 /// One call of an endpoint's reading: the function, every argument it
@@ -550,7 +615,7 @@ fn concatenated(
 /// - requires: `endpoint` is read under the family's one binder.
 /// - ensures: [`Action::Moving`] for the binder; [`Action::Fixed`] for an
 ///   endpoint that ignores it; [`Action::Through`] for calls [`routes`] reads;
-///   `None` otherwise.
+///   `None` otherwise, a carried endpoint included, which [`carried`] reads.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -563,6 +628,7 @@ fn concatenated(
 #[spec(ensures: |ret| match ret {
     Some(Action::Moving) => matches!(arena.value(endpoint), Some(&Value::Variable(_))),
     Some(Action::Through(ref read)) => !read.leaves.is_empty(),
+    Some(Action::Carried(_)) => false,
     Some(Action::Fixed) | None => arena.value(endpoint).is_some(),
 })]
 fn action(
@@ -578,6 +644,165 @@ fn action(
         return Some(Action::Fixed);
     }
     routes(arena, endpoint).map(Action::Through)
+}
+
+/// An endpoint that carries a value along the binder, read whole, when every
+/// endpoint below it acts on a cell.
+///
+/// # Specification
+/// - requires: `endpoint` is read under the family's one binder.
+/// - ensures: `Some(carrying)` exactly when [`transported`] reads the endpoint
+///   as a transport in a family, and each endpoint below it — the family's two,
+///   and in turn the two of each family read below — is its family's binder,
+///   ignores it, is one call of one argument as [`routes`] reads it, or is a
+///   transport [`transported`] reads; each piece's depth counts the carried
+///   transports around it, and a call's layers are raised by it; `None`
+///   otherwise. The engine's evaluator reads the same endpoints.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while` takes one pending family per turn, each pending only
+///   the families its endpoints transport in, strict subterms.
+/// - measure: the endpoint's nodes left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the family at the 2-sphere's cell carries its answer
+///   along its binder in `x. Path[.A = S2](x, x)`, and the family at the
+///   3-sphere's cell the 2-cell's family in turn; a carried endpoint left
+///   unread leaves the obligation stuck, and a depth misread maps the cell
+///   through the wrong case.
+/// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|read| matches!(read.pieces.first(), Some(&Piece { shape: Shape::Carried { .. }, .. }))))]
+fn carried(
+    arena: &TermArena,
+    presentations: &Presentations,
+    endpoint: ValueId,
+) -> Option<Carrying>
+{
+    let binder = DeBruijnIndex::from(0_u32);
+    let root = transported(arena, presentations, endpoint)?;
+    let mut pieces = Vec::from([Piece {
+        depth: Reflexivities::NONE,
+        shape: Shape::Fixed,
+    }]);
+    let mut pending = Vec::from([(root, 0_usize)]);
+    while let Some((family, at)) = pending.pop() {
+        let &ValueType::Path { left, right, .. } = arena.value_type(family)?
+        else {
+            return None;
+        };
+        let depth = Reflexivities::from(usize::from(pieces.get(at)?.depth).saturating_add(1));
+        let first = pieces.len();
+        for side in [left, right] {
+            let shape = if matches!(arena.value(side), Some(&Value::Variable(index)) if index == binder)
+            {
+                Shape::Moving
+            }
+            else if binder_use(arena, Family::Value(side)) == BinderUse::Ignored {
+                Shape::Fixed
+            }
+            else if let Some(mut read) = routes(arena, side) {
+                // A cell maps through one call of one argument: the `Path.ap`
+                // layers act on a cell, and a chain's later calls act on a
+                // loop.
+                let [ref mut node] = *read.nodes.as_mut_slice()
+                else {
+                    return None;
+                };
+                let [_] = *node.arguments.as_slice()
+                else {
+                    return None;
+                };
+                node.layers = Reflexivities::from(
+                    usize::from(node.layers).saturating_add(usize::from(depth)),
+                );
+                Shape::Call(read)
+            }
+            else {
+                // The piece is rewritten when its own family is read.
+                pending.push((transported(arena, presentations, side)?, pieces.len()));
+                Shape::Fixed
+            };
+            pieces.push(Piece { depth, shape });
+        }
+        pieces.get_mut(at)?.shape = Shape::Carried {
+            left: first,
+            right: first.saturating_add(1),
+        };
+    }
+    Some(Carrying { pieces })
+}
+
+/// The family of a transport an endpoint carries along the binder.
+///
+/// The transport of `b` along `q` in `x. Path[.A = C](l, r)` is the
+/// conjugation `ap(l, q)⁻¹ · b · ap(r, q)` for every `b`. The rule reduces it
+/// only at reflexivity: a `b` that holds a letter whiskers the two images, and
+/// the transport stays held.
+///
+/// # Specification
+/// - requires: `endpoint` is read under its family's binder `y`.
+/// - ensures: `Some(A)` exactly when the endpoint is `⟨tr(A, y, b)⟩`, `A` is a
+///   path family `x. Path[.A = C](l, r)` that never reads `y` and whose carrier
+///   `C` reads neither `x` nor `y`, and `b` reads as the empty word ([`head`])
+///   and ignores `y`; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the family at the 2-sphere's cell carries reflexivity at
+///   the point along its binder; read with any other operand, the conjugation
+///   would drop a whiskering.
+/// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
+#[spec(ensures: |ret| ret.is_none_or(|family| matches!(arena.value_type(family), Some(&ValueType::Path { .. }))))]
+fn transported(
+    arena: &TermArena,
+    presentations: &Presentations,
+    endpoint: ValueId,
+) -> Option<ValueTypeId>
+{
+    let &Value::Returned(call) = arena.value(endpoint)?
+    else {
+        return None;
+    };
+    let &Computation::PathTransport {
+        motive: family,
+        path,
+        value,
+    } = arena.computation(call)?
+    else {
+        return None;
+    };
+    if !matches!(arena.value(path), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
+        || head(arena, presentations, value) != Head::Empty
+        || binder_use(arena, Family::Value(value)) != BinderUse::Ignored
+    {
+        return None;
+    }
+    let &ValueType::Path {
+        domain: carrier, ..
+    } = arena.value_type(family)?
+    else {
+        return None;
+    };
+    // Inside the family, its own binder is index 0 and `y` index 1.
+    let carrying = DeBruijnIndex::from(1_u32);
+    let Maybe::Present(mut read) = arena.value_type_support(family).indices()
+    else {
+        return None;
+    };
+    if read.any(|index| index == carrying) {
+        return None;
+    }
+    let Maybe::Present(mut read) = arena.value_type_support(carrier).indices()
+    else {
+        return None;
+    };
+    if read.any(|index| index <= carrying) {
+        return None;
+    }
+    Some(family)
 }
 
 /// The calls an endpoint runs the family's binder through, and a route per
@@ -1607,6 +1832,88 @@ where
     Some(built)
 }
 
+/// The image of the one-letter word `letter` under a carried endpoint, as a
+/// computation returning the image word, or `None` when a piece's call is no
+/// case its layers read.
+///
+/// A fixed piece's image is the letter's empty word, a moving one's the
+/// letter, and a call's its [`image`] through its raised layers. A carried
+/// piece binds its left piece's image, then its right one's, and transports
+/// the right image along the left in `z. Path[.A = C](z, fixed)`: the left
+/// image inverted, then the right.
+///
+/// # Specification
+/// - requires: as [`image`]; `carrying` is read by [`carried`].
+/// - ensures: the first piece's image, each piece's built after the pieces it
+///   names.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the pieces, the last first, not recursion.
+/// - measure: the pieces left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the 2-sphere's cell maps under the family's carried
+///   endpoint in `x. Path[.A = S2](x, x)` to its inverse then itself, the empty
+///   word, and under `sphereId`'s in `x. Path[.A = S2](sphereId x, x)` to the
+///   arm's inverse then the cell; an image uninverted or a call one layer short
+///   refuses the obligation.
+/// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
+#[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
+fn carried_image<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    unfoldings: &Unfoldings,
+    (carrying, at): (&Carrying, ValueId),
+    (letter, (carrier, fixed)): (ValueId, (ValueTypeId, ValueId)),
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let Head::Letter { rest, .. } = head(arena, unfoldings.presentations(), letter)
+    else {
+        return None;
+    };
+    let mut images: Vec<Option<ComputationId>> = Vec::new();
+    images.resize(carrying.pieces.len(), None);
+    for (position, piece) in carrying.pieces.iter().enumerate().rev() {
+        let built = match piece.shape {
+            Shape::Fixed => arena.computation_return(rest),
+            Shape::Moving => arena.computation_return(letter),
+            Shape::Call(ref read) => image(
+                arena,
+                (table, memo),
+                unfoldings,
+                (read, at),
+                (letter, (carrier, fixed)),
+            )?,
+            Shape::Carried { left, right } => {
+                let first = (*images.get(left)?)?;
+                let second = (*images.get(right)?)?;
+                // `l⁻¹ · r`: `r` bound one binder in, `l` two, moved along `l`
+                // in `z. Path[.A = C](z, fixed)`.
+                let one = BinderDepth::from(1_u32);
+                let lifted = shift_computation(arena, table, memo, second, BinderDepth::NONE, one);
+                let family = path_family(
+                    arena,
+                    (table, memo),
+                    (carrier, fixed),
+                    gandr_kernel_term::Side::Left,
+                    BinderDepth::from(2_u32),
+                );
+                let along = arena.value_variable(DeBruijnIndex::from(1_u32));
+                let start = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let moved = arena.computation_path_transport(family, along, start);
+                let after = arena.computation_bind(lifted, moved);
+                arena.computation_bind(first, after)
+            },
+        };
+        *images.get_mut(position)? = Some(built);
+    }
+    images.first().copied().flatten()
+}
+
 /// One transport step along a word, by the module's rows, where
 /// [`crate::element_identity::transport_beta`] sticks.
 ///
@@ -1737,14 +2044,18 @@ where
     if binder_use(arena, Family::Type(carrier)) != BinderUse::Ignored {
         return Reduction::Stuck;
     }
-    let (Some(left_action), Some(right_action)) = (action(arena, left), action(arena, right))
+    let read = |endpoint: ValueId| {
+        action(arena, endpoint)
+            .or_else(|| carried(arena, presentations, endpoint).map(Action::Carried))
+    };
+    let (Some(left_action), Some(right_action)) = (read(left), read(right))
     else {
         return Reduction::Stuck;
     };
     let fixed_image = |action: &Action| match *action {
         Action::Fixed => Some(rest),
         Action::Moving => Some(path),
-        Action::Through(_) => None,
+        Action::Through(_) | Action::Carried(_) => None,
     };
     if let (Some(left_image), Some(right_image)) =
         (fixed_image(&left_action), fixed_image(&right_action))
@@ -1775,6 +2086,14 @@ where
             (table, memo),
             unfoldings,
             (read, at),
+            (path, (base, fixed)),
+        )
+        .map(Some),
+        Action::Carried(ref carrying) => carried_image(
+            arena,
+            (table, memo),
+            unfoldings,
+            (carrying, at),
             (path, (base, fixed)),
         )
         .map(Some),

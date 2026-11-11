@@ -2083,6 +2083,9 @@ enum Built
     Inverse,
     /// Reflexivity at the empty word.
     Stays,
+    /// Reflexivity at the point, `here(Base)`, whose left endpoint the kernel
+    /// evaluates to the point, as the checker's dialogue says.
+    Reflexive,
 }
 
 /// `built` in `arena`.
@@ -2118,6 +2121,21 @@ fn build(
             vec![empty],
         ),
         Built::Stays => arena.value_here(empty),
+        Built::Reflexive => {
+            let point = arena.value_constructor(
+                ConstantIndex::from(SORT),
+                carrier,
+                ConstructorTag::from(0_usize),
+                vec![],
+            );
+            arena.value_here_relating(
+                point,
+                alloc::sync::Arc::new(gandr_kernel_term::EndpointDialogues {
+                    left: vec![ConversionDecision::Evaluate],
+                    right: Vec::new(),
+                }),
+            )
+        },
     }
 }
 
@@ -2631,6 +2649,45 @@ fn a_map_s_image_of_a_2_cell_in_place_is_its_arm()
     }
 }
 
+/// #6458: a dependent case at the 2-cell owes transport along the cell, whose
+/// family carries the answer along the bound path; the kernel reads that
+/// endpoint by its family's two.
+#[test]
+fn a_carried_endpoint_maps_a_cell_6458()
+{
+    let mut environment = one_two_cell();
+    let identity = case_over(&mut environment, Family::Kept, Built::Point, &[
+        Built::Named,
+    ])
+    .expect("a non-dependent arm at the 2-cell chooses its image");
+    let squash = case_over(&mut environment, Family::Kept, Built::Point, &[])
+        .expect("a non-dependent case with no arm at the 2-cell sends it to reflexivity");
+    for (family, what) in [
+        (
+            Family::Looped,
+            "reflexivity at every point respects the 2-cell",
+        ),
+        (
+            Family::Mapped(identity),
+            "under the identity the carried endpoint maps the 2-cell to its inverse, then \
+             the 2-cell",
+        ),
+    ] {
+        let admitted = case_over(&mut environment, family, Built::Reflexive, &[]);
+        assert!(admitted.is_ok(), "{what}: {admitted:?}");
+    }
+    assert_eq!(
+        case_over(
+            &mut environment,
+            Family::Mapped(squash),
+            Built::Reflexive,
+            &[]
+        ),
+        Err(KernelError::LoopNotRespected(CellIndex::from(0_usize))),
+        "a map with no arm at the 2-cell moves reflexivity to the 2-cell's inverse"
+    );
+}
+
 /// A word written in place of the 2-cell's words, no definition naming it,
 /// is followed one path type above the sort: `Path.ap` of a map along it
 /// starts at the map's action on the point's reflexivity, and the identity's
@@ -2748,7 +2805,7 @@ fn diagonal(
     let image = arena.value_returned(applied);
     let right = match right {
         Built::Point => build(arena, Built::Point),
-        Built::Empty | Built::Named | Built::Inverse | Built::Stays => x,
+        Built::Empty | Built::Named | Built::Inverse | Built::Stays | Built::Reflexive => x,
     };
     let fibre = arena.value_type_path(carrier, image, right);
     let motive = arena.comp_type_returner(fibre);
