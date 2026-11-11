@@ -812,11 +812,13 @@ jobs:
   # the documentation examples, units no other plain gate builds; plain
   # Clippy lints the plain-only targets. On main's push the Linux test lanes
   # run only when no queue run tested the commit, and then build on main's
-  # state and cache theirs as main's.
+  # state and cache theirs as main's. A push whose queue run holds no plain
+  # build state, the merge group into `landing`, builds and caches it with no
+  # test (`CI_BUILD_ONLY`, #6790): the nightly's all-features job restores it.
   cargo-test-plain-only:
     name: test plain-only targets (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--')) }}
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
@@ -827,6 +829,7 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_BUILD_ONLY: ${{ github.event_name == 'push' && needs.prepare.outputs.unbuilt != 'true' }}
       # The lane runs three Cargo commands over three package selections: the
       # parser's tests, the driver the corpus roots run, and the comments
       # suite. Each resolves its own features, so each compiled the changed
@@ -885,7 +888,7 @@ jobs:
       # Each check after the build runs whatever an earlier check gives, so
       # one run names every red and the fixer repairs them together (#5440).
       - name: test workspace targets
-        if: ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
+        if: ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
         env:
           CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'ci:plain-baseline' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
@@ -917,7 +920,7 @@ jobs:
         if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.witness-listing.outcome == 'success' }}
         run: mise run check:witnesses
       - name: run the corpus roots
-        if: &plain-gate ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
+        if: &plain-gate ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
         run: mise run check:corpus
       # The corpus roots built the driver the formatter check runs, and the
       # plain state holds the comments suite: the format gate would build both
@@ -1130,12 +1133,24 @@ jobs:
   # checked by checksum). The joined state is what the next landing
   # restores; no verdict waits on it, since each shard resolves its own
   # witnesses (#1994, #2148).
+  #
+  # A push to main whose queue run holds no enforcing build state builds the
+  # state here, with no shard and no test (`CI_BUILD_ONLY`, #6790). Such a
+  # run is the merge group into `landing`, which runs no test lane, so
+  # nothing else writes the state the nightly restores on this runner. The
+  # integration cycle tests the tree, on a host of another architecture. The
+  # build starts from main's newest state of the generation, so it compiles
+  # what changed since. A run that holds the state promotes it, as before.
   cargo-test-enforcing:
     name: join the enforcing shards (linux)
     needs: [prepare, ci-image, cargo-test-enforcing-shard]
-    if: *test-lane
+    if: ${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--')) }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    # The join deletes the state it supersedes on main, as promotion does.
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
@@ -1143,6 +1158,7 @@ jobs:
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_SHARDS: cargo-test-enforcing-shard
       CI_ENFORCING: "true"
+      CI_BUILD_ONLY: ${{ github.event_name == 'push' && needs.prepare.outputs.unbuilt != 'true' }}
     steps: &join-steps
       - *git-checkout
       - *trust-workspace
@@ -1153,9 +1169,10 @@ jobs:
       - *download-build-state
       - *find-build-state
       - *unpack-build-state
-      # Under act no shard uploads, and the join builds what it lists.
+      # Under act no shard uploads, and the join builds what it lists. A
+      # build-only join has no shard to download.
       - name: download the shards' builds
-        if: ${{ env.ACT != 'true' }}
+        if: ${{ env.ACT != 'true' && env.CI_BUILD_ONLY != 'true' }}
         uses: *download-artifact
         with:
           pattern: build-shard-${{ env.CI_SHARDS }}-*
@@ -1165,6 +1182,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p target/enforcing/debug
+          if [[ ${CI_BUILD_ONLY:-} == true ]]; then
+            mise run build:tests-enforcing
+            exit 0
+          fi
           for build in build-shard-*.tar.zst; do
             [[ -e $build ]] || continue
             zstd -dc "$build" | tar -xf -

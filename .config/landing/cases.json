@@ -689,5 +689,263 @@
     "output": [
       "`report` runs in a merge group on `landing` outside the blocking set: add `github.event.merge_group.base_ref != 'refs/heads/landing'` to its `if` (#5439)"
     ]
+  },
+  {
+    "name": "#6790: a join that saves the enforcing state on a push whose queue run holds none writes the state the nightly restores",
+    "input": {
+      "jobs": {
+        "template": {
+          "if": false,
+          "steps": [
+            {
+              "run": "mise run check:doc"
+            }
+          ]
+        },
+        "depth": {
+          "name": "wait for stack depth 3",
+          "if": "${{ github.event_name == 'pull_request' }}",
+          "steps": [
+            {
+              "run": ".config/pr-stack/landing.bash depth"
+            }
+          ]
+        },
+        "prepare": {
+          "name": "prepare the run",
+          "needs": "depth",
+          "if": "${{ !cancelled() }}",
+          "steps": [
+            {
+              "run": "gh api repos"
+            }
+          ]
+        },
+        "image": {
+          "name": "build the missing CI image",
+          "needs": "prepare",
+          "if": "${{ !cancelled() && needs.prepare.outputs.build == 'true' }}"
+        },
+        "clippy": {
+          "name": "check Clippy wall",
+          "needs": ["prepare", "image"],
+          "if": "${{ !cancelled() && !failure() && github.base_ref != 'landing' && needs.prepare.outputs.rust == 'true' }}",
+          "steps": [
+            {
+              "run": "mise run check:clippy-plain-only"
+            },
+            {
+              "run": "mise run check:clippy-enforcing"
+            },
+            {
+              "run": "mise run ci:prune-clippy"
+            }
+          ]
+        },
+        "dylint": {
+          "name": "check quenchant compiler policy",
+          "needs": ["prepare", "image"],
+          "if": "${{ !cancelled() && !failure() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}",
+          "steps": [
+            {
+              "run": "mise run check:dylint"
+            },
+            {
+              "run": "mise run check:anodized"
+            },
+            {
+              "run": "mise run check:anodized-enforcing"
+            },
+            {
+              "run": "mise run evidence:rustdoc"
+            }
+          ]
+        },
+        "tests": {
+          "name": "test enforcing targets",
+          "needs": ["prepare", "image"],
+          "if": "${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name == 'merge_group' }}",
+          "steps": [
+            {
+              "run": "mise run check:tests-enforcing"
+            }
+          ]
+        },
+        "hotpath": {
+          "name": "report the hotpath benchmarks",
+          "if": "${{ !cancelled() && github.event_name == 'push' }}",
+          "steps": [
+            {
+              "run": "mise run ci:hotpath"
+            }
+          ]
+        },
+        "timing": {
+          "name": "summarize the lanes' step times",
+          "needs": ["clippy"],
+          "if": "${{ !cancelled() && github.event.merge_group.base_ref != 'refs/heads/landing' }}",
+          "steps": [
+            {
+              "run": "gh api jobs"
+            }
+          ]
+        },
+        "join": {
+          "name": "join the enforcing shards (linux)",
+          "if": "${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--')) }}",
+          "env": {
+            "CI_BUILD_STATE": "cargo-test-enforcing"
+          },
+          "steps": [
+            {
+              "run": "mise run build:tests-enforcing"
+            },
+            {
+              "name": "cache complete test state",
+              "uses": "actions/cache/save"
+            }
+          ]
+        }
+      },
+      "landing": [
+        "check:clippy-plain-only",
+        "check:clippy-enforcing",
+        "check:dylint",
+        "check:anodized",
+        "check:anodized-enforcing"
+      ],
+      "states": ["cargo-test-enforcing"]
+    },
+    "output": []
+  },
+  {
+    "name": "#6790: a join that saves the enforcing state on the test lanes alone writes none after a merge group into landing, so the nightly builds cold",
+    "input": {
+      "jobs": {
+        "template": {
+          "if": false,
+          "steps": [
+            {
+              "run": "mise run check:doc"
+            }
+          ]
+        },
+        "depth": {
+          "name": "wait for stack depth 3",
+          "if": "${{ github.event_name == 'pull_request' }}",
+          "steps": [
+            {
+              "run": ".config/pr-stack/landing.bash depth"
+            }
+          ]
+        },
+        "prepare": {
+          "name": "prepare the run",
+          "needs": "depth",
+          "if": "${{ !cancelled() }}",
+          "steps": [
+            {
+              "run": "gh api repos"
+            }
+          ]
+        },
+        "image": {
+          "name": "build the missing CI image",
+          "needs": "prepare",
+          "if": "${{ !cancelled() && needs.prepare.outputs.build == 'true' }}"
+        },
+        "clippy": {
+          "name": "check Clippy wall",
+          "needs": ["prepare", "image"],
+          "if": "${{ !cancelled() && !failure() && github.base_ref != 'landing' && needs.prepare.outputs.rust == 'true' }}",
+          "steps": [
+            {
+              "run": "mise run check:clippy-plain-only"
+            },
+            {
+              "run": "mise run check:clippy-enforcing"
+            },
+            {
+              "run": "mise run ci:prune-clippy"
+            }
+          ]
+        },
+        "dylint": {
+          "name": "check quenchant compiler policy",
+          "needs": ["prepare", "image"],
+          "if": "${{ !cancelled() && !failure() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}",
+          "steps": [
+            {
+              "run": "mise run check:dylint"
+            },
+            {
+              "run": "mise run check:anodized"
+            },
+            {
+              "run": "mise run check:anodized-enforcing"
+            },
+            {
+              "run": "mise run evidence:rustdoc"
+            }
+          ]
+        },
+        "tests": {
+          "name": "test enforcing targets",
+          "needs": ["prepare", "image"],
+          "if": "${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name == 'merge_group' }}",
+          "steps": [
+            {
+              "run": "mise run check:tests-enforcing"
+            }
+          ]
+        },
+        "hotpath": {
+          "name": "report the hotpath benchmarks",
+          "if": "${{ !cancelled() && github.event_name == 'push' }}",
+          "steps": [
+            {
+              "run": "mise run ci:hotpath"
+            }
+          ]
+        },
+        "timing": {
+          "name": "summarize the lanes' step times",
+          "needs": ["clippy"],
+          "if": "${{ !cancelled() && github.event.merge_group.base_ref != 'refs/heads/landing' }}",
+          "steps": [
+            {
+              "run": "gh api jobs"
+            }
+          ]
+        },
+        "join": {
+          "name": "join the enforcing shards (linux)",
+          "if": "${{ !cancelled() && !failure() && github.event.merge_group.base_ref != 'refs/heads/landing' && (needs.prepare.outputs.unbuilt == 'true') }}",
+          "env": {
+            "CI_BUILD_STATE": "cargo-test-enforcing"
+          },
+          "steps": [
+            {
+              "run": "mise run build:tests-enforcing"
+            },
+            {
+              "name": "cache complete test state",
+              "uses": "actions/cache/save"
+            }
+          ]
+        }
+      },
+      "landing": [
+        "check:clippy-plain-only",
+        "check:clippy-enforcing",
+        "check:dylint",
+        "check:anodized",
+        "check:anodized-enforcing"
+      ],
+      "states": ["cargo-test-enforcing"]
+    },
+    "output": [
+      "no job saves `cargo-test-enforcing` on a push to main whose queue run holds none, so the nightly restores no state and builds cold: add `!contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--')` to the `if` of the job that saves it (#6790)"
+    ]
   }
 ]
