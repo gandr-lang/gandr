@@ -256,7 +256,9 @@ fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error
 /// returner and the arrow, so `-F Maybe A` returns the application, and the
 /// call form `Vec(A, n)` keeps its reading. A form such as `+U A` is an
 /// argument as it stands. The returner `-F` is a prefix of a looser band, so
-/// it is an argument only in parentheses.
+/// it is an argument only in parentheses. A lowercase argument before a
+/// spaced group is an argument as a type name is, `Vec a (Succ n)`, and a
+/// lowercase word that heads its type keeps the moded type, `m (T)`.
 #[test]
 fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error>>
 {
@@ -269,6 +271,11 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error
         ("def x : Maybe(A);", 0),
         ("def x : Vec(A, n);", 0),
         ("def x : Vec a n;", 2),
+        ("def x : Vec a (Succ n);", 3),
+        ("def x : Sub d (g);", 2),
+        ("def x : Sub D (g);", 2),
+        ("def x : Vec a(n);", 1),
+        ("def x : m (T);", 0),
         ("def x : Vec Integer plus(m, Zero);", 2),
         ("def x : m T;", 0),
         ("def x : (m n : Integer) -> Integer;", 0),
