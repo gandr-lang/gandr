@@ -9,10 +9,16 @@
 /// answer at the point holds a loop checks where both images of the cell are
 /// empty.
 ///
+/// A case over the words at the 3-cell takes its `here` arm at the empty
+/// word. The degree of a map that fixes the point by its cases is the winding
+/// of its image of the 3-cell. The identity's degree is one.
+///
 /// Not implemented: past an image that holds a cell, that answer owes the
-/// whiskering of the cell, which does not yet compute.
+/// whiskering of the cell, which does not yet compute. The degree of a bound
+/// map waits on `Path.ap` of a bound map at the 3-cell.
 ///
 /// - owes: #6773
+/// - owes: #6811
 // The spheres, their cells at their path types, and the cancellations.
 import "../../model/identity/sphere.gandr";
 // A sort with a loop and a 2-cell, and its maps out of the 2-sphere.
@@ -20,6 +26,9 @@ import "../../model/identity/sphere-whiskers.gandr";
 // The circle, `selfloop` and `ua`.
 import "../../model/identity/circle-base.gandr";
 import "../../model/identity/univalence.gandr";
+// The identity of the 3-sphere by cases, and the winding at its 3-cell.
+import "../../model/identity/sphere-maps.gandr";
+import "../../model/identity/degree.gandr";
 
 /// The 2-cell and its inverse reduce to the empty word, by conversion.
 @[checks]
@@ -69,3 +78,7 @@ def hopfWalked : Path[.A = Path[.A = Circle](Base, Base)](
   walkAlong Base (Path.ap hopfFamily surf),
   loop
 ) = Path.here loop;
+
+/// The degree of the identity of the 3-sphere is one, by conversion.
+@[checks]
+def degreeOne : Path[.A = Int](wind3 (Path.ap sphereId3 surf3), S Z) = Path.here (S Z);
