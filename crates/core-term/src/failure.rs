@@ -247,9 +247,9 @@ impl TrackingIssue
     /// zero, a universe field, a term index, or a union, staged or session
     /// field.
     pub const TYPE_SHAPE: Self = Self(5662);
-    /// An operation feeding an output from several monomials, or of an arity
-    /// the cell frame cannot hold.
-    pub const OPERATION_SHAPE: Self = Self(2666);
+    /// An operation whose output port several monomials feed, which needs a
+    /// commutative monoid on its target.
+    pub const AGGREGATED_OUTPUT: Self = Self(6471);
     /// A derivation over an indexed sort or a nested model, or a peak
     /// variable no term of its sort stands for.
     pub const DERIVE_INDEXED: Self = Self(2667);

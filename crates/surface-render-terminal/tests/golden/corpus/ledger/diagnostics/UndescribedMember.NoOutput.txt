@@ -1,0 +1,7 @@
+error[UndescribedMember.NoOutput]: this member is an operation with no output port, so its result goes nowhere
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.NoOutput.gandr:6:3
+  │
+6 │   oper drain : (m : M) --> ();
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ╰ note: `Drain` is refused with UndescribedMember.NoOutput, as its expectation states
