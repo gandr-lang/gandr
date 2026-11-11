@@ -176,5 +176,43 @@ got=$(
 )
 [[ $got == "exit 1, stays, names the fetch" ]] || fail "#5627: a refused fetch stops the rebase, and landing stays" "$got"
 
+# A fix on main while the merge queue builds a group on landing: the rebase
+# waits, and landing stays while the group's branch stands. Once the group's
+# branch goes, as the queue merges it, landing moves onto main (#6553).
+got=$(
+  setup "$scratch/queued"
+  land pr1 one 'one'
+  fix landing shared $'one\nfixed\nthree'
+  land pr2 two 'two'
+  before=$(git rev-parse landing)
+  git push --quiet origin landing:refs/heads/gh-readonly-queue/landing/pr-3-0000000
+  (REBASE_QUEUE_POLL=1 run "$scratch/queued" > "$scratch/queued/status") &
+  waiter=$!
+  sleep 3
+  held=$([[ $(git ls-remote origin refs/heads/landing) == "$before"* ]] && echo stays || echo moves)
+  git push --quiet origin --delete gh-readonly-queue/landing/pr-3-0000000
+  wait "$waiter"
+  again
+  echo "while queued $held," \
+    "exit $(< "$scratch/queued/status")," \
+    "$(git merge-base --is-ancestor origin/main origin/landing && echo "then holds main" || echo "then lacks main")"
+)
+[[ $got == "while queued stays, exit 0, then holds main" ]] || fail "#6553: the rebase waits while the queue builds a group on landing, then moves landing" "$got"
+
+# A group that the queue still builds when the wait ends: the push goes
+# through, and the error names the group that the queue builds again.
+got=$(
+  setup "$scratch/overdue"
+  land pr1 one 'one'
+  fix landing shared $'one\nfixed\nthree'
+  land pr2 two 'two'
+  git push --quiet origin landing:refs/heads/gh-readonly-queue/landing/pr-3-0000000
+  status=$(REBASE_QUEUE_WAIT=0 run "$scratch/overdue") && again
+  echo "exit $status," \
+    "$(git merge-base --is-ancestor origin/main origin/landing && echo "holds main," || echo "lacks main,")" \
+    "$([[ $(< "$scratch/overdue/err") == *"build each again: pr-3-0000000"* ]] && echo "names the group" || echo "names no group")"
+)
+[[ $got == "exit 0, holds main, names the group" ]] || fail "#6553: past the wait the push goes through and names the group the queue builds again" "$got"
+
 (( failed == 0 )) || exit 1
-echo "landing rebase OK: 6 cases stay, fast-forward, move, stop on a conflict, drop what main holds and stop on a refused fetch as recorded"
+echo "landing rebase OK: 8 cases stay, fast-forward, move, stop on a conflict, drop what main holds, stop on a refused fetch, wait for the queue and end the wait as recorded"

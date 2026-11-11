@@ -184,13 +184,15 @@ jobs:
   # default branch's script, and the rebase runs no code of `landing`. A
   # rebase that fails leaves `landing` as it was and pages the workflow lane
   # with the run. Its log names the cause: the files of a conflict, or the
-  # error of another failure, such as a refused fetch.
+  # error of another failure, such as a refused fetch. The rebase waits up to
+  # 25 minutes while the merge queue builds a group on `landing` (#6553), so
+  # the job runs on the factory runner for 35 minutes at most.
   rebase:
     name: rebase landing onto main
     needs: cycle
     if: ${{ needs.cycle.outputs.rebase == 'true' }}
     runs-on: [self-hosted, factory] # zizmor: ignore[self-hosted-runner]
-    timeout-minutes: 10
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
