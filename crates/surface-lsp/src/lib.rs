@@ -375,6 +375,8 @@ extern crate alloc;
 
 use core::fmt;
 
+#[cfg(feature = "instrument")]
+mod activity;
 #[cfg(test)]
 mod anchor;
 mod build;
@@ -435,6 +437,10 @@ pub use gandr_surface_dispatcher::Pool;
 pub use gandr_surface_dispatcher::Width;
 pub use gandr_surface_pretty::Spelling;
 
+#[cfg(feature = "instrument")]
+pub use crate::activity::Activities;
+#[cfg(feature = "instrument")]
+pub use crate::activity::Tick;
 pub use crate::build::unidentified;
 #[cfg(unix)]
 pub use crate::bus::RENDER_BUS_PREFACE;

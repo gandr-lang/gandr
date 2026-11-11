@@ -1523,6 +1523,9 @@ pub struct Workspace
     /// its candidates on, and every connection's judgements and admissions
     /// run on.
     pool: Arc<Pool>,
+    /// The fold of the activity ring of `pool`, and its watchers.
+    #[cfg(feature = "instrument")]
+    activity: crate::activity::Activities,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
@@ -1649,7 +1652,12 @@ impl Workspace
         pool: Arc<Pool>,
     ) -> Self
     {
-        Self { pool, ..self }
+        Self {
+            #[cfg(feature = "instrument")]
+            activity: crate::activity::Activities::of(Arc::clone(&pool)),
+            pool,
+            ..self
+        }
     }
 
     /// The pool every session the workspace opens and every connection
@@ -1662,6 +1670,53 @@ impl Workspace
     pub fn pool(&self) -> &Arc<Pool>
     {
         &self.pool
+    }
+
+    /// The fold of the activity ring of the pool, and its watchers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    #[must_use]
+    pub const fn activity(&self) -> &crate::activity::Activities
+    {
+        &self.activity
+    }
+
+    /// The subscription a job of `connection` runs at: the activity layer
+    /// while the hub has a watcher of the activity, and the connection's own
+    /// otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn subscription(
+        &self,
+        connection: &Subscription,
+    ) -> Subscription
+    {
+        self.activity
+            .rings()
+            .map_or_else(|| connection.clone(), Subscription::recording)
+    }
+
+    /// The subscription a job of `connection` runs at: the connection's own,
+    /// since no ring is compiled.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(not(feature = "instrument"))]
+    #[expect(
+        clippy::unused_self,
+        reason = "the workspace holds no ring without the feature, and the choice keeps one signature in both builds"
+    )]
+    fn subscription(
+        &self,
+        connection: &Subscription,
+    ) -> Subscription
+    {
+        connection.clone()
     }
 }
 
@@ -2212,9 +2267,9 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; a peer that never connected or held nothing is
     ///   admitted.
-    /// - ensures: `peer` watches and hears nothing, holds no copy of any
-    ///   document and holds no folder open; every document left is held by
-    ///   another connection.
+    /// - ensures: `peer` watches and hears nothing, the activity included,
+    ///   holds no copy of any document and holds no folder open; every document
+    ///   left is held by another connection.
     /// - provides: a connection's end, clean or not.
     /// - panics: none.
     ///
@@ -2242,6 +2297,8 @@ impl Workspace
         let _accountant = self.accountants.remove(&peer);
         let _editor = self.editors.remove(&peer);
         let _reporting = self.reporting.remove(&peer);
+        #[cfg(feature = "instrument")]
+        self.activity.unwatch(peer);
         self.files.get_mut().depart(peer);
         for (uri, held) in core::mem::take(&mut self.documents) {
             if let Some(forgotten) = self.let_go(uri, held, peer) {
@@ -3611,7 +3668,7 @@ impl Server
                 Maybe::Absent(formless::Absent::Uncareted),
             ),
             started,
-            subscription: self.subscription,
+            subscription: workspace.subscription(&self.subscription),
         };
         let submission = admissions.next();
         let _started = admissions
@@ -3798,7 +3855,7 @@ impl Server
                                     self.quiet,
                                     self.shadowing,
                                 ),
-                                self.subscription,
+                                workspace.subscription(&self.subscription),
                             ),
                             document.version,
                         )),
@@ -4029,7 +4086,7 @@ impl Server
                 },
                 Taken::Running(admitting) => {
                     let submission = admissions.next();
-                    let subscription = self.subscription;
+                    let subscription = workspace.subscription(&self.subscription);
                     let _started =
                         admissions
                             .generations
@@ -4209,7 +4266,7 @@ impl Server
                     self.quiet,
                     self.shadowing,
                 ),
-                self.subscription,
+                workspace.subscription(&self.subscription),
             )),
             Maybe::Absent(_) => None,
         }
@@ -9240,6 +9297,9 @@ where
     Poll: Retirement,
 {
     type Out = Polled<Rechecked, Poll::Retired, ()>;
+
+    #[cfg(feature = "instrument")]
+    const TASK: gandr_core_fork::activity::Task = gandr_core_fork::activity::Task::Fork;
 
     /// [`Judging::run`], telling `sink` what the judgement does.
     ///
@@ -17141,6 +17201,78 @@ mod tests
             "a change to a closed document says nothing"
         );
         assert_eq!(server.settle(), Settled::default(), "and judges nothing");
+    }
+
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn a_watched_edit_marks_its_judgement_and_its_admission()
+    {
+        use gandr_core_fork::activity::Edge;
+        use gandr_core_fork::activity::Task;
+
+        let edit = |version: u8| {
+            Body::from(
+                format!(
+                    r#"{{"jsonrpc":"2.0","method":"textDocument/didChange","params":{{
+                    "textDocument":{{"uri":"file:///tmp/example.gandr","version":{version}}},
+                    "contentChanges":[{{"text":"def g : Integer ;\ndef g = {version} ;\n"}}]}}}}"#
+                )
+                .into_bytes(),
+            )
+        };
+        let mut server = server_over_the_known_document();
+        let peer = Peer::from(99_u64);
+        let (watcher, ticks) = std::sync::mpsc::channel();
+        server
+            .workspace
+            .activity()
+            .watch(peer, watcher)
+            .expect("the host starts the fold's thread");
+        let _changed = server.server.handle(&mut server.workspace, &edit(2));
+        let _settled = server.settle();
+        let mut marked: Vec<(Task, Edge)> = Vec::new();
+        while !marked.contains(&(Task::Replay, Edge::End)) {
+            let tick = ticks
+                .recv_timeout(core::time::Duration::from_secs(5))
+                .expect("the edit's admission reaches the watcher");
+            marked.extend(tick.events.iter().map(|event| (event.task, event.edge)));
+        }
+        let replays: Vec<Edge> = marked
+            .iter()
+            .filter(|&&(task, _)| task == Task::Replay)
+            .map(|&(_, edge)| edge)
+            .collect();
+        assert_eq!(
+            replays,
+            [Edge::Start, Edge::End],
+            "the admission is one replay task, its start before its end"
+        );
+        let forks = |edge| {
+            marked
+                .iter()
+                .filter(|&&marked| marked == (Task::Fork, edge))
+                .count()
+        };
+        assert!(
+            forks(Edge::Start) >= 1 && forks(Edge::Start) == forks(Edge::End),
+            "the judgement and its molding jobs are fork tasks, each started and ended: {marked:?}"
+        );
+        server.workspace.activity().unwatch(peer);
+        let _changed = server.server.handle(&mut server.workspace, &edit(3));
+        let _settled = server.settle();
+        let (watcher, ticks) = std::sync::mpsc::channel();
+        server
+            .workspace
+            .activity()
+            .watch(peer, watcher)
+            .expect("the host starts the fold's thread");
+        assert!(
+            ticks
+                .recv_timeout(core::time::Duration::from_millis(200))
+                .is_err(),
+            "an edit with no watcher writes no mark"
+        );
+        server.workspace.activity().unwatch(peer);
     }
 
     /// One of the two pool threads a gated job holds.

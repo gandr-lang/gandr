@@ -414,6 +414,8 @@ pub use crate::pool::PoolFault;
 pub use crate::pool::recording::ActivityFork;
 #[cfg(feature = "instrument")]
 pub use crate::pool::recording::clock as activity_clock;
+#[cfg(feature = "instrument")]
+pub use crate::pool::recording::marked;
 pub use crate::presentation::Presentation;
 pub use crate::presentation::PresentationFault;
 pub use crate::presentation::presented;
