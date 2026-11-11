@@ -75,6 +75,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      issues: read
     steps:
       - *git-checkout
       - *install-commitlint
@@ -93,3 +94,20 @@ jobs:
         if: ${{ github.event_name == 'merge_group' }}
         shell: bash
         run: git log -1 --format=%s HEAD | sed -E 's/ \(#[0-9]+\)$//' | mise exec -- commitlint
+      # The account of what the pull request takes out of the tree (#6817),
+      # read again where it lands: a body edited, or a head pushed past the
+      # architect's sign-off, is refused. `pr:open` read the records of both
+      # sides; the queue reads the rows and the sign-offs alone. The group's
+      # first parent is the base, and its second the pull request's head, so
+      # the groups ahead of it move no sign-off.
+      - name: read the account of what the change takes out
+        if: ${{ github.event_name == 'merge_group' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          git fetch --quiet --no-tags --depth=2 origin "$GITHUB_SHA"
+          number=$(git log -1 --format=%s HEAD | sed -nE 's/.* \(#([0-9]+)\)$/\1/p')
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
+          .config/deletes/check.bash --rows-only --head HEAD^2 "$RUNNER_TEMP/body.md" HEAD^1

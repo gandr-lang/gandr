@@ -3888,9 +3888,23 @@ jq -r 'group_by(.file)[] | [.[0].file, (map([.start, .end]) | unique | tojson)] 
         | jq -c -f "$1/blame.jq" | jq -c --arg file "$4" "with_entries(.key = \"\(\$file):\(.key)\")" > "$2/$$.json"
       rm -- "$2/$$.porcelain"' _ "$rules" "$scratch/dates" "$rev"
 jq -s -c 'add // {}' "$scratch"/dates/*.json < /dev/null > "$scratch/dates.json"
+# The crates that no other crate names (#6817), each with the epics that its
+# README's `## References` names: the report gives such a crate one row that
+# waits for its epic, and no row for each item. A crate with a binary is its
+# own consumer.
+lonely=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path "$root/Cargo.toml" \
+  | jq -c --arg root "$root/" '.packages as $all
+      | [$all[] | .name as $n | select(all(.targets[]; .kind | index("bin") | not))
+          | select([$all[] | select(.name != $n) | .dependencies[].name | select(. == $n)] | length == 0)
+          | .manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | select(startswith("crates/")) | ltrimstr("crates/")]' \
+  | jq -r '.[]' | while IFS= read -r crate; do
+      awk '/^## /{ on = ($0 == "## References"); next } on' "$root/crates/$crate/README.md" 2> /dev/null \
+        | { grep -oE '(^|[^[:alnum:]/])#[0-9]+' || :; } | tr -dc '0-9\n' | jq -R 'select(. != "") | tonumber' \
+        | jq -s -c --arg crate "$crate" '{($crate): unique}'
+    done | jq -s -c 'add // {}')
 jq -n -c --slurpfile items "$scratch/verdicts.json" --slurpfile dates "$scratch/dates.json" --arg today "$(date -u +%F)" \
-  --argjson grace "$grace" --argjson budget "$budget" --arg repository "$repo" --arg commit "$commit" \
-  '{items: $items[0], dates: $dates[0], today: $today, grace: $grace, budget: $budget, repository: $repository, commit: $commit}' \
+  --argjson grace "$grace" --argjson budget "$budget" --arg repository "$repo" --arg commit "$commit" --argjson lonely "$lonely" \
+  '{items: $items[0], dates: $dates[0], today: $today, grace: $grace, budget: $budget, repository: $repository, commit: $commit, lonely: $lonely}' \
   | jq -c -f "$rules/render.jq" > "$scratch/bodies.json"
 rows=$(jq 'map(.count) | add // 0' "$scratch/bodies.json")
 if [[ -z $write ]]; then
@@ -4519,6 +4533,12 @@ fi
 # it, or a tracked path (#2884, `check:refactoring`).
 mise run --quiet check:refactoring "$body" \
   || { echo "name each \`## Refactoring\` \`Where\` as the workspace carries it, then run \`pr:open\` again" >&2; exit 2; }
+# Each item, test, ledger row and file that the change takes out has its row
+# in the body's `## Deletes`, and each deletion the architect's sign-off at a
+# head that the change keeps (#6817, `check:deletes`). A test whose text
+# changes has its row in `## Preserved and changed`.
+mise run --quiet check:deletes --title "${usage_title:?}" "$body" "$from" \
+  || { echo "account for what the change takes out in \`## Deletes\`, then run \`pr:open\` again" >&2; exit 2; }
 # Landed worktrees go before anything else, and under the disk floor the
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard

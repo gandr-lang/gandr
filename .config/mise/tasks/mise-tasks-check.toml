@@ -2954,6 +2954,43 @@ set -euo pipefail
 echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases read as recorded"
 '''
 
+# The account of what a change takes out of the tree (#6817). The owner's
+# order of 2026-11-11: no deletion lands without the architect's sign-off.
+# The dead-weight collectors landed 27 pull requests that took items, ledger
+# rows and README lines out, and no body gave an account a reader could
+# check. With a body and a base, the task reads the change from the base to
+# HEAD (`.config/deletes/check.bash`) and refuses each thing that leaves
+# with no row in the body's `## Deletes`, a `deleted` row with no reasoning,
+# an item that the crate's README names, an item of a crate with no
+# consumer, a row with no sign-off of the architect at a head that the
+# change keeps, a test whose text changes with no row in `## Preserved and
+# changed`, and a `refactor` with no `## Preserved and changed`. `pr:open`
+# runs it before the push, and the merge queue runs it with `--rows-only`.
+# With no body, as in the gate, it runs the cases of `deletes.jq`
+# (`.config/deletes/cases.json`).
+["check:deletes"]
+description = "A body accounts for each item, test, ledger row and file its change takes out, with the architect's sign-off for each deletion; with no body, the rule's cases"
+tools.jq = "1.8.1"
+usage = '''
+arg "[body]" help="the pull request body; with none, the task runs the rule's cases"
+arg "[base]" help="the commit the change runs from to HEAD"
+flag "--title <title>" help="the pull request title: a refactor carries ## Preserved and changed"
+flag "--rows-only" help="read the rows, the sign-offs and the consumers alone, as the merge queue does"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -z ${usage_body:-} ]]; then
+  .config/cases/run.bash deletes .config/deletes/cases.json --program .config/deletes/deletes.jq --mode r -L .config/claims
+  echo "deletes check OK: $(jq length .config/deletes/cases.json) cases read as recorded"
+  exit 0
+fi
+flags=()
+if [[ ${usage_rows_only:-false} == true ]]; then flags+=(--rows-only); fi
+if [[ -n ${usage_title:-} ]]; then flags+=(--title "$usage_title"); fi
+.config/deletes/check.bash "${flags[@]}" "$usage_body" "${usage_base:?check:deletes takes the base with the body}"
+'''
+
 # The bench harness's readings (#3930). A run past the host's bound is recorded
 # `past bound` and never retried larger, and Catt runs only at n = 2 and 3
 # (#3855): a run misread as a time, or an example past n = 3 let through,

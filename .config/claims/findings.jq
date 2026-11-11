@@ -170,6 +170,11 @@ def owes_row($row; $labels; $number):
 def findings($labels; $number):
   . as $body
   | need("Sources"),
+    # A refactor states what it takes out of the tree, which the architect
+    # reads before the coordinator signs it (#6817): `none` or one row each.
+    (if ($labels | index("kind:refactor")) != null and ($labels | index("collector")) == null and section("Deletes") == null then
+       "`## Deletes` is missing: a `kind:refactor` unit writes one row for each item, test, ledger row or file it takes out, or `none` (#6817)"
+     else empty end),
     ((section("Sources") // []) as $lines
       | [source_rows] as $rows
       | ($lines | items | "`## Sources` line `\(.)` is a list item: write it as a row of the table `| Source | Role | What it gives |`"),

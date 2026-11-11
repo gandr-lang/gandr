@@ -53,6 +53,11 @@ site = [
   { file = ".config/claims/mark.bash", scope = "claim_mark", api = "rest", identity = "write", calls = 3, points = 3, measured = "rest", hour = 10, trigger = "claim:next, claim:take and a gate that writes a dropped marker back (#6210): the label and the body's marker, and the body written back when another lane claimed first" },
   { file = ".config/claims/taken.bash", scope = "-", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "check and gate:all on a unit branch: one read of the branch's issue a gate, about 2 gates a seat an hour; a branch that works no unit reads nothing" },
 
+  # The account of what a change takes out (#6817): pr:open on a host, and
+  # the merge queue's title job.
+  { file = ".config/deletes/check.bash", scope = "-", api = "rest", identity = "read", calls = 1, points = 1, pages = 1, measured = "rest", hour = 8, trigger = "pr:open, through check:deletes: the comments of each issue the body works, one paged read of 100 comments an issue, one issue for most bodies; about 8 openings an hour" },
+  { file = ".config/deletes/check.bash", scope = "-", api = "rest", identity = "actions", calls = 1, points = 1, pages = 1, measured = "rest", hour = 10, trigger = "pr-title.yml: each merge-queue entry, the comments of each issue the body works, one paged read of 100 comments an issue" },
+
   # Epics: epics.yml closes an epic whose last child closed (Actions).
   { file = ".config/epics/epics.sh", scope = "-", api = "graphql", identity = "actions", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "epics.yml: each issue closed; a comment and a close; the repository comes from GITHUB_REPOSITORY (repo_name)" },
   { file = ".config/epics/epics.sh", scope = "-", api = "rest", identity = "actions", calls = 5, points = 6, pages = 3, measured = "rest", hour = 8, trigger = "epics.yml: each issue closed; its parent, blockers and sub-issues, one page each" },
@@ -271,6 +276,7 @@ site = [
   { file = ".github/workflows/integration.yml", scope = "relay/dispatch this workflow on the default branch", api = "rest", identity = "actions", calls = 1, points = 4, measured = "rest", hour = 6, trigger = "integration.yml: each push to landing or integration, a landing batch or a fix; one dispatch, tried again after a server error, four requests at most" },
   { file = ".github/workflows/nightly.yml", scope = "freshness/compare main against the last successful run", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 1, schedule = "nightly.yml", trigger = "nightly.yml: once a day" },
   { file = ".github/workflows/pr-title.yml", scope = "title/lint the title", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 10, trigger = "pr-title.yml: each title event of a pull request, about 8 openings an hour as pr:open's row and a few edits; the title as it stands, so a re-run lints it again (#5777)" },
+  { file = ".github/workflows/pr-title.yml", scope = "title/read the account of what the change takes out", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 10, trigger = "pr-title.yml: each merge-queue entry, the pull request's body as it stands (#6817); its comments are check.bash's row" },
 ]
 
 # The hour's ceiling of each identity on each API: a fifth of the reader's
