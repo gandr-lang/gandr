@@ -23,7 +23,9 @@ cleanup() {
 }
 trap cleanup EXIT
 export GANDR_HOST_LOCK_DIR=$scratch
-unset GANDR_GATE_SLOT GATE_NO_WAIT
+# A gate that runs these cases in the background asks for no background
+# gate here (#6656).
+unset GANDR_GATE_SLOT GATE_NO_WAIT GANDR_GATE_BACKGROUND
 failed=0
 fail() {
   printf 'host-lock: %s\n' "$*" >&2
@@ -229,16 +231,40 @@ status=0
 
 # A background gate (#6638), at niceness 19, takes its lane's lock and no
 # slot, so it runs while the one slot is held. Asked at niceness 0, it takes
-# a slot as any gate does, and with the slot held it is refused.
+# a slot as any gate does, and with the slot held it is refused. The case
+# reads niceness 0 through `gate_niceness`, since a case that runs at
+# niceness 19 cannot lower its own.
 status=0
 (cd "$scratch/core-1" && GANDR_GATE_BACKGROUND=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 \
   nice -n 19 bash -c 'source "$1"; hold_gate_slot watcher; [[ $gate_slot == background ]]' _ "$gate_helper") > /dev/null 2>&1 || status=$?
 [[ $status == 0 ]] || fail "#6638: a background gate at niceness 19 waited for a host slot, exit $status"
 status=0
 refusal=$(cd "$scratch/core-1" && GANDR_GATE_BACKGROUND=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 \
-  bash -c 'source "$1"; hold_gate_slot watcher' _ "$gate_helper" 2>&1) || status=$?
+  bash -c 'source "$1"; gate_niceness() { echo 0; }; hold_gate_slot watcher' _ "$gate_helper" 2>&1) || status=$?
 [[ $status == 2 && $refusal == "gate: every slot on the host is held: mise run "*" alone"* ]] \
   || fail "#6638: a background gate at niceness 0 took no slot: exit $status, $refusal"
+
+# A check inside a background gate is no background gate (#6656). The
+# background gate keeps its request from its checks, so a check of another
+# lane that asks for a slot, at the gate's niceness 19, is refused while the
+# one slot is held.
+mkdir -p "$scratch/views-6656"
+status=0
+refusal=$(cd "$scratch/core-1" && GANDR_GATE_BACKGROUND=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 \
+  nice -n 19 bash -c 'source "$1"; hold_gate_slot watcher; cd "$2" && bash -c "source \"\$1\"; hold_gate_slot check" _ "$1"' \
+  _ "$gate_helper" "$scratch/views-6656" 2>&1) || status=$?
+[[ $status == 2 && $refusal == "gate: every slot on the host is held: mise run "*" alone"* ]] \
+  || fail "#6656: a check inside a background gate took no slot: exit $status, $refusal"
+
+# A background gate under `SCHED_IDLE`, the head watcher's policy, reads its
+# niceness 19 too (#6656): `ps` prints `-` there, so the gate reads `nice`.
+# Only Linux has the policy, so the case runs where `chrt` is.
+if command -v chrt > /dev/null; then
+  status=0
+  (cd "$scratch/core-1" && GANDR_GATE_BACKGROUND=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 \
+    nice -n 19 chrt --idle 0 bash -c 'source "$1"; hold_gate_slot watcher; [[ $gate_slot == background ]]' _ "$gate_helper") > /dev/null 2>&1 || status=$?
+  [[ $status == 0 ]] || fail "#6656: a background gate under SCHED_IDLE at niceness 19 waited for a host slot, exit $status"
+fi
 
 # The lock directory (#6182): with both variables set, a lock takes its file
 # under `GANDR_HOST_LOCK_DIR`, and the runtime directory holds no lock.
