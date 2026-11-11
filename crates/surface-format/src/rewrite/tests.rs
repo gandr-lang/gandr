@@ -104,6 +104,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
         PhysicalLineEnding::Lf,
     )
     .unwrap_or_else(|error| panic!("the layout options: {error}"));
+    let respelled = [form];
     let check = |leaves: &[leaf::Leaf<'_>]| {
         let mut text = layout::lay_out(leaves, &options, SourceFragment::from("\n"))
             .unwrap_or_else(|error| panic!("the layout: {error}"));
@@ -114,7 +115,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
             .unwrap_or_else(|| panic!("the source lowers"));
         let verdict = verify_rewritten(
             &grammar,
-            (&parsed, leaves, SourceText::from(text.as_str())),
+            (&parsed, leaves, &respelled, SourceText::from(text.as_str())),
             (SourceText::from(""), &alone),
             (&mut arena, &lowered),
             None,
@@ -152,7 +153,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     else {
         panic!("the rewritten product names String");
     };
-    leaf.text = SourceFragment::from("Path");
+    leaf.text = SourceFragment::from("NoSuchType");
     let (text, verdict) = check(&unresolved);
     let Ok(Agreement::Declarations(differing)) = verdict
     else {
@@ -162,7 +163,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     else {
         panic!("one declaration is withdrawn");
     };
-    assert_eq!(text, "def pair : Integer * Path;\n");
+    assert_eq!(text, "def pair : Integer * NoSuchType;\n");
     assert_eq!(differing.keys, Vec::from([key]));
     assert_eq!(differing.withdrawal.declaration, "pair");
     assert_eq!(differing.withdrawal.span, span);

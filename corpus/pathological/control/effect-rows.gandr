@@ -15,7 +15,7 @@ import std.fs;
 /// refused as a label defined twice, as a record's second field of one label
 /// is.
 @[refuses("DuplicateDefinition")]
-def namedTwice() -> [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
+def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
 
 /// Sequencing joins the rows: the computation reads through
 /// `std.fs.Eff`, which the

@@ -9,4 +9,4 @@
 
 /// `both` uses `&&` between two commands.
 @[refuses("OutOfFragment.shell_block")]
-def both() -> Unit { #!{ true && false; } }
+def both() -> -F Unit { #!{ true && false; } }

@@ -47,6 +47,8 @@ pub enum Agreement
 {
     /// Every declaration lowered to the same core.
     Same,
+    /// The rewritten text has other parser obligations.
+    ParserObligations(Vec<Differing>),
     /// These declarations of the first lowered otherwise in the second, in
     /// order.
     Declarations(Vec<Differing>),
@@ -182,6 +184,43 @@ where
             })
         })
         .collect()
+}
+
+/// The declarations whose rewritten candidate has other parser obligations.
+///
+/// # Specification
+/// trivial.
+pub(super) fn parser_obligations(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+    forms: &[(NodeKey, ByteSpan)],
+) -> Vec<Differing>
+{
+    let mut differing = Vec::with_capacity(forms.len());
+    for &(key, form) in forms {
+        let declaration = module.declarations().iter().find(|declaration| {
+            let span = own(declaration.span(), base);
+            span.start() < form.end() && form.start() < span.end()
+        });
+        let (declaration, span) = declaration.map_or_else(
+            || (String::from("source"), form),
+            |declaration| {
+                (
+                    format!("{}", declaration.name()),
+                    own(declaration.span(), base),
+                )
+            },
+        );
+        differing.push(Differing {
+            keys: Vec::from([key]),
+            withdrawal: Withdrawal {
+                declaration,
+                span,
+                reason: Withdrawn::Obligations,
+            },
+        });
+    }
+    differing
 }
 
 /// The keys of the forms holding `declaration`: its signature, its
@@ -383,7 +422,7 @@ pub fn agree(
                     },
                     (DeclarationOutcome::World, DeclarationOutcome::World) => true,
                     (DeclarationOutcome::Refused(left), DeclarationOutcome::Refused(right)) => {
-                        discriminant(&left) == discriminant(&right)
+                        discriminant(&left) == discriminant(&right) && left.span() == right.span()
                     },
                     _ => false,
                 }

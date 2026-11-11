@@ -14,5 +14,5 @@ module Bits : Model(Toggle) where {
 
   /// Refused where it is written, and not again as its witness.
   @[refuses("UnresolvedName")]
-  def flip(n : Integer) -> Integer { return missing }
+  def flip(n : Integer) -> -F Integer { return missing }
 }

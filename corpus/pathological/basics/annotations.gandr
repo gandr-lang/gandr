@@ -34,4 +34,4 @@ def splitWrong() -> Integer =
 
 /// An annotated value written as a statement, where no value stands.
 @[refuses("OutOfFragment.WrongSort")]
-def stated() -> Integer { (3 : Integer); return 1 }
+def stated() -> -F Integer { (3 : Integer); return 1 }

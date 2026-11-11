@@ -1,6 +1,6 @@
 @[refuses("WithoutK")]
-def uip(n : Integer, p : Path(n, n), q : Path(n, n)) -> Path[.A = Path[.A = Integer](n, n)](
+def uip(n : Integer, p : Path(n, n), q : Path(n, n)) -> -F (Path[.A = Path[.A = Integer](n, n)](
   p,
   q
-) =
+)) =
   match p { | here => match q { | here => return Path.here p } }

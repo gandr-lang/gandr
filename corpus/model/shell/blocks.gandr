@@ -9,7 +9,7 @@
 
 /// `greeted` gives `printf` one host-escape argument with spaces.
 @[refuses("OutOfFragment.shell_block")]
-def greeted() -> Unit =
+def greeted() -> -F Unit =
   #!{
     printf 'hello from the host\n<%s>\n' $("one argv with spaces");
   }

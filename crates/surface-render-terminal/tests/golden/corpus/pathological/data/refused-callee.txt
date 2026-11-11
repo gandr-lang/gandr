@@ -8,10 +8,10 @@ error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a 
    ╰ help: write a computation in this position
 
 error[OutOfFragment.Unannotated]: the constructor needs a type annotation
-   ╭▸ corpus/pathological/data/refused-callee.gandr:22:39
+   ╭▸ corpus/pathological/data/refused-callee.gandr:22:42
    │
-22 │ def calls() -> List Integer { refused Nil }
-   │                                       ━━━ needs a stated type
+22 │ def calls() -> -F List Integer { refused Nil }
+   │                                          ━━━ needs a stated type
    │
    ├ note: `calls` is refused with OutOfFragment.Unannotated, as its expectation states
    ╰ help: write a type annotation for the form

@@ -9,4 +9,4 @@
 
 /// `piped` puts a pipe between two commands.
 @[refuses("OutOfFragment.shell_block")]
-def piped() -> Unit { #!{ printf 'x' | cat; } }
+def piped() -> -F Unit { #!{ printf 'x' | cat; } }

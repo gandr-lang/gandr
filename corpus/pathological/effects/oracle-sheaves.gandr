@@ -80,7 +80,7 @@ def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s
 /// The trees of an open container as a static lambda. The lowering reads its
 /// body as a computation, which a type is not.
 @[refuses("OutOfFragment.WrongSort")]
-def staticOpenMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { type(Tree s p q) });
+def staticOpenMode(s : Type, p : +U (s -> -F Type)) -> Mode = MkMode (fun (q) { type(Tree s p q) });
 
 /// Each query has two answers.
 def branches(a : Two) -> Type { return Two }
@@ -98,6 +98,6 @@ data CellShfy : Type where
   /// The tree that returns `v`.
   | CellRet : (v : Two) --> CellShfy
   /// The tree that asks and continues by `k`.
-  | CellAsk : (k : Two -> CellShfy) --> CellShfy
+  | CellAsk : (k : +U (Two -> -F CellShfy)) --> CellShfy
   /// The cell that drops a query whose answer is at hand.
   | skip : CellAsk k <-> k L

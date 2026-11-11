@@ -46,7 +46,7 @@ def lap_by_position(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.
 
 /// A pair has two positions, so a third names nothing.
 @[refuses("UnresolvedName")]
-def third(p : Integer * String) -> String =
+def third(p : Integer * String) -> -F String =
   return p.2
 
 /// A split's answer may name its scrutinee: each arm answers it at the pair.

@@ -39,10 +39,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[OutOfFragment.Arity]: the type variable cannot take 0 operands
-   ╭▸ corpus/pathological/universe/closed.gandr:49:25
+   ╭▸ corpus/pathological/universe/closed.gandr:49:28
    │
-49 │ def unapplied(c : U) -> el { return c }
-   │                         ━━ the wrong number of operands
+49 │ def unapplied(c : U) -> -F el { return c }
+   │                            ━━ the wrong number of operands
    │
    ├ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states
    ╰ help: give the form its declared number of operands

@@ -107,15 +107,15 @@ def handled(n : Nat) -> [Partial] Nat =
 def handled_zero() -> [Partial] Nat { become handled Zero }
 
 @[refuses("OutsideLoop")]
-def stray(n : Nat) -> Nat =
+def stray(n : Nat) -> -F Nat =
   break(n)
 
 @[refuses("OutsideLoop")]
-def skip(n : Nat) -> Nat =
+def skip(n : Nat) -> -F Nat =
   continue
 
 @[refuses("OutsideLoop")]
-def held(n : Nat) -> Nat =
+def held(n : Nat) -> -F Nat =
   loop {
     let t = thunk { break(n) };
     continue

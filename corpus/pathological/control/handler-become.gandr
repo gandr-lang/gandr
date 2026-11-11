@@ -15,7 +15,7 @@ def one() -> Integer =
   1
 
 @[refuses("AcrossHandler")]
-def became() -> Integer =
+def became() -> -F Integer =
   handle c : std.process.Exit.Eff {
     become one ()
   } with {

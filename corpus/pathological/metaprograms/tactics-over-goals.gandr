@@ -25,6 +25,6 @@ def named(x : Integer) -> Integer { ~x }
 /// A splice stands as a statement here, in a computation's place. A tactic
 /// answers a value, so the splice has the wrong sort there.
 @[refuses("OutOfFragment.WrongSort")]
-def ranSplice(x : Integer) -> Integer =
+def ranSplice(x : Integer) -> -F Integer =
   ~assumption
   x

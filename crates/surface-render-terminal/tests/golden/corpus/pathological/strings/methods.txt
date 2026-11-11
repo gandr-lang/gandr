@@ -98,7 +98,7 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
 error[StrayReceiverMode]: `shared` is a receiver's mode: only a module member's first parameter is written with it, `self : shared T`
    ╭▸ corpus/pathological/strings/methods.gandr:58:14
    │
-58 │ def lent(t : shared Repr) -> Integer =
+58 │ def lent(t : shared Repr) -> -F Integer =
    │              ━━━━━━ a mode off a receiver
    │
    ├ note: `lent` is refused with StrayReceiverMode, as its expectation states

@@ -1,8 +1,8 @@
 error[UnresolvedName]: `missing` is not defined
-   ╭▸ corpus/pathological/modules/model-refused-member.gandr:17:45
+   ╭▸ corpus/pathological/modules/model-refused-member.gandr:17:48
    │
-17 │   def flip(n : Integer) -> Integer { return missing }
-   │                                             ━━━━━━━ not found in this scope
+17 │   def flip(n : Integer) -> -F Integer { return missing }
+   │                                                ━━━━━━━ not found in this scope
    │
    ├ note: `flip` is refused with UnresolvedName, as its expectation states
    ╰ help: define `missing`, or import the module that exports it

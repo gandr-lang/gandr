@@ -52,7 +52,7 @@ error[OutOfFragment.Stage]: a stage that refines no data type, names no binder o
 error[OutOfFragment.staged_type]: the staged type is not supported yet
    ╭▸ corpus/pathological/data/sized-higher-order.gandr:50:48
    │
-50 │ def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> Nat =
+50 │ def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> -F Nat =
    │                                                ━━━━━━ a form the fragment does not admit
    │
    ├ note: `carriedAt` is refused with OutOfFragment.staged_type, as its expectation states

@@ -1,8 +1,8 @@
 error[RegionAsValue]: `r` is a region, never a value; name it only where a type keeps a value in it, `A at r`
-   ╭▸ corpus/pathological/regions/named.gandr:12:67
+   ╭▸ corpus/pathological/regions/named.gandr:12:70
    │
-12 │ def named[r : Region](k : (() -> Integer) at r) -> Integer { pure r }
-   │                                                                   ━ a region named as a value
+12 │ def named[r : Region](k : (() -> Integer) at r) -> -F Integer { pure r }
+   │                                                                      ━ a region named as a value
    │
    ├ note: `named` is refused with RegionAsValue, as its expectation states
    ╰ help: name the region only in a type such as `A at r`

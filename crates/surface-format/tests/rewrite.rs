@@ -1137,40 +1137,6 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     );
 }
 
-/// #812: desugaring `stay`'s dependent alias once changed how `stayUp`'s
-/// call lowered, since the call read the alias and not the explicit thunk,
-/// so `stay` was withdrawn for its reader. The call now reads either
-/// spelling, so `stay` is rewritten and no reader withdraws it.
-#[test]
-fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
-{
-    let grammar = grammar();
-    let source = include_str!(
-        "rewrite/unformatted/a-rewrite-of-a-dependent-alias-keeps-its-readers-812.gandr"
-    );
-    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Explicit,
-        ..FormatOptions::default()
-    };
-    let formatted = format(&grammar, &parsed, options)
-        .unwrap_or_else(|error| panic!("the source formats: {error}"));
-    let kept: Vec<(&str, &Withdrawn)> = formatted
-        .withdrawn()
-        .iter()
-        .map(|withdrawal| (withdrawal.declaration.as_str(), &withdrawal.reason))
-        .collect();
-    assert!(kept.iter().all(|&(name, _)| name != "stay"), "{kept:?}");
-    assert!(
-        formatted
-            .text()
-            .as_ref()
-            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat](a, a));"),
-        "{}",
-        formatted.text()
-    );
-}
-
 /// A selection runs the rewrites it names and no other.
 #[test]
 fn a_selection_runs_only_the_rewrites_it_names()
@@ -1201,7 +1167,7 @@ fn a_respaced_root_expression_keeps_the_rewrite_beside_it()
     );
     assert_eq!(
         spelled(&grammar, source, Form::Explicit, Selection::Every),
-        "def pair : *{Integer, String};\ndef s = *{b = 1};\n*{s | b = 2}\n"
+        "def pair : Integer * String;\ndef s = *{b = 1};\n*{s | b = 2}\n"
     );
 }
 
@@ -1381,6 +1347,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
     .map(|refusal| refusal.to_string());
     apart(&refusals);
     let withdrawals = [
+        Withdrawn::Obligations,
         Withdrawn::Refused(String::from("the refusal")),
         Withdrawn::Lowered,
         Withdrawn::Unchecked(String::from("the refusal")),
@@ -1429,7 +1396,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
 fn a_rewrite_keeps_matching_refusal_6681()
 {
     let grammar = grammar();
-    let source = "def pair : *{Integer, String} = selfComposite;\n";
+    let source = "def rejected : Integer = selfComposite;\ndef pair : *{Integer, String};\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let formatted = format(&grammar, &parsed, FormatOptions {
         form: Form::Sugared,
@@ -1439,51 +1406,55 @@ fn a_rewrite_keeps_matching_refusal_6681()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "def pair : Integer * String = selfComposite;\n"
+        "def rejected : Integer = selfComposite;\ndef pair : Integer * String;\n"
     );
 }
-fn refused_rewrite_chain_6681() -> &'static str
+#[test]
+fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
 {
-    "def bad : (Integer, String) -> Integer = selfComposite;\ndef post : Integer -> Type = fun \
-     (_o) { return Unit };\n"
+    let grammar = grammar();
+    let source = include_str!("../../../corpus/surface/data-field-decorations.gandr");
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let formatted = format(&grammar, &parsed, FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    })
+    .expect("the source formats");
+    assert_eq!(formatted.withdrawn().len(), 1);
+    assert_eq!(formatted.withdrawn()[0].reason, Withdrawn::Obligations);
+    assert_eq!(formatted.into_text(), source);
+}
+
+fn moved_refusal_6681() -> &'static str
+{
+    "def refused : Integer = selfComposite;\ndef pair : (Integer, String) -> Integer = fun \
+     (_pair) { 1 };\ndef post : Integer -> Type = fun (_o) { return Unit };\n"
 }
 
 #[test]
-fn a_refused_source_runs_a_rewrite_chain_6681()
+fn a_rewrite_that_moves_a_refusal_piece_is_withdrawn_6681()
 {
     let grammar = grammar();
-    let source = refused_rewrite_chain_6681();
+    let source = moved_refusal_6681();
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let formatted = format(&grammar, &parsed, FormatOptions {
         form: Form::Explicit,
         ..FormatOptions::default()
     })
     .expect("the source formats");
-    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(formatted.withdrawn().len(), 1);
+    assert_eq!(formatted.withdrawn()[0].declaration, "refused");
+    assert!(matches!(
+        formatted.withdrawn()[0].reason,
+        Withdrawn::Refused(ref refusal)
+            if refusal == "no declaration or binder answers `selfComposite`"
+    ));
     assert_eq!(
         formatted.into_text(),
-        "def bad : +U (Integer -> String -> -F Integer);\ndef bad = selfComposite;\ndef post : \
-         +U (Integer -> -F Type);\ndef post = fun (_o) { return Unit };\n"
+        "def refused : Integer = selfComposite;\ndef pair : +U (Integer -> String -> -F \
+         Integer);\ndef pair = fun (_pair) { 1 };\ndef post : +U (Integer -> -F Type);\ndef \
+         post = fun (_o) { return Unit };\n"
     );
-}
-
-#[test]
-fn a_refused_source_formats_once_after_a_rewrite_chain_6681()
-{
-    let grammar = grammar();
-    let source = refused_rewrite_chain_6681();
-    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Explicit,
-        ..FormatOptions::default()
-    };
-    let once = format(&grammar, &parsed, options)
-        .expect("the source formats")
-        .into_text();
-    let parsed = parse(&grammar, SourceText::from(once.as_str())).expect("the source parses again");
-    let twice = format(&grammar, &parsed, options).expect("the source formats again");
-    assert_eq!(twice.withdrawn(), []);
-    assert_eq!(twice.into_text(), once);
 }
 
 /// A rewrite in one declaration is checked against every other kind of

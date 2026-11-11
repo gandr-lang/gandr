@@ -18,7 +18,7 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 @[refuses("UnmarkedSelfReference")]
-def rec bare(n : Nat) -> Nat =
+def rec bare(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
     | Succ(p) => bare p
@@ -40,7 +40,7 @@ def rec varied(n : Nat, m : Nat) -> Nat =
 /// A productive claim outside a copattern block: nothing is observed before
 /// the function runs again.
 @[refuses("UnguardedCorecursion")]
-def rec ahead(n : Nat) -> Nat =
+def rec ahead(n : Nat) -> -F Nat =
   match n where
     | Zero => return n
     | Succ(p) => ahead[>] p

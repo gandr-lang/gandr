@@ -12,7 +12,7 @@
 import std.process;
 
 @[refuses("AcrossHandler")]
-def broke() -> Integer =
+def broke() -> -F Integer =
   loop {
     handle c : std.process.Exit.Eff {
       break(1)
@@ -23,7 +23,7 @@ def broke() -> Integer =
   }
 
 @[refuses("AcrossHandler")]
-def again() -> Integer =
+def again() -> -F Integer =
   loop {
     handle c : std.process.Exit.Eff {
       continue

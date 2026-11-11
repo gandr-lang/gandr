@@ -19,4 +19,4 @@
 
 /// A subshell nested in another, in a definition.
 @[refuses("OutOfFragment.shell_block")]
-def nested() -> Unit { #!{ [ echo outer; [ echo inner ] ]; } }
+def nested() -> -F Unit { #!{ [ echo outer; [ echo inner ] ]; } }

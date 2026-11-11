@@ -1,8 +1,8 @@
 error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a computation is expected
-   ╭▸ corpus/pathological/basics/annotations.gandr:37:27
+   ╭▸ corpus/pathological/basics/annotations.gandr:37:30
    │
-37 │ def stated() -> Integer { (3 : Integer); return 1 }
-   │                           ━━━━━━━━━━━━━ a form of another sort than this position takes
+37 │ def stated() -> -F Integer { (3 : Integer); return 1 }
+   │                              ━━━━━━━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `stated` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a computation in this position

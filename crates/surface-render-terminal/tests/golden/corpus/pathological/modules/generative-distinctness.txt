@@ -13,10 +13,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ProjectionFromApplication]: an application of `MkCounter` is read before it is bound; bind it with `module A = MkCounter(…) ;` and read `A`
-   ╭▸ corpus/pathological/modules/generative-distinctness.gandr:25:28
+   ╭▸ corpus/pathological/modules/generative-distinctness.gandr:26:18
    │
-25 │ def projected : Integer = (MkCounter Seed).seed;
-   │                            ━━━━━━━━━━━━━━ an application read before it is bound
+26 │ def projected = (MkCounter Seed).seed;
+   │                  ━━━━━━━━━━━━━━ an application read before it is bound
    │
    ├ note: `projected` is refused with ProjectionFromApplication, as its expectation states
    ╰ help: bind the application to a module before selecting its member

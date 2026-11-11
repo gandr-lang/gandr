@@ -1,10 +1,10 @@
 error[DuplicateDefinition]: `std.fs.Eff` is defined twice
-   ╭▸ corpus/pathological/control/effect-rows.gandr:18:34
+   ╭▸ corpus/pathological/control/effect-rows.gandr:18:37
    │
-18 │ def namedTwice() -> [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
-   │                      ┬─────────  ━━━━━━━━━━ written again here
-   │                      │
-   │                      first written here
+18 │ def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
+   │                         ┬─────────  ━━━━━━━━━━ written again here
+   │                         │
+   │                         first written here
    │
    ├ note: `namedTwice` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `std.fs.Eff` its own name, or delete one of them

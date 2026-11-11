@@ -27,7 +27,7 @@ def readInThunk() -> Integer =
 
 /// A push onto a string no var holds: nothing would keep what it writes back.
 @[refuses("OutOfFragment.Held")]
-def pushedUnheld(t : Repr) -> Unit =
+def pushedUnheld(t : Repr) -> -F Unit =
   t.push 33
 
 /// A string read while a view of it is live: the access already lends it.
@@ -55,5 +55,5 @@ def readAfterTakenInOneArm(t : Repr) -> Integer =
 
 /// A mode written on a parameter that is no receiver.
 @[refuses("StrayReceiverMode")]
-def lent(t : shared Repr) -> Integer =
+def lent(t : shared Repr) -> -F Integer =
   pure 0

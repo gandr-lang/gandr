@@ -13,8 +13,8 @@ rec {
   /// Even when its predecessor is odd; a plain definition claims no
   /// descent.
   @[refuses("OutOfFragment.ForeignClaim")]
-  def even(n : Integer) -> Bool { return odd[<] n }
+  def even(n : Integer) -> -F Bool { return odd[<] n }
   /// Odd when its predecessor is even, refused for the same reason.
   @[refuses("OutOfFragment.ForeignClaim")]
-  def odd(n : Integer) -> Bool { return even[<] n }
+  def odd(n : Integer) -> -F Bool { return even[<] n }
 }

@@ -611,6 +611,8 @@ pub struct Withdrawal
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Withdrawn
 {
+    /// Rewritten, the text has other parser obligations.
+    Obligations,
     /// Rewritten, the declaration is refused: the refusal, as the lowering
     /// writes it.
     Refused(String),
@@ -638,6 +640,7 @@ impl fmt::Display for Withdrawn
     ) -> fmt::Result
     {
         match *self {
+            Self::Obligations => f.write_str("rewritten, it has other parser obligations"),
             Self::Refused(ref refusal) => write!(f, "rewritten, it is refused: {refusal}"),
             Self::Lowered => f.write_str("rewritten, it would lower to other core"),
             Self::Unchecked(ref refusal) => {
@@ -1054,7 +1057,7 @@ fn format_once(
         }
         let agreement = verify_rewritten(
             grammar,
-            (parsed, &laid.leaves, text),
+            (parsed, &laid.leaves, &laid.respelled, text),
             (SourceText::from(before), unit),
             (&mut arena, lowered),
             checker.map(|checker| (checker, &mut elaborations)),
@@ -1062,6 +1065,27 @@ fn format_once(
         match agreement {
             Agreement::Same => {
                 return Ok(laid.formatted(reports));
+            },
+            Agreement::ParserObligations(differing) => {
+                let before = withdrawn.len();
+                for declaration in differing {
+                    fresh.clear();
+                    fresh.extend(
+                        declaration
+                            .keys
+                            .iter()
+                            .copied()
+                            .filter(|key| !held.contains(key)),
+                    );
+                    if !fresh.is_empty() {
+                        held.extend(fresh.iter().copied());
+                        withdrawn.append(&mut fresh);
+                        reports.push(declaration.withdrawal);
+                    }
+                }
+                if withdrawn.len() == before {
+                    return Err(FormatError::Changed(Change::Meaning));
+                }
             },
             Agreement::Declarations(differing) => {
                 let before = withdrawn.len();
@@ -1079,6 +1103,40 @@ fn format_once(
                 stuck.clear();
                 recalled.clear();
                 for declaration in differing {
+                    let refused = matches!(&declaration.withdrawal.reason, Withdrawn::Refused(_));
+                    if refused {
+                        fresh.clear();
+                        fresh.extend(
+                            declaration
+                                .keys
+                                .iter()
+                                .copied()
+                                .filter(|key| !held.contains(key)),
+                        );
+                        if fresh.is_empty() {
+                            let span = declaration.withdrawal.span;
+                            fresh.extend(
+                                tree.children(tree.root())
+                                    .filter(|&form| {
+                                        tree.node(form).is_some_and(|form| {
+                                            form.span().start() <= span.start()
+                                                && span.end() <= form.span().end()
+                                        })
+                                    })
+                                    .filter_map(|form| tree.key(form))
+                                    .filter(|key| !held.contains(key)),
+                            );
+                        }
+                        if fresh.is_empty() {
+                            stuck.push(declaration);
+                        }
+                        else {
+                            held.extend(fresh.iter().copied());
+                            withdrawn.append(&mut fresh);
+                            reports.push(declaration.withdrawal);
+                        }
+                        continue;
+                    }
                     let forms = forms_of(tree, &declaration.keys);
                     if checker.is_some()
                         && thunk::thunked(&flat.leaves, Some(&forms)) == thunk::Thunked::Written
@@ -2155,7 +2213,12 @@ type Elaborations = Option<Elaboration>;
 /// trivial.
 fn verify_rewritten(
     grammar: &Pbg,
-    (parsed, written, text): (&ParseResult<'_>, &[Leaf<'_>], SourceText<'_>),
+    (parsed, written, respelled, text): (
+        &ParseResult<'_>,
+        &[Leaf<'_>],
+        &[NodeIndex],
+        SourceText<'_>,
+    ),
     (before, unit): (SourceText<'_>, &LoweringUnit),
     (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
     checked: Option<(&dyn Elaborate, &mut Elaborations)>,
@@ -2172,6 +2235,25 @@ fn verify_rewritten(
         .ne(&kept_runs(reparsed.tree().source(), &after_comments))
     {
         return Err(FormatError::Changed(Change::Attachment));
+    }
+    let base = ByteOffset::from(<&str>::from(before).len());
+    if parsed.obligations() != reparsed.obligations() {
+        let forms: Vec<_> = respelled
+            .iter()
+            .filter_map(|&form| {
+                parsed.tree().key(form).zip(
+                    parsed
+                        .tree()
+                        .node(form)
+                        .map(gandr_surface_syntax::Node::span),
+                )
+            })
+            .collect();
+        let differing = meaning::parser_obligations(lowered, base, &forms);
+        if differing.is_empty() {
+            return Err(FormatError::Changed(Change::Meaning));
+        }
+        return Ok(Agreement::ParserObligations(differing));
     }
     let before = <&str>::from(before);
     let whole = (!before.is_empty()).then(|| alloc::format!("{before}{}", <&str>::from(text)));
@@ -2190,7 +2272,6 @@ fn verify_rewritten(
     else {
         return Ok(Agreement::Unpaired);
     };
-    let base = ByteOffset::from(before.len());
     let agreement = meaning::agree(arena, (lowered, &respelled), base, None);
     // Only a declaration that lowered otherwise asks the checker: a source no
     // rewrite moved between such spellings is never checked here.

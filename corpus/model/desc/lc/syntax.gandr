@@ -29,14 +29,14 @@ pub theory LC where
   sort Tm(g : Con) : Type;
 
   oper empty : () --> Con;
-  oper subTm : (t : Tm g, s : Sub d g) --> Tm d;
+  oper subTm : (t : Tm(g), s : Sub(d, g)) --> Tm(d);
   oper extendTm : (g : Con) --> Con;
-  oper pTm : () --> Sub extendTm(g) g;
-  oper qTm : () --> Tm extendTm(g);
-  oper singleTm : (a : Tm g) --> Sub(g, extendTm(g));
-  oper liftTm : (s : Sub d g) --> Sub extendTm(d) extendTm(g);
-  oper lam : (t : Tm extendTm(g)) --> Tm g;
-  oper app : (t : Tm g, u : Tm g) --> Tm g;
+  oper pTm : () --> Sub(extendTm(g), g);
+  oper qTm : () --> Tm(extendTm(g));
+  oper singleTm : (a : Tm(g)) --> Sub(g, extendTm(g));
+  oper liftTm : (s : Sub(d, g)) --> Sub(extendTm(d), extendTm(g));
+  oper lam : (t : Tm(extendTm(g))) --> Tm(g);
+  oper app : (t : Tm(g), u : Tm(g)) --> Tm(g);
 
   rule law1 : subTm (qTm ()) (singleTm b) <=> b;
   rule law2 : subTm (qTm ()) (liftTm s) <=> qTm ();

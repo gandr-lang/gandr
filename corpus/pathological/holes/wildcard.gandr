@@ -20,6 +20,6 @@ def disagreeing() -> Unit { idAt _ 3 }
 /// A wildcard stands as a statement here, in a computation's place. The
 /// solver binds values, so the wildcard has the wrong sort there.
 @[refuses("OutOfFragment.WrongSort")]
-def ranWildcard() -> Integer =
+def ranWildcard() -> -F Integer =
   _
   0

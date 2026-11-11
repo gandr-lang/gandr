@@ -1,14 +1,14 @@
 @[refuses("OutOfFragment.Endpoint")]
-def parameter_as_endpoint(rounds : Integer) -> Unit =
+def parameter_as_endpoint(rounds : Integer) -> -F Unit =
   close rounds
 
 @[refuses("OutOfFragment.NonContractive")]
-def recursion_before_any_action() -> Unit =
+def recursion_before_any_action() -> -F Unit =
   let desk = fork (seat : mu turn. turn) { close seat };
   close desk
 
 @[refuses("OutOfFragment.WrongSort")]
-def value_type_as_continuation() -> Unit =
+def value_type_as_continuation() -> -F Unit =
   let desk = fork (seat : !Integer. Integer) { close seat };
   close desk
 

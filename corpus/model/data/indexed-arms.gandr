@@ -25,7 +25,7 @@ def printed(c : Integer) -> Integer =
 /// An arm that matches anything leaves the sum's width open, so the arms
 /// settle no sum and the scrutinee still needs its type.
 @[refuses("OutOfFragment.Unannotated")]
-def open(c : Integer) -> Integer =
+def open(c : Integer) -> -F Integer =
   let small = c < 128
   match small where
     | +{.0 = u} => return 1

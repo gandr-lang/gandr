@@ -35,5 +35,5 @@ def cancelled(e : Path[.A = Path[.A = Circle](Base, Base)](
 
 /// A match of no arm over a type with constructors misses them.
 @[refuses("NonExhaustiveMatch")]
-def unmatched(n : Int) -> Empty =
+def unmatched(n : Int) -> -F Empty =
   match n {}

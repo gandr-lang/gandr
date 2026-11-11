@@ -9,4 +9,4 @@
 
 /// `escaped` gives a host escape an integer.
 @[refuses("OutOfFragment.shell_block")]
-def escaped() -> Unit { #!{ printf '%s' $(1); } }
+def escaped() -> -F Unit { #!{ printf '%s' $(1); } }

@@ -9,4 +9,4 @@
 
 /// `named` returns its region parameter as though it were a value.
 @[refuses("RegionAsValue")]
-def named[r : Region](k : (() -> Integer) at r) -> Integer { pure r }
+def named[r : Region](k : (() -> Integer) at r) -> -F Integer { pure r }
