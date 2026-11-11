@@ -2230,8 +2230,10 @@ echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read
 # scratch key and each old commit noted with its new hash. A landing that
 # conflicts with the fix exits 3, and `landing` stays as it was. A fetch that
 # the remote refuses exits 1 before the rebase, and `landing` stays (#5627).
+# A branch of the merge queue's groups on `landing` holds the rebase until
+# the branch goes, and past the wait the push names the group (#6553).
 ["check:landing-rebase"]
-description = "The rebase of landing onto main keeps a landing that holds main, fast-forwards, moves the landings onto a fix signed and noted, stops on a conflict, and stops before the rebase on a refused fetch"
+description = "The rebase of landing onto main keeps a landing that holds main, fast-forwards, moves the landings onto a fix signed and noted, stops on a conflict, stops before the rebase on a refused fetch, and waits while the merge queue builds a group on landing"
 run = ".config/landing/rebase-cases.bash"
 
 # The integration cycle's decisions (#5440, `ci:cycle`). `.config/

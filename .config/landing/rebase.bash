@@ -16,6 +16,13 @@
 #   key of the host signs each new commit.
 # - A git note on each old commit under `refs/notes/rebased` holds its new
 #   hash, so a seat finds a landed commit from its old hash.
+# - The merge queue builds each group on the tip of `landing`, and a push
+#   from outside the queue makes it build each group again (#6553). So
+#   before it moves `landing`, the task waits while the remote holds a branch
+#   of the queue's groups (`gh-readonly-queue/landing/*`), and reads both
+#   tips again after each wait. Git reads the branches, with no API call. The
+#   wait ends after `REBASE_QUEUE_WAIT` seconds, 1500 by default, and then
+#   the push names each group that it makes the queue build again.
 # - One atomic push moves `landing` and the notes. The lease on the old tip
 #   of `landing` refuses the push when a landing arrives during the rebase.
 #   Then the task reads both tips again, at most 3 times in all.
@@ -29,6 +36,9 @@ set -euo pipefail
 remote=${1:-origin}
 notes=refs/notes/rebased
 scratch=$(mktemp -d)
+queue_wait=${REBASE_QUEUE_WAIT:-1500}
+queue_poll=${REBASE_QUEUE_POLL:-30}
+queue_until=$((SECONDS + queue_wait))
 cleanup() {
   git worktree remove --force "$scratch/tree" 2> /dev/null || true
   rm -rf "$scratch"
@@ -40,10 +50,10 @@ printf '#!/usr/bin/env bash\ncat >> %q\n' "$scratch/rewritten" > "$scratch/hooks
 chmod +x "$scratch/hooks/post-rewrite"
 
 # One attempt: 0 when `landing` holds `main` at the end, 3 on a conflict, 4
-# when the push loses its lease, and 1 when a fetch or another git command
-# fails or the remote refuses the push. The loop below calls `attempt` on the
-# left of `||`, where bash ignores `set -e`. Thus each command that can fail
-# returns on its own (#5627).
+# when the push loses its lease, 5 after a wait for the queue's groups, and 1
+# when a fetch or another git command fails or the remote refuses the push.
+# The loop below calls `attempt` on the left of `||`, where bash ignores
+# `set -e`. Thus each command that can fail returns on its own (#5627).
 attempt() {
   local main landing base new old moved listed=0 refspecs=()
   if ! git fetch --quiet --no-tags "$remote" "+refs/heads/main:refs/remotes/$remote/main" \
@@ -71,6 +81,19 @@ attempt() {
   if git merge-base --is-ancestor "$main" "$landing"; then
     echo "landing at ${landing:0:12} holds main at ${main:0:12}: nothing to rebase"
     return 0
+  fi
+  local groups
+  if ! groups=$(git ls-remote "$remote" 'refs/heads/gh-readonly-queue/landing/*'); then
+    echo "git ls-remote of the merge queue's groups on $remote fails: no rebase runs" >&2
+    return 1
+  fi
+  if [[ -n $groups ]] && (( SECONDS < queue_until )); then
+    echo "the merge queue builds $(wc -l <<< "$groups" | tr -d ' ') group(s) on landing at ${landing:0:12}: the rebase waits for them"
+    sleep "$queue_poll"
+    return 5
+  fi
+  if [[ -n $groups ]]; then
+    echo "the merge queue still builds these groups after a wait of ${queue_wait}s, and the push makes it build each again: $(awk '{ sub("refs/heads/gh-readonly-queue/landing/", "", $2); print $2 }' <<< "$groups" | paste -sd ' ' -)" >&2
   fi
   base=$(git merge-base "$main" "$landing") || return 1
   if [[ $base == "$landing" ]]; then
@@ -114,12 +137,17 @@ attempt() {
   return 0
 }
 
-for try in 1 2 3; do
+try=1
+while (( try <= 3 )); do
   status=0
   attempt || status=$?
   case $status in
     0) exit 0 ;;
-    4) echo "the push of landing lost its lease on try $try: a landing arrived during the rebase" >&2 ;;
+    4)
+      echo "the push of landing lost its lease on try $try: a landing arrived during the rebase" >&2
+      try=$((try + 1))
+      ;;
+    5) ;;
     *) exit "$status" ;;
   esac
 done
