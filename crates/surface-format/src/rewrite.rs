@@ -1603,7 +1603,7 @@ impl<'source> Respelling<'_, 'source>
     /// tightest or, where its own position admits a band tighter than an
     /// arrow, fits that band. Where the form is `open` to rewrites and opens a
     /// block, each `let` statement the lowering lists as linear is written
-    /// away ([`Self::linear`]); where it is open and the explicit form writes
+    /// away; where it is open and the explicit form writes
     /// reducts, each operand the checker applies a reduct to is written as the
     /// reduct's call.
     ///
