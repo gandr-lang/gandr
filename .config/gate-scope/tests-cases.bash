@@ -10,6 +10,10 @@
 # to `green` alone passes, and its suite keeps `red` out. The head watcher's
 # suite (`GATE_TEST_WHOLE`, #6725) runs `red` too, so it refuses that change.
 set -euo pipefail
+# The watcher's gate sets `GATE_TEST_WHOLE` for every check it runs (#6739).
+# Each case reads the suite's scope as a lane's gate reads it, and the
+# watcher's case sets the variable on its own call alone.
+unset GATE_TEST_WHOLE
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 scope="$here/test-scope.bash"
 source "$here/../pr-stack/trunk.bash"
