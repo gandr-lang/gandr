@@ -1,0 +1,5 @@
+@[refuses(("x")]
+extern C from "sensor" {
+  def read(channel : i32) -> i64;
+}
+def kept = 1 ;
