@@ -7,11 +7,13 @@
 /// it and forces the integer to `Tt`.
 ///
 /// The run machine runs each length that this source states. At 10⁶ letters
-/// the run passes the heap region's bound. The machine does not run a word
-/// that `Path.step` composes, because it does not lower that transport.
+/// the run spends its jump budget before it settles. With a larger budget, it
+/// settles within `--memory 1GiB`. The machine does not run a word that
+/// `Path.step` composes, because it does not lower that transport.
 ///
 /// - see: #6309
-/// - see: #6324 — the heap region's bound at 10⁶ letters
+/// - see: #6324 — the memory bound of the heap and the window region
+/// - see: #6325 — the jump budget at 10⁶ letters
 // The circle, its words and `wind`.
 import "./circle-base.gandr";
 // The numerals, `forceInt` and the loop words.

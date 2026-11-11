@@ -3,10 +3,12 @@
 //! why, the regions untouched past their limits.
 //!
 //! Each case is a hand-built executor program over regions sized to put the
-//! limit exactly where the case needs it.
+//! limit exactly where the case needs it: a region's reservation, or the
+//! memory bound that the heap and the window region share.
 
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
+use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Host;
@@ -53,9 +55,24 @@ struct Exit
 #[derive(Clone, Copy, Debug)]
 struct Words(usize);
 
+/// The words each region reserves, and the memory bound that the heap and
+/// the window region commit within together.
+#[derive(Clone, Copy, Debug)]
+struct Regions
+{
+    /// The heap's reservation.
+    heap: Words,
+    /// The frame words above the sentinel.
+    frames: Words,
+    /// The window region's reservation.
+    windows: Words,
+    /// The memory bound.
+    bound: Words,
+}
+
 /// Run `program` from its first instruction over a heap of `heap` words and
-/// `frames` frame words above the sentinel, with `fuel`, its calls entering
-/// `host`; the sentinel frame resumes at the program's last instruction.
+/// `frames` frame words above the sentinel, with no window region and the
+/// heap's words as the bound, with `fuel`, its calls entering `host`.
 ///
 /// # Specification
 /// trivial.
@@ -67,20 +84,46 @@ fn run(
     host: Host,
 ) -> Exit
 {
-    let mut heap = vec![Word::ZERO; heap.0];
-    let mut frames = vec![Word::ZERO; frames.0.saturating_add(2)];
+    let regions = Regions {
+        heap,
+        frames,
+        windows: Words(0),
+        bound: heap,
+    };
+    run_within(program, regions, fuel, host)
+}
+
+/// Run `program` from its first instruction over `regions`, with `fuel`,
+/// its calls entering `host`; the sentinel frame resumes at the program's
+/// last instruction.
+///
+/// # Specification
+/// trivial.
+fn run_within(
+    program: &[Instruction],
+    regions: Regions,
+    fuel: Fuel,
+    host: Host,
+) -> Exit
+{
+    let mut heap = vec![Word::ZERO; regions.heap.0];
+    let mut frames = vec![Word::ZERO; regions.frames.0.saturating_add(2)];
     let mut window = [Word::ZERO; 1];
+    let mut windows = vec![Word::ZERO; regions.windows.0];
     let halt = program.last().expect("a program ends in its halt");
     frames[0] = Word::from_pointer(core::ptr::from_ref(halt));
     let start = heap.as_mut_ptr();
-    let heap_limit = start.wrapping_add(heap.len());
+    let heap_end = start.wrapping_add(heap.len());
     let base = frames.as_mut_ptr().wrapping_add(2);
     let frame_limit = frames.as_mut_ptr().wrapping_add(frames.len());
-    let mut runtime = Runtime::new(start, heap_limit, frame_limit, base, fuel, host, Word::ZERO);
+    let mut runtime = Runtime::new(start, heap_end, frame_limit, base, fuel, host, Word::ZERO);
+    runtime.set_memory(gandr_runtime_stencils::Words(regions.bound.0));
+    let region = windows.as_mut_ptr();
+    runtime.set_windows(region, region.wrapping_add(windows.len()));
     // SAFETY: the program's every instruction falls through to the next or
-    // exits, and its only code word is its last instruction's address; the
-    // regions live to the end of the call, the sentinel frame below the base
-    // mark, and the window holds the one slot the program names.
+    // exits, and its only code words are its own instructions' addresses;
+    // the regions live to the end of the call, the sentinel frame below the
+    // base mark, and the window holds the one slot the program names.
     let answer = unsafe {
         execute(
             program.as_ptr(),
@@ -208,6 +251,99 @@ fn a_full_heap_exits_by_name()
     let room = run(&program, Words(3), Words(4), Fuel::from(4_usize), refusing);
     assert_eq!(Status::Halted, room.status, "three words hold the tuple");
     assert_eq!(3, room.allocated, "the count, the header and its field");
+}
+
+/// The heap commits within the memory bound, not its reservation: a heap of
+/// eight words under a bound of two holds no tuple, and under a bound of
+/// three it holds one.
+#[test]
+fn the_regions_commit_within_one_bound()
+{
+    let program = [
+        instruction(StencilId::Push, Word::ZERO),
+        instruction(StencilId::Ctor1, single()),
+        instruction(StencilId::Halt, Word::ZERO),
+    ];
+    let regions = |bound: usize| Regions {
+        heap: Words(8),
+        frames: Words(4),
+        windows: Words(0),
+        bound: Words(bound),
+    };
+    let short = run_within(&program, regions(2), Fuel::from(4_usize), refusing);
+    assert_eq!(
+        Status::HeapExhausted,
+        short.status,
+        "a bound of two holds no tuple"
+    );
+    assert_eq!(0, short.allocated, "the exit allocates nothing");
+    let room = run_within(&program, regions(3), Fuel::from(4_usize), refusing);
+    assert_eq!(Status::Halted, room.status, "a bound of three holds it");
+}
+
+/// The header of a thunk over no captures.
+///
+/// # Specification
+/// trivial.
+fn thunk() -> Word
+{
+    Header::new(
+        Kind::Closure,
+        Tag::from(Flavour::Thunk),
+        Arity::try_from(0_usize).expect("arity 0"),
+        Family::UNNAMED,
+    )
+    .matched()
+}
+
+/// A thunk's body enters a window of two words. A window region of one word
+/// holds no such window, and the entry exits by the window region's name. A
+/// region commits whole chunks cut to its reservation's room, so the heap
+/// here reserves the thunk's three words alone: a bound of four leaves the
+/// window region one word, and the entry exits by its name again; a bound of
+/// five leaves two, and the body answers.
+#[test]
+fn a_full_window_region_exits_by_name()
+{
+    let mut program = vec![
+        instruction(StencilId::Halt, Word::ZERO),
+        instruction(StencilId::InvokeForceValue, Word::ZERO),
+        instruction(StencilId::Halt, Word::ZERO),
+        // The thunk's body: its window holds the return mark in slot 0 and
+        // the closure in slot 1, which it answers.
+        instruction(StencilId::EnterForce, Word::from(2_usize)),
+        instruction(StencilId::Var, Word::from(1_usize)),
+        instruction(StencilId::Leave, Word::ZERO),
+        instruction(StencilId::Halt, Word::ZERO),
+    ];
+    let body = Word::from_pointer(program.as_ptr().wrapping_add(3));
+    program[0] = Instruction::new(StencilId::Closure, body, thunk(), core::ptr::null());
+    let regions = |windows: usize, bound: usize| Regions {
+        heap: Words(3),
+        frames: Words(4),
+        windows: Words(windows),
+        bound: Words(bound),
+    };
+    let fuel = Fuel::from(16_usize);
+    let reserved = run_within(&program, regions(1, 16), fuel, refusing);
+    assert_eq!(
+        Status::WindowsExhausted,
+        reserved.status,
+        "one reserved word holds no window of two"
+    );
+    let bounded = run_within(&program, regions(8, 4), fuel, refusing);
+    assert_eq!(
+        Status::WindowsExhausted,
+        bounded.status,
+        "the thunk's three heap words leave one word of the bound"
+    );
+    let room = run_within(&program, regions(8, 5), fuel, refusing);
+    assert_eq!(
+        Status::Halted,
+        room.status,
+        "two words of the bound are left"
+    );
+    assert_eq!(3, room.allocated, "the thunk alone is on the heap");
 }
 
 /// A push at the frame region's limit exits by the frames' name; one word of

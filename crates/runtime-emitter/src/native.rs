@@ -126,6 +126,8 @@ struct Shared
     fuel: Address,
     /// `stencil_stuck`.
     stuck: Address,
+    /// `stencil_windows_exhausted`.
+    windows: Address,
     /// Each of [`Stub::ALL`], in its order.
     stubs: [Address; Stub::ALL.len()],
 }
@@ -165,12 +167,13 @@ pub struct Native
 
 /// The shared copies, in layout order: the exits, then each of
 /// [`Stub::ALL`].
-const SHARED: [StencilId; 5_usize.wrapping_add(Stub::ALL.len())] = [
+const SHARED: [StencilId; 6_usize.wrapping_add(Stub::ALL.len())] = [
     StencilId::Halt,
     StencilId::HeapExhausted,
     StencilId::FramesExhausted,
     StencilId::FuelExhausted,
     StencilId::Stuck,
+    StencilId::WindowsExhausted,
     Stub::Apply.stencil(),
     Stub::Force.stencil(),
     Stub::Argument.stencil(),
@@ -364,6 +367,7 @@ impl Native
             frames,
             fuel,
             stuck,
+            windows,
             apply,
             force,
             argument,
@@ -377,6 +381,7 @@ impl Native
             frames,
             fuel,
             stuck,
+            windows,
             stubs: [apply, force, argument, reset, answer, project],
         };
         region.write(
@@ -403,6 +408,7 @@ impl Native
                             HoleSymbol::FramesExhausted => Ok(Value::Address(shared.frames)),
                             HoleSymbol::FuelExhausted => Ok(Value::Address(shared.fuel)),
                             HoleSymbol::Stuck => Ok(Value::Address(shared.stuck)),
+                            HoleSymbol::WindowsExhausted => Ok(Value::Address(shared.windows)),
                             HoleSymbol::Next | HoleSymbol::Alt | HoleSymbol::A | HoleSymbol::B => {
                                 Err(EmitRefusal::Operand)
                             },
@@ -474,6 +480,7 @@ where
         HoleSymbol::FramesExhausted => Value::Address(shared.frames),
         HoleSymbol::FuelExhausted => Value::Address(shared.fuel),
         HoleSymbol::Stuck => Value::Address(shared.stuck),
+        HoleSymbol::WindowsExhausted => Value::Address(shared.windows),
         HoleSymbol::A | HoleSymbol::B => match operand {
             // An immediate is patched biased by one, which the stencil
             // subtracts: a static's address is never null, and the compiler
@@ -523,7 +530,8 @@ where
             | HoleSymbol::HeapExhausted
             | HoleSymbol::FramesExhausted
             | HoleSymbol::FuelExhausted
-            | HoleSymbol::Stuck => Operand::Unused,
+            | HoleSymbol::Stuck
+            | HoleSymbol::WindowsExhausted => Operand::Unused,
         };
         let value = resolve(hole.symbol, operand)?;
         let site = Address(pc.0.wrapping_add(hole.offset.0));

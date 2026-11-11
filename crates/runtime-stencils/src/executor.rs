@@ -211,6 +211,8 @@ stencils! {
     FuelExhausted => stencil_fuel_exhausted,
     /// `stencil_stuck`.
     Stuck => stencil_stuck,
+    /// `stencil_windows_exhausted`.
+    WindowsExhausted => stencil_windows_exhausted,
 }
 
 impl Instruction
