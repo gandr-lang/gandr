@@ -192,6 +192,7 @@ use self::deliver::Post;
 pub use self::deliver::Retries;
 use self::deliver::Row;
 use self::jobs::Command;
+use self::jobs::Pinned;
 pub use self::jobs::Verbs;
 use self::subscriptions::Generation;
 use self::subscriptions::Kept;
@@ -1052,7 +1053,8 @@ impl Subscriptions
 }
 
 /// A call queued for the worker: its row, its arguments, absent for a call
-/// that a crash lost, and the acknowledgement that releases it.
+/// that a crash lost, the acknowledgement that releases it, and the versions
+/// that its job reads.
 struct Call
 {
     /// The row.
@@ -1062,6 +1064,10 @@ struct Call
     /// The acknowledgement that the worker waits for before it starts the
     /// call, absent for a call that a crash lost.
     release: Option<Release>,
+    /// The version of each document that the call's job reads, as the hub
+    /// held it when the acknowledgement went out. Empty for a call that runs
+    /// no job or that a crash lost.
+    pinned: Pinned,
 }
 
 /// A count of acknowledgements, and the mark that one call waits for.
@@ -1454,6 +1460,7 @@ impl Toolset
                     pending,
                     arguments: None,
                     release: None,
+                    pinned: Pinned::default(),
                 }))),
             }
         }
@@ -1565,6 +1572,7 @@ impl Toolset
                 let desk = Desk {
                     manifest,
                     store,
+                    workspace,
                     queue: queue.clone(),
                     written: Arc::default(),
                     subscriptions,
@@ -1797,6 +1805,8 @@ struct Desk<'toolset, Log>
     manifest: &'toolset Buffer,
     /// The store of rows.
     store: &'toolset Mutex<Store>,
+    /// The hub's documents, whose versions a call's job reads.
+    workspace: &'toolset Mutex<Workspace>,
     /// The worker's queue, which a cancel and a closure end jobs on too.
     queue: Sender<Queued>,
     /// The acknowledgements that this acceptor has written, which release
@@ -1906,6 +1916,13 @@ where
             if lock(desk.store).opened(&pending).is_err() {
                 return stream.write_all(UNSTORED);
             }
+            // The job of the call reads the documents at the versions that
+            // the hub holds before the acknowledgement goes out, so an edit
+            // that the runtime makes after the acknowledgement retires it.
+            let pinned = match job_of(&pending, Some(&arguments)) {
+                Some(Ok(ref job)) => Pinned::of(job, &lock(desk.workspace)),
+                Some(Err(_)) | None => Pinned::default(),
+            };
             // The call reaches the queue before its acknowledgement, so a
             // cancel that the runtime sends after it queues after the call.
             // The worker starts the call only once the acknowledgement is
@@ -1920,6 +1937,7 @@ where
                     written: Arc::clone(&desk.written),
                     mark,
                 }),
+                pinned,
             })));
             let acknowledged = stream.write_all(ACKNOWLEDGED);
             desk.written.count();
@@ -2118,6 +2136,7 @@ fn work<Log>(
             pending,
             arguments,
             release,
+            pinned,
         } = match queued {
             Queued::Call(call) => call,
             Queued::End(ending) => {
@@ -2130,7 +2149,7 @@ fn work<Log>(
         }
         match job_of(&pending, arguments.as_ref()) {
             Some(Ok(job)) => {
-                drop(jobs.send(Command::Start(pending, job)));
+                drop(jobs.send(Command::Start(pending, job, pinned)));
                 continue;
             },
             Some(Err(refused)) => {
@@ -4308,11 +4327,8 @@ mod tests
             "{}",
             acknowledged.head
         );
-        // The run spends its budget unless a newer revision retires it; the
-        // wait lets it start first, and the edit waits for no part of it. The
-        // wait stands for an order that the toolset does not hold yet, which
-        // #6770 owes.
-        thread::sleep(Duration::from_millis(200));
+        // The run spends its budget unless a newer revision retires it. The
+        // edit follows the acknowledgement at once.
         editor.edit(&uri, &json!(4_i32), &json!("def f = 44 ;\n"));
         assert_eq!(
             told(&resulted(&callback).0),
@@ -4322,6 +4338,14 @@ mod tests
                 null
             ]),
             "a newer revision retires a run as it retires a check"
+        );
+        // The client reads one state of the run, its retirement: whether the
+        // start or the change retired it, the run delivers no result of its
+        // own after it.
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(300)),
+            Answer(true),
+            "a retired run delivers no result of its own"
         );
 
         start("check-2", "thread-1");
@@ -4349,6 +4373,115 @@ mod tests
             quiet(&callback, Duration::from_millis(300)),
             Answer(true),
             "an ended job delivers no result of its own"
+        );
+        drop(editor);
+    }
+
+    /// The start of a run that comes after an edit, where the edit came after
+    /// the run's acknowledgement, retires the run: the run reads the version
+    /// that the acknowledgement pinned, and the hub holds a newer one. A run
+    /// that read the hub's document at its start ran over the newer revision,
+    /// which names no `spin`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[test]
+    fn a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770()
+    {
+        let scratch = Scratch::new(&json!("rap-pinned"));
+        let socket = scratch.socket();
+        let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
+        else {
+            panic!("no other hub serves a fresh socket");
+        };
+        let (lent, lending) = std::sync::mpsc::channel();
+        drop(thread::spawn(move || {
+            run_hub(
+                &listener,
+                &socket,
+                Duration::from_millis(100),
+                std::io::sink(),
+                Some(crate::serve),
+                Some(Box::new(
+                    move |workspace: Arc<std::sync::Mutex<Workspace>>, _peer: Peer| {
+                        drop(lent.send(workspace));
+                    },
+                )),
+                parallel(),
+            )
+            .expect("the hub serves");
+        }));
+        let workspace = lending.recv().expect("the hub lends its workspace");
+        let uri = json!("file:///tmp/pinned/held.gandr");
+        let mut editor = Editor::new(&scratch);
+        editor.edit(
+            &uri,
+            &json!(1_i32),
+            &json!("def spin() -> [Partial] Integer =\n  pure 1\n"),
+        );
+        let job = tools::job(&json!("run"), &json!({ "uri": uri, "entry": "spin" }))
+            .expect("a run is a job")
+            .expect("the arguments name a run");
+        let pinned = super::Pinned::of(&job, &crate::face::lock(&workspace));
+        editor.edit(&uri, &json!(2_i32), &json!("def f = 2 ;\n"));
+
+        let calls = calls(&scratch);
+        std::fs::create_dir_all(calls.parent().expect("the file has a directory"))
+            .expect("the directory is made");
+        let file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&calls)
+            .expect("the file of rows opens");
+        let store = std::sync::Mutex::new(super::Store {
+            file,
+            open: 0,
+            line: Buffer::default(),
+        });
+        #[cfg(feature = "instrument")]
+        let subscriptions = std::sync::Mutex::new(super::Subscriptions::resumed(Vec::new()));
+        let deliveries = super::Deliveries::new(Policy::default());
+        let log = std::sync::Mutex::new(std::io::sink());
+        let held = super::Held {
+            workspace: &workspace,
+            verbs: None,
+            store: &store,
+            #[cfg(feature = "instrument")]
+            subscriptions: &subscriptions,
+            deliveries: &deliveries,
+            log: &log,
+        };
+        let pending = super::Pending {
+            group_id: String::from("thread-1"),
+            id: String::from("run-1"),
+            call_id: None,
+            callback_url: String::from("http://127.0.0.1:9/results"),
+            token: None,
+            operation: String::from("run"),
+            started: 0,
+        };
+        let (commands, heard) = std::sync::mpsc::channel();
+        drop(commands.send(super::Command::Start(pending, job, pinned)));
+        drop(commands.send(super::Command::Stop));
+        super::jobs::run(heard, commands, &held);
+
+        let texts: Vec<Value> = std::fs::read_to_string(&calls)
+            .expect("the file of rows reads")
+            .lines()
+            .filter_map(|line| {
+                serde_json::from_str::<Value>(line)
+                    .ok()?
+                    .pointer("/answered/text")
+                    .cloned()
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            [json!(
+                "retired: file:///tmp/pinned/held.gandr is at version 2"
+            )],
+            "the run retires at its start, since the hub moved past the version that \
+             its acknowledgement pinned"
         );
         drop(editor);
     }
