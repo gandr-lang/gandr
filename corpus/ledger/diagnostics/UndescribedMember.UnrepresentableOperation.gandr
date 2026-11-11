@@ -1,0 +1,6 @@
+/// `UndescribedMember.UnrepresentableOperation`: a rule applies an operation whose outputs no description can represent.
+@[refuses("UndescribedMember.UnrepresentableOperation")]
+theory Drain where
+  sort M : Type;
+  oper drain : (m : M) --> ();
+  rule erase : drain m ==> ();
