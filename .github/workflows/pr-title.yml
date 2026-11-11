@@ -86,28 +86,41 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .title | mise exec -- commitlint
-      # The queue's merge commit is the one that lands; a title edited after
-      # the pull request's check is caught here. GitHub appends ` (#N)` to
-      # the title, which is stripped so both checks lint the same header.
-      # Bash, for pipefail: a failed git log must fail the step.
+      # The queue of `landing` groups by HEADGREEN: a green group lands every
+      # entry below it. So each step below reads every entry of the group,
+      # never `HEAD` alone (#6839): the green group of pull request 6836
+      # landed 6835, whose own account was red. The walk lists each merge on
+      # the first-parent line from the group's base, and a base that the
+      # fetch does not reach is refused.
+      - name: list the entries of the merge group
+        if: ${{ github.event_name == 'merge_group' }}
+        shell: bash
+        env:
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+        run: .config/queue/entries.bash --fetch "$GITHUB_SHA" "$GROUP_BASE" > "$RUNNER_TEMP/entries"
+      # Each queue merge commit lands; a title edited after the pull
+      # request's check is caught here. GitHub appends ` (#N)` to the title,
+      # which is stripped so both checks lint the same header. Bash, for
+      # pipefail: a failed git log must fail the step.
       - name: lint the merge commit header
         if: ${{ github.event_name == 'merge_group' }}
         shell: bash
-        run: git log -1 --format=%s HEAD | sed -E 's/ \(#[0-9]+\)$//' | mise exec -- commitlint
-      # The account of what the pull request takes out of the tree (#6817),
+        run: |
+          status=0
+          while read -r merge number _; do
+            echo "pull request #$number:"
+            git log -1 --format=%s "$merge" | sed -E 's/ \(#[0-9]+\)$//' | mise exec -- commitlint || status=1
+          done < "$RUNNER_TEMP/entries"
+          exit "$status"
+      # The account of what each pull request takes out of the tree (#6817),
       # read again where it lands: a body edited, or a head pushed past the
       # architect's sign-off, is refused. `pr:open` read the records of both
-      # sides; the queue reads the rows and the sign-offs alone. The group's
-      # first parent is the base, and its second the pull request's head, so
-      # the groups ahead of it move no sign-off.
+      # sides; the queue reads the rows and the sign-offs alone, each entry
+      # against its own head, so the entries ahead of it move no sign-off.
       - name: read the account of what the change takes out
         if: ${{ github.event_name == 'merge_group' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          git fetch --quiet --no-tags --depth=2 origin "$GITHUB_SHA"
-          number=$(git log -1 --format=%s HEAD | sed -nE 's/.* \(#([0-9]+)\)$/\1/p')
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
-          .config/deletes/check.bash --rows-only --head HEAD^2 "$RUNNER_TEMP/body.md" HEAD^1
+        run: .config/deletes/queue.bash "$RUNNER_TEMP/entries"

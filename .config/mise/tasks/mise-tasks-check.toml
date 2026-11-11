@@ -2965,9 +2965,13 @@ echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases re
 # consumer, a row with no sign-off of the architect at a head that the
 # change keeps, a test whose text changes with no row in `## Preserved and
 # changed`, and a `refactor` with no `## Preserved and changed`. `pr:open`
-# runs it before the push, and the merge queue runs it with `--rows-only`.
-# With no body, as in the gate, it runs the cases of `deletes.jq`
-# (`.config/deletes/cases.json`).
+# runs it before the push. The merge queue runs it with `--rows-only` for
+# each entry of the group (`.config/deletes/queue.bash` over
+# `.config/queue/entries.bash`, #6839), since a green group lands every entry
+# below it. With no body, as in the gate, it runs the cases of `deletes.jq`
+# (`.config/deletes/cases.json`), of the record run's settings
+# (`.config/deletes/policy-cases.bash`) and of the queue's walk
+# (`.config/queue/cases.bash`).
 ["check:deletes"]
 description = "A body accounts for each item, test, ledger row and file its change takes out, with the architect's sign-off for each deletion; with no body, the rule's cases"
 tools.jq = "1.8.1"
@@ -2983,6 +2987,7 @@ set -euo pipefail
 if [[ -z ${usage_body:-} ]]; then
   .config/cases/run.bash deletes .config/deletes/cases.json --program .config/deletes/deletes.jq --mode r -L .config/claims
   .config/deletes/policy-cases.bash
+  .config/queue/cases.bash
   echo "deletes check OK: $(jq length .config/deletes/cases.json) cases read as recorded"
   exit 0
 fi
