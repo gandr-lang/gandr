@@ -172,15 +172,16 @@ fn main() -> ExitCode
 /// - ensures: standard output receives the report, its integration table and
 ///   the main table of the same lanes sampled only with `--integration`, its
 ///   daily table only with `--daily`, its nightly table only with `--nightly`
-///   and its workflow table only with `--summed`, then, with `--issue`, one
-///   line naming what filing did; then, when a `--summed` workflow's newest
-///   completed run passed its ceiling, the command refuses.
+///   and its workflow table only with `--summed`, then one line for each
+///   `--summed` workflow whose newest completed run passed its ceiling
+///   ([`Workflows::past_ceiling`]), then, with `--issue`, one line naming what
+///   filing did. A run past its ceiling is a row of the workflow table and of
+///   the issue, and never a refusal.
 /// - provides: the whole command.
 /// - fails: every refusal of [`github::recent_runs`], [`cone::classify`],
 ///   [`github::samples`], [`github::read_all`], [`github::timed`],
 ///   [`github::cache_usage`] and [`github::file`]; [`BudgetError::Output`] when
-///   standard output cannot be written; [`BudgetError::Ceiling`], after the
-///   report and the filing, naming each newest run past its ceiling.
+///   standard output cannot be written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes on standard output and the
 ///   repository's issue.
@@ -248,18 +249,16 @@ fn run(cli: Cli) -> Result<(), BudgetError>
         message: error.to_string(),
     };
     write!(std::io::stdout(), "{report}").map_err(output)?;
+    for run in &past {
+        writeln!(
+            std::io::stdout(),
+            "\nThe newest run passed its ceiling: {run}."
+        )
+        .map_err(output)?;
+    }
     if let Some(title) = cli.issue {
         let filed = github::file(&report, &IssueTitle::from(title.as_str()))?;
         writeln!(std::io::stdout(), "\n{filed}").map_err(output)?;
-    }
-    if !past.is_empty() {
-        return Err(BudgetError::Ceiling {
-            runs: past
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("; "),
-        });
     }
     Ok(())
 }
