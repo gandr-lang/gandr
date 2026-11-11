@@ -2332,17 +2332,17 @@ fn main() -> ExitCode
     }
 }
 
-/// Hold the kernel's verdicts in the process for a language server or a hub,
-/// under the kernel policy `configuration` names; a policy that cannot be
-/// read, or a cache that cannot be held, is noted on standard error and every
-/// declaration is checked.
+/// Keep the kernel's verdicts for a language server or a hub, in this
+/// installation's store and in the process, under the kernel policy
+/// `configuration` names; a policy that cannot be read, or a cache that cannot
+/// be installed, is noted on standard error and every declaration is checked.
 ///
 /// # Specification
 /// trivial.
 fn held(configuration: &config::Configuration)
 {
     let noted = match configuration.kernel() {
-        Ok(kernel) => match verdicts::hold(&kernel) {
+        Ok(kernel) => match verdicts::hold(kernel) {
             Ok(()) => return,
             Err(unheld) => writeln!(std::io::stderr(), "gandr: {unheld}"),
         },

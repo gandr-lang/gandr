@@ -18,6 +18,7 @@
 //! | --- | --- | --- | --- |
 //! | the admission has not ended | `pending` | `·` | `kernel pending` |
 //! | replayed: a definition or a nominal declaration | `replayed` | `✓✓` | `kernel replayed` |
+//! | attested: a recorded verdict of the kernel admitted it | `replayed` | `✓✓` | `kernel admitted: attested` |
 //! | assumed: the kernel owes the body | `checked` | `✓` | `kernel assumed: the body is owed` |
 //! | refused: the kernel does not re-derive what the checker accepted | `refused` | `✗` | `kernel refused: <reason>` |
 //! | withheld behind a declaration that did not cross | `withheld` | `○` | `kernel withheld: behind <name>` |
@@ -118,9 +119,10 @@ impl Tier
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: pending is `pending`; replayed is `replayed`; assumed is
-    ///   `checked`; refused and disagreed are `refused`; withheld, outside and
-    ///   static are `withheld`; unoffered is [`unmarked::Absent::Unoffered`].
+    /// - ensures: pending is `pending`; replayed and attested are `replayed`;
+    ///   assumed is `checked`; refused and disagreed are `refused`; withheld,
+    ///   outside and static are `withheld`; unoffered is
+    ///   [`unmarked::Absent::Unoffered`].
     /// - provides: the warrant that the lens and the gutter both draw.
     /// - fails: never.
     /// - panics: none.
@@ -131,7 +133,7 @@ impl Tier
     /// - witness: `server::tests::each_declaration_shows_its_kernel_tier_2517_6662`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(Warrant::Pending) => *self == Self::Pending,
-        Maybe::Present(Warrant::Replayed) => *self == Self::Settled(KernelTier::Replayed),
+        Maybe::Present(Warrant::Replayed) => matches!(*self, Self::Settled(KernelTier::Replayed | KernelTier::Attested)),
         Maybe::Present(Warrant::Checked) => *self == Self::Settled(KernelTier::Assumed),
         Maybe::Present(Warrant::Refused) => matches!(*self, Self::Settled(KernelTier::Refused(_)) | Self::Disagreed(_)),
         Maybe::Present(Warrant::Withheld) => matches!(*self, Self::Settled(
@@ -143,7 +145,9 @@ impl Tier
     {
         match *self {
             Self::Pending => Maybe::Present(Warrant::Pending),
-            Self::Settled(KernelTier::Replayed) => Maybe::Present(Warrant::Replayed),
+            Self::Settled(KernelTier::Replayed | KernelTier::Attested) => {
+                Maybe::Present(Warrant::Replayed)
+            },
             Self::Settled(KernelTier::Assumed) => Maybe::Present(Warrant::Checked),
             Self::Settled(KernelTier::Refused(_)) | Self::Disagreed(_) => {
                 Maybe::Present(Warrant::Refused)
@@ -369,6 +373,7 @@ impl Tiers
         Maybe::Present(match *tier {
             Tier::Pending => String::from("kernel pending"),
             Tier::Settled(KernelTier::Replayed) => String::from("kernel replayed"),
+            Tier::Settled(KernelTier::Attested) => String::from("kernel admitted: attested"),
             Tier::Settled(KernelTier::Assumed) => String::from("kernel assumed: the body is owed"),
             Tier::Settled(KernelTier::Refused(class)) => {
                 alloc::format!("kernel refused: {class}")
