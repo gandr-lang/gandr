@@ -1,10 +1,10 @@
-test: cli::the_toolset_checks_a_corpus_as_the_command_line_does
+test: cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765
 package: gandr-lang
-command: mise run debug:test gandr-lang cli::the_toolset_checks_a_corpus_as_the_command_line_does
+command: mise run debug:test gandr-lang cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765
 
 (lldb) target create "target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1"
 Current executable set to 'target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1' (arm64).
-(lldb) settings set -- target.run-args  "cli::the_toolset_checks_a_corpus_as_the_command_line_does" "--exact" "--nocapture" "--test-threads=1"
+(lldb) settings set -- target.run-args  "cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765" "--exact" "--nocapture" "--test-threads=1"
 (lldb) command source .config/debug/lldbinit
 Executing commands in '.config/debug/lldbinit'.
 (lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
@@ -13,31 +13,31 @@ Executing commands in '.config/debug/lldbinit'.
 (lldb) command script import -c rust_formatters.py
 (lldb) settings set target.max-children-count 16
 (lldb) breakpoint set --name rust_panic
-Breakpoint 1: where = tests-0e6c9e69862936c1`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001009d3828
+Breakpoint 1: where = tests-0e6c9e69862936c1`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001009e3528
 (lldb) run
 
 running 1 test
-test cli::the_toolset_checks_a_corpus_as_the_command_line_does ... 
-thread 'cli::the_toolset_checks_a_corpus_as_the_command_line_does' (32426906) panicked at crates/surface-driver/tests/cli.rs:3695:5:
-the call is acknowledged before the toolset calls back: the acknowledgement at 8, the callback's requests at [0, 1, 2, 3, 4, 5, 6, 7]
+test cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765 ... 
+thread 'cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765' (33731280) panicked at crates/surface-driver/tests/cli.rs:3695:5:
+the call is acknowledged before the toolset calls back: the acknowledgement at 7, the callback's requests at [0, 1, 2, 3, 4, 5, 6]
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 warning: tests-0e6c9e69862936c1 was compiled with optimization - stepping may behave oddly; variables may not be available
 warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
-Process 1152 launched: 'target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1' (arm64)
-Process 1152 stopped
-* thread #2, name = 'cli::the_toolset_checks_a_corpus_as_the_command_line_does', stop reason = breakpoint 1.1
-       frame #0: 0x00000001009d3828 tests-0e6c9e69862936c1`__rustc::rust_panic at panicking.rs:887:25 [opt]
+Process 99009 launched: 'target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1' (arm64)
+Process 99009 stopped
+* thread #2, name = 'cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765', stop reason = breakpoint 1.1
+       frame #0: 0x00000001009e3528 tests-0e6c9e69862936c1`__rustc::rust_panic at panicking.rs:887:25 [opt]
 (lldb) bt 24
-* thread #2, name = 'cli::the_toolset_checks_a_corpus_as_the_command_line_does', stop reason = breakpoint 1.1
-   * frame #0: 0x00000001009d3828 tests-0e6c9e69862936c1`__rustc::rust_panic at panicking.rs:887:25 [opt]
-     frame #1: 0x00000001009a3ae4 tests-0e6c9e69862936c1`std::panicking::panic_with_hook at panicking.rs:840:5 [opt]
-     frame #2: 0x000000010098b758 tests-0e6c9e69862936c1`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13 [opt]
-     frame #3: 0x000000010098350c tests-0e6c9e69862936c1`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18 [opt]
-     frame #4: 0x000000010098c27c tests-0e6c9e69862936c1`__rustc::rust_begin_unwind at panicking.rs:679:5 [opt]
-     frame #5: 0x00000001009d52f8 tests-0e6c9e69862936c1`core::panicking::panic_fmt at panicking.rs:80:14 [opt]
-     frame #6: 0x000000010003179c tests-0e6c9e69862936c1`tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does at cli.rs:3695:5
-     frame #7: 0x0000000100006018 tests-0e6c9e69862936c1`tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does::{closure#0}((null)={}) at cli.rs:3577:58
-     frame #8: 0x00000001000ce11c tests-0e6c9e69862936c1`<tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+* thread #2, name = 'cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001009e3528 tests-0e6c9e69862936c1`__rustc::rust_panic at panicking.rs:887:25 [opt]
+     frame #1: 0x00000001009b37e4 tests-0e6c9e69862936c1`std::panicking::panic_with_hook at panicking.rs:840:5 [opt]
+     frame #2: 0x000000010099b458 tests-0e6c9e69862936c1`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13 [opt]
+     frame #3: 0x000000010099320c tests-0e6c9e69862936c1`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18 [opt]
+     frame #4: 0x000000010099bf7c tests-0e6c9e69862936c1`__rustc::rust_begin_unwind at panicking.rs:679:5 [opt]
+     frame #5: 0x00000001009e4ff8 tests-0e6c9e69862936c1`core::panicking::panic_fmt at panicking.rs:80:14 [opt]
+     frame #6: 0x0000000100040390 tests-0e6c9e69862936c1`tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765 at cli.rs:3695:5
+     frame #7: 0x0000000100006514 tests-0e6c9e69862936c1`tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765::{closure#0}((null)={}) at cli.rs:3577:63
+     frame #8: 0x00000001000ce530 tests-0e6c9e69862936c1`<tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
      frame #9: 0x000000010019f6d8 tests-0e6c9e69862936c1`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
      frame #10: 0x000000010019f6d0 tests-0e6c9e69862936c1`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
      frame #11: 0x00000001001aabf4 tests-0e6c9e69862936c1`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]

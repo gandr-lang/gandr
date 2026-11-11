@@ -68,7 +68,7 @@ pub struct Occupied
 /// # Adequacy
 /// - hypothesis: L3 — a `check` through the toolset of a hub reaches its caller
 ///   with the activity of its walk, and its output is a `check`'s.
-/// - witness: `tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does`
+/// - witness: `tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765`
 pub fn recorded<Stop, Visitor>(
     walk: Walk,
     (pool, rings): (&Pool, &Activity),

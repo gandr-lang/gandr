@@ -3574,7 +3574,7 @@ fn serve_offers_the_toolset_by_default()
 }
 
 #[test]
-fn the_toolset_checks_a_corpus_as_the_command_line_does()
+fn the_toolset_checks_a_corpus_as_the_command_line_does_6765()
 {
     use std::ffi::OsStr;
     use std::io::Read as _;
