@@ -2618,7 +2618,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragm
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/SessionNotSubtype.txt STE-5.2 e1af2a66c8eda789
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ShadowedBuiltin.txt STE-5.3 d0178ac867679784
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/TelescopeCycle.txt STE-5.3 761ce136eef636cd
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UndescribedMember.NoOutput.txt STE-5.3 8fa40dbc93bfd91d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnexportedName.txt STE-5.3 3c742c4d5cf41195
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnmarkedSelfReference.txt STE-5.3 4db31bd807aaf1cf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Arity.txt STE-5.2 c3f68a1179ef2ead
