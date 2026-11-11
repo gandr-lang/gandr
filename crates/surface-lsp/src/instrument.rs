@@ -18,18 +18,18 @@
 //! # The activity follows the hub, not the client
 //!
 //! While the hub has a watcher of the activity, each job takes the activity
-//! layer in place of its client's ([`Subscription::recording`]). The job then
-//! runs as one task between two marks on the ring of its thread, at a sink
-//! that answers the rings, so the fork sites inside it mark their own jobs.
-//! The rings follow the pool, which every connection shares, so one watcher
-//! makes every connection's jobs mark them.
+//! layer in place of its client's (`Subscription::recording`, with the
+//! `instrument` feature). The job then runs as one task between two marks on
+//! the ring of its thread, at a sink that answers the rings, so the fork sites
+//! inside it mark their own jobs. The rings follow the pool, which every
+//! connection shares, so one watcher makes every connection's jobs mark them.
 //!
 //! # What it does not cover
 //!
 //! A client cannot subscribe to a layer yet, because the subscription on the
 //! render bus is a later unit. Until then, each connection holds the silent
 //! layer, and a test selects another layer through its constant, such as
-//! [`Subscription::COUNTS`].
+//! `Subscription::COUNTS`, with the `instrument` feature.
 
 #[cfg(feature = "instrument")]
 use alloc::sync::Arc;
