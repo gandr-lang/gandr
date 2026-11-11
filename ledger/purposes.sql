@@ -4677,7 +4677,6 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','query::InstanceRow','stru
 INSERT INTO purpose VALUES('theory-virtual-doctrines','query::InstanceTable','struct','The **instantiation table** of a relation — its instances with two projections.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','query::Query','struct','The **query view** over a cell store — the constructor menu''s realization.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','query::RewritePath','struct','A **rewrite path** — a reduction trace and its endpoint.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','query::SeamComposite','struct','A **seam composite** — one overlap-indexed member of the ⊙ family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','signature::SignatureNode','struct','A borrowed factor, retaining nested product structure.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','signature::SignatureParts','struct','Immediate factors of a product signature.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','signature::SignatureRef','struct','A reflected nominal signature or finite nested product, stored flat.',NULL,'fits','sound',NULL);
