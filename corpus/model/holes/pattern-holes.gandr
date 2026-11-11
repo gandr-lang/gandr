@@ -3,7 +3,8 @@
 //! A pattern hole stands for an unwritten arm or payload. The checker
 //! cannot decide coverage.
 //!
-//! The checker refuses the match until coverage reads no hole.
+//! The checker refuses the match by name with `UndecidedCoverage`. Coverage
+//! does not read a hole yet.
 //!
 //! - see: `corpus/pathological/holes/` — each source refuses one pattern-hole shape.
 //! - see: #391 — `rank`, `weigh`
@@ -34,5 +35,6 @@ def weigh(m : Option) -> Integer =
     | Value(?) => 100
     | NoValue => 200
 
-/// A pattern hole refuses `weigh` before this function runs.
+/// A pattern hole refuses `weigh` before this function runs. This function
+/// checks against the signature of `weigh`.
 def weighed() -> Integer { weigh NoValue }
