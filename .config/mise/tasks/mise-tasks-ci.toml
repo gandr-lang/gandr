@@ -1623,11 +1623,39 @@ if [[ -n $write ]]; then
   esac
 fi
 
+# The state that the known-red list's issue owes, for a row (`true`) or for
+# none (`false`): `close`, `reopen`, `file` or nothing (`list-state.jq`). It
+# reads `found`, the list's issue, from `keep_list`.
+list_act() {
+  jq -n -c --argjson row "$1" --argjson found "$found" '{row: $row, state: $found.state?}' \
+    | jq -c -f "$here/list-state.jq" | jq -r '.act // empty'
+}
+
+# Close or reopen the list's issue `number` of `keep_list` as the act asks;
+# `file` and nothing leave it as it is.
+set_state() {
+  case $1 in
+    reopen)
+      if [[ -z $write ]]; then say "would reopen the known-red list #$number: it holds a row"; return; fi
+      gh issue reopen "$number" --repo "$repo" > /dev/null
+      say "The cycle reopens the known-red list #$number: it holds a row."
+      ;;
+    close)
+      if [[ -z $write ]]; then say "would close the known-red list #$number: it holds no row"; return; fi
+      gh issue close "$number" --repo "$repo" --reason completed \
+        --comment "The list holds no row${id:+: run $id passes}. The cycle reopens it for a row (#6540)." > /dev/null
+      say "The cycle closes the known-red list #$number: it holds no row."
+      ;;
+  esac
+}
+
 # The known-red list in step with the verdict, the take and the brake. A
 # list that names the verdict's run and holds the same take and the same
-# brake stands unread.
+# brake stands unread. The list's issue is open while the list holds a row,
+# a failed cycle or a take that does not merge, and closed otherwise
+# (`list-state.jq`, #6540): an empty list counts as no open defect.
 keep_list() {
-  local title="integration: the known-red list" found number current id held taken braked braking jobs='[]' known url own heading
+  local title="integration: the known-red list" found number current id held taken braked braking jobs='[]' known url own heading row act
   found=$(issue_found "$title")
   number=$(jq -r '.number // empty' <<< "$found")
   current=$(jq -r '.body // empty' <<< "$found")
@@ -1637,6 +1665,8 @@ keep_list() {
   braked=$([[ $current == *"## The brake"* ]] && echo true || echo false)
   braking=$(jq -r .on <<< "$brake")
   if [[ -n $id && $current == *"/actions/runs/$id)"* && $held == "$taken" && $braked == "$braking" ]]; then
+    row=$([[ $taken == true || ( -n $conclusion && $conclusion != success ) ]] && echo true || echo false)
+    set_state "$(list_act "$row")"
     say "The known-red list #$number stands: it reads run $id."
     return
   fi
@@ -1659,13 +1689,20 @@ keep_list() {
     '{verdict: $verdict, conflict: $conflict, brake: $brake, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
     | jq -c -f "$here/known-red.jq")
   jq -r .body <<< "$known" > "$scratch/body.md"
+  act=$(list_act "$(jq -c .page <<< "$known")")
   if [[ $current == "$(< "$scratch/body.md")" ]]; then
+    set_state "$act"
     say "The known-red list #$number stands."
+    return
+  fi
+  if [[ -z $number && $act != file ]]; then
+    say "The known-red list holds no row, and no list issue exists, so the cycle files none."
     return
   fi
   if [[ -z $write ]]; then
     say "would rewrite the known-red list${number:+ #$number}:"
     cat "$scratch/body.md"
+    set_state "$act"
     jq -r '.soundness[] | "would file or update: \(.title)"' <<< "$known"
     if [[ $braked != "$braking" ]]; then say "would page every lane: the brake turns $([[ $braking == true ]] && echo on || echo off)"; fi
     return
@@ -1675,8 +1712,9 @@ keep_list() {
       --label priority:high --label effort:unknown --body-file "$scratch/body.md")
     number=${url##*/}
   else
-    [[ $(jq -r .state <<< "$found") == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
+    [[ $act != reopen ]] || set_state reopen
     gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+    [[ $act != close ]] || set_state close
   fi
   say "The cycle rewrites the known-red list #$number."
   while IFS= read -r own; do
