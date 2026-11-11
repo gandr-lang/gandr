@@ -879,7 +879,7 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
 /// - hypothesis: L3 — the sphere's words spell the path type at the reflexivity
 ///   of its point, which reads back to their certificate and reprints as
 ///   itself.
-/// - witness: `census::sweeps::every_printed_type_reads_back_to_its_certificate_changed`
+/// - witness: `tests::diagnostics::a_higher_cell_s_words_spell_at_the_wrapped_point_6446`
 #[spec(ensures: |ret| ret.1.matches("Path.here").count() >= usize::from(wraps))]
 fn wrapped(
     family: String,

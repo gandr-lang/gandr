@@ -1,0 +1,7 @@
+data S2 : Type where
+  | Base2 : S2
+  | surf : Path.here Base2 <-> Path.here Base2
+
+data S3 : Type where
+  | Base3 : S3
+  | surf3 : Path.here (Path.here Base3) <-> Path.here (Path.here Base3)
