@@ -1509,6 +1509,33 @@
     "output": ""
   },
   {
+    "name": "#3479: a speedup claim with neither corpus nor baseline is refused, naming both",
+    "input": {
+      "branch": "workflow-3479-speedup",
+      "body": "Advances #3479\n\nThe layout runs 3x faster after this change.\n\n## Refactoring\n\nno\n",
+      "issues": []
+    },
+    "output": "the body's line `The layout runs 3x faster after this change.` claims a speedup without its corpus (`corpus: <the inputs the number is over>`) and its algorithmic baseline (`baseline: <the algorithm it is measured against>`): name both on the claim's line (#3479, the algorithm-first ruling of #320), then run `pr:open` again"
+  },
+  {
+    "name": "#3479: a speedup row with its corpus and no baseline is refused, naming the baseline",
+    "input": {
+      "branch": "workflow-3479-speedup",
+      "body": "Advances #3479\n\n| Row | Answer |\n| --- | --- |\n| latency | a speedup of 40% faster; corpus: the 1,533 sources of `corpus/` |\n\n## Refactoring\n\nno\n",
+      "issues": []
+    },
+    "output": "the body's line `| latency | a speedup of 40% faster; corpus: the 1,533 sources of `corpus/` |` claims a speedup without its algorithmic baseline (`baseline: <the algorithm it is measured against>`): name both on the claim's line (#3479, the algorithm-first ruling of #320), then run `pr:open` again"
+  },
+  {
+    "name": "#3479: a speedup claim with its corpus and its baseline opens; a factor in a code block, a code span or a comment, and the word in prose with no number, claim nothing",
+    "input": {
+      "branch": "workflow-3479-speedup",
+      "body": "Advances #3479\n\nThe layout runs 3x faster; corpus: the 1,533 sources of `corpus/`; baseline: the quadratic rescan of each line.\n\nA speedup claim names its corpus, which `3x faster` alone does not.\n\n```\nbench: 3x faster\n```\n\n<!-- 2x faster on one file -->\n\n## Refactoring\n\nno\n",
+      "issues": []
+    },
+    "output": ""
+  },
+  {
     "name": "#3326: a body advancing a collector and listing open rows under `## Rows` opens, a row keyed with its text after the key",
     "input": {
       "branch": "surface-2558-recovery",
