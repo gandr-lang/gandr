@@ -158,19 +158,17 @@ watch_checkout() {
 # against the green head, writing its log to `$3`; exits as the check exits.
 # The run is a background gate (#6638): at niceness 19 and in no host slot,
 # so a lane's gate beside it loses neither CPU nor a slot to it. The
-# enforcing suite runs over the whole workspace (#6725): no test lane runs
-# after the merge queue, and the suite of the touched packages alone passed
-# `f2b3dadaf` over two red tests of a package that the change reached.
+# enforcing suite runs over the whole workspace, as in every gate (#6738).
 watch_run() {
   local commit=$1 check=$2 log=$3
   watch_checkout "$commit"
   if [[ $check == check ]]; then
-    (cd "$watch_tree" && GATE_TEST_WHOLE=1 GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
+    (cd "$watch_tree" && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run check) > "$log" 2>&1
   else
     (cd "$watch_tree" \
       && GATE_SCOPE=$(.config/gate-scope/scope.bash 2> /dev/null) \
       && GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched 2> /dev/null) \
-      && GATE_TEST_SCOPE=$(GATE_TEST_WHOLE=1 .config/gate-scope/test-scope.bash 2> /dev/null) \
+      && GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash 2> /dev/null) \
       && export GATE_SCOPE GATE_WITNESS_SCOPE GATE_TEST_SCOPE \
       && GANDR_GATE_BACKGROUND=1 nice -n 19 mise run "$check") > "$log" 2>&1
   fi

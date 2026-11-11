@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# The landing's gate runs the suite of the packages a change touches (#6595),
-# run by `check:gate-scope`. Pull request 6563 changed the checker and broke
-# two of its tests, and its gate passed, since the gate ran no test. Each case
-# builds a scratch workspace of two packages, `red` and `green`, whose tests
-# pass at its fork from `origin/$trunk`. The case changes one package, reads
-# the suite's scope as `check` reads it (`scope.bash --touched`) and runs the
-# suite over that scope as `check:tests-enforcing` runs it. A change that
-# breaks a test of `red` is refused, and the refusal names the test. A change
-# to `green` alone passes, and its suite keeps `red` out. The head watcher's
-# suite (`GATE_TEST_WHOLE`, #6725) runs `red` too, so it refuses that change.
+# The landing's gate runs the enforcing suite of the whole workspace
+# (#6738), run by `check:gate-scope`. Pull request 6563 changed the checker
+# and broke two of its tests, and its gate passed, since the gate ran no test
+# (#6595). The suite of the touched packages alone then passed #6709 and
+# #6712, which each turned a test of an untouched package red on `landing`.
+# Each case builds a scratch workspace of two packages, `red` and `green`,
+# whose tests pass at its fork from `origin/$trunk`. The case changes one
+# package, reads the suite's scope as `check` reads it (`test-scope.bash`)
+# and runs the suite over that scope as `check:tests-enforcing` runs it. A
+# change that breaks a test of `red` is refused, and the refusal names the
+# test. A change to `green` alone, with `red` broken at the fork, is refused
+# too, and the refusal names the test of `red`.
 set -euo pipefail
-# The watcher's gate sets `GATE_TEST_WHOLE` for every check it runs (#6739).
-# Each case reads the suite's scope as a lane's gate reads it, and the
-# watcher's case sets the variable on its own call alone.
-unset GATE_TEST_WHOLE
 here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 scope="$here/test-scope.bash"
 source "$here/../pr-stack/trunk.bash"
@@ -52,8 +50,7 @@ setup() {
   git update-ref "refs/remotes/origin/$trunk" HEAD
 }
 
-# The suite over the change's touched packages, as the gate runs it, or over
-# the whole workspace when `GATE_TEST_WHOLE` is set, as the watcher runs it.
+# The suite over the scope that the gate reads, as the gate runs it.
 suite() {
   local args
   args=$("$scope" 2> /dev/null)
@@ -70,33 +67,20 @@ got=$(
 )
 [[ $got == $'refused\nnames red adds' ]] || fail "#6595: a change that breaks a test of the package it touches is refused, and the refusal names the test" "$got"
 
-# A change to `green` alone, with `red` broken at the fork: the suite runs
-# `green` and keeps `red` out.
+# A change to `green` alone, with `red` broken at the fork: #6709 changed the
+# corpus and the checker, and two tests of the dispatcher, which it did not
+# touch, went red. The suite runs `red` and refuses the change.
 got=$(
-  setup "$scratch/narrow"
+  setup "$scratch/untouched"
   package . red 3
   git commit --quiet -am 'red breaks at the fork'
   git update-ref "refs/remotes/origin/$trunk" HEAD
   printf '\n#[test]\nfn subtracts() {\n    assert_eq!(2 - 1, 1);\n}\n' >> green/src/lib.rs
   if out=$(suite); then echo "passed"; else echo "refused"; fi
-  [[ $out == *"red adds"* ]] && echo "ran red"
+  [[ $out == *"red adds"* ]] && echo "names red adds"
   [[ $out == *"green subtracts"* ]] && echo "ran green subtracts"
 )
-[[ $got == $'passed\nran green subtracts' ]] || fail "#6595: a change to one package runs that package's suite and no other" "$got"
-
-# The head watcher's suite over the same head: #6709 changed the corpus and
-# the checker, and two tests of the dispatcher, which it did not touch, went
-# red. The whole suite runs `red` and refuses the head.
-got=$(
-  setup "$scratch/whole"
-  package . red 3
-  git commit --quiet -am 'red breaks at the fork'
-  git update-ref "refs/remotes/origin/$trunk" HEAD
-  printf '\n#[test]\nfn subtracts() {\n    assert_eq!(2 - 1, 1);\n}\n' >> green/src/lib.rs
-  if out=$(GATE_TEST_WHOLE=1 suite); then echo "passed"; else echo "refused"; fi
-  [[ $out == *"red adds"* ]] && echo "names red adds"
-)
-[[ $got == $'refused\nnames red adds' ]] || fail "#6725: the head watcher's suite refuses a head with a red test in a package that the change does not touch" "$got"
+[[ $got == $'refused\nnames red adds\nran green subtracts' ]] || fail "#6738: a lane's gate of a change to the green package alone is refused and names the red test of the untouched package" "$got"
 
 (( failed == 0 )) || exit 1
-echo "gate tests OK: a broken test of a touched package is refused, the suite keeps an untouched package out, and the watcher's whole suite refuses a red untouched package"
+echo "gate tests OK: a broken test of a touched package is refused, and a red test of an untouched package refuses a change to another"
