@@ -138,14 +138,16 @@ hotpath = [
   "hotpath/hotpath-cloud",
 ]
 # The hub's build: each recheck of `gandr lsp` and `gandr serve` runs at the
-# instrument layer its client chose, and `gandr check --activity` prints each
-# core's occupancy from the activity ring. Off, as in `gandr check` and every
-# artifact a recipe builds, no recording sink and no ring is compiled.
+# instrument layer its client chose, `gandr serve` offers `subscribe_activity`,
+# and `gandr check --activity` prints each core's occupancy from the activity
+# ring. Off, as in `gandr check` and every artifact a recipe builds, no
+# recording sink and no ring is compiled.
 instrument = [
   "dep:gandr-core-fork",
   "gandr-core-fork/instrument",
   "gandr-surface-dispatcher/instrument",
   "gandr-surface-lsp/instrument",
+  "gandr-surface-mcp/instrument",
 ]
 # On macOS, serve every allocation from one private malloc zone rather than
 # the default zone; off, and on every other target, the system allocator.

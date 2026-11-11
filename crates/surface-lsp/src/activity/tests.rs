@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::num::NonZeroU16;
+use core::num::NonZeroUsize;
 use core::time::Duration;
 use std::sync::mpsc::channel;
 
@@ -52,7 +53,7 @@ fn a_watcher_hears_each_task_and_the_fold_ends_without_one()
     );
     assert_eq!(
         tick.rows.len(),
-        usize::from(NonZeroU16::from(rings.cores()).get()),
+        NonZeroUsize::from(NonZeroU16::from(rings.cores())).get(),
         "the tick holds the row of each ring"
     );
     activities.unwatch(peer);
@@ -60,9 +61,9 @@ fn a_watcher_hears_each_task_and_the_fold_ends_without_one()
         activities.rings().is_none(),
         "once the last watcher leaves, no job writes a mark"
     );
-    let ended = (0 .. 100).any(|_| {
+    let ended = (0_u8 .. 100_u8).any(|_| {
         std::thread::sleep(Duration::from_millis(10));
-        !lock(&activities.0).folding
+        !lock(&activities.0.state).folds
     });
     assert!(ended, "the fold's thread ends once no watcher is left");
 }

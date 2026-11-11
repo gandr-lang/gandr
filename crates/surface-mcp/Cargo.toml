@@ -21,21 +21,38 @@ publish.workspace = true
 # through the renderer seam's serde image, and the lines `gandr view` prints
 # for a report through the terminal face.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. With the `instrument` feature, the toolset
+# reads the events of the fork crate's activity ring.
 [dependencies]
 anodized.workspace = true
+gandr-core-fork = { workspace = true, optional = true }
 gandr-surface-dispatcher.workspace = true
 gandr-surface-lsp.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-tui.workspace = true
 httparse.workspace = true
+quenchant-shape = { workspace = true, optional = true }
 serde.workspace = true
 serde_json = { workspace = true, features = ["std"] }
 
 # The hub tests read frames through the language server's framing, whose
-# absence is a named shape.
+# absence is a named shape. The tests of `subscribe_activity` read the
+# activity ring, so the crate's own targets turn its `instrument` feature on.
 [dev-dependencies]
+gandr-surface-mcp = { workspace = true, features = ["instrument"] }
 quenchant-shape.workspace = true
+
+[features]
+default = []
+# The hub's build: the toolset offers `subscribe_activity`, and the hub folds
+# the activity ring while a subscription follows it. Off, the manifest does
+# not offer it, and no ring and no fold is compiled.
+instrument = [
+  "dep:gandr-core-fork",
+  "dep:quenchant-shape",
+  "gandr-core-fork/instrument",
+  "gandr-surface-lsp/instrument",
+]
 
 [lints]
 workspace = true
