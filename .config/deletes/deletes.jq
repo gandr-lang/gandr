@@ -27,7 +27,8 @@
 #   signoffs    each comment of the issues the body works that says `signed`:
 #               {author, body, sha, changed}; `changed` holds the files that
 #               change from `sha` to the head, or null when `sha` is no commit
-#   architects  the logins whose comments sign
+#   architects  for each login whose comments sign, the heading text that its
+#               comment must hold, or "" when it needs none
 #
 # Output: one line for each refusal, in the order of the rules.
 
@@ -93,7 +94,7 @@ include "account";
               # The architect's sign-off at a head that the change keeps.
               (($in.files[$item] // []) as $files
                | select([$in.signoffs[]? as $c | signs($c; $item; $files; $in.architects)] | any | not)
-               | if [$in.signoffs[]? | select((.author | IN($in.architects[])) and (.body | test("\\(architect")) and (.body | contains($item)) and (.body | test("\\bsigned\\b")))] | length > 0 then
+               | if [$in.signoffs[]? | select(signer(.; $in.architects) and (.body | contains($item)) and (.body | test("\\bsigned\\b")))] | length > 0 then
                    "the architect's sign-off of `\($item)` names no commit that the head keeps for its files; the architect signs again on the new head"
                  else
                    "the `deleted` row of `\($item)` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"

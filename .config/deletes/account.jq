@@ -40,12 +40,16 @@ def covers($item; $thing):
 # The last segment of a path, without a trait implementation's brackets.
 def segment: sub("^.*::"; "") | gsub("[<>]"; "");
 
+# Whether the comment `$c` comes from a login of `architects.txt`, with the
+# heading that the login's line asks of it.
+def signer($c; $architects):
+  $architects[$c.author] as $heading | $heading != null and ($c.body | contains($heading));
+
 # Whether the comment `$c` signs the row item `$item` for the files `$files`:
 # an architect's comment that names the item and a commit, says `signed`,
 # and sees no later change of those files.
 def signs($c; $item; $files; $architects):
-  ($c.author | IN($architects[]))
-  and ($c.body | test("\\(architect"))
+  signer($c; $architects)
   and ($c.body | test("\\bsigned\\b"))
   and ($c.body | contains($item))
   and $c.sha != null and $c.changed != null
