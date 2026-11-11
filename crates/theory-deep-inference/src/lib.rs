@@ -19,15 +19,19 @@
 //! template where that pays ([`anti_unify_tracelets`], [`GuardedTemplate`]),
 //! and the template with one row for each member is a reduction of the
 //! family whose replay checks each member against its instance
-//! ([`TemplateReduction`]). A family of families folds its templates into one
-//! template of templates where that pays ([`TemplateFold`]).
+//! ([`TemplateReduction`]). The reduction reads a template through the four
+//! operations of [`GuardedForm`] alone, so a template that another crate holds
+//! reduces alike; each cell alphabet is one guarded form. The crate re-exports
+//! [`Closure`], which the form's member check answers, for each implementor.
+//! A family of families folds its templates into one template of templates
+//! where that pays ([`TemplateFold`]).
 //!
 //! Replay in `gandr-theory-coherent-resolutions` is the semantic oracle: every
 //! relation here is sound below it, and a negative answer means "not
-//! identified", never "distinct". Everything is generic over the substrate's
-//! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet). The crate is
-//! `no_std` and depends on `alloc`, the substrate, the engine, the reduction
-//! trait of `gandr-theory-discrete-morse` and `quenchant-shape`.
+//! identified", never "distinct". Everything else is generic over the
+//! substrate's [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet).
+//! The crate is `no_std` and depends on `alloc`, the substrate, the engine,
+//! the reduction trait of `gandr-theory-discrete-morse` and `quenchant-shape`.
 //!
 //! Every walk keeps its stack on the heap. A dependence chain far longer than
 //! a small thread's stack is ordered, normalized, projected to a flow and a
@@ -184,11 +188,14 @@ mod causal;
 mod causal_web;
 mod flow;
 mod footprint;
+mod form;
 mod modular;
 mod normal_form;
 mod reduction;
 mod shift;
 mod template;
+
+pub use gandr_theory_discrete_morse::Closure;
 
 pub use crate::boundary::AdmissionCount;
 pub use crate::boundary::CacheHitCount;
@@ -262,6 +269,8 @@ pub use crate::footprint::FootprintObstruction;
 pub use crate::footprint::MatchFootprint;
 pub use crate::footprint::footprint_independence;
 pub use crate::footprint::match_footprint;
+pub use crate::form::GuardedForm;
+pub use crate::form::RowOf;
 pub use crate::modular::DecompositionRefusal;
 pub use crate::modular::ModularNode;
 pub use crate::modular::ModularTree;
