@@ -78,5 +78,4 @@ def elsewhereComputed : Path(kept Elsewhere, kept Elsewhere) = Path.here Mark;
 /// `Path.ap` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.
 @[refuses("OutOfFragment.NotAFunction")]
-def cong_at_point : Path(Base, Base);
-def cong_at_point = Path.ap Base loop;
+def cong_at_point : Path(Base, Base) = Path.ap Base loop;

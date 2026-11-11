@@ -3,6 +3,6 @@ data Maybe(a : Type) : Type where
   | Some : (x : a) --> Maybe a
 
 @[refuses("NonExhaustiveMatch")]
-def unwrap() -> -F Integer =
+def unwrap() -> Integer =
   match (None : Maybe Integer) where
     | Some(x) => return x

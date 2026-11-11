@@ -43,4 +43,4 @@
 
 /// A command sent to the background, in a definition.
 @[refuses("OutOfFragment.shell_block")]
-def backgrounded() -> -F Unit { #!{ warm; run & } }
+def backgrounded() -> Unit { #!{ warm; run & } }

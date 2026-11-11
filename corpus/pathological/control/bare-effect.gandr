@@ -6,11 +6,11 @@
 
 /// A row naming the console bare.
 @[refuses("UnresolvedTypeHead")]
-def bareRow() -> -F [Console] Unit { pure *{} }
+def bareRow() -> [Console] Unit { pure *{} }
 
 /// A scope handling the early exit bare.
 @[refuses("UnresolvedTypeHead")]
-def bareScope() -> -F Unit =
+def bareScope() -> Unit =
   handle c : Proc {
     pure *{}
   } with {

@@ -17,8 +17,5 @@ def commented = thunk {
   become twice 2
 } ;
 
-def graded : +U[1] (-F Integer) ;
-def graded = thunk[1] { become twice 3 } ;
-
 def value : Integer ;
 def value = 3 ;

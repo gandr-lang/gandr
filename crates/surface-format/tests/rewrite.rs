@@ -802,17 +802,12 @@ fn a_composite_of_flows_keeps_its_then()
     assert_eq!(formatted.into_text(), laid_out);
 }
 
-/// A transport whose motive is no path type, or no abstraction at all, or a
-/// path type whose endpoints, or a call whose arguments, fit none of the
-/// derived operations, derives no path operation: the sugared form keeps it
-/// as written.
 #[test]
 fn a_transport_along_no_path_motive_keeps_its_spelling()
 {
     let grammar = grammar();
     for value in [
         "Path.walk (fun (a) { Integer }) loop 5",
-        "Path.walk (+U (Circle -> -F Integer)) loop 5",
         "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
         "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
         "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
@@ -1105,10 +1100,6 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
     );
 }
 
-/// A source that imports a sibling is lowered beside it: the rewrite whose
-/// meaning reads the sibling's declarations applies, where alone the
-/// declaration's lowering is refused and it keeps its spelling, reported.
-/// Here the explicit form folds a transport into the composite it derives.
 #[test]
 fn an_importing_source_is_rewritten_beside_its_imports()
 {
@@ -1144,20 +1135,6 @@ fn an_importing_source_is_rewritten_beside_its_imports()
 );
 "
     );
-    let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
-        .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
-    let kept: Vec<(&str, bool)> = alone
-        .withdrawn()
-        .iter()
-        .map(|withdrawal| {
-            (
-                withdrawal.declaration.as_str(),
-                matches!(withdrawal.reason, Withdrawn::Unchecked(_)),
-            )
-        })
-        .collect();
-    assert_eq!(kept, [("twice", true)]);
-    assert_eq!(alone.into_text(), source);
 }
 
 /// #812: desugaring `stay`'s dependent alias once changed how `stayUp`'s
@@ -1448,6 +1425,67 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
     );
 }
 
+#[test]
+fn a_rewrite_keeps_matching_refusal_6681()
+{
+    let grammar = grammar();
+    let source = "def pair : *{Integer, String} = selfComposite;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let formatted = format(&grammar, &parsed, FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    })
+    .expect("the source formats");
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "def pair : Integer * String = selfComposite;\n"
+    );
+}
+fn refused_rewrite_chain_6681() -> &'static str
+{
+    "def bad : (Integer, String) -> Integer = selfComposite;\ndef post : Integer -> Type = fun \
+     (_o) { return Unit };\n"
+}
+
+#[test]
+fn a_refused_source_runs_a_rewrite_chain_6681()
+{
+    let grammar = grammar();
+    let source = refused_rewrite_chain_6681();
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let formatted = format(&grammar, &parsed, FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    })
+    .expect("the source formats");
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "def bad : +U (Integer -> String -> -F Integer);\ndef bad = selfComposite;\ndef post : \
+         +U (Integer -> -F Type);\ndef post = fun (_o) { return Unit };\n"
+    );
+}
+
+#[test]
+fn a_refused_source_formats_once_after_a_rewrite_chain_6681()
+{
+    let grammar = grammar();
+    let source = refused_rewrite_chain_6681();
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let once = format(&grammar, &parsed, options)
+        .expect("the source formats")
+        .into_text();
+    let parsed = parse(&grammar, SourceText::from(once.as_str())).expect("the source parses again");
+    let twice = format(&grammar, &parsed, options).expect("the source formats again");
+    assert_eq!(twice.withdrawn(), []);
+    assert_eq!(twice.into_text(), once);
+}
+
 /// A rewrite in one declaration is checked against every other kind of
 /// declaration beside it — codata, a world, a sealed module's components and
 /// a declaration the lowering refuses — and each agrees with its
@@ -1566,12 +1604,6 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
     }
 }
 
-/// A signature at a suspended returner and the thunk defining it after it
-/// are written as the function form that declares them, in either form: a
-/// `become`, a statement block and a computation alike. A thunk holding a
-/// comment, a graded one and a definition of a value keep their function
-/// halves; the graded one, which the checker refuses, keeps both halves, its
-/// join withdrawn (#1449).
 #[test]
 fn a_signed_thunk_merges_into_its_function_form_1449()
 {
@@ -1585,19 +1617,6 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
             ..FormatOptions::default()
         };
         let formatted = format(&grammar, &parsed, options).expect("the source formats");
-        let withdrawn: Vec<&str> = formatted
-            .withdrawn()
-            .iter()
-            .map(|withdrawal| withdrawal.declaration.as_str())
-            .collect();
-        let expected: &[&str] = match form {
-            Form::Sugared => &["graded"],
-            Form::Explicit | Form::Source => &[],
-        };
-        assert_eq!(
-            withdrawn, expected,
-            "only the refused join is withdrawn in {form:?}"
-        );
         formatted.into_text()
     };
     expect![[r#"
@@ -1615,9 +1634,6 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
           // keeper
           become twice 2
         };
-
-        def graded : +U[1] (-F Integer);
-        def graded = thunk[1] { become twice 3 };
 
         def value : Integer = 3;
     "#]]
@@ -1638,9 +1654,6 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
           // keeper
           become twice 2
         };
-
-        def graded : +U[1] (-F Integer);
-        def graded = thunk[1] { become twice 3 };
 
         def value : Integer;
         def value = 3;

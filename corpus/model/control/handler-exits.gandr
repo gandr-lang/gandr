@@ -185,5 +185,5 @@ def resumed_aliased() -> Integer =
 
 /// A continuation runs from a computation, never from a value type.
 @[refuses("OutOfFragment.WrongSort")]
-def from_a_value(k : Stack(Integer, -F Integer)) -> -F Integer =
+def from_a_value(k : Stack Integer (-F Integer)) -> Integer =
   return 9

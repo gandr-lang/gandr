@@ -20,6 +20,6 @@ def aborted() -> Unit =
 /// An unwind on a shared access: only an exclusive access is aborted, so only
 /// it runs an unwind.
 @[refuses("MalformedForm")]
-def unwound() -> -F Unit =
+def unwound() -> Unit =
   var c = 0
   access shared c as w { pure *{} } unwind { pure *{} }

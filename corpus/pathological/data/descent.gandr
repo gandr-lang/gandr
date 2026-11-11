@@ -23,7 +23,7 @@ def rec again(n : Nat) -> Nat =
 /// One claim under a match on `n`, another under the match on `m`: the
 /// definition would descend on both, a measure the sized rung states.
 @[refuses("DescentOnSeveralParameters")]
-def rec both(m : Nat, n : Nat) -> -F Nat =
+def rec both(m : Nat, n : Nat) -> Nat =
   match m where
     | Zero => match n where
       | Zero => Zero

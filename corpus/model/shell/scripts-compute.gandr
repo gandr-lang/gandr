@@ -8,6 +8,6 @@
 
 /// `searched` prints a host banner and searches its output for `gandr`.
 @[refuses("OutOfFragment.shell_block")]
-def searched() -> -F Bool =
+def searched() -> Bool =
   let banner = #!{ printf 'hello from gandr\n'; };
   string.contains banner.stdout "gandr"

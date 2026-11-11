@@ -1,8 +1,8 @@
 error[UnresolvedTypeHead]: no type named `Console` is written bare
-  ╭▸ corpus/pathological/control/bare-effect.gandr:9:22
+  ╭▸ corpus/pathological/control/bare-effect.gandr:9:19
   │
-9 │ def bareRow() -> -F [Console] Unit { pure *{} }
-  │                      ━━━━━━━ no type head of this name and arity
+9 │ def bareRow() -> [Console] Unit { pure *{} }
+  │                   ━━━━━━━ no type head of this name and arity
   │
   ├ note: `bareRow` is refused with UnresolvedTypeHead, as its expectation states
   ╰ help: declare a type named `Console`, or import the module that exports it

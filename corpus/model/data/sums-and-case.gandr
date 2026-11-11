@@ -8,7 +8,7 @@
 /// `pick` uses a left injection and the left arm.
 /// `Inl` and `Inr` are not names that this surface defines.
 @[refuses("UnresolvedName")]
-def pick() -> -F Integer =
+def pick() -> Integer =
   match (Inl 42 : Integer + String) where
     | Inl(x) => return (x + 1)
     | Inr(s) => return 0

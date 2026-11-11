@@ -1,3 +1,0 @@
-@[ form(explicit) ]
-def  shown : +U (-F Integer) ;
-def shown = thunk {   let n = force one ;  become read n } ;

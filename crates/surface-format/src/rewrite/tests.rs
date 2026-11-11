@@ -145,4 +145,26 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
             }])))
         )
     );
+    let mut unresolved = sugared.clone();
+    let Some(leaf) = unresolved
+        .iter_mut()
+        .find(|leaf| leaf.material == Material::Token && <&str>::from(leaf.text) == "String")
+    else {
+        panic!("the rewritten product names String");
+    };
+    leaf.text = SourceFragment::from("Path");
+    let (text, verdict) = check(&unresolved);
+    let Ok(Agreement::Declarations(differing)) = verdict
+    else {
+        panic!("the candidate is withdrawn");
+    };
+    let [differing] = differing.as_slice()
+    else {
+        panic!("one declaration is withdrawn");
+    };
+    assert_eq!(text, "def pair : Integer * Path;\n");
+    assert_eq!(differing.keys, Vec::from([key]));
+    assert_eq!(differing.withdrawal.declaration, "pair");
+    assert_eq!(differing.withdrawal.span, span);
+    assert!(matches!(differing.withdrawal.reason, Withdrawn::Refused(_)));
 }

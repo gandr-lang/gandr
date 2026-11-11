@@ -15,4 +15,4 @@
 
 /// Braced parameters joined to a word and to each other, in a definition.
 @[refuses("OutOfFragment.shell_block")]
-def joined() -> -F Unit { #!{ echo ${prefix}_suffix ${x}${y}; } }
+def joined() -> Unit { #!{ echo ${prefix}_suffix ${x}${y}; } }

@@ -8,12 +8,10 @@
 use std::path::Path;
 
 use expect_test::expect_file;
-use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
 use gandr_surface_format::Layout;
 use gandr_surface_format::PageWidth;
-use gandr_surface_format::declared_form;
 use gandr_surface_format::format;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -733,76 +731,6 @@ fn pieces_place_each_top_level_form()
             ("def b = 2 ;", "def b = 2;")
         ],
         "a form's piece runs from its first token to its trailing comment"
-    );
-}
-
-/// A source in the core's explicit spelling, its head declaring it:
-/// every run, force and thunk written out.
-const EXPLICIT: &str = include_str!("format/unformatted/explicit.gandr");
-
-/// #492: the gate's invariant made visible. The formatter keeps every
-/// token, so a source spelled in the explicit form comes back in the
-/// explicit form, laid out, under every option: its declaration wins over
-/// an option asking for the sugared form. A source that opens with a `rec`
-/// group declares it on the group's first declaration, where a block before
-/// `rec` would refuse the module.
-#[test]
-fn an_explicit_source_keeps_its_explicit_spelling()
-{
-    let grammar = grammar();
-    let kept = "@[form(explicit)]\ndef shown : +U (-F Integer);\ndef shown = thunk { let n = \
-                force one; become read n };\n";
-    let imported = "import \"./base.gandr\" ;\n";
-    let imported_kept = "import \"./base.gandr\";\n";
-    let grouped = include_str!(
-        "format/unformatted/an-explicit-source-keeps-its-explicit-spelling-grouped.gandr"
-    );
-    let grouped_kept = "rec {\n  @[form(explicit)]\n  def shown : +U (-F Integer);\n  def \
-                        shown = thunk { let n = force one; become read n };\n}\n";
-    for (written, expected) in [
-        (String::from(EXPLICIT), String::from(kept)),
-        (
-            format!("{imported}{EXPLICIT}"),
-            format!("{imported_kept}{kept}"),
-        ),
-        (
-            format!("{imported}{grouped}"),
-            format!("{imported_kept}{grouped_kept}"),
-        ),
-    ] {
-        let parsed =
-            parse(&grammar, SourceText::from(written.as_str())).expect("the source parses");
-        assert_eq!(
-            declared_form(&grammar, &parsed),
-            Some(Form::Explicit),
-            "the head declares the explicit form"
-        );
-        for form in [Form::Source, Form::Explicit, Form::Sugared] {
-            let options = FormatOptions {
-                form,
-                ..FormatOptions::default()
-            };
-            assert_eq!(
-                format(&grammar, &parsed, options).map(Formatted::into_text),
-                Ok(expected.clone()),
-                "{form}: the explicit spelling is kept, its declaration after any import"
-            );
-        }
-    }
-    let sugared = include_str!(
-        "format/unformatted/an-explicit-source-keeps-its-explicit-spelling-sugared.gandr"
-    );
-    for (written, declared) in [
-        (sugared, Some(Form::Sugared)),
-        ("def shown : () -> Integer ;\n", None),
-    ] {
-        let parsed = parse(&grammar, SourceText::from(written)).expect("the source parses");
-        assert_eq!(declared_form(&grammar, &parsed), declared, "{written}");
-    }
-    assert_eq!(
-        [Form::Source, Form::Explicit, Form::Sugared].map(|form| form.to_string()),
-        ["source", "explicit", "sugared"],
-        "each form is named as the option and the declaration spell it"
     );
 }
 

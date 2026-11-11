@@ -70,7 +70,7 @@ def swapped() -> Unit =
 
 /// Only a scope capability names a region.
 @[refuses("UnresolvedName")]
-def unbound(c : Integer) -> -F Unit =
+def unbound(c : Integer) -> Unit =
   handle e : std.process.Exit.Eff {
     let d : Cap { exit } at c = e;
     return *{}

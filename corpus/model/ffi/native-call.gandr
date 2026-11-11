@@ -18,7 +18,7 @@ extern "c" from "./testlib" as testlib {
 /// `measured` names the adder at twenty-one and the string-length call through
 /// `testlib` before the current lowering reaches their projections.
 @[refuses("OutOfFragment.projection_expression")]
-def measured() -> -F (i64 * i64) =
+def measured() -> i64 * i64 =
   let doubled = testlib.gandr_test_add 21i64 21i64
   let length = testlib.gandr_test_strlen "hello"
   pure *{doubled, length}

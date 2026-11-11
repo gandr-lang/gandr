@@ -22,5 +22,4 @@ module B = MkCounter(Seed);
 def mixed : A.T = B.seed;
 
 @[refuses("ProjectionFromApplication")]
-def projected : Integer;
-def projected = (MkCounter Seed).seed;
+def projected : Integer = (MkCounter Seed).seed;

@@ -1,8 +1,8 @@
 error[UnresolvedTypeHead]: no type named `Clock` is written bare
-  ╭▸ corpus/pathological/effects/hello-unprovided.gandr:8:19
+  ╭▸ corpus/pathological/effects/hello-unprovided.gandr:8:16
   │
-8 │ def main() -> -F [Clock] Unit =
-  │                   ━━━━━ no type head of this name and arity
+8 │ def main() -> [Clock] Unit =
+  │                ━━━━━ no type head of this name and arity
   │
   ├ note: `main` is refused with UnresolvedTypeHead, as its expectation states
   ╰ help: declare a type named `Clock`, or import the module that exports it

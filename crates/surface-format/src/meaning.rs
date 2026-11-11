@@ -144,42 +144,6 @@ pub fn lowered<'source>(
     .ok()
 }
 
-/// The declarations `module` refused at or after `base`, where no rewrite's
-/// meaning can be checked: the keys of the forms holding each — its
-/// signature, definition and duplicate — and its withdrawal, the refusal its
-/// reason.
-///
-/// # Specification
-/// trivial.
-pub fn refused(
-    module: &LoweredModule<'_>,
-    base: ByteOffset,
-) -> Vec<Differing>
-{
-    module
-        .declarations()
-        .iter()
-        .filter(|declaration| declaration.span().start() >= base)
-        .filter_map(|declaration| match declaration.outcome() {
-            DeclarationOutcome::Refused(refusal) => Some(Differing {
-                keys: halves(declaration).collect(),
-                withdrawal: Withdrawal {
-                    declaration: format!("{}", declaration.name()),
-                    span: own(declaration.span(), base),
-                    reason: Withdrawn::Unchecked(format!("{refusal}")),
-                },
-            }),
-            DeclarationOutcome::Completed { .. }
-            | DeclarationOutcome::Uncompleted { .. }
-            | DeclarationOutcome::Bodied { .. }
-            | DeclarationOutcome::Data(_)
-            | DeclarationOutcome::Codata(_)
-            | DeclarationOutcome::Abstract(_)
-            | DeclarationOutcome::World => None,
-        })
-        .collect()
-}
-
 /// The withdrawal of each declaration `module` lowered at or after `base`
 /// whose forms' keys `held` accepts and whose name `reader` maps to the
 /// declaration that reads it: the declarations a reader's meaning depends on

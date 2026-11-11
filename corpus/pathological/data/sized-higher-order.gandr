@@ -47,7 +47,7 @@ def integerAt[i : Size](n : Integer[i]) -> Integer =
 /// A stage in a path's carrier: a path places no stage, so the lowering
 /// refuses it where it is written.
 @[refuses("OutOfFragment.staged_type")]
-def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> -F Nat =
+def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> Nat =
   return a
 
 /// A function applied to a number, its signature naming no type parameter.

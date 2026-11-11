@@ -94,5 +94,5 @@ def mappedInto(
 
 /// A non-path parameter gives no path type to read.
 @[refuses("OutOfFragment.Unannotated")]
-def pointed(c : Circle) -> -F Path[.A = Circle](Base, Base) =
+def pointed(c : Circle) -> Path[.A = Circle](Base, Base) =
   Path.step (Path.back c) loop

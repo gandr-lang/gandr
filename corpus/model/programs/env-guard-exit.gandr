@@ -9,6 +9,6 @@
 
 /// The rejected form reads an unset variable and selects exit code `3`.
 @[refuses("OutOfFragment.projection_expression")]
-def exit_by_environment() -> -F Integer =
+def exit_by_environment() -> Integer =
   let missing = env.get "GANDR_CORPUS_UNSET_VARIABLE_ZZQ"
   if missing == "" { 3 } else { 7 }

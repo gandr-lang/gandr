@@ -454,6 +454,8 @@ pub enum Change
     Material,
     /// A comment's owner or its role among the owner's children.
     Attachment,
+    /// The output pieces cannot map to the source pieces.
+    Pieces,
 }
 
 impl From<BuildError> for FormatError
@@ -511,6 +513,9 @@ impl fmt::Display for FormatError
                     "formatting would move a comment off the node it belongs to"
                 )
             },
+            Self::Changed(Change::Pieces) => {
+                write!(f, "formatting could not map output pieces to the source")
+            },
         }
     }
 }
@@ -526,6 +531,18 @@ pub struct Formatted
     /// Each declaration whose rewrites were withdrawn, in the order the
     /// checks found them.
     withdrawn: Vec<Withdrawal>,
+}
+/// One formatter pass and its rewrite state.
+///
+/// # Specification
+///
+/// trivial.
+struct Pass
+{
+    /// The formatted source from this pass.
+    formatted: Formatted,
+    /// Whether this pass admitted a rewrite.
+    rewritten: bool,
 }
 
 impl Formatted
@@ -807,6 +824,47 @@ pub fn format_beside(
     (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
 ) -> Result<Formatted, FormatError>
 {
+    let first = format_once(grammar, parsed, options, (beside, checker))?;
+    if !first.rewritten {
+        return Ok(first.formatted);
+    }
+    let mut source = first.formatted.text;
+    let mut pieces = first.formatted.pieces;
+    loop {
+        let parsed =
+            parse(grammar, SourceText::from(source.as_str())).map_err(FormatError::Reparse)?;
+        let next = format_once(grammar, &parsed, options, (beside, checker))?;
+        let rewritten = next.rewritten;
+        let Formatted {
+            text,
+            pieces: next_pieces,
+            withdrawn,
+        } = next.formatted;
+        let composed = compose_pieces(&pieces, &next_pieces)?;
+        if !rewritten || text == source {
+            return Ok(Formatted {
+                text,
+                pieces: composed,
+                withdrawn,
+            });
+        }
+        source = text;
+        pieces = composed;
+    }
+}
+
+/// Format one candidate before a later rewrite pass.
+///
+/// # Specification
+///
+/// trivial.
+fn format_once(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    options: FormatOptions,
+    (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
+) -> Result<Pass, FormatError>
+{
     let tree = parsed.tree();
     let source = tree.source();
     let flat = leaf::flatten(grammar, tree, parsed.obligations());
@@ -848,15 +906,8 @@ pub fn format_beside(
             &mut arena,
         )
     });
-    let refused = lowered
-        .as_ref()
-        .map(|module| meaning::refused(module, base))
-        .unwrap_or_default();
-    let mut withdrawn: Vec<NodeKey> = refused
-        .iter()
-        .flat_map(|declaration| declaration.keys.iter().copied())
-        .collect();
-    let mut held: BTreeSet<NodeKey> = withdrawn.iter().copied().collect();
+    let mut withdrawn: Vec<NodeKey> = Vec::new();
+    let mut held: BTreeSet<NodeKey> = BTreeSet::new();
     let composites = match (chosen, lowered.as_ref()) {
         (Some(_), Some(module)) => composite::Composites::of(module, &arena, base),
         (Some(_) | None, _) => composite::Composites::default(),
@@ -940,51 +991,6 @@ pub fn format_beside(
         ByteOffset::from(<&str>::from(source).len()),
     )
     .ok();
-    if let (Some(chosen), false) = (chosen, refused.is_empty()) {
-        let any = composite::Composites::any();
-        let every = tail::Tails::any();
-        // A refused declaration has no lowering to list its linear runs from,
-        // so none is reported for one.
-        let unthunked = thunk::Thunks::default();
-        let unapplied = Reducts::default();
-        let whole: Vec<ByteSpan> = everywhere.into_iter().collect();
-        let unchecked = |called: &[ByteSpan]| {
-            write(
-                grammar,
-                tree,
-                &flat,
-                (
-                    Some(rewrite::Rewrites {
-                        chosen,
-                        withdrawn: &[],
-                        composites: &any,
-                        tails: &every,
-                        thunks: &unthunked,
-                        reducts: &unapplied,
-                        unreduced: &[],
-                        called,
-                    }),
-                    &merge::Apart::default(),
-                ),
-                &layout,
-                ending,
-                options.comment,
-            )
-        };
-        let unchecked = match unchecked(&[]) {
-            Err(FormatError::Unbalanced) => unchecked(&whole),
-            written => written,
-        }?;
-        let respelled: BTreeSet<NodeIndex> = unchecked.respelled.iter().copied().collect();
-        for declaration in refused {
-            if top_forms(tree, &declaration.keys)
-                .iter()
-                .any(|form| respelled.contains(form))
-            {
-                reports.push(declaration.withdrawal);
-            }
-        }
-    }
     let mut stuck = Vec::new();
     let mut fresh: Vec<NodeKey> = Vec::new();
     let mut retried: Vec<ByteSpan> = Vec::new();
@@ -1188,6 +1194,44 @@ pub fn format_beside(
     }
 }
 
+/// Compose pieces through one candidate source.
+///
+/// # Specification
+///
+/// trivial.
+fn compose_pieces(
+    previous: &[Piece],
+    next: &[Piece],
+) -> Result<Vec<Piece>, FormatError>
+{
+    let mut composed: Vec<Piece> = Vec::with_capacity(next.len());
+    for later in next {
+        let mut matching = previous.iter().filter(|earlier| {
+            earlier.formatted.start() < later.source.end()
+                && later.source.start() < earlier.formatted.end()
+        });
+        let Some(first) = matching.next()
+        else {
+            return Err(FormatError::Changed(Change::Pieces));
+        };
+        let source = matching.fold(first.source, |source, earlier| source.join(earlier.source));
+        if let Some(previous) = composed.last_mut()
+            && previous.source == source
+        {
+            previous.formatted = previous.formatted.join(later.formatted);
+            previous.layout = later.layout;
+        }
+        else {
+            composed.push(Piece {
+                source,
+                formatted: later.formatted,
+                layout: later.layout,
+            });
+        }
+    }
+    Ok(composed)
+}
+
 /// Which type applications the formatter writes back in their call form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Recall
@@ -1344,12 +1388,16 @@ impl Written<'_>
     fn formatted(
         self,
         withdrawn: Vec<Withdrawal>,
-    ) -> Formatted
+    ) -> Pass
     {
-        Formatted {
-            text: self.text,
-            pieces: self.pieces,
-            withdrawn,
+        let rewritten = !self.respelled.is_empty();
+        Pass {
+            formatted: Formatted {
+                text: self.text,
+                pieces: self.pieces,
+                withdrawn,
+            },
+            rewritten,
         }
     }
 }
