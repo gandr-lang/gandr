@@ -10,15 +10,13 @@
 /// empty.
 ///
 /// A case over the words at the 3-cell takes its `here` arm at the empty
-/// word. The degree of a map that fixes the point by its cases is the winding
-/// of its image of the 3-cell. The identity's degree is one.
+/// word. The degree of a pointed map is the winding of its image of the
+/// 3-cell, carried along its pointing. The identity's degree is one.
 ///
 /// Not implemented: past an image that holds a cell, that answer owes the
-/// whiskering of the cell, which does not yet compute. The degree of a bound
-/// map waits on `Path.ap` of a bound map at the 3-cell.
+/// whiskering of the cell, which does not yet compute.
 ///
 /// - owes: #6773
-/// - owes: #6811
 // The spheres, their cells at their path types, and the cancellations.
 import "../../model/identity/sphere.gandr";
 // A sort with a loop and a 2-cell, and its maps out of the 2-sphere.
@@ -82,3 +80,7 @@ def hopfWalked : Path[.A = Path[.A = Circle](Base, Base)](
 /// The degree of the identity of the 3-sphere is one, by conversion.
 @[checks]
 def degreeOne : Path[.A = Int](wind3 (Path.ap sphereId3 surf3), S Z) = Path.here (S Z);
+
+/// The degree of the identity, pointed by reflexivity, is one, by conversion.
+@[checks]
+def degreePointed : Path[.A = Int](xi *{sphereId3, Path.here Base3}, S Z) = Path.here (S Z);

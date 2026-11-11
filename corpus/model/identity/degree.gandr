@@ -1,19 +1,16 @@
-/// This source states the degree `ξ` of a map of the 3-sphere as the winding
-/// at its 3-cell.
+/// This source states the degree `ξ` of a pointed map of the 3-sphere.
+///
+/// The degree is the winding of the image of the 3-cell. Each later rung
+/// applies `xi` to its own map. The checker converts each degree to its
+/// integer, and the kernel replays the conversion.
 ///
 /// `wind3` cases on the words at the 3-cell, as `wind` cases on the loop
 /// words of the circle. Its `here` arm reads its words from the type that the
-/// scrutinee's position states.
-/// `ξ f` is `wind3 (Path.ap f surf3)`, the exponent of the map's image of the
-/// 3-cell.
+/// scrutinee's position states. `xi` reads a pointed map as a map `f` and a
+/// path `p` from `f Base3` to `Base3`. The transport along `p` carries
+/// `Path.ap f surf3` to the 3-cells at the point. The kernel checks each
+/// layer of `Path.ap f surf3` against the 3-cell.
 ///
-/// The checker converts each degree to its integer, and the kernel replays
-/// the conversion.
-///
-/// Limits: `ξ` reads a map that fixes the point by its cases. `Path.ap` of a
-/// bound map takes one layer at the 3-cell, so `ξ` takes no bound map.
-///
-/// - see: #6811 — `ξ` over a bound pointed map
 /// - see: corpus/model/identity/sphere-maps.gandr — `sphereId3`, the identity
 ///   of the 3-sphere by cases
 /// - see: corpus/model/identity/circle-base.gandr — `wind`, the winding at
@@ -54,3 +51,25 @@ def xiFlat3 : Path[.A = Int](wind3 (Path.ap flat3 surf3), Z) = Path.here Z;
 /// The degree of the identity is not zero.
 @[refuses("EndpointMismatch")]
 def xiIdZero : Path[.A = Int](wind3 (Path.ap sphereId3 surf3), Z) = Path.here Z;
+
+/// `xi m` is the degree of the pointed map `m`. The transport along the
+/// pointing carries the image of the 3-cell to the 3-cells at the point.
+pub def xi(m : *{f : S3 -> S3, p : Path[.A = S3](f Base3, Base3)}) -> Int =
+  match m where
+    | *{f, p} => wind3 (Path.walk (fun (y) { type(Path[.A = Path[.A = Path[.A = S3](y, y)](
+      Path.here y,
+      Path.here y
+    )](
+      Path.here (Path.here y),
+      Path.here (Path.here y)
+    )) }) p (Path.ap f surf3))
+
+/// The identity, pointed by reflexivity, has degree one.
+def xiPointedId3 : Path[.A = Int](xi *{sphereId3, Path.here Base3}, S Z) = Path.here (S Z);
+
+/// The flat map, pointed by reflexivity, has degree zero.
+def xiPointedFlat3 : Path[.A = Int](xi *{flat3, Path.here Base3}, Z) = Path.here Z;
+
+/// The identity, pointed by reflexivity, does not have degree zero.
+@[refuses("EndpointMismatch")]
+def xiPointedIdZero : Path[.A = Int](xi *{sphereId3, Path.here Base3}, Z) = Path.here Z;
