@@ -921,15 +921,13 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
         &[(Oblig::UnmoldedTok, "type")],
     ),
     // The strays a root holds among its declarations, each refused alone
-    // (#1058).
+    // (#1058). The definition named `mu` keeps its tiles, and the parse owes
+    // the reserved word alone (#6266).
     ("fixture/pathological/modules/stray-root-child.gandr", &[
-        (Oblig::UnmoldedTok, "mu"),
+        (Oblig::ReservedKeyword, "mu"),
         (Oblig::UnmoldedTok, "\u{1}"),
         (Oblig::MissingTile, "|"),
         (Oblig::MissingTile, "=>"),
-        (Oblig::MissingTile, "def"),
-        (Oblig::MissingTile, "="),
-        (Oblig::MissingTile, ";"),
     ]),
     // The retired constructor block, `data D(a) { C, … }`: a family's
     // members open after `where`, each on its bar.
@@ -1181,82 +1179,100 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
     Ok(())
 }
 
-/// #722, #2460: a keyword written where a declaration's name belongs stands in
-/// the name slot as an unmolded token, at a top-level definition, a theory's
-/// operation and a theory's rule alike, whether the keyword's own form is a
-/// type (`mu`) or an expression the slot's sort admits (`drop`, `dup`,
-/// `send`). The parse's first obligation lies over the keyword's own bytes
-/// and the declaration after it owes nothing, where the keyword's form used to
-/// open there and read the rest of the source inside it, owing a missing
-/// closer at the end.
+/// #6266, #722, #2460: a reserved word written where a declaration's form or
+/// a binder spells a name reads as that name. The parse owes one obligation,
+/// `ReservedKeyword`, over the word's own bytes, so the declaration stays
+/// whole and the declaration after it owes nothing. The word reads alike
+/// whether its own form is a type (`mu`), an expression (`drop`, `dup`,
+/// `send`, `match`) or a declaration (`data`, `type`). A name that is no
+/// reserved word owes nothing.
 #[test]
-fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Error>>
+fn a_reserved_word_where_a_name_stands_owes_one_obligation_6266() -> Result<(), Box<dyn Error>>
 {
+    const WORDS: &[&str] = &["mu", "drop", "dup", "send", "match", "data", "type"];
     let pbg = built();
-    for keyword in ["mu", "drop", "dup", "send"] {
-        for written in [
-            format!(
-                include_str!(
-                    "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-1.gandr"
-                ),
-                keyword = keyword
+    for (template, words) in [
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-definition.gandr"
             ),
-            format!(
-                include_str!(
-                    "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-2.gandr"
-                ),
-                keyword = keyword
+            WORDS,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-operation.gandr"
             ),
-            format!(
-                include_str!(
-                    "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-3.gandr"
-                ),
-                keyword = keyword
+            WORDS,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-rule.gandr"
             ),
-        ] {
-            let result = parse(pbg, SourceText::from(written.as_str()))?;
+            WORDS,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-parameter.gandr"
+            ),
+            WORDS,
+        ),
+        // `data` before a parameter marks a data binder, a tile of the
+        // operation's own form.
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-operation-parameter.gandr"
+            ),
+            &["mu", "drop", "dup", "send", "match", "type"][..],
+        ),
+        // The labeler reads `where` after `match` as the match's block.
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-module.gandr"
+            ),
+            &["mu", "drop", "dup", "send", "data", "type"][..],
+        ),
+        // A binder's slot admits a session expression, as `let drop = 1` reads.
+        (
+            include_str!(
+                "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-binder.gandr"
+            ),
+            &["mu", "match", "type"][..],
+        ),
+    ] {
+        for &word in words {
+            let written = template.replace("{keyword}", word);
             let start = written
-                .find(&format!(" {keyword} :"))
-                .ok_or("the keyword is written")?
-                .saturating_add(1);
-            let next = written
-                .find("def ok")
-                .ok_or("the next declaration is written")?;
-            let owed: Vec<_> = result
-                .obligations()
-                .iter()
-                .map(|obligation| {
-                    (
-                        obligation.class,
-                        usize::from(obligation.span.start()),
-                        usize::from(obligation.span.end()),
-                    )
+                .match_indices(word)
+                .map(|(at, _)| at)
+                .find(|&at| {
+                    let alone = |byte: Option<&u8>| {
+                        byte.is_none_or(|&byte| !byte.is_ascii_alphanumeric() && byte != b'_')
+                    };
+                    alone(
+                        at.checked_sub(1)
+                            .and_then(|before| written.as_bytes().get(before)),
+                    ) && alone(written.as_bytes().get(at.saturating_add(word.len())))
                 })
-                .collect();
-            assert_eq!(
-                owed.first().copied(),
-                Some((
-                    Oblig::UnmoldedTok,
-                    start,
-                    start.saturating_add(keyword.len())
-                )),
-                "{written:?} owes its first obligation over the keyword's own bytes; got {owed:?}"
-            );
+                .ok_or("the word is written")?;
+            let result = parse(pbg, SourceText::from(written.as_str()))?;
+            let owed = result.obligations();
             assert!(
-                owed.iter().all(|&(_, from, _)| from < next),
-                "{written:?} owes nothing in the declaration after the keyword's; got {owed:?}"
+                matches!(owed, [only] if only.class == Oblig::ReservedKeyword
+                    && usize::from(only.span.start()) == start
+                    && usize::from(only.span.end()) == start.saturating_add(word.len())),
+                "{written:?} owes one obligation, over the word: {owed:?}"
             );
         }
     }
     let named = parse(
         pbg,
         SourceText::from(include_str!(
-            "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-named.gandr"
+            "acceptance/unformatted/a-reserved-word-where-a-name-stands-6266-named.gandr"
         )),
     )?;
     assert!(
         bool::from(named.is_clean()),
-        "a name that is no keyword owes nothing"
+        "a name that is no reserved word owes nothing"
     );
     Ok(())
 }

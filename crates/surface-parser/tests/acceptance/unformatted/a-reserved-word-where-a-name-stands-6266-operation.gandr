@@ -1,5 +1,5 @@
-theory T where {{
+theory T where {
   sort Tm : Type;
   oper {keyword} : (b : Tm) --> Tm;
-}}
+}
 def ok = 2 ;

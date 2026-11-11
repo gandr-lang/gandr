@@ -1,0 +1,3 @@
+module {keyword} where
+  def x = 1;
+def ok = 2 ;
