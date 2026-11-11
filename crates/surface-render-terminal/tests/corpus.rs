@@ -157,29 +157,6 @@ fn every_refusing_source_renders_as_its_golden()
 }
 
 #[test]
-fn a_two_cell_loop_refusal_keeps_its_landing_notes_6532()
-{
-    let refusals = rendered(&repository());
-    let rendered = refusals
-        .get(Path::new("pathological/identity/circle-elim.gandr"))
-        .expect("the circle-elimination fixture is refused");
-    let refusal = rendered
-        .split("error[LoopNotRespected]")
-        .nth(2)
-        .and_then(|refusal| refusal.split("error[EndpointMismatch]").next())
-        .expect("the circle-elimination fixture prints its 2-cell refusal");
-    assert!(
-        refusal.contains("`rotTwin` is refused with LoopNotRespected"),
-        "the 2-cell refusal names rotTwin: {refusal}"
-    );
-    assert!(
-        !refusal.contains("the answer carried along the loop")
-            && !refusal.contains("the answer at the loop's point"),
-        "the 2-cell refusal keeps its landing notes: {refusal}"
-    );
-}
-
-#[test]
 fn cyclic_circuit_wiring_names_its_port_5805()
 {
     let refusals = rendered(&repository());

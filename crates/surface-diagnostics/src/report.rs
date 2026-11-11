@@ -653,8 +653,8 @@ impl Report<'_>
                 ..
             } => match (spellings.loop_side(left), spellings.loop_side(right)) {
                 (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
-                    alloc::format!("the answer carried along the loop is `{left}`"),
-                    alloc::format!("the answer at the loop's point is `{right}`"),
+                    noted("the answer carried along the loop is", left.as_ref()),
+                    noted("the answer at the loop's point is", right.as_ref()),
                 ]),
                 _ => Vec::new(),
             },
@@ -1204,6 +1204,30 @@ impl Report<'_>
             primary,
             context: [first, second],
         }
+    }
+}
+
+/// A note naming `term` after `sentence`: in backticks on its line when the
+/// term is one line, laid out on the lines below it otherwise.
+///
+/// # Specification
+/// trivial.
+fn noted(
+    sentence: &str,
+    term: &str,
+) -> String
+{
+    if term.contains('\n') {
+        let mut note = String::from(sentence);
+        note.push(':');
+        for line in term.lines() {
+            note.push_str("\n  ");
+            note.push_str(line);
+        }
+        note
+    }
+    else {
+        alloc::format!("{sentence} `{term}`")
     }
 }
 

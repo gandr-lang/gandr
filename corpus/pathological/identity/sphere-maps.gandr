@@ -1,0 +1,21 @@
+// A dependent case over the 2-sphere that its cell refuses. The map at the
+// family's left endpoint sends the cell to reflexivity, so the answer at the
+// point, carried along the cell, is the cell's inverse and not that answer.
+//
+// - see: #6458 — `flattenRefl`
+// - see: #6548 — the two notes of its refusal
+
+// The 2-sphere.
+import "../../model/identity/sphere.gandr";
+
+/// A case with no arm at the cell sends the cell to reflexivity.
+def flatten(x : S2) -> S2 =
+  match x where
+    | Base2 => Base2
+
+/// A map with no arm at the cell moves the answer along the cell to the
+/// cell's inverse. The case owes an arm there.
+@[refuses("LoopNotRespected")]
+def flattenRefl(x : S2) -> Path[.A = S2](flatten x, x) =
+  match x where
+    | Base2 => Path.here Base2

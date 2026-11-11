@@ -34,6 +34,15 @@ error[LoopNotRespected]: this case answers at its loop's point by a case over an
    │                                                  a case its sort's loops do not admit
    │
    ├ note: `rotTwin` is refused with LoopNotRespected, as its expectation states
+   ├ note: the answer carried along the loop is:
+   │         Path.walk (fun (c) { type(*{around : Path[.A = Circle](c, c), centre : Circle}) })
+   │           (loop ∷ Path.here Base)
+   │           (match Base { | Base => match b -> -F *{around : Path[.A = Circle](Base, Base), centre : Circle
+   │                         } { | Base => pure *{.around = loop, .centre = Base} } })
+   ├ note: the answer at the loop's point is:
+   │         Path.walk (fun (c) { type(*{around : Path[.A = Circle](c, c), centre : Circle}) }) (Path.here Base)
+   │           (match Base { | Base => match b -> -F *{around : Path[.A = Circle](Base, Base), centre : Circle
+   │                         } { | Base => pure *{.around = loop, .centre = Base} } })
    ╰ help: make the case respect each loop of its sort
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
