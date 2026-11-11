@@ -45,8 +45,9 @@
 //! change. So a cursor that moves inside one declaration sends no card. A
 //! client that sends no trace frame is sent no card, and its attachment makes
 //! no job trace. A declaration that a job judged before the first trace frame
-//! holds no tree, so its document sends no card until its next job traces it
-//! (#6716).
+//! holds no tree, so the first trace frame makes each connection judge its
+//! documents again at the trace layer (#6716). A view that attaches after the
+//! editor's last job thus hears the card with no edit.
 //!
 //! In the build with the `instrument` feature, the face also watches the
 //! hub's work ledger at the cadence of the rows while the renderer is
@@ -241,14 +242,15 @@ fn send(
 ///   stack card, nothing for a document the hub does not hold; a detach is
 ///   answered with a detach and ends the face. In the build with the
 ///   `instrument` feature, a trace frame subscribes the client to the trace
-///   layer; after it, each of those events and the trace frame itself also send
-///   the derivation card at the document's cursor when its frame changed, and a
-///   resync sends it whole. Frames are written one line each, in the order the
-///   face made them. In the build with the `instrument` feature, each tick of
-///   the hub's work ledger that changes the pane sends the pool's activity,
-///   connection-scoped, and a tick that leaves it as it was sends nothing. The
-///   face returns when the client's stream ends, a line is not a frame, or a
-///   write fails.
+///   layer, and the first one makes every connection judge its documents again
+///   at that layer; after it, each of those events and the trace frame itself
+///   also send the derivation card at the document's cursor when its frame
+///   changed, and a resync sends it whole. Frames are written one line each, in
+///   the order the face made them. In the build with the `instrument` feature,
+///   each tick of the hub's work ledger that changes the pane sends the pool's
+///   activity, connection-scoped, and a tick that leaves it as it was sends
+///   nothing. The face returns when the client's stream ends, a line is not a
+///   frame, or a write fails.
 /// - provides: `gandr serve`'s render-bus face, which `gandr view` attaches to.
 /// - fails: never; a fault ends the connection.
 /// - panics: none.
@@ -267,7 +269,7 @@ fn send(
 ///   time leaves the window. The view hears the stack card at the cursor the
 ///   editor's signature help names, and a card again after an edit changes it.
 ///   A view of the trace layer hears the derivation card of the declaration at
-///   that cursor, and nothing while the cursor moves inside it.
+///   that cursor with no edit, and nothing while the cursor moves inside it.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`

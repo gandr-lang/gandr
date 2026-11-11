@@ -324,6 +324,7 @@ fn line(met: &Met<'_>) -> Value
         Met::Edited(ref paths) => json!({ "edited": lossy(paths) }),
         Met::Proposed => json!({ "proposed": null }),
         Met::Admitted => json!({ "admitted": null }),
+        Met::Traced => json!({ "traced": null }),
         Met::Closed => json!({ "closed": null }),
     }
 }

@@ -428,6 +428,9 @@ pub enum Met<'later>
     /// A kernel admission the loop's connection started ended, and waits to
     /// be settled.
     Admitted,
+    /// The first view of the trace layer subscribed, so each document that
+    /// the loop's connection holds is due a judgement at that layer.
+    Traced,
     /// The client's stream closed at a frame boundary.
     Closed,
 }
@@ -446,6 +449,8 @@ enum Read
     Proposed,
     /// An admission the loop's connection started ended.
     Admitted,
+    /// The first view of the trace layer subscribed.
+    Traced,
     /// The stream closed at a frame boundary.
     Closed,
     /// The stream failed.
@@ -471,7 +476,7 @@ fn queue(
     read: Read,
     queued: &mut VecDeque<Classified>,
     (changed, edited): (&mut BTreeSet<PathBuf>, &mut BTreeSet<PathBuf>),
-    (proposed, admitted, behind): (&mut Proposed, &mut Woken, &mut Behind),
+    (proposed, admitted, traced, behind): (&mut Proposed, &mut Woken, &mut Traced, &mut Behind),
 ) -> Option<End>
 {
     match read {
@@ -496,6 +501,10 @@ fn queue(
             *admitted = Woken(true);
             None
         },
+        Read::Traced => {
+            *traced = Traced(true);
+            None
+        },
         Read::Closed => Some(End::Closed),
         Read::Fault(fault) => Some(End::Fault(fault)),
     }
@@ -510,6 +519,12 @@ struct Proposed(bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Woken(bool);
+
+/// Whether the first view of the trace layer subscribed since the loop last
+/// said so.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Traced(bool);
 
 /// Whether an input holds bytes past the last message the reader took: the
 /// start of a frame the client wrote with it.
@@ -633,6 +648,17 @@ impl Changes
     {
         let _sent = self.0.send(Read::Admitted);
     }
+
+    /// Tell the loop that the first view of the trace layer subscribed;
+    /// nothing once the loop ended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn traced(&self)
+    {
+        let _sent = self.0.send(Read::Traced);
+    }
 }
 
 /// Serve `input` through `visit`: each message read, each deadline passed,
@@ -653,12 +679,13 @@ impl Changes
 ///   [`Met::Edited`] after them, and the fills another connection kept as one
 ///   [`Met::Proposed`] after those, and the admissions its connection started
 ///   that ended, through [`Changes::admitted`], as one [`Met::Admitted`] after
-///   that; while nothing waits, each document whose deadline in the
-///   [`Deadlines`] `visit` arms passes is handed to `visit` as [`Met::Quiet`],
-///   disarmed; a stream closed at a frame boundary, or ended by `exit`, is
-///   [`Met::Closed`] once every message before it was handed over, whether or
-///   not a watch still holds a handle. The first break `visit` returns is
-///   returned.
+///   that, and the subscription of the first view of the trace layer, through
+///   [`Changes::traced`], as one [`Met::Traced`] after that; while nothing
+///   waits, each document whose deadline in the [`Deadlines`] `visit` arms
+///   passes is handed to `visit` as [`Met::Quiet`], disarmed; a stream closed
+///   at a frame boundary, or ended by `exit`, is [`Met::Closed`] once every
+///   message before it was handed over, whether or not a watch still holds a
+///   handle. The first break `visit` returns is returned.
 /// - provides: the loop of [`crate::serve`] and of each hub connection, the
 ///   later messages a request is withdrawn by, and the hub's watch's way in.
 /// - fails: the first [`TransportFault`] of the stream, once every message
@@ -735,6 +762,7 @@ where
         let mut edited: BTreeSet<PathBuf> = BTreeSet::new();
         let mut proposed = Proposed::default();
         let mut admitted = Woken::default();
+        let mut traced = Traced::default();
         let mut behind = Behind::default();
         let mut end: Option<End> = None;
         loop {
@@ -743,6 +771,7 @@ where
                 && edited.is_empty()
                 && proposed == Proposed(false)
                 && admitted == Woken(false)
+                && traced == Traced(false)
                 && end.is_none()
             {
                 loop {
@@ -762,7 +791,7 @@ where
                                 frame,
                                 &mut queued,
                                 (&mut changed, &mut edited),
-                                (&mut proposed, &mut admitted, &mut behind),
+                                (&mut proposed, &mut admitted, &mut traced, &mut behind),
                             );
                             break;
                         },
@@ -790,7 +819,7 @@ where
                     frame,
                     &mut queued,
                     (&mut changed, &mut edited),
-                    (&mut proposed, &mut admitted, &mut behind),
+                    (&mut proposed, &mut admitted, &mut traced, &mut behind),
                 ) {
                     let _first = end.get_or_insert(ended);
                 }
@@ -804,7 +833,7 @@ where
                         frame,
                         &mut queued,
                         (&mut changed, &mut edited),
-                        (&mut proposed, &mut admitted, &mut behind),
+                        (&mut proposed, &mut admitted, &mut traced, &mut behind),
                     )
                 });
             }
@@ -832,6 +861,13 @@ where
             if admitted == Woken(true) {
                 admitted = Woken(false);
                 if let ControlFlow::Break(ended) = visit(Met::Admitted, &mut deadlines)? {
+                    return Ok(ended);
+                }
+                continue;
+            }
+            if traced == Traced(true) {
+                traced = Traced(false);
+                if let ControlFlow::Break(ended) = visit(Met::Traced, &mut deadlines)? {
                     return Ok(ended);
                 }
                 continue;
@@ -895,6 +931,7 @@ pub mod tests
                 | super::Read::Edited(_)
                 | super::Read::Proposed
                 | super::Read::Admitted
+                | super::Read::Traced
                 | super::Read::Closed
                 | super::Read::Fault(_) => None,
             })
@@ -1108,7 +1145,8 @@ pub mod tests
                 | super::Met::Changed(_)
                 | super::Met::Edited(_)
                 | super::Met::Proposed
-                | super::Met::Admitted => core::ops::ControlFlow::Continue(()),
+                | super::Met::Admitted
+                | super::Met::Traced => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break("closed"),
             })
         })
@@ -1156,7 +1194,8 @@ pub mod tests
                 | super::Met::Changed(_)
                 | super::Met::Edited(_)
                 | super::Met::Proposed
-                | super::Met::Admitted => core::ops::ControlFlow::Continue(()),
+                | super::Met::Admitted
+                | super::Met::Traced => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break(()),
             })
         })
@@ -1245,7 +1284,8 @@ pub mod tests
                 | super::Met::Changed(_)
                 | super::Met::Edited(_)
                 | super::Met::Proposed
-                | super::Met::Admitted => core::ops::ControlFlow::Continue(()),
+                | super::Met::Admitted
+                | super::Met::Traced => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break(()),
             })
         })
