@@ -14,6 +14,7 @@ use gandr_storage_values::InMemoryChunkStore;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::ValueManifest;
 use gandr_storage_values::ValueProfile;
+use gandr_storage_values::cam_closure;
 use gandr_storage_values::cam_commit;
 use proptest::prelude::ProptestConfig;
 use proptest::prop_assert_eq;
@@ -37,7 +38,8 @@ proptest! {
     /// The closure of a value committed into an empty store is exactly the
     /// set of digests that store holds; and once a value embedding the first
     /// one's root is committed beside it, that value's closure is the store's
-    /// whole set, its token count the embedded value's plus its own two.
+    /// whole set, its token count the embedded value's plus its own two. The
+    /// walk from each root alone, with no manifest, finds the same closure.
     #[test]
     fn the_closure_is_every_chunk_the_commit_wrote(value in tree(), profile in profile()) {
         let mut store = Ledger::default();
@@ -45,11 +47,19 @@ proptest! {
             .expect("a generated value commits");
         let closure = manifest.closure(&store).expect("the closure is complete");
         prop_assert_eq!(closure.digests(), store.held());
+        prop_assert_eq!(
+            cam_closure(&store, manifest.root(), profile.boundary_classification()),
+            Ok(closure)
+        );
 
         let embedding = cam_commit(&mut store, &profile, &Embedding(Inner::Pointer(manifest.root())))
             .expect("the embedding commits");
         let closure = embedding.closure(&store).expect("the embedding's closure is complete");
         prop_assert_eq!(closure.digests(), store.held());
+        prop_assert_eq!(
+            cam_closure(&store, embedding.root(), profile.boundary_classification()),
+            Ok(closure)
+        );
         prop_assert_eq!(
             u64::from(embedding.token_count()),
             u64::from(manifest.token_count())

@@ -149,6 +149,9 @@ fn spelled(source: &Path) -> Option<Spelling>
     Some(Spelling(spelling.into_boxed_slice()))
 }
 
+/// The prefix of every root naming the export of a package.
+pub const EXPORT_ROOTS: &str = "export/";
+
 impl Export
 {
     /// The root the export of the package at `address` is named by.
@@ -159,7 +162,7 @@ impl Export
     #[must_use]
     pub fn root(address: &PackageAddress) -> RootName
     {
-        RootName::new(format!("export/{address}"))
+        RootName::new(format!("{EXPORT_ROOTS}{address}"))
     }
 
     /// Commit the export into `store` and name it by the root of the package

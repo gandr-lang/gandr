@@ -49,6 +49,7 @@ use gandr_storage_values::VerifiedChunk;
 use gandr_storage_values::verify_chunk_image;
 use quenchant_shape::shape::Maybe;
 
+use crate::store::ImageBytes;
 use crate::store::StoreError;
 
 /// The identity a plane names its objects by: 32 bytes, spelled as 64
@@ -451,6 +452,22 @@ impl ChunkDirectory
     pub(crate) fn write(&mut self) -> Result<(), StoreError>
     {
         self.0.write()
+    }
+
+    /// The bytes of the image held under `digest`, as [`Directory::bytes`]
+    /// reads them, with no second verification.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn size(
+        &self,
+        digest: ChunkDigest,
+    ) -> Maybe<ImageBytes, unheld::Absent>
+    {
+        match self.0.bytes(digest) {
+            Maybe::Present(image) => Maybe::Present(ImageBytes::of(image)),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        }
     }
 }
 

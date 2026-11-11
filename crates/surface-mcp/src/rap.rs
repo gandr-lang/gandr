@@ -2339,6 +2339,7 @@ fn carded(frame: &RenderFrame) -> Option<(&DocId, &ReportView)>
             | FrameBody::Open { .. }
             | FrameBody::Opened { .. }
             | FrameBody::Activity { .. }
+            | FrameBody::Store { .. }
             | FrameBody::Trace { .. }
             | FrameBody::Detach),
         ) => None,

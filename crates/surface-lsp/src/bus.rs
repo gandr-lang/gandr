@@ -52,6 +52,12 @@
 //! the trace layer (#6716). A view that attaches after the editor's last job
 //! thus hears the card with no edit.
 //!
+//! A hub that reads a store (`Workspace::stored`) sends its card after the
+//! greeting: one row for each value of the store under its data directory,
+//! keyed by its content pointer, with the cells that no layer fills yet. The
+//! face reads the store again for each renderer that attaches, with no lock
+//! of the workspace held, and sends no card after that.
+//!
 //! In the build with the `instrument` feature, the face also watches the
 //! hub's work ledger at the cadence of the rows while the renderer is
 //! attached. It folds each tick it hears into the renderer's pane
@@ -76,7 +82,8 @@
 //! goal cards once the checker spells them; a frame set that gains a closing
 //! body announces a forgotten document; a report measured as too large for a
 //! document's every edit sends only what changed; a pane measured as too
-//! large for a tick sends the rows that changed.
+//! large for a tick sends the rows that changed; a store that the engine
+//! writes while a renderer is attached sends its card again after each write.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -235,30 +242,30 @@ fn send(
 ///   `r`.
 /// - ensures: a connection whose first line is not [`RENDER_BUS_PREFACE`] is
 ///   answered with a detach and nothing else. Otherwise the face sends the
-///   greeting naming every document the hub holds, then each one's whole
-///   account, its report and its stack card. Then, for every document a
-///   synchronisation publishes, it sends the patch of its account when the
-///   account changed, its report at the version published, and its stack card
-///   when the card frame changed. For every document whose kernel tiers an
-///   admission settled, it sends the patch alone, when the account changed. For
-///   every document whose cursor a request moved, it sends the stack card when
-///   the card frame changed. A resync from the client is answered with the
-///   named document's whole account, its report at its current version and its
-///   stack card, nothing for a document the hub does not hold; a detach is
-///   answered with a detach and ends the face. In the build with the
-///   `instrument` feature, a trace frame subscribes the client to the trace
-///   layer, and the first one makes every connection judge its documents again
-///   at that layer; after it, each of those events and the trace frame itself
-///   also send the derivation card at the document's cursor when its frame
-///   changed, and a resync sends it whole. An open frame from a subscribed
-///   client is answered with the whole goal of the node it names, absent when
-///   the card at the cursor has another key or the node has no goal; an open
-///   frame from any other client is answered with nothing. Frames are written
-///   one line each, in the order the face made them. In the build with the
-///   `instrument` feature, each tick of the hub's work ledger that changes the
-///   pane sends the pool's activity, connection-scoped, and a tick that leaves
-///   it as it was sends nothing. The face returns when the client's stream
-///   ends, a line is not a frame, or a write fails.
+///   greeting naming every document the hub holds, then the store card when the
+///   workspace reads a store, then each document's whole account, its report
+///   and its stack card. Then, for every document a synchronisation publishes,
+///   it sends the patch of its account when the account changed, its report at
+///   the version published, and its stack card when the card frame changed. For
+///   every document whose kernel tiers an admission settled, it sends the patch
+///   alone, when the account changed. For every document whose cursor a request
+///   moved, it sends the stack card when the card frame changed. A resync from
+///   the client is answered with the named document's whole account, its report
+///   at its current version and its stack card, nothing for a document the hub
+///   does not hold; a detach is answered with a detach and ends the face. In
+///   the build with the `instrument` feature, a trace frame subscribes the
+///   client to the trace layer, and the first one makes every connection judge
+///   its documents again at that layer; after it, each of those events and the
+///   trace frame itself also send the derivation card at the document's cursor
+///   when its frame changed, and a resync sends it whole. An open frame from a
+///   subscribed client is answered with the whole goal of the node it names,
+///   absent when the card at the cursor has another key or the node has no
+///   goal; an open frame from any other client is answered with nothing. Frames
+///   are written one line each, in the order the face made them. In the build
+///   with the `instrument` feature, each tick of the hub's work ledger that
+///   changes the pane sends the pool's activity, connection-scoped, and a tick
+///   that leaves it as it was sends nothing. The face returns when the client's
+///   stream ends, a line is not a frame, or a write fails.
 /// - provides: `gandr serve`'s render-bus face, which `gandr view` attaches to.
 /// - fails: never; a fault ends the connection.
 /// - panics: none.
@@ -278,12 +285,14 @@ fn send(
 ///   editor's signature help names, and a card again after an edit changes it.
 ///   A view of the trace layer hears the derivation card of the declaration at
 ///   that cursor with no edit, each row on one line in its room, the whole goal
-///   of the node it opens, and nothing while the cursor moves inside it.
+///   of the node it opens, and nothing while the cursor moves inside it. A view
+///   of a hub that reads a store hears its card after the greeting.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
 /// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
 /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+/// - witness: `hub::tests::an_attached_view_hears_the_store_6296`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -321,6 +330,11 @@ pub fn serve(
     // frame each document sent it.
     let mut traced: Option<Count> = None;
     let mut derivations: BTreeMap<DocumentUri, RenderFrame> = BTreeMap::new();
+    // The store is read with no lock of the workspace held: a reading opens
+    // the store and walks the closure of each value it did not read yet.
+    let store = lock(workspace)
+        .stored()
+        .map(|(stored, paths)| RenderFrame::store(stored.card(&paths)));
     let opening = {
         let mut held = lock(workspace);
         held.watch(peer, watcher);
@@ -331,6 +345,7 @@ pub fn serve(
         #[cfg(feature = "instrument")]
         drop(held.activity().watch(peer, ticker, Cadence::Rows));
         let mut opening = Vec::from([held.greeting()]);
+        opening.extend(store);
         let uris: Vec<DocumentUri> = held.held().map(|(uri, _version)| uri.clone()).collect();
         for uri in &uris {
             opening.extend(patched(held.accounted(uri), uri, &mut sent, Whole::Asked));
@@ -500,7 +515,8 @@ pub fn serve(
                         | FrameBody::Derivation { .. }
                         | FrameBody::Open { .. }
                         | FrameBody::Opened { .. }
-                        | FrameBody::Activity { .. }),
+                        | FrameBody::Activity { .. }
+                        | FrameBody::Store { .. }),
                     ) => (Vec::new(), false),
                 },
             };

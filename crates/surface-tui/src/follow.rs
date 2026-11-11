@@ -320,6 +320,7 @@ impl Following
                 | FrameBody::Derivation { .. }
                 | FrameBody::Open { .. }
                 | FrameBody::Opened { .. }
+                | FrameBody::Store { .. }
                 | FrameBody::Trace { .. }),
             ) => Heard::Continue,
         }
@@ -360,6 +361,7 @@ impl Following
                 | FrameBody::Open { .. }
                 | FrameBody::Opened { .. }
                 | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
                 | FrameBody::Trace { .. }
                 | FrameBody::Detach),
             ) => false,

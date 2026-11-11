@@ -786,6 +786,48 @@ where
     }
 }
 
+/// The chunks a dereference of `pointer` loads, walked under
+/// `classification`, with no manifest to check a token count against.
+///
+/// # Specification
+/// - requires: nothing; every malformed or missing chunk is refused by name.
+/// - ensures: on success the closure [`walk_closure`] finds from `pointer` as a
+///   whole value: the chunk `pointer` names and, for every child record inside
+///   the subtree at its offset, that child's closure. For the root of a
+///   manifest committed under a profile with `classification`, it is the
+///   closure [`crate::ValueManifest::closure`] answers.
+/// - provides: the closure of a stored value that a reader holds only the
+///   pointer of, as a store's named roots give it.
+/// - fails: as [`walk_closure`]: [`ValueError::UnknownChunk`] naming the first
+///   absent digest in stream order, the store's refusals for a chunk it answers
+///   wrongly, [`ValueError::AliasSeam`], the refusals of a malformed subtree
+///   and [`ValueError::DecodeBudgetExceeded`].
+/// - panics: none.
+///
+/// # Errors
+/// [`ValueError`] — as listed above.
+///
+/// # Adequacy
+/// - hypothesis: L2 on generated values of at most 4096 records and one-value
+///   embeddings observes that the walk from the root equals the manifest's
+///   closure. This separates a walk that drops or adds a chunk from the
+///   manifest's, not a token count, which the walk does not check.
+/// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
+#[inline]
+#[spec(ensures: |ret| ret
+    .as_ref()
+    .ok()
+    .is_none_or(|closure| closure.digests().contains(&pointer.digest())
+        && anodized::types::Spec::predicate(closure)))]
+pub fn cam_closure(
+    store: &dyn ChunkStore,
+    pointer: ContentPtr,
+    classification: BoundaryClassification,
+) -> Result<ValueClosure, ValueError>
+{
+    walk_closure(store, pointer, (classification, WalkStart::Value)).map(Walked::into_closure)
+}
+
 /// Adds two token counts, refusing a total past the width.
 ///
 /// # Specification

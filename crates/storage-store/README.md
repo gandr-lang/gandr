@@ -26,11 +26,13 @@
 - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: the build layer's design (§ build-owner-store) — the storage tier is the build layer's store, and its persistence is a backend beside the planes, not in them.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: the integrity design (§ the two layers) — integrity never stands for validity, the wall this store keeps.
 - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the planes and the roots publish through `core-publish`, whose guard owns each temporary.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage programme's chunk DAG, whose closure of a pointer `Store::closure` reads with no codec.
 
 ## Provided features
 
 - `Store::open` makes the directory and its planes where they are missing and lists what they hold.
 - `Store::commit` commits a `Stored` value under the store's chunking profile and the value's own codec identity, and returns its `ContentPtr`; `Store::deref` reads it back.
+- `Store::closure` reads where a value resides with no codec: its `Residence`, the chunks a dereference of its pointer loads, each verified, and the `ImageBytes` of their images. The store writes nothing for it.
 - `Store::write_tree` admits a record tree to the record plane; `Store::records` is the plane, a `BlockStore`, for opening a stored root and proving against it.
 - `Store::set_root` names a pointer by a `RootName` in amortised constant time, reading under the lock what another store over the same directory named since, so two stores keep each other's roots; `Store::roots` reads them.
 - `StoreError` names the file system's faults by path, and carries each plane's own refusal, a chunk or node changed on disk among them.

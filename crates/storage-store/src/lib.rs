@@ -10,8 +10,9 @@
 //! named by its digest; the record plane of `storage-records` holds its nodes
 //! in `nodes/`, each named by its identity; the two never share a name space.
 //! [`Store::commit`] and [`Store::deref`] move a [`Stored`] value in and out
-//! by [`ContentPtr`], [`Store::write_tree`] and [`Store::records`] a record
-//! tree, and [`Store::set_root`] and [`Store::roots`] name a pointer for a
+//! by [`ContentPtr`], [`Store::closure`] reads the chunks it resides in and
+//! their bytes, [`Store::write_tree`] and [`Store::records`] a record tree,
+//! and [`Store::set_root`] and [`Store::roots`] name a pointer for a
 //! consumer to find again. The planes' own traits verify every load, so a
 //! file changed on disk is refused by the plane's own fault, carried as
 //! [`StoreError`].
@@ -36,6 +37,9 @@
 //!   stands for validity, the wall this crate keeps.
 //! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: the CAM
 //!   the value plane is, which this store keeps on disk.
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage
+//!   programme's chunk DAG, whose closure of a pointer `Store::closure` reads
+//!   with no codec.
 
 extern crate alloc;
 
@@ -50,6 +54,8 @@ pub use crate::plane::NodeDirectory;
 pub use crate::roots::RootName;
 pub use crate::roots::Roots;
 pub use crate::roots::unrooted;
+pub use crate::store::ImageBytes;
+pub use crate::store::Residence;
 pub use crate::store::RootsFault;
 pub use crate::store::Store;
 pub use crate::store::StoreError;

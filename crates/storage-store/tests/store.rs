@@ -1,6 +1,9 @@
 //! The store's contract: each plane and the roots read back from disk after
 //! reopening, and bytes changed on disk are refused.
 
+extern crate alloc;
+
+use alloc::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -236,6 +239,60 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
             digest: other.digest()
         })),
         "a chunk the store never held is unknown"
+    );
+}
+
+/// A value read with no codec resides in exactly the chunks its commit
+/// wrote, and its bytes are the sum of their files' lengths. A chunk changed
+/// on disk is refused by its digest, as a dereference refuses it (#6296).
+#[test]
+fn a_committed_value_resides_in_the_chunks_its_commit_wrote_6296()
+{
+    let root = scratch(Path::new("resides"));
+    let pointer = Store::open(&root)
+        .expect("the store opens")
+        .commit(&labels(Count(120)))
+        .expect("the value commits");
+    let written = files(&root.join("chunks"));
+    let residence = Store::open(&root)
+        .expect("the store opens again")
+        .closure(pointer)
+        .expect("the closure reads");
+    let named: BTreeSet<PathBuf> = residence
+        .closure()
+        .digests()
+        .iter()
+        .map(|digest| root.join("chunks").join(digest.to_string()))
+        .collect();
+    assert_eq!(
+        named,
+        written.iter().cloned().collect::<BTreeSet<PathBuf>>(),
+        "the closure is each chunk the commit wrote"
+    );
+    assert!(written.len() > 1, "a long list resides in several chunks");
+    let lengths = written.iter().fold(0_u64, |sum, file| {
+        sum.saturating_add(
+            std::fs::metadata(file)
+                .expect("a chunk's file is read")
+                .len(),
+        )
+    });
+    assert_eq!(
+        u64::from(residence.bytes()),
+        lengths,
+        "the bytes are the lengths of the chunks' files"
+    );
+    let file = root.join("chunks").join(pointer.digest().to_string());
+    let mut bytes = std::fs::read(&file).expect("the chunk's file reads");
+    let last = bytes.last_mut().expect("a chunk has bytes");
+    *last ^= 0xFF_u8;
+    std::fs::write(&file, &bytes).expect("the chunk's file is changed");
+    assert!(
+        matches!(
+            Store::open(&root).expect("the store opens a third time").closure(pointer),
+            Err(StoreError::Value(ValueError::DigestMismatch { expected, .. })) if expected == pointer.digest()
+        ),
+        "the changed chunk is refused by its digest"
     );
 }
 

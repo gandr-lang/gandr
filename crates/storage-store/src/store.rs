@@ -6,12 +6,14 @@
 //! [`Stored`] value through the value plane under [`Store::PROFILE_KAPPA`]
 //! and [`Store::PROFILE_CAP`], with the value's own codec identity, and
 //! writes the chunks it cut before it returns the root pointer;
-//! [`Store::deref`] reads it back. [`Store::write_tree`] admits a record tree
-//! to the record plane and writes its nodes, and [`Store::records`] is that
-//! plane, for opening a stored root. [`Store::set_root`] names a pointer under
-//! the roots lock: it reads what another store over the same directory named
-//! since, then appends its own naming to the roots journal, so a naming costs
-//! amortised constant time and loses no other store's root.
+//! [`Store::deref`] reads it back, and [`Store::closure`] reads where it
+//! resides: the chunks it reaches and the bytes of their images.
+//! [`Store::write_tree`] admits a record tree to the record plane and writes
+//! its nodes, and [`Store::records`] is that plane, for opening a stored root.
+//! [`Store::set_root`] names a pointer under the roots lock: it reads what
+//! another store over the same directory named since, then appends its own
+//! naming to the roots journal, so a naming costs amortised constant time and
+//! loses no other store's root.
 
 use core::num::NonZeroU64;
 use std::io;
@@ -25,16 +27,21 @@ use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::RecordTreeError;
+use gandr_storage_values::BoundaryClassification;
 use gandr_storage_values::CanonicalValue;
 use gandr_storage_values::ChildIndexBase;
 use gandr_storage_values::CodecIdentity;
 use gandr_storage_values::ContentPtr;
+use gandr_storage_values::ValueClosure;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::ValueProfile;
+use gandr_storage_values::cam_closure;
 use gandr_storage_values::cam_commit;
 use gandr_storage_values::cam_deref;
+use quenchant_shape::shape::Maybe;
 
 use crate::plane::ChunkDirectory;
+use crate::plane::Image;
 use crate::plane::NodeDirectory;
 use crate::roots::Kept;
 use crate::roots::RootName;
@@ -126,6 +133,85 @@ pub trait Stored: CanonicalValue
     /// - hypothesis: L3 — a committed value derefs back after reopening.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     fn codec() -> CodecIdentity;
+}
+
+/// A number of bytes of chunk images: what the chunks of a closure take in
+/// the value plane's directory.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ImageBytes(u64);
+
+impl ImageBytes
+{
+    /// The length of `image`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of(Image(image): Image<'_>) -> Self
+    {
+        Self(u64::try_from(image.len()).unwrap_or(u64::MAX))
+    }
+
+    /// The bytes of `self` and `more` together, held at the width's end.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn plus(
+        self,
+        more: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_add(more.0))
+    }
+}
+
+impl From<ImageBytes> for u64
+{
+    /// The number of bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: ImageBytes) -> Self
+    {
+        bytes.0
+    }
+}
+
+/// Where a stored value resides: the chunks a dereference of its pointer
+/// loads, and the bytes of their images together.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Residence
+{
+    /// The chunks a dereference loads.
+    closure: ValueClosure,
+    /// The bytes of their images.
+    bytes: ImageBytes,
+}
+
+impl Residence
+{
+    /// The chunks a dereference of the value loads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn closure(&self) -> &ValueClosure
+    {
+        &self.closure
+    }
+
+    /// The bytes of the images of those chunks together.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn bytes(&self) -> ImageBytes
+    {
+        self.bytes
+    }
 }
 
 /// Why a store's roots file names no roots tree.
@@ -301,6 +387,11 @@ impl Store
     /// The most records a chunk the store commits holds before a cut.
     pub const PROFILE_CAP: NonZeroU64 = NonZeroU64::MIN.saturating_add(63_u64);
 
+    /// Which constructors are boundaries in every value the store commits:
+    /// each one, so the closure of any value walks under it whatever its
+    /// codec.
+    const CLASSIFICATION: BoundaryClassification = BoundaryClassification::EveryConstructor;
+
     /// The store rooted at `root`, made where it is missing.
     ///
     /// # Specification
@@ -367,6 +458,7 @@ impl Store
             codec,
             ChildIndexBase::Absolute,
         )
+        .classified(Self::CLASSIFICATION)
     }
 
     /// Commit `value` and write the chunks it was cut into.
@@ -434,6 +526,49 @@ impl Store
         Value: Stored,
     {
         cam_deref(&self.chunks, pointer).map_err(StoreError::Value)
+    }
+
+    /// Where the value at `pointer` resides: the chunks a dereference of it
+    /// loads, each verified, and the bytes of their images.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the closure [`cam_closure`] walks from `pointer`
+    ///   under the classification of the store's profile, and the sum of the
+    ///   lengths of those chunks' images. The store writes nothing and names no
+    ///   root.
+    /// - provides: the residence of a value that the store's roots name, read
+    ///   with no codec, so a reader that holds only the pointer reads it.
+    /// - fails: [`StoreError::Value`]: an unknown chunk, a chunk whose bytes do
+    ///   not verify, and the walk's other refusals.
+    /// - panics: none.
+    /// - executable: none — the chunks are the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — after reopening, a value's closure is the chunks its
+    ///   commit wrote and the bytes of their files, and a chunk changed on disk
+    ///   is refused by its digest.
+    /// - witness: `tests::store::a_committed_value_resides_in_the_chunks_its_commit_wrote_6296`
+    #[inline]
+    pub fn closure(
+        &self,
+        pointer: ContentPtr,
+    ) -> Result<Residence, StoreError>
+    {
+        let closure =
+            cam_closure(&self.chunks, pointer, Self::CLASSIFICATION).map_err(StoreError::Value)?;
+        let mut bytes = ImageBytes::default();
+        for &digest in closure.digests() {
+            let Maybe::Present(size) = self.chunks.size(digest)
+            else {
+                return Err(StoreError::Value(ValueError::UnknownChunk { digest }));
+            };
+            bytes = bytes.plus(size);
+        }
+        Ok(Residence { closure, bytes })
     }
 
     /// The record plane, for opening and proving against a stored tree.
