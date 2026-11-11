@@ -1106,11 +1106,14 @@ mod tests
 
     use anodized::spec;
     use gandr_surface_render_remote::AccountCard;
+    use gandr_surface_render_remote::Count;
     use gandr_surface_render_remote::DocId;
     use gandr_surface_render_remote::DocVersion;
     use gandr_surface_render_remote::FrameBody;
     use gandr_surface_render_remote::FrameScope;
     use gandr_surface_render_remote::RenderFrame;
+    use gandr_surface_render_remote::SpineRow;
+    use gandr_surface_render_remote::StackCard;
     use gandr_surface_render_remote::Warrant;
     use gandr_surface_render_remote::apply_account_edits;
     use quenchant_shape::shape::Maybe;
@@ -1651,8 +1654,9 @@ mod tests
         (line, frame)
     }
 
-    /// The next frame on `reading` that is not an account frame, and the line
-    /// it came on: an admission settles its tiers at a time of its own.
+    /// The next frame on `reading` that is neither an account frame nor a
+    /// stack frame, and the line it came on: an admission settles its tiers at
+    /// a time of its own.
     ///
     /// # Specification
     /// trivial.
@@ -1662,7 +1666,9 @@ mod tests
             let (line, frame) = next_frame(reading);
             if !matches!(
                 *frame.body(),
-                FrameBody::Accounts { .. } | FrameBody::AccountPatch { .. }
+                FrameBody::Accounts { .. }
+                    | FrameBody::AccountPatch { .. }
+                    | FrameBody::Stack { .. }
             ) {
                 return (line, frame);
             }
@@ -1684,6 +1690,7 @@ mod tests
             FrameBody::AccountPatch { ref edits } => apply_account_edits(held, edits.clone()),
             FrameBody::Hello { .. }
             | FrameBody::Frame { .. }
+            | FrameBody::Stack { .. }
             | FrameBody::Resync
             | FrameBody::Activity { .. }
             | FrameBody::Detach => {},
@@ -1752,6 +1759,7 @@ mod tests
             | FrameBody::Resync
             | FrameBody::Accounts { .. }
             | FrameBody::AccountPatch { .. }
+            | FrameBody::Stack { .. }
             | FrameBody::Activity { .. }
             | FrameBody::Detach => {
                 panic!("a report was owed, not {frame:?}")
@@ -1962,6 +1970,110 @@ mod tests
             held.first().map(|card| &card.key),
             settled.first().map(|card| &card.key),
             "the new content has a new key"
+        );
+        drop(reading);
+        drop(view);
+        drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    #[test]
+    fn an_attached_view_follows_the_stack_at_the_editors_cursor()
+    {
+        let scratch = Scratch::new(Json("stack"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut editor = Client::new(&socket);
+        let heads = "def g(a : Integer, b : Integer) -> -F Integer { return a + b }\ndef f(a : Integer, b : Integer) -> -F Integer { return a + b }\n";
+        let opened = |main: &str| format!("{heads}def main() -> -F Integer {{ {main} }}\n");
+        let text = opened("f 1 (g 2 3)");
+        editor.send(Json(
+            &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///tmp/stack.gandr", "version": 1_i32,
+                    "text": text}}})
+            .to_string(),
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
+        let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.set_read_timeout(Some(OWED))
+            .expect("the stream takes a deadline");
+        view.write_all(RENDER_BUS_PREFACE.as_bytes())
+            .expect("the hub reads");
+        let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
+        let (_line, _greeting) = next_frame(&mut reading);
+        // The cursor stands before `2`, in the first slot of `g`.
+        let character = "def main() -> -F Integer { f 1 (g ".len();
+        editor.send(Json(
+            &serde_json::json!({"jsonrpc": "2.0", "id": 2_i32,
+                "method": "textDocument/signatureHelp",
+                "params": {"textDocument": {"uri": "file:///tmp/stack.gandr"},
+                    "position": {"line": 2_i32, "character": character}}})
+            .to_string(),
+        ));
+        while editor.receive().get("id") != Some(&serde_json::json!(2_i32)) {}
+        let stacked = |reading: &mut BufReader<UnixStream>| loop {
+            let (_line, frame) = next_frame(reading);
+            if let FrameBody::Stack { ref card } = *frame.body() {
+                return (frame.scope().clone(), card.clone());
+            }
+        };
+        let run = |start: usize, end: usize| {
+            Some(
+                gandr_surface_render_remote::ByteRange::new(
+                    gandr_surface_render_remote::ByteOffset::from(start),
+                    gandr_surface_render_remote::ByteOffset::from(end),
+                )
+                .expect("an ordered run"),
+            )
+        };
+        let typed = "(a : Integer, b : Integer) -> -F Integer";
+        let row = |head: &str, slot: u64, filled, expected: Option<&str>| SpineRow {
+            head: String::from(head),
+            ty: Some(String::from(typed)),
+            filled,
+            slot: Count(slot),
+            arity: Some(Count(2)),
+            expected: expected.map(String::from),
+        };
+        let document = |version: i32| {
+            FrameScope::Document(DocId {
+                uri: gandr_surface_render_remote::DocumentUri::from(String::from(
+                    "file:///tmp/stack.gandr",
+                )),
+                version: DocVersion::from(version),
+            })
+        };
+        let offset =
+            gandr_surface_render_remote::ByteOffset::from(heads.len().saturating_add(character));
+        assert_eq!(
+            stacked(&mut reading),
+            (document(1_i32), StackCard {
+                offset,
+                rows: Vec::from([
+                    row("g", 0, run(1, 12), Some("Integer")),
+                    row("f", 1, run(14, 25), Some("Integer")),
+                ]),
+            }),
+            "the view hears the stack at the cursor the help names, innermost first"
+        );
+        let edited = opened("g 1 (f 2 3)");
+        editor.send(Json(
+            &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                "params": {"textDocument": {"uri": "file:///tmp/stack.gandr", "version": 2_i32},
+                    "contentChanges": [{"text": edited}]}})
+            .to_string(),
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
+        assert_eq!(
+            stacked(&mut reading),
+            (document(2_i32), StackCard {
+                offset,
+                rows: Vec::from([
+                    row("f", 0, run(1, 12), Some("Integer")),
+                    row("g", 1, run(14, 25), Some("Integer")),
+                ]),
+            }),
+            "an edit that changes the stack at the cursor sends the card again"
         );
         drop(reading);
         drop(view);

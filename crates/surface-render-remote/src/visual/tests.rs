@@ -31,6 +31,8 @@ use super::WARRANTS;
 use super::Warrant;
 use super::conform;
 use super::patterned;
+use crate::present::ByteOffset;
+use crate::present::ByteRange;
 
 /// The revision of the example frames.
 const NOW: Revision = Revision(2_i64);
@@ -220,8 +222,9 @@ fn example(note: Datum) -> (Frame, Rendering)
                 .attributes
                 .push(Attribute::Hue(Warrant::Pending.colour()));
         }
-        let spelled = match noted {
-            Datum::Text(text) => text,
+        let (spelled, underlined) = match noted {
+            Datum::Text(text) => (text, None),
+            Datum::Marked { text, run } => (text, Some(Attribute::Underline(run))),
             Datum::Absent
             | Datum::Count(_)
             | Datum::Duration { .. }
@@ -230,7 +233,7 @@ fn example(note: Datum) -> (Frame, Rendering)
             | Datum::Ratio { .. }
             | Datum::Samples(_)
             | Datum::Warrant(_)
-            | Datum::Comparison { .. } => String::new(),
+            | Datum::Comparison { .. } => (String::new(), None),
         };
         let last = numeral!("31", Unit::Count);
         let row = Row {
@@ -259,7 +262,10 @@ fn example(note: Datum) -> (Frame, Rendering)
                     align: super::Align::Right,
                     ..Cell::blank()
                 },
-                Cell::text(place(6), spelled),
+                Cell {
+                    attributes: underlined.into_iter().collect(),
+                    ..Cell::text(place(6), spelled)
+                },
                 Cell::numeral(place(7), numeral!(cost.2, Unit::Count)),
                 Cell::numeral(place(7), numeral!(cost.3, Unit::Count)),
             ]),
@@ -544,6 +550,69 @@ fn a_rendering_that_paints_a_border_breaks_no_decoration()
                 .iter()
                 .any(|breach| <&str>::from(breach.rule) == "no-decoration"),
             "{breaches:?}"
+        );
+    }
+}
+
+#[test]
+fn an_underline_marks_only_the_run_its_datum_marks()
+{
+    let run = |start: usize, end: usize| {
+        ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)).expect("an ordered run")
+    };
+    let marked = Datum::Marked {
+        text: String::from("(n : Nat, m : Nat) -> -F Nat"),
+        run: run(10, 17),
+    };
+    let (frame, rendering) = example(marked.clone());
+    assert_eq!(
+        conform(&Shown {
+            frame: &frame,
+            rendering: &rendering,
+            before: None,
+        }),
+        [],
+        "the run that the datum marks is underlined"
+    );
+    let moved: Breaking = |_, rendering| {
+        let held = cell(rendering, At {
+            pane: 1,
+            row: 1,
+            cell: 7,
+        });
+        held.attributes = Vec::from([Attribute::Underline(
+            ByteRange::new(ByteOffset::from(1_usize), ByteOffset::from(2_usize))
+                .expect("an ordered run"),
+        )]);
+    };
+    let elsewhere: Breaking = |_, rendering| {
+        cell(rendering, At {
+            pane: 1,
+            row: 0,
+            cell: 0,
+        })
+        .attributes
+        .push(Attribute::Underline(
+            ByteRange::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))
+                .expect("an ordered run"),
+        ));
+    };
+    for (broken, why) in [
+        (moved, "a run other than the marked one"),
+        (elsewhere, "a text that marks no run"),
+    ] {
+        let (mut frame, mut rendering) = example(marked.clone());
+        broken(&mut frame, &mut rendering);
+        let breaches = conform(&Shown {
+            frame: &frame,
+            rendering: &rendering,
+            before: None,
+        });
+        assert!(
+            breaches
+                .iter()
+                .any(|breach| <&str>::from(breach.rule) == "no-decoration"),
+            "{why}: {breaches:?}"
         );
     }
 }

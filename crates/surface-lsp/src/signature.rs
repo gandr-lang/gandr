@@ -13,12 +13,20 @@
 //! holds and shared by every text laid after it, so a keystroke reads the
 //! document's own forms alone. The type table's referent index
 //! ([`TypeTable::referent`]) gives the declaration a spine's head refers to.
-//! Signature help answers the declared head of the innermost spine. A
-//! `gandr/stack` request answers each spine from the innermost outward: its
-//! head, the type the judgement gives the head, the declared head and its
-//! arity, the slot, and the type the judgement checked the slot's argument
-//! against, or none where the judgement typed no term in the slot. Neither
-//! reads text or resolves a name.
+//! The faces read the spines a position stands in once, from the innermost
+//! outward. A position past the last argument of a spine, after layout on its
+//! line, opens the spine's next slot while its declared head takes one. A
+//! position after a head that has no argument yet, and layout on its line,
+//! opens that head's first slot in the same way. So a space typed after a head
+//! whose type still takes arguments stands in the slot that it opens.
+//! Signature help answers one signature per spine, the innermost active, each
+//! with the parameter its slot fills. A `gandr/stack` request answers each
+//! spine: its head, the type the judgement gives the head, the declared head
+//! and its arity, the slot, and the type the judgement checked the slot's
+//! argument against, or none where the judgement typed no term in the slot.
+//! The stack card of the render bus holds the same rows, the type of each head
+//! with the run its slot's parameter writes. None of them reads text past the
+//! layout before the position, or resolves a name.
 //!
 //! A head is read off its declaring form:
 //!
@@ -54,10 +62,15 @@ use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::read_doc;
 use gandr_surface_pretty::Style;
+use gandr_surface_render_remote::Count;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_render_remote::SpineRow;
+use gandr_surface_render_remote::StackCard;
 use gandr_surface_session::ClosureKey;
+use gandr_surface_session::Frame;
 use gandr_surface_session::Holding;
+use gandr_surface_session::Slot;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::Node;
@@ -134,10 +147,39 @@ pub struct Signature
     parameters: Vec<Parameter>,
     /// The documentation written for the declaration or constructor.
     documentation: Option<String>,
+    /// Where the type starts in the label: past the name, and past the `:`
+    /// written after it.
+    typed: usize,
 }
 
 impl Signature
 {
+    /// The head that `label` writes, with `parameters` and `documentation`, its
+    /// name at `name` written first: its type starts past the name, the layout
+    /// after it, and a `:` with the layout after that.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        label: Label,
+        parameters: Vec<Parameter>,
+        documentation: Option<String>,
+        name: Option<ByteSpan>,
+    ) -> Self
+    {
+        let named = name.map_or(0, |name| {
+            usize::from(name.end()).saturating_sub(usize::from(name.start()))
+        });
+        let rest = label.text.get(named ..).unwrap_or_default().trim_start();
+        let rest = rest.strip_prefix(':').map_or(rest, str::trim_start);
+        Self {
+            typed: label.text.len().saturating_sub(rest.len()),
+            label: label.text,
+            parameters,
+            documentation,
+        }
+    }
+
     /// The name through its parameters and its result, on one line.
     ///
     /// # Specification
@@ -844,11 +886,10 @@ impl Form
             {
                 let label = labelled(tree, text, window);
                 let parameters = label.parameters(domains);
-                found(tile, Signature {
-                    label: label.text,
-                    parameters,
-                    documentation: None,
-                });
+                found(
+                    tile,
+                    Signature::written(label, parameters, None, Some(tile)),
+                );
             }
         }
     }
@@ -930,11 +971,12 @@ fn head(
     let pieces = from.get(..= length).unwrap_or_default();
     let label = labelled(tree, text, pieces);
     let parameters = parameters(grammar, tree, text, pieces, &label);
-    Signature {
-        label: label.text,
+    Signature::written(
+        label,
         parameters,
         documentation,
-    }
+        from.first().and_then(|piece| piece.span()),
+    )
 }
 
 /// A label being written on one line from the bytes of a text, with where
@@ -1600,52 +1642,219 @@ fn telescope(
     found
 }
 
-/// What a signature-help request at `position` of `text`, whose reading is
-/// `reading` and whose copy keeps `hovering`, answers to a client that takes
-/// a parameter as its place in the label when `offsets` holds.
+/// What asked for signature help: the author or a character that opens or
+/// separates arguments, or a space typed after a head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Opened
+{
+    /// The author, or `(` or `,`: the help answers every spine.
+    Asked,
+    /// A space: the help answers only while the innermost spine's declared head
+    /// takes a parameter at its slot.
+    Spaced,
+}
+
+/// One spine a position stands in, as the faces read it: the frame, and the
+/// declared head its head refers to when the hovering keeps one.
+#[derive(Clone, Copy, Debug)]
+struct Spine<'hovering>
+{
+    /// The head, the slot and the argument written in the slot.
+    frame: Frame,
+    /// The declared head that the head refers to.
+    declared: Option<&'hovering Signature>,
+}
+
+impl Spine<'_>
+{
+    /// The parameter of the declared head that the slot fills; none past the
+    /// last parameter and with no declared head.
+    ///
+    /// # Specification
+    /// trivial.
+    fn filled(&self) -> Option<&Parameter>
+    {
+        self.declared?.parameters.get(usize::from(self.frame.slot))
+    }
+}
+
+/// The spines that `at`, a byte of `text`, stands in, from the innermost
+/// outward, `text` read as `reading` reads it and kept as `hovering` keeps it.
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
-/// - ensures: for the innermost spine whose slots hold the position
-///   ([`Reading::frames`]), when the type table refers its head's first byte to
-///   a declaration or constructor whose head the hovering keeps: that head as
-///   the one signature, active, with its documentation as markdown, each
-///   parameter as its start and end in the label counted in UTF-16 code units
-///   when `offsets` holds or as its text otherwise, with the documentation
-///   written before it as markdown when it has any, and the argument the
-///   position writes as the active parameter, `null` past the last parameter;
-///   Nothing otherwise.
-/// - provides: the answer to `textDocument/signatureHelp`.
+/// - ensures: the spines of [`Reading::frames`] at `at`, each with the declared
+///   head the type table refers its head's first byte to, when the hovering
+///   keeps one. When spaces or tabs come just before `at`, one spine more opens
+///   before them, unless the frames hold its head already. That spine is the
+///   innermost spine whose argument ends where those blanks start, at its next
+///   slot. With no such spine, it is the use that ends there, at its first
+///   slot. It opens only while its declared head takes a parameter at that
+///   slot.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a function's juxtaposed call at each argument, a
-///   constructor applied to no field yet, a nested call, a position past the
-///   last parameter, a call of a sibling's declaration and a position in no
-///   call are each asserted at their exact answer.
-/// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
-/// - witness: `tests::session::signature_help_reads_a_sibling_s_head`
-/// - witness: `server::tests::signature_help_sends_a_parameter_s_documentation_1116`
-#[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_)))]
-#[must_use]
-pub fn help(
+/// - hypothesis: L3 — a space after a head, after an argument a head still
+///   owes, after a saturated call, and inside a nested call, each asserted at
+///   its exact signatures; every position of a closed and an open call agrees
+///   with the context stack.
+/// - witness: `server::tests::a_space_opens_the_help_while_the_spine_owes_an_argument_4697`
+/// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+#[spec(ensures: |ret| ret.len() <= reading.frames(at).count().saturating_add(1))]
+fn spines<'hovering>(
     text: SourceText<'_>,
     reading: &Reading,
-    hovering: &Hovering,
-    position: Position,
-    offsets: LabelOffsets,
-) -> Answer
+    hovering: &'hovering Hovering,
+    at: ByteOffset,
+) -> Vec<Spine<'hovering>>
 {
-    let index = LineIndex::new(<&str>::from(text).into());
-    let at = ByteOffset::from(usize::from(position.byte(&index)));
-    let Some(frame) = reading.frames(at).next()
-    else {
-        return Answer::Nothing;
+    let spine = |frame: Frame| Spine {
+        declared: declared(hovering, frame.head),
+        frame,
     };
-    let Some(signature) = declared(hovering, frame.head)
+    let mut found: Vec<Spine<'hovering>> = reading.frames(at).map(spine).collect();
+    let start = usize::from(at);
+    let before = <&str>::from(text)
+        .get(.. start)
+        .map_or(start, |written| written.trim_end_matches([' ', '\t']).len());
+    if before == start {
+        return found;
+    }
+    let blank = ByteOffset::from(before);
+    let ended = reading.frames(blank).find(|frame| {
+        frame
+            .argument
+            .is_some_and(|argument| argument.end() == blank)
+    });
+    let opened = if let Some(frame) = ended {
+        Frame {
+            slot: Slot::from(usize::from(frame.slot).saturating_add(1)),
+            argument: None,
+            ..frame
+        }
+    }
     else {
-        return Answer::Nothing;
+        let Some(last) = before.checked_sub(1)
+        else {
+            return found;
+        };
+        match hovering.table().referent(ByteOffset::from(last)) {
+            Maybe::Present((head, _)) if head.end() == blank => Frame {
+                head,
+                slot: Slot::from(0_usize),
+                argument: None,
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => return found,
+        }
+    };
+    let opened = spine(opened);
+    if opened.filled().is_some()
+        && found
+            .iter()
+            .all(|held| held.frame.head != opened.frame.head)
+    {
+        found.insert(0, opened);
+    }
+    found
+}
+
+/// The type the judgement gives the term at the first byte of `head`, when
+/// that term lies inside `head`, on one line in `style` as the hover spells it
+/// on a page wider than every line ([`TypeTable::at_line`]).
+///
+/// [`TypeTable::at_line`]: gandr_surface_dispatcher::TypeTable::at_line
+///
+/// # Specification
+/// trivial.
+fn head_type(
+    hovering: &Hovering,
+    head: ByteSpan,
+    style: Style,
+) -> Option<String>
+{
+    match hovering.table().at_line(head.start(), style) {
+        Maybe::Present(ref typed) if inside(typed, head).is_some() => {
+            Some(String::from(typed.ty().as_ref()))
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => None,
+    }
+}
+
+/// Some when `typed` lies inside `within`.
+///
+/// # Specification
+/// trivial.
+fn inside(
+    typed: &TypedSpan,
+    within: ByteSpan,
+) -> Option<()>
+{
+    (within.start() <= typed.span().start() && typed.span().end() <= within.end()).then_some(())
+}
+
+/// The type the judgement checked the outermost term of `argument` against
+/// ([`TypeTable::outermost`]), its own type when it was checked against no
+/// other, on one line in `style`; none for no argument or one the table types
+/// no term inside.
+///
+/// [`TypeTable::outermost`]: gandr_surface_dispatcher::TypeTable::outermost
+///
+/// # Specification
+/// trivial.
+fn expected(
+    hovering: &Hovering,
+    argument: Option<ByteSpan>,
+    style: Style,
+) -> Option<String>
+{
+    match hovering.table().outermost(argument?, style) {
+        Maybe::Present(ref typed) => Some(String::from(match typed.expected() {
+            Maybe::Present(checked) => checked.as_ref(),
+            Maybe::Absent(_) => typed.ty().as_ref(),
+        })),
+        Maybe::Absent(_) => None,
+    }
+}
+
+/// The bytes of `head` in `text`.
+///
+/// # Specification
+/// trivial.
+fn written(
+    text: SourceText<'_>,
+    head: ByteSpan,
+) -> Option<SourceText<'_>>
+{
+    <&str>::from(text)
+        .get(usize::from(head.start()) .. usize::from(head.end()))
+        .map(SourceText::from)
+}
+
+/// The signature of `spine` of `text` to a client that takes a parameter as
+/// its place in the label when `offsets` holds: its declared head, or the head
+/// as written with the type `hovering` gives it in `style` when it has none.
+///
+/// # Specification
+/// trivial.
+fn informed(
+    text: SourceText<'_>,
+    hovering: &Hovering,
+    spine: &Spine<'_>,
+    offsets: LabelOffsets,
+    style: Style,
+) -> SignatureInformation
+{
+    let Some(signature) = spine.declared
+    else {
+        let head = written(text, spine.frame.head).map_or("", <&str>::from);
+        return SignatureInformation {
+            label: head_type(hovering, spine.frame.head, style)
+                .map_or_else(|| String::from(head), |ty| format!("{head} : {ty}")),
+            documentation: None,
+            parameters: Vec::new(),
+            active_parameter: None,
+        };
     };
     let units = |bytes: usize| {
         u32::try_from(
@@ -1682,24 +1891,85 @@ pub fn help(
             }
         })
         .collect();
-    let slot = usize::from(frame.slot);
-    let active = (slot < parameters.len())
-        .then(|| u32::try_from(slot).ok())
-        .flatten();
+    SignatureInformation {
+        label: signature.label.clone(),
+        documentation: signature
+            .documentation
+            .as_ref()
+            .map(|documented| MarkupContent {
+                kind: "markdown",
+                value: documented.clone(),
+            }),
+        parameters,
+        active_parameter: spine
+            .filled()
+            .and_then(|_| u32::try_from(usize::from(spine.frame.slot)).ok()),
+    }
+}
+
+/// What a signature-help request at `position` of `text`, whose reading is
+/// `reading` and whose copy keeps `hovering`, answers to a client that takes
+/// a parameter as its place in the label when `offsets` holds, each type
+/// spelled in `style`, asked as `opened` says.
+///
+/// # Specification
+/// - requires: `reading` and `hovering` were read off `text`.
+/// - ensures: one signature for each spine the position stands in ([`spines`]),
+///   from the innermost outward, the first active. A spine whose head the type
+///   table refers to a declaration or constructor whose head the hovering keeps
+///   answers that head, with its documentation as markdown and each parameter
+///   as its start and end in the label counted in UTF-16 code units when
+///   `offsets` holds or as its text otherwise, with the documentation written
+///   before it as markdown when it has any. Its active parameter is the one its
+///   slot fills, `null` past the last parameter. Another spine answers its head
+///   as written, then ` : ` and the type the judgement gives the head when it
+///   gives one, with no parameters. The help's active parameter is the first
+///   signature's. Nothing when the position stands in no spine, and nothing for
+///   [`Opened::Spaced`] unless the innermost spine's declared head takes a
+///   parameter at its slot.
+/// - provides: the answer to `textDocument/signatureHelp`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function's juxtaposed call at each argument, a
+///   constructor applied to no field yet, a nested call, a position past the
+///   last parameter, a call of a sibling's declaration and a position in no
+///   call are each asserted at their exact answer; a space after a head that
+///   owes an argument opens the help, and one after a saturated call does not.
+/// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
+/// - witness: `tests::session::signature_help_reads_a_sibling_s_head`
+/// - witness: `server::tests::signature_help_sends_a_parameter_s_documentation_1116`
+/// - witness: `server::tests::a_space_opens_the_help_while_the_spine_owes_an_argument_4697`
+#[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_)))]
+#[must_use]
+pub fn help(
+    text: SourceText<'_>,
+    reading: &Reading,
+    hovering: &Hovering,
+    position: Position,
+    (offsets, style): (LabelOffsets, Style),
+    opened: Opened,
+) -> Answer
+{
+    let index = LineIndex::new(<&str>::from(text).into());
+    let at = ByteOffset::from(usize::from(position.byte(&index)));
+    let spines = spines(text, reading, hovering, at);
+    let Some(innermost) = spines.first()
+    else {
+        return Answer::Nothing;
+    };
+    if opened == Opened::Spaced && innermost.filled().is_none() {
+        return Answer::Nothing;
+    }
+    let signatures: Vec<SignatureInformation> = spines
+        .iter()
+        .map(|spine| informed(text, hovering, spine, offsets, style))
+        .collect();
     Answer::Signatures(SignatureHelp {
-        signatures: Vec::from([SignatureInformation {
-            label: signature.label.clone(),
-            documentation: signature
-                .documentation
-                .as_ref()
-                .map(|documented| MarkupContent {
-                    kind: "markdown",
-                    value: documented.clone(),
-                }),
-            parameters,
-        }]),
+        active_parameter: signatures.first().and_then(|first| first.active_parameter),
+        signatures,
         active_signature: 0,
-        active_parameter: active,
     })
 }
 
@@ -1727,25 +1997,25 @@ fn declared(
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
-/// - ensures: one row for each frame the reading answers at the position
-///   ([`Reading::frames`]), in its order. A row holds the head as written and
-///   its range, and the type the table gives the term at the head's first byte
-///   when that term lies inside the head, as the hover spells it on a page
-///   wider than every line ([`TypeTable::at_line`]). It holds the declared head
-///   and its count of parameters when the table refers the head's first byte to
-///   a declaration or constructor whose head the hovering keeps. It holds the
-///   slot, and the type the judgement checked the outermost term of the slot's
-///   argument against ([`TypeTable::outermost`]), its own type when it was
-///   checked against no other. That type is none, which reads owed, when the
-///   slot writes no argument or the table types no term inside it.
+/// - ensures: one row for each spine the position stands in ([`spines`]), in
+///   its order. A row holds the head as written and its range, and the type the
+///   table gives the term at the head's first byte when that term lies inside
+///   the head, as the hover spells it on a page wider than every line
+///   ([`TypeTable::at_line`]). It holds the declared head and its count of
+///   parameters when the table refers the head's first byte to a declaration or
+///   constructor whose head the hovering keeps. It holds the slot, and the type
+///   the judgement checked the outermost term of the slot's argument against
+///   ([`TypeTable::outermost`]), its own type when it was checked against no
+///   other. That type is none, which reads owed, when the slot writes no
+///   argument or the table types no term inside it.
 /// - provides: the answer to `gandr/stack`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — at every position of a closed call and of an open one,
-///   each row agrees with the hover at its head, and the first row with the
-///   signature help.
+///   each row agrees with the hover at its head, and the rows with the
+///   signatures of the signature help.
 /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
 ///
 /// [`TypeTable::at_line`]: gandr_surface_dispatcher::TypeTable::at_line
@@ -1762,49 +2032,101 @@ pub fn stack(
 {
     let index = LineIndex::new(<&str>::from(text).into());
     let at = ByteOffset::from(usize::from(position.byte(&index)));
-    let table = hovering.table();
-    let inside = |typed: &TypedSpan, within: ByteSpan| {
-        within.start() <= typed.span().start() && typed.span().end() <= within.end()
-    };
     Answer::Stack(
-        reading
-            .frames(at)
-            .filter_map(|frame| {
-                let range = ranged(&index, frame.head)?;
-                let head = <&str>::from(text)
-                    .get(usize::from(frame.head.start()) .. usize::from(frame.head.end()))?;
-                let ty = match table.at_line(frame.head.start(), style) {
-                    Maybe::Present(ref typed) if inside(typed, frame.head) => {
-                        Some(String::from(typed.ty().as_ref()))
-                    },
-                    Maybe::Present(_) | Maybe::Absent(_) => None,
-                };
-                let signature = declared(hovering, frame.head);
-                let expected =
-                    frame
-                        .argument
-                        .and_then(|argument| match table.outermost(argument, style) {
-                            Maybe::Present(ref typed) => {
-                                Some(String::from(match typed.expected() {
-                                    Maybe::Present(checked) => checked.as_ref(),
-                                    Maybe::Absent(_) => typed.ty().as_ref(),
-                                }))
-                            },
-                            Maybe::Absent(_) => None,
-                        });
+        spines(text, reading, hovering, at)
+            .into_iter()
+            .filter_map(|spine| {
                 Some(StackRow {
-                    head: String::from(head),
-                    range,
-                    ty,
-                    declared: signature.map(|declared| declared.label.clone()),
-                    arity: signature
+                    range: ranged(&index, spine.frame.head)?,
+                    head: String::from(<&str>::from(written(text, spine.frame.head)?)),
+                    ty: head_type(hovering, spine.frame.head, style),
+                    declared: spine.declared.map(|declared| declared.label.clone()),
+                    arity: spine
+                        .declared
                         .and_then(|declared| u32::try_from(declared.parameters.len()).ok()),
-                    slot: u32::try_from(usize::from(frame.slot)).unwrap_or(u32::MAX),
-                    expected,
+                    slot: u32::try_from(usize::from(spine.frame.slot)).unwrap_or(u32::MAX),
+                    expected: expected(hovering, spine.frame.argument, style),
                 })
             })
             .collect(),
     )
+}
+
+/// The stack card at `position` of `text`, whose reading is `reading` and
+/// whose copy keeps `hovering`, each type spelled in `style` on one line.
+///
+/// # Specification
+/// - requires: `reading` and `hovering` were read off `text`.
+/// - ensures: the card at the position's byte offset, one row for each spine
+///   the position stands in ([`spines`]), in its order. A row holds the head as
+///   written, the slot, and the expected type as [`stack`] answers them. A
+///   spine with a declared head holds its arity, and as its type the declared
+///   head past its name and the `:` after it, with the run that the parameter
+///   at its slot writes there. Another spine holds the type the judgement gives
+///   its head, with no run.
+/// - provides: the card the render bus sends for the cursor of a document.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an attached view hears the card of the cursor the
+///   editor's signature help names, its innermost row's run the parameter its
+///   slot fills, and a card again once an edit changes the stack there.
+/// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
+#[spec(ensures: |ret| ret.rows.iter().all(|row| row.filled.is_none() || row.ty.is_some()))]
+#[must_use]
+pub fn card(
+    text: SourceText<'_>,
+    reading: &Reading,
+    hovering: &Hovering,
+    position: Position,
+    style: Style,
+) -> StackCard
+{
+    let index = LineIndex::new(<&str>::from(text).into());
+    let at = ByteOffset::from(usize::from(position.byte(&index)));
+    let count = |value: usize| Count(u64::try_from(value).unwrap_or(u64::MAX));
+    let rows = spines(text, reading, hovering, at)
+        .into_iter()
+        .filter_map(|spine| {
+            let head = String::from(<&str>::from(written(text, spine.frame.head)?));
+            let (ty, filled) = spine.declared.map_or_else(
+                || (head_type(hovering, spine.frame.head, style), None),
+                |signature| {
+                    let filled = spine.filled().and_then(|parameter| {
+                        let shifted = |offset: usize| {
+                            offset
+                                .checked_sub(signature.typed)
+                                .map(gandr_surface_render_remote::ByteOffset::from)
+                        };
+                        gandr_surface_render_remote::ByteRange::new(
+                            shifted(parameter.place.start)?,
+                            shifted(parameter.place.end)?,
+                        )
+                        .ok()
+                    });
+                    (
+                        signature.label.get(signature.typed ..).map(String::from),
+                        filled,
+                    )
+                },
+            );
+            Some(SpineRow {
+                head,
+                ty,
+                filled,
+                slot: count(usize::from(spine.frame.slot)),
+                arity: spine
+                    .declared
+                    .map(|declared| count(declared.parameters.len())),
+                expected: expected(hovering, spine.frame.argument, style),
+            })
+        })
+        .collect();
+    StackCard {
+        offset: gandr_surface_render_remote::ByteOffset::from(usize::from(at)),
+        rows,
+    }
 }
 
 #[cfg(test)]

@@ -2273,6 +2273,32 @@ pub struct InlineParams
     pub context: Option<InlineContext>,
 }
 
+/// The parameters of `textDocument/signatureHelp`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The cursor the request is about.
+    pub position: Position,
+    /// Why the client asked, read as invoked when absent.
+    #[serde(default)]
+    pub context: Option<SignatureContext>,
+}
+
+/// `SignatureHelpContext`, of which the server reads the character typed.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct SignatureContext
+{
+    /// `triggerCharacter`: the character whose typing asked, absent when the
+    /// author asked or the cursor moved.
+    #[serde(default)]
+    pub trigger_character: Option<String>,
+}
+
 /// `InlineCompletionContext`, of which the server reads why the request was
 /// made.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -2485,7 +2511,8 @@ impl InitializeResult
             && ret.capabilities.selection_range_provider.0
             && ret.capabilities.hover_provider.0
             && matches!(ret.capabilities.signature_help_provider.trigger_characters,
-                [open, comma] if matches!(open.as_bytes(), b"(") && matches!(comma.as_bytes(), b","))
+                [open, comma, space] if matches!(open.as_bytes(), b"(")
+                    && matches!(comma.as_bytes(), b",") && matches!(space.as_bytes(), b" "))
             && ret.capabilities.definition_provider.0
             && ret.capabilities.declaration_provider.0
             && ret.capabilities.type_definition_provider.0
@@ -2643,7 +2670,7 @@ pub struct ServerCapabilities
     /// Hovers are answered.
     pub hover_provider: Provider,
     /// Signature help is answered, asked for by the characters that open and
-    /// separate a call's arguments.
+    /// separate a call's arguments and by a space.
     pub signature_help_provider: SignatureHelpOptions,
     /// Definitions are answered: where what a written name refers to is
     /// written.
@@ -3511,8 +3538,9 @@ pub struct OnTypeFormattingOptions
 }
 
 /// The characters that ask for signature help as they are typed: the `(` that
-/// opens a call's arguments and the `,` between them.
-pub const SIGNATURE_TRIGGERS: [&str; 2] = ["(", ","];
+/// opens a call's arguments, the `,` between them, and the space that opens a
+/// juxtaposed argument.
+pub const SIGNATURE_TRIGGERS: [&str; 3] = ["(", ",", " "];
 
 /// The signature-help provider, as advertised.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -3520,37 +3548,44 @@ pub const SIGNATURE_TRIGGERS: [&str; 2] = ["(", ","];
 pub struct SignatureHelpOptions
 {
     /// The characters that ask for help as they are typed.
-    pub trigger_characters: [&'static str; 2],
+    pub trigger_characters: [&'static str; 3],
     /// The characters that ask again while help is shown: the `)` that may
     /// leave the call.
     pub retrigger_characters: [&'static str; 1],
 }
 
-/// The result of a signature-help request: the one head the call's name
-/// refers to, and the argument the position writes.
+/// The result of a signature-help request: one signature for each spine the
+/// position stands in, from the innermost outward, and the parameter the
+/// innermost one's slot fills.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignatureHelp
 {
-    /// The signatures, one.
+    /// The signatures, the innermost first.
     pub signatures: Vec<SignatureInformation>,
     /// The signature shown: the first.
     pub active_signature: u32,
-    /// The parameter the position writes; `null` past the last parameter.
+    /// The parameter the innermost spine's slot fills; `null` past its last
+    /// parameter.
     pub active_parameter: Option<u32>,
 }
 
-/// One signature: its label, its documentation and its parameters.
+/// One signature: its label, its documentation, its parameters, and the one
+/// its spine's slot fills.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SignatureInformation
 {
-    /// The declared head, on one line.
+    /// The declared head, on one line, or the head as written and its type.
     pub label: String,
     /// The documentation written for the declaration, when it has any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub documentation: Option<MarkupContent>,
     /// The parameters, in written order.
     pub parameters: Vec<ParameterInformation>,
+    /// The parameter the spine's slot fills; `null` past the last parameter,
+    /// which shows none active in place of the help's own.
+    #[serde(rename = "activeParameter")]
+    pub active_parameter: Option<u32>,
 }
 
 /// One parameter of a signature.

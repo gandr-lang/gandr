@@ -1,12 +1,15 @@
 //! The side view: a render-bus client that follows the document the hub
-//! checked last and shows its cards and its account, beside an editor that
-//! shows the text, and the activity pane of the hub's pool below them.
+//! checked last and shows its cards, its account and the context stack at its
+//! cursor, beside an editor that shows the text, and the activity pane of the
+//! hub's pool below them.
 //!
 //! The view builds the frame of the document it follows
 //! ([`Following::frame`]): one record that names the document, its version
 //! and its counts, then one record per declaration of the account, then one
 //! record per card and per hole. So a card that comes or goes moves no row of
-//! the account. The activity pane follows: one record per core of the pool,
+//! the account. The stack pane follows: one record per spine at the cursor,
+//! the innermost first, its type with the parameter of the cursor's slot
+//! underlined. The activity pane comes last: one record per core of the pool,
 //! then the totals record. [`rendering`] lays the frame out as the
 //! visual language's rendering data, which every rule of
 //! `gandr_surface_render_remote::RULES` checks. A painter then puts the cells
@@ -15,7 +18,7 @@
 //! colour for its warrant. The terminal keeps the activity pane at the foot of
 //! the screen, so a long report never pushes it out of view. A pipe prints the
 //! document alone, because a pipe only appends and a live pane changes in
-//! place.
+//! place: the stack pane moves with the cursor.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -64,6 +67,7 @@ use gandr_surface_render_remote::Row;
 use gandr_surface_render_remote::SampleUnit;
 use gandr_surface_render_remote::SourceText;
 use gandr_surface_render_remote::Sparkline;
+use gandr_surface_render_remote::StackCard;
 use gandr_surface_render_remote::Unit;
 use gandr_surface_render_remote::WARRANTS;
 use gandr_surface_render_remote::Warrant;
@@ -90,9 +94,9 @@ use crate::theme::hue_of_warrant;
 /// record that the side view draws as names beside their data.
 const DOCUMENT: &str = "uri";
 
-/// What the side view knows: the last report and the account of each
-/// document it heard, which one the hub checked last, and the last activity
-/// of the hub's pool.
+/// What the side view knows: the last report, the account and the stack card
+/// of each document it heard, which one the hub checked last, and the last
+/// activity of the hub's pool.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Following
 {
@@ -101,6 +105,9 @@ pub struct Following
     /// The account cards held for each document, with the version of the last
     /// account frame.
     accounts: BTreeMap<DocumentUri, (DocId, Vec<AccountCard>)>,
+    /// The last stack card heard for each document, with the version it was
+    /// read at.
+    stacks: BTreeMap<DocumentUri, (DocId, StackCard)>,
     /// The document whose report arrived last.
     latest: Option<DocumentUri>,
     /// The activity of the hub's pool that arrived last.
@@ -132,9 +139,10 @@ impl Following
     ///   then current at the report's version, because the bus sends a change
     ///   of the account before its report. A whole account replaces the cards
     ///   held for its document, and a patch applies to them, and neither
-    ///   changes the document followed. An activity frame replaces the activity
-    ///   held. A detach answers [`Heard::Detached`] and changes nothing; a
-    ///   greeting and a resync change nothing.
+    ///   changes the document followed. A stack card replaces the one held for
+    ///   its document and changes nothing else. An activity frame replaces the
+    ///   activity held. A detach answers [`Heard::Detached`] and changes
+    ///   nothing; a greeting and a resync change nothing.
     /// - provides: the view's one update step.
     /// - fails: never.
     /// - panics: none.
@@ -145,10 +153,12 @@ impl Following
     ///   its new version; a detach is reported. A whole account and a patch
     ///   leave the cards that the patch names, a later report leaves them
     ///   current, and an account older than the report shows in the pending
-    ///   hue. An activity frame shows the pool's pane.
+    ///   hue. A stack card shows the stack pane. An activity frame shows the
+    ///   pool's pane.
     /// - witness: `follow::tests::the_view_follows_the_document_checked_last`
     /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
     /// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
+    /// - witness: `follow::tests::the_view_shows_the_stack_at_the_cursor`
     #[spec(ensures: |ret| matches!(ret, Heard::Continue | Heard::Detached))]
     #[inline]
     pub fn hear(
@@ -189,6 +199,13 @@ impl Following
                 apply_account_edits(cards, edits.clone());
                 Heard::Continue
             },
+            (&FrameScope::Document(ref document), &FrameBody::Stack { ref card }) => {
+                drop(
+                    self.stacks
+                        .insert(document.uri.clone(), (document.clone(), card.clone())),
+                );
+                Heard::Continue
+            },
             (_, &FrameBody::Activity { ref activity }) => {
                 self.activity = Some(activity.clone());
                 Heard::Continue
@@ -200,7 +217,8 @@ impl Following
                 | FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
-                | FrameBody::AccountPatch { .. }),
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. }),
             ) => Heard::Continue,
         }
     }
@@ -235,6 +253,7 @@ impl Following
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. }
                 | FrameBody::Activity { .. }
                 | FrameBody::Detach),
             ) => false,
@@ -294,13 +313,17 @@ impl Following
     ///   goes moves no row of the account. Each text is trimmed, and an empty
     ///   line or step is left out. A span is a row and a column, both
     ///   one-based. Rows end where the language server's rows end, and the
-    ///   column counts characters. The activity of the pool comes last, at the
-    ///   frame's revision: a record per core with its `world`, its `core`, its
-    ///   `occupancy`, its task `now`, its `busy` time and the `lengths` of its
-    ///   tasks, then the totals record with the count of the `cores`, their
-    ///   `occupancy`, their `busy` time and their `lengths`. An absent world,
-    ///   an idle core and a window with no ended task leave their fields
-    ///   absent.
+    ///   column counts characters. A record per spine of the document's stack
+    ///   card follows, at the card's version, the innermost first: its `head`,
+    ///   its `type` with the run its slot's parameter writes marked, its `slot`
+    ///   as the slot's one-based ordinal over the arity, and the `expected`
+    ///   type, each absent when the card holds none. The activity of the pool
+    ///   comes last, at the frame's revision: a record per core with its
+    ///   `world`, its `core`, its `occupancy`, its task `now`, its `busy` time
+    ///   and the `lengths` of its tasks, then the totals record with the count
+    ///   of the `cores`, their `occupancy`, their `busy` time and their
+    ///   `lengths`. An absent world, an idle core and a window with no ended
+    ///   task leave their fields absent.
     /// - provides: the one model that the terminal renders, and that a pipe
     ///   renders without the activity.
     /// - fails: never.
@@ -316,12 +339,22 @@ impl Following
     /// - witness: `follow::tests::a_report_lays_out_its_cards_and_holes`
     /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
     /// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
+    /// - witness: `follow::tests::the_view_shows_the_stack_at_the_cursor`
     #[spec(ensures: |ret| ret.records.is_empty() == (self.latest.is_none() && self.activity.is_none()))]
     #[must_use]
     #[inline]
     pub fn frame(&self) -> Frame
     {
         let mut frame = self.followed();
+        if let Some(&(ref stacked, ref card)) =
+            self.latest.as_ref().and_then(|uri| self.stacks.get(uri))
+            && self.reports.contains_key(&stacked.uri)
+        {
+            frame.records.extend(stack_records(
+                card,
+                Revision(i64::from(i32::from(stacked.version))),
+            ));
+        }
         if let Some(ref activity) = self.activity {
             frame
                 .records
@@ -329,6 +362,51 @@ impl Following
         }
         frame
     }
+}
+
+/// The records of the stack pane of `card`, computed for `revision`: one per
+/// spine, the innermost first.
+///
+/// # Specification
+/// trivial.
+fn stack_records(
+    card: &StackCard,
+    revision: Revision,
+) -> Vec<Record>
+{
+    let entry = |name: &'static str, datum: Datum| Field {
+        name: FieldName::from(name),
+        datum,
+        revision,
+    };
+    card.rows
+        .iter()
+        .map(|row| {
+            let ty = match (row.ty.as_ref(), row.filled) {
+                (Some(ty), Some(run)) => Datum::Marked {
+                    text: ty.clone(),
+                    run,
+                },
+                (Some(ty), None) => Datum::Text(ty.clone()),
+                (None, _) => Datum::Absent,
+            };
+            let slot = row.arity.map_or(Datum::Absent, |arity| Datum::Ratio {
+                hits: Count(row.slot.0.saturating_add(1)),
+                total: arity,
+            });
+            Record {
+                fields: Vec::from([
+                    entry("head", Datum::Text(row.head.clone())),
+                    entry("type", ty),
+                    entry("slot", slot),
+                    entry(
+                        "expected",
+                        row.expected.clone().map_or(Datum::Absent, Datum::Text),
+                    ),
+                ]),
+            }
+        })
+        .collect()
 }
 
 /// The records of the activity pane of `activity`, computed for `revision`:
@@ -738,9 +816,15 @@ fn tabled(
             heads.len().saturating_sub(width)
         });
         let top = match field.datum {
-            Datum::Count(_) => {
+            Datum::Count(_) | Datum::Ratio { .. } => {
+                let unit = if matches!(field.datum, Datum::Ratio { .. }) {
+                    Unit::Ratio
+                }
+                else {
+                    Unit::Count
+                };
                 if let Some(head) = heads.get_mut(column) {
-                    head.unit = head.unit.or(Some(Unit::Count));
+                    head.unit = head.unit.or(Some(unit));
                 }
                 None
             },
@@ -762,8 +846,8 @@ fn tabled(
             },
             Datum::Absent
             | Datum::Text(_)
+            | Datum::Marked { .. }
             | Datum::Bytes(_)
-            | Datum::Ratio { .. }
             | Datum::Warrant(_)
             | Datum::Comparison { .. } => None,
         };
@@ -874,7 +958,15 @@ fn drawn(
     };
     let mut cell = match field.datum {
         Datum::Text(ref text) => Cell::text(place, text.clone()),
+        Datum::Marked { ref text, run } => Cell {
+            attributes: Vec::from([Attribute::Underline(run)]),
+            ..Cell::text(place, text.clone())
+        },
         Datum::Count(count) => Cell::numeral(place, Numeral::from(count)),
+        Datum::Ratio { hits, total } => Cell::numeral(place, Numeral {
+            text: spelled(format_args!("{}/{}", hits.0, total.0)),
+            unit: Unit::Ratio,
+        }),
         Datum::Warrant(warrant) => Cell {
             glyph: Some(warrant.glyph()),
             warrant: Some(warrant),
@@ -898,7 +990,7 @@ fn drawn(
             Half::Tail => timed(p99).unwrap_or(placed),
             Half::Whole => placed,
         },
-        Datum::Absent | Datum::Bytes(_) | Datum::Ratio { .. } | Datum::Comparison { .. } => placed,
+        Datum::Absent | Datum::Bytes(_) | Datum::Comparison { .. } => placed,
     };
     let inked = !cell.text.is_empty() || cell.glyph.is_some();
     if field.revision < revision && inked {
@@ -1027,8 +1119,9 @@ pub fn laid(panes: &[Pane]) -> Vec<Vec<Painted<'_>>>
 }
 
 /// The terminal style `cell`'s attributes name: a hue as the theme's colour
-/// for its warrant, and the bold and italic weights. The rules refuse every
-/// other attribute, so the painter has no paint for it.
+/// for its warrant, and the bold and italic weights. An underline marks a run
+/// of the text, which [`lines`] draws. The rules refuse every other attribute,
+/// so the painter has no paint for it.
 ///
 /// # Specification
 /// trivial.
@@ -1047,8 +1140,65 @@ fn painted(cell: &Cell) -> Style
             | Attribute::Opacity
             | Attribute::Background(_)
             | Attribute::Border
-            | Attribute::Blink => style,
+            | Attribute::Blink
+            | Attribute::Underline(_) => style,
         })
+}
+
+/// The text of a painted cell in three pieces: before the run that the cell
+/// underlines, the run, and after it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Underlined<'text>
+{
+    /// The text before the run; the whole text when the cell marks no run.
+    pub before: &'text str,
+    /// The run that the underline marks; empty when the cell marks none.
+    pub run: &'text str,
+    /// The text after the run.
+    pub after: &'text str,
+}
+
+/// The pieces of the padded text of `painted` as a painter draws them: the
+/// run that an underline of its cell marks, shifted past the padding before
+/// the cell's text, and the text on each side of it.
+///
+/// # Specification
+/// trivial.
+pub fn underlined<'text>(painted: &'text Painted<'_>) -> Underlined<'text>
+{
+    let &(ref text, cell) = painted;
+    let run = cell.and_then(|held| {
+        held.attributes
+            .iter()
+            .find_map(|attribute| match *attribute {
+                Attribute::Underline(run) => Some(run),
+                Attribute::Hue(_)
+                | Attribute::Bold
+                | Attribute::Italic
+                | Attribute::Faint
+                | Attribute::Opacity
+                | Attribute::Background(_)
+                | Attribute::Border
+                | Attribute::Blink => None,
+            })
+    });
+    let indent = text
+        .len()
+        .saturating_sub(text.trim_start_matches(' ').len());
+    run.and_then(|run| {
+        let start = indent.saturating_add(usize::from(run.start()));
+        let end = indent.saturating_add(usize::from(run.end()));
+        Some(Underlined {
+            before: text.get(.. start)?,
+            run: text.get(start .. end)?,
+            after: text.get(end ..)?,
+        })
+    })
+    .unwrap_or(Underlined {
+        before: text,
+        run: "",
+        after: "",
+    })
 }
 
 /// The lines of `rendering` as plain text: the cells of a line parted by one
@@ -1166,12 +1316,22 @@ fn lines(laid: Vec<Vec<Painted<'_>>>) -> Vec<Line<'static>>
 {
     laid.into_iter()
         .map(|line| {
-            let mut spans = Vec::with_capacity(line.len().saturating_mul(2));
-            for (column, (text, cell)) in line.into_iter().enumerate() {
+            let mut spans = Vec::with_capacity(line.len().saturating_mul(4));
+            for (column, drawn) in line.iter().enumerate() {
                 if column > 0 {
                     spans.push(Span::raw(" "));
                 }
-                spans.push(Span::styled(text, cell.map_or_else(Style::new, painted)));
+                let style = drawn.1.map_or_else(Style::new, painted);
+                let pieces = underlined(drawn);
+                for (piece, styled) in [
+                    (pieces.before, style),
+                    (pieces.run, style.add_modifier(Modifier::UNDERLINED)),
+                    (pieces.after, style),
+                ] {
+                    if !piece.is_empty() {
+                        spans.push(Span::styled(String::from(piece), styled));
+                    }
+                }
             }
             Line::from(spans)
         })
@@ -1443,6 +1603,8 @@ mod tests
     use gandr_surface_render_remote::SampleUnit;
     use gandr_surface_render_remote::Samples;
     use gandr_surface_render_remote::Shown;
+    use gandr_surface_render_remote::SpineRow;
+    use gandr_surface_render_remote::StackCard;
     use gandr_surface_render_remote::TaskKind;
     use gandr_surface_render_remote::Warrant;
     use gandr_surface_render_remote::conform;
@@ -1831,6 +1993,103 @@ mod tests
                 .all(|attributes| *attributes == [pending]),
             "an account older than the report shows in the pending hue: {:?}",
             inked(&following)
+        );
+        assert_eq!(breaches(&following, &current), []);
+    }
+
+    #[test]
+    fn the_view_shows_the_stack_at_the_cursor()
+    {
+        let uri = DocumentUri::from(String::from("file:///a.gandr"));
+        let at = |version: i32| document(&uri, DocVersion::from(version));
+        let run = |start: usize, end: usize| {
+            ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)).expect("an ordered run")
+        };
+        let typed = String::from("(a : Integer, b : Integer) -> -F Integer");
+        let card = StackCard {
+            offset: ByteOffset::from(40_usize),
+            rows: Vec::from([
+                SpineRow {
+                    head: String::from("g"),
+                    ty: Some(typed.clone()),
+                    filled: Some(run(1, 12)),
+                    slot: Count(0),
+                    arity: Some(Count(2)),
+                    expected: Some(String::from("Integer")),
+                },
+                SpineRow {
+                    head: String::from("f"),
+                    ty: Some(typed.clone()),
+                    filled: Some(run(14, 25)),
+                    slot: Count(1),
+                    arity: Some(Count(2)),
+                    expected: None,
+                },
+                SpineRow {
+                    head: String::from("k"),
+                    ty: Some(String::from("Integer -> Integer")),
+                    filled: None,
+                    slot: Count(0),
+                    arity: None,
+                    expected: None,
+                },
+            ]),
+        };
+        let mut following = Following::default();
+        assert_eq!(
+            following.hear(&RenderFrame::stack(at(1_i32), card.clone())),
+            Heard::Continue
+        );
+        assert!(
+            following.frame().records.is_empty(),
+            "a card follows no document before its report"
+        );
+        let _heard = following.hear(&RenderFrame::frame(at(1_i32), ReportView::default()));
+        let before = following.clone();
+        let _heard = following.hear(&RenderFrame::stack(at(1_i32), card));
+        let row = |head: &str, ty: &str, slot: &str, expected: &str| {
+            String::from(format!("{head:<4} {ty:<40} {slot:>4} {expected}").trim_end())
+        };
+        assert_eq!(lines(&following), [
+            String::from("uri file:///a.gandr version 1 diagnostics 0 holes 0"),
+            row("head", "type", "slot", "expected"),
+            row("g", &typed, "1/2", "Integer"),
+            row("f", &typed, "2/2", ""),
+            row("k", "Integer -> Integer", "", ""),
+        ]);
+        let marks = |following: &Following| -> Vec<Vec<Attribute>> {
+            rendering(&following.frame())
+                .panes
+                .get(1)
+                .into_iter()
+                .flat_map(|pane| &pane.rows)
+                .filter_map(|row| row.cells.get(1))
+                .map(|cell| cell.attributes.clone())
+                .collect()
+        };
+        assert_eq!(
+            marks(&following),
+            [
+                Vec::from([Attribute::Underline(run(1, 12))]),
+                Vec::from([Attribute::Underline(run(14, 25))]),
+                Vec::new(),
+            ],
+            "each type underlines the parameter its slot fills"
+        );
+        assert_eq!(
+            breaches(&following, &before),
+            [],
+            "the stack pane keeps every rule of the visual language"
+        );
+        let current = following.clone();
+        let _heard = following.hear(&RenderFrame::frame(at(2_i32), ReportView::default()));
+        let pending = Attribute::Hue(Warrant::Pending.colour());
+        assert!(
+            marks(&following)
+                .iter()
+                .all(|attributes| attributes.last() == Some(&pending)),
+            "a card older than the report shows in the pending hue: {:?}",
+            marks(&following)
         );
         assert_eq!(breaches(&following, &current), []);
     }

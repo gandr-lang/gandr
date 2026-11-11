@@ -3374,9 +3374,11 @@ INSERT INTO purpose VALUES('surface-render-remote','present::Utf16Column','struc
 INSERT INTO purpose VALUES('surface-render-remote','present::Utf16Pos','struct','The row and UTF-16 column of a byte offset, both zero-based.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','present::byte_of_pos','function','The byte offset of `pos` in `text`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','present::pos_of_byte','function','The position of `byte` in `text`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','stack::SpineRow','struct','One spine of the stack at a cursor: its head, its type with the run that the slot''s parameter writes, the slot, the arity and the expected type.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','stack::StackCard','struct','The context stack at the cursor of one document, one row per spine with the innermost first, which the render bus carries to the stack pane.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Align','enum','Where a cell''s text sits in its column: a label or a text at the left, a numeral or a sparkline at the right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::At','struct','The position of a cell in a rendering: its pane, its row and its place in the row.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-render-remote','visual::Attribute','enum','How a renderer paints a cell: the hue of a warrant, a weight, or a decoration the rules refuse.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-remote','visual::Attribute','enum','How a renderer paints a cell: the hue of a warrant, a weight, the underline of a run its datum marks, or a decoration the rules refuse.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::BLOCKS','constant','The eight block elements a sparkline is drawn with, from the lowest sample to the highest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Breach','struct','One rule a rendering breaks, and the first place that breaks it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','visual::Cell','struct','One cell of a rendering: the field it encodes, its text, and the warrant, numeral, sparkline and attributes it is drawn with.',NULL,'fits','sound',NULL);
