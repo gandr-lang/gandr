@@ -4,4 +4,5 @@ error[UndescribedMember.NoOutput]: this member is an operation with no output po
 6 │   oper drain : (m : M) --> ();
   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
   │
-  ╰ note: `Drain` is refused with UndescribedMember.NoOutput, as its expectation states
+  ├ note: `Drain` is refused with UndescribedMember.NoOutput, as its expectation states
+  ╰ help: give the operation at least one output port
