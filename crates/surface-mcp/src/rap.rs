@@ -7,10 +7,12 @@
 //! of `/.well-known/rap-toolset` returns the manifest: the name `gandr`, the
 //! invoke endpoint, and each operation of the hub's one table, with its name,
 //! description and input schema. A `POST` to `/invoke` carries an
-//! invocation. The toolset appends a row for the call to its store, answers
-//! `200` with no body, and queues the call. An invocation that is not JSON,
-//! that has no field RAP requires, or whose callback URL is not `http`, gets
-//! `400`, because no result can reach its caller.
+//! invocation. The toolset appends a row for the call to its store, queues
+//! the call, and answers `200` with no body. The worker starts the call once
+//! that answer is written, so no callback of the call comes before it. An
+//! invocation that is not JSON, that has no field RAP requires, or whose
+//! callback URL is not `http`, gets `400`, because no result can reach its
+//! caller.
 //!
 //! One worker runs each queued call over the workspace that the editors share,
 //! through the table that `tools/call` reads, and owes a `tool_result` to the
@@ -153,7 +155,9 @@ use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Condvar;
 use std::sync::Mutex;
+use std::sync::PoisonError;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::channel;
@@ -1047,14 +1051,98 @@ impl Subscriptions
     }
 }
 
-/// A call queued for the worker: its row, and its arguments, absent for a call
-/// that a crash lost.
+/// A call queued for the worker: its row, its arguments, absent for a call
+/// that a crash lost, and the acknowledgement that releases it.
 struct Call
 {
     /// The row.
     pending: Pending,
     /// The arguments, absent for a call that a crash lost.
     arguments: Option<Value>,
+    /// The acknowledgement that the worker waits for before it starts the
+    /// call, absent for a call that a crash lost.
+    release: Option<Release>,
+}
+
+/// A count of acknowledgements, and the mark that one call waits for.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct Mark(u64);
+
+impl Mark
+{
+    /// The mark one acknowledgement after this one.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn after(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+/// The acknowledgements that one acceptor has written or failed to write.
+/// The worker starts a call that the acceptor queued once the count reaches
+/// the call's mark, so no callback of the call comes before its
+/// acknowledgement.
+#[derive(Default)]
+struct Written
+{
+    /// The count.
+    count: Mutex<Mark>,
+    /// Woken at each count.
+    counted: Condvar,
+}
+
+impl Written
+{
+    /// The mark of the acknowledgement that the acceptor writes next. Only
+    /// the acceptor counts, so the count reaches the mark at its next write.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&self) -> Mark
+    {
+        lock(&self.count).after()
+    }
+
+    /// Count one acknowledgement, written or not, and wake the worker.
+    ///
+    /// # Specification
+    /// trivial.
+    fn count(&self)
+    {
+        let mut count = lock(&self.count);
+        *count = count.after();
+        drop(count);
+        self.counted.notify_all();
+    }
+
+    /// Wait until the count reaches `mark`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reach(
+        &self,
+        mark: Mark,
+    )
+    {
+        drop(
+            self.counted
+                .wait_while(lock(&self.count), |count| *count < mark)
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+    }
+}
+
+/// The acknowledgement that releases one call: the count of its acceptor, and
+/// the mark that the count reaches when the acceptor writes it.
+struct Release
+{
+    /// The count of the acceptor.
+    written: Arc<Written>,
+    /// The mark.
+    mark: Mark,
 }
 
 /// What the worker's queue holds, in the order that the requests reached the
@@ -1261,33 +1349,35 @@ impl Toolset
     ///   and every operation of the hub's one table, by its name, description
     ///   and input schema. A `POST` to `/invoke` whose body is an invocation
     ///   with a callback URL in `http` is answered `200` with no body once its
-    ///   row is in the store, `503` when the row cannot be written. Another
-    ///   body is answered `400`, a body past the limit `413`, and another path
-    ///   `404`. Each acknowledged call, and each call that a crash cut short,
-    ///   is answered once by a `tool_result` owed to its callback URL with the
-    ///   caller's bearer when it sent one. Its row is settled once a runtime
-    ///   takes or refuses it. The text is the answer of the tool as JSON, or a
-    ///   text that starts with `Error: `. The result of `diagnostics` carries
-    ///   the cards of the document's frame, its version, and the lines that
-    ///   `gandr view` prints as its `display_as`. A subscription operation adds
-    ///   a row to the table before its result, which carries `subscription:
-    ///   true`. Each publication that changes the frame of a document owes one
-    ///   `subscription_event` to each subscription to the frame, and each
-    ///   admission that changes the card of a declaration owes one to each
-    ///   subscription to the declaration, unless the runtime took a state of
-    ///   that version or a later one. While a row follows the activity, each
-    ///   tick of the hub's fold that has events reaches it, and a row with no
-    ///   state in flight is owed its next state. A long operation, `check`,
-    ///   `test`, `replay` or `run`, is answered once its job ends, with the
-    ///   verdict line of the verb, the counts of the replay, or the line of the
-    ///   run. In the build with the `instrument` feature, each tick that has
-    ///   events reaches each running job as a `view_update` of the type
-    ///   `activity`. A newer revision of a document that a `check`, a `test` or
-    ///   a `replay` reads retires it, and its text names the document and its
-    ///   version. A `POST` to `/cancel_tool_call` or `/close_thread` is
-    ///   answered `200` once the rows it names are dropped from the table and
-    ///   their deliveries forgotten, and each job it names is answered
-    ///   `cancelled`. Each delivery is retried as the policy states.
+    ///   row is in the store, `503` when the row cannot be written. The call
+    ///   starts once that `200` is written, so no callback of the call comes
+    ///   before it. Another body is answered `400`, a body past the limit
+    ///   `413`, and another path `404`. Each acknowledged call, and each call
+    ///   that a crash cut short, is answered once by a `tool_result` owed to
+    ///   its callback URL with the caller's bearer when it sent one. Its row is
+    ///   settled once a runtime takes or refuses it. The text is the answer of
+    ///   the tool as JSON, or a text that starts with `Error: `. The result of
+    ///   `diagnostics` carries the cards of the document's frame, its version,
+    ///   and the lines that `gandr view` prints as its `display_as`. A
+    ///   subscription operation adds a row to the table before its result,
+    ///   which carries `subscription: true`. Each publication that changes the
+    ///   frame of a document owes one `subscription_event` to each subscription
+    ///   to the frame, and each admission that changes the card of a
+    ///   declaration owes one to each subscription to the declaration, unless
+    ///   the runtime took a state of that version or a later one. While a row
+    ///   follows the activity, each tick of the hub's fold that has events
+    ///   reaches it, and a row with no state in flight is owed its next state.
+    ///   A long operation, `check`, `test`, `replay` or `run`, is answered once
+    ///   its job ends, with the verdict line of the verb, the counts of the
+    ///   replay, or the line of the run. In the build with the `instrument`
+    ///   feature, each tick that has events reaches each running job as a
+    ///   `view_update` of the type `activity`. A newer revision of a document
+    ///   that a `check`, a `test` or a `replay` reads retires it, and its text
+    ///   names the document and its version. A `POST` to `/cancel_tool_call` or
+    ///   `/close_thread` is answered `200` once the rows it names are dropped
+    ///   from the table and their deliveries forgotten, and each job it names
+    ///   is answered `cancelled`. Each delivery is retried as the policy
+    ///   states.
     /// - provides: `gandr serve`, the face beside the hub's socket.
     /// - fails: when accepting a connection fails on every acceptor for a
     ///   reason other than an interruption or an aborted connection.
@@ -1363,6 +1453,7 @@ impl Toolset
                 None => drop(queue.send(Queued::Call(Call {
                     pending,
                     arguments: None,
+                    release: None,
                 }))),
             }
         }
@@ -1475,6 +1566,7 @@ impl Toolset
                     manifest,
                     store,
                     queue: queue.clone(),
+                    written: Arc::default(),
                     subscriptions,
                     table,
                     deliveries,
@@ -1707,6 +1799,9 @@ struct Desk<'toolset, Log>
     store: &'toolset Mutex<Store>,
     /// The worker's queue, which a cancel and a closure end jobs on too.
     queue: Sender<Queued>,
+    /// The acknowledgements that this acceptor has written, which release
+    /// the calls that it queued.
+    written: Arc<Written>,
     /// The subscriptions.
     subscriptions: &'toolset Mutex<Subscriptions>,
     /// The table that keeps the subscriptions.
@@ -1813,13 +1908,22 @@ where
             }
             // The call reaches the queue before its acknowledgement, so a
             // cancel that the runtime sends after it queues after the call.
-            // The row is written: the call is answered whether or not the
-            // acknowledgement reached its caller.
+            // The worker starts the call only once the acknowledgement is
+            // written, so no callback of the call comes before it. The row is
+            // written: the call is answered whether or not the acknowledgement
+            // reached its caller.
+            let mark = desk.written.next();
             drop(desk.queue.send(Queued::Call(Call {
                 pending,
                 arguments: Some(arguments),
+                release: Some(Release {
+                    written: Arc::clone(&desk.written),
+                    mark,
+                }),
             })));
-            stream.write_all(ACKNOWLEDGED)
+            let acknowledged = stream.write_all(ACKNOWLEDGED);
+            desk.written.count();
+            acknowledged
         },
     }
 }
@@ -1991,9 +2095,10 @@ fn read_request(
 /// Answer each call `queued` holds over `workspace`, keep its answer in
 /// `store`, open the subscription it confirms in `subscriptions` and `table`,
 /// and owe its result to `deliveries`, telling `log` of each answer that the
-/// store does not keep. Send each long operation to the thread of the jobs,
-/// which answers it when its job ends, and each end of jobs after the starts
-/// that the queue holds before it.
+/// store does not keep. Start each call once its acknowledgement is written.
+/// Send each long operation to the thread of the jobs, which answers it when
+/// its job ends, and each end of jobs after the starts that the queue holds
+/// before it.
 ///
 /// # Specification
 /// trivial.
@@ -2009,13 +2114,20 @@ fn work<Log>(
     Log: Write,
 {
     for queued in queued {
-        let Call { pending, arguments } = match queued {
+        let Call {
+            pending,
+            arguments,
+            release,
+        } = match queued {
             Queued::Call(call) => call,
             Queued::End(ending) => {
                 drop(jobs.send(Command::End(ending)));
                 continue;
             },
         };
+        if let Some(Release { written, mark }) = release {
+            written.reach(mark);
+        }
         match job_of(&pending, arguments.as_ref()) {
             Some(Ok(job)) => {
                 drop(jobs.send(Command::Start(pending, job)));
@@ -3961,8 +4073,24 @@ mod tests
 
     /// Verbs that print each path, and then the verdict line. A path that
     /// ends in `wait` prints a tick each 10 ms until its job is retired, for
-    /// ten seconds at most.
-    struct Echoing;
+    /// ten seconds at most. Its walk first tells `walking` that the job runs.
+    #[repr(transparent)]
+    struct Echoing
+    {
+        /// Where a walk of a path that ends in `wait` tells that it starts.
+        walking: std::sync::mpsc::Sender<()>,
+    }
+
+    /// The verbs [`Echoing`], and the start of each walk of a path that ends
+    /// in `wait`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn echoing() -> (Arc<Echoing>, std::sync::mpsc::Receiver<()>)
+    {
+        let (walking, walks) = std::sync::mpsc::channel();
+        (Arc::new(Echoing { walking }), walks)
+    }
 
     impl Verbs for Echoing
     {
@@ -3981,6 +4109,9 @@ mod tests
             for path in &paths {
                 writeln!(printed, "{}", path.display())?;
                 if path.ends_with("wait") {
+                    // A test that does not wait for the walk drops the
+                    // receiver, and the send then fails.
+                    let _told = self.walking.send(());
                     for _tick in 0_u32 .. 1000_u32 {
                         writeln!(printed, "tick")?;
                         thread::sleep(Duration::from_millis(10));
@@ -4027,7 +4158,8 @@ mod tests
         let scratch = Scratch::new(&json!("rap-jobs"));
         let callback = loopback();
         let uri = json!("file:///tmp/jobs.gandr");
-        let toolset = opened(&scratch).walking(Arc::new(Echoing));
+        let (verbs, _walks) = echoing();
+        let toolset = opened(&scratch).walking(verbs);
         let address = toolset.address().expect("the toolset listens");
         hub_over(&scratch, toolset, parallel());
         let mut editor = Editor::new(&scratch);
@@ -4037,22 +4169,16 @@ mod tests
             callback.local_addr().expect("the callback listens")
         ));
         let call = |operation: &str, arguments: Value, id: &str| {
-            let started = std::time::Instant::now();
             let acknowledged = invoke(
                 address,
                 &json!({ "operation": operation, "arguments": arguments, "id": id,
                     "callback_url": callback_url, "group_id": "thread-1" }),
                 None,
             );
-            let acknowledgement = started.elapsed();
             assert!(
                 acknowledged.head.starts_with("HTTP/1.1 200 "),
                 "{}",
                 acknowledged.head
-            );
-            assert!(
-                acknowledgement < Duration::from_millis(100),
-                "a long operation is acknowledged at once: {acknowledgement:?}"
             );
             told(&resulted(&callback).0)
         };
@@ -4120,7 +4246,8 @@ mod tests
         let scratch = Scratch::new(&json!("rap-retired"));
         let callback = loopback();
         let uri = json!("file:///tmp/wait/held.gandr");
-        let toolset = opened(&scratch).walking(Arc::new(Echoing));
+        let (verbs, walks) = echoing();
+        let toolset = opened(&scratch).walking(verbs);
         let address = toolset.address().expect("the toolset listens");
         hub_over(&scratch, toolset, parallel());
         let mut editor = Editor::new(&scratch);
@@ -4145,8 +4272,11 @@ mod tests
 
         start("check-1", "thread-1");
         // The check prints ticks for ten seconds unless a newer revision
-        // retires it; the wait lets it start first.
-        thread::sleep(Duration::from_millis(200));
+        // retires it, so its acknowledgement comes while its job runs. The
+        // edit waits until the walk starts, so the job reads version 1.
+        walks
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the check walks");
         editor.edit(&uri, &json!(2_i32), &json!("def f = 43 ;\n"));
         assert_eq!(
             told(&resulted(&callback).0),
@@ -4177,7 +4307,9 @@ mod tests
             acknowledged.head
         );
         // The run spends its budget unless a newer revision retires it; the
-        // wait lets it start first, and the edit waits for no part of it.
+        // wait lets it start first, and the edit waits for no part of it. The
+        // wait stands for an order that the toolset does not hold yet, which
+        // #6770 owes.
         thread::sleep(Duration::from_millis(200));
         editor.edit(&uri, &json!(4_i32), &json!("def f = 44 ;\n"));
         assert_eq!(
@@ -4209,6 +4341,8 @@ mod tests
             ],
             "a cancel and a closed thread each end their job"
         );
+        // Load only delays a stray result past the wait, so load cannot turn
+        // this red.
         assert_eq!(
             quiet(&callback, Duration::from_millis(300)),
             Answer(true),
