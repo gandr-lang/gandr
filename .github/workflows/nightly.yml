@@ -28,7 +28,7 @@ permissions:
 
 # One run at a time; a dispatch during the scheduled run replaces it.
 concurrency:
-  group: nightly-main
+  group: nightly-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -41,6 +41,8 @@ env:
   # Empty selects the bare runner. A set value selects the pin-file tag,
   # and only a published tag is used: this workflow does not publish.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+  # The probe of #6704: every candidate visits the same night.
+  GANDR_SWEEP_NIGHT: "20768"
 
 jobs:
   # Definitions only: aliases run in each consuming job's context. The
