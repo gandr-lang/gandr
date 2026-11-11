@@ -16,6 +16,7 @@ use core::sync::atomic::Ordering;
 use core::time::Duration;
 use std::io;
 
+use gandr_core_fork::activity::Activity;
 use gandr_core_fork::activity::Declared;
 use gandr_core_fork::activity::Fold;
 use gandr_core_fork::activity::Nanos;
@@ -51,6 +52,35 @@ pub struct Occupied
     events: usize,
     /// The hub's clock from the walk's start to its end.
     wall: Nanos,
+}
+
+/// `walk` visited on `pool` as [`Walk::visit`] visits it, each lowering job
+/// marked on `rings`, rings of `pool` that another thread folds: the hub's,
+/// while the toolset watches its activity for a job.
+///
+/// # Specification
+/// - requires: `rings` are `pool`'s, as `Pool::activity` makes them.
+/// - ensures: the steps and the report [`Walk::visit`] gives.
+/// - fails: as [`Walk::visit`].
+/// - panics: as [`Walk::visit`].
+/// - executable: none — the marks are a side channel.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `check` through the toolset of a hub reaches its caller
+///   with the activity of its walk, and its output is a `check`'s.
+/// - witness: `tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does`
+pub fn recorded<Stop, Visitor>(
+    walk: Walk,
+    (pool, rings): (&Pool, &Activity),
+    visitor: Visitor,
+) -> ControlFlow<Stop, RunReport>
+where
+    Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
+{
+    walk.visit_recording(
+        &pool.recording(rings, (Task::Fork, World::from(0_u32)), |_| Declared::NONE),
+        visitor,
+    )
 }
 
 /// `walk` visited on `pool` as [`Walk::visit`] visits it, each lowering job

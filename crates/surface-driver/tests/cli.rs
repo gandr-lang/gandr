@@ -3544,6 +3544,7 @@ fn serve_offers_the_toolset_by_default()
         .filter_map(|tool| tool["name"].as_str())
         .collect();
     let mut offered = vec![
+        "check",
         "diagnostics",
         "documents",
         "expected_syntax",
@@ -3551,13 +3552,15 @@ fn serve_offers_the_toolset_by_default()
         "ledger_show",
         "outline",
         "propose",
+        "replay",
+        "run",
         "subscribe_account",
     ];
     // The hub's build offers the activity too.
     if cfg!(feature = "instrument") {
         offered.push("subscribe_activity");
     }
-    offered.extend(["subscribe_diagnostics", "trial", "type_of"]);
+    offered.extend(["subscribe_diagnostics", "test", "trial", "type_of"]);
     assert_eq!(
         names, offered,
         "the toolset offers every operation of the table"
@@ -3568,6 +3571,149 @@ fn serve_offers_the_toolset_by_default()
         "a second hub of the workspace names the address file: {}",
         stderr(&second)
     );
+}
+
+#[test]
+fn the_toolset_checks_a_corpus_as_the_command_line_does()
+{
+    use std::ffi::OsStr;
+    use std::io::Read as _;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("rapc"));
+    let socket = scratch.0.join("hub.sock");
+    let file = scratch.0.join("hub.rap");
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/data")
+        .canonicalize()
+        .expect("the corpus exists");
+    let mut hub = gandr(&[
+        OsStr::new("serve"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+    ])
+    .current_dir(&scratch.0)
+    .stdin(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .expect("the hub starts");
+    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+    let mut url = String::new();
+    while url.is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(core::time::Duration::from_millis(20));
+        url = std::fs::read_to_string(&file).unwrap_or_default();
+    }
+    let address = url
+        .trim_end()
+        .strip_prefix("http://")
+        .and_then(|url| url.strip_suffix("/.well-known/rap-toolset"))
+        .map_or_else(
+            || panic!("the address file names the manifest: {url:?}"),
+            String::from,
+        );
+    let callback = std::net::TcpListener::bind("127.0.0.1:0").expect("the loopback binds");
+    let body = serde_json::json!({ "operation": "check", "arguments": { "paths": [corpus] },
+        "id": "check-1", "group_id": "thread-1", "callback_url": format!(
+            "http://{}/results", callback.local_addr().expect("the callback listens")) })
+    .to_string();
+    let started = std::time::Instant::now();
+    let mut stream = std::net::TcpStream::connect(&address).expect("the toolset accepts");
+    write!(
+        stream,
+        "POST /invoke HTTP/1.1\r\nhost: {address}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .expect("the toolset reads");
+    let mut acknowledged = String::new();
+    let _read = stream
+        .read_to_string(&mut acknowledged)
+        .expect("the toolset answers");
+    let acknowledgement = started.elapsed();
+    // Each request that the toolset sends to the callback, answered `200`,
+    // until the result.
+    let mut views: Vec<serde_json::Value> = Vec::new();
+    let mut bytes = Vec::new();
+    let result = loop {
+        let (mut delivery, _peer) = callback.accept().expect("the toolset calls back");
+        delivery
+            .set_read_timeout(Some(core::time::Duration::from_secs(60)))
+            .expect("the timeout is set");
+        bytes.clear();
+        let mut chunk = [0_u8; 4096];
+        let body = loop {
+            let read = delivery.read(&mut chunk).expect("the callback reads");
+            assert_ne!(read, 0_usize, "the toolset ended its request early");
+            bytes.extend_from_slice(chunk.get(.. read).unwrap_or_default());
+            let Some(end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+            else {
+                continue;
+            };
+            let head =
+                String::from_utf8_lossy(bytes.get(.. end).unwrap_or_default()).to_ascii_lowercase();
+            let length: usize = head
+                .split("\r\n")
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .and_then(|length| length.parse().ok())
+                .expect("the request names its length");
+            let start = end.saturating_add(4);
+            if let Some(body) = bytes.get(start .. start.saturating_add(length)) {
+                break serde_json::from_slice::<serde_json::Value>(body).expect("the body is JSON");
+            }
+        };
+        delivery
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+            .expect("the toolset reads the answer");
+        if body["type"] == "tool_result" {
+            break body;
+        }
+        views.push(body);
+    };
+    let checked = gandr(&[OsStr::new("check"), corpus.as_os_str()])
+        .current_dir(&scratch.0)
+        .output()
+        .expect("the driver runs");
+    drop(hub.kill());
+    drop(hub.wait());
+    assert!(acknowledged.starts_with("HTTP/1.1 200 "), "{acknowledged}");
+    assert!(
+        acknowledgement < core::time::Duration::from_millis(100),
+        "the call is acknowledged before the check runs: {acknowledgement:?}"
+    );
+    let printed = stdout(&checked);
+    assert_eq!(
+        (
+            result["id"].as_str(),
+            result["text"].as_str(),
+            result
+                .pointer("/display_as/0/content")
+                .and_then(serde_json::Value::as_str)
+        ),
+        (
+            Some("check-1"),
+            printed.lines().last(),
+            Some(format!("{printed}{}", stderr(&checked)).as_str())
+        ),
+        "the text is the verdict line of `gandr check`, and the display is all that it prints"
+    );
+    if cfg!(feature = "instrument") {
+        assert!(
+            !views.is_empty()
+                && views.iter().all(|view| {
+                    (
+                        view["type"].as_str(),
+                        view["tool_call_id"].as_str(),
+                        view["view_type"].as_str(),
+                    ) == (Some("view_update"), Some("check-1"), Some("activity"))
+                }),
+            "the hub's build tells the call of the check's activity: {views:?}"
+        );
+    }
+    else {
+        assert!(
+            views.is_empty(),
+            "a build with no activity sends no view: {views:?}"
+        );
+    }
 }
 
 /// Two builds' relays in one workspace each start a hub of their own, and a

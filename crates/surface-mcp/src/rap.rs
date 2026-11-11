@@ -62,6 +62,17 @@
 //! runtime takes a state. Once no row follows the activity, the toolset ends
 //! its watch, and the hub folds nothing.
 //!
+//! # Jobs
+//!
+//! `check`, `test`, `replay` and `run` are long operations. The worker sends
+//! each one to the thread of the jobs, and the result goes when the job ends:
+//! the verdict line of the verb, the counts of the replay, or the line of the
+//! run. A newer revision of a document that a `check`, a `test` or a `replay`
+//! reads retires it, and a cancel or a closure ends it. In the hub's build with
+//! the `instrument` feature, each running job hears the activity as a
+//! `view_update`. The module `jobs` states the rest. The driver gives the
+//! [`Verbs`] that `check` and `test` walk with.
+//!
 //! # The subscription table
 //!
 //! The subscription table is one file per workspace, readable by its owner
@@ -118,8 +129,9 @@
 //!
 //! - The Hydro project. "Reactive Agent Protocol specification." 2026. <https://reactiveagentprotocol.dev/docs/rap/spec/overview>
 //!   — the manifest, the invocation, the acknowledgement, the callback and its
-//!   `Error: ` text, the `subscription_event` and its fields, the `display_as`
-//!   segments, and the retry of a `5xx` and never of a `4xx`.
+//!   `Error: ` text, the `subscription_event` and its fields, the `view_update`
+//!   and its `view_type`, the `display_as` segments, and the retry of a `5xx`
+//!   and never of a `4xx`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -175,6 +187,8 @@ pub use self::deliver::Policy;
 use self::deliver::Post;
 pub use self::deliver::Retries;
 use self::deliver::Row;
+use self::jobs::Command;
+pub use self::jobs::Verbs;
 use self::subscriptions::Generation;
 use self::subscriptions::Kept;
 use self::subscriptions::Snapshot;
@@ -186,6 +200,7 @@ use crate::tools::Scope;
 #[cfg(feature = "instrument")]
 mod activity;
 mod deliver;
+mod jobs;
 mod subscriptions;
 
 /// The name of the tool whose result is a frame of the render bus.
@@ -587,6 +602,59 @@ struct Watch
     watching: bool,
 }
 
+/// The view of a running job: where its view updates go, and their head.
+#[cfg(feature = "instrument")]
+struct View
+{
+    /// Where its view updates go, shared by each delivery.
+    callback_url: Arc<str>,
+    /// The bearer that the runtime sent on the call, sent back on each update.
+    token: Option<Arc<str>>,
+    /// The `id` of the call.
+    id: String,
+    /// The type and the routing of each update, up to its content, encoded
+    /// once.
+    head: String,
+}
+
+/// The activity card of one tick, quoted once for every view: the run, the
+/// sequence number of its last event, and its text.
+#[cfg(feature = "instrument")]
+struct Card
+{
+    /// The run of the toolset.
+    run: activity::Run,
+    /// The sequence number of the last event of the tick.
+    last: gandr_core_fork::activity::Sequence,
+    /// The card as a JSON string, quoted once for every view.
+    text: Arc<str>,
+}
+
+#[cfg(feature = "instrument")]
+impl View
+{
+    /// Owe `row` the card `card`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn owe(
+        &self,
+        row: &Row,
+        card: &Card,
+        deliveries: &Deliveries,
+    )
+    {
+        deliveries.owe(row.clone(), Post {
+            callback_url: Arc::clone(&self.callback_url),
+            token: self.token.clone(),
+            key: alloc::format!("{}@{}.{}", self.id, card.run.0, u64::from(card.last)),
+            version: None,
+            head: self.head.clone(),
+            text: Arc::clone(&card.text),
+        });
+    }
+}
+
 /// The subscriptions by row, the rows that follow each document by their
 /// kind of scope, and the generation of their last change.
 struct Subscriptions
@@ -599,6 +667,10 @@ struct Subscriptions
     accounts: BTreeMap<DocumentUri, BTreeSet<Row>>,
     /// The rows that follow the activity.
     activity: BTreeSet<Row>,
+    /// The running jobs that hear the activity as view updates, by the row of
+    /// their view.
+    #[cfg(feature = "instrument")]
+    views: BTreeMap<Row, View>,
     /// The generation of the last change that the table must keep.
     generation: Generation,
     /// The watch of the hub's activity, once the toolset serves.
@@ -625,6 +697,8 @@ impl Subscriptions
             diagnostics: BTreeMap::new(),
             accounts: BTreeMap::new(),
             activity: BTreeSet::new(),
+            #[cfg(feature = "instrument")]
+            views: BTreeMap::new(),
             generation: Generation::default(),
             #[cfg(feature = "instrument")]
             watch: None,
@@ -814,8 +888,8 @@ impl Subscriptions
         }
     }
 
-    /// Watch the hub's activity while a row follows it, and end the watch
-    /// once no row does.
+    /// Watch the hub's activity while a row follows it or a job views it, and
+    /// end the watch once none does.
     ///
     /// # Specification
     /// trivial.
@@ -825,7 +899,7 @@ impl Subscriptions
     #[cfg(feature = "instrument")]
     fn follow(&mut self) -> io::Result<()>
     {
-        let following = !self.activity.is_empty();
+        let following = !self.activity.is_empty() || !self.views.is_empty();
         let Some(ref mut watch) = self.watch
         else {
             return Ok(());
@@ -843,9 +917,65 @@ impl Subscriptions
         Ok(())
     }
 
+    /// Start the view of the job of `pending`: each tick of the hub's
+    /// activity that has events reaches it as a view update until it ends.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The host's refusal of the fold's thread.
+    #[cfg(feature = "instrument")]
+    fn view(
+        &mut self,
+        pending: &Pending,
+    ) -> io::Result<()>
+    {
+        let head = alloc::format!(
+            "{{\"type\":\"view_update\",\"group_id\":{},\"tool_call_id\":{},\"view_type\":\"activity\",\"content\":",
+            quoted(&pending.group_id),
+            quoted(&pending.id)
+        );
+        drop(self.views.insert(
+            Row::View(pending.group_id.clone(), pending.id.clone()),
+            View {
+                callback_url: Arc::from(pending.callback_url.as_str()),
+                token: pending.token.as_deref().map(Arc::from),
+                id: pending.id.clone(),
+                head,
+            },
+        ));
+        self.follow()
+    }
+
+    /// End the view of the job of the call `row`, with each view update that
+    /// its delivery still owes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn unview(
+        &mut self,
+        row: &Row,
+        deliveries: &Deliveries,
+    )
+    {
+        let Row::Call(ref group_id, ref id) = *row
+        else {
+            return;
+        };
+        let view = Row::View(group_id.clone(), id.clone());
+        if self.views.remove(&view).is_some() {
+            deliveries.forget(&view);
+            // Unwatching never fails; only a watch asks the host for a thread.
+            drop(self.follow());
+        }
+    }
+
     /// Add the events of `tick` to each row that follows the activity, and
-    /// owe each row with no state in flight its next state. `occupancy` is the
-    /// row of each core of the tick, encoded.
+    /// owe each row with no state in flight its next state. Owe each running
+    /// job the card of the tick as its view. `occupancy` is the row of each
+    /// core of the tick, encoded.
     ///
     /// # Specification
     /// trivial.
@@ -861,6 +991,7 @@ impl Subscriptions
         let Self {
             ref activity,
             ref mut rows,
+            ref views,
             ref occupancy,
             run,
             ..
@@ -869,6 +1000,20 @@ impl Subscriptions
             if let Some(subscription) = rows.get_mut(row) {
                 subscription.ledger.heard(&tick.events);
                 subscription.owe_ledger(row, (run, occupancy), deliveries);
+            }
+        }
+        if views.is_empty() {
+            return;
+        }
+        // One card for every view: the runtime keeps the latest of each.
+        if let Some((last, text)) = activity::card(run, &tick.events, occupancy) {
+            let card = Card {
+                run,
+                last,
+                text: Arc::from(quoted(&text)),
+            };
+            for (row, view) in views {
+                view.owe(row, &card, deliveries);
             }
         }
     }
@@ -955,6 +1100,8 @@ pub struct Toolset
     table: Table,
     /// When to retry a delivery, and how often.
     policy: Policy,
+    /// The verbs that `check` and `test` walk with, when the driver gave them.
+    verbs: Option<Arc<dyn Verbs>>,
 }
 
 impl Toolset
@@ -1051,7 +1198,26 @@ impl Toolset
             subscriptions: Subscriptions::resumed(kept),
             table,
             policy,
+            verbs: None,
         })
+    }
+
+    /// This toolset, whose `check` and `test` walk their paths with `verbs`.
+    /// A toolset with no verbs answers them with an error.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn walking(
+        self,
+        verbs: Arc<dyn Verbs>,
+    ) -> Self
+    {
+        Self {
+            verbs: Some(verbs),
+            ..self
+        }
     }
 
     /// The address the toolset listens on.
@@ -1094,10 +1260,17 @@ impl Toolset
     ///   subscription to the declaration, unless the runtime took a state of
     ///   that version or a later one. While a row follows the activity, each
     ///   tick of the hub's fold that has events reaches it, and a row with no
-    ///   state in flight is owed its next state. A `POST` to
-    ///   `/cancel_tool_call` or `/close_thread` is answered `200` once the rows
-    ///   it names are dropped from the table and their deliveries forgotten.
-    ///   Each delivery is retried as the policy states.
+    ///   state in flight is owed its next state. A long operation, `check`,
+    ///   `test`, `replay` or `run`, is answered once its job ends, with the
+    ///   verdict line of the verb, the counts of the replay, or the line of the
+    ///   run. In the build with the `instrument` feature, each tick that has
+    ///   events reaches each running job as a `view_update` of the type
+    ///   `activity`. A newer revision of a document that a `check`, a `test` or
+    ///   a `replay` reads retires it, and its text names the document and its
+    ///   version. A `POST` to `/cancel_tool_call` or `/close_thread` is
+    ///   answered `200` once the rows it names are dropped from the table and
+    ///   their deliveries forgotten, and each job it names is answered
+    ///   `cancelled`. Each delivery is retried as the policy states.
     /// - provides: `gandr serve`, the face beside the hub's socket.
     /// - fails: when accepting a connection fails on every acceptor for a
     ///   reason other than an interruption or an aborted connection.
@@ -1120,7 +1293,9 @@ impl Toolset
     ///   admission that changes the card it follows. A cancel and a closed
     ///   thread end their rows. A listener that answers `503` once hears the
     ///   event again after the first wait, and one that answers `404` hears
-    ///   nothing more.
+    ///   nothing more. `check` on a corpus reaches the listener with its
+    ///   verdict line and its activity, `replay` and `run` answer, and an edit
+    ///   and a cancel end their jobs.
     /// - witness: `rap::tests::the_toolset_answers_a_call_by_its_callback`
     /// - witness: `rap::tests::a_call_a_crash_lost_is_answered_with_an_error`
     /// - witness: `rap::tests::a_stalled_client_holds_no_other_call`
@@ -1129,17 +1304,19 @@ impl Toolset
     /// - witness: `rap::tests::a_cancel_and_a_closed_thread_drop_their_rows`
     /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
     /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509`
+    /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
+    /// - witness: `rap::tests::a_newer_revision_retires_a_check_and_a_cancel_ends_a_job`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             pool_only_threads,
-            reason = "io: the worker and the fan-out block on the workspace lock, each delivery on its callback's socket, and each acceptor on its client's socket, for the toolset's life"
+            reason = "io: the worker, the jobs and the fan-out block on the workspace lock or a channel, each delivery on its callback's socket, and each acceptor on its client's socket, for the toolset's life"
         )
     )]
     #[inline]
     pub fn serve<Log>(
         self,
-        workspace: &Mutex<Workspace>,
+        workspace: &Arc<Mutex<Workspace>>,
         peer: Peer,
         log: Log,
     ) -> io::Result<()>
@@ -1153,6 +1330,7 @@ impl Toolset
             subscriptions,
             table,
             policy,
+            verbs,
         } = self;
         #[cfg(feature = "instrument")]
         let (mut subscriptions, mut log) = (subscriptions, log);
@@ -1173,6 +1351,7 @@ impl Toolset
         }
         let (changed, changes) = channel();
         let (settled, settlements) = channel();
+        let (jobs, commands) = channel();
         {
             let mut watched = lock(workspace);
             watched.watch(peer, changed);
@@ -1223,21 +1402,45 @@ impl Toolset
             &deliveries,
         );
         let table = &table;
+        let held = Held {
+            workspace,
+            verbs: verbs.as_ref(),
+            store,
+            #[cfg(feature = "instrument")]
+            subscriptions,
+            deliveries,
+            log,
+        };
         thread::scope(|scope| {
+            let worker = {
+                let jobs = jobs.clone();
+                scope.spawn(move || {
+                    work(
+                        queued,
+                        (workspace, &jobs),
+                        store,
+                        subscriptions,
+                        table,
+                        deliveries,
+                        log,
+                    );
+                })
+            };
+            let finished = jobs.clone();
+            let held = &held;
+            drop(scope.spawn(move || jobs::run(commands, finished, held)));
+            let changing = jobs.clone();
             drop(scope.spawn(move || {
-                work(
-                    queued,
-                    workspace,
-                    store,
-                    subscriptions,
-                    table,
-                    deliveries,
-                    log,
-                );
+                fan_out(changes, (workspace, &changing), subscriptions, deliveries);
             }));
-            drop(scope.spawn(move || fan_out(changes, workspace, subscriptions, deliveries)));
+            let settling = jobs.clone();
             drop(scope.spawn(move || {
-                fan_out_accounts(settlements, workspace, subscriptions, deliveries);
+                fan_out_accounts(
+                    settlements,
+                    (workspace, &settling),
+                    subscriptions,
+                    deliveries,
+                );
             }));
             #[cfg(feature = "instrument")]
             drop(scope.spawn(move || fan_out_activity(ticks, subscriptions, deliveries)));
@@ -1255,6 +1458,7 @@ impl Toolset
                     manifest,
                     store,
                     queue: queue.clone(),
+                    jobs: jobs.clone(),
                     subscriptions,
                     table,
                     deliveries,
@@ -1273,6 +1477,10 @@ impl Toolset
                         .unwrap_or_else(|_panic| Err(io::Error::other("an acceptor panicked")))
                 })
                 .fold(Ok(()), Result::and);
+            // The jobs end once the worker started its last one. A job that did
+            // not end keeps its row, which the next toolset answers.
+            drop(worker.join());
+            drop(jobs.send(Command::Stop));
             // The fan-out ends with its watch, and each delivery thread once
             // its attempt in flight ends. The store keeps each answer that no
             // runtime took.
@@ -1442,9 +1650,39 @@ fn manifest(address: SocketAddr) -> Buffer
     Buffer(answer)
 }
 
+/// The jobs that a cancel or a closure names: by the `group_id`, and by the
+/// `id` when it names one.
+struct Ending
+{
+    /// The conversation, when the request names one.
+    group_id: Option<String>,
+    /// The call, when the request names one.
+    id: Option<String>,
+}
+
+/// What the thread of the jobs reads and writes besides its jobs: the
+/// workspace, the verbs, the store, the subscriptions, the deliveries and the
+/// log.
+struct Held<'toolset, Log>
+{
+    /// The workspace that the editors share.
+    workspace: &'toolset Arc<Mutex<Workspace>>,
+    /// The verbs that the driver gave, when it gave them.
+    verbs: Option<&'toolset Arc<dyn Verbs>>,
+    /// The store of the calls.
+    store: &'toolset Mutex<Store>,
+    /// The subscriptions, which hold the views of the running jobs.
+    #[cfg(feature = "instrument")]
+    subscriptions: &'toolset Mutex<Subscriptions>,
+    /// The deliveries.
+    deliveries: &'toolset Deliveries,
+    /// The log.
+    log: &'toolset Mutex<Log>,
+}
+
 /// What each acceptor reads and writes besides its connection: the manifest,
-/// the store, the worker's queue, the subscriptions and their table, the
-/// deliveries and the log.
+/// the store, the worker's queue, the thread of the jobs, the subscriptions
+/// and their table, the deliveries and the log.
 struct Desk<'toolset, Log>
 {
     /// The answer to a `GET` of the manifest.
@@ -1453,6 +1691,8 @@ struct Desk<'toolset, Log>
     store: &'toolset Mutex<Store>,
     /// The worker's queue.
     queue: Sender<Call>,
+    /// The thread of the jobs, which a cancel and a closure end jobs on.
+    jobs: Sender<Command>,
     /// The subscriptions.
     subscriptions: &'toolset Mutex<Subscriptions>,
     /// The table that keeps the subscriptions.
@@ -1570,10 +1810,11 @@ where
 }
 
 /// Drop each subscription that `request`, the body of a request on `route`,
-/// names: a cancel names a `tool_call_id`, and narrows to a `group_id` when it
-/// names one. A closure names a `thread_id`, the `group_id` of its rows.
-/// Forget the deliveries of each row dropped, and write the table at `desk`
-/// once. A body that names no row drops nothing.
+/// names, and end each job that it names: a cancel names a `tool_call_id`,
+/// and narrows to a `group_id` when it names one. A closure names a
+/// `thread_id`, the `group_id` of its rows. Forget the deliveries of each row
+/// dropped, and write the table at `desk` once. A body that names no row drops
+/// nothing.
 ///
 /// # Specification
 /// trivial.
@@ -1585,6 +1826,20 @@ fn ended<Log>(
     Log: Write,
 {
     let named = |field| request.get(field).and_then(Value::as_str);
+    let stopping = match route {
+        Route::Cancel => named("tool_call_id").map(|id| Ending {
+            group_id: named("group_id").map(String::from),
+            id: Some(String::from(id)),
+        }),
+        Route::Close => named("thread_id").map(|group_id| Ending {
+            group_id: Some(String::from(group_id)),
+            id: None,
+        }),
+        Route::Manifest | Route::Invoke | Route::Unknown | Route::TooLarge => None,
+    };
+    if let Some(stopping) = stopping {
+        drop(desk.jobs.send(Command::End(stopping)));
+    }
     let mut subscriptions = lock(desk.subscriptions);
     let ending: Vec<Row> = subscriptions
         .rows
@@ -1721,13 +1976,14 @@ fn read_request(
 /// Answer each call `queued` holds over `workspace`, keep its answer in
 /// `store`, open the subscription it confirms in `subscriptions` and `table`,
 /// and owe its result to `deliveries`, telling `log` of each answer that the
-/// store does not keep.
+/// store does not keep. Send each long operation to the thread of the jobs,
+/// which answers it when its job ends.
 ///
 /// # Specification
 /// trivial.
 fn work<Log>(
     queued: Receiver<Call>,
-    workspace: &Mutex<Workspace>,
+    (workspace, jobs): (&Mutex<Workspace>, &Sender<Command>),
     store: &Mutex<Store>,
     subscriptions: &Mutex<Subscriptions>,
     table: &Table,
@@ -1737,6 +1993,17 @@ fn work<Log>(
     Log: Write,
 {
     for Call { pending, arguments } in queued {
+        match job_of(&pending, arguments.as_ref()) {
+            Some(Ok(job)) => {
+                drop(jobs.send(Command::Start(pending, job)));
+                continue;
+            },
+            Some(Err(refused)) => {
+                owe_answer(&pending, &refused, store, deliveries, log);
+                continue;
+            },
+            None => {},
+        }
         let mut answer = answered(&pending, arguments, workspace);
         // A subscription reaches the table before its result is owed. The
         // lock is held until the result is owed, so that no event of the
@@ -1773,21 +2040,61 @@ fn work<Log>(
         else {
             None
         };
-        let kept = lock(store).answered(&answer);
-        if let Err(error) = kept {
-            drop(writeln!(
-                lock(log),
-                "the toolset did not keep the answer of the call {} of {}: {error}",
-                pending.id,
-                pending.group_id
-            ));
-        }
-        deliveries.owe(
-            Row::Call(pending.group_id.clone(), pending.id.clone()),
-            result(&pending, &answer),
-        );
+        owe_answer(&pending, &answer, store, deliveries, log);
         drop(opened);
     }
+}
+
+/// The job of the call `pending` with `arguments`, or the answer that refuses
+/// its arguments, when the call is a long operation. A call that a crash cut
+/// short has no arguments and no job.
+///
+/// # Specification
+/// trivial.
+fn job_of(
+    pending: &Pending,
+    arguments: Option<&Value>,
+) -> Option<Result<tools::Job, Answer>>
+{
+    let name = Value::String(pending.operation.clone());
+    let job = tools::job(&name, arguments?)?;
+    Some(job.map_err(|refusal| Answer {
+        group_id: pending.group_id.clone(),
+        id: pending.id.clone(),
+        text: alloc::format!("Error: {refusal}"),
+        display: None,
+        version: None,
+        subscription: None,
+    }))
+}
+
+/// Keep `answer`, the answer of the call `pending`, in `store`, and owe its
+/// result to `deliveries`, telling `log` when the store does not keep it.
+///
+/// # Specification
+/// trivial.
+fn owe_answer<Log>(
+    pending: &Pending,
+    answer: &Answer,
+    store: &Mutex<Store>,
+    deliveries: &Deliveries,
+    log: &Mutex<Log>,
+) where
+    Log: Write,
+{
+    let kept = lock(store).answered(answer);
+    if let Err(error) = kept {
+        drop(writeln!(
+            lock(log),
+            "the toolset did not keep the answer of the call {} of {}: {error}",
+            pending.id,
+            pending.group_id
+        ));
+    }
+    deliveries.owe(
+        Row::Call(pending.group_id.clone(), pending.id.clone()),
+        result(pending, answer),
+    );
 }
 
 /// The answer of the call `pending` with `arguments` over `workspace`, absent
@@ -1948,49 +2255,67 @@ fn result(
 }
 
 /// Owe each subscription the new frame of each document that `changes` names,
-/// until the workspace ends the watch. A document that no subscription follows
-/// costs a lookup.
+/// until the workspace ends the watch, and tell the thread of the jobs of each
+/// document. A document that no subscription follows costs a lookup.
 ///
 /// # Specification
 /// trivial.
 fn fan_out(
     changes: Receiver<DocumentUri>,
-    workspace: &Mutex<Workspace>,
+    (workspace, jobs): (&Mutex<Workspace>, &Sender<Command>),
     subscriptions: &Mutex<Subscriptions>,
     deliveries: &Deliveries,
 )
 {
     for uri in changes {
-        let followed = lock(subscriptions).diagnostics.contains_key(&uri);
-        if !followed {
-            continue;
-        }
-        let Some(frame) = lock(workspace).rendered(&uri)
-        else {
-            continue;
-        };
-        let Some((document, report)) = carded(&frame)
-        else {
-            continue;
-        };
-        let state = State {
-            version: i32::from(document.version),
-            text: Arc::from(quoted(&cards(document, report))),
-        };
-        lock(subscriptions).publish_diagnostics(&uri, &state, deliveries);
+        publish_frame(&uri, workspace, subscriptions, deliveries);
+        // The thread of the jobs retires each job that reads an older revision.
+        drop(jobs.send(Command::Changed(uri)));
     }
+}
+
+/// Owe each subscription to the frame of `uri` its new frame. A document that
+/// no subscription follows costs a lookup.
+///
+/// # Specification
+/// trivial.
+fn publish_frame(
+    uri: &DocumentUri,
+    workspace: &Mutex<Workspace>,
+    subscriptions: &Mutex<Subscriptions>,
+    deliveries: &Deliveries,
+)
+{
+    let followed = lock(subscriptions).diagnostics.contains_key(uri);
+    if !followed {
+        return;
+    }
+    let Some(frame) = lock(workspace).rendered(uri)
+    else {
+        return;
+    };
+    let Some((document, report)) = carded(&frame)
+    else {
+        return;
+    };
+    let state = State {
+        version: i32::from(document.version),
+        text: Arc::from(quoted(&cards(document, report))),
+    };
+    lock(subscriptions).publish_diagnostics(uri, &state, deliveries);
 }
 
 /// Owe each subscription to a declaration of a document that `settlements`
 /// names the card of that declaration, after each admission that settles the
-/// document, until the workspace ends the watch. A document that no
-/// subscription follows costs a lookup.
+/// document, until the workspace ends the watch, and tell the thread of the
+/// jobs of each admission. A document that no subscription follows costs a
+/// lookup.
 ///
 /// # Specification
 /// trivial.
 fn fan_out_accounts(
     settlements: Receiver<DocumentUri>,
-    workspace: &Mutex<Workspace>,
+    (workspace, jobs): (&Mutex<Workspace>, &Sender<Command>),
     subscriptions: &Mutex<Subscriptions>,
     deliveries: &Deliveries,
 )
@@ -1999,42 +2324,59 @@ fn fan_out_accounts(
     let mut states: BTreeMap<String, State> = BTreeMap::new();
     for uri in settlements {
         states.clear();
-        let declarations = lock(subscriptions).declarations(&uri);
-        if declarations.is_empty() {
-            continue;
-        }
-        let Some((document, cards)) = lock(workspace).accounted(&uri)
-        else {
-            continue;
-        };
-        // The first card of a name in document order is the one that a
-        // subscription to the name follows.
-        for card in &cards {
-            if declarations.contains(&card.name) && !states.contains_key(&card.name) {
-                let accounted = Accounted {
-                    uri: &uri,
-                    declaration: &card.name,
-                    card: Some(card),
-                };
-                let state = account_state(&accounted, &document);
-                drop(states.insert(String::from(card.name.as_str()), state));
-            }
-        }
-        // A subscription to a name that no declaration has follows null.
-        for declaration in declarations {
-            if let alloc::collections::btree_map::Entry::Vacant(vacant) = states.entry(declaration)
-            {
-                let accounted = Accounted {
-                    uri: &uri,
-                    declaration: vacant.key(),
-                    card: None,
-                };
-                let state = account_state(&accounted, &document);
-                let _null = vacant.insert(state);
-            }
-        }
-        lock(subscriptions).publish_accounts(&uri, &states, deliveries);
+        publish_settled((&uri, &mut states), workspace, subscriptions, deliveries);
+        // The thread of the jobs answers each replay that the admission ends.
+        drop(jobs.send(Command::Settled(uri)));
     }
+}
+
+/// Owe each subscription to a declaration of `uri` the card of that
+/// declaration, with `states` as the map of the states of the pass. A document
+/// that no subscription follows costs a lookup.
+///
+/// # Specification
+/// trivial.
+fn publish_settled(
+    (uri, states): (&DocumentUri, &mut BTreeMap<String, State>),
+    workspace: &Mutex<Workspace>,
+    subscriptions: &Mutex<Subscriptions>,
+    deliveries: &Deliveries,
+)
+{
+    let declarations = lock(subscriptions).declarations(uri);
+    if declarations.is_empty() {
+        return;
+    }
+    let Some((document, cards)) = lock(workspace).accounted(uri)
+    else {
+        return;
+    };
+    // The first card of a name in document order is the one that a
+    // subscription to the name follows.
+    for card in &cards {
+        if declarations.contains(&card.name) && !states.contains_key(&card.name) {
+            let accounted = Accounted {
+                uri,
+                declaration: &card.name,
+                card: Some(card),
+            };
+            let state = account_state(&accounted, &document);
+            drop(states.insert(String::from(card.name.as_str()), state));
+        }
+    }
+    // A subscription to a name that no declaration has follows null.
+    for declaration in declarations {
+        if let alloc::collections::btree_map::Entry::Vacant(vacant) = states.entry(declaration) {
+            let accounted = Accounted {
+                uri,
+                declaration: vacant.key(),
+                card: None,
+            };
+            let state = account_state(&accounted, &document);
+            let _null = vacant.insert(state);
+        }
+    }
+    lock(subscriptions).publish_accounts(uri, states, deliveries);
 }
 
 /// The state that `accounted` gives each subscription to its declaration in
@@ -2078,9 +2420,10 @@ fn fan_out_activity(
 /// runtime took or refused, record the version of a state that a runtime took,
 /// drop a subscription that a runtime refused, and mark one whose retries are
 /// spent. A row that follows the activity lets go of the state it took and is
-/// owed its next state on `deliveries`. Tell `log` of each fate but a delivery
-/// taken, of a subscription that is reachable again, and of a table that could
-/// not be written.
+/// owed its next state on `deliveries`. A job whose view a runtime refused
+/// hears no more updates. Tell `log` of each fate but a delivery taken, of a
+/// subscription that is reachable again, and of a table that could not be
+/// written.
 ///
 /// # Specification
 /// trivial.
@@ -2170,6 +2513,16 @@ fn told<Log>(
                 subscription.ledger.spent();
             }
         },
+        #[cfg(feature = "instrument")]
+        (&Row::View(..), _) => {
+            if matches!(*fate, Fate::Refused(_)) {
+                let mut held = lock(subscriptions);
+                drop(held.views.remove(row));
+                // The removal of a view only ends a watch, which cannot fail.
+                drop(held.follow());
+                drop(held);
+            }
+        },
     }
     if !matches!(*fate, Fate::Taken(_)) {
         drop(writeln!(lock(log), "the delivery to {row} was {fate}"));
@@ -2180,6 +2533,7 @@ fn told<Log>(
 mod tests
 {
     use alloc::string::String;
+    use alloc::sync::Arc;
     use alloc::vec::Vec;
     use core::net::Ipv4Addr;
     use core::net::SocketAddr;
@@ -2192,6 +2546,10 @@ mod tests
     use std::path::PathBuf;
     use std::thread;
 
+    use gandr_surface_dispatcher::Pool;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Verb;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_lsp::Peer;
     use gandr_surface_lsp::Workspace;
     use gandr_surface_lsp::bind;
@@ -2206,6 +2564,7 @@ mod tests
     use super::Policy;
     use super::REQUEST_WAIT;
     use super::Toolset;
+    use super::Verbs;
     use crate::face::tests::Editor;
     use crate::face::tests::Model;
     use crate::face::tests::Scratch;
@@ -2282,6 +2641,25 @@ mod tests
         toolset: Toolset,
     )
     {
+        hub_over(
+            scratch,
+            toolset,
+            Workspace::spelled(gandr_surface_lsp::Spelling::Unicode),
+        );
+    }
+
+    /// A hub serving `scratch`'s socket over `workspace`, with the line face
+    /// and `toolset` beside it. The hub serves for the life of the test
+    /// process.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hub_over(
+        scratch: &Scratch,
+        toolset: Toolset,
+        workspace: Workspace,
+    )
+    {
         let socket = scratch.socket();
         let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
         else {
@@ -2301,10 +2679,24 @@ mod tests
                             .expect("the toolset serves");
                     },
                 )),
-                Workspace::spelled(gandr_surface_lsp::Spelling::Unicode),
+                workspace,
             )
             .expect("the hub serves");
         }));
+    }
+
+    /// A workspace whose pool has two threads, so a job runs beside the thread
+    /// of the jobs, as on a host of two cores or more.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parallel() -> Workspace
+    {
+        Workspace::spelled(gandr_surface_lsp::Spelling::Unicode).pooled(Arc::new(Pool::new(
+            Width::Threads(Threads::from(
+                core::num::NonZeroUsize::MIN.saturating_add(1),
+            )),
+        )))
     }
 
     /// A listener on the loopback interface, at a port the system picks.
@@ -2656,25 +3048,29 @@ mod tests
             body: Vec::new(),
         })
         .json();
-        let (subscriptions, called): (Vec<Value>, Vec<Value>) = entries(manifest.get("tools"))
+        let (called_back, called): (Vec<Value>, Vec<Value>) = entries(manifest.get("tools"))
             .into_iter()
             .partition(|entry| {
-                entry
-                    .get(0)
-                    .and_then(Value::as_str)
-                    .is_some_and(|name| name.starts_with("subscribe_"))
+                entry.get(0).and_then(Value::as_str).is_some_and(|name| {
+                    name.starts_with("subscribe_")
+                        || matches!(name, "check" | "replay" | "run" | "test")
+                })
             });
         assert_eq!(
-            subscriptions
+            called_back
                 .iter()
                 .map(|entry| entry.get(0))
                 .collect::<Vec<_>>(),
             [
+                Some(&json!("check")),
+                Some(&json!("replay")),
+                Some(&json!("run")),
                 Some(&json!("subscribe_account")),
                 Some(&json!("subscribe_activity")),
-                Some(&json!("subscribe_diagnostics"))
+                Some(&json!("subscribe_diagnostics")),
+                Some(&json!("test"))
             ],
-            "the manifest alone offers the subscriptions"
+            "the manifest alone offers the subscriptions and the long operations"
         );
         assert_eq!(
             called,
@@ -3534,5 +3930,231 @@ mod tests
             "a file whose listener has gone is vacant"
         );
         drop(stale);
+    }
+
+    /// Verbs that print each path, and then the verdict line. A path that
+    /// ends in `wait` prints a tick each 10 ms until its job is retired, for
+    /// ten seconds at most.
+    struct Echoing;
+
+    impl Verbs for Echoing
+    {
+        /// Print each path of `paths`, and then the verdict line.
+        ///
+        /// # Specification
+        /// trivial.
+        fn walk(
+            &self,
+            _verb: Verb,
+            paths: Vec<PathBuf>,
+            _pool: &Pool,
+            (printed, _faulted): (&mut dyn std::io::Write, &mut dyn std::io::Write),
+        ) -> std::io::Result<()>
+        {
+            for path in &paths {
+                writeln!(printed, "{}", path.display())?;
+                if path.ends_with("wait") {
+                    for _tick in 0_u32 .. 1000_u32 {
+                        writeln!(printed, "tick")?;
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
+            writeln!(printed, "verdict: settled")
+        }
+    }
+
+    /// The next result that `callback` takes, read whole and answered `200`,
+    /// and the view updates that come before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resulted(callback: &TcpListener) -> (Value, Vec<Value>)
+    {
+        let mut views = Vec::new();
+        loop {
+            let message = received(callback).json();
+            if message.get("type") == Some(&json!("tool_result")) {
+                return (message, views);
+            }
+            views.push(message);
+        }
+    }
+
+    /// The `id`, the text and the display of `result`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn told(result: &Value) -> Value
+    {
+        json!([
+            result.get("id"),
+            result.get("text"),
+            result.pointer("/display_as/0/content")
+        ])
+    }
+
+    #[test]
+    fn a_long_operation_answers_when_its_job_ends()
+    {
+        let scratch = Scratch::new(&json!("rap-jobs"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/jobs.gandr");
+        let toolset = opened(&scratch).walking(Arc::new(Echoing));
+        let address = toolset.address().expect("the toolset listens");
+        hub_over(&scratch, toolset, parallel());
+        let mut editor = Editor::new(&scratch);
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let callback_url = json!(alloc::format!(
+            "http://{}/results/jobs",
+            callback.local_addr().expect("the callback listens")
+        ));
+        let call = |operation: &str, arguments: Value, id: &str| {
+            let started = std::time::Instant::now();
+            let acknowledged = invoke(
+                address,
+                &json!({ "operation": operation, "arguments": arguments, "id": id,
+                    "callback_url": callback_url, "group_id": "thread-1" }),
+                None,
+            );
+            let acknowledgement = started.elapsed();
+            assert!(
+                acknowledged.head.starts_with("HTTP/1.1 200 "),
+                "{}",
+                acknowledged.head
+            );
+            assert!(
+                acknowledgement < Duration::from_millis(100),
+                "a long operation is acknowledged at once: {acknowledgement:?}"
+            );
+            told(&resulted(&callback).0)
+        };
+
+        assert_eq!(
+            call(
+                "check",
+                json!({ "paths": ["/tmp/a.gandr", "/tmp/b.gandr"] }),
+                "check-1"
+            ),
+            json!([
+                "check-1",
+                "verdict: settled",
+                "/tmp/a.gandr\n/tmp/b.gandr\nverdict: settled\n"
+            ]),
+            "the text is the verdict line, and the display is each line that the verb prints"
+        );
+        assert_eq!(
+            call("test", json!({ "paths": [] }), "test-1"),
+            json!(["test-1", "Error: `paths` must name one path or more", null]),
+            "a walk of no path is refused"
+        );
+        assert_eq!(
+            call("replay", json!({ "uri": uri }), "replay-1"),
+            json!([
+                "replay-1",
+                "replay of version 1: 1 replayed, 0 refused, 0 withheld, 0 checked",
+                "f: kernel replayed\n"
+            ]),
+            "a replay counts the declarations of the revision by the kernel's warrant"
+        );
+        assert_eq!(
+            call(
+                "replay",
+                json!({ "uri": "file:///tmp/unheld.gandr" }),
+                "replay-2"
+            ),
+            json!([
+                "replay-2",
+                "Error: the hub does not hold file:///tmp/unheld.gandr",
+                null
+            ]),
+            "a replay of a document that the hub does not hold is refused"
+        );
+        assert_eq!(
+            call("run", json!({ "uri": uri, "entry": "f" }), "run-1"),
+            json!(["run-1", "42", "42"]),
+            "a run answers the line that the run lens shows"
+        );
+        assert_eq!(
+            call("run", json!({ "uri": uri, "entry": "g" }), "run-2"),
+            json!([
+                "run-2",
+                "Error: no declaration of file:///tmp/jobs.gandr is named `g`",
+                null
+            ]),
+            "a run of a name that no declaration has is refused"
+        );
+        drop(editor);
+    }
+
+    #[test]
+    fn a_newer_revision_retires_a_check_and_a_cancel_ends_a_job()
+    {
+        let scratch = Scratch::new(&json!("rap-retired"));
+        let callback = loopback();
+        let uri = json!("file:///tmp/wait/held.gandr");
+        let toolset = opened(&scratch).walking(Arc::new(Echoing));
+        let address = toolset.address().expect("the toolset listens");
+        hub_over(&scratch, toolset, parallel());
+        let mut editor = Editor::new(&scratch);
+        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+        let callback_url = json!(alloc::format!(
+            "http://{}/results/retired",
+            callback.local_addr().expect("the callback listens")
+        ));
+        let start = |id: &str, group_id: &str| {
+            let acknowledged = invoke(
+                address,
+                &json!({ "operation": "check", "arguments": { "paths": ["/tmp/wait"] }, "id": id,
+                    "callback_url": callback_url, "group_id": group_id }),
+                None,
+            );
+            assert!(
+                acknowledged.head.starts_with("HTTP/1.1 200 "),
+                "{}",
+                acknowledged.head
+            );
+        };
+
+        start("check-1", "thread-1");
+        // The check prints ticks for ten seconds unless a newer revision
+        // retires it; the wait lets it start first.
+        thread::sleep(Duration::from_millis(200));
+        editor.edit(&uri, &json!(2_i32), &json!("def f = 43 ;\n"));
+        assert_eq!(
+            told(&resulted(&callback).0),
+            json!([
+                "check-1",
+                "retired: file:///tmp/wait/held.gandr is at version 2",
+                null
+            ]),
+            "the retired call names the document and its version"
+        );
+
+        start("check-2", "thread-1");
+        start("check-3", "thread-2");
+        for (path, body) in [
+            ("/cancel_tool_call", json!({ "tool_call_id": "check-2" })),
+            ("/close_thread", json!({ "thread_id": "thread-2" })),
+        ] {
+            let ended = posted(address, &json!(path), &body);
+            assert!(ended.head.starts_with("HTTP/1.1 200 "), "{}", ended.head);
+        }
+        let mut ended = [resulted(&callback).0, resulted(&callback).0].map(|result| told(&result));
+        ended.sort_by_key(ToString::to_string);
+        assert_eq!(
+            ended,
+            [
+                json!(["check-2", "cancelled", null]),
+                json!(["check-3", "cancelled", null])
+            ],
+            "a cancel and a closed thread each end their job"
+        );
+        assert_eq!(
+            quiet(&callback, Duration::from_millis(300)),
+            Answer(true),
+            "an ended job delivers no result of its own"
+        );
+        drop(editor);
     }
 }

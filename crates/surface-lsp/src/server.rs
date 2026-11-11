@@ -2188,16 +2188,19 @@ impl Workspace
     /// - ensures: a request is answered as [`Server::handle`] answers it on a
     ///   running connection, under its own identifier; `initialize` and
     ///   `shutdown` are refused as a running connection refuses or answers
-    ///   them, and change nothing here. A notification or a response is
+    ///   them, and change nothing here. A `workspace/executeCommand` of [`RUN`]
+    ///   is answered as a connection answers it, with no `window/showMessage`;
+    ///   another command is not served. A notification or a response is
     ///   answered `null`; a body that is not a message, with the error the
     ///   protocol owes it.
-    /// - provides: every read-only request of the language server, for a face
-    ///   that speaks another protocol over the same documents.
+    /// - provides: every read-only request of the language server, and the run
+    ///   of a declaration, for a face that speaks another protocol over the
+    ///   same documents.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a hover and an outline answer as a connection's
-    ///   would; a notification answers `null`.
+    /// - hypothesis: L3 — a hover, an outline and a run answer as a
+    ///   connection's would; a notification answers `null`.
     /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
     #[spec(ensures: |ret| ret.is_null() || ret.get("jsonrpc").is_some())]
     #[inline]
@@ -2251,6 +2254,17 @@ impl Workspace
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
+            // A run changes no document, so a face that holds no copy runs a
+            // declaration as the run lens of an editor runs it.
+            Ok(Incoming::Request { id, method, params })
+                if method.as_ref() == "workspace/executeCommand"
+                    && params.get("command").and_then(Value::as_str) == Some(RUN) =>
+            {
+                match reader.execute(self, id, params).messages.pop() {
+                    Some(answer) => answer,
+                    None => return Value::Null,
+                }
+            },
             Ok(Incoming::Request { id, method, params }) => {
                 reader.request(self, id, &method, params)
             },
@@ -18169,6 +18183,22 @@ mod tests
                 .get(0_usize)
                 .cloned(),
             "a query answers as a connection answers"
+        );
+        let run = Body::from(
+            br#"{"jsonrpc":"2.0","id":4,"method":"workspace/executeCommand","params":{
+                "command":"gandr.run","arguments":["file:///tmp/shared.gandr",{"line":0,"character":4}]}}"#
+                .to_vec(),
+        );
+        let ran = workspace.query(&run);
+        assert_eq!(ran.get("id"), Some(&serde_json::json!(4_i32)));
+        assert_eq!(
+            Some(ran),
+            serde_json::to_value(&first.handle(&mut workspace, &run).messages)
+                .expect("a message encodes")
+                .as_array()
+                .and_then(|messages| messages.last())
+                .cloned(),
+            "a run answers as a connection's run lens answers, with no message shown"
         );
         assert!(
             workspace
