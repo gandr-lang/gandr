@@ -18,7 +18,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are projections of the diagnostics `gandr-surface-diagnostics` builds for the dispatcher's step, the same ones the terminal lays out, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy; the copy's session judges the text on the worker pool, off the serving loop, a later change retiring it, and the server reads the judgement's step through `gandr-surface-dispatcher`'s `entries` under `check --goals` and publishes each diagnostic the model builds as one LSP diagnostic, mapped as [`recheck`](src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. The first structural request after a change parses the copy's text once, and that reading answers each of them until the next change ([`reading`](src/reading.rs)). Every request about a name reads the dispatcher's `TypeTable`, built once per edit. Formatting lays the held text out through `gandr-surface-format`.
+**How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy; the copy's session judges the text on the worker pool, off the serving loop, a later change retiring it, and the server reads the judgement's step through `gandr-surface-dispatcher`'s `entries` under `check --goals` and publishes each diagnostic the model builds as one LSP diagnostic, mapped as [`recheck`](src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. Each structural request, name request and formatting request reads what the table below names.
 
 ## Provided features
 
@@ -31,6 +31,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes judged without submitting any, ranked best first, each with the diagnostics its text would publish; every copy and its session unchanged.
 - `Workspace::propose`, `Proposal` and `ProposalRefusal`: a model's fill of a range kept beside the document once it checks, refused when stale or failing, and withdrawn by the next synchronisation; kept fills served as ghost text, code lenses, code actions and hover notes.
 - `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket, with its greeting, its reports, a resync and a detach as [`bus`](src/bus.rs) states.
+- With the `instrument` feature, `Activities` and `Tick`: the hub's fold of the activity ring, which runs while a watcher follows it.
 - Incremental synchronisation: each content change applied in order and the document judged again in its session on the worker pool, molding only the forms the change touched; one log line per publication.
 - Notebook synchronisation: a Jupyter `.ipynb` of `gandr` cells judged as one document, each cell published its own diagnostics ([`notebook`](src/notebook.rs)).
 - `Server::admit`, `Server::admitted`, `Admissions` and `Awaiting`: the judgement each synchronisation leaves due, run on the worker pool and published once delivered, then the kernel admission it left, run once its diagnostics are published.
@@ -99,6 +100,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | A session across builds | [`handover`](src/handover.rs) |
 | Model proposals | [`proposal`](src/proposal.rs) |
 | The render bus | [`bus`](src/bus.rs) |
+| The hub's fold of the activity ring | [`activity`](src/activity.rs) |
 | `gandr doc`'s site | [`site`](src/site.rs) |
 | The transport | [`transport`](src/transport.rs) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
