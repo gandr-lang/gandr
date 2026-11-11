@@ -1500,6 +1500,72 @@ fn refused(module: &LoweredModule<'_>) -> Vec<String>
         .collect()
 }
 
+/// #6722: a bare `here` pattern names the empty word of the words that its
+/// own source can name. The importer of the circle alone reads it as the
+/// circle's empty word, though an earlier source of the unit mints the
+/// sphere's words. The importer of both is refused as unannotated.
+#[test]
+fn here_names_the_words_its_source_can_name_6722()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/here-names-the-words-its-source-can-name-6722-1.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/here-names-the-words-its-source-can-name-6722-2.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/here-names-the-words-its-source-can-name-6722-3.gandr"
+            )),
+            &[ImportTarget::Source(SourceIndex::from(1_usize))],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/here-names-the-words-its-source-can-name-6722-4.gandr"
+            )),
+            &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(1_usize)),
+            ],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let outcomes: Vec<(String, bool)> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| ["counted", "ambiguous"].contains(&declaration.name().as_ref()))
+        .map(|declaration| {
+            (
+                String::from(declaration.name().as_ref()),
+                matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                        boundary: FragmentBoundary::Unannotated,
+                        ..
+                    })
+                ),
+            )
+        })
+        .collect();
+    assert_eq!(
+        outcomes,
+        Vec::from([
+            (String::from("counted"), false),
+            (String::from("ambiguous"), true)
+        ]),
+        "`here` reads as the circle's empty word where the source sees the circle alone, and is unannotated where it sees both"
+    );
+}
+
 #[test]
 fn the_prelude_answers_a_name_nothing_written_binds_2302()
 {
