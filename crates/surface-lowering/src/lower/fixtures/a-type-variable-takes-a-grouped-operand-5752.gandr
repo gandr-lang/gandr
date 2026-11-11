@@ -1,0 +1,15 @@
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+data Vec(a : Type) : Nat -> Type where
+  | VNil : Vec a Zero
+  | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec(a, Succ n)
+
+def plus(m : Nat, k : Nat) -> Nat { m }
+
+def called_group(a : Type, n : Nat, v : Vec(a, Succ n)) -> Vec(a, Succ n) { v }
+def juxtaposed_group(a : Type, n : Nat, v : Vec a (Succ n)) -> Vec a (Succ n) { v }
+
+def called_call(a : Type, m : Nat, k : Nat, v : Vec(a, plus(m, k))) -> Vec(a, plus(m, k)) { v }
+def juxtaposed_call(a : Type, m : Nat, k : Nat, v : Vec a plus(m, k)) -> Vec a plus(m, k) { v }

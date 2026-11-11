@@ -30800,6 +30800,38 @@ mod tests
             outcome("opt")
         );
     }
+    #[test]
+    fn a_type_variable_takes_grouped_and_called_operands_5752()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/a-type-variable-takes-a-grouped-operand-5752.gandr"
+            )),
+            &mut arena,
+        );
+        let outcome = |name: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == name)
+                .map(LoweredDeclaration::outcome)
+        };
+        let declared = |name: &str| match outcome(name) {
+            Some(DeclarationOutcome::Completed { declared_type, .. }) => declared_type,
+            other => panic!("`{name}` lowers its type and its body: {other:?}"),
+        };
+        for (called, juxtaposed) in [
+            ("called_group", "juxtaposed_group"),
+            ("called_call", "juxtaposed_call"),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_type_syntax(&arena, declared(called), declared(juxtaposed)),
+                gandr_core_term::CertificateEquality::Equal,
+                "`{juxtaposed}` lowers as `{called}`"
+            );
+        }
+    }
 
     #[test]
     fn a_product_binder_splits_as_the_tuple_binder_4853()

@@ -82,7 +82,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 56 && rules.iter().take(42).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(42).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 57 && rules.iter().take(43).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(43).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -111,7 +111,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 42 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 43 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -555,6 +555,33 @@ fn add_type_rules(
             Regex::sort(ty),
             tile(TileLabel(super::APPLICATION)),
             Regex::sort(ty),
+        ]),
+    ));
+    let type_variable_application_operand = || {
+        Regex::alt([
+            tile(TileLabel("type_identifier")),
+            tile(TileLabel("type_variable")),
+            Regex::seq([tile(TileLabel("(")), Regex::sort(ty), tile(TileLabel(")"))]),
+            Regex::seq([
+                Regex::alt([
+                    tile(TileLabel("type_identifier")),
+                    tile(TileLabel("type_variable")),
+                ]),
+                tile(TileLabel("(")),
+                Regex::optional(comma1(Regex::sort(ty))),
+                tile(TileLabel(")")),
+            ]),
+        ])
+    };
+    rules.push(Rule::with_provenance(
+        RuleName("type_variable_application.juxtaposed"),
+        Provenance("type_application"),
+        ty,
+        type_juxtaposition,
+        Regex::seq([
+            tile(TileLabel("type_variable")),
+            tile(TileLabel(super::APPLICATION)),
+            type_variable_application_operand(),
         ]),
     ));
     // A qualified type reference `M.T`: a type component of the module the

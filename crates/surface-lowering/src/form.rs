@@ -60,6 +60,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::GroundSort;
+use gandr_surface_grammar::APPLICATION;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::NamedKind;
@@ -2688,7 +2689,9 @@ fn application_spine(
 {
     let application = match tree.node(position)?.label() {
         NodeLabel::Meld(mold)
-            if Some(mold) == pbg.application() || Some(mold) == pbg.application_in(Sort::Type) =>
+            if pbg.mold(mold).is_ok_and(|def| {
+                def.label == APPLICATION && matches!(def.sort, Sort::Expression | Sort::Type)
+            }) =>
         {
             mold
         },
@@ -2700,10 +2703,22 @@ fn application_spine(
         | NodeLabel::Space
         | NodeLabel::Doc => return None,
     };
-    let in_type = Some(application) == pbg.application_in(Sort::Type);
+    let in_type = pbg
+        .mold(application)
+        .is_ok_and(|def| def.sort == Sort::Type);
+    let application_sort = if in_type {
+        Sort::Type
+    }
+    else {
+        Sort::Expression
+    };
     let applied = |at: NodeIndex| {
-        tree.node(at)
-            .is_some_and(|node| node.label() == NodeLabel::Meld(application))
+        tree.node(at).is_some_and(|node| {
+            matches!(node.label(), NodeLabel::Meld(mold)
+            if pbg.mold(mold).is_ok_and(|def| {
+                def.label == APPLICATION && def.sort == application_sort
+            }))
+        })
     };
     let written = |at: NodeIndex| {
         tree.children(at)

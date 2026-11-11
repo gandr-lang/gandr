@@ -309,6 +309,42 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+#[test]
+fn a_variable_operand_after_an_application_takes_its_tile_5752() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def x : Vec a plus(m, k);", 1_usize),
+        ("def f[m : Mode](self : m T) -> Integer { 0 }", 0),
+        ("def f(x : m plus(m, k)) -> Integer { 0 }", 0),
+        ("def x : F (m T);", 0),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let applications = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == "type_variable_application.juxtaposed"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(
+            applications, expected,
+            "`{source}`: the variable-operand applications it reads"
+        );
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
 /// #6121: `Path` reads as `Bridge` reads. Before a `(` or a `[` written
 /// straight after it, each keeps its own form, whose endpoints are
 /// expressions, so `Path(Path.walk f p v, w)` reads its endpoint as a

@@ -242,6 +242,7 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_surface_grammar::APPLICATION;
 use gandr_surface_grammar::LabelId;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
@@ -2404,26 +2405,57 @@ impl<'pbg> MeldState<'pbg>
     ///   applies twice, and `-F Maybe A` returns the application.
     /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
-    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort) && application != mold))]
+    #[spec(ensures: |ret| ret.is_none_or(|application| application != mold && self.pbg.rule_of(application).is_ok_and(|rule| matches!(rule.name().0, "type_application.juxtaposed" | "type_variable_application.juxtaposed"))))]
     fn juxtaposed(
         &self,
         mold: MoldId,
         sort: Sort,
     ) -> Option<MoldId>
     {
-        let application = self.pbg.application_in(sort)?;
+        let generic = self.pbg.application_in(sort)?;
+        let variable_follows_application = sort == Sort::Type
+            && match (self.stack.as_slice(), self.pbg.application_in(Sort::Type)) {
+                ([.., application, variable], Some(application_mold)) => {
+                    self.label_of(application.emit) == Some(NodeLabel::Tile(application_mold))
+                        && matches!(
+                            self.label_of(variable.emit),
+                            Some(NodeLabel::Tile(variable_mold))
+                                if self.pbg.mold(variable_mold).is_ok_and(|def| def.label == "type_variable")
+                        )
+                },
+                _ => false,
+            };
+        let application = variable_follows_application
+            .then(|| {
+                self.pbg.label_id(LabelText(APPLICATION)).and_then(|label| {
+                    self.pbg
+                        .label_candidates(label)
+                        .iter()
+                        .copied()
+                        .find(|&candidate| {
+                            self.pbg.rule_of(candidate).is_ok_and(|rule| {
+                                rule.name().0 == "type_variable_application.juxtaposed"
+                            })
+                        })
+                })
+            })
+            .flatten()
+            .unwrap_or(generic);
         if mold == application {
             return None;
         }
+        let kind = self.classify(mold);
         if !matches!(
-            self.classify(mold),
+            kind,
             Kind::Operand
                 | Kind::FormStart { absorb_left: false }
                 | Kind::Operator(OpShape::Prefix)
-        ) {
+        ) && !(variable_follows_application
+            && matches!(kind, Kind::FormStart { absorb_left: true }))
+        {
             return None;
         }
-        self.applies_next_in(sort)
+        self.applies_next_in(sort).map(|_generic| application)
     }
 
     /// The application tile an expression operand opening next would take:
