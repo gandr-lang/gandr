@@ -23,11 +23,13 @@ mod tests
     use gandr_theory_levitation::NameRef;
     use gandr_theory_levitation::NominalId;
     use gandr_theory_virtual_doctrines::BiDiagram;
+    use gandr_theory_virtual_doctrines::Coend;
     use gandr_theory_virtual_doctrines::CutOutcome;
     use gandr_theory_virtual_doctrines::Diagram;
     use gandr_theory_virtual_doctrines::DirectedContext;
     use gandr_theory_virtual_doctrines::DirectedHom;
     use gandr_theory_virtual_doctrines::DirectedJ;
+    use gandr_theory_virtual_doctrines::End;
     use gandr_theory_virtual_doctrines::JError;
     use gandr_theory_virtual_doctrines::MotiveShape;
     use gandr_theory_virtual_doctrines::OpSig;
@@ -195,13 +197,28 @@ mod tests
         let other = SignatureRef::single(NominalId::new(1_u64.into(), "Other"));
         let ctx = DirectedContext::new()
             .with_var(NameRef::from("m"), OpSig::covariant(nat_sig()))
-            .with_var(NameRef::from("m"), OpSig::contravariant(other))
+            .with_var(NameRef::from("m"), OpSig::contravariant(other.clone()))
             .with_var(NameRef::from("k"), OpSig::covariant(nat_sig()));
         assert_eq!(
             ctx.variance_of(NameRef::from("m")),
             Maybe::Present(Variance::Contravariant),
             "the inner `m` is the one in scope"
         );
+        assert_eq!(
+            ctx.signature_of(NameRef::from("m")),
+            Maybe::Present(&other),
+            "and it ranges over its own signature"
+        );
+        assert_eq!(
+            ctx.signature_of(NameRef::from("k")),
+            Maybe::Present(&nat_sig())
+        );
+        assert!(bool::from(ctx.declares(NameRef::from("k"))));
+        assert!(!bool::from(ctx.declares(NameRef::from("z"))));
+        assert!(matches!(
+            ctx.signature_of(NameRef::from("z")),
+            Maybe::Absent(_)
+        ));
         assert!(matches!(
             ctx.variance_of(NameRef::from("z")),
             Maybe::Absent(_)
@@ -267,37 +284,27 @@ mod tests
     #[test]
     fn directed_j_transports_along_a_covariant_motive()
     {
-        let scrut = DirectedHom {
-            sig: nat_sig(),
-            src: vt(NameRef::from("a")),
-            tgt: vt(NameRef::from("b")),
-        };
+        let scrut = DirectedHom::new(nat_sig(), vt(NameRef::from("a")), vt(NameRef::from("b")));
         // Covariant motive C(x) = hom(c ⇝ x): transports forward to hom(c ⇝ b).
-        let covariant = DirectedJ {
-            motive: MotiveShape::CovariantTarget,
-            fixed: vt(NameRef::from("c")),
-        };
+        let covariant = DirectedJ::new(MotiveShape::CovariantTarget, vt(NameRef::from("c")));
         assert_eq!(
             check_directed_j(&scrut, &covariant),
-            Ok(DirectedHom {
-                sig: nat_sig(),
-                src: vt(NameRef::from("c")),
-                tgt: vt(NameRef::from("b")),
-            }),
+            Ok(DirectedHom::new(
+                nat_sig(),
+                vt(NameRef::from("c")),
+                vt(NameRef::from("b"))
+            )),
             "a covariant motive transports the covariant endpoint forward"
         );
         // Constant motive C(x) = hom(c ⇝ c): admissible, yields the diagonal.
-        let constant = DirectedJ {
-            motive: MotiveShape::Constant,
-            fixed: vt(NameRef::from("c")),
-        };
+        let constant = DirectedJ::new(MotiveShape::Constant, vt(NameRef::from("c")));
         assert_eq!(
             check_directed_j(&scrut, &constant),
-            Ok(DirectedHom {
-                sig: nat_sig(),
-                src: vt(NameRef::from("c")),
-                tgt: vt(NameRef::from("c")),
-            }),
+            Ok(DirectedHom::new(
+                nat_sig(),
+                vt(NameRef::from("c")),
+                vt(NameRef::from("c"))
+            )),
             "a constant motive is admissible"
         );
     }
@@ -305,17 +312,10 @@ mod tests
     #[test]
     fn directed_j_refuses_the_symmetry_motive()
     {
-        let scrut = DirectedHom {
-            sig: nat_sig(),
-            src: vt(NameRef::from("a")),
-            tgt: vt(NameRef::from("b")),
-        };
+        let scrut = DirectedHom::new(nat_sig(), vt(NameRef::from("a")), vt(NameRef::from("b")));
         // Symmetry needs C(x) = hom(x ⇝ a): the moving endpoint in the
         // contravariant source slot — the polarity side condition refuses it.
-        let symmetry = DirectedJ {
-            motive: MotiveShape::ContravariantSource,
-            fixed: vt(NameRef::from("a")),
-        };
+        let symmetry = DirectedJ::symmetry(vt(NameRef::from("a")));
         assert_eq!(
             Err(JError::MotiveNotCovariant),
             check_directed_j(&scrut, &symmetry),
@@ -333,17 +333,11 @@ mod tests
     fn directed_j_on_the_reflexive_hom_is_the_reflexive_hom()
     {
         let c = vt(NameRef::from("c"));
-        let diagonal = DirectedHom {
-            sig: nat_sig(),
-            src: c.clone(),
-            tgt: c.clone(),
-        };
+        let diagonal = DirectedHom::refl(nat_sig(), c.clone());
+        assert_eq!(diagonal, DirectedHom::new(nat_sig(), c.clone(), c.clone()));
         for motive in [MotiveShape::CovariantTarget, MotiveShape::Constant] {
             assert_eq!(
-                check_directed_j(&diagonal, &DirectedJ {
-                    motive,
-                    fixed: c.clone(),
-                },),
+                check_directed_j(&diagonal, &DirectedJ::new(motive, c.clone())),
                 Ok(diagonal.clone())
             );
         }
@@ -358,13 +352,9 @@ mod tests
         let query = Query::new(&store);
         let a = ground_cmd(NameRef::from("A"));
         let b = ground_cmd(NameRef::from("B"));
-        let fwd = DirectedHom {
-            sig: nat_sig(),
-            src: ct(NameRef::from("A")),
-            tgt: ct(NameRef::from("B")),
-        };
+        let fwd = DirectedHom::new(nat_sig(), ct(NameRef::from("A")), ct(NameRef::from("B")));
         assert!(
-            fwd.src != fwd.tgt,
+            !bool::from(fwd.is_reflexive()),
             "the forward hom is a genuine directed cell"
         );
         // Forward is witnessed; backward (symmetry) has NO engine witness.
@@ -388,28 +378,15 @@ mod tests
                 target in "[a-z]{1,3}",
                 fixed in "[a-z]{1,3}",
             ) {
-                let scrut = DirectedHom {
-                    sig: nat_sig(),
-                    src: vt(NameRef::from(source.as_str())),
-                    tgt: vt(NameRef::from(target.as_str())),
-                };
+                let scrut = DirectedHom::new(nat_sig(), vt(NameRef::from(source.as_str())), vt(NameRef::from(target.as_str())));
                 // The symmetry motive is always refused.
                 prop_assert_eq!(
-                    check_directed_j(
-                        &scrut,
-                        &DirectedJ {
-                            motive: MotiveShape::ContravariantSource,
-                            fixed: scrut.src.clone(),
-                        },
-                    ),
+                    check_directed_j(&scrut, &DirectedJ::symmetry(scrut.src.clone())),
                     Err(JError::MotiveNotCovariant),
                     "symmetry is underivable for every directed hom"
                 );
                 // The admissible (covariant) motive never reverses the target endpoint.
-                let covariant = DirectedJ {
-                    motive: MotiveShape::CovariantTarget,
-                    fixed: vt(NameRef::from(fixed.as_str())),
-                };
+                let covariant = DirectedJ::new(MotiveShape::CovariantTarget, vt(NameRef::from(fixed.as_str())));
                 let transported = check_directed_j(&scrut, &covariant)
                     .expect("a covariant motive is admissible");
                 prop_assert_eq!(
@@ -441,24 +418,17 @@ mod tests
     #[test]
     fn the_end_and_coend_collect_the_diagonal_components()
     {
-        let diagram = Diagram {
-            entries: vec![
-                (ct(NameRef::from("P0")), ct(NameRef::from("V0"))),
-                (ct(NameRef::from("P1")), ct(NameRef::from("V1"))),
-            ],
-        };
-        let components = diagram
-            .entries
-            .iter()
-            .map(|entry| entry.1.clone())
-            .collect::<Vec<_>>();
+        let diagram = Diagram::new(vec![
+            (ct(NameRef::from("P0")), ct(NameRef::from("V0"))),
+            (ct(NameRef::from("P1")), ct(NameRef::from("V1"))),
+        ]);
         assert_eq!(
-            components,
+            End::of(&diagram).components,
             vec![ct(NameRef::from("V0")), ct(NameRef::from("V1"))],
             "the end is the product of the diagonal components"
         );
         assert_eq!(
-            components,
+            Coend::of(&diagram).summands,
             vec![ct(NameRef::from("V0")), ct(NameRef::from("V1"))],
             "the coend is the coproduct of the diagonal components"
         );
@@ -527,9 +497,7 @@ mod tests
     #[test]
     fn coyoneda_is_none_off_carrier()
     {
-        let diagram = Diagram {
-            entries: vec![(ct(NameRef::from("P0")), ct(NameRef::from("V0")))],
-        };
+        let diagram = Diagram::new(vec![(ct(NameRef::from("P0")), ct(NameRef::from("V0")))]);
         assert_eq!(
             Maybe::Absent(
                 gandr_theory_virtual_doctrines::directed::coend::carrier_lookup::Absent::OffCarrier
@@ -548,12 +516,12 @@ mod tests
                 pick in 0_usize .. 64,
             ) {
                 let mut spelled = String::new();
-                let diagram = Diagram {
-                    entries: indices
+                let diagram = Diagram::new(
+                    indices
                         .iter()
                         .map(|&index| (spelled_ct(&mut spelled, format_args!("P{index}")), spelled_ct(&mut spelled, format_args!("V{index}"))))
                         .collect::<Vec<_>>(),
-                };
+                );
                 let chosen = pick.checked_rem(diagram.entries.len()).expect("entries are nonempty");
                 let object = diagram.entries[chosen].0.clone();
                 let expected = ct(NameRef::from(format!("V{}", indices[chosen]).as_str()));
@@ -576,12 +544,14 @@ mod tests
             "the invertible certificates share the ground seam"
         );
         let outcome = directed_cut(&first, &second, &store);
-        let CutOutcome::Coherent(composite) = outcome
-        else {
-            panic!("an all-invertible cut is admitted unconditionally (the boundary theorem)");
-        };
         assert!(
-            bool::from(composite.replay(&store)),
+            bool::from(outcome.is_coherent()),
+            "an all-invertible cut is admitted unconditionally (the boundary theorem)"
+        );
+        assert!(
+            outcome
+                .tracelet()
+                .is_ok_and(|composite| bool::from(composite.replay(&store))),
             "the coherent composite replays the whole chain"
         );
     }
@@ -596,11 +566,11 @@ mod tests
                 let (store, first, second) = invertible_chain(NameRef::from(prefix));
                 let outcome = directed_cut(&first, &second, &store);
                 prop_assert!(
-                    matches!(&outcome, CutOutcome::Coherent(_)),
+                    bool::from(outcome.is_coherent()),
                     "an invertible cut is coherent (never gated, never declined)"
                 );
                 prop_assert!(
-                    !matches!(&outcome, CutOutcome::Declined(_)),
+                    !bool::from(outcome.is_declined()),
                     "the boundary theorem: the invertible lane is never declined"
                 );
             }
@@ -696,13 +666,18 @@ mod tests
         let b = fused(&mut store, u2, v2);
         let outcome = directed_cut(&a, &b, &store);
         assert!(
-            matches!(&outcome, CutOutcome::Declined(_)),
+            bool::from(outcome.is_declined()),
             "a mixed-variance cycle is declined by the acyclicity gate"
         );
         if let CutOutcome::Declined(ref obstruction) = outcome {
             assert!(
                 matches!(obstruction, gandr_theory_decomposition_spaces::CompositionObstruction::Cycle { cycle } if cycle.len() >= 2),
                 "the decline carries the variable-flow cycle"
+            );
+            assert_eq!(
+                outcome.tracelet(),
+                Err(obstruction),
+                "a declined cut answers its obstruction, not a certificate"
             );
         }
         else {

@@ -23,6 +23,7 @@ mod tests
     use gandr_theory_levitation::Name;
     use gandr_theory_levitation::NameRef;
     use gandr_theory_levitation::NominalId;
+    use gandr_theory_virtual_doctrines::CartesianLawError;
     use gandr_theory_virtual_doctrines::CellStoreVdc;
     use gandr_theory_virtual_doctrines::CheckError;
     use gandr_theory_virtual_doctrines::Checker;
@@ -43,6 +44,9 @@ mod tests
     use gandr_theory_virtual_doctrines::SignatureRef;
     use gandr_theory_virtual_doctrines::TermRef;
     use gandr_theory_virtual_doctrines::Vdc as _;
+    use gandr_theory_virtual_doctrines::WCartesianAction;
+    use gandr_theory_virtual_doctrines::iso::witness_resolution;
+    use quenchant_shape::shape::Maybe;
 
     use crate::require_present;
 
@@ -338,6 +342,116 @@ mod tests
         );
     }
 
+    #[test]
+    fn w_cartesian_action_preserves_projections_diagonal_and_structure()
+    {
+        let nat = nat_sig();
+        let source = SignatureRef::product(Box::from([nat.clone(), nat.clone()]));
+        let target = source.clone();
+        let components = vec![
+            SigMorphism::identity(nat.clone()),
+            SigMorphism::identity(nat),
+        ];
+        let action = WCartesianAction::new(source, target, components);
+        let witness = action
+            .checked_witness()
+            .expect("the componentwise identity action is cartesian");
+        assert!(bool::from(witness.projections));
+        assert!(bool::from(witness.diagonal));
+        assert!(bool::from(witness.structure));
+    }
+
+    #[test]
+    fn w_cartesian_action_rejects_projection_defect()
+    {
+        let first = SignatureRef::single(NominalId::new(0_u64.into(), "First"));
+        let second = SignatureRef::single(NominalId::new(1_u64.into(), "Second"));
+        let source = SignatureRef::product(Box::from([first, second.clone()]));
+        let target = source.clone();
+        let action = WCartesianAction::new(source, target, vec![
+            SigMorphism::identity(second.clone()),
+            SigMorphism::identity(second),
+        ]);
+        let Err(CartesianLawError::Violation(witness)) = action.checked_witness()
+        else {
+            panic!("a factor-boundary mismatch must fail the projection law");
+        };
+        assert!(!bool::from(witness.projections));
+        assert!(bool::from(witness.diagonal));
+        assert!(!bool::from(witness.structure));
+    }
+
+    #[test]
+    fn w_cartesian_action_rejects_diagonal_defect()
+    {
+        let first = SignatureRef::single(NominalId::new(0_u64.into(), "First"));
+        let second = SignatureRef::single(NominalId::new(1_u64.into(), "Second"));
+        let source = SignatureRef::product(Box::from([first.clone(), second.clone()]));
+        let target = source.clone();
+        let action = WCartesianAction::new(source, target, vec![
+            SigMorphism::identity(first),
+            SigMorphism::identity(second),
+        ]);
+        let Err(CartesianLawError::Violation(witness)) = action.checked_witness()
+        else {
+            panic!("distinct component actions must fail diagonal preservation");
+        };
+        assert!(bool::from(witness.projections));
+        assert!(!bool::from(witness.diagonal));
+        assert!(!bool::from(witness.structure));
+    }
+
+    #[test]
+    fn w_cartesian_action_rejects_product_structure_defect()
+    {
+        let nat = nat_sig();
+        let source = SignatureRef::product(Box::from([nat.clone(), nat.clone()]));
+        let target = SignatureRef::product(Box::from([nat.clone()]));
+        let action = WCartesianAction::new(source, target, vec![
+            SigMorphism::identity(nat.clone()),
+            SigMorphism::identity(nat),
+        ]);
+        let Err(CartesianLawError::Violation(witness)) = action.checked_witness()
+        else {
+            panic!("a width-changing action must fail the cartesian structure law");
+        };
+        assert!(!bool::from(witness.projections));
+        assert!(!bool::from(witness.diagonal));
+        assert!(!bool::from(witness.structure));
+    }
+
+    /// An action whose source, or else whose target, is not a product has no
+    /// cartesian status to check; each refusal says which, and a violation
+    /// says which statuses failed.
+    #[test]
+    fn w_cartesian_action_refuses_a_boundary_that_is_not_a_product()
+    {
+        let nat = nat_sig();
+        let pair = SignatureRef::product(Box::from([nat.clone(), nat.clone()]));
+        let identities = vec![
+            SigMorphism::identity(nat.clone()),
+            SigMorphism::identity(nat.clone()),
+        ];
+        let source_refusal =
+            WCartesianAction::new(nat.clone(), nat.clone(), identities.clone()).checked_witness();
+        assert_eq!(source_refusal, Err(CartesianLawError::SourceNotProduct));
+        let target_refusal =
+            WCartesianAction::new(pair.clone(), nat.clone(), identities).checked_witness();
+        assert_eq!(target_refusal, Err(CartesianLawError::TargetNotProduct));
+        let violation = WCartesianAction::new(pair.clone(), pair, vec![
+            SigMorphism::identity(nat),
+            SigMorphism::identity(SignatureRef::single(NominalId::new(1_u64.into(), "Other"))),
+        ])
+        .checked_witness();
+        let rendered = [source_refusal, target_refusal, violation]
+            .map(|refusal| refusal.expect_err("each action is refused").to_string());
+        assert_eq!(rendered, [
+            "cartesian source is not a product".to_owned(),
+            "cartesian target is not a product".to_owned(),
+            "cartesian laws fail: projections=false, diagonal=false, structure=false".to_owned(),
+        ]);
+    }
+
     // ---- the reflection rules law 5: units (path induction)
     // --------------------------------
 
@@ -389,7 +503,104 @@ mod tests
         );
     }
 
-    // ---- query surface: tabulator ----------------------------------------
+    // ---- query surface: seam family + tabulator --------------------------
+
+    #[test]
+    fn the_seam_family_is_the_overlap_indexed_multi_sum()
+    {
+        // A non-linear seam: `plus` leaves a `g`-redex two consumers both match,
+        // so the ⊙ family has two members, never one collapsed rule (the reflection
+        // rules).
+        let (store, [plus, linear, nonlinear]) = g_seam_store();
+        let query = Query::new(&store);
+        let left = rel(NameRef::from("plus"), vec![plus]);
+        let right = rel(NameRef::from("g"), vec![linear, nonlinear]);
+        let family = query.seam_family(&left, &right);
+        assert!(
+            family.len() >= 2,
+            "the g-seam composition is a multi-sum family, not a single rule"
+        );
+        // Every member re-derives its composite from the overlap (engine oracle).
+        for member in &family {
+            assert_eq!(member.left, plus, "each member is a plus∘g overlap");
+        }
+    }
+
+    /// The `plus` producer of a `g`-redex and the two `g` consumers, linear
+    /// and non-linear, in that order.
+    /// # Specification
+    /// trivial.
+    fn g_seam_store() -> (CellStore, [CellId; 3])
+    {
+        let mut store = CellStore::new();
+        let plus = store.insert(Cell::new(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("k"),
+                ConsPat::op("plus", [], ConsPat::meta("alpha")),
+            ),
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("k"),
+                ConsPat::op("g", [], ConsPat::meta("alpha")),
+            ),
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        ));
+        let linear = store.insert(Cell::new(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("x"),
+                ConsPat::op("g", [], ConsPat::meta("alpha")),
+            ),
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("x"),
+                ConsPat::meta("alpha"),
+            ),
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        ));
+        let nonlinear = store.insert(Cell::new(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Pair", [ProdPat::meta("y"), ProdPat::meta("y")]),
+                ConsPat::op("g", [], ConsPat::meta("alpha")),
+            ),
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("y"),
+                ConsPat::meta("alpha"),
+            ),
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        ));
+        (store, [plus, linear, nonlinear])
+    }
+
+    /// A relation's extension candidates are the critical pairs among its own
+    /// generators: both orders of the two `g` consumers, and nothing from a
+    /// composition seam or a pair with a cell outside the relation.
+    #[test]
+    fn the_extension_candidates_are_the_critical_pairs_among_the_generators()
+    {
+        let (store, [plus, linear, nonlinear]) = g_seam_store();
+        let query = Query::new(&store);
+        let pairs = |generators| {
+            query
+                .extension_candidates(&rel(NameRef::from("R"), generators))
+                .iter()
+                .map(|candidate| (candidate.left, candidate.right))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(pairs(vec![linear, nonlinear]), vec![
+            (linear, nonlinear),
+            (nonlinear, linear)
+        ]);
+        assert_eq!(pairs(vec![plus, linear]), Vec::new());
+        assert_eq!(pairs(vec![nonlinear]), Vec::new());
+        assert_eq!(pairs(vec![plus]), Vec::new());
+    }
 
     #[test]
     fn the_tabulator_projects_each_instance_to_its_two_faces()
@@ -723,16 +934,23 @@ mod tests
     {
         let (store, base) = peano_fused();
         let relation = rel(NameRef::from("R"), Vec::new());
-        let derivations = vec![cert(reflexive_cert(&base), relation.clone(), relation)];
+        let d_refl = cert(reflexive_cert(&base), relation.clone(), relation);
+        let derivations = vec![d_refl.clone()];
         let bound = Proterm::cert(DerivationId::new(DerivationIndex::from(0_usize)));
         let missing = DerivationId::new(DerivationIndex::from(1_usize));
-        assert!(bool::from(
-            ProtypeIso::new(bound.clone(), bound.clone()).is_valid(&derivations, &store)
-        ));
-        assert!(!bool::from(
-            ProtypeIso::new(bound.clone(), Proterm::cert(missing)).is_valid(&derivations, &store)
-        ));
+        assert_eq!(
+            ProtypeIso::new(bound.clone(), bound.clone()).witness(&derivations),
+            Maybe::Present(IsoWitness::new(d_refl.clone(), d_refl))
+        );
+        assert_eq!(
+            ProtypeIso::new(bound.clone(), Proterm::cert(missing)).witness(&derivations),
+            Maybe::Absent(witness_resolution::Absent::Unbound(missing))
+        );
         let not_cert = ProtypeIso::new(Proterm::unit_term(), bound);
+        assert_eq!(
+            not_cert.witness(&derivations),
+            Maybe::Absent(witness_resolution::Absent::NotCertificate)
+        );
         assert!(!bool::from(not_cert.is_valid(&derivations, &store)));
     }
 

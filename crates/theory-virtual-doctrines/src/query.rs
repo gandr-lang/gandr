@@ -1,5 +1,6 @@
 //! Constructor-menu queries over the cell store.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -7,6 +8,8 @@ use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_coherent_resolutions::CellApp;
+use gandr_theory_coherent_resolutions::OverlapKind;
+use gandr_theory_coherent_resolutions::enumerate_overlaps;
 use gandr_theory_coherent_resolutions::normalize;
 use quenchant_shape::shape::Maybe;
 
@@ -25,6 +28,18 @@ pub struct RewritePath
     pub steps: Vec<CellApp>,
     /// Whether a normal form was reached within budget.
     pub complete: RewriteCompletion,
+}
+
+/// A **seam composite** — one overlap-indexed member of the ⊙ family.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeamComposite
+{
+    /// The left generating cell.
+    pub left: CellId,
+    /// The right generating cell.
+    pub right: CellId,
+    /// The fused right-hand side the composition produces.
+    pub composite: CmdPat,
 }
 
 /// A **right/left extension candidate** — a seam a completing consumer
@@ -187,6 +202,95 @@ impl<'store> Query<'store>
             acc = step(acc, cell_app);
         }
         acc
+    }
+
+    /// The **⊙ seam family** — the overlap-indexed composites of `left`'s
+    /// generators against `right`'s.
+    ///
+    /// # Specification
+    /// - ensures: one [`SeamComposite`] per composition overlap between a
+    ///   generator of `left` and a generator of `right`, in the deterministic
+    ///   enumeration order; the **family** (multi-sum), never collapsed to a
+    ///   single rule — a non-linear seam yields several composites (the
+    ///   *virtual* weakening's honest fan-out).
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 evidence — each returned composite is re-derived from
+    ///   the overlap and asserted equal (the engine's `composite` is the
+    ///   oracle); boundary: a non-linear seam returns a multi-member family.
+    /// - witness: `tests::laws::tests::the_seam_family_is_the_overlap_indexed_multi_sum`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |out| out.iter().all(|member| left.generators.contains(&member.left) && right.generators.contains(&member.right)))]
+    pub fn seam_family(
+        &self,
+        left: &RelationRef,
+        right: &RelationRef,
+    ) -> Vec<SeamComposite>
+    {
+        let left_generators: BTreeSet<CellId> = left.generators.iter().copied().collect();
+        let right_generators: BTreeSet<CellId> = right.generators.iter().copied().collect();
+        let mut out = Vec::new();
+        for overlap in enumerate_overlaps(self.cells) {
+            if overlap.kind != OverlapKind::Composition
+                || !left_generators.contains(&overlap.left)
+                || !right_generators.contains(&overlap.right)
+            {
+                continue;
+            }
+            if let Ok(composite) = overlap.composite(self.cells) {
+                out.push(SeamComposite {
+                    left: overlap.left,
+                    right: overlap.right,
+                    composite,
+                });
+            }
+        }
+        out
+    }
+
+    /// The **⊲/⊳ extension candidates** — the confluence critical pairs among a
+    /// relation's generators.
+    ///
+    /// This is the query *surface* for the Kan-shaped extension; the
+    /// best-consumer **synthesis** (running budgeted completion to derive
+    /// the frame) is the completion engine's job and is not run here.
+    ///
+    /// # Specification
+    /// - ensures: one [`ExtensionCandidate`] per confluence overlap between two
+    ///   generators of `rel`, in enumeration order — the critical-pair seams
+    ///   the completion loop would resolve into a derived frame.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L1 — the predicate observes both generator filters.
+    ///   Confluence classification and exhaustiveness follow the engine
+    ///   enumeration, not membership alone.
+    /// - witness: `tests::laws::tests::the_extension_candidates_are_the_critical_pairs_among_the_generators`
+    #[spec(ensures: |out| out.iter().all(|candidate| rel.generators.contains(&candidate.left) && rel.generators.contains(&candidate.right)))]
+    pub fn extension_candidates(
+        &self,
+        rel: &RelationRef,
+    ) -> Vec<ExtensionCandidate>
+    {
+        let generators: BTreeSet<CellId> = rel.generators.iter().copied().collect();
+        let mut out = Vec::new();
+        for overlap in enumerate_overlaps(self.cells) {
+            if overlap.kind != OverlapKind::Confluence
+                || !generators.contains(&overlap.left)
+                || !generators.contains(&overlap.right)
+            {
+                continue;
+            }
+            out.push(ExtensionCandidate {
+                left: overlap.left,
+                right: overlap.right,
+                peak: overlap.peak,
+            });
+        }
+        out
     }
 
     /// The **tabulator** `{|R|}` — the instantiation table of a relation, each

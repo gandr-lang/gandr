@@ -2239,6 +2239,35 @@ impl<'arena> CheckingContext<'arena>
         let _previous = self.codata_signatures.insert(constant, signature);
     }
 
+    /// Re-form and adopt a codata signature.
+    ///
+    /// # Specification
+    /// - requires: identifiers are read in this context.
+    /// - ensures: the fresh position has a codata signature.
+    /// - fails: signature formation or admission out of source order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns a formation refusal or the ordinary admission-order refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream adopted into a fresh context reads through
+    ///   its observations as it did where it was first admitted.
+    /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
+    #[spec(ensures: |ret| ret.is_err() || self.codata_signatures.contains_key(&constant))]
+    #[inline]
+    pub fn adopt_codata(
+        &mut self,
+        constant: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::CodataSignature>,
+    ) -> Result<(), CheckRefusal>
+    {
+        crate::codata::form_signature(self, constant, &signature)?;
+        self.admit(constant)?;
+        self.record_codata(constant, signature);
+        Ok(())
+    }
+
     /// Open the codata declaration at `position` for its observations'
     /// formation: until it closes, [`Self::codata_in_scope`] answers
     /// `signature` at `position`.

@@ -34,6 +34,7 @@ Virtual double categories, reflected judgments and directed laws over replayable
 ## Provided features
 
 - `Vdc`, `CellStoreVdc`, `SignatureRef`, `SigMorphism`, `RelationRef`, `Derivation` and `DescTable<G>`: the category interface, its cell-store interpretation and its description namespace.
+- `WCartesianAction`: independently reported projection, diagonal and product-structure obligations, including malformed boundaries.
 - `Protype`, `Proterm`, `Context` and `Checker`: formation, bidirectional checking, synthesis, scoped hypotheses and certificate replay. Errors retain their typed boundary evidence.
 - `Query`: budgeted rewrite paths, path folds, overlap-indexed seam families, confluence candidates and relation tabulators.
 - `IsoWitness` and `ProtypeIso`: paired certificate witnesses whose two round trips are checked by engine replay.

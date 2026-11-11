@@ -459,6 +459,18 @@ impl<Term: Copy, Type: Copy> Elaboration<Term, Type>
         self.root
     }
 
+    /// The synthesised type, the unknown type where synthesis was marked, or
+    /// the expected type of a check.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn produced(&self) -> Type
+    {
+        self.produced
+    }
+
     /// The marks in the order met; a mark former's index names its entry.
     ///
     /// # Specification
@@ -468,6 +480,17 @@ impl<Term: Copy, Type: Copy> Elaboration<Term, Type>
     pub fn marks(&self) -> &[MarkEntry]
     {
         &self.marks
+    }
+
+    /// How many times the run crossed the conversion boundary.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn conversions(&self) -> ConversionCount
+    {
+        self.conversions
     }
 }
 

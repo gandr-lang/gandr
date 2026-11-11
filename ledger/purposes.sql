@@ -125,6 +125,7 @@ INSERT INTO purpose VALUES('core-checker','fill::realise','function','Builds a f
 INSERT INTO purpose VALUES('core-checker','flow::Statement','struct','A session statement the judgement decided: the relation, the two quotes, the classifier the bridge erases it at, the engine''s evidence and the payload pairs its paths are owed for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedCompType','struct','A computation type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedValueType','struct','A value type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','formation::classify_comp_type','function','The classifier of the formed computation type formed: the computation universe at its natural level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::classify_value_type','function','The classifier of the formed value type formed: the value universe at its natural level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::form_comp_type','function','Forms the computation type comp_type in the context''s binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::form_value_type','function','Forms the value type value_type in the context''s binders.',NULL,'fits','sound',NULL);
@@ -2904,6 +2905,8 @@ INSERT INTO purpose VALUES('surface-lowering','module::functor::Stratum','enum',
 INSERT INTO purpose VALUES('surface-lowering','module::layered::Listed','struct','Holds a module''s declarations as a reader sees them, the closure''s then the module''s own, so they are read in order or found by key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::layered::ListedIter','struct','Walks a listed module''s declarations in order from either end, so a reader iterates them without joining the two parts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model::FamilyIndex','struct','Names the index of a model''s family, so the family''s index is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::model::ModelIndex','struct','Names the index of a model, so the model''s index is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::model::ParameterList','struct','Holds a model''s parameter list, so the parameters'' sorts are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::model_type::Absent','enum','Names why a model''s type is absent, so the type''s absence is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::plicity::TelescopePosition','struct','Names a telescope''s position, so the position''s sort is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::sealing::ComponentPlace','struct','Names a component''s place, so the place''s sort is read.',NULL,'fits','sound',NULL);
@@ -4645,6 +4648,9 @@ INSERT INTO purpose VALUES('theory-stone-duality','index::GeneratorCount','struc
 INSERT INTO purpose VALUES('theory-stone-duality','index::Membership','enum','Names whether a set holds an element or a polynomial holds at a vertex, so the membership''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-stone-duality','index::WIDEST','constant','Bounds the generators of a term and the elements of a finite poset by the bits of one machine word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-stone-duality','index::WIDEST_CUBE','constant','Bounds the axes of a cube so that a truth table on it fits one machine word.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CartesianDiagonalPreservation','struct','Whether a W-cartesian action preserves the product diagonal.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CartesianProjectionPreservation','struct','Whether a W-cartesian action preserves every product projection.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CartesianStructurePreservation','struct','Whether a W-cartesian action preserves the complete cartesian structure.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CertificateInvertibility','struct','Whether every cell fired by a reflected certificate is invertible.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CheckContextDeclaration','struct','Whether a two-sided VDC checking context declares an object variable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CutCoherence','struct','Whether a directed cut was admitted on the invertible coherence lane.',NULL,'fits','sound',NULL);
@@ -4653,6 +4659,10 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DerivationIndex
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DerivationReplay','struct','Whether a reflected derivation replays in the engine store.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DescTableEmptyStatus','struct','Whether a reflected description registry is empty.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DescTableLength','struct','Number of descriptions registered in a reflected VDC description table.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DiagramCarrierEmptyStatus','struct','Whether a finite reflected diagram has an empty carrier.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DiagramCarrierLength','struct','Number of carrier objects in a finite reflected diagram.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedContextDeclaration','struct','Whether a directed VDC context declares an object variable.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedHomReflexivity','struct','Whether a directed hom lies on the reflexive diagonal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedObjectCovariance','struct','Whether a directed reflected object is sorted covariantly.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DiscreteHomInhabitation','struct','Whether a discrete reflected hom has a reflexive inhabitant.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::IsoValidity','struct','Whether a reflected protype isomorphism validates by replay.',NULL,'fits','sound',NULL);
@@ -4663,6 +4673,9 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::RewriteStepBudg
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::RoundTripIdentity','struct','Whether an isomorphism round trip replays to the identity transformation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::SigMorphismIdentity','struct','Whether a reflected signature morphism is the identity renaming.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::VdcCellEquality','struct','Whether two reflected VDC cells are replay-equivalent.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','cartesian::CartesianLawError','enum','Failure reported by the checked W-cartesian action.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','cartesian::CartesianWitness','struct','The checked status of the three LAW-VDC-CARTESIAN obligations.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','cartesian::WCartesianAction','struct','A componentwise action on a finite product of VDC signatures.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','check::CheckError','enum','Why a protype or proterm failed to check.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','check::Checker','struct','The **checker** — an environment of embedded derivations and the cell store they replay against.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','check::Context','struct','The **two-sided object context** `Γ # Δ` — domain-side and codomain-side object variables with their signatures.',NULL,'fits','sound',NULL);
@@ -4670,7 +4683,9 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::boundary::CutOu
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::boundary::all_participating_invertible','function','Decide whether every cell a certificate fires is an invertible joinability certificate.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::boundary::directed_cut','function','Compose two directed certificates, routing off the invertible boundary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::BiDiagram','struct','A **finite two-variable diagram** `F(x, y)` over a product carrier `Xs × Ys` — the shape a double end `∫_x ∫_y F` quantifies.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::Coend','struct','The **coend** `∫^x F(x, x)` over a finite discrete carrier — the existential quantifier, realized as the coproduct of the diagram''s diagonal components.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::Diagram','struct','A **finite diagram** `F` over a reflected signature''s carrier.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::End','struct','The **end** `∫_x F(x, x)` over a finite discrete carrier — the universal quantifier, realized as the product of the diagram''s diagonal components.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::coyoneda_collapse','function','Collapse the density coend `∫^x hom(a, x) × F(x)` to `F(a)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::discrete_hom_inhabited','function','Decide whether the discrete reflected hom is inhabited — at this rung the hom is refl-generated, so it is inhabited exactly on the diagonal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','directed::coend::fubini_swap','function','Swap the two `∫` binders of a finite bidiagram, transposing its index set.',NULL,'fits','sound',NULL);
@@ -4690,6 +4705,7 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','query::InstanceRow','stru
 INSERT INTO purpose VALUES('theory-virtual-doctrines','query::InstanceTable','struct','The **instantiation table** of a relation — its instances with two projections.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','query::Query','struct','The **query view** over a cell store — the constructor menu''s realization.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','query::RewritePath','struct','A **rewrite path** — a reduction trace and its endpoint.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-virtual-doctrines','query::SeamComposite','struct','A **seam composite** — one overlap-indexed member of the ⊙ family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','signature::SignatureNode','struct','A borrowed factor, retaining nested product structure.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','signature::SignatureParts','struct','Immediate factors of a product signature.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','signature::SignatureRef','struct','A reflected nominal signature or finite nested product, stored flat.',NULL,'fits','sound',NULL);

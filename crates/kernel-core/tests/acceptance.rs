@@ -23,6 +23,7 @@ use gandr_kernel_core::KernelError;
 use gandr_kernel_core::LevelContext;
 use gandr_kernel_core::NodeOutcome;
 use gandr_kernel_core::NodeSupport;
+use gandr_kernel_core::RewritePlane;
 use gandr_kernel_core::SupportContext;
 use gandr_kernel_core::SupportGoal;
 use gandr_kernel_core::SupportPlane;
@@ -1747,6 +1748,17 @@ fn the_rewrite_planes_account_separately_through_a_real_check()
     let mut memo: DefaultMemo = DefaultMemo::new();
     let (verdict, _census) = check_in_session(&mut arena, &declaration, &mut memo, &mut session);
     assert_eq!(Ok(()), verdict, "the dependent application checks");
+
+    assert_ne!(
+        MemoEntryCount::from(0_usize),
+        session.rewrite_entry_count(RewritePlane::Shift),
+        "the shifting machine ran: every variable synthesis raises its context slot"
+    );
+    assert_ne!(
+        MemoEntryCount::from(0_usize),
+        session.rewrite_entry_count(RewritePlane::Substitute),
+        "and the substitution machine ran: the dependent head's codomain was instantiated"
+    );
 }
 
 /// The polymorphic identity, as a fixture: `Π (A : U 0). Π (_ : El A). F

@@ -213,12 +213,14 @@ fn round_trips_to_identity(
     RoundTripIdentity::from(valid)
 }
 
-/// A **protype isomorphism** is a pair of certificate-witness proterms.
+/// A **protype isomorphism** — the reflected-syntax surface: a pair of
+/// certificate-witness proterms.
 ///
-/// [`ProtypeIso::is_valid`] checks both round trips against the identity. It
-/// replays the resolved [`IsoWitness`] values. Only [`ProtermKind::Cert`]
-/// witnesses are engine-replayable at this stage. A non-certificate witness
-/// makes the iso invalid.
+/// Well-formed iff [`ProtypeIso::is_valid`] — `bwd ∘ fwd ≡ id` and `fwd ∘ bwd ≡
+/// id`, decided by replaying the resolved [`IsoWitness`]. Only
+/// [`ProtermKind::Cert`] witnesses are engine-replayable at this stage; a
+/// non-certificate witness makes [`ProtypeIso::witness`] `Absent` (and the iso
+/// invalid).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ProtypeIso
 {
@@ -243,12 +245,39 @@ impl ProtypeIso
         Self { fwd, bwd }
     }
 
+    /// Resolve the certificate witnesses to an [`IsoWitness`] over
+    /// `derivations`.
+    ///
+    /// # Specification
+    /// - ensures: `Present(witness)` iff both `fwd` and `bwd` are
+    ///   [`ProtermKind::Cert`] proterms referencing derivations present in
+    ///   `derivations`; `Absent` otherwise (a non-certificate witness is not
+    ///   engine-replayable at this stage).
+    /// - panics: none.
+    #[inline]
+    /// # Adequacy
+    /// - hypothesis: L1 — both resolved directions retain the bound evidence;
+    ///   resolution does not assert isomorphism validity.
+    /// - witness: `tests::laws::tests::a_reflexive_witness_pair_is_a_valid_iso`
+    /// - witness: `tests::laws::tests::a_reflected_iso_resolves_only_bound_certificates`
+    #[spec(ensures: |out| match out { Maybe::Present(ref witness) => resolve_cert(&self.fwd, derivations) == Maybe::Present(&witness.fwd) && resolve_cert(&self.bwd, derivations) == Maybe::Present(&witness.bwd), Maybe::Absent(_) => matches!(resolve_cert(&self.fwd, derivations), Maybe::Absent(_)) || matches!(resolve_cert(&self.bwd, derivations), Maybe::Absent(_)) })]
+    pub fn witness(
+        &self,
+        derivations: &[Derivation],
+    ) -> Maybe<IsoWitness, witness_resolution::Absent>
+    {
+        resolve_cert(&self.fwd, derivations).and_then(|fwd| {
+            resolve_cert(&self.bwd, derivations)
+                .map(|bwd| IsoWitness::new(fwd.clone(), bwd.clone()))
+        })
+    }
+
     /// Whether this isomorphism is well-formed — its witnesses resolve and both
     /// round-trips replay to the identity.
     ///
     /// # Specification
-    /// - ensures: `true` iff both certificate witnesses resolve and the
-    ///   resolved [`IsoWitness::is_valid`] holds against `cells`.
+    /// - ensures: `true` iff [`ProtypeIso::witness`] resolves and the resolved
+    ///   [`IsoWitness::is_valid`] holds against `cells`.
     /// - panics: none.
     #[inline]
     #[must_use]

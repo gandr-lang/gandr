@@ -9,6 +9,8 @@ use gandr_theory_decomposition_spaces::compose_invertible;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CertificateInvertibility;
+use crate::boundary::CutCoherence;
+use crate::boundary::CutDeclination;
 
 /// The outcome of a [`directed_cut`].
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +26,53 @@ pub enum CutOutcome
     /// the directed composition (canonically a shared mixed-variance seam
     /// hole).
     Declined(CompositionObstruction),
+}
+
+impl CutOutcome
+{
+    /// The composite certificate, when the cut was admitted (either lane).
+    ///
+    /// # Specification
+    /// - ensures: `Ok` borrows the admitted certificate; `Err` borrows the
+    ///   recorded composition obstruction.
+    /// - panics: none.
+    #[inline]
+    /// # Errors
+    /// Returns the recorded composition obstruction for a declined cut.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the admitted and declined cut witnesses preserve
+    ///   actual certificates and obstruction evidence, not just success flags.
+    /// - witness: `tests::directed::tests::a_mixed_variance_cycle_is_declined`
+    #[spec(ensures: |ret| match *self { Self::Coherent(ref expected) | Self::Directed(ref expected) => ret == Ok(expected), Self::Declined(ref expected) => ret == Err(expected) })]
+    pub fn tracelet(&self) -> Result<&Tracelet, &CompositionObstruction>
+    {
+        match *self {
+            Self::Coherent(ref t) | Self::Directed(ref t) => Ok(t),
+            Self::Declined(ref reason) => Err(reason),
+        }
+    }
+
+    /// Whether the cut was admitted unconditionally (the invertible / coherence
+    /// lane).
+    #[inline]
+    #[must_use]
+    /// # Specification
+    /// trivial.
+    pub fn is_coherent(&self) -> CutCoherence
+    {
+        CutCoherence::from(matches!(*self, Self::Coherent(_)))
+    }
+
+    /// Whether the cut was declined by the acyclicity gate.
+    #[inline]
+    #[must_use]
+    /// # Specification
+    /// trivial.
+    pub fn is_declined(&self) -> CutDeclination
+    {
+        CutDeclination::from(matches!(*self, Self::Declined(_)))
+    }
 }
 
 /// **The directed cut** — compose two directed certificates, routing off the
