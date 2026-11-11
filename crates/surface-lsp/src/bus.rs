@@ -274,7 +274,7 @@ fn send(
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
 /// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
-/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(

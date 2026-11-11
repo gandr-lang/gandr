@@ -2266,7 +2266,7 @@ impl Workspace
     /// - hypothesis: L3 — a view of the trace layer attached to a hub hears the
     ///   card of the declaration at the cursor the editor's signature help
     ///   names, and nothing while the cursor moves inside it.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
     #[cfg(feature = "instrument")]
     #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
     #[inline]
@@ -4891,7 +4891,7 @@ impl Server
     /// # Adequacy
     /// - hypothesis: L3 — a view that subscribes after the editor judged its
     ///   document hears the card at the cursor with no edit.
-    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
     #[inline]
     pub fn traced_elsewhere(
         &self,

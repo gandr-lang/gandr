@@ -2101,7 +2101,7 @@ mod tests
     /// for a move inside one, or sent no card before an edit fails here.
     #[cfg(feature = "instrument")]
     #[test]
-    fn an_attached_view_follows_the_derivation_at_the_editors_cursor()
+    fn an_attached_view_follows_the_derivation_at_the_editors_cursor_6716()
     {
         let scratch = Scratch::new(Json("derivation"));
         let socket = scratch.socket();
