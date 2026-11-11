@@ -9,8 +9,12 @@
 //! memoized and answers a Pareto frontier of measures, sorted by cost, none
 //! dominated in cost and ending column. An out-of-bound state is not entered:
 //! it answers a deferred promise carrying its exact context, which is forced
-//! only when nothing in-bound competes with it. The memo table is an ordered
-//! map, bounded by the memo-state ceiling charged before each insertion.
+//! only when nothing in-bound competes with it. A forced state is memoized as
+//! well, under a key that holds its mode, so a forced document reads each
+//! shared node once for each context, not once for each path to it
+//! (`tests::algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747`).
+//! The memo table is an ordered map, bounded by the memo-state ceiling charged
+//! before each insertion.
 //!
 //! # Resolution and the cost order
 //!
@@ -21,8 +25,8 @@
 //! produces it. A state answers a frontier: measures sorted by cost, none
 //! dominated in both cost and ending column. A choice merges its branches'
 //! frontiers; a concatenation resolves its right operand at each of the left
-//! frontier's ending columns. Each in-bound state is resolved once and memoized
-//! for the rest of the resolution
+//! frontier's ending columns. Each state is resolved once in each mode and
+//! memoized for the rest of the resolution
 //! (`tests::algebra::shared_contexts_reuse_memo_states`).
 //!
 //! **Squared overflow, then line count.** Overflow dominates, so no layout
@@ -278,12 +282,12 @@ impl Resolved
 }
 
 /// Evaluation mode for one document context.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum ResolutionMode
 {
-    /// Use and populate the in-bound memo table.
+    /// Defer an out-of-bound context; memoize each state it enters.
     Memoized,
-    /// Evaluate the exact tainted context without memoization.
+    /// Evaluate the exact tainted context, each state memoized under this mode.
     Forced,
 }
 
@@ -342,12 +346,12 @@ enum Step
     Scheduled,
 }
 
-/// Memoization key for one in-bound context.
+/// Memoization key for one context in one mode.
 ///
 /// # Specification
 /// - requires: the fields describe one finalized document context.
-/// - ensures: node, incoming column and indentation all participate in memo
-///   identity and ordering.
+/// - ensures: node, incoming column, indentation and mode all participate in
+///   memo identity and ordering.
 /// - provides: the state represented by this item.
 /// - panics: none.
 /// - executable: none — this state carrier has no invocation boundary; enter,
@@ -364,6 +368,7 @@ enum Step
 /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
 /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
 /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -375,6 +380,8 @@ struct MemoKey
     column: Column,
     /// Active indentation.
     indentation: Indentation,
+    /// The mode the state resolves in.
+    mode: ResolutionMode,
 }
 
 /// Continuation state for one left measure in concatenation.
@@ -556,7 +563,7 @@ struct Resolver<'arena, 'meter>
     meter: &'meter mut RenderMeter,
     /// Generational plan store.
     plans: PlanArena,
-    /// In-bound memoized measure sets.
+    /// The memoized measure sets of each mode.
     memo: BTreeMap<MemoKey, MeasureSet>,
     /// One explicit enter/resume work vector.
     work: Vec<WorkItem>,
@@ -1286,9 +1293,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// # Specification
     /// - requires: `node` names a node of the arena.
     /// - ensures: an out-of-bound memoized state answers a deferred promise
-    ///   carrying exactly `node`, `column` and `indentation`; a memoized state
-    ///   seen before answers its memo entry, retained; otherwise a leaf answers
-    ///   its measure and an inner node pushes its continuation and children.
+    ///   carrying exactly `node`, `column` and `indentation`; a state seen
+    ///   before in its mode answers its memo entry, retained; otherwise a leaf
+    ///   answers its measure and an inner node pushes its continuation and
+    ///   children, and the state's answer is memoized under its mode.
     /// - provides: the enter half of the machine.
     /// - fails: a layout or memo ceiling, a node the arena does not hold, an
     ///   indentation that cannot advance, or a push error.
@@ -1308,10 +1316,11 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
     /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
     /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::a_forced_spine_of_blocks_resolves_each_state_once_6747`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
-        captures: before = (self.meter.usage(), self.work.len(), self.memo.len(), self.memo.get(&MemoKey { node, column, indentation }).map(|set| match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) })),
+        captures: before = (self.meter.usage(), self.work.len(), self.memo.len(), self.memo.get(&MemoKey { node, column, indentation, mode: force }).map(|set| match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) })),
         ensures: |ret| ret.as_ref().map_or(true,
             |step| { if u64::from(before.0.layout_steps).checked_add(1) != Some(u64::from(self.meter.usage().layout_steps)) || self.memo.len() != before.2 { return false }
         if force == ResolutionMode::Memoized
@@ -1325,16 +1334,14 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
                 && actual_column == column
 
                 && actual_indentation == indentation) }
-        if force == ResolutionMode::Memoized
-
-                && before.3.is_some() { return self.work.len() == before.1
+        if before.3.is_some() { return self.work.len() == before.1
 
                 && self.meter.usage().memo_states == before.0.memo_states
 
                 && matches!(*step, Step::Result(ref set) if Some(match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }) == before.3
 
-                && (match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true })) } let memo_work = usize::from(force == ResolutionMode::Memoized);
-            if u64::from(before.0.memo_states).checked_add(u64::from(force == ResolutionMode::Memoized)) != Some(u64::from(self.meter.usage().memo_states)) { return false } match *step { Step::Scheduled => before.1.checked_add(memo_work).and_then(|depth| depth.checked_add(2)) == Some(self.work.len())
+                && (match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true })) } let memo_work = 1_usize;
+            if u64::from(before.0.memo_states).checked_add(1) != Some(u64::from(self.meter.usage().memo_states)) { return false } match *step { Step::Scheduled => before.1.checked_add(memo_work).and_then(|depth| depth.checked_add(2)) == Some(self.work.len())
 
                 && (match self.arena.node(node) { Maybe::Present(DocNode::Nest { amount, doc }) => u32::from(indentation).checked_add(amount).is_some_and(|raised| self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
         if actual_node == doc
@@ -1414,19 +1421,18 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
         {
             return Ok(Step::Result(deferred(node, column, indentation)));
         }
-        if force == ResolutionMode::Memoized {
-            let key = MemoKey {
-                node,
-                column,
-                indentation,
-            };
-            if let Some(result) = self.memo.get(&key).cloned() {
-                self.retain_set(&result)?;
-                return Ok(Step::Result(result));
-            }
-            self.meter.charge_memo_state()?;
-            self.push(WorkItem::StoreMemo { key })?;
+        let key = MemoKey {
+            node,
+            column,
+            indentation,
+            mode: force,
+        };
+        if let Some(result) = self.memo.get(&key).cloned() {
+            self.retain_set(&result)?;
+            return Ok(Step::Result(result));
         }
+        self.meter.charge_memo_state()?;
+        self.push(WorkItem::StoreMemo { key })?;
         let Maybe::Present(stored) = self.arena.node(node)
         else {
             return Err(broken(RenderInvariant::DocumentIdentity));
