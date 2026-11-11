@@ -243,6 +243,56 @@ fn a_deciding_pass_refuses_a_pattern_hole_as_its_judgement_does_6707()
     );
 }
 
+/// A pass steps the module run's own schedule of mutual blocks (#6703). So a
+/// deciding session admits `Ne` and `Nf`, each of which names the other, and
+/// `newest`, which reads both, as the judgement admits them; a member decided
+/// alone names a sibling not yet admitted.
+#[test]
+fn a_deciding_pass_admits_a_mutual_block_as_its_judgement_does_6703()
+{
+    let mut deciding = session(SourceRoot::Strict);
+    deciding.take(Verdicts::Decided);
+    let _submission = submit(
+        &mut deciding,
+        include_str!(
+            "incremental/fixtures/a-deciding-pass-admits-a-mutual-block-as-its-judgement-does-6703.gandr"
+        ),
+    );
+    let refused: Vec<bool> = resumed(&deciding)
+        .iter()
+        .map(|typing| matches!(typing, Typing::Refused(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [false; 6],
+        "the deciding pass admits the block and its reader: {:?}",
+        resumed(&deciding)
+    );
+}
+
+/// A pass that takes the judgement's verdicts keeps the checkpoints of a pass
+/// that decides each item, past a mutual block (#6693). Each pass decides the
+/// block of `Ne` and `Nf` in its block, so the answer it holds of `Nf` is the
+/// answer the judgement read when it decided `var`; a member decided alone
+/// holds another answer, and the taken `var` stands apart from the decided one.
+#[test]
+fn a_taking_pass_keeps_the_checkpoints_of_a_deciding_pass_past_a_mutual_block_6693()
+{
+    let source = include_str!(
+        "incremental/fixtures/a-taking-pass-keeps-the-checkpoints-of-a-deciding-pass-past-a-mutual-block-6693.gandr"
+    );
+    let mut taking = session(SourceRoot::Fixture);
+    let mut deciding = session(SourceRoot::Fixture);
+    deciding.take(Verdicts::Decided);
+    let _taken = submit(&mut taking, source);
+    let _decided = submit(&mut deciding, source);
+    assert_eq!(
+        latest(&taking),
+        latest(&deciding),
+        "the two passes keep one set of checkpoints"
+    );
+}
+
 /// The over-adoption twin of a handed-on signature (#2102): `three`'s
 /// signature decodes `code`, whose value changes while its type does not, so
 /// `three`'s content and every answer it consulted stand. Only the value it

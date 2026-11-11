@@ -34,6 +34,8 @@ use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
 use quenchant_shape::shape::Maybe;
 
+use crate::common::batch;
+
 /// A definition at `position`.
 ///
 /// # Specification
@@ -330,19 +332,27 @@ fn recursive_data_checkpoints_round_trip_and_resume()
         typings[8],
         &Typing::Refused(Refusal::NonUniformOccurrence(field))
     );
-    assert!(
-        matches!(
-            typings[9],
-            Typing::Refused(Refusal::CrossBlockReference { site, .. }) if *site == field
-        ),
-        "{typings:?}"
+    // `Later` names `Tail`, so the two are one mutual block, which the pass
+    // refuses whole as the module run does: `Tail` takes none of `Later`'s
+    // parameters.
+    assert_eq!(
+        typings[9],
+        &Typing::Refused(Refusal::NonUniformOccurrence(field))
     );
-    assert_eq!(typings[10], &Typing::Data);
+    assert_eq!(
+        typings[10],
+        &Typing::Refused(Refusal::NonUniformOccurrence(field))
+    );
     assert_eq!(
         typings[11],
         &Typing::Refused(Refusal::IndexOccurrence(OccurrenceSite::Parameter(
             ParameterPosition::from(1_usize)
         )))
+    );
+    assert_eq!(
+        typings.into_iter().cloned().collect::<Vec<_>>(),
+        batch(&program()),
+        "the pass gives each item the module run's verdict"
     );
 
     let encoded = encode_checkpoints(checkpoints).expect("recursion content and refusals persist");
@@ -350,13 +360,16 @@ fn recursive_data_checkpoints_round_trip_and_resume()
     assert_eq!(&restored, checkpoints);
     let unchanged = resume_from(&restored, &mut program()).expect("the program is adopted");
     assert_eq!(unchanged.checkpoints(), checkpoints);
-    assert!(
-        unchanged
-            .adoptions()
-            .iter()
-            .all(|adoption| *adoption == Adoption::Adopted),
-        "{:?}",
-        unchanged.adoptions()
+    // The pass adopts no member of a mutual block alone: it decides the block
+    // again, and every other item is adopted.
+    assert_eq!(
+        unchanged.adoptions(),
+        [
+            [Adoption::Adopted; 9].as_slice(),
+            &[Adoption::Judged; 2],
+            &[Adoption::Adopted],
+        ]
+        .concat(),
     );
 }
 

@@ -151,9 +151,11 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Demand;
 use gandr_core_checker::Entered;
 use gandr_core_checker::FormedValueType;
+use gandr_core_checker::Membership;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
+use gandr_core_checker::Schedule;
 use gandr_core_checker::Support;
 use gandr_core_checker::Supported;
 use gandr_core_checker::Unretired;
@@ -244,6 +246,10 @@ quenchant_shape::reason_enum! {
             /// Adoption seats the written form, so the declaration is judged
             /// again.
             Elaborated,
+            /// The declaration is a member of a mutual block. It reads its
+            /// siblings before they stand, so the pass decides it in its block
+            /// and adopts no member alone.
+            Mutual,
         }
     }
 }
@@ -2958,13 +2964,18 @@ type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, 
 ///   `start` holds, in order.
 /// - ensures: while every poll answers [`Demand::Wanted`], one outcome and one
 ///   answer per encoded item, in order, and what `Kept` keeps of the context
-///   after the last; retired, nothing. An item is adopted only when its
-///   recalled checkpoint's support holds pointwise against the answers of the
-///   items before it, the leading ones' `start`'s, no type position of it or of
-///   a recorded answer names a value-changed definition, and its type can be
-///   seated; every other item is judged in a context that has admitted exactly
-///   the items before it, as batch does. A judged item that `judgement` decided
-///   alone takes that verdict and support and is seated as adoption seats it
+///   after the last; retired, nothing. The pass steps the module run's
+///   [`Schedule`] before each item, so it opens each mutual block where the
+///   judgement does. It adopts no member of an open block and takes none from
+///   `judgement`: it decides each member in its block, refuses the block whole
+///   as the module run does, and closes the block before it keeps the context.
+///   Any other item is adopted only when its recalled checkpoint's support
+///   holds pointwise against the answers of the items before it, the leading
+///   ones' `start`'s, no type position of it or of a recorded answer names a
+///   value-changed definition, and its type can be seated; every other item is
+///   judged in a context that has admitted exactly the items before it, as
+///   batch does. A judged item that `judgement` decided alone takes that
+///   verdict and support and is seated as adoption seats it
 ///   ([`Judgement::take`]); the pass decides it only when it cannot take it.
 ///   Support is ordered and unique by reference and signature table, retaining
 ///   value and Data consultations separately.
@@ -3115,6 +3126,12 @@ where
     };
     context.enter_at(host);
     let skip = usize::from(start.leading());
+    // The module run's own schedule: the pass opens, closes and refuses whole
+    // each mutual block where the judgement does.
+    let mut schedule = Schedule::new();
+    // Each member of a block the pass decided: its index among the pass's
+    // items, its position and its verdict, until its block is refused whole.
+    let mut members: Vec<(usize, ConstantIndex, Verdict)> = Vec::new();
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once; the judgement's arena has a memo of its own.
     let types = crate::content::TypeMemo::default();
@@ -3148,18 +3165,32 @@ where
         let mut consulted = MemoTally::default();
         #[cfg(feature = "instrument")]
         context.retrace();
-        let adopted = match candidates.get(index) {
-            Some(&Maybe::Present(ref candidate)) => adopt(&mut context, &AdoptionInput {
-                candidate,
-                item,
-                footprint: &footprint,
-                declaration,
-                layout,
-                supplied: &supplied,
-                ordinal,
-                value_changed: &value_changed,
-            }),
-            Some(&Maybe::Absent(_)) | None => Maybe::Absent(recall::Absent::Missed),
+        let membership = schedule.step(
+            &mut context,
+            layout
+                .items
+                .get(usize::from(ordinal) ..)
+                .unwrap_or_default()
+                .iter()
+                .map(super::region::Item::declaration),
+        );
+        let adopted = match (membership, candidates.get(index)) {
+            (Membership::Member, _) => Maybe::Absent(recall::Absent::Mutual),
+            (Membership::Alone, Some(&Maybe::Present(ref candidate))) => {
+                adopt(&mut context, &AdoptionInput {
+                    candidate,
+                    item,
+                    footprint: &footprint,
+                    declaration,
+                    layout,
+                    supplied: &supplied,
+                    ordinal,
+                    value_changed: &value_changed,
+                })
+            },
+            (Membership::Alone, Some(&Maybe::Absent(_)) | None) => {
+                Maybe::Absent(recall::Absent::Missed)
+            },
         };
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
@@ -3184,17 +3215,20 @@ where
                     | recall::Absent::Unseated
                     | recall::Absent::Elaborated
                     | recall::Absent::Derived
-                    | recall::Absent::Marked => {},
+                    | recall::Absent::Marked
+                    | recall::Absent::Mutual => {},
                 }
                 bump(&mut census.judged);
-                let taken = judgement.map_or(Maybe::Absent(taken::Absent::Unjudged), |judgement| {
-                    judgement.take(&mut context, &Taking {
+                let taken = match (membership, judgement) {
+                    (Membership::Alone, Some(judgement)) => judgement.take(&mut context, &Taking {
                         item,
                         declaration,
                         layout,
                         types: &judged_types,
-                    })
-                });
+                    }),
+                    (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
+                    (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
+                };
                 let (support, typing, answer, entered) = match taken {
                     Maybe::Present((support, typing, answer)) => {
                         bump(&mut census.taken);
@@ -3204,7 +3238,14 @@ where
                         }
                         (support, typing, answer, Entered::AsWritten)
                     },
-                    Maybe::Absent(_) => decided(&mut context, item, declaration, layout, &types),
+                    Maybe::Absent(_) => {
+                        let (decision, verdict) =
+                            decided(&mut context, item, declaration, layout, &types);
+                        if membership == Membership::Member {
+                            members.push((index, declaration.constant(), verdict));
+                        }
+                        decision
+                    },
                 };
                 (
                     Outcome {
@@ -3230,6 +3271,25 @@ where
         outcomes.push(outcome);
         supplied.own.push(answer);
     }
+    // The pass keeps nothing of an open block: it closes the block, and gives
+    // each member the verdict the judgement gives it, its block's refusal.
+    schedule.close(&mut context);
+    schedule.refuse_whole(
+        &mut members,
+        |&(_, constant, verdict)| (constant, verdict),
+        |&mut (index, _, ref mut verdict), refusal, _| {
+            *verdict = Verdict::Refused(refusal);
+            if let (Some(outcome), Some(item)) = (outcomes.get_mut(index), encoded.get(index)) {
+                outcome.typing = Projection {
+                    arena: context.arena(),
+                    layout,
+                    sites: &item.sites,
+                    types: &types,
+                }
+                .typing(&Verdict::Refused(refusal));
+            }
+        },
+    );
     let kept = Kept::keep(&context);
     #[cfg(feature = "instrument")]
     if let Maybe::Present(buffer) = context.take_trace() {
@@ -3239,13 +3299,14 @@ where
 }
 
 /// Decide the item in `context`, and read its typing, its support and its
-/// answer through the edited program.
+/// answer through the edited program, beside the verdict they project.
 ///
 /// # Specification
 /// - requires: `context` has admitted exactly the items before this one.
 /// - ensures: the verdict [`check_declaration_supported`] gives, projected,
 ///   with its support and the item's own entered answer, the answer the table
-///   then gives of the item, and the form the table holds it in.
+///   then gives of the item, and the form the table holds it in; beside them,
+///   the verdict itself, which a block's refusal replaces.
 /// - panics: none.
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
@@ -3259,7 +3320,7 @@ fn decided(
     declaration: &gandr_core_checker::Declaration,
     layout: &Layout,
     types: &crate::content::TypeMemo,
-) -> (Vec<Answered>, Typing, Answer, Entered)
+) -> ((Vec<Answered>, Typing, Answer, Entered), Verdict)
 {
     let supported = check_declaration_supported(context, declaration);
     let arena = context.arena();
@@ -3289,7 +3350,10 @@ fn decided(
         gandr_core_checker::DeclarationContent::Abstract(_)
         | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
     };
-    (support, typing, answer, supported.entered())
+    (
+        (support, typing, answer, supported.entered()),
+        supported.verdict(),
+    )
 }
 
 /// Mint the seat an unsigned item's adopted synthesised type is read from.
