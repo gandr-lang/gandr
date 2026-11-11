@@ -2,7 +2,10 @@ error[UnresolvedTypeHead]: no type named `Run` is written applied to one argumen
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:19:11
    │
 19 │ def ran : Run (Ask.Asking) = recorded (sent "yes") closed;
-   │           ━━━ no type head of this name and arity
+   │           ┬──━━━━━━━━━━━━━
+   │           │
+   │           no type head of this name and arity
+   │           the head no type answers
    │
    ├ note: `ran` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: write `import std.session (Run);`, the listing of `Run` from its home
@@ -11,7 +14,10 @@ error[UnresolvedTypeHead]: no type named `Prefix` is written applied to one argu
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:23:13
    │
 23 │ def begun : Prefix (Ask.Asking) = recorded (sent "yes");
-   │             ━━━━━━ no type head of this name and arity
+   │             ┬─────━━━━━━━━━━━━━
+   │             │
+   │             no type head of this name and arity
+   │             the head no type answers
    │
    ├ note: `begun` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: write `import std.session (Prefix);`, the listing of `Prefix` from its home
@@ -20,7 +26,10 @@ error[UnresolvedTypeHead]: no type named `Dialogue` is written applied to one ar
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:27:14
    │
 27 │ def talked : Dialogue (Ask.Asking) = dialogue
-   │              ━━━━━━━━ no type head of this name and arity
+   │              ┬───────━━━━━━━━━━━━━
+   │              │
+   │              no type head of this name and arity
+   │              the head no type answers
    │
    ├ note: `talked` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: write `import std.session (Dialogue);`, the listing of `Dialogue` from its home
