@@ -2526,7 +2526,7 @@ impl<'judged> Judgement<'judged>
         // from its content, as an adopted one's is.
         let minted = match (&typing, written) {
             (&Typing::Synthesised { ref produced, .. }, Maybe::Absent(_)) => {
-                produced.mint(context.arena_mut(), taking.layout)
+                produced.mint_value_type(context.arena_mut(), taking.layout)
             },
             (
                 &(Typing::Data
@@ -3241,7 +3241,7 @@ fn seat_of(
             &Typing::Synthesised { ref produced, .. },
         ) => {
             bump(&mut census.minted);
-            produced.mint(arena, layout)
+            produced.mint_value_type(arena, layout)
         },
         _ => Maybe::Absent(seating::Absent::Unseatable),
     }
