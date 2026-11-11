@@ -1683,6 +1683,8 @@ dependencies = [
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-storage-records",
+ "gandr-storage-store",
+ "gandr-storage-values",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",

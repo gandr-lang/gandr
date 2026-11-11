@@ -14,7 +14,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Synopsis
 
-**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation maps to `Outcome::Status`, `check` and `test` to the `Walk` of `Outcome::Run`, `run` to `Outcome::Script` and `stage` to `Outcome::Stage`. `Walk::visit` composes each import-connected component once and hands each source its share of the verdict in walk order ([`walk`](src/walk.rs), [`compose`](src/compose.rs)). A `RunReport` counts each step, and its `verdict` is the gate of the driver's exit code. [`script`](src/script.rs) and [`stage`](src/stage.rs) state the run and the stage verbs.
+**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation maps to `Outcome::Status`, `check` and `test` to the `Walk` of `Outcome::Run`, `run` to `Outcome::Script` and `stage` to `Outcome::Stage`. `Walk::visit` composes each import-connected component once and hands each source its share of the verdict in walk order ([`walk`](src/walk.rs), [`compose`](src/compose.rs)). A `RunReport` counts each step, and its `verdict` is the gate of the driver's exit code.
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process.
 
@@ -105,7 +105,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Membership, the pending set | [`root`](src/root.rs) |
 | Faults, unsettled declarations and goals | [`report`](src/report.rs) |
 | The exercised table | [`exercised`](src/exercised.rs) |
-| The stage verb | [`stage`](src/stage.rs) |
+| The run and the stage verbs; the store account | [`script`](src/script.rs), [`stage`](src/stage.rs); [`stored`](src/stored.rs) |
 | The format verb | [`format`](src/format.rs) |
 | The ledger verb | [`ledger`](src/ledger.rs) |
 

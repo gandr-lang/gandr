@@ -423,6 +423,17 @@ impl Lock
         self.0.keys()
     }
 
+    /// The pointer of each identity the lock records, in the order of the
+    /// coordinates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn pointers(&self) -> impl Iterator<Item = ContentPtr>
+    {
+        self.0.values().map(|locked| locked.pointer)
+    }
+
     /// Each coordinate the lock records, in order, with the address of the
     /// identity its pointer names, read back through `store`.
     ///

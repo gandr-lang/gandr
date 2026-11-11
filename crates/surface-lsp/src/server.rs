@@ -1635,6 +1635,10 @@ pub struct Workspace
     /// Where a save keeps its copy's checkpoints and an open restores from,
     /// as the `saved` module states; none keeps no save.
     saved: Option<Saved>,
+    /// The store under the hub's data directory, which the render bus reads
+    /// for a renderer as it attaches; none reads no store.
+    #[cfg(unix)]
+    stored: Option<Arc<crate::stored::Stored>>,
     /// What the last copy of each document let go recorded at its last
     /// judgement, by the document's URI: what the first judgement of the next
     /// copy opened at it resumes from, whatever its text.
@@ -1758,6 +1762,37 @@ impl Workspace
             saved: Some(saved),
             ..self
         }
+    }
+
+    /// This workspace, the render bus reading `stored` for each renderer as
+    /// it attaches.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(unix)]
+    #[inline]
+    #[must_use]
+    pub fn storing(
+        self,
+        stored: crate::stored::Stored,
+    ) -> Self
+    {
+        Self {
+            stored: Some(Arc::new(stored)),
+            ..self
+        }
+    }
+
+    /// The store the render bus reads, with the path of each open document,
+    /// whose packages' locks name the identities; none reads no store.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(unix)]
+    pub(crate) fn stored(&self) -> Option<(Arc<crate::stored::Stored>, Vec<PathBuf>)>
+    {
+        let stored = Arc::clone(self.stored.as_ref()?);
+        Some((stored, self.paths.keys().cloned().collect()))
     }
 
     /// This workspace, every session it opens and every connection serving it

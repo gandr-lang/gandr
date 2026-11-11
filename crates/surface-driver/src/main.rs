@@ -3097,10 +3097,11 @@ fn reach_hub(
 /// - ensures: the hub binds `socket` through `gandr_surface_lsp::bind` and runs
 ///   as `gandr_surface_lsp::run_hub` states, with this crate's Model Context
 ///   Protocol face (`gandr_surface_mcp::serve`) for connections speaking lines,
-///   its timing lines on standard error, and exits `0` when it lingers out; a
-///   socket another hub serves exits `0` at once, noted on standard error. A
-///   socket that cannot be bound or served is noted and exits `2`. With
-///   `toolset`, the hub also serves [`toolset`]'s face beside its socket,
+///   its render bus reading the store [`config::store`] names when it names
+///   one, its timing lines on standard error, and exits `0` when it lingers
+///   out; a socket another hub serves exits `0` at once, noted on standard
+///   error. A socket that cannot be bound or served is noted and exits `2`.
+///   With `toolset`, the hub also serves [`toolset`]'s face beside its socket,
 ///   writes the manifest's URL to the address file beside the socket and says
 ///   it on standard error, and runs until it is stopped. It removes the file
 ///   when it stops. An address file that names a toolset that still listens, a
@@ -3190,7 +3191,12 @@ fn hub(
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
                 beside,
-                workspace(spelling),
+                config::store().map_or_else(
+                    || workspace(spelling),
+                    |directory| {
+                        workspace(spelling).storing(gandr_surface_lsp::Stored::at(directory))
+                    },
+                ),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => hub_fault(&error),

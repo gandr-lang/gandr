@@ -120,6 +120,9 @@ fn key_of(
     )
 }
 
+/// The prefix of every root naming a stratum.
+pub const STRATUM_ROOTS: &str = "stratum/";
+
 /// The root a stratum is named by: its level, its bound, its degree and its
 /// key, which digests its catalogue family.
 ///
@@ -132,7 +135,7 @@ fn root_of(
 ) -> RootName
 {
     RootName::new(format!(
-        "stratum/{level}/{}/{}/{key}",
+        "{STRATUM_ROOTS}{level}/{}/{}/{key}",
         usize::from(at.bound),
         usize::from(at.degree)
     ))

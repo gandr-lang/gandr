@@ -305,6 +305,7 @@ pub use crate::chunk::VerifiedChunk;
 pub use crate::chunk::frame_chunk;
 pub use crate::chunk::verify_chunk_image;
 pub use crate::closure::ValueClosure;
+pub use crate::closure::cam_closure;
 pub use crate::commit::RESIDUE_DOMAIN;
 pub use crate::commit::cam_commit;
 pub use crate::deref::cam_deref;

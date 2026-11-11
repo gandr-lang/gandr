@@ -1109,6 +1109,18 @@ mod tests
     use std::thread::JoinHandle;
 
     use anodized::spec;
+    use gandr_storage_store::RootName;
+    use gandr_storage_store::Store;
+    use gandr_storage_store::Stored as StoredValue;
+    use gandr_storage_values::CanonicalValue;
+    use gandr_storage_values::CanonicalWord;
+    use gandr_storage_values::CodecId;
+    use gandr_storage_values::CodecIdentity;
+    use gandr_storage_values::CodecVersion;
+    use gandr_storage_values::ConstructorTag;
+    use gandr_storage_values::TokenReader;
+    use gandr_storage_values::TokenSink;
+    use gandr_storage_values::ValueError;
     use gandr_surface_render_remote::AccountCard;
     use gandr_surface_render_remote::Count;
     use gandr_surface_render_remote::DocId;
@@ -1120,6 +1132,10 @@ mod tests
     use gandr_surface_render_remote::Room;
     use gandr_surface_render_remote::SpineRow;
     use gandr_surface_render_remote::StackCard;
+    use gandr_surface_render_remote::StoreKey;
+    use gandr_surface_render_remote::StoreKind;
+    use gandr_surface_render_remote::StoreResidence;
+    use gandr_surface_render_remote::StoreRow;
     use gandr_surface_render_remote::Warrant;
     use gandr_surface_render_remote::apply_account_edits;
     #[cfg(feature = "instrument")]
@@ -1138,6 +1154,7 @@ mod tests
     use crate::bus::RENDER_BUS_PREFACE;
     use crate::handover::REPLAY;
     use crate::server::Served;
+    use crate::stored::Stored;
     use crate::transport::Body;
     use crate::transport::read_frame;
     use crate::transport::write_frame;
@@ -1704,6 +1721,7 @@ mod tests
             | FrameBody::Opened { .. }
             | FrameBody::Resync
             | FrameBody::Activity { .. }
+            | FrameBody::Store { .. }
             | FrameBody::Trace { .. }
             | FrameBody::Detach => {},
         }
@@ -1776,6 +1794,7 @@ mod tests
             | FrameBody::Open { .. }
             | FrameBody::Opened { .. }
             | FrameBody::Activity { .. }
+            | FrameBody::Store { .. }
             | FrameBody::Trace { .. }
             | FrameBody::Detach => {
                 panic!("a report was owed, not {frame:?}")
@@ -1898,6 +1917,125 @@ mod tests
         view.write_all(detach.as_bytes()).expect("the hub reads");
         assert_eq!(next_unaccounted(&mut reading).1, RenderFrame::detach());
         drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    /// One word under one constructor: the value the test of the store card
+    /// commits.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Word(u64);
+
+    impl CanonicalValue for Word
+    {
+        /// # Specification
+        /// trivial.
+        fn emit_tokens<Sink>(
+            &self,
+            sink: &mut Sink,
+        ) -> Result<(), ValueError>
+        where
+            Sink: TokenSink + ?Sized,
+        {
+            sink.open(ConstructorTag::from(0_u8))?;
+            sink.word(CanonicalWord::from(self.0))?;
+            sink.close()
+        }
+
+        /// # Specification
+        /// trivial.
+        fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+        {
+            let _word = reader.read_tag()?;
+            let word = u64::from(reader.read_word()?);
+            reader.read_close()?;
+            Ok(Self(word))
+        }
+    }
+
+    impl StoredValue for Word
+    {
+        /// # Specification
+        /// trivial.
+        fn codec() -> CodecIdentity
+        {
+            CodecIdentity::new(CodecId::from(0x7E58_u16), CodecVersion::from(1_u16))
+        }
+    }
+
+    /// A view attached to a hub that reads a store hears the store's card
+    /// after the greeting: the value under the root of an export, its one
+    /// chunk and the bytes of that chunk's file, and each owed cell with its
+    /// unit (#6296).
+    #[test]
+    fn an_attached_view_hears_the_store_6296()
+    {
+        let scratch = Scratch::new(Json("store"));
+        let socket = scratch.socket();
+        let directory = scratch.0.join("store");
+        let mut store = Store::open(&directory).expect("the store opens");
+        let pointer = store.commit(&Word(7)).expect("the value commits");
+        store
+            .set_root(RootName::new(String::from("export/one")), pointer)
+            .expect("the root is named");
+        drop(store);
+        let file = directory.join("chunks").join(pointer.digest().to_string());
+        let length = std::fs::metadata(&file)
+            .expect("the chunk's file is read")
+            .len();
+        let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
+        else {
+            panic!("no other hub serves a fresh socket");
+        };
+        let serving = socket.clone();
+        let hub = thread::spawn(move || {
+            run_hub(
+                &listener,
+                &serving,
+                Duration::from_millis(100),
+                io::sink(),
+                None,
+                None,
+                super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode)
+                    .storing(Stored::at(directory)),
+            )
+            .expect("the hub serves");
+        });
+        let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.set_read_timeout(Some(OWED))
+            .expect("the stream takes a deadline");
+        view.write_all(RENDER_BUS_PREFACE.as_bytes())
+            .expect("the hub reads");
+        let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
+        assert_eq!(next_frame(&mut reading).1, RenderFrame::hello(Vec::new()));
+        let (_line, frame) = next_frame(&mut reading);
+        let FrameBody::Store { ref card } = *frame.body()
+        else {
+            panic!("the store card was owed, not {frame:?}");
+        };
+        assert_eq!(card.rows, [StoreRow {
+            key: StoreKey::from(pointer.digest().to_string()),
+            kind: StoreKind::Export,
+            residence: StoreResidence::Cam {
+                bytes: Count(length),
+                chunks: Count(1),
+                shared: Count(1),
+            },
+        }]);
+        assert_eq!(
+            card.owed
+                .iter()
+                .map(|owed| format!("{} {}", owed.column, owed.unit))
+                .collect::<Vec<String>>(),
+            ["wrote #3022", "world #3381", "lam #6272", "reduct #5723"],
+            "each owed cell names its unit"
+        );
+        assert_eq!(card.refused, None, "the store opened");
+        let mut detach = serde_json::to_string(&RenderFrame::detach()).expect("a frame encodes");
+        detach.push('\n');
+        view.write_all(detach.as_bytes()).expect("the hub reads");
+        assert_eq!(next_frame(&mut reading).1, RenderFrame::detach());
+        drop((view, reading));
         hub.join().expect("the hub exits");
     }
 
