@@ -77,5 +77,23 @@
       "body": "## Rows\n\n- [x] `surface-format`\n- [x] `surface-parser`\n- [ ] `surface-lowering`\n",
       "close": false
     }
+  },
+  {
+    "name": "#6443: a merged body marks its named collector table row as landed",
+    "input": {
+      "body": "Advances #6212\n\n## Rows\n\n- `duplicate`\n",
+      "issues": [
+        {
+          "number": 6212,
+          "labels": ["kind:refactor", "area:workflow", "collector"],
+          "body": "## Observation\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `.config/pr-stack/landed-heads.jq` | Two selectors share an account. |\n"
+        }
+      ]
+    },
+    "output": {
+      "number": 6212,
+      "body": "## Observation\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `.config/pr-stack/landed-heads.jq` | Two selectors share an account. | landed |\n",
+      "close": true
+    }
   }
 ]

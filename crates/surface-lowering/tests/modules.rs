@@ -2574,29 +2574,34 @@ fn a_record_type_names_its_faces_over_its_labels()
 }
 
 #[test]
-fn a_face_past_a_record_s_labels_is_refused_by_the_label()
+fn a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label()
 {
-    let refused = |span, kind, subjects: [&'static str; 2]| {
+    let refused = |(span, fault), kind, subjects: [&'static str; 2]| {
         Amounts::Refused(LoweringRefusal::IllFormedDescription {
             span,
+            fault,
             kind,
             subjects: subjects.map(|subject| Maybe::Present(name(subject))),
         })
     };
     let outside = faced!("face secure = {port, tls}; face bad = {port, cert};", "");
+    let record = span_of(
+        outside,
+        "*{host : String, port : Integer, tls : Bool}",
+        0_usize,
+    );
+    let cert = span_of(outside, "cert", 0_usize);
     let lowered = lower(outside);
     assert_eq!(
         rows(&lowered),
         [row(
             "Config",
             Role::Held,
-            refused(
-                span_of(outside, "cert", 0_usize),
-                WfKind::FaceOutsideShape,
-                ["bad", "Config"]
-            )
+            refused((record.join(cert), cert), WfKind::FaceOutsideShape, [
+                "bad", "Config"
+            ])
         )],
-        "the face is refused at the label the record lacks"
+        "the face is refused over the record it reads, at the label the record lacks"
     );
     assert!(
         lowered.module.record_faces().is_empty(),
@@ -2604,12 +2609,13 @@ fn a_face_past_a_record_s_labels_is_refused_by_the_label()
     );
 
     let twice = faced!("face bad = {port}; face bad = {tls};", "");
+    let second = span_of(twice, "bad", 1_usize);
     assert_eq!(
         rows(&lower(twice)),
         [row(
             "Config",
             Role::Held,
-            refused(span_of(twice, "bad", 1_usize), WfKind::DuplicateFaceName, [
+            refused((second, second), WfKind::DuplicateFaceName, [
                 "Config", "bad"
             ])
         )],
@@ -2722,6 +2728,7 @@ fn a_face_poset_past_its_budget_is_refused()
             Role::Held,
             Amounts::Refused(LoweringRefusal::IllFormedDescription {
                 span: span_of(past.as_str(), record.as_str(), 0_usize),
+                fault: span_of(past.as_str(), record.as_str(), 0_usize),
                 kind: WfKind::FacePosetPastBudget,
                 subjects: [
                     Maybe::Present(name("Wide")),

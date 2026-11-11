@@ -1234,6 +1234,47 @@ fn prefixes_declaration(
     }))
 }
 
+/// Return the head of the declaration that the token at `index` of `tokens`
+/// stands before, when the token starts its line and is an item form of one
+/// tile ([`prefixes_declaration`]), as `pub` is.
+///
+/// # Specification
+/// - requires: `tokens` came from the labeler over `source`.
+/// - ensures: the next significant token after the one at `index` when the
+///   token at `index` starts its line and prefixes a declaration and that next
+///   token heads one ([`heads_declaration`]); none otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `pub` at the margin before `def`, `pub` inside a line,
+///   and a `def` with no prefix separate the prefix from the rest.
+/// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+#[spec(ensures: |ret| ret.is_none_or(|head| tokens.get(usize::from(index)).is_some_and(|token| token.end <= head.start)))]
+#[inline]
+fn prefixed_head(
+    pbg: &Pbg,
+    tokens: &[Token],
+    index: TokenIndex,
+    source: &SourceFragment<'_>,
+) -> Option<Token>
+{
+    let at = usize::from(index);
+    let &token = tokens.get(at)?;
+    let starts_line = usize::try_from(token.start)
+        .ok()
+        .and_then(|start| AsRef::<str>::as_ref(source).get(.. start))
+        .is_some_and(|before| before.is_empty() || before.ends_with('\n'));
+    if !starts_line || !bool::from(prefixes_declaration(pbg, token, source)) {
+        return None;
+    }
+    tokens
+        .iter()
+        .skip(at.saturating_add(1))
+        .find(|next| !matches!(next.lexeme, Lexeme::Space))
+        .copied()
+        .filter(|&next| bool::from(heads_declaration(pbg, next, source)))
+}
+
 primitive_copy_wrapper!(
     /// Whether a token is the separator that ends a top-level declaration
     /// before the head of the next one.
@@ -2440,6 +2481,13 @@ impl<'pbg> Molder<'pbg>
                 };
                 self.settle_statement(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
+                self.settle_before_prefixed_head(
+                    state,
+                    tokens,
+                    TokenIndex::from(index),
+                    &source,
+                    (token.lexeme, text, &labels),
+                );
                 let taken = bool::from(ends_declaration(
                     self.pbg,
                     tokens,
@@ -2650,6 +2698,164 @@ impl<'pbg> Molder<'pbg>
             // fallback) while preserving the token text.
             None => state.push_text(MoldId::from(u32::MAX), TileText::from(text)),
         }
+    }
+
+    /// Gather the menu of `head`, the head of a declaration that a prefix at
+    /// the margin stands before, and return the head's labels when that menu
+    /// bounds the open declaration ([`MeldState::bounds_declaration`]).
+    ///
+    /// # Specification
+    /// - requires: `head` came from `source` through [`prefixed_head`].
+    /// - ensures: the candidate buffer holds the head's menu at `state`;
+    ///   returns the head's labels exactly when that menu bounds the open
+    ///   declaration, so the buffer then holds at least the head's mold.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`settle_before_prefixed_head`](Self::settle_before_prefixed_head).
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    #[spec(ensures: |ret| ret.is_none() || !self.candidates.is_empty())]
+    fn bounding_head(
+        &mut self,
+        state: &MeldState<'_>,
+        head: Token,
+        source: &SourceFragment<'_>,
+    ) -> Option<LabelIds>
+    {
+        let slice = head.text(source);
+        let text = TokenText::from(AsRef::<str>::as_ref(&slice));
+        let labels = LabelIds::resolve(self.pbg, &candidate_labels(head.lexeme, text));
+        self.gather(state, head.lexeme, text, &labels);
+        bool::from(state.bounds_declaration(&self.candidates)).then_some(labels)
+    }
+
+    /// Close the open declaration in a window before a prefix at the margin,
+    /// as `pub`, when the head it stands before closes it, then gather the
+    /// prefix's own menu again.
+    ///
+    /// The head's menu, gathered at this state, decides the close
+    /// ([`bounding_head`](Self::bounding_head)), and the close reaches the
+    /// root ([`MeldState::settle_top_level_boundary`]). A window closes there
+    /// outright; the stream weighs the close
+    /// ([`settle_before_prefixed_head`](Self::settle_before_prefixed_head)).
+    ///
+    /// # Specification
+    /// - requires: the candidate buffer holds the prefix's menu, gathered at
+    ///   `state`; `labels` are the prefix's labels and `text` its text.
+    /// - ensures: the state is closed at the root exactly when the token at
+    ///   `index` prefixes a head ([`prefixed_head`]) and the head's menu bounds
+    ///   the open declaration; the candidate buffer then holds the prefix's
+    ///   menu at the resulting state; consumes no source.
+    /// - panics: none.
+    /// - executable: none — the close turns on the head's menu, which the
+    ///   clause cannot read again once the prefix's menu replaces it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`settle_before_prefixed_head`](Self::settle_before_prefixed_head):
+    ///   the window at the tie in the last arm reaches the prefix, and only a
+    ///   close there lets the reading that closes the type win.
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    fn close_before_prefixed_head(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &SourceFragment<'_>,
+        (lexeme, text, labels): (Lexeme, TokenText<'_>, &LabelIds),
+    )
+    {
+        let Some(head) = prefixed_head(self.pbg, tokens, index, source)
+        else {
+            return;
+        };
+        if self.bounding_head(state, head, source).is_some() {
+            state.settle_top_level_boundary(&self.candidates);
+        }
+        self.gather(state, lexeme, text, labels);
+    }
+
+    /// Close the open declaration on the stream before a prefix at the
+    /// margin, as `pub`, when the head it stands before closes it and the
+    /// close costs no more, then gather the prefix's own menu again.
+    ///
+    /// The close is the close of a window
+    /// ([`close_before_prefixed_head`](Self::close_before_prefixed_head)),
+    /// weighed as the statement close weighs
+    /// ([`settle_statement`](Self::settle_statement)): the molder molds the
+    /// window after the prefix twice under a mark, read as it stands and
+    /// after the close, and closes unless the window read as it stands owes
+    /// less.
+    ///
+    /// # Specification
+    /// - requires: the candidate buffer holds the prefix's menu, gathered at
+    ///   `state`; `labels` are the prefix's labels and `text` its text.
+    /// - ensures: the state is closed at the root exactly when the token at
+    ///   `index` prefixes a head ([`prefixed_head`]), the head's menu bounds
+    ///   the open declaration, and the window after the close owes no more than
+    ///   the window read as it stands; the candidate buffer then holds the
+    ///   prefix's menu at the resulting state; consumes no source.
+    /// - panics: none.
+    /// - executable: none — the close turns on two windows that the molder
+    ///   rolls back, which the clause cannot mold again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `def` whose last arm keeps a juxtaposed type open
+    ///   before `pub def` closes at the prefix, and a whole source does not.
+    ///   Without the close, the window at the type prefers the reading that
+    ///   leaves it open.
+    /// - witness: `tests::acceptance::a_pub_at_the_margin_closes_the_open_declaration_6101`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    fn settle_before_prefixed_head<'src>(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &'src SourceFragment<'src>,
+        (lexeme, text, labels): (Lexeme, TokenText<'_>, &LabelIds),
+    )
+    {
+        let Some(head) = prefixed_head(self.pbg, tokens, index, source)
+        else {
+            return;
+        };
+        let Some(head_labels) = self.bounding_head(state, head, source)
+        else {
+            self.gather(state, lexeme, text, labels);
+            return;
+        };
+        let slice = head.text(source);
+        let head_text = TokenText::from(AsRef::<str>::as_ref(&slice));
+        let next = TokenIndex::from(usize::from(index).saturating_add(1));
+        self.gather(state, lexeme, text, labels);
+        let mark = state.mark();
+        let choice = self.choose_stream(state, tokens, index, source);
+        Self::push_choice(state, choice, text);
+        let end = self.mold_window(state, tokens, next, source, &mark, WindowBound::Unbounded);
+        let standing =
+            (end == WindowEnd::Molded).then(|| state.completion_delta(state.delta_since(&mark)));
+        state.rollback_to(&mark);
+        let mark = state.mark();
+        self.gather(state, head.lexeme, head_text, &head_labels);
+        state.settle_top_level_boundary(&self.candidates);
+        self.gather(state, lexeme, text, labels);
+        let choice = self.choose_stream(state, tokens, index, source);
+        Self::push_choice(state, choice, text);
+        let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
+        let end = self.mold_window(state, tokens, next, source, &mark, bound);
+        let closed =
+            (end == WindowEnd::Molded).then(|| state.completion_delta(state.delta_since(&mark)));
+        state.rollback_to(&mark);
+        let closes = match (standing, closed) {
+            (Some(standing), Some(closed)) => closed <= standing,
+            (_, closed) => closed.is_some(),
+        };
+        if closes {
+            self.gather(state, head.lexeme, head_text, &head_labels);
+            state.settle_top_level_boundary(&self.candidates);
+        }
+        self.gather(state, lexeme, text, labels);
     }
 
     /// Gather the sorted, de-duplicated candidate molds for a token's
@@ -4315,7 +4521,9 @@ impl<'pbg> Molder<'pbg>
     ///
     /// A separator that ends a top-level declaration unfinished
     /// ([`ends_declaration`]) closes that declaration in the window as it does
-    /// in the stream ([`MeldState::close_at_separator`]).
+    /// in the stream ([`MeldState::close_at_separator`]). A prefix at the
+    /// margin before a declaration head closes every open form in the window
+    /// outright ([`close_before_prefixed_head`](Self::close_before_prefixed_head)).
     ///
     /// # Specification
     /// - requires: `start` is within the token stream or its end sentinel;
@@ -4369,6 +4577,13 @@ impl<'pbg> Molder<'pbg>
                 state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
                 self.gather(state, token.lexeme, text, &labels);
                 state.settle_declaration_boundary(&self.candidates);
+                self.close_before_prefixed_head(
+                    state,
+                    tokens,
+                    TokenIndex::from(index),
+                    source,
+                    (token.lexeme, text, &labels),
+                );
                 let taken = bool::from(ends_declaration(
                     self.pbg,
                     tokens,

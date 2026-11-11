@@ -481,17 +481,6 @@ impl<Term: Copy, Type: Copy> Elaboration<Term, Type>
     {
         &self.marks
     }
-
-    /// How many times the run crossed the conversion boundary.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn conversions(&self) -> ConversionCount
-    {
-        self.conversions
-    }
 }
 
 /// Elaborate `value` totally: judge it in `direction`, marking every refusal

@@ -592,7 +592,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
     /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
+    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.top_types.len()),
         ensures: |_| {
@@ -786,10 +786,11 @@ impl<'source> Collector<'_, 'source>
     ///   entries, none for a type that is no record, and one face per written
     ///   face, in written order; the face poset holds those faces, then each
     ///   nonempty meet of two faces that no earlier cell is.
-    /// - fails: a face listing a label the record lacks is refused at that
-    ///   label, a face named twice at its second name, and a label listed twice
-    ///   in one face, or a record labelling twice, at the face or the type;
-    ///   faces and meets past the poset's 64 cells are refused at the type.
+    /// - fails: a face listing a label the record lacks is refused over the
+    ///   record through that label, with the label as the part at fault; a face
+    ///   named twice at its second name, and a label listed twice in one face,
+    ///   or a record labelling twice, at the face or the type; faces and meets
+    ///   past the poset's 64 cells are refused at the type.
     /// - panics: none.
     ///
     /// # Errors
@@ -801,7 +802,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — two faces over three labels are read, with their meet
     ///   as a third cell, and a face listing a fourth is refused by it.
     /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
+    /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |faces| faces.name == name && faces.faces.len() == written.len()))]
     fn record_faces(
         &self,
@@ -840,6 +841,7 @@ impl<'source> Collector<'_, 'source>
                 // As a theory's: the boundary first, then the face it names twice.
                 return Err(LoweringRefusal::IllFormedDescription {
                     span: face.span,
+                    fault: face.span,
                     kind: WfKind::DuplicateFaceName,
                     subjects: [Maybe::Present(name), Maybe::Present(face_name)],
                 });
@@ -849,12 +851,16 @@ impl<'source> Collector<'_, 'source>
             match boundary.face(&held) {
                 Ok(subshape) => faces.push((face_name, subshape)),
                 Err(BoundaryError::Unbound(outside)) => {
-                    let span = listed
+                    // The check judges the face against the record it reads,
+                    // so the refusal covers the record through the label at
+                    // fault: a mistake in the record's own labels lies inside.
+                    let fault = listed
                         .iter()
                         .find(|&&label| self.name_of(label) == outside)
                         .map_or(face.span, |label| label.span);
                     return Err(LoweringRefusal::IllFormedDescription {
-                        span,
+                        span: defined.span.join(fault),
+                        fault,
                         kind: WfKind::FaceOutsideShape,
                         subjects: [Maybe::Present(face_name), Maybe::Present(name)],
                     });
@@ -870,6 +876,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return Err(LoweringRefusal::IllFormedDescription {
                 span: defined.span,
+                fault: defined.span,
                 kind: WfKind::FacePosetPastBudget,
                 subjects: [
                     Maybe::Present(name),

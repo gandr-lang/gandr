@@ -1,18 +1,23 @@
-//! The guarded template as a reduction: a family of certificates collapses
-//! onto its template, and each member's row includes back as its instance.
+//! A guarded form as a reduction: a family of certificates collapses onto its
+//! template, and each member's row includes back as its instance.
 //!
 //! The source holds one cell for each member of the family. The target holds
 //! one cell for each member too: its row, the guard of the arm that the member
-//! holds at each entry. The template is the part that the rows share, and its
-//! size is the size `s` that [`FamilyCostReport`](crate::FamilyCostReport)
-//! gives. The collapse reads a member's row from its peak. The inclusion puts
-//! the row's arms in place in the carrier's peak and join, and the instance
-//! keeps the carrier's skeleton with no copy. A row is exact, so each witness
-//! is an identity, and it closes only between equal composites: a member
-//! equals an instance when its skeleton is the carrier's and its peak and its
-//! join are the instance's. The replay checks that the collapse gives each row
-//! back after the inclusion, and that each member equals its instance. The
-//! fold is untrusted, and the replay decides it.
+//! holds at each entry. The template is the part that the rows share. The
+//! reduction reads the template through the four operations of
+//! [`GuardedForm`] alone, so it reads every guarded form alike. The collapse
+//! reads a member's row from its peak. The inclusion puts the row's arms in
+//! place, held as the instance's peak and join, with no copy of the rest. A
+//! row is exact, so each witness is an identity, and it closes only between
+//! equal composites: a member equals an instance when the form holds it. The
+//! replay checks that the collapse gives each row back after the inclusion,
+//! and that each member equals its instance. The fold is untrusted, and the
+//! replay decides it.
+//!
+//! Over a cell alphabet the template is the tracelet template, and its size is
+//! the size `s` that [`FamilyCostReport`](crate::FamilyCostReport) gives. A
+//! member equals an instance there when its skeleton is the carrier's and its
+//! peak and its join are the instance's.
 //!
 //! A family of families reduces in two steps. The
 //! [`Sum`](gandr_theory_discrete_morse::Sum) of the reductions of each family
@@ -53,6 +58,8 @@ use gandr_theory_discrete_morse::Summand;
 
 use crate::boundary::MemberIndex;
 use crate::boundary::NodeCount;
+use crate::form::GuardedForm;
+use crate::form::RowOf;
 use crate::template::GuardedTemplate;
 use crate::template::InheritanceCache;
 use crate::template::TemplateObstruction;
@@ -60,15 +67,15 @@ use crate::template::TemplateRefusal;
 use crate::template::TemplateRow;
 use crate::template::anti_unify_tracelets;
 
-/// A family of certificates read against a template: a [`Reduction`] from
-/// the family onto the template's rows.
+/// A family of certificates read against the template of a guarded form: a
+/// [`Reduction`] from the family onto the template's rows.
 #[derive(Debug)]
-pub struct TemplateReduction<'family, A: CellAlphabet>
+pub struct TemplateReduction<'family, F: GuardedForm>
 {
     /// The template that the family folds into, owned or borrowed.
-    template: Cow<'family, GuardedTemplate<A>>,
+    template: Cow<'family, F::Template>,
     /// The family, one certificate for each member.
-    family: &'family [Tracelet<A>],
+    family: &'family [F::Member],
     /// One cell for each member, in family order.
     members: Vec<MemberIndex>,
 }
@@ -76,19 +83,19 @@ pub struct TemplateReduction<'family, A: CellAlphabet>
 /// A composite of a template reduction: a member of the family, an instance
 /// of the template, or a row of the template.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Folded<'family, A: CellAlphabet>
+pub enum Folded<'family, F: GuardedForm>
 {
     /// A member of the family, borrowed.
-    Member(&'family Tracelet<A>),
-    /// An instance of the template: the carrier with the arms of a row in
+    Member(&'family F::Member),
+    /// An instance of the template: the template with the arms of a row in
     /// place, held as its peak and its join, because the rest of it is the
-    /// carrier's.
+    /// template's.
     Instance
     {
         /// The instance's peak.
-        peak: A::Cmd,
+        peak: F::End,
         /// The instance's join.
-        join: A::Cmd,
+        join: F::End,
     },
     /// The guard of the arm at each entry of the template.
     Row(TemplateRow),
@@ -108,14 +115,14 @@ pub enum Folded<'family, A: CellAlphabet>
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Identity;
 
-/// Why a template reduction cannot answer.
+/// Why a template reduction cannot answer, with the form's obstruction `O`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FoldFault
+pub enum FoldFault<O = TemplateObstruction>
 {
     /// The family holds no member at this cell.
     NoMember(MemberIndex),
     /// The template does not read a member's peak, or does not rebuild a row.
-    Obstruction(TemplateObstruction),
+    Obstruction(O),
     /// A collapse or a section reads a certificate, a member or an instance,
     /// and it received a row.
     NotAMember,
@@ -131,7 +138,7 @@ pub enum FoldFault
 ///
 /// # Specification
 /// trivial.
-const fn refused(fault: FoldFault) -> Refusal<MemberIndex, FoldFault>
+const fn refused<O>(fault: FoldFault<O>) -> Refusal<MemberIndex, FoldFault<O>>
 {
     Refusal::Morse(MorseError::Complex(fault))
 }
@@ -140,9 +147,68 @@ const fn refused(fault: FoldFault) -> Refusal<MemberIndex, FoldFault>
 ///
 /// # Specification
 /// trivial.
-const fn obstructed(obstruction: TemplateObstruction) -> Refusal<MemberIndex, FoldFault>
+const fn obstructed<O>(obstruction: O) -> Refusal<MemberIndex, FoldFault<O>>
 {
     refused(FoldFault::Obstruction(obstruction))
+}
+
+impl<'family, F: GuardedForm> TemplateReduction<'family, F>
+{
+    /// Read `family` against `template`, owned or borrowed, wherever the
+    /// template comes from: the replay decides whether it reduces the family.
+    ///
+    /// # Specification
+    /// - ensures: one cell for each member of `family`, in family order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the template of an honest family read against a
+    ///   family with one member changed. The cell observer rejects a dropped or
+    ///   reordered member.
+    /// - witness: `tests::template::a_member_unlike_its_instance_is_refused_by_name`
+    #[spec(ensures: |output| output.members.len() == family.len()
+        && output.members.iter().enumerate().all(|(index, cell)| usize::from(*cell) == index))]
+    #[inline]
+    #[must_use]
+    pub fn read(
+        template: Cow<'family, F::Template>,
+        family: &'family [F::Member],
+    ) -> Self
+    {
+        Self {
+            template,
+            family,
+            members: (0 .. family.len()).map(MemberIndex::from).collect(),
+        }
+    }
+
+    /// The template that the family is read against.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn template(&self) -> &F::Template
+    {
+        &self.template
+    }
+
+    /// The collapse of each member: its row, in family order, or the form's
+    /// first obstruction.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// - each obstruction of the form: the template does not read a member.
+    #[inline]
+    pub fn rows(&self) -> Result<Vec<TemplateRow>, F::Obstruction>
+    {
+        self.family
+            .iter()
+            .map(|member| F::row(&self.template, RowOf::Member(member)))
+            .collect()
+    }
 }
 
 impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
@@ -181,8 +247,8 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
         ))
     }
 
-    /// Read `family` against `template`, owned or borrowed, wherever the
-    /// template comes from: the replay decides whether it reduces the family.
+    /// Read `family` against the tracelet `template`, owned or borrowed: the
+    /// reading [`Self::read`] gives over the alphabet's form.
     ///
     /// # Specification
     /// - ensures: one cell for each member of `family`, in family order.
@@ -202,22 +268,7 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
         family: &'family [Tracelet<A>],
     ) -> Self
     {
-        Self {
-            template,
-            family,
-            members: (0 .. family.len()).map(MemberIndex::from).collect(),
-        }
-    }
-
-    /// The template that the family is read against.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn template(&self) -> &GuardedTemplate<A>
-    {
-        &self.template
+        Self::read(template, family)
     }
 
     /// The size of the target: the template's size `s`, which counts the
@@ -234,11 +285,11 @@ impl<'family, A: CellAlphabet> TemplateReduction<'family, A>
     }
 }
 
-impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
+impl<'family, F: GuardedForm> Reduction for TemplateReduction<'family, F>
 {
     type Cell = MemberIndex;
-    type Composite = Folded<'family, A>;
-    type Fault = FoldFault;
+    type Composite = Folded<'family, F>;
+    type Fault = FoldFault<F::Obstruction>;
     type Witness = Identity;
 
     /// The members of the family.
@@ -271,7 +322,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         cell: &Self::Cell,
     ) -> Answer<Self, Self::Composite>
     {
-        let family: &'family [Tracelet<A>] = self.family;
+        let family: &'family [F::Member] = self.family;
         family
             .get(usize::from(*cell))
             .map(Folded::Member)
@@ -288,12 +339,14 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         composite: &Self::Composite,
     ) -> Answer<Self, Self::Composite>
     {
-        let peak = match *composite {
-            Folded::Member(member) => &member.overlap.peak,
-            Folded::Instance { ref peak, .. } => peak,
+        let certificate = match *composite {
+            Folded::Member(member) => RowOf::Member(member),
+            Folded::Instance { ref peak, .. } => RowOf::Instance(peak),
             Folded::Row(_) | Folded::Nested { .. } => return Err(refused(FoldFault::NotAMember)),
         };
-        self.template.row(peak).map(Folded::Row).map_err(obstructed)
+        F::row(&self.template, certificate)
+            .map(Folded::Row)
+            .map_err(obstructed)
     }
 
     /// The instance of a row: its peak and its join, with the arms in place.
@@ -307,9 +360,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     ) -> Answer<Self, Self::Composite>
     {
         match *composite {
-            Folded::Row(ref row) => self
-                .template
-                .boundary(row)
+            Folded::Row(ref row) => F::instance(&self.template, row)
                 .map(|(peak, join)| Folded::Instance { peak, join })
                 .map_err(obstructed),
             Folded::Member(_) | Folded::Instance { .. } | Folded::Nested { .. } => {
@@ -396,7 +447,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     }
 
     /// Whether `source` and `target` are equal: a member and an instance
-    /// compare in place, through the carrier's skeleton.
+    /// compare in place, as the form holds them.
     ///
     /// # Specification
     /// trivial.
@@ -408,18 +459,18 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
         target: &Self::Composite,
     ) -> Answer<Self, Closure>
     {
-        Ok(alike(self.template.carrier(), source, target))
+        alike::<F>(&self.template, source, target).map_err(obstructed)
     }
 
     /// Check each member in family order: its row and the boundary of its
     /// instance exist, the instance gives the row back, and the instance is
     /// the member.
     ///
-    /// The replay never builds an instance whole. An instance's skeleton is
-    /// the carrier's, so the replay compares the member's skeleton with the
-    /// carrier's in place, and it rebuilds only the peak and the join. A
-    /// rebuilt peak equal to the member's gives the member's row back, because
-    /// a row is a function of its peak.
+    /// The replay never builds an instance whole. The form holds an instance
+    /// as its peak and its join, so the replay compares the member with the
+    /// rest of the template in place. An instance that the member does not
+    /// hold is forged where its peak gives the member's row back, because a
+    /// row is a function of its peak.
     ///
     /// # Specification
     /// - ensures: `Ok` exactly when each member's peak gives a row, the row
@@ -431,9 +482,9 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     ///   member as [`Refusal::Forged`].
     /// - panics: none.
     /// - executable: none — the body is the predicate.
-    /// - intension: one match of a peak and one fold of a row into the
-    ///   carrier's peak and join for each member, with a second match only
-    ///   where the rebuilt peak differs.
+    /// - intension: one row of a peak and one instance of a row for each
+    ///   member, with a second row only where the member does not hold its
+    ///   instance.
     ///
     /// # Errors
     /// - [`Refusal::Morse`]: the template does not read a peak or rebuild a
@@ -452,7 +503,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateReduction<'family, A>
     {
         for (index, member) in self.family.iter().enumerate() {
             let cell = MemberIndex::from(index);
-            match rebuilt(&self.template, member).map_err(obstructed)? {
+            match rebuilt::<F>(&self.template, member).map_err(obstructed)? {
                 Rebuilt::Same => {},
                 Rebuilt::Forged => return Err(Refusal::Forged(cell)),
                 Rebuilt::Unretracted => return Err(Refusal::Unretracted(cell)),
@@ -475,98 +526,60 @@ enum Rebuilt
 }
 
 /// How `certificate` stands against the instance of its own row in
-/// `template`. The check compares the certificate's skeleton with the
-/// carrier's in place, and it rebuilds only the peak and the join.
+/// `template`. The form compares the certificate with the instance in place,
+/// and it rebuilds only the instance's peak and join.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// - each [`TemplateObstruction`]: the template does not read a peak or rebuild
+/// - each obstruction of the form: the template does not read a peak or rebuild
 ///   a row.
-fn rebuilt<A>(
-    template: &GuardedTemplate<A>,
-    certificate: &Tracelet<A>,
-) -> Result<Rebuilt, TemplateObstruction>
+fn rebuilt<F>(
+    template: &F::Template,
+    certificate: &F::Member,
+) -> Result<Rebuilt, F::Obstruction>
 where
-    A: CellAlphabet,
+    F: GuardedForm,
 {
-    let row = template.row(&certificate.overlap.peak)?;
-    let (peak, join) = template.boundary(&row)?;
-    if peak != certificate.overlap.peak {
-        return Ok(if template.row(&peak)? == row {
-            Rebuilt::Forged
-        }
-        else {
-            Rebuilt::Unretracted
-        });
+    let row = F::row(template, RowOf::Member(certificate))?;
+    let (peak, join) = F::instance(template, &row)?;
+    if F::holds(template, certificate, &peak, &join)? == Closure::Closes {
+        return Ok(Rebuilt::Same);
     }
-    Ok(
-        if join == certificate.joins_at
-            && same_skeleton(template.carrier(), certificate) == Closure::Closes
-        {
-            Rebuilt::Same
-        }
-        else {
-            Rebuilt::Forged
-        },
-    )
-}
-
-/// The identity between `certificate` and the skeleton of `carrier`: it
-/// closes when their paths are equal and their overlaps are equal but the peak.
-///
-/// # Specification
-/// trivial.
-fn same_skeleton<A>(
-    carrier: &Tracelet<A>,
-    certificate: &Tracelet<A>,
-) -> Closure
-where
-    A: CellAlphabet,
-{
-    if carrier.path_a == certificate.path_a
-        && carrier.path_b == certificate.path_b
-        && carrier.overlap.left == certificate.overlap.left
-        && carrier.overlap.right == certificate.overlap.right
-        && carrier.overlap.kind == certificate.overlap.kind
-        && carrier.overlap.unifier == certificate.overlap.unifier
-        && carrier.overlap.seam == certificate.overlap.seam
-        && carrier.overlap.right_renamed() == certificate.overlap.right_renamed()
-    {
-        Closure::Closes
+    let given = F::row(template, RowOf::Instance(&peak))?;
+    Ok(if given == row {
+        Rebuilt::Forged
     }
     else {
-        Closure::Open
-    }
+        Rebuilt::Unretracted
+    })
 }
 
-/// The identity between `left` and `right` in a reduction over the template
-/// with `carrier`: it closes only between one composite, and a member equals
-/// an instance when its skeleton is the carrier's and its peak and its join
-/// are the instance's.
+/// The identity between `left` and `right` in a reduction over `template`:
+/// it closes only between one composite, and a member equals an instance
+/// when the form holds it.
 ///
 /// # Specification
 /// trivial.
-fn alike<A>(
-    carrier: &Tracelet<A>,
-    left: &Folded<'_, A>,
-    right: &Folded<'_, A>,
-) -> Closure
+///
+/// # Errors
+/// - each obstruction of the form: the template does not read the instance.
+fn alike<F>(
+    template: &F::Template,
+    left: &Folded<'_, F>,
+    right: &Folded<'_, F>,
+) -> Result<Closure, F::Obstruction>
 where
-    A: CellAlphabet,
+    F: GuardedForm,
 {
     match (left, right) {
         (&Folded::Member(member), &Folded::Instance { ref peak, ref join })
-        | (&Folded::Instance { ref peak, ref join }, &Folded::Member(member))
-            if member.overlap.peak == *peak && member.joins_at == *join =>
-        {
-            same_skeleton(carrier, member)
+        | (&Folded::Instance { ref peak, ref join }, &Folded::Member(member)) => {
+            F::holds(template, member, peak, join)
         },
-        (&Folded::Member(_), &Folded::Instance { .. })
-        | (&Folded::Instance { .. }, &Folded::Member(_)) => Closure::Open,
-        _ if left == right => Closure::Closes,
-        _ => Closure::Open,
+        _ if left == right => Ok(Closure::Closes),
+        _ => Ok(Closure::Open),
     }
 }
 
@@ -979,7 +992,7 @@ impl<'family, A: CellAlphabet> Reduction for TemplateFold<'family, A>
         for (index, member) in self.templates.iter().enumerate() {
             let part = PartIndex::from(index);
             let cell = Summand::new(part, MemberIndex::from(0_usize));
-            match rebuilt(&self.template, member.carrier())
+            match rebuilt::<A>(&self.template, member.carrier())
                 .map_err(|obstruction| refused_in(part, FoldFault::Obstruction(obstruction)))?
             {
                 Rebuilt::Same => {},

@@ -143,6 +143,7 @@
 
 mod admission;
 mod draft;
+mod form;
 mod harvest;
 mod image;
 mod memo;
@@ -175,6 +176,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use form::Bound;
 use gandr_kernel_term::stage::Arena;
 use gandr_kernel_term::stage::Budget;
 use gandr_kernel_term::stage::Certificate;
@@ -1589,64 +1591,15 @@ impl Template
         source: TermId,
     ) -> Result<Substitution, StageError>
     {
-        // Import only one peak; the template skeleton and arms stay borrowed.
-        let mut graph = self.graph.member();
-        let imported = graph.import(arena, &[source])?;
-        let root = *imported.first().ok_or(StageError::Unbalanced)?;
-        let [peak, _] = self.sides;
-        let mut pending = Vec::from([(peak, root)]);
-        let mut seen = BTreeSet::new();
-        let mut bindings = BTreeMap::new();
-        while let Some((pattern, actual)) = pending.pop() {
-            if !seen.insert((pattern, actual)) {
-                continue;
-            }
-            let pattern = self.graph.node(pattern)?;
-            if let Head::Point(point) = pattern.head {
-                let entry = self
-                    .entries
-                    .get(usize::from(point))
-                    .ok_or(StageError::Unbalanced)?;
-                let address = graph.address(actual)?;
-                let mut selected = None;
-                for arm in entry.arms.keys() {
-                    if self.graph.address(*arm)? == address {
-                        match self.graph.compare(*arm, &graph, actual) {
-                            Ok(()) => {
-                                selected = Some(*arm);
-                                break;
-                            },
-                            Err(StageError::InvalidCertificate) => {},
-                            Err(error) => return Err(error),
-                        }
-                    }
-                }
-                let selected = selected.ok_or(StageError::InvalidCertificate)?;
-                if bindings
-                    .insert(point, selected)
-                    .is_some_and(|old| old != selected)
-                {
-                    return Err(StageError::InvalidCertificate);
-                }
-                continue;
-            }
-            let actual = graph.node(actual)?;
-            if pattern.head != actual.head {
-                return Err(StageError::InvalidCertificate);
-            }
-            pending.extend(
-                pattern
-                    .children
-                    .0
-                    .into_iter()
-                    .flatten()
-                    .zip(actual.children.0.into_iter().flatten()),
-            );
-        }
-        if bindings.len() != self.entries.len() {
-            return Err(StageError::InvalidCertificate);
-        }
-        Ok(Substitution(bindings))
+        let arms =
+            Bound::of(&self.graph, self.sides, self.rule, &self.entries, arena).arms(source)?;
+        Ok(Substitution(
+            self.entries
+                .iter()
+                .zip(arms)
+                .map(|(entry, arm)| (entry.point, arm))
+                .collect(),
+        ))
     }
 
     /// Materialize one member; the caller owns and drops its independent arena.

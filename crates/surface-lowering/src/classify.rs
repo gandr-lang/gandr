@@ -1080,6 +1080,7 @@ mod tests
             LoweringRefusal::ViewOfNoPlace { span: empty },
             LoweringRefusal::IllFormedDescription {
                 span: empty,
+                fault: empty,
                 kind: crate::WfKind::DuplicateSortName,
                 subjects: [
                     Maybe::Present(SurfaceName::from("Tm")),
@@ -1391,6 +1392,7 @@ mod tests
         let ill_formed = |kind| {
             LoweringRefusal::IllFormedDescription {
                 span: empty,
+                fault: empty,
                 kind,
                 subjects: [
                     Maybe::Present(SurfaceName::from("a")),

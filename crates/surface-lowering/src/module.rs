@@ -1044,7 +1044,7 @@ pub struct TypeComponent<'source>
 ///   face listing a label the record lacks is refused by the label; two faces
 ///   that meet at one label give a poset of three cells.
 /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-/// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
+/// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_over_the_record_and_the_label`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordFaces<'source>
 {

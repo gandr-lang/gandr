@@ -146,6 +146,8 @@ pub struct Post
     /// The `Idempotency-Key` header: `<tool_call_id>@<version>` for an event
     /// and the `id` for a result.
     pub key: String,
+    /// The version of the state, when the state has one.
+    pub version: Option<i32>,
     /// The body up to its text: the routing of the row, as JSON fields.
     pub head: String,
     /// The text of the state, encoded once as a JSON string, which every
@@ -167,8 +169,9 @@ pub struct Drops(pub u64);
 #[derive(Debug)]
 pub enum Fate
 {
-    /// The runtime took the delivery.
-    Taken,
+    /// The runtime took the delivery: the version of the state it took, when
+    /// the state has one.
+    Taken(Option<i32>),
     /// The runtime refused the delivery with a status that no retry changes.
     Refused(Status),
     /// Every attempt failed: the last error, and the drops of the toolset
@@ -189,7 +192,7 @@ impl fmt::Display for Fate
     ) -> fmt::Result
     {
         match *self {
-            Self::Taken => f.write_str("taken"),
+            Self::Taken(_) => f.write_str("taken"),
             Self::Refused(Status(status)) => write!(f, "refused with {status}"),
             Self::Spent(ref error, Drops(drops)) => write!(
                 f,
@@ -371,6 +374,21 @@ impl Deliveries
         self.ready.notify_all();
     }
 
+    /// Forget each state owed to `row`. A delivery in flight ends, and no retry
+    /// and no newer state follows it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn forget(
+        &self,
+        row: &Row,
+    )
+    {
+        // The row's entry in the due heap names a lane that is gone, and the
+        // settlement of a flight finds no lane to retry or to go on with.
+        drop(lock(&self.table).lanes.remove(row));
+    }
+
     /// Deliver what is owed until the toolset stops, telling `told` how the
     /// deliveries of each row ended.
     ///
@@ -465,7 +483,7 @@ impl Deliveries
                 if woken {
                     self.ready.notify_all();
                 }
-                return Some(Fate::Taken);
+                return Some(Fate::Taken(owed.post.version));
             },
             Ok(Status(500 ..= 599)) => io::Error::other("the callback answered a server error"),
             Ok(status) => {

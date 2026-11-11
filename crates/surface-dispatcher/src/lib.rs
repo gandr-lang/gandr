@@ -43,11 +43,11 @@
 //! reverses for a tree whose text does not fit in memory, when the walk reads
 //! the import graph first and each component's texts again to lower it.
 //!
-//! # Components fork; judgement keeps walk order
+//! # Components fork; the steps keep walk order
 //!
-//! [`Walk::visit`] parses and lowers the components on the driver's
-//! [`Pool`], largest first, and judges, settles and reports their sources in
-//! walk order on the calling thread, so every count, verdict and diagnostic
+//! [`Walk::visit`] parses, lowers and judges the components on the driver's
+//! [`Pool`], largest first, and settles and reports their sources in walk
+//! order on the calling thread, so every count, verdict and diagnostic
 //! is the serial visit's at every width. A pool at [`Width::SERIAL`] is that
 //! serial visit, and the reference every wider one is tested against. The
 //! `stage` verb forks each program's stages on the same pool, so a process
