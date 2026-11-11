@@ -458,7 +458,9 @@ impl Presentations
     /// - ensures: `Some(words)` exactly when `base` is a constructor term of a
     ///   sort `s` and `words` the first presented type, by admission position,
     ///   whose cells loop in `s` wrapped `wraps` times at a point `base`
-    ///   spells; admission keeps one type of words per point and wrapping.
+    ///   spells; admission keeps one type of words per point and wrapping. A
+    ///   `base` that is the empty word of a type of words over `p` wrapped `t`
+    ///   times reads as `p` wrapped `wraps + t + 1` times.
     /// - provides: the value half of [`Self::words`]: the reading of
     ///   `Replay::present` at a reflexivity, as `syntax::empty_word` in
     ///   core-term compares it and the evaluator's `presented::normal_form`
@@ -469,9 +471,12 @@ impl Presentations
     /// # Adequacy
     /// - hypothesis: L3 — the circle's base at no wrapping and the sphere's
     ///   base at one wrapping read as their words; a point the cells do not
-    ///   spell, and a wrapping no cells carry, read as no words.
+    ///   spell, and a wrapping no cells carry, read as no words. At a point
+    ///   with a loop and a 2-cell, the loop's empty word at no wrapping reads
+    ///   as the 2-cell's words.
     /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
-    #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some_and(|cells| cells.reflexivities() == wraps))))]
+    /// - witness: `replay::tests::a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741`
+    #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some_and(|cells| cells.reflexivities() >= wraps))))]
     #[must_use]
     pub(crate) fn emptied(
         &self,
@@ -480,7 +485,12 @@ impl Presentations
         wraps: Reflexivities,
     ) -> Option<ConstantIndex>
     {
-        let &Value::Constructor { datatype, .. } = arena.value(base)?
+        let &Value::Constructor {
+            datatype,
+            tag,
+            ref fields,
+            ..
+        } = arena.value(base)?
         else {
             return None;
         };
@@ -490,6 +500,27 @@ impl Presentations
         else {
             return None;
         };
+        // The empty word of a type of words over `p` wrapped `t` times spells
+        // `p` wrapped `t + 1` times, so a reflexivity around it reads one
+        // dimension up.
+        if tag == FreeCells::nil()
+            && fields.is_empty()
+            && let Some(below) = self
+                .presented(sort)
+                .and_then(|presented| presented.presentation.cells())
+        {
+            let wraps = Reflexivities::from(
+                usize::from(wraps)
+                    .saturating_add(usize::from(below.reflexivities()))
+                    .saturating_add(1),
+            );
+            return self
+                .looping(below.sort())
+                .find(|&(_, cells)| {
+                    cells.reflexivities() == wraps && cells.point() == below.point()
+                })
+                .map(|(words, _)| words);
+        }
         self.looping(sort)
             .find(|&(_, cells)| {
                 cells.reflexivities() == wraps

@@ -420,6 +420,8 @@ enum Side
     Empty,
     /// The empty word of the 2-cell's words.
     EmptyCell,
+    /// `here(ε)`, for `ε` the empty word of the loop's words.
+    HereEmpty,
     /// `⟨tr(y. Path[.A = S](Base, y), w, ε)⟩`, for `w` the loop's word
     /// [`MOVED`]: the empty path moved along a word of four letters.
     Moved,
@@ -497,6 +499,10 @@ fn core_side(
         },
         Side::Empty => empty(core, WORDS),
         Side::EmptyCell => empty(core, CELLS),
+        Side::HereEmpty => {
+            let end = empty(core, WORDS);
+            core.value_here(end)
+        },
         Side::Moved | Side::Word => {
             let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
             let end = empty(core, WORDS);
@@ -636,6 +642,10 @@ fn kernel_side(
         },
         Side::Empty => empty(arena, WORDS),
         Side::EmptyCell => empty(arena, CELLS),
+        Side::HereEmpty => {
+            let end = empty(arena, WORDS);
+            arena.value_here(end)
+        },
         Side::Moved | Side::Word => {
             let own = arena.value_type_data(ConstantIndex::from(WORDS), Vec::new());
             let end = empty(arena, WORDS);
@@ -786,6 +796,30 @@ fn a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477()
         MachineVerdict::Convertible,
         "a reflexivity off the point is no empty word"
     );
+}
+
+/// #6741: at a point with a loop and a 2-cell, a reflexivity at the loop's
+/// empty word is the 2-cell's empty word, as the reflexivity of the point's
+/// reflexivity is.
+#[test]
+fn a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741()
+{
+    for (left, right) in [
+        (Side::HereEmpty, Side::EmptyCell),
+        (Side::EmptyCell, Side::HereEmpty),
+    ] {
+        let (verdict, decisions) = decided_sides(left, right);
+        assert_eq!(
+            verdict,
+            MachineVerdict::Convertible,
+            "{left:?} against {right:?}: {decisions:?}"
+        );
+        assert_eq!(
+            replayed_sides(left, right, &replay_nodes(&decisions)),
+            KernelVerdict::Convertible,
+            "{left:?} against {right:?}, and the kernel replays the dialogue: {decisions:?}"
+        );
+    }
 }
 
 #[test]
