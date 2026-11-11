@@ -109,6 +109,7 @@ use crate::free::FreeFault;
 use crate::free::FreeIndices;
 use crate::free::Membership;
 use crate::presented::NormalForm;
+use crate::presented::Reflexive;
 use crate::presented::normal_form;
 
 /// What reading a computation as a cong chain gave.
@@ -318,7 +319,7 @@ pub fn fused(
         *fuel = RewriteFuel::from(u64::from(*fuel).saturating_sub(u64::from(spent)));
         image = read;
     }
-    let image = match normal_form(core, domain, manifest, image, fuel)? {
+    let image = match normal_form(core, domain, manifest, image, Reflexive::Kept, fuel)? {
         NormalForm::Kept => image,
         NormalForm::Rewritten(normal) => normal,
         NormalForm::Exhausted => return Ok(Fusion::Exhausted),

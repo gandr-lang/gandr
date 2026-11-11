@@ -3328,6 +3328,20 @@ enum Composite
     Other,
 }
 
+/// Whether [`Replay::present`] reads a reflexivity at the root as an empty
+/// word: the pair's other side picks it, so two reflexivities keep the rule
+/// that compares their points, as the evaluator's `presented::Reflexive` does.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reflexive
+{
+    /// The other side is no reflexivity: a reflexivity at a looped point
+    /// reads as the empty word of its words.
+    Worded,
+    /// The other side is a reflexivity, or no pair stands: a reflexivity
+    /// stays as it is.
+    Kept,
+}
+
 /// One replay in flight.
 struct Replay<'run, I>
 where
@@ -3596,8 +3610,16 @@ where
             self.open_returned(&mut goal);
             let left = self.whnf(goal.left, goal.reduction)?;
             let right = self.whnf(goal.right, goal.reduction)?;
-            goal.left = self.present(left)?;
-            goal.right = self.present(right)?;
+            let reflexive = |arena: &TermArena, other: Term| match other {
+                Term::Value(other) if matches!(arena.value(other), Some(&Value::Here { .. })) => {
+                    Reflexive::Kept
+                },
+                Term::Value(_) | Term::Computation(_) => Reflexive::Worded,
+            };
+            let (left_reads, right_reads) =
+                (reflexive(self.arena, right), reflexive(self.arena, left));
+            goal.left = self.present(left, left_reads)?;
+            goal.right = self.present(right, right_reads)?;
             goal.left = self.fuse(goal.left)?;
             goal.right = self.fuse(goal.right)?;
             // A presented constructor whose rules rewrite it to one of its
@@ -3865,8 +3887,9 @@ where
     }
 
     /// A value headed by a constructor of a presented type, rewritten to its
-    /// normal form once its returned leaves are read; every other term
-    /// unchanged.
+    /// normal form once its returned leaves are read; a reflexivity at a
+    /// looped point read as its empty word when `reflexive` is
+    /// [`Reflexive::Worded`]; every other term unchanged.
     ///
     /// The rules are the type's definition, applied by one fixed strategy, and
     /// a returned leaf reads by the kernel's own evaluator, so the step chooses
@@ -3878,9 +3901,12 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`crate::presented::normal_form`] under the unfoldings'
-    ///   presentations of what [`Self::read_returned_leaves`] gives a value, a
-    ///   computation unchanged; every node the rewriting compared or copied,
-    ///   and every step the reading took, charged to the budget.
+    ///   presentations of what [`Self::read_returned_leaves`] gives for a
+    ///   value, a computation unchanged. Under [`Reflexive::Worded`], a
+    ///   reflexivity at the root, and a normal form that is one, read as
+    ///   [`Self::present_reflexivity`] reads them first. Every node the
+    ///   rewriting compared or copied, and every step the reading took, is
+    ///   charged to the budget.
     /// - provides: the presented half of weak head form, before any rule of the
     ///   table reads a value goal.
     /// - fails: [`Stop::Budget`] when the rewriting outruns the budget; as
@@ -3892,9 +3918,11 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's words convert by their normal forms in
-    ///   the forced loop, which compares a free type's constructors as before.
+    ///   the forced loop, which compares a free type's constructors as before,
+    ///   and a reflexivity at the looped point meets the empty word.
     /// - witness: `presented::tests::the_forced_loop_converts_circle_words_by_their_normal_forms`
     /// - witness: `replay::tests::a_returned_leaf_of_a_presented_term_reads_before_the_rules`
+    /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| self.spent >= before
@@ -3904,11 +3932,16 @@ where
     fn present(
         &mut self,
         term: Term,
+        reflexive: Reflexive,
     ) -> Result<Term, Stop>
     {
         let Term::Value(value) = term
         else {
             return Ok(term);
+        };
+        let value = match reflexive {
+            Reflexive::Worded => self.present_reflexivity(value)?,
+            Reflexive::Kept => value,
         };
         let value = self.read_returned_leaves(value)?;
         let mut fuel = RewriteFuel::from(self.budget.saturating_sub(self.spent));
@@ -3927,7 +3960,114 @@ where
             self.spent = self.budget;
             return Err(Stop::Budget);
         };
+        if reflexive == Reflexive::Worded
+            && matches!(self.arena.value(normal), Some(&Value::Here { .. }))
+        {
+            return Ok(Term::Value(self.present_reflexivity(normal)?));
+        }
         Ok(Term::Value(normal))
+    }
+
+    /// The empty word a reflexivity at a looped point presents as; every other
+    /// value unchanged.
+    ///
+    /// A reflexivity at the point a type of words loops at, and that type's
+    /// empty word, spell one path. The empty word is its canonical form: the
+    /// lowering reads `here(p)` so in types, and the evaluator's
+    /// `presented::normal_form` reads a value so before the machine plans a
+    /// pair whose other side is no reflexivity.
+    ///
+    /// **Choice.** The reading is forced: the point and its wrapping fix the
+    /// one type of words admission keeps, and a returned point reads by the
+    /// kernel's own evaluator, so no decision of the trace records it. Two
+    /// reflexivities keep the rule that compares their points, so a dialogue
+    /// that rule recorded replays as before. **Alternatives.** A pair rule of
+    /// the value table between a reflexivity and an empty word: it splits one
+    /// canonical form across two places. **Reversal.** A type of words whose
+    /// empty word needs a choice among several readings takes a recorded
+    /// decision.
+    ///
+    /// # Specification
+    /// - requires: `value` lives in the arena.
+    /// - ensures: a fresh empty word of `w`, the constructor of tag zero and no
+    ///   fields at `Data(w, [])`, exactly when `value` is `here(q)` and `q`
+    ///   reads as a point `p` wrapped in `r` reflexivities, and
+    ///   [`crate::presented::Presentations::emptied`] reads `w` for `p` at `r`;
+    ///   `value` otherwise. The reading takes the reflexivities off `q`, and
+    ///   each returned endpoint it then meets is read by
+    ///   [`Self::normalize_returned`] and unwrapped in turn, so `p` is no
+    ///   reflexivity and no returned endpoint. A returned endpoint is read only
+    ///   while some type of words is wrapped at least as often as the
+    ///   reflexivities taken off so far.
+    /// - provides: the reflexivity half of [`Self::present`].
+    /// - fails: as [`Self::normalize_returned`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` reads one returned endpoint for each turn, and each
+    ///   reading is charged to the budget.
+    /// - measure: the budget left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path.ap` of a map on the circle's empty word replays
+    ///   against the empty word at dimension one and two, the point a held call
+    ///   of the map; a reflexivity off the point stays as written.
+    /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| self.spent >= before
+            && ret.as_ref().map_or(true, |read| *read == value || self.arena.value(*read).is_some()),
+    )]
+    fn present_reflexivity(
+        &mut self,
+        value: ValueId,
+    ) -> Result<ValueId, Stop>
+    {
+        let Some(&Value::Here { point, .. }) = self.arena.value(value)
+        else {
+            return Ok(value);
+        };
+        let mut base = point;
+        let mut wraps = 0_usize;
+        loop {
+            let (inner, more) = crate::presented::unwrapped(self.arena, base);
+            base = inner;
+            wraps = wraps.saturating_add(usize::from(more));
+            if !matches!(self.arena.value(base), Some(&Value::Returned(_))) {
+                break;
+            }
+            let worded = self
+                .unfoldings
+                .presentations()
+                .worded()
+                .any(|(_, cells)| usize::from(cells.reflexivities()) >= wraps);
+            if !worded {
+                return Ok(value);
+            }
+            let read = self.normalize_returned(base, Reduction::Endpoint, DefinedHead::Unfold)?;
+            if matches!(self.arena.value(read), Some(&Value::Returned(_))) {
+                return Ok(value);
+            }
+            base = read;
+        }
+        let Some(words) = self.unfoldings.presentations().emptied(
+            self.arena,
+            base,
+            gandr_kernel_term::Reflexivities::from(wraps),
+        )
+        else {
+            return Ok(value);
+        };
+        let own = self.arena.value_type_data(words, Vec::new());
+        Ok(self.arena.value_constructor(
+            words,
+            own,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            Vec::new(),
+        ))
     }
 
     /// A cong chain whose functions compose to the identity, read as the
@@ -4713,7 +4853,7 @@ where
             Err(Stop::Budget) => return Err(Stop::Budget),
             Err(Stop::Refused(_) | Stop::PartialFixpoint) => return Ok(Composite::Other),
         };
-        let normal = match self.present(Term::Value(read)) {
+        let normal = match self.present(Term::Value(read), Reflexive::Kept) {
             Ok(Term::Value(normal)) => normal,
             Err(Stop::Budget) => return Err(Stop::Budget),
             Ok(Term::Computation(_)) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
@@ -6935,7 +7075,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 *side = self.normalize_returned(*side, reduction, defined)?;
                 // A constructor of a presented type is set aside for its
                 // normal form: read it by the type's rules.
-                let Term::Value(normal) = self.present(Term::Value(*side))?
+                let Term::Value(normal) = self.present(Term::Value(*side), Reflexive::Kept)?
                 else {
                     return Err(unreadable());
                 };

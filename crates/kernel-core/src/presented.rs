@@ -362,6 +362,70 @@ impl Presentations
         }
         ty
     }
+
+    /// The types of words, by admission position ascending, each with its
+    /// cells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn worded(&self) -> impl Iterator<Item = (ConstantIndex, &FreeCells)>
+    {
+        self.0.iter().flat_map(|table| {
+            table.iter().filter_map(|(&words, presented)| {
+                presented.presentation.cells().map(|cells| (words, cells))
+            })
+        })
+    }
+
+    /// The type of words whose empty word a reflexivity at `base`, wrapped
+    /// `wraps` times, is.
+    ///
+    /// # Specification
+    /// - requires: nothing — unreadable ids read as no words.
+    /// - ensures: `Some(words)` exactly when `base` is a constructor term of a
+    ///   sort `s` and `words` the first presented type, by admission position,
+    ///   whose cells loop in `s` wrapped `wraps` times at a point `base`
+    ///   spells; admission keeps one type of words per point and wrapping.
+    /// - provides: the value half of [`Self::words`]: the reading of
+    ///   `Replay::present` at a reflexivity, as `syntax::empty_word` in
+    ///   core-term compares it and the evaluator's `presented::normal_form`
+    ///   reads it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's base at no wrapping and the sphere's
+    ///   base at one wrapping read as their words; a point the cells do not
+    ///   spell, and a wrapping no cells carry, read as no words.
+    /// - witness: `replay::tests::a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477`
+    #[spec(ensures: |ret| ret.is_none_or(|words| self.presented(words).is_some_and(|presented| presented.presentation.cells().is_some_and(|cells| cells.reflexivities() == wraps))))]
+    #[must_use]
+    pub(crate) fn emptied(
+        &self,
+        arena: &TermArena,
+        base: ValueId,
+        wraps: Reflexivities,
+    ) -> Option<ConstantIndex>
+    {
+        let &Value::Constructor { datatype, .. } = arena.value(base)?
+        else {
+            return None;
+        };
+        let &ValueType::Data {
+            declaration: sort, ..
+        } = arena.value_type(datatype)?
+        else {
+            return None;
+        };
+        self.worded()
+            .find(|&(_, cells)| {
+                cells.reflexivities() == wraps
+                    && cells.sort() == sort
+                    && spells(arena, sort, base, cells.point()) == Spelling::Spelled
+            })
+            .map(|(words, _)| words)
+    }
 }
 
 /// The sort a path type's domain reads down to, and how many path types it
@@ -500,7 +564,7 @@ fn spelled_along(
 /// - hypothesis: L3 — as [`Presentations::words`].
 /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| !matches!(arena.value(ret.0), Some(&Value::Here { .. })))]
-fn unwrapped(
+pub(crate) fn unwrapped(
     arena: &TermArena,
     value: ValueId,
 ) -> (ValueId, Reflexivities)

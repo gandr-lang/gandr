@@ -394,3 +394,385 @@ fn a_held_call_under_a_presented_constructor_reads_as_what_it_returns()
         "over a free circle `loop(unloop(base))` is not `base`"
     );
 }
+
+/// The sort `S`, with `Base` at tag 0 and `Other` at tag 1.
+const SORT: usize = 0;
+/// The words of one loop at `Base`.
+const WORDS: usize = 1;
+/// The words of one 2-cell at `here(Base)`.
+const CELLS: usize = 2;
+/// `ident`, the identity on `S`.
+const IDENT: usize = 3;
+
+/// A side of a pair the reflexivity witnesses decide.
+#[derive(Clone, Copy, Debug)]
+enum Side
+{
+    /// `here(⟨ident(Base)⟩)`, its point a held call.
+    HeldHere,
+    /// `here(here(Base))`.
+    TwiceHere,
+    /// `here(Other)`, off the point.
+    OtherHere,
+    /// `here(Base)`.
+    Here,
+    /// The empty word of the loop's words.
+    Empty,
+    /// The empty word of the 2-cell's words.
+    EmptyCell,
+}
+
+/// The cells of one loop at `Base`, wrapped `wraps` times.
+///
+/// # Specification
+/// trivial.
+fn looped_cells(wraps: gandr_kernel_term::Reflexivities) -> gandr_kernel_term::FreeCells
+{
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    gandr_kernel_term::FreeCells::new(ConstantIndex::from(SORT), alloc::vec![
+        gandr_kernel_term::FreeCell::new(base(), base())
+    ])
+    .wrapped(wraps)
+}
+
+/// `side` in the checker's core arena.
+///
+/// # Specification
+/// trivial.
+fn core_side(
+    core: &mut CoreArena,
+    side: Side,
+) -> gandr_core_term::ValueId
+{
+    let carrier = core.value_type_data(ConstantIndex::from(SORT), Vec::new());
+    let at = |core: &mut CoreArena, tag: usize| {
+        core.value_constructor(
+            ConstantIndex::from(SORT),
+            carrier,
+            ConstructorTag::from(tag),
+            Vec::new(),
+        )
+    };
+    let empty = |core: &mut CoreArena, words: usize| {
+        let own = core.value_type_data(ConstantIndex::from(words), Vec::new());
+        core.value_constructor(
+            ConstantIndex::from(words),
+            own,
+            ConstructorTag::from(0_usize),
+            Vec::new(),
+        )
+    };
+    match side {
+        Side::HeldHere => {
+            let base = at(core, 0);
+            let head = core.value_constant(ConstantIndex::from(IDENT));
+            let forced = core.computation_force(head);
+            let applied = core.computation_application(forced, base);
+            let held = core.value_returned(applied);
+            core.value_here(held)
+        },
+        Side::TwiceHere => {
+            let base = at(core, 0);
+            let once = core.value_here(base);
+            core.value_here(once)
+        },
+        Side::OtherHere => {
+            let other = at(core, 1);
+            core.value_here(other)
+        },
+        Side::Here => {
+            let base = at(core, 0);
+            core.value_here(base)
+        },
+        Side::Empty => empty(core, WORDS),
+        Side::EmptyCell => empty(core, CELLS),
+    }
+}
+
+/// Decide `left` against `right` with endpoints held, the loop's words and the
+/// 2-cell's words presented and `ident` defined.
+///
+/// # Specification
+/// trivial.
+fn decided_sides(
+    left: Side,
+    right: Side,
+) -> (MachineVerdict, Vec<ConversionDecision<TraceNode>>)
+{
+    let mut core = CoreArena::new();
+    let left = core_side(&mut core, left);
+    let right = core_side(&mut core, right);
+    let occurrence = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(occurrence);
+    let lambda = core.computation_lambda(returned);
+    let ident = core.value_thunk(lambda);
+    let mut chain = DefinitionChain::new();
+    let _height = chain
+        .define(
+            ConstantIndex::from(IDENT),
+            GlobalIndex::from(0_u32),
+            Transparency::Manifest,
+            &[],
+        )
+        .expect("the identity admits");
+    let Ok(mut chain) = LoweredChain::lower(chain, |_entry| Ok::<_, ConstantIndex>(ident))
+    else {
+        panic!("the identity lowers");
+    };
+    chain.admit_data(
+        ConstantIndex::from(SORT),
+        gandr_kernel_term::ConstructorCount::from(2_usize),
+    );
+    for (words, wraps) in [(WORDS, 0_usize), (CELLS, 1)] {
+        chain.present(
+            ConstantIndex::from(words),
+            Presented::new(
+                Presentation::words(looped_cells(gandr_kernel_term::Reflexivities::from(wraps))),
+                [0_usize, 1, 1].map(FieldCount::from).into(),
+            )
+            .classified(core.value_type_data(ConstantIndex::from(words), Vec::new())),
+        );
+    }
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root())
+        .reading_endpoints(Endpoints::Hold);
+    let mut domain = DomainArena::new();
+    let left = eval_value(&core, &mut domain, definitions, Fuel::from(64_u32), left)
+        .expect("the side evaluates");
+    let right = eval_value(&core, &mut domain, definitions, Fuel::from(64_u32), right)
+        .expect("the side evaluates");
+    let mut log = TraceLog::new();
+    let report = decide::<_, NullMemo>(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        Problem::values(left, right),
+        &mut log,
+    )
+    .expect("the machine answers");
+    (report.verdict(), log.decisions().copied().collect())
+}
+
+/// `side` in a kernel arena.
+///
+/// # Specification
+/// trivial.
+fn kernel_side(
+    arena: &mut TermArena,
+    side: Side,
+) -> gandr_kernel_term::ValueId
+{
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), Vec::new());
+    let at = |arena: &mut TermArena, tag: usize| {
+        arena.value_constructor(
+            ConstantIndex::from(SORT),
+            carrier,
+            ConstructorTag::from(tag),
+            Vec::new(),
+        )
+    };
+    let empty = |arena: &mut TermArena, words: usize| {
+        let own = arena.value_type_data(ConstantIndex::from(words), Vec::new());
+        arena.value_constructor(
+            ConstantIndex::from(words),
+            own,
+            ConstructorTag::from(0_usize),
+            Vec::new(),
+        )
+    };
+    match side {
+        Side::HeldHere => {
+            let base = at(arena, 0);
+            let head = arena.value_constant(ConstantIndex::from(IDENT));
+            let forced = arena.computation_force(head);
+            let applied = arena.computation_application(forced, base);
+            let held = arena.value_returned(applied);
+            arena.value_here(held)
+        },
+        Side::TwiceHere => {
+            let base = at(arena, 0);
+            let once = arena.value_here(base);
+            arena.value_here(once)
+        },
+        Side::OtherHere => {
+            let other = at(arena, 1);
+            arena.value_here(other)
+        },
+        Side::Here => {
+            let base = at(arena, 0);
+            arena.value_here(base)
+        },
+        Side::Empty => empty(arena, WORDS),
+        Side::EmptyCell => empty(arena, CELLS),
+    }
+}
+
+/// The kernel's replay of `dialogue` for `left` against `right`, over the
+/// sort, the loop's words and the 2-cell's words admitted and `ident`
+/// unfolding.
+///
+/// # Specification
+/// trivial.
+fn replayed_sides(
+    left: Side,
+    right: Side,
+    dialogue: &[ConversionDecision<ReplayNode>],
+) -> KernelVerdict
+{
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        Vec::new(),
+        alloc::vec![alloc::vec![], alloc::vec![]],
+        kind,
+    );
+    let _sort = environment.add_decl(staged).expect("the sort admits");
+    for (words, wraps) in [(WORDS, 0_usize), (CELLS, 1)] {
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(words), Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(looped_cells(
+                gandr_kernel_term::Reflexivities::from(wraps),
+            )));
+        let _words = environment.add_decl(staged).expect("the words admit");
+    }
+    let mut arena = environment.arena().clone();
+    let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(occurrence);
+    let lambda = arena.computation_lambda(returned);
+    let ident = arena.value_thunk(lambda);
+    let left = kernel_side(&mut arena, left);
+    let right = kernel_side(&mut arena, right);
+    let unfoldings = Unfoldings::new(alloc::vec![
+        Unfoldable::Opaque,
+        Unfoldable::Opaque,
+        Unfoldable::Opaque,
+        Unfoldable::Body(ident),
+    ])
+    .presenting(Presentations::of(environment.entries()));
+    replay(
+        &mut arena,
+        &unfoldings,
+        ReplaySides::Values(left, right),
+        EngineClaim::Convertible,
+        dialogue.iter().copied(),
+        ReplayBudget::DEFAULT,
+    )
+}
+
+/// The dialogue the evaluator recorded, as the kernel names its nodes.
+///
+/// # Specification
+/// trivial.
+fn replay_nodes(decisions: &[ConversionDecision<TraceNode>])
+-> Vec<ConversionDecision<ReplayNode>>
+{
+    decisions
+        .iter()
+        .map(|decision| {
+            decision.map(|node: TraceNode| match node {
+                TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+                TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477()
+{
+    // #6477: `here(p)` at the point a type of words loops at, and that
+    // type's empty word, spell one path. Before the fix the evaluator planned
+    // a reflexivity and an empty word apart, and the kernel's table did too.
+    // A reflexivity on either side of the pair reads so.
+    for (left, right, reading) in [
+        (
+            Side::HeldHere,
+            Side::Empty,
+            "a reflexivity at the point a held call returns is the loop's empty word",
+        ),
+        (
+            Side::Empty,
+            Side::HeldHere,
+            "the loop's empty word is a reflexivity at the point a held call returns",
+        ),
+        (
+            Side::TwiceHere,
+            Side::EmptyCell,
+            "the reflexivity of the point's reflexivity is the 2-cell's empty word",
+        ),
+    ] {
+        let (verdict, decisions) = decided_sides(left, right);
+        assert_eq!(
+            verdict,
+            MachineVerdict::Convertible,
+            "{reading}: {decisions:?}"
+        );
+        assert_eq!(
+            replayed_sides(left, right, &replay_nodes(&decisions)),
+            KernelVerdict::Convertible,
+            "{reading}, and the kernel replays the dialogue: {decisions:?}"
+        );
+    }
+    assert_ne!(
+        decided_sides(Side::OtherHere, Side::Empty).0,
+        MachineVerdict::Convertible,
+        "a reflexivity off the point is no empty word"
+    );
+}
+
+#[test]
+fn a_dialogue_recorded_before_the_reading_replays_unchanged_6477()
+{
+    // The dialogues the evaluator recorded before #6477 for two reflexivities
+    // at the looped point, read off its trace log: the held call's point
+    // decomposed and unfolded, and two equal reflexivities shared. The kernel
+    // replays each one, and the evaluator still records it, because two
+    // reflexivities keep the rule that compares their points.
+    let shared = ConversionDecision::ComparedShared {
+        left: ReplayNode::Other,
+        right: ReplayNode::Other,
+    };
+    let ident = ReplayNode::Constant(ConstantIndex::from(IDENT));
+    for (left, right, dialogue) in [
+        (Side::HeldHere, Side::Here, alloc::vec![
+            ConversionDecision::Decompose,
+            ConversionDecision::Unfold { constant: ident },
+            ConversionDecision::ReduceLeft { redex: ident },
+            shared,
+        ]),
+        (Side::TwiceHere, Side::TwiceHere, alloc::vec![shared]),
+        (Side::HeldHere, Side::HeldHere, alloc::vec![shared]),
+        (Side::Here, Side::Here, alloc::vec![shared]),
+    ] {
+        assert_eq!(
+            replayed_sides(left, right, &dialogue),
+            KernelVerdict::Convertible,
+            "{left:?} against {right:?} replays as it did before the reading"
+        );
+        let (verdict, decisions) = decided_sides(left, right);
+        assert_eq!(
+            (verdict, replay_nodes(&decisions)),
+            (MachineVerdict::Convertible, dialogue),
+            "{left:?} against {right:?} records the dialogue it recorded before the reading"
+        );
+    }
+}
