@@ -32,6 +32,7 @@ use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::Judgement;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::Opacity;
+use gandr_core_incremental::Opener;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
@@ -1186,9 +1187,9 @@ fn agreeing() -> alloc::boxed::Box<dyn gandr_core_checker::tier::EndpointTier>
     alloc::boxed::Box::new(Agreeing)
 }
 
-/// A pass consults the tier its program carries, fresh and after leading
-/// items: a tier meeting every pair checks `here(1)` at `Path[.A = Integer](1,
-/// 2)`, which the machine refutes.
+/// A pass opens its context with the opener its program carries, fresh and
+/// after leading items: a tier the opener hands, meeting every pair, checks
+/// `here(1)` at `Path[.A = Integer](1, 2)`, which the machine refutes.
 #[test]
 fn a_pass_hands_its_context_the_program_s_tier_2282()
 {
@@ -1220,7 +1221,11 @@ fn a_pass_hands_its_context_the_program_s_tier_2282()
     let program = |arena: CoreArena, items: Vec<Item>, tiered: bool| {
         let mut program = Program::new(arena, items).expect("positions ascend");
         if tiered {
-            program.decide_endpoints_on(agreeing, gandr_kernel_core::AdmissionPolicy::Derive);
+            program.open_contexts_with(Opener::new(|arena, opened| {
+                let mut context = opened.bare(arena);
+                context.decide_endpoints_on(agreeing(), gandr_kernel_core::AdmissionPolicy::Derive);
+                context
+            }));
         }
         program
     };
@@ -1372,10 +1377,11 @@ fn magma_statement(arena: &mut CoreArena) -> gandr_core_term::ValueId
     )
 }
 
-/// #4034: a pass hands its context the stratum store its program carries,
-/// fresh and after leading items. Two statements at one stratum ask the store
-/// once and hand it the stratum certified once, because the context holds
-/// it; each statement derives its path.
+/// #4034: a pass opens its context with the opener its program carries,
+/// fresh and after leading items, which hands it a stratum store. Two
+/// statements at one stratum ask the store once and hand it the stratum
+/// certified once, because the context holds it; each statement derives its
+/// path.
 #[test]
 fn a_pass_hands_its_context_the_program_s_stratum_store_4034()
 {
@@ -1405,7 +1411,11 @@ fn a_pass_hands_its_context_the_program_s_stratum_store_4034()
     let stored = |arena: CoreArena, items: Vec<Item>, store: &Arc<Counting>| {
         let mut program = Program::new(arena, items).expect("positions ascend");
         let shared: Arc<dyn gandr_core_checker::ua::StratumStore> = Arc::<Counting>::clone(store);
-        program.keep_strata_in(shared);
+        program.open_contexts_with(Opener::new(move |arena, opened| {
+            let mut context = opened.bare(arena);
+            context.keep_strata_in(Arc::clone(&shared));
+            context
+        }));
         program
     };
     // The statements are the last two items of every program here.

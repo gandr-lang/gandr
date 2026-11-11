@@ -240,6 +240,7 @@ use crate::compose::JudgedClosure;
 use crate::compose::Lowered;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
+use crate::compose::ModuleSettings;
 use crate::compose::Opening;
 use crate::compose::adapt;
 use crate::compose::checking_context;
@@ -247,7 +248,6 @@ use crate::compose::judge_lowering;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
-use crate::compose::pattern_holes;
 use crate::evaluate::Evaluation;
 use crate::evaluate::hidden_members;
 use crate::typed::referent::Referents;
@@ -1871,8 +1871,7 @@ impl TypeTable
                 ),
                 None => (Opening::UNBOUNDED, declarations.as_slice()),
             };
-            let mut context =
-                checking_context(&mut arena, opening, &module, &pattern_holes(&module));
+            let mut context = checking_context(&mut arena, opening, &ModuleSettings::of(&module));
             context.keep_formations(Formations::Firsts(wanted));
             let typed = type_module(&mut context, own_declarations);
             TypedRun::read(&context, typed, written)
@@ -5704,8 +5703,7 @@ impl TypeTable
                         let mut context = checking_context(
                             &mut read,
                             Opening::UNBOUNDED,
-                            &module,
-                            &pattern_holes(&module),
+                            &ModuleSettings::of(&module),
                         );
                         type_module(&mut context, &declarations).filled().clone()
                     }

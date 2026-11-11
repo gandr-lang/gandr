@@ -1,0 +1,21 @@
+data Shade : Type where
+  | Crimson : Shade
+  | Olive : Shade
+  | Navy : Shade
+
+def rank(c : Shade) -> Integer =
+  match c where
+    | Crimson => 0
+    | ? => 1
+    | Navy => 2
+
+data Option : Type where
+  | NoValue : Option
+  | Value : (x : Integer) --> Option
+
+def weigh(m : Option) -> Integer =
+  match m where
+    | Value(?) => 100
+    | NoValue => 200
+
+def weighed() -> Integer { weigh NoValue }

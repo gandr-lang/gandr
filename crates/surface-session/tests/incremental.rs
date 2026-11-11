@@ -15,6 +15,7 @@ use gandr_core_incremental::ItemContent;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemSource as _;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_core_incremental::Refusal;
 use gandr_core_incremental::Typing;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::LoweringCount;
@@ -23,6 +24,7 @@ use gandr_surface_dispatcher::compose;
 use gandr_surface_session::Revision;
 use gandr_surface_session::Session;
 use gandr_surface_session::SurfaceItems;
+use gandr_surface_session::Verdicts;
 use gandr_surface_syntax::SourceText;
 use proptest::prelude::ProptestConfig;
 use proptest::prop_assert_eq;
@@ -211,6 +213,33 @@ fn downstream_error_surfaces()
     assert!(
         matches!(resumed(&session).get(1_usize), Some(Typing::Refused(_))),
         "the downstream mismatch surfaces rather than a stale success"
+    );
+}
+
+/// A pass that decides each item opens its context as the judgement does, so
+/// it reads the module's pattern holes (#6707). It refuses `rank` and `weigh`,
+/// whose matches leave an arm to a pattern hole, as `UndecidedCoverage`, and
+/// admits the rest.
+#[test]
+fn a_deciding_pass_refuses_a_pattern_hole_as_its_judgement_does_6707()
+{
+    let mut deciding = session(SourceRoot::Strict);
+    deciding.take(Verdicts::Decided);
+    let _submission = submit(
+        &mut deciding,
+        include_str!(
+            "incremental/fixtures/a-deciding-pass-refuses-a-pattern-hole-as-its-judgement-does-6707.gandr"
+        ),
+    );
+    let undecided: Vec<bool> = resumed(&deciding)
+        .iter()
+        .map(|typing| matches!(typing, Typing::Refused(Refusal::UndecidedCoverage(_))))
+        .collect();
+    assert_eq!(
+        undecided,
+        [false, true, false, true, false],
+        "the deciding pass refuses `rank` and `weigh` alone: {:?}",
+        resumed(&deciding)
     );
 }
 

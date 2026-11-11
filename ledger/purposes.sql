@@ -372,6 +372,8 @@ INSERT INTO purpose VALUES('core-incremental','region::Item','struct','Holds one
 INSERT INTO purpose VALUES('core-incremental','region::ItemKey','struct','Carries a front end''s stable identity for an item, its name after its source''s tag, so its reference names it across revisions and closures.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','region::ItemSource','trait','Names a front end''s view of its own revisions: it lowers one into a program.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','region::KeyName','struct','Holds the name an item key carries after its source''s tag, so a reader spells the item as written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','region::Opened','enum','Says how a pass opens its checking context: fresh under an allowance, or resumed from the leading items'' checkpoint.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','region::Opener','struct','Holds the constructor a front end hands a program, so each pass opens its context as the front end''s judgement opens its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','region::Program','struct','Holds the items a front end offers for one revision, in source order, over their arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','region::ProgramError','enum','Names why a sequence of items is not a program, the first non-ascending pair of positions.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','region::Reference','enum','Names what a constant names: the occurrence of a key, or the unoccupied position that names no item.',NULL,'fits','sound',NULL);

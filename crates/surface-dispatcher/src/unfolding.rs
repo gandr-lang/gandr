@@ -223,13 +223,14 @@ where
     UnfoldingObservation { output, reports }
 }
 
-/// Attach a fresh module probe to `context` during an observation.
+/// Attach a fresh module probe to `context` during an observation, which
+/// reports each read by the module's `names`.
 ///
 /// # Specification
 /// trivial.
 pub fn attach(
     context: &mut CheckingContext<'_>,
-    module: &LoweredModule<'_>,
+    names: &BTreeMap<ConstantIndex, String>,
 )
 {
     ACTIVE.with(|active| {
@@ -241,7 +242,7 @@ pub fn attach(
         let probe = UnfoldingProbe::new();
         context.observe_unfoldings(probe.clone());
         observed.push(ObservedModule {
-            names: names(module),
+            names: names.clone(),
             probe,
         });
     });
@@ -251,7 +252,7 @@ pub fn attach(
 ///
 /// # Specification
 /// trivial.
-fn names(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
+pub fn names(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 {
     let mut names: BTreeMap<ConstantIndex, String> = module
         .structured_names()

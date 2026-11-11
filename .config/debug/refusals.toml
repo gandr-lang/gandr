@@ -100,3 +100,8 @@ sites = [
   { file = "crates/surface-lowering/src/module/sealing.rs", pattern = '^\s*return Err\(LoweringRefusal::IllFormedDescription \{$' },
   { file = "crates/surface-lowering/src/description.rs", pattern = 'LoweringRefusal::IllFormedDescription \{$' },
 ]
+
+[refusal.UndecidedCoverage]
+sites = [
+  { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UndecidedCoverage\(term\)\)' },
+]

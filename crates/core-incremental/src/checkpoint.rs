@@ -206,6 +206,7 @@ use crate::order::SpliceCensus;
 use crate::order::handle;
 use crate::persistence::CheckpointObserver;
 use crate::region::Layout;
+use crate::region::Opened;
 use crate::region::Program;
 use crate::region::Reference;
 use crate::session::Unobserved;
@@ -3105,18 +3106,13 @@ where
         leading: start.answers(),
         own: Vec::with_capacity(encoded.len()),
     };
-    let tier = edited.tier();
-    let strata = edited.strata();
+    let opener = edited.opener();
     let host = edited.host().clone();
     let (arena, layout) = edited.parts_mut();
     let mut context = match start {
-        Start::Fresh(budget) => CheckingContext::new(arena, budget),
-        Start::After(leading) => CheckingContext::resume(arena, leading.context.clone()),
+        Start::Fresh(budget) => opener.open(arena, Opened::Fresh(budget)),
+        Start::After(leading) => opener.open(arena, Opened::Resumed(&leading.context)),
     };
-    if let Some((make, policy)) = tier {
-        context.decide_endpoints_on(make(), policy);
-    }
-    context.keep_strata_in(strata);
     context.enter_at(host);
     let skip = usize::from(start.leading());
     // The arena only grows within the pass, so each type it answers or
