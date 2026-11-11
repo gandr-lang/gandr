@@ -1057,6 +1057,19 @@ struct Call
     arguments: Option<Value>,
 }
 
+/// What the worker's queue holds, in the order that the requests reached the
+/// toolset. A cancel or a closure travels the same queue as the calls, so the
+/// worker starts the job of each call that a runtime saw acknowledged before
+/// it ends the jobs that the cancel names: an end that overtook the start of
+/// its job would find no job, and the job would run to its end.
+enum Queued
+{
+    /// A call to answer.
+    Call(Call),
+    /// The jobs that a cancel or a closure ends.
+    End(Ending),
+}
+
 /// What a request asks for.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Route
@@ -1347,10 +1360,10 @@ impl Toolset
                     Row::Call(pending.group_id.clone(), pending.id.clone()),
                     result(&pending, &answer),
                 ),
-                None => drop(queue.send(Call {
+                None => drop(queue.send(Queued::Call(Call {
                     pending,
                     arguments: None,
-                })),
+                }))),
             }
         }
         let (changed, changes) = channel();
@@ -1462,7 +1475,6 @@ impl Toolset
                     manifest,
                     store,
                     queue: queue.clone(),
-                    jobs: jobs.clone(),
                     subscriptions,
                     table,
                     deliveries,
@@ -1685,18 +1697,16 @@ struct Held<'toolset, Log>
 }
 
 /// What each acceptor reads and writes besides its connection: the manifest,
-/// the store, the worker's queue, the thread of the jobs, the subscriptions
-/// and their table, the deliveries and the log.
+/// the store, the worker's queue, the subscriptions and their table, the
+/// deliveries and the log.
 struct Desk<'toolset, Log>
 {
     /// The answer to a `GET` of the manifest.
     manifest: &'toolset Buffer,
     /// The store of rows.
     store: &'toolset Mutex<Store>,
-    /// The worker's queue.
-    queue: Sender<Call>,
-    /// The thread of the jobs, which a cancel and a closure end jobs on.
-    jobs: Sender<Command>,
+    /// The worker's queue, which a cancel and a closure end jobs on too.
+    queue: Sender<Queued>,
     /// The subscriptions.
     subscriptions: &'toolset Mutex<Subscriptions>,
     /// The table that keeps the subscriptions.
@@ -1801,14 +1811,15 @@ where
             if lock(desk.store).opened(&pending).is_err() {
                 return stream.write_all(UNSTORED);
             }
-            let acknowledged = stream.write_all(ACKNOWLEDGED);
+            // The call reaches the queue before its acknowledgement, so a
+            // cancel that the runtime sends after it queues after the call.
             // The row is written: the call is answered whether or not the
             // acknowledgement reached its caller.
-            drop(desk.queue.send(Call {
+            drop(desk.queue.send(Queued::Call(Call {
                 pending,
                 arguments: Some(arguments),
-            }));
-            acknowledged
+            })));
+            stream.write_all(ACKNOWLEDGED)
         },
     }
 }
@@ -1842,7 +1853,7 @@ fn ended<Log>(
         Route::Manifest | Route::Invoke | Route::Unknown | Route::TooLarge => None,
     };
     if let Some(stopping) = stopping {
-        drop(desk.jobs.send(Command::End(stopping)));
+        drop(desk.queue.send(Queued::End(stopping)));
     }
     let mut subscriptions = lock(desk.subscriptions);
     let ending: Vec<Row> = subscriptions
@@ -1981,12 +1992,13 @@ fn read_request(
 /// `store`, open the subscription it confirms in `subscriptions` and `table`,
 /// and owe its result to `deliveries`, telling `log` of each answer that the
 /// store does not keep. Send each long operation to the thread of the jobs,
-/// which answers it when its job ends.
+/// which answers it when its job ends, and each end of jobs after the starts
+/// that the queue holds before it.
 ///
 /// # Specification
 /// trivial.
 fn work<Log>(
-    queued: Receiver<Call>,
+    queued: Receiver<Queued>,
     (workspace, jobs): (&Mutex<Workspace>, &Sender<Command>),
     store: &Mutex<Store>,
     subscriptions: &Mutex<Subscriptions>,
@@ -1996,7 +2008,14 @@ fn work<Log>(
 ) where
     Log: Write,
 {
-    for Call { pending, arguments } in queued {
+    for queued in queued {
+        let Call { pending, arguments } = match queued {
+            Queued::Call(call) => call,
+            Queued::End(ending) => {
+                drop(jobs.send(Command::End(ending)));
+                continue;
+            },
+        };
         match job_of(&pending, arguments.as_ref()) {
             Some(Ok(job)) => {
                 drop(jobs.send(Command::Start(pending, job)));
