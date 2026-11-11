@@ -814,19 +814,6 @@ impl From<usize> for ComponentCount
     }
 }
 
-impl From<ComponentCount> for usize
-{
-    /// How many components `count` counts.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(count: ComponentCount) -> Self
-    {
-        count.0
-    }
-}
-
 impl From<EncodingLength> for usize
 {
     /// The same measurement as a component count.
