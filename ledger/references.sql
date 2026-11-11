@@ -160,6 +160,7 @@ INSERT INTO reference VALUES('arXiv:2205.06651','core-checker','','background',N
 INSERT INTO reference VALUES('arXiv:2205.06651','core-checker','ua','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2302.02462','core-term','handler','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2302.02462','core-term','handler::subject','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2307.00073','core-incremental','bundle','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2307.13519','theory-path-orders','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2307.13519','theory-path-orders','lpo','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2310.01530','surface-format','','background',NULL,NULL,NULL);
@@ -655,6 +656,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','ascent::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','core-incremental','bundle','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-corpus','distribution','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-diagnostics','obstruction','background',NULL,NULL,NULL);
