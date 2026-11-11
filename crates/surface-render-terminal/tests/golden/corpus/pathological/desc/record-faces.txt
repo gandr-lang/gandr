@@ -1,9 +1,18 @@
-error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
-   ╭▸ corpus/pathological/desc/record-faces.gandr:29:18
+error[MalformedForm]: this codata declaration has an operand it does not take here
+   ╭▸ corpus/pathological/desc/record-faces.gandr:55:7
    │
-29 │     type Outside = *{host : String, port : Integer} where
+55 │   face front = {head};
+   │       ━ the form leaves its shape here
+   │
+   ├ note: `Stream` is refused with MalformedForm, as its expectation states
+   ╰ help: remove the extra operand
+
+error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
+   ╭▸ corpus/pathological/desc/record-faces.gandr:30:18
+   │
+30 │     type Outside = *{host : String, port : Integer} where
    │ ┏━━━━━━━━━━━━━━━━━━┛
-30 │ ┃     face bad = { port, cert };
+31 │ ┃     face bad = { port, cert };
    │ ┃                        ┬──╿
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━│━━┥
    │                          │  what the description check refuses
@@ -13,88 +22,25 @@ error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` 
    ╰ help: put in the face only names that the boundary lists
 
 error[IllFormedDescription]: the boundary `Twice` names the face `addr` twice
-   ╭▸ corpus/pathological/desc/record-faces.gandr:37:10
+   ╭▸ corpus/pathological/desc/record-faces.gandr:38:10
    │
-37 │     face addr = { port };
+38 │     face addr = { port };
    │          ━━━━ what the description check refuses
    │
    ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
    ╰ help: give each face of the boundary its own name
 
-error[UnresolvedName]: `mode` is not defined
-   ╭▸ corpus/pathological/desc/record-faces.gandr:47:23
+error[IllFormedDescription]: the face `secure` holds a name the boundary `Server` does not list
+   ╭▸ corpus/pathological/desc/record-faces.gandr:43:15
    │
-47 │ def moded(c : Config[.mode = 1]) -> Integer { 0 }
-   │                       ━━━━ not found in this scope
+43 │   type Server = &{host : String, port : Integer, tls : Bool} where
+   │ ┏━━━━━━━━━━━━━━━┛
+44 │ ┃   /// `secure` names the port and TLS fields.
+45 │ ┃   face secure = { port, tls };
+   │ ┃                   ┬──╿
+   │ ┗━━━━━━━━━━━━━━━━━━━│━━┥
+   │                     │  what the description check refuses
+   │                     the part the description check refuses
    │
-   ├ note: `moded` is refused with UnresolvedName, as its expectation states
-   ╰ help: define `mode`, or import the module that exports it
-
-error[UnresolvedName]: `remote` is not defined
-   ╭▸ corpus/pathological/desc/record-faces.gandr:51:23
-   │
-51 │ def remote(c : Config[remote ↦ *{.host = "localhost"}]) -> Integer { 0 }
-   │                       ━━━━━━ not found in this scope
-   │
-   ├ note: `remote` is refused with UnresolvedName, as its expectation states
-   ╰ help: define `remote`, or import the module that exports it
-
-error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/desc/record-faces.gandr:56:33
-   │
-41 │ type Config = *{host : String, port : Integer, tls : Bool} where
-   │                                       ─────── the type it is checked against
-   ┆
-56 │ def mistyped(c : Config[.port = true]) -> Integer { 0 }
-   │              ┬                  ┯━━━
-   │              │                  │
-   │              │                  its type does not convert: expected `Integer`, found `Bool`
-   │              │                  the type it synthesises
-   │              formed; while forming the parts of this type
-   │
-   ├ note: `mistyped` is refused with TypeMismatch, as its expectation states
-   ╰ help: change the term or the type it is checked against, so that the two types agree
-
-error[FixedFieldDiffers]: the field is not the value its type fixes
-   ╭▸ corpus/pathological/desc/record-faces.gandr:61:66
-   │
-61 │ def wrong : Config[.port = 443] = *{.host = "localhost", .port = 80, .tls = true};
-   │                            ─── the value the type fixes          ━━ not the value its type fixes
-   │
-   ├ note: `wrong` is refused with FixedFieldDiffers, as its expectation states
-   ╰ help: state the value the type fixes, or omit the field
-
-error[FixedFieldDiffers]: the field is not the value its type fixes
-   ╭▸ corpus/pathological/desc/record-faces.gandr:69:35
-   │
-69 │ def plain : Config[.port = 443] = http;
-   │                            ┬──    ━━━━ not the value its type fixes
-   │                            │
-   │                            the value the type fixes
-   │
-   ├ note: `plain` is refused with FixedFieldDiffers, as its expectation states
-   ╰ help: state the value the type fixes, or omit the field
-
-error[DuplicateDefinition]: `secure` is defined twice
-   ╭▸ corpus/pathological/desc/record-faces.gandr:75:3
-   │
-74 │   secure ↦ *{.port = 443, .tls = true},
-   │   ────── first written here
-75 │   secure ↦ *{.port = 443, .tls = true}
-   │   ━━━━━━ written again here
-   │
-   ├ note: `again` is refused with DuplicateDefinition, as its expectation states
-   ╰ help: give each definition of `secure` its own name, or delete one of them
-
-error[FixedFieldDiffers]: the field is not the value its type fixes
-   ╭▸ corpus/pathological/desc/record-faces.gandr:83:41
-   │
-81 │ def split_port(c : Config[
-   │                ─ formed; while forming the parts of this type
-82 │   secure ↦ *{.port = 443, .tls = true},
-   │                      ─── the value the type fixes
-83 │   addr ↦ *{.host = "localhost", .port = 80}
-   │                                         ━━ not the value its type fixes
-   │
-   ├ note: `split_port` is refused with FixedFieldDiffers, as its expectation states
-   ╰ help: state the value the type fixes, or omit the field
+   ├ note: `Server` is refused with IllFormedDescription, as its expectation states
+   ╰ help: put in the face only names that the boundary lists

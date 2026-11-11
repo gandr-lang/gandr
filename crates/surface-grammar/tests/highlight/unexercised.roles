@@ -977,8 +977,6 @@
 1616 Other record_selection_expression } L[, identifier number] R[]
 1620 Keyword view_expression let L[{] R[<pattern>]
 1621 Other view_expression : L[<pattern>] R[<type>]
-1622 Other view_expression = L[<pattern> <type>] R[<expression>]
-1623 Other view_expression ; L[<expression>] R[<expression> }]
 1624 Keyword view_expression module L[{] R[identifier]
 1625 VariableDef view_expression identifier L[module] R[=]
 1626 Other view_expression = L[identifier] R[<expression>]
