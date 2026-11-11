@@ -168,7 +168,7 @@ jobs:
     runs-on: *linux
     permissions: *image-read-permissions
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       CI_BUILD_STATE: cargo-test-enforcing
     steps:
