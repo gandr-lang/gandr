@@ -14,20 +14,20 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 ## Synopsis
 
-**What.** `Environment` admits declarations through one checked choke point, `add_decl`, and one warned bypass, `add_decl_unchecked`; `audit` reports what an admitted declaration transitively rests on. Beneath the choke point sit a bidirectional checking machine, a type-formation walk that computes a type's universe level, and structural conversion. Beside it, `replay` rechecks a term-conversion verdict an untrusted engine reached, decision by decision, from the trace that engine recorded. Representation, the sharing format and the decode budgets belong to `gandr-kernel-term`, the universe algebra to `gandr-kernel-strata`, the memo's storage to `gandr-kernel-check-memo`, and the decision vocabulary to `gandr-kernel-conversion-trace`; this crate is what re-derives an obligation.
+**What.** `Environment` admits declarations through one checked choke point, `add_decl`, and one warned bypass, `add_decl_unchecked`; `audit` reports what an admitted declaration transitively rests on. Beneath the choke point sit a bidirectional checking machine, a type-formation walk that computes a type's universe level, and structural conversion. Beside it sits the replay of an untrusted engine's conversion trace. Representation, the sharing format and the decode budgets belong to `gandr-kernel-term`, the universe algebra to `gandr-kernel-strata`, the memo's storage to `gandr-kernel-check-memo`, and the decision vocabulary to `gandr-kernel-conversion-trace`; this crate is what re-derives an obligation.
 
 **Why.** The kernel grants a producer no credence: every declaration is re-checked before admission, including one a decoder built from untrusted bytes. Such a term can be arbitrarily deep and heavily shared, so the checker must be total on adversarial depth and must not pay for a shared subterm once per occurrence.
 
-**How.** The checker is a defunctionalized machine over explicit stacks. It is total on depth. Conversion is structural comparison with a positive-only id-equality fast path. Both machines consult a content-keyed check memo per call, then the environment's kept outcomes. Admission truncates the arena on both verdicts, clamped at the admission floor. [`src/lib.rs`](src/lib.rs) states why the four are decided together.
+**How.** The checker is a defunctionalized machine over explicit stacks. It is total on depth. Conversion is structural comparison with a positive-only id-equality fast path. Both machines consult a content-keyed check memo per call, then the environment's kept outcomes. [`src/lib.rs`](src/lib.rs) states how admission truncates the arena, and why the four are decided together.
 
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
 - **Recorded verdicts.** `Environment::recalling` admits a key that a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself. [`verdict`](src/verdict.rs) holds the key, the policy and the records.
 - **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
-- **Sealing.** An abstract type carries its representation and the extent of its minting admission: the declarations inside it are checked with the atom read as its representation, and every later one against the bare atom (`seal`).
+- **Sealing.** An abstract type carries its representation and the extent of its minting admission; [`seal`](src/seal.rs) states what reads the atom as its representation.
 - **The checking machine.** `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`; only `Environment` admits.
-- **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
+- **Type formation.** An iterative walk computing a type's universe level; [`check`](src/check.rs) tables its gates.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` (the classes are in [`replay`](src/replay.rs)); `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
 - **The descent skeleton.** `Descent` and `descent::replay`: one replay for a conversion trace and a guarded family with its rows.
@@ -36,7 +36,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **The content key.** `ContentTable`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, the memo key as one name in the content table built from its members' names, and content digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: each goal expanded, recalled or answered by a kept outcome, per plane, kept on its entry ([`census`](src/census.rs)).
-- **Errors.** `KernelError`, whose payloads are content — a head former and the offending node's content digest — because admission truncates the arena and an arena id would dangle.
+- **Errors.** `KernelError`, whose payloads are content; [`error`](src/error.rs) states why.
 
 ## Expected features
 
@@ -85,6 +85,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 ## References
 
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1–3, 6, 7 and 10) — a key names the constants it reaches by content; the kernel derives every support from its own nodes and judgement, taking none across the bridge; a replay step enters the trusted base on a test against its reference; one skeleton replays every certificate.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: content addressing as strictified descent (§ storage-conjecture-chunk-descent) — a record's name is its key up to an identification, with the identification as a parameter; `RecordName` takes `Exact`, the identity on content.
 - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as descent (§ sharing-rule-descent, § sharing-rule-probe) — a cover glued once and replayed.
 - `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement, § codebruijn-carrier, § footprint-from-support) — the judgement returns the binders it read as its output.
 - `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.

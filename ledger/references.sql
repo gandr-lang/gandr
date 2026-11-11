@@ -470,6 +470,7 @@ INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runti
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering','circuit::embed','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','surface-lowering','description::theory','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-core','encoding','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-dispatcher','measure','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-driver','','background',NULL,NULL,NULL);
