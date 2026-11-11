@@ -3107,6 +3107,7 @@ INSERT INTO purpose VALUES('surface-lsp','protocol::SignatureHelpOptions','struc
 INSERT INTO purpose VALUES('surface-lsp','protocol::SignatureInformation','struct','One signature: its label, its documentation and its parameters.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::SnippetEdit','struct','An edit whose text is a snippet (3.18 `SnippetTextEdit`).',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::SpellingSetting','enum','A `gandr.presentation.spelling` value, spelled as `gandr --spelling` spells it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','protocol::StackRow','struct','One spine a position stands in, as a `gandr/stack` request answers it: the head, its type, the slot and the expected type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::StringValue','struct','A string in the protocol''s snippet syntax.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::SymbolInformation','struct','A declared name of the workspace, where its name is written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::SymbolKind','struct','What a symbol declares, as the protocol numbers it.',NULL,'fits','sound',NULL);
@@ -3277,6 +3278,7 @@ INSERT INTO purpose VALUES('surface-parser','parse::laid::JoinPiece','struct','H
 INSERT INTO purpose VALUES('surface-parser','parse::laid::LaidJoin','struct','Holds a laid join''s parse, the region it laid for each run, and how many runs it took up whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::laid::LaidUnit','struct','Holds what a parse laid out for one run, the slice of its region and the region''s obligations, so a later parse takes the run''s forms up whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::laid::RunCount','struct','Counts the runs of one split, so a laid join says how many it took up whole.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::laid::RunRegion','enum','Names how a laid join took one run''s region: kept whole, laid for the next parse, or joined unlaid.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::parse','function','Batch-parse `source` over the checked grammar `pbg`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::parse_by_form','function','Batch-parse `source` by its top-level forms: split, mold each form run apart, join.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','DEPTH_LIMIT','constant','Names the depth a value''s presentation is bounded at, so a value deeper than the limit is elided.',NULL,'fits','sound',NULL);
@@ -3509,6 +3511,9 @@ INSERT INTO purpose VALUES('surface-session','session::Tables','enum','Names the
 INSERT INTO purpose VALUES('surface-session','session::Trial','struct','Holds a trial, so the trial''s candidates are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Verdicts','enum','Whether a session''s incremental pass takes each changed item''s verdict from the judgement or decides it again, the reversal path the corpus witness compares against.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::evaluate','function','Runs one declaration of the revision on the dispatcher''s run stage, so the declaration''s run is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','stack::Frame','struct','Holds one spine that encloses an offset: its head, the slot the offset writes and that slot''s argument.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','stack::Slot','struct','Names the position of a slot among a spine''s slots, so a frame says which argument the offset writes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','stack::Stack','struct','Holds the spines of a text by the form whose region holds them, so each revision answers the spines that enclose an offset.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','typed::type_of','function','Spells the type the latest resume gives a declaration, so the type''s spelling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','build::StagedId','struct','The identity of a node staged inside one TreeBuilder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','build::TreeBuilder','struct','Stages the nodes of one tree and lays them out by form.',NULL,'fits','sound',NULL);
