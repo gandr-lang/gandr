@@ -32,12 +32,10 @@ pub mod select;
 pub mod stack;
 
 pub use crate::error::CostError;
-pub use crate::ledger::Charge;
 pub use crate::ledger::Frequency;
 pub use crate::ledger::Ledger;
 pub use crate::ledger::RankLimit;
 pub use crate::ledger::Ranking;
-pub use crate::ledger::charge;
 pub use crate::profile::Suites;
 pub use crate::profile::read_samples;
 pub use crate::profile::record;
