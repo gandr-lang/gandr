@@ -1,8 +1,8 @@
 //! The chunk wire on loopback: a holder serves what its run committed while
 //! its owner waits on nothing, a second fetch of an edited value carries only
-//! the chunks the edit added, and an answer that does not verify, does not
-//! frame, announces a part past the frame limit or does not hold the value
-//! whole is refused.
+//! the chunks the edit added and only their bytes, and an answer that does not
+//! verify, does not frame, announces a part past the frame limit or does not
+//! hold the value whole is refused.
 
 use core::net::IpAddr;
 use core::net::Ipv4Addr;
@@ -143,6 +143,32 @@ enum Edited
     No,
 }
 
+/// A count of image bytes: the unit the wire measures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct ImageBytes(u64);
+
+/// The bytes of the images `store` holds under `digests`.
+///
+/// # Specification
+/// trivial.
+fn image_bytes<'digest>(
+    store: &dyn gandr_storage_values::ChunkStore,
+    digests: impl IntoIterator<Item = &'digest ChunkDigest>,
+) -> ImageBytes
+{
+    ImageBytes(
+        digests
+            .into_iter()
+            .map(|&digest| {
+                let chunk = store.load(digest).expect("the holder holds its closure");
+                let image: &[u8] = chunk.image().into();
+                u64::try_from(image.len()).expect("a length")
+            })
+            .sum(),
+    )
+}
+
 /// The root `manifest`'s value commits to once read back out of `chunks`:
 /// equal values commit to one root, so the root names the value read.
 ///
@@ -171,16 +197,18 @@ fn a_second_fetch_carries_only_the_chunks_an_edit_changed()
     let mut values = Store::new();
     let original = list(&mut values, Edited::No);
     let first = commit(&values, original, params(), &mut *at_holder.lock()).expect("crosses");
-    let whole = first
+    let whole_closure = first
         .closure(&*at_holder.lock())
-        .expect("the holder holds what it committed")
-        .chunk_count();
+        .expect("the holder holds what it committed");
+    let whole = whole_closure.chunk_count();
+    let whole_bytes = image_bytes(&*at_holder.lock(), whole_closure.digests());
     let fetched = asker
         .fetch(&reached, &first, &[])
         .expect("the value is fetched");
     assert_eq!(
-        fetched.chunks, whole,
-        "a first fetch carries the whole closure"
+        (fetched.chunks, ImageBytes(fetched.bytes)),
+        (whole, whole_bytes),
+        "a first fetch carries the whole closure, every byte of it"
     );
     assert_eq!(
         read_back(&at_asker, &first),
@@ -199,9 +227,25 @@ fn a_second_fetch_carries_only_the_chunks_an_edit_changed()
         fetched.chunks, measured.chunks_affected,
         "naming the first as held, the second fetch carries exactly the chunks the edit added"
     );
+    let edited_closure = second
+        .closure(&*at_holder.lock())
+        .expect("the holder holds what it committed");
+    let added_bytes = image_bytes(
+        &*at_holder.lock(),
+        edited_closure.digests().difference(whole_closure.digests()),
+    );
+    assert_eq!(
+        ImageBytes(fetched.bytes),
+        added_bytes,
+        "the second fetch carries the bytes of the added chunks and no byte the asker holds"
+    );
     assert!(
-        fetched.chunks < whole,
-        "{fetched:?} carries less than the whole of {whole:?}"
+        fetched.chunks < whole && fetched.bytes < whole_bytes.0,
+        "{fetched:?} carries less than the whole of {whole:?}, {whole_bytes:?}"
+    );
+    println!(
+        "cam-wire: first fetch {whole_bytes:?} in {whole:?}; edited fetch {:?} in {:?}",
+        fetched.bytes, fetched.chunks
     );
     let bound = expected_chunk_bound(depth, &params()).expect("the bound");
     assert!(
