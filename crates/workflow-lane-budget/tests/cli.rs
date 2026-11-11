@@ -515,13 +515,10 @@ fn a_summed_budget_tables_every_workflow()
         "all"
     );
     // The nightly's newest run, 6, passed its ceiling: the report is printed
-    // and filed whole, then the command refuses (#3013).
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "lane-budget: the newest run passed its ceiling: Nightly run 6: 11m 5s summed, past its \
-         10m 0s ceiling\n"
-    );
-    assert_eq!(output.status.code(), Some(2_i32));
+    // and filed whole, it names that run past the ceiling of #3013, and the
+    // command exits 0. A report never turns a run red (#6704).
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Every lane is within; the nightly's summed times, 665 s and 555 s, put
     // its median past the budget and run 6 past the ceiling, so the report
@@ -543,9 +540,18 @@ fn a_summed_budget_tables_every_workflow()
              | --- | ---: | ---: | ---: | --- | ---: | ---: |\n\
              | Nightly | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |\n\
              \nThe Actions cache holds 10.0 GiB in 144 caches.\n\n</details>\n\
+             \nThe newest run passed its ceiling: Nightly run 6: 11m 5s summed, past its 10m \
+             0s ceiling.\n\
              \nOpened https://example.invalid/issues/7.\n"
         ),
         "{stdout}"
+    );
+    // The issue the report opens holds run 6's row past the ceiling.
+    assert!(
+        std::fs::read_to_string(scratch.join("body"))
+            .unwrap()
+            .contains("| Nightly | 6 | 11m 5s | 10m 0s | `check Clippy wall` | 10m 0s | 8m 20s |"),
+        "the filed body holds the run past its ceiling"
     );
     let log = log!(scratch);
     assert!(
