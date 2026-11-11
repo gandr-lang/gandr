@@ -1929,15 +1929,18 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # and another tree names each differing path with its mode and its blob on
 # each side, the mode reason kept for a mode alone (#6020, `signed_replay`).
 # `.config/pr-stack/behind-top.bash` stacks an upper on a lower in a scratch
-# repository, once per case in `.config/pr-stack/behind.json`: a lower that
-# lacks the trunk change the upper builds on arms `pr:await` while it is
-# bound for the trunk, queued, behind with its checks pending or passed, or
-# conflicting within its seat's claim window; it is stacked past once it has
-# conflicted past the window, and refused naming the change while it is held
-# or failed (#4124, #4164, `bound.jq`); a conflict with the lower's own
-# change is refused at once (#3654, `stack_on_top`). A branch stacked once,
-# over a lower restacked since, replays its own commit alone (#3877,
-# `stack_base`). `.config/pr-stack/past.bash` cuts a red member out of a
+# repository, once per case in `.config/pr-stack/behind.json`: a lower behind
+# the trunk that is not queued, held or conflicting is restacked onto the
+# tip first, and the upper stacks on it; a restack that conflicts leaves the
+# lower, pages its lane and opens the upper on the trunk (#6760,
+# `restack_behind`). A lower that lacks the trunk change the upper builds on
+# arms `pr:await` while it is queued or conflicting within its seat's claim
+# window; it is stacked past once it has conflicted past the window, and
+# refused naming the change while it is held (#4124, #4164, `bound.jq`); a
+# conflict with the lower's own change is refused at once (#3654,
+# `stack_on_top`). A branch stacked once, over a lower restacked since,
+# replays its own commit alone (#3877, `stack_base`).
+# `.config/pr-stack/past.bash` cuts a red member out of a
 # scratch repository's stack, once per case in `.config/pr-stack/past.json`:
 # the members above it replay their own commits onto the member below it, or
 # onto the trunk past a red bottom, and the server stack is unstacked,
@@ -2000,7 +2003,7 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # moves onto the new tip, a queued member is waited for and never moved, and
 # a conflict names its stack, its lane and its file (#6700).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a chain is cut past a member closed unmerged, a heal reports its restack, the watcher tells a refused landing, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, pr:await outlasts a failed read, the sweep judges a subject from the fork, the sweep asks about a branch at a head once, a link reads each server stack once, and a push to the trunk from outside the queue restacks each open stack"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a chain is cut past a member closed unmerged, a heal reports its restack, the watcher tells a refused landing, a change is measured from a fetched trunk, a top behind the trunk is restacked onto it, arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, pr:await outlasts a failed read, the sweep judges a subject from the fork, the sweep asks about a branch at a head once, a link reads each server stack once, and a push to the trunk from outside the queue restacks each open stack"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -2034,7 +2037,7 @@ fi
 .config/pr-stack/landed-heads-cases.bash || failed=1
 .config/pr-stack/moved-cases.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a chain is cut past a member closed unmerged; a heal reports its restack; the watcher tells a refused landing; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read; the sweep judges a subject from the fork; the sweep asks about a branch at a head once; a link reads each server stack once; the watcher deletes a landed head no pull request uses; a push to the trunk from outside the queue restacks each open stack"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a chain is cut past a member closed unmerged; a heal reports its restack; the watcher tells a refused landing; a change is measured from a fetched trunk; a top behind the trunk is restacked onto it, arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read; the sweep judges a subject from the fork; the sweep asks about a branch at a head once; a link reads each server stack once; the watcher deletes a landed head no pull request uses; a push to the trunk from outside the queue restacks each open stack"
 '''
 
 # Every `gh` call site has a measured price, and each identity's hour of

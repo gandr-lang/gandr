@@ -14,6 +14,8 @@ source "$pr_stack_dir/trunk.bash"
 source "$pr_stack_dir/../gh/budget.bash"
 # shellcheck source=../mise/host-lock.bash
 source "$pr_stack_dir/../mise/host-lock.bash"
+# shellcheck source=page.bash
+source "$pr_stack_dir/page.bash"
 
 # Refuse while `origin/$trunk` holds a change to the stacking rule the
 # checked-out branch lacks (#1455). A task runs the rule from the branch it is
@@ -224,9 +226,42 @@ upstream_replays() {
   git worktree prune
 }
 
+# Restack the stack of the top `$1`, a reading of `await_top`, onto the tip of
+# `$trunk` when the top stands behind it (#6760). The merge queue's own
+# landings move the trunk past an open top, and nothing else moves it: a
+# branch stacked on it builds on a trunk that lacks each repair since, and
+# its gate fails on a test the trunk already repairs (#6707 on #6759). So
+# the stacking restacks the top's whole stack first (`tip_restack`). A stack
+# that holds a queued member never moves (#2531), nor does a top held as a
+# draft or one that conflicts with the trunk: `bound.jq` decides for them.
+# A restack that stops pages the stack's lanes and the coordinator
+# (`page_stopped`) and returns 1, so the branch opens on the trunk beside the
+# top. Returns 2 when a reading fails. Prints what it did.
+restack_behind() {
+  local top=$1 number head state open stack out status=0
+  number=$(jq -r .number <<< "$top")
+  head=$(jq -r .head <<< "$top")
+  git fetch --quiet origin "$trunk" "$head" || return 2
+  git merge-base --is-ancestor "origin/$trunk" "origin/$head" && return 0
+  state=$(top_reading "$number") || return 2
+  jq -e '.queued or .draft or .merge == "DIRTY"' <<< "$state" > /dev/null && return 0
+  open=$(landable_prs) || return 2
+  stack=$(jq -c --argjson n "$number" --arg trunk "$trunk" -f "$pr_stack_dir/chain.jq" <<< "$open")
+  [[ $stack != '[]' ]] || return 0
+  jq -e --argjson stack "$stack" 'any(.[]; .landing and (.number | IN($stack[].number)))' <<< "$open" > /dev/null && return 0
+  echo "the top #$number stands behind $trunk: its stack is restacked onto the tip first"
+  out=$(tip_restack "$stack") || status=$?
+  [[ -z $out ]] || printf '%s\n' "$out"
+  (( status == 1 )) && page_stopped <<< "$out"
+  return "$status"
+}
+
 # Stack the checked-out branch `$1` on the top `$2`, a reading of
 # `await_top` or `null`, and leave the top it stacked on in `stacked_top`
-# (#3654). With no top there is nothing to rebase. Otherwise the branch's own
+# (#3654). With no top there is nothing to rebase. A top behind the trunk is
+# restacked onto its tip first (`restack_behind`, #6760); when that restack
+# stops, the branch opens on the trunk beside the top, and `stacked_past`
+# names the top. Otherwise the branch's own
 # commits (`own_fork`) are rebased onto the top's branch. That rebase
 # conflicts when the top forked from the trunk before a change the own
 # commits build on (`trunk_lacked`), though they apply to the trunk: the top
@@ -241,12 +276,24 @@ upstream_replays() {
 # conflict with the top's own changes, are refused, the first two naming the
 # trunk's changes the top lacks.
 stack_on_top() {
-  local own=$1 base number fork lacked bound
+  local own=$1 base number fork lacked bound status
   stacked_top=$2
   stacked_past=
   while [[ $stacked_top != null ]]; do
     base=$(jq -r .head <<< "$stacked_top")
     number=$(jq -r .number <<< "$stacked_top")
+    status=0
+    restack_behind "$stacked_top" || status=$?
+    if (( status == 2 )); then
+      echo "a reading of the top #$number for its restack failed; run \`pr:open\` again" >&2
+      return 1
+    fi
+    if (( status == 1 )); then
+      echo "the restack of the top #$number stopped; $own opens on $trunk beside it"
+      stacked_past=$number
+      stacked_top=null
+      break
+    fi
     git fetch --quiet origin "$base" "$trunk"
     if git merge-base --is-ancestor "origin/$base" HEAD; then
       record_stack_base "origin/$base"
@@ -624,7 +671,7 @@ restack() {
 # restack stops, 1 when a reading fails, and 0 otherwise. The caller's exit
 # trap runs `drop_scratch`.
 trunk_moved() {
-  local deadline poll open bottom stack numbers lanes queued head out status=0
+  local deadline poll open bottom stack numbers queued status=0
   local -a bottoms
   deadline=$((SECONDS + ${TRUNK_MOVED_WAIT:-600}))
   poll=${TRUNK_MOVED_POLL:-30}
@@ -647,22 +694,34 @@ trunk_moved() {
       gh_budget_stale
       open=$(landable_prs) || return 1
     done
-    head=$(jq -r '.[0].head' <<< "$stack")
-    git fetch --quiet origin "$head" || return 1
-    if git merge-base --is-ancestor "origin/$trunk" "origin/$head"; then
-      echo "stack $numbers: stands on the tip of $trunk"
-      continue
-    fi
-    if out=$(restack "$stack" 2>&1); then
-      echo "stack $numbers: restacked onto $(git rev-parse --short "origin/$trunk")"
-      [[ -z $out ]] || printf '%s\n' "$out"
-    else
-      lanes=$(jq -r 'map(.head | split("-")[0]) | unique | join(" ")' <<< "$stack")
-      echo "stopped $numbers [$lanes]: $(paste -sd ' ' - <<< "$out")"
-      status=3
-    fi
+    tip_restack "$stack" || { (( $? == 2 )) && return 1; status=3; }
   done
   return "$status"
+}
+
+# Restack the open stack `$1` (`chain.jq`'s, bottom to top) onto the tip of
+# `$trunk` (`restack`) when its bottom lacks the tip (#6700, #6760). Prints
+# one line for the stack: it stands on the tip, it is restacked, or
+# `stopped <number>… [<lane>…]: <the reason>`, the line `page_stopped`
+# pages. A restack that stops pushes nothing. Returns 1 when it stops, and 2
+# when a fetch fails.
+tip_restack() {
+  local stack=$1 numbers head lanes out
+  numbers=$(jq -r 'map("#\(.number)") | join(" ")' <<< "$stack")
+  head=$(jq -r '.[0].head' <<< "$stack")
+  git fetch --quiet origin "$trunk" "$head" || return 2
+  if git merge-base --is-ancestor "origin/$trunk" "origin/$head"; then
+    echo "stack $numbers: stands on the tip of $trunk"
+    return 0
+  fi
+  if out=$(restack "$stack" 2>&1); then
+    echo "stack $numbers: restacked onto $(git rev-parse --short "origin/$trunk")"
+    [[ -z $out ]] || printf '%s\n' "$out"
+    return 0
+  fi
+  lanes=$(jq -r 'map(.head | split("-")[0]) | unique | join(" ")' <<< "$stack")
+  echo "stopped $numbers [$lanes]: $(paste -sd ' ' - <<< "$out")"
+  return 1
 }
 
 # The first member of the chain `$2`… (branches, bottom to top, fetched)

@@ -12,20 +12,27 @@
 # - `restacked` (#3877): the upper is stacked on the lower once, and the
 #   lower's own commit is then rewritten with another patch and pushed, as
 #   its seat's restack does, before the step runs.
-# The server is stubbed: no other pull request is open, so a top stacked past
-# leaves the trunk. The result is one line compared with the case's
-# `output`: `stacked on <branch>`, with `, past #<n>` when the step stacked
-# past a stale top; `armed: <the arm line>` when it waits on the top (#4164);
-# or `refused: <why>`.
+# The server is stubbed: the lower is the one other open pull request, #1 on
+# `main`, queued when its reading is, so a top stacked past leaves the trunk.
+# A top behind the trunk and not queued, held or conflicting is restacked
+# onto it first (#6760, `restack_behind`), and a stopped restack's page is
+# printed. The result is one line compared with the case's `output`:
+# `stacked on <branch>`, with `(the top holds main)` or `(the top lacks
+# main)` as the origin's lower stands after the step, `, past #<n>` when the
+# step stacked past a top, and `, paged` when it paged a stopped restack;
+# `armed: <the arm line>` when it waits on the top (#4164); or `refused:
+# <why>`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
 cases=$here/behind.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-behind-top.XXXXXX")
-trap 'rm -rf "$work"' EXIT
+trap 'drop_scratch; rm -rf "$work"' EXIT
 repo=case/case
 trunk=main
 failed=0
+export XDG_CACHE_HOME=$work/cache REPLAY_ARTIFACTS=$work/artifacts.json
+echo '[]' > "$REPLAY_ARTIFACTS"
 
 source "$here/../cases/scratch.bash"
 
@@ -64,8 +71,12 @@ for (( i = 0; i < count; i++ )); do
   mkdir "$dir"
   ( scenario "$dir" "$(jq -r ".[$i].top" "$cases")" "$(jq -r ".[$i].lower" "$cases")" ) > /dev/null
   cd "$dir/clone"
-  open_prs() { echo '[]'; }
+  open_prs() { jq -nc --argjson queued "$(jq .queued <<< "$reading")" \
+    '[{number: 1, head: "lower", base: "main", created: "2026-11-11T00:00:00Z", landing: $queued, held: false, stack: null, bot: false, hold: null}]'; }
   top_reading() { echo "$reading"; }
+  landed_heads() { :; }
+  pushed_heads() { :; }
+  page_stopped() { sed -n 's/^stopped /paged: stopped /p'; }
   if [[ $(jq -r ".[$i].restacked // false" "$cases") == true ]]; then
     stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1
     (
@@ -82,7 +93,11 @@ for (( i = 0; i < count; i++ )); do
   stack_on_top upper '{"number":1,"head":"lower"}' > "$dir/out" 2>&1 || status=$?
   if (( status == 0 )); then
     if [[ $stacked_top == null ]]; then actual="stacked on main"; else actual="stacked on $(jq -r .head <<< "$stacked_top")"; fi
+    if [[ $stacked_top != null ]]; then
+      if git merge-base --is-ancestor origin/main origin/lower; then actual+=" (the top holds main)"; else actual+=" (the top lacks main)"; fi
+    fi
     if [[ -n $stacked_past ]]; then actual+=", past #$stacked_past"; fi
+    if grep -q '^paged: stopped #1 \[lower\]: ' "$dir/out"; then actual+=", paged"; fi
   elif (( status == 3 )); then
     actual="armed: $(grep -E '^arm: ' "$dir/out" || true)"
   else
