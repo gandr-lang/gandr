@@ -1,0 +1,111 @@
+test: rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509
+package: gandr-surface-mcp
+command: .config/debug/trace.bash gandr-surface-mcp rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 --at rap.rs:3402
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46' (arm64).
+(lldb) settings set -- target.run-args  "rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --file rap.rs --line 3402
+Breakpoint 1: where = gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 + 5144 at rap.rs:3402:26, address = 0x00000001001eaa0c
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_mcp-a0375bd537d48b46`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000103ad09a8
+(lldb) run
+
+running 1 test
+test rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 13150 launched: 'target/debug-trace/debug/build/gandr-surface-mcp/a0375bd537d48b46/out/gandr_surface_mcp-a0375bd537d48b46' (arm64)
+Process 13150 stopped
+* thread #2, name = 'rap::tests::an_activity_subscription_hears_each_task_until_it_e', stop reason = breakpoint 1.1
+       frame #0: 0x00000001001eaa0c gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 at rap.rs:3402:26
+   3399	            "{}",
+   3400	            manifest.head
+   3401	        );
+-> 3402	        let mut editor = Editor::new(&later);
+    	                         ^
+   3403	        editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
+   3404	        let second = admitted(&callback);
+   3405	        assert_ne!(
+(lldb) bt 24
+* thread #2, name = 'rap::tests::an_activity_subscription_hears_each_task_until_it_e', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001001eaa0c gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509 at rap.rs:3402:26
+     frame #1: 0x00000001001cab10 gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure#0}((null)={}) at rap.rs:3349:69
+     frame #2: 0x00000001002e0088 gandr_surface_mcp-a0375bd537d48b46`<gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #3: 0x0000000100301918 gandr_surface_mcp-a0375bd537d48b46`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #4: 0x0000000100301910 gandr_surface_mcp-a0375bd537d48b46`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #5: 0x000000010030ce34 gandr_surface_mcp-a0375bd537d48b46`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #6: 0x000000010030ce28 gandr_surface_mcp-a0375bd537d48b46`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #7: 0x000000010030ce28 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #8: 0x000000010030ce24 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #9: 0x000000010030ce24 gandr_surface_mcp-a0375bd537d48b46`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #10: 0x000000010030ce24 gandr_surface_mcp-a0375bd537d48b46`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #11: 0x000000010030ce18 gandr_surface_mcp-a0375bd537d48b46`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #12: 0x0000000100307828 gandr_surface_mcp-a0375bd537d48b46`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #13: 0x00000001003077c4 gandr_surface_mcp-a0375bd537d48b46`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #14: 0x000000010030f2f8 gandr_surface_mcp-a0375bd537d48b46`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #15: 0x000000010030f2e8 gandr_surface_mcp-a0375bd537d48b46`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #16: 0x000000010030f2e8 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #17: 0x000000010030f2e4 gandr_surface_mcp-a0375bd537d48b46`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #18: 0x000000010030f2e4 gandr_surface_mcp-a0375bd537d48b46`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #19: 0x000000010030f2e4 gandr_surface_mcp-a0375bd537d48b46`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #20: 0x000000010030f2d4 gandr_surface_mcp-a0375bd537d48b46`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #21: 0x0000000103a92078 gandr_surface_mcp-a0375bd537d48b46`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #22: 0x0000000103a9206c gandr_surface_mcp-a0375bd537d48b46`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+     frame #23: 0x000000018ef03c58 libsystem_pthread.dylib`_pthread_start + 136
+(lldb) frame variable --depth 3
+(gandr_surface_mcp::face::tests::Scratch) earlier = {0:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-earlier"}
+(gandr_surface_mcp::face::tests::Scratch) later = {0:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-later"}
+(std::net::tcp::TcpListener) callback = {0:{inner:{0:{0:{fd:{…}}}}}}
+(serde_json::value::Value) uri = String("file:///tmp/active.gandr") {
+  0 = "file:///tmp/active.gandr" {
+    [0] = 'f'
+    [1] = 'i'
+    [2] = 'l'
+    [3] = 'e'
+    [4] = ':'
+    [5] = '/'
+    [6] = '/'
+    [7] = '/'
+    [8] = 't'
+    [9] = 'm'
+    [10] = 'p'
+    [11] = '/'
+    [12] = 'a'
+    [13] = 'c'
+    [14] = 't'
+    [15] = 'i'
+    ...
+  }
+}
+(gandr_surface_mcp::rap::Toolset) toolset = {listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"f\u{1b}"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}
+(core::net::socket_addr::SocketAddr) address = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59058}) {
+  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59058}
+}
+(gandr_surface_mcp::face::tests::Editor) editor = {writing:{0:{0:{0:{fd:{…}}}}}, reading:{buf:{buf:{data_ptr:{None:(…), value:{…}}, length:8192}, pos:156, filled:156, initialized:false}, inner:{0:{0:{0:{…}}}}}}
+(serde_json::value::Value) first = Number({n:PosInt(1794372657399)}) {
+  0 = {n:PosInt(1794372657399)}
+}
+(gandr_surface_mcp::rap::Toolset) toolset = {listener:{0:{inner:{0:{0:{…}}}}}, store:{file:{inner:{0:{0:{…}}}}, open:0, line:{0:size=0}}, lost:size=0, subscriptions:{rows:{root:Some({height:0, node:{…}, _marker:{…}}), length:1, alloc:{value:{0:{…}}}, _marker:{}}, diagnostics:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, accounts:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, activity:{map:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}, table:{path:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gm-13150-rap-activity-earlier/state/subscriptions.json", written:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{0:0}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}
+(core::net::socket_addr::SocketAddr) address = V4({ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59064}) {
+  0 = {ip:{octets:('\x7f', '\0', '\0', '\x01')}, port:59064}
+}
+(gandr_surface_mcp::rap::tests::Message) manifest = {head:"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 6973\r\nconnection: close", body:size=6973}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(lldb) up
+frame #1: 0x00000001001cab10 gandr_surface_mcp-a0375bd537d48b46`gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure#0}((null)={}) at rap.rs:3349:69
+   3346	    }
+   3347	
+   3348	    #[test]
+-> 3349	    fn an_activity_subscription_hears_each_task_until_it_ends_6509()
+    	                                                                    ^
+   3350	    {
+   3351	        let earlier = Scratch::new(&json!("rap-activity-earlier"));
+   3352	        let later = Scratch::new(&json!("rap-activity-later"));
+(lldb) frame variable --depth 3
+(gandr_surface_mcp::rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509::{closure_env#0} *)  = 0x00000001700066be {}
