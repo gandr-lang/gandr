@@ -322,6 +322,55 @@ fn a_call_of_a_binder_is_rigid_without_running_1369()
     }
 }
 
+/// #6544: `convert_terms` handed on the machine's decline as its verdict, and
+/// a type comparison read every verdict but convertible as apart. A hole
+/// against a literal is a pair the machine declines.
+#[test]
+fn a_declined_pair_is_undecided_6544()
+{
+    let mut arena = CoreArena::new();
+    let definitions = CodeDefinitions::new();
+    let hole = arena.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    assert_eq!(
+        definitions.convert_terms(&arena, hole, zero),
+        Err(super::CheckRefusal::Undecided { at: hole }),
+        "a pair the machine declines is undecided, not a verdict a caller reads as apart"
+    );
+}
+
+/// #6478: before the fix, each side of a pair ran under 4,096 steps of fuel,
+/// and a side that spent it was an undecided pair, which a reflexivity reads
+/// as endpoints apart. The self-application `ω ω` runs past any budget.
+#[test]
+fn a_side_past_the_budget_is_a_decline_for_the_budget_6478()
+{
+    let mut arena = CoreArena::new();
+    let definitions = CodeDefinitions::new();
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(bound);
+    let applied = arena.computation_application(forced, bound);
+    let lambda = arena.computation_lambda(applied);
+    let omega = arena.value_thunk(lambda);
+    let head = arena.computation_force(omega);
+    let diverging = arena.computation_application(head, omega);
+    let spinning = arena.value_returned(diverging);
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    assert_eq!(
+        definitions.relation(&arena, spinning, zero, &[]),
+        Ok((
+            gandr_core_nbe::MachineVerdict::Declined(gandr_core_nbe::DeclineReason::Budget),
+            alloc::vec::Vec::new()
+        )),
+        "a side that spends the budget is a decline for the budget"
+    );
+    assert_eq!(
+        definitions.convert_terms(&arena, spinning, zero),
+        Err(super::CheckRefusal::Undecided { at: spinning }),
+        "a conversion that keeps no derivation reads the spent side as undecided"
+    );
+}
+
 /// #2751: a call of a definition whose body applies a binder,
 /// `app(post, x)` with `app = λpost x. post(x)`, runs to that application,
 /// `returned(post(x))`, the call written out, where a weak head stops.

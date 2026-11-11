@@ -2535,7 +2535,7 @@ crates/kernel-term/README.md STE-3.5 551670b90a21424d
 crates/kernel-term/README.md STE-3.5 59b83a410ef05e73
 crates/runtime-emitter/README.md STE-3.6 cd729b6735dc73f2
 crates/runtime-emitter/README.md STE-3.5 940d0da42889c371
-crates/runtime-emitter/README.md STE-1.2 7337e747ea1f1af1
+crates/runtime-emitter/README.md STE-1.2 3bbb7e1284179f05
 crates/runtime-net/README.md STE-3.5 61e1ef3106daa3f5
 crates/runtime-net/README.md STE-9.3 48a01fe690face90
 crates/runtime-stencils/README.md STE-3.6 cd729b6735dc73f2
@@ -2635,7 +2635,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/bind-port.t
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/bind-term.txt STE-5.3 aef1da9c395fca1d
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/binding-field.txt STE-5.3 3ebbbbdd851df500
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/freshness.txt STE-5.3 4e66202e37c5fd67
-crates/surface-render-terminal/tests/golden/corpus/pathological/desc/record-faces.txt STE-5.2 02d539a9556166db
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/oracle-sheaves.txt STE-5.3 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/oracle-sheaves.txt STE-5.3 4243b91b89fd9499
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt STE-5.3 4837140b8b4cbaae

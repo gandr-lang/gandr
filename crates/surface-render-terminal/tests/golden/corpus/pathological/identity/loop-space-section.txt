@@ -1,5 +1,5 @@
-error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/loop-space-section.gandr:49:18
+error[Undecided]: the checker could not decide what this code unfolds to
+   ╭▸ corpus/pathological/identity/loop-space-section.gandr:46:1
    │
 46 │    def rec forged(c : Circle) -> Path(spin (wind c), c) =
    │    │              ─ checked against `(a : Circle) -> -F Path[.A = Circle](spin (wind a), a)`; while checking the body of this function; binds c : Circle
@@ -8,12 +8,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 47 │ │┌   match c where
 48 │ ││     | Base => Path.here Base
 49 │ ││     | Loop(x) => forged[<] x
-   │ ││                  ━━━━━━━━━━━ its type does not convert: expected `-F Path[.A = Circle](spin (wind (Loop x)), Loop x)`, found `-F Path[.A = Circle](spin (wind x), x)`
+   │ ││                  ─────────── checked against `-F Path(spin (wind (Loop x)), Loop x)`; while comparing the type this synthesises with the one it is checked against
 50 │ ││     | Unloop(x) => { let p = forged[<] x; Path.ap unaround p }
    │ ││                                                              │
    │ └│──────────────────────────────────────────────────────────────│
    │  └──────────────────────────────────────────────────────────────checked against `(a : Circle) -> Path[.A = Circle](spin (wind a), a)`; while checking the body of this function; binds forged : (a : Circle) -> Path[.A = Circle](spin (wind a), a)
    │                                                                 checked against `-F Path[.A = Circle](spin (wind c), c)`; while checking the body of this function; binds x : Circle
    │
-   ├ note: `forged` is refused with TypeMismatch, as its expectation states
-   ╰ help: change the term or the type it is checked against, so that the two types agree
+   ├ note: `forged` is refused with Undecided, as its expectation states
+   ╰ help: write code whose unfolding the checker can decide

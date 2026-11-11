@@ -76,6 +76,7 @@ clap.workspace = true
 gandr-core-fork = { workspace = true, optional = true }
 gandr-core-publish.workspace = true
 gandr-kernel-core.workspace = true
+gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
 gandr-surface-diagnostics.workspace = true

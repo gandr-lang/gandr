@@ -134,6 +134,13 @@
 # `needed` row names where its claim lands, a `noise` row why it stays out,
 # and a `borderline` row its finding on #2917. A missing section, a row with
 # no class, and a row with no fourth cell for its class are refused.
+#
+# Each speedup claim states its corpus and its algorithmic baseline (#3479,
+# the algorithm-first ruling of #320): a line that claims a factor, a
+# percentage or a speedup carries `corpus: <the inputs the number is over>`
+# and `baseline: <the algorithm it is measured against>`. The check reads the
+# body alone, outside its code blocks and HTML comments, and refuses a claim
+# that lacks either.
 
 include "targets";
 include "sections";
@@ -510,4 +517,35 @@ def facts_kept:
       end
     end;
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings, api_budget, facts_kept
+# A speedup claim of the body (#3479, the algorithm-first ruling of #320): a
+# factor or a percentage that says the change runs faster, or a speedup that
+# carries a number. The word alone, as prose about speedups writes it, claims
+# none.
+def speedup:
+  test("\\b[0-9]+(\\.[0-9]+)?\\s*(x|×|times)\\s+(faster|quicker|the speed|speed-?ups?)\\b"; "i")
+  or test("(^|[^a-z0-9])[0-9]+(\\.[0-9]+)?\\s*%\\s+(faster|quicker|speed-?ups?)\\b"; "i")
+  or test("\\bspeed-?ups? of\\s+[0-9]"; "i")
+  or (test("\\b(faster|quicker) than\\b"; "i") and test("[0-9]"));
+
+# The refusals of the body's speedup claims (#3479). Each claim names the
+# corpus that its number is over and the algorithmic baseline that it is
+# measured against, as `corpus:` and `baseline:` on the claim's own line or
+# table row. A comparison against `main` alone measures no algorithm. The
+# check reads the body alone, outside its code blocks, its code spans and its
+# HTML comments, so a quoted example claims nothing.
+def speedups:
+  .body
+  | gsub("(?s)<!--.*?-->"; "")
+  | lines
+  | reduce .[] as $line ({fenced: false, claims: []};
+      if $line | test("^\\s*(```|~~~)") then .fenced = (.fenced | not)
+      elif .fenced then .
+      elif $line | gsub("`[^`]*`"; "") | speedup then .claims += [$line]
+      else . end)
+  | .claims[]
+  | ([if test("\\bcorpus:"; "i") | not then "its corpus (`corpus: <the inputs the number is over>`)" else empty end,
+      if test("\\bbaseline:"; "i") | not then "its algorithmic baseline (`baseline: <the algorithm it is measured against>`)" else empty end]) as $lacks
+  | select($lacks | length > 0)
+  | "the body's line `\(gsub("^\\s+|\\s+$"; ""))` claims a speedup without \($lacks | join(" and ")): name both on the claim's line (#3479, the algorithm-first ruling of #320), then run `pr:open` again";
+
+claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings, api_budget, facts_kept, speedups

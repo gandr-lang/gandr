@@ -390,6 +390,7 @@ INSERT INTO purpose VALUES('core-nbe','closure::EnvironmentDepth','struct','The 
 INSERT INTO purpose VALUES('core-nbe','closure::Mapping','struct','The state of mapping a word through one endpoint''s calls.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::Mover','enum','The eliminator a constructorwise continuation applies at the next part.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::Orientation','enum','Whether a letter''s image is read as written or inverted.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','closure::PathFamily','struct','A path family whose endpoints act on a word, with the motive it stands in and the carried transports around it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::Route','struct','A route''s position among an endpoint''s routes, the binder''s leftmost occurrence first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::RunPosition','struct','Where a walk of a recorded run against its session stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','closure::ValueBody','enum','A source value or a native quotation of an already existing type root.',NULL,'fits','sound',NULL);
@@ -1698,8 +1699,19 @@ INSERT INTO purpose VALUES('runtime-emitter','lower::lower_unfused','function','
 INSERT INTO purpose VALUES('runtime-emitter','native::EmitRefusal','enum','Names why emission failed: a region mapping failed, the function is larger than a region, a hole could not be patched, a label is unbound, the last instruction falls off, or an operand is missing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::PatchRefusal','enum','Names why a hole could not be patched: a branch target beyond reach, an address beyond page reach, a value past its field, a wrong shape, or a wrong kind.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::memory::MapFailure','struct','Names why mapping a region failed: the host''s error number.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Bytes','struct','A size in bytes, read from its spelling with a unit and written with its digits grouped.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Held','struct','A run''s stop at its memory bound: what each region held, at which step, and which region asked for the chunk that did not fit.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Memory','struct','The memory bound of the runs of one invocation, and where it comes from.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Origin','enum','Names where a run''s memory bound comes from: the invocation''s flag, the memory the host makes available, half of its physical memory, or the bound of a host that reports none.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Region','enum','Names the region that asked for the chunk a run could not commit: the heap or the window region.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Short','enum','Names what a region found short of the chunk it asked for: the bound, or its reservation.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Spelled','struct','Writes a size as its largest unit that divides it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Step','struct','The code-word jumps a run spent before it stopped.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Unsized','enum','Names why a text names no size: no digit, an unknown unit, a zero size, or a size past 64 bits.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::bind','function','Binds the invocation''s memory bound once, before its first run, and returns the bound in force when an earlier binding fixed it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::bound','function','Reads the memory bound every run of the process takes: the bound that bind gave, else the host''s, read once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Choice','enum','Names the tier a run asks for: the one the process''s policy picks, or one tier.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','run::Declined','enum','Names why a run gave no outcome: a form the lowering refused, no patcher, an emission refusal, an unbound label, a cache miss, a stuck run, a spent budget, a transfer refusal, or a reply the run cannot hold.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','run::Declined','enum','Names why a run gave no outcome: a form the lowering refused, no patcher, an emission refusal, an unbound label, a cache miss, a stuck run, a spent budget, a stop at the memory bound, a transfer refusal, or a reply the run cannot hold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Kept','struct','Keeps the emitted code a lowering''s first native run found, so a later run of the same lowering takes no cache lookup.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::POLICY_VARIABLE','constant','Names the environment variable the policy is read from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Policy','enum','Names when a run takes native code: emit on a function''s first run and serve the cache after, never emit, or serve only cached code.',NULL,'fits','sound',NULL);
@@ -1745,6 +1757,7 @@ INSERT INTO purpose VALUES('runtime-stencils','layout::ACCUMULATED_APPLIED','con
 INSERT INTO purpose VALUES('runtime-stencils','layout::ACCUMULATED_FORCED','constant','The family position of an accumulator a force grew, holding the accumulator forced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::ACCUMULATOR_FREE','constant','The least family position of a free variable''s accumulator, to which its index doubled, plus one for the linear zone, is added.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::Arity','struct','A header''s arity field: a field count or a capture count.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-stencils','layout::CHUNK','constant','The words a region commits at a time: the heap and the window region each grow by whole chunks of 2²⁰ words.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::COUNT_IMMORTAL','constant','The count word of an object no drop frees: a constant laid out in the function''s data.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::COUNT_ONE','constant','The count word of a fresh object: its one owner.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::FREE_CLASSES','constant','The free lists the runtime record keeps, by block size in words: a block of this many words or more is never reused.',NULL,'fits','sound',NULL);

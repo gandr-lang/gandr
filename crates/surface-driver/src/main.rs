@@ -66,6 +66,7 @@
 //! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
 //! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
 //! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
+//! | `gandr --memory <size> <verb>` | as the verb, each run it starts — a fixture's, a cut's, a world's, `gandr run`'s — holding its heap and its window region within the size, `512MiB` or `2GiB`: a run that asks past it stops, naming each region's bytes, the step and the remedy; without the flag, the least of the host's available memory, its cgroup's `memory.max` and its address-space limit | as the verb; a size that does not read is a malformed invocation |
 //!
 //! A path is a source file of any name, or a directory searched for `.gandr`
 //! sources. The directories a source sits in decide its root — `strict`,
@@ -337,6 +338,9 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_kernel_core::tallied;
+use gandr_runtime_emitter::regions;
+use gandr_runtime_emitter::regions::Bytes;
+use gandr_runtime_emitter::regions::Memory;
 use gandr_runtime_net::Binding;
 use gandr_runtime_net::Lookup;
 use gandr_runtime_net::Net;
@@ -496,6 +500,11 @@ struct Cli
     /// `presentation.spelling` of the user's configuration file.
     #[arg(long, global = true, value_enum)]
     spelling: Option<SpellingName>,
+    /// Bound the memory each run of the invocation holds across its heap
+    /// and its window region, `512MiB` or `2GiB`, over the host's available
+    /// memory.
+    #[arg(long, global = true, value_name = "SIZE")]
+    memory: Option<Bytes>,
     /// The verb; with none, the driver prints its status.
     #[command(subcommand)]
     command: Option<Command>,
@@ -1811,6 +1820,18 @@ fn main() -> ExitCode
         Ok(cli) => cli,
         Err(error) => return usage(&error),
     };
+    // The bound every run of the invocation holds within: nothing ran
+    // before this line, so no run read another.
+    if let Some(bytes) = cli.memory
+        && let Err(bound) = regions::bind(Memory::flag(bytes))
+    {
+        return match writeln!(
+            std::io::stderr(),
+            "gandr: the memory bound is {bound} already"
+        ) {
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        };
+    }
     // Every verb that resolves a `gh:` coordinate, and the language server,
     // reads its checkout from the one directory the user's cache names; with
     // none, such a coordinate stands unfetched. Nothing installed it before,

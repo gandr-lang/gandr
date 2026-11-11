@@ -67,6 +67,8 @@ pub enum HoleSymbol
     FuelExhausted,
     /// The stuck exit.
     Stuck,
+    /// The window exit.
+    WindowsExhausted,
     /// The first operand.
     A,
     /// The second operand.

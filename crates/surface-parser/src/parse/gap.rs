@@ -38,6 +38,15 @@
 //! block and a layout block take no `,`, and a shell block or an
 //! interpolation hides its contents from the search.
 //!
+//! A written closer can close a bracket that is not the innermost open one,
+//! as the `}` of a block can meet a `(` that a line of the block leaves open.
+//! Each bracket opened inside that bracket is then left open. When each of
+//! them is a written bracket, the place at the end of the token before the
+//! closer mints the closer of each of them, innermost first. The scan still
+//! reads the closer as the close of the innermost bracket, so every other
+//! place stays as it is. The search tries this place with the places before
+//! each line.
+//!
 //! Three more signals give places on one line:
 //!
 //! |signal|the place|it mints|
@@ -152,6 +161,13 @@ struct Frame
     limit: u32,
     /// Where its items stand.
     items: Items,
+    /// The closer its written opener takes: none for a layout block, a shell
+    /// block or an interpolation.
+    closer: Option<&'static str>,
+    /// For each of `)`, `]` and `}`, in that order, the index in the stack of
+    /// the nearest frame, this one included, whose written opener takes that
+    /// closer.
+    nearest: [Option<usize>; 3],
 }
 
 /// What a place does to the copy that judges it.
@@ -386,7 +402,12 @@ fn class(
 ///   `k > 0` blocks, one for each count of closes from 0 to `k - 1`, when the
 ///   token neither closes nor separates, no shell block or interpolation is
 ///   open, and the innermost open frame is none or a layout block whose items
-///   stand at another column. In `words`, each lower-case word of two or more
+///   stand at another column. Also in `lines`, at the end of the token before
+///   each written closer that closes an open bracket other than the innermost,
+///   with no shell block or interpolation open and only written brackets opened
+///   inside that bracket: the closer of each of those brackets, innermost
+///   first. The scan reads the closer as the close of the innermost bracket, as
+///   it reads every closer. In `words`, each lower-case word of two or more
 ///   bytes that is no keyword, outside a shell block or an interpolation, in
 ///   source order.
 /// - fails: never.
@@ -395,11 +416,12 @@ fn class(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a field left without its type before the next field, a
-///   field whose `(` the line leaves open, a valid record, a line at column
-///   zero, two parameters side by side in a parameter list, a type beside a
-///   returner, an attribute without its `@[` on its own line or after a block's
-///   `{`, a whole attribute, a stray `]` before an operator, and a misspelt
-///   keyword each give their places or none.
+///   field whose `(` the line leaves open, a `(` left open before a block's
+///   `}`, a block's `{` left open before a `)`, a valid record, a line at
+///   column zero, two parameters side by side in a parameter list, a type
+///   beside a returner, an attribute without its `@[` on its own line or after
+///   a block's `{`, a whole attribute, a stray `]` before an operator, and a
+///   misspelt keyword each give their places or none.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
@@ -407,6 +429,7 @@ fn class(
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
+/// - witness: `parse::gap::tests::a_bracket_left_open_before_a_closer_of_another_family_is_closed_there_6103`
 fn gaps<'text>(
     text: SourceText<'text>,
     tokens: &[Token],
@@ -446,7 +469,30 @@ fn gaps<'text>(
         },
         cleared: true,
     };
-    let open = |kind: Kind, limit: u32, items: Items| Frame { kind, limit, items };
+    // The index of a closer among `)`, `]` and `}`, the closers a written
+    // opener takes.
+    let family = |closer: &str| match closer {
+        ")" => Some(0_usize),
+        "]" => Some(1),
+        "}" => Some(2),
+        _ => None,
+    };
+    // A frame links to the nearest frame of each family from the one below
+    // it, so a closer finds the bracket it closes with no search.
+    let open =
+        |stack: &[Frame], kind: Kind, limit: u32, items: Items, closer: Option<&'static str>| {
+            let mut nearest = stack.last().map_or([None; 3], |top| top.nearest);
+            if let Some(slot) = closer.and_then(family).and_then(|at| nearest.get_mut(at)) {
+                *slot = Some(stack.len());
+            }
+            Frame {
+                kind,
+                limit,
+                items,
+                closer,
+                nearest,
+            }
+        };
     for &token in tokens {
         match token.lexeme {
             Lexeme::Space => {
@@ -461,7 +507,7 @@ fn gaps<'text>(
             },
             Lexeme::LayoutSemi => continue,
             Lexeme::LayoutOpen => {
-                stack.push(open(Kind::Block, line_column, Items::Unread));
+                stack.push(open(&stack, Kind::Block, line_column, Items::Unread, None));
                 member = true;
                 continue;
             },
@@ -648,9 +694,41 @@ fn gaps<'text>(
                 if kind == Kind::Opaque {
                     opaque = opaque.saturating_add(1);
                 }
-                stack.push(open(kind, line_column, Items::Unread));
+                let closer = match kind {
+                    Kind::Group(closer) => Some(closer),
+                    Kind::Block => Some("}"),
+                    Kind::Opaque => None,
+                };
+                stack.push(open(&stack, kind, line_column, Items::Unread, closer));
             },
             Bracketing::Closes => {
+                // A written closer of another family than the innermost
+                // bracket shows that each bracket opened inside the one it
+                // closes is left open. Their closers stand before it. The
+                // scan still reads the closer as the close of the innermost
+                // bracket, so that each place it gives without this one
+                // stays.
+                let spelled = <&str>::from(spelling(text, token));
+                let matched = stack
+                    .last()
+                    .zip(family(spelled))
+                    .and_then(|(top, at)| top.nearest.get(at).copied().flatten())
+                    .filter(|_| token.lexeme == Lexeme::Punct && opaque == 0);
+                let above = matched
+                    .and_then(|at| stack.get(at.saturating_add(1) ..))
+                    .unwrap_or_default();
+                let tiles: Vec<&'static str> =
+                    above.iter().rev().map_while(|frame| frame.closer).collect();
+                if let Some((end, ..)) = previous
+                    && !tiles.is_empty()
+                    && tiles.len() == above.len()
+                {
+                    places.lines.push(Gap {
+                        at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                        act: Act::Writes { tiles, over: 0 },
+                        cleared: true,
+                    });
+                }
                 if stack.pop().is_some_and(|frame| frame.kind == Kind::Opaque) {
                     opaque = opaque.saturating_sub(1);
                 }
@@ -1103,13 +1181,15 @@ struct Form<'gap>
 /// # Adequacy
 /// - hypothesis: L3 — a field left without its type before the next field owes
 ///   one `,` on its own line and nothing after it; a field whose `(` the line
-///   leaves open owes the `)` and the `,` there; two arguments side by side owe
-///   the `,` between them; a type beside a returner owes the `->` between them;
-///   an attribute without its `@[` owes the `@[` alone; a misspelt `matc` owes
-///   its word alone; a `)` deleted inside a line with a repair after it is not
-///   minted at the line's end; a line at column zero inside nested blocks owes
-///   only its own line; a source that owes nothing, and one whose places all
-///   owe more, keep their parse.
+///   leaves open owes the `)` and the `,` there; a `(` that a line of a block
+///   leaves open owes its `)` before the block's `}` alone, and a block left
+///   open before the `)` of the group around it owes its `}` there alone; two
+///   arguments side by side owe the `,` between them; a type beside a returner
+///   owes the `->` between them; an attribute without its `@[` owes the `@[`
+///   alone; a misspelt `matc` owes its word alone; a `)` deleted inside a line
+///   with a repair after it is not minted at the line's end; a line at column
+///   zero inside nested blocks owes only its own line; a source that owes
+///   nothing, and one whose places all owe more, keep their parse.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
@@ -1118,6 +1198,7 @@ struct Form<'gap>
 /// - witness: `parse::gap::tests::a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
+/// - witness: `parse::gap::tests::a_bracket_left_open_before_a_closer_of_another_family_is_closed_there_6103`
 pub(super) fn gapped<'source>(
     pbg: &Pbg,
     parsed: &ParseResult<'source>,
@@ -1736,6 +1817,46 @@ mod tests
             "the `)` the line leaves open is not minted at its end, where the copy owes more: {:?}",
             parsed.obligations()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_bracket_left_open_before_a_closer_of_another_family_is_closed_there_6103()
+    -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        for (source, before, left) in [
+            (
+                include_str!(
+                    "gap/unformatted/a-group-left-open-before-a-closer-of-another-family-is-closed-there-6103.gandr"
+                ),
+                ")\n    })",
+                "the `(` of `(Done` that the `}` meets open owes its `)` before the `}` alone",
+            ),
+            (
+                include_str!(
+                    "gap/unformatted/a-block-left-open-before-a-closer-of-another-family-is-closed-there-6103.gandr"
+                ),
+                ")\n    ) :",
+                "the `{` of the inner `fun` that the `)` meets open owes its `}` before the `)` alone",
+            ),
+        ] {
+            let place = source
+                .find(before)
+                .map(|at| ByteOffset::from(at.saturating_add(1)))
+                .map(|at| ByteSpan::new(at, at))
+                .transpose()?;
+            let parsed = parse(&pbg, SourceText::from(source))?;
+            assert_eq!(
+                parsed
+                    .obligations()
+                    .iter()
+                    .map(|obligation| (obligation.class, Some(obligation.span)))
+                    .collect::<alloc::vec::Vec<_>>(),
+                [(Oblig::MissingTile, place)],
+                "{left}"
+            );
+        }
         Ok(())
     }
 

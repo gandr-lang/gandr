@@ -5112,6 +5112,50 @@ fn a_program_leaves_with_its_entry_s_status_1881()
     }
 }
 
+/// #6324: a run holds its heap and its window region within `--memory`. A
+/// recursion twenty thousand calls deep fills the window region past 9 MiB,
+/// and the stop names the bytes each region held, the region that asked and
+/// the bound. Under 16 MiB the same run returns. A size that does not read is
+/// a malformed invocation.
+#[test]
+fn a_run_past_its_memory_bound_names_the_region_that_asked_6324()
+{
+    let scratch = Scratch::new(Path::new("memory-bound"));
+    let path = scratch.file(
+        Path::new("deep.gandr"),
+        Text::from(
+            "data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n\ndef build(k : \
+             Integer) -> [Partial] Nat =\n  var acc = Zero\n  var left = k\n  while left > 0 {\n    \
+             access acc as a { resume a (Succ a) };\n    access left as v { resume v (v - 1) }\n  \
+             };\n  pure acc\n\ndef rec depth(n : Nat) -> -F Integer {\n  match n {\n    | Zero => \
+             0\n    | Succ(m) => { let d = depth[<] m; d + 1 }\n  }\n}\n\ndef main() -> [Partial] \
+             Integer =\n  let n = build 20000\n  let d = depth n\n  pure 0\n",
+        ),
+    );
+    let under = |bound: &str| {
+        ran(gandr(&[
+            Path::new("--memory"),
+            Path::new(bound),
+            Path::new("run"),
+            path.as_path(),
+        ]))
+    };
+    let short = under("9MiB");
+    assert_eq!(code(&short), Code(1_i32), "{}", stderr(&short));
+    assert!(
+        stderr(&short).contains(
+            "the window region 1 048 576, the heap 8 388 608; the window region asked for one \
+             more chunk past --memory 9 MiB; raise --memory"
+        ),
+        "the stop names each region, the one that asked and the bound: {}",
+        stderr(&short)
+    );
+    let room = under("16MiB");
+    assert_eq!(code(&room), Code(0_i32), "{}", stderr(&room));
+    let malformed = under("9XiB");
+    assert_eq!(code(&malformed), Code(2_i32), "{}", stderr(&malformed));
+}
+
 /// #2279: `gandr run` of the hello-world exemplar prints its greeting as the
 /// whole of standard output and leaves with 0; a program whose row names an
 /// effect no host provides, the exemplar's twin without its expectation, is

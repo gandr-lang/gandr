@@ -1551,9 +1551,21 @@ running() {
 landing=$(tip landing)
 integration=$(tip integration)
 compare=$(gh api "repos/$repo/compare/$integration...$landing" --jq .status)
+# The repair that the fixer marks on `landing` (#6560, `integration:repair`):
+# the tag `integration-repair`, which GitHub answers with 404 while no mark
+# stands, and whether `landing` holds its commit. One read on each step, and
+# one comparison while a mark stands.
+repair=$(gh api "repos/$repo/git/ref/tags/integration-repair" --jq .object.sha 2> /dev/null) || repair=
+held_repair=false
+if [[ -n $repair ]]; then
+  case $(gh api "repos/$repo/compare/$repair...$landing" --jq .status) in
+    ahead | identical) held_repair=true ;;
+  esac
+fi
 running > "$scratch/runs.json"
 decision=$(jq -n -c --arg landing "$landing" --arg integration "$integration" --arg compare "$compare" \
-  --slurpfile runs "$scratch/runs.json" '{landing: $landing, integration: $integration, compare: $compare, runs: $runs[0]}' \
+  --arg repair "$repair" --argjson held "$held_repair" --slurpfile runs "$scratch/runs.json" \
+  '{landing: $landing, integration: $integration, compare: $compare, repair: (if $repair == "" then null else {sha: $repair, held: $held} end), runs: $runs[0]}' \
   | jq -c -L "$here" -f "$here/cycle.jq")
 verdict=$(jq -c .verdict <<< "$decision")
 conclusion=$(jq -r '.conclusion // empty' <<< "$verdict")
@@ -1621,6 +1633,11 @@ if [[ -n $write ]]; then
       fi
       ;;
   esac
+  # A take of a repair drops its mark, so the next red verdict waits again.
+  if [[ $conflict == null && $(jq -r '.repaired // false' <<< "$decision") == true ]]; then
+    gh api -X DELETE "repos/$repo/git/refs/tags/integration-repair" > /dev/null
+    say "The cycle drops the mark of the repair, ${repair:0:12}: integration holds it now."
+  fi
 fi
 
 # The state that the known-red list's issue owes, for a row (`true`) or for
@@ -1803,6 +1820,30 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n' "$line" >> "$GITHUB_STE
 ["landing:rebase"]
 description = "Rebase landing onto main, its merges kept, each new commit signed and each old one noted"
 run = ".config/landing/rebase.bash"
+
+# The fixer's mark of a repair that only `landing` carries (#6560): the tag
+# `integration-repair` on commit `<commit>` of `landing`. While the verdict
+# on the tip of `integration` fails, `ci:cycle` takes the tip of `landing`
+# once it holds the commit, tests it, and drops the tag (`cycle.jq`). A
+# commit that `origin/landing` does not hold is refused, and a later mark
+# replaces an earlier one.
+["integration:repair"]
+description = "Mark the commit of landing that repairs integration's red verdict, so the cycle takes landing while integration is red"
+usage = '''
+arg "<commit>" help="the commit of landing that holds the repair"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+git fetch --quiet origin landing
+commit=$(git rev-parse --verify "${usage_commit:?}^{commit}")
+if ! git merge-base --is-ancestor "$commit" origin/landing; then
+  echo "integration:repair: origin/landing does not hold ${commit:0:12}; land the repair first" >&2
+  exit 2
+fi
+git push --quiet --force origin "$commit:refs/tags/integration-repair"
+echo "integration:repair: the cycle takes landing once it holds ${commit:0:12}, while the tip of integration is red"
+'''
 
 # The cycle's known-red list (#5443, `ci:cycle`), read by a seat. The tests,
 # the sweeps and the specification obligations run only in the integration
@@ -4707,7 +4748,9 @@ conflicts() {
 # conflicting one (#2783), a unit at a time,
 # until the caller's own pull request is queued. A stack that holds the
 # commits of a pull request queued on its own waits for that one to merge,
-# then reads the stack again.
+# then reads the stack again. A stack on an old lineage of the trunk is
+# replayed onto it first and queues nothing (#6399, `replay_lineage`): its
+# new heads land once their checks pass.
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 trap 'release_landing; drop_scratch' EXIT
 trap 'exit 130' INT

@@ -7,7 +7,14 @@
 # cancelled run gives no verdict. While a run is queued or in progress,
 # nothing moves: the end of that run starts the next cycle. While the verdict
 # is a failure, `integration` takes nothing from `landing` (#5829): each
-# commit of the fixer is tested alone, and `landing` waits for a pass.
+# commit of the fixer is tested alone, and `landing` waits for a pass. One
+# failure takes `landing` all the same (#6560): the verdict names the tip of
+# `integration`, so no commit of the fixer waits for its test, and `landing`
+# holds the repair that the fixer marks (`repair`, `{sha, held}`, `held` when
+# `landing` holds the commit). A repair that only `landing` carries, such as a
+# revert that the fixer may not make on `integration`, otherwise waits with no
+# end. The decision then carries `repaired`, and `ci:cycle` drops the mark
+# after the take.
 # Otherwise `integration` takes the tip of `landing`. It fast-forwards when it
 # holds no commit past `landing`, and the merges API merges `landing` into it
 # when it holds the fixer's commits. A tip that moves is tested. A tip that
@@ -24,7 +31,9 @@ def short: .[0:12];
 | if $running then
     {take: "none", dispatch: false, line: "A cycle runs on integration. The end of that run starts the next cycle."}
   elif $verdict != null and ($verdict.conclusion | failed) and ($in.compare == "ahead" or $in.compare == "diverged") then
-    if $verdict.sha == $in.integration then
+    if $verdict.sha == $in.integration and ($in.repair.held // false) then
+      {take: (if $in.compare == "ahead" then "fast-forward" else "merge" end), dispatch: true, repaired: true, line: "Run \($verdict.id) fails on the tip of integration, \($in.integration | short), and landing, \($in.landing | short), holds its repair, \($in.repair.sha | short), so integration takes landing, and the suite starts."}
+    elif $verdict.sha == $in.integration then
       {take: "none", dispatch: false, line: "Run \($verdict.id) fails on the tip of integration, \($in.integration | short), so landing, \($in.landing | short), waits for a fix."}
     else
       {take: "none", dispatch: true, line: "Run \($verdict.id) fails on \($verdict.sha | short), so landing, \($in.landing | short), waits for a fix. No verdict names the tip of integration, \($in.integration | short), so the suite starts."}

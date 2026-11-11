@@ -1343,6 +1343,7 @@ dependencies = [
  "gandr-core-publish",
  "gandr-kernel-core",
  "gandr-lang",
+ "gandr-runtime-emitter",
  "gandr-runtime-net",
  "gandr-storage-store",
  "gandr-surface-diagnostics",
