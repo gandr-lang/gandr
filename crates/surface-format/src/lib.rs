@@ -795,7 +795,6 @@ pub fn declared_form(
 ///   function form, and keep their halves where the thunk is commented, graded
 ///   or no thunk.
 /// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
-/// - witness: `tests::rewrite::a_linear_run_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255`
 /// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::the_runs_ending_a_block_are_written_away_together`
