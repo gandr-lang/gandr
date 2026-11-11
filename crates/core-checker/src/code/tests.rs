@@ -322,6 +322,23 @@ fn a_call_of_a_binder_is_rigid_without_running_1369()
     }
 }
 
+/// #6544: `convert_terms` handed on the machine's decline as its verdict, and
+/// a type comparison read every verdict but convertible as apart. A hole
+/// against a literal is a pair the machine declines.
+#[test]
+fn a_declined_pair_is_undecided_6544()
+{
+    let mut arena = CoreArena::new();
+    let definitions = CodeDefinitions::new();
+    let hole = arena.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    assert_eq!(
+        definitions.convert_terms(&arena, hole, zero),
+        Err(super::CheckRefusal::Undecided { at: hole }),
+        "a pair the machine declines is undecided, not a verdict a caller reads as apart"
+    );
+}
+
 /// #2751: a call of a definition whose body applies a binder,
 /// `app(post, x)` with `app = λpost x. post(x)`, runs to that application,
 /// `returned(post(x))`, the call written out, where a weak head stops.

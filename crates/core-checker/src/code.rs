@@ -1545,15 +1545,16 @@ impl CodeDefinitions
     /// # Specification
     /// - requires: every body this table holds, and both values, live in
     ///   `core`; the two values stand under the same binders.
-    /// - ensures: the machine's verdict on the pair, each side evaluated in one
-    ///   environment of rigid variables, one per binder the farther side
-    ///   reaches.
+    /// - ensures: the machine's verdict on the pair when it converts or refutes
+    ///   it, each side evaluated in one environment of rigid variables, one per
+    ///   binder the farther side reaches; never a decline.
     /// - provides: the conversion two terms meet where no derivation is kept:
     ///   function extensionality's pointwise results and a type comparison's
-    ///   term pairs.
+    ///   term pairs. A caller reads a verdict other than convertible as a
+    ///   refutation, so a pair the machine declines is undecided here.
     /// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
-    ///   evaluate or the machine faults; [`CheckRefusal::DanglingNode`] for a
-    ///   node `core` does not hold.
+    ///   evaluate, the machine declines the pair or the machine faults;
+    ///   [`CheckRefusal::DanglingNode`] for a node `core` does not hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -1562,9 +1563,13 @@ impl CodeDefinitions
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a function extensionality whose pointwise results
-    ///   differ is refused, and one whose results agree is decided.
+    ///   differ is refused, and one whose results agree is decided. A pair the
+    ///   machine declines is undecided, never apart: returning the decline lets
+    ///   a type comparison report it as a mismatch.
     /// - witness: `funext::tests::pointwise_equal_functions_relate_by_computation`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
+    /// - witness: `code::tests::a_declined_pair_is_undecided_6544`
+    #[spec(ensures: |ret| (ret.is_ok() && !matches!(ret, Ok(MachineVerdict::Declined(_))))
+        || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
     #[inline]
     pub fn convert_terms(
@@ -1579,7 +1584,7 @@ impl CodeDefinitions
         let mut domain = DomainArena::new();
         let (problem, _returning) =
             rigid_problem(core, &mut domain, definitions, left, right, &[])?;
-        decide::<NullSink, ResharingMemo>(
+        let verdict = decide::<NullSink, ResharingMemo>(
             core,
             &mut domain,
             definitions,
@@ -1587,8 +1592,12 @@ impl CodeDefinitions
             problem,
             &mut NullSink,
         )
-        .map(|report| report.verdict())
-        .map_err(|_fault| undecided)
+        .map_err(|_fault| undecided)?
+        .verdict();
+        match verdict {
+            MachineVerdict::Convertible | MachineVerdict::NotConvertible => Ok(verdict),
+            MachineVerdict::Declined(_) => Err(undecided),
+        }
     }
 
     /// Relate a reflexivity's point to one endpoint standing under the same
