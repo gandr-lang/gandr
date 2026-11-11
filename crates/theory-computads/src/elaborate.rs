@@ -265,7 +265,6 @@
 
 use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -414,8 +413,8 @@ pub enum ElaborateError
     /// operation.
     UnsupportedShape,
     /// The face applies an operation whose declared arity the operation frame
-    /// cannot hold ([`OpElaborateError`]).
-    UnrepresentableOperation,
+    /// cannot hold, with that operation's own fault ([`OpElaborateError`]).
+    UnrepresentableOperation(OpElaborateError),
     /// The right-hand side returns a number of results other than the
     /// left-hand operation's output count: a single value, a results tuple of
     /// another width, or a tail operation with another output count.
@@ -1026,13 +1025,13 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   `presented` the faces only the term reading holds, between them every face
 ///   whose right-hand side instantiates no variable once, in rule order; a face
 ///   applying a declined operation is declined with
-///   [`ElaborateError::UnrepresentableOperation`] and never reaches either
-///   store, and a face instantiating a variable or firing under a row reaches
-///   neither: it fires where the kernel's second-order reading or a row says,
-///   which neither store knows. Over an indexed block, a face that
-///   [`Indexing::face`] refuses as [`Unsorted::Clash`] is declined with
-///   [`ElaborateError::IllSorted`]. A face it refuses as
-///   [`Unsorted::Rewritten`] is declined with
+///   [`ElaborateError::UnrepresentableOperation`], carrying that operation's
+///   fault, and never reaches either store, and a face instantiating a variable
+///   or firing under a row reaches neither: it fires where the kernel's
+///   second-order reading or a row says, which neither store knows. Over an
+///   indexed block, a face that [`Indexing::face`] refuses as
+///   [`Unsorted::Clash`] is declined with [`ElaborateError::IllSorted`]. A face
+///   it refuses as [`Unsorted::Rewritten`] is declined with
 ///   [`ElaborateError::RewrittenIndex`]. The block keeps its reading for its
 ///   other faces.
 /// - ensures: a face calls for terms when it passed the operation gate and is
@@ -1155,14 +1154,14 @@ fn elaborate_desc<G>(
     }
     let mut opers = Vec::with_capacity(desc.opers.len());
     let mut declined_opers = Vec::new();
-    // The names no cell may mention, gathered while the operation pass runs so
-    // the face pass can consult them.
-    let mut unrepresentable: BTreeSet<&Name> = BTreeSet::new();
+    // The names no cell may mention, each with its operation's fault, gathered
+    // while the operation pass runs so the face pass can consult them.
+    let mut unrepresentable: BTreeMap<&Name, OpElaborateError> = BTreeMap::new();
     for (index, op) in desc.opers.iter().enumerate() {
         match admit_op(op) {
             Ok(frame) => opers.push(frame),
             Err(error) => {
-                unrepresentable.insert(&op.name);
+                let _first = unrepresentable.entry(&op.name).or_insert(error);
                 declined_opers.push((DeclinedOpIndex::from(index), error));
             },
         }
@@ -1340,7 +1339,7 @@ fn admit_face(
     face: &RuleFace,
     polarity: DeclPolarity,
     opers: &[OpFrame],
-    unrepresentable: &BTreeSet<&Name>,
+    unrepresentable: &BTreeMap<&Name, OpElaborateError>,
 ) -> Result<CellId, ElaborateError>
 {
     declined_operation(face, unrepresentable)?;
@@ -1393,7 +1392,7 @@ fn admit_circuit_rule(
     rule: &CircuitRule,
     polarity: DeclPolarity,
     opers: &[OpFrame],
-    unrepresentable: &BTreeSet<&Name>,
+    unrepresentable: &BTreeMap<&Name, OpElaborateError>,
 ) -> CircuitElaboration
 {
     let composite = match elaborate_body(&rule.body) {
@@ -1863,12 +1862,14 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
     })
 }
 
-/// The decline a face earns for applying an operation the cell layer refused.
+/// The decline a face earns for applying an operation the cell layer refused,
+/// with the fault that operation earned.
 ///
 /// # Specification
 /// - ensures: success exactly when no operation application in either face
 ///   names an operation in `declined`.
-/// - fails: [`ElaborateError::UnrepresentableOperation`] otherwise.
+/// - fails: [`ElaborateError::UnrepresentableOperation`] otherwise, with the
+///   fault `declined` holds for the first such operation the walk meets.
 /// - panics: none.
 /// - intension: an explicit worklist over both faces, so face depth costs no
 ///   stack.
@@ -1895,13 +1896,13 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
             TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {}
             TermView::Ctor { args, .. } | TermView::Results { args } | TermView::Inst { args, .. } | TermView::Abs { args, .. } | TermView::Lam { args, .. } => pending.extend(args),
             TermView::Op { name, args } => {
-                mentioned |= declined.contains(&name);
+                mentioned |= declined.contains_key(&name);
                 pending.extend(args);
             }
         }
     }
     if mentioned {
-        matches!(ret, Err(ElaborateError::UnrepresentableOperation))
+        matches!(ret, Err(ElaborateError::UnrepresentableOperation(_)))
     } else {
         ret.is_ok()
     }
@@ -1909,7 +1910,7 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
 )]
 fn declined_operation(
     face: &RuleFace,
-    declined: &BTreeSet<&Name>,
+    declined: &BTreeMap<&Name, OpElaborateError>,
 ) -> Result<(), ElaborateError>
 {
     let mut stack: Vec<TermNode<'_>> = alloc::vec![face.lhs.to_node(), face.rhs.to_node()];
@@ -1917,8 +1918,8 @@ fn declined_operation(
         match node.view() {
             TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
             TermView::Op { name, args } => {
-                if declined.contains(&name) {
-                    return Err(ElaborateError::UnrepresentableOperation);
+                if let Some(&fault) = declined.get(&name) {
+                    return Err(ElaborateError::UnrepresentableOperation(fault));
                 }
                 stack.extend(args);
             },
@@ -3211,7 +3212,7 @@ mod tests
         let elaborated = elaborate_data_desc(&desc);
         assert_eq!(
             vec![CircuitElaboration::Declined(
-                ElaborateError::UnrepresentableOperation
+                ElaborateError::UnrepresentableOperation(OpElaborateError::AggregatedOutput)
             )],
             elaborated.circuits,
             "the operation gate binds where the block applies a declined operation"
@@ -3965,7 +3966,7 @@ mod tests
         assert_eq!(
             vec![(
                 DeclinedFaceIndex::from(0_usize),
-                ElaborateError::UnrepresentableOperation
+                ElaborateError::UnrepresentableOperation(OpElaborateError::NoOutput)
             )],
             elaborated.declined_faces,
             "the gate declines the constructor rule"
@@ -4487,12 +4488,12 @@ mod tests
         let good = add_zero_face();
         assert_eq!(
             Ok(CellId::from(1_usize)),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[], &BTreeSet::new())
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &BTreeMap::new())
         );
         let before = store.clone();
         assert_eq!(
             Ok(CellId::from(1_usize)),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[], &BTreeSet::new()),
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &BTreeMap::new()),
             "an equal face is the cell already admitted"
         );
         assert_eq!(before, store);
@@ -4514,7 +4515,7 @@ mod tests
                     &refused,
                     DeclPolarity::Data,
                     &[],
-                    &BTreeSet::new()
+                    &BTreeMap::new()
                 )
                 .is_err()
             );
@@ -4526,7 +4527,8 @@ mod tests
     #[test]
     fn operation_gate_precedes_shape_and_scans_both_faces()
     {
-        let blocked = Name::from("ban");
+        let ban = Name::from("ban");
+        let blocked = BTreeMap::from([(&ban, OpElaborateError::NoOutput)]);
         for input in [
             face(
                 FreeTerm::op("f", [FreeTerm::ctor("Wrap", [FreeTerm::op("ban", [
@@ -4540,20 +4542,18 @@ mod tests
             ),
         ] {
             assert_eq!(
-                Err(ElaborateError::UnrepresentableOperation),
-                declined_operation(&input, &BTreeSet::from([&blocked]))
+                Err(ElaborateError::UnrepresentableOperation(
+                    OpElaborateError::NoOutput
+                )),
+                declined_operation(&input, &blocked)
             );
-            assert_eq!(Ok(()), declined_operation(&input, &BTreeSet::new()));
+            assert_eq!(Ok(()), declined_operation(&input, &BTreeMap::new()));
             let mut store = CellStore::new();
             assert_eq!(
-                Err(ElaborateError::UnrepresentableOperation),
-                admit_face(
-                    &mut store,
-                    &input,
-                    DeclPolarity::Data,
-                    &[],
-                    &BTreeSet::from([&blocked])
-                )
+                Err(ElaborateError::UnrepresentableOperation(
+                    OpElaborateError::NoOutput
+                )),
+                admit_face(&mut store, &input, DeclPolarity::Data, &[], &blocked)
             );
             assert!(bool::from(store.is_empty()));
         }
@@ -4561,10 +4561,7 @@ mod tests
             FreeTerm::op("f", [FreeTerm::ctor("ban", [])]),
             FreeTerm::ctor("ban", []),
         );
-        assert_eq!(
-            Ok(()),
-            declined_operation(&constructor, &BTreeSet::from([&blocked]))
-        );
+        assert_eq!(Ok(()), declined_operation(&constructor, &blocked));
     }
 
     #[test]
@@ -4596,7 +4593,7 @@ mod tests
         store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
         let before = store.clone();
         assert!(matches!(
-            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[], &BTreeSet::new()),
+            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[], &BTreeMap::new()),
             CircuitElaboration::Declined(ElaborateError::NoCircuitComposite(_))
         ));
         assert_eq!(before, store);
@@ -4888,7 +4885,7 @@ mod tests
             }
             assert!(matches!(continuation.view(), ConsView::Meta(var) if var.hole().as_ref() == RETURN_CONT));
             let blocked = Name::from("g");
-            assert_eq!(Err(ElaborateError::UnrepresentableOperation), declined_operation(&face(pure, framed), &BTreeSet::from([&blocked])));
+            assert_eq!(Err(ElaborateError::UnrepresentableOperation(OpElaborateError::AggregatedOutput)), declined_operation(&face(pure, framed), &BTreeMap::from([(&blocked, OpElaborateError::AggregatedOutput)])));
         }).expect("bounded-stack worker").join().expect("iterative elaboration");
     }
 
