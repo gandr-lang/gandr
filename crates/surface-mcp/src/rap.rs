@@ -1128,7 +1128,7 @@ impl Toolset
     /// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
     /// - witness: `rap::tests::a_cancel_and_a_closed_thread_drop_their_rows`
     /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
-    /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends`
+    /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3346,7 +3346,7 @@ mod tests
     }
 
     #[test]
-    fn an_activity_subscription_hears_each_task_until_it_ends()
+    fn an_activity_subscription_hears_each_task_until_it_ends_6509()
     {
         let earlier = Scratch::new(&json!("rap-activity-earlier"));
         let later = Scratch::new(&json!("rap-activity-later"));
