@@ -12757,6 +12757,89 @@ mod tests
         );
     }
 
+    /// #6294: at the trace layer each declaration of a document holds the
+    /// tree of the goals that its judgement visited. A first recheck judges
+    /// each declaration, so each holds a tree, and after the admission
+    /// replays a declaration, each node of its tree reads replayed. A second
+    /// recheck of the same text adopts each item, so each declaration keeps
+    /// the tree it held. A layer that traced nothing, a tree dropped on
+    /// adoption, or a warrant that did not read the kernel's tier changes the
+    /// trees.
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn a_traced_document_keeps_the_tree_of_each_declaration_6294()
+    {
+        use gandr_surface_session::DerivationNode;
+        use gandr_surface_session::Warrant;
+        use quenchant_shape::shape::Maybe;
+
+        let uri = "file:///a-traced-document-keeps-the-tree-of-each-declaration-6294.gandr";
+        let document = DocumentUri::from(uri);
+        let text =
+            include_str!("server/fixtures/a-comment-edit-keeps-each-kernel-tier-6286-first.gandr");
+        let mut connected = initialized();
+        connected.server.subscription = crate::instrument::Subscription::TRACE;
+        let _opened = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                    "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}})
+                .to_string(),
+            ),
+        );
+        // Each declaration's nodes, beside the warrant of each.
+        let trees = |connected: &Connected| -> Vec<(Vec<DerivationNode>, Vec<Warrant>)> {
+            let held = connected
+                .workspace
+                .documents
+                .get(&document)
+                .expect("the document is held");
+            let session = crate::server::locked(&held.document.session);
+            let account = session.as_ref().expect("the session opens").account();
+            let trees = account
+                .rows()
+                .map(|(constant, ..)| match account.derivation_at(constant) {
+                    Maybe::Present(derivation) => (
+                        derivation.nodes().to_vec(),
+                        derivation
+                            .nodes()
+                            .iter()
+                            .map(|node| derivation.warrant(node))
+                            .collect(),
+                    ),
+                    Maybe::Absent(reason) => {
+                        panic!("the declaration at {constant:?} holds a tree: {reason:?}")
+                    },
+                })
+                .collect();
+            drop(session);
+            trees
+        };
+        let first = trees(&connected);
+        assert!(
+            first.len() == 2
+                && first.iter().all(|&(ref nodes, ref warrants)| {
+                    !nodes.is_empty()
+                        && warrants.iter().all(|&warrant| warrant == Warrant::Replayed)
+                }),
+            "a first recheck builds each declaration's tree, which the admission replays: {first:?}"
+        );
+        let _changed = send(
+            &mut connected,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": uri, "version": 2_i32},
+                    "contentChanges": [{"text": text}]}})
+                .to_string(),
+            ),
+        );
+        assert_eq!(
+            trees(&connected),
+            first,
+            "a second recheck adopts each item and keeps each tree"
+        );
+    }
+
     #[test]
     fn a_rename_rewrites_a_name_everywhere_it_is_written()
     {

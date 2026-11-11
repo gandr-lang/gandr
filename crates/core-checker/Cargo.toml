@@ -83,9 +83,11 @@ default = []
 # report (the driver's `hotpath` bench).
 hotpath = ["dep:hotpath", "hotpath/hotpath"]
 # The goal memo's tally in each checking context: a hit or a miss counted at
-# each consult, which the counts layer of the hub's instrument reads. Off, the
-# context holds no tally and a consult counts nothing.
-instrument = []
+# each consult, which the counts layer of the hub's instrument reads. The
+# buffer of steps a tracer lends the context, which the trace layer folds; its
+# records read the clock type of the fork crate's activity ring. Off, the
+# context holds no tally and no buffer, and a consult counts nothing.
+instrument = ["gandr-core-fork/instrument"]
 unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
 
 [lints]

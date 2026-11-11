@@ -332,6 +332,7 @@ digraph crates {
   "surface-session" -> "storage-artifact";
   "surface-session" -> "storage-records";
   "surface-session" -> "surface-corpus";
+  "surface-session" -> "surface-diagnostics";
   "surface-session" -> "surface-dispatcher";
   "surface-session" -> "surface-grammar";
   "surface-session" -> "surface-lowering";
