@@ -2851,6 +2851,10 @@ enum Plan
     /// lowerer's operand store, left to right: a type-position call's argument
     /// written as a call, which a value position nests.
     Called(Code, FormStretch),
+    /// The force of the dynamic function the code names, called with no
+    /// argument where a type reads a value: the expression grammar's `f()`,
+    /// which a value position nests (#6787).
+    Forced(Code),
     /// A static application of the head to the arguments in the lowerer's
     /// operand store, left to right.
     StaticApplication(Code, FormStretch),
@@ -15376,7 +15380,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Former(..) | Plan::Constant(_)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Former(..) | Plan::Constant(_)))
                 )
         },
     )]
@@ -16310,7 +16314,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -17006,8 +17010,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   application is the unquote of the code the call returns, in the
     ///   universe the position reads, and where a value is read, an application
     ///   of it to at least one argument is the call, a computation the position
-    ///   nests. In a static abstraction's body, the type its operator denotes,
-    ///   that call is the unquote a type reads, and the body quotes it; its
+    ///   nests. A call of it with no argument, `f()`, is the force of its head
+    ///   where a value is read, as the expression grammar reads `f()` (#6787).
+    ///   In a static abstraction's body, the type its operator denotes, that
+    ///   call is the unquote a type reads, and the body quotes it; its
     ///   telescope is read once that quote is chosen (#3786). Every argument is
     ///   read as a value under the site's frame, and a binder so named is
     ///   recorded by [`Self::name_in_type`]: quoted in a body quote, mentioned
@@ -17041,7 +17047,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   read back out of the arena; a lambda in a type-valued call's argument,
     ///   in a signature's type, reading outer variables at their indices; a
     ///   binder holding a family called in a body's static abstraction, past a
-    ///   parameter no type names.
+    ///   parameter no type names; a function called with no argument at a
+    ///   family's argument, in the call form and in the juxtaposed form.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
@@ -17050,6 +17057,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
     /// - witness: `lower::identity::tests::a_transport_moves_through_a_family_a_parameter_names_3786`
+    /// - witness: `lower::tests::a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -17061,6 +17069,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         planned == self.kept(applied)
                             && applied.start < applied.end
                             && matches!(site.reading, Reading::Value(_))
+                    },
+                    | Some(&Plan::Forced(_)) => {
+                        applied.start == applied.end && matches!(site.reading, Reading::Value(_))
                     },
                     | Some(&Plan::Decode(_, planned, _) | &Plan::Unquote(_, planned, _)) => {
                         planned == self.kept(applied)
@@ -17193,6 +17204,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             (Some(universe), None) if dynamic => Plan::Unquote(code, kept, universe),
             (Some(universe), None) => Plan::Decode(code, kept, universe),
+            // A call with no argument is the force of its head, as the
+            // expression grammar reads `f()` (#6787).
+            (None, _) if dynamic && called && applied.start == applied.end => Plan::Forced(code),
             (None, _) if dynamic && called => Plan::Called(code, kept),
             (None, _) => Plan::StaticApplication(code, kept),
         };
@@ -20141,7 +20155,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
                 | Plan::Plugged { .. }
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -20381,6 +20395,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let head = self.written_head(origin);
                 self.mint_called(code, arguments, sink, (origin, head))
                     .map(Lowered::Computation)
+            },
+            Plan::Forced(code) => {
+                let head = self.written_head(origin);
+                Maybe::Present(Lowered::Computation(self.mint_forced(
+                    code,
+                    sink,
+                    (origin, head),
+                )))
             },
             Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
@@ -21030,6 +21052,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(reason);
             }
         }
+        let head = self.called_head(function, sink, head_origin);
+        let mut called = sink.arena.computation_force(head);
+        sink.origins
+            .record_computation(called, origin.inserted(Insertion::Force));
+        for &argument in written {
+            if let Maybe::Present(value) = self.value_at(argument) {
+                called = sink.arena.computation_application(called, value);
+                sink.origins.record_computation(called, origin);
+            }
+        }
+
+        Maybe::Present(called)
+    }
+
+    /// The head of a dynamic call: the function the code names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the constant at its admission position, or the variable at
+    ///   the binder's index in the telescope of the type the call stands in,
+    ///   with the origin `head_origin`.
+    /// - provides: the head that [`Self::mint_called`] and
+    ///   [`Self::mint_forced`] force.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder's call and a declaration's call, each with
+    ///   arguments and with none, asserted as the exact core node read back out
+    ///   of the arena.
+    /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
+    /// - witness: `lower::tests::a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787`
+    #[spec(
+        ensures: |ret| {
+            sink.origins.value(ret) == Maybe::Present(head_origin)
+                && matches!(
+                    sink.arena.value(ret),
+                    Some(&(gandr_core_term::Value::Variable { .. } | gandr_core_term::Value::Constant(_)))
+                )
+        },
+    )]
+    fn called_head(
+        &self,
+        function: Code,
+        sink: &mut Sink<'_>,
+        head_origin: Origin,
+    ) -> ValueId
+    {
         let head = match function {
             Code::Bound {
                 from,
@@ -21042,17 +21112,45 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Code::Constant(constant) => sink.arena.value_constant(constant),
         };
         sink.origins.record_value(head, head_origin);
-        let mut called = sink.arena.computation_force(head);
-        sink.origins
-            .record_computation(called, origin.inserted(Insertion::Force));
-        for &argument in written {
-            if let Maybe::Present(value) = self.value_at(argument) {
-                called = sink.arena.computation_application(called, value);
-                sink.origins.record_computation(called, origin);
-            }
-        }
+        head
+    }
 
-        Maybe::Present(called)
+    /// Carry out the plan of a dynamic function called with no argument where
+    /// a type reads a value: the force of the function the code names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `f()` mints as `force f`, with `f` as [`Self::called_head`]
+    ///   mints it. The force is the call the source writes, so it carries the
+    ///   written origin `origin`. The force of the expression grammar's `f()`
+    ///   carries its call's origin in the same way (#6787).
+    /// - provides: a type-position call's argument written as a call with no
+    ///   argument, which a value position nests.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function called with no argument at a family's
+    ///   argument, in the call form and in the juxtaposed form, asserted as the
+    ///   exact core node read back out of the arena, with its origin.
+    /// - witness: `lower::tests::a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787`
+    #[spec(
+        ensures: |ret| {
+            matches!(sink.arena.computation(ret), Some(&gandr_core_term::Computation::Force(_)))
+                && sink.origins.computation(ret) == Maybe::Present(origin)
+        },
+    )]
+    fn mint_forced(
+        &self,
+        function: Code,
+        sink: &mut Sink<'_>,
+        (origin, head_origin): (Origin, Origin),
+    ) -> ComputationId
+    {
+        let head = self.called_head(function, sink, head_origin);
+        let forced = sink.arena.computation_force(head);
+        sink.origins.record_computation(forced, origin);
+        forced
     }
 
     /// Carry out a tuple's plan: its members, as one tuple.
@@ -21709,6 +21807,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Carrier(..)
             | Plan::FixedCarrier(..)
             | Plan::Called(..)
+            | Plan::Forced(_)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
             | Plan::ReturnAll(_)
@@ -32316,6 +32415,92 @@ mod tests
             variable(0),
             "the argument calls the binder in place"
         );
+    }
+
+    /// #6787: a call of a dynamic function with no argument, at a family's
+    /// argument inside a type, is the expression grammar's `f()`: the force of
+    /// its head, which answers at the call. Its value is what that force
+    /// returns, in the call form and in the juxtaposed form. A plan of the call
+    /// over an empty stretch fails the postcondition of `Plan::Called`. The
+    /// juxtaposed form follows a type name: after a variable, `Pair a plus()`
+    /// reads `a plus()` as one call until the glued call head of #5752 lands.
+    #[test]
+    fn a_nullary_call_at_a_family_s_argument_is_its_head_s_force_6787()
+    {
+        for text in [
+            "data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair a b } def \
+             plus() -> -F Type { return Integer } def called(a : Type, x : Pair(a, plus())) -> -F \
+             Integer { return 1 }",
+            "data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair a b } def \
+             plus() -> -F Type { return Integer } def called(a : Type, x : Pair Integer plus()) -> \
+             -F Integer { return 1 }",
+        ] {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(text), &mut arena);
+            let lowered = outcomes(&module);
+            assert!(
+                matches!(lowered[2], DeclarationOutcome::Completed { .. }),
+                "`called` lowers, in `{text}`: {:?}",
+                lowered[2]
+            );
+            let declared = declared_of(lowered[2]);
+            let arrow = match arena.value_type(declared) {
+                Some(&ValueType::Thunk(arrow)) => arrow,
+                other => panic!("a function's type is a thunk: {other:?}"),
+            };
+            // The rest names `a` in the call form, and no type names it in the
+            // juxtaposed form.
+            let Some(&(CompType::Pi { codomain, .. } | CompType::Arrow { codomain, .. })) =
+                arena.comp_type(arrow)
+            else {
+                panic!("`a` is the first parameter: {:?}", arena.comp_type(arrow));
+            };
+            let Some(&(CompType::Pi { domain, .. } | CompType::Arrow { domain, .. })) =
+                arena.comp_type(codomain)
+            else {
+                panic!(
+                    "`x` is the second parameter: {:?}",
+                    arena.comp_type(codomain)
+                );
+            };
+            let Some(ValueType::Data { arguments, .. }) = arena.value_type(domain).cloned()
+            else {
+                panic!("`x` is held at the family: {:?}", arena.value_type(domain));
+            };
+            let [_, argument] = *arguments
+            else {
+                panic!("the family takes two arguments: {arguments:?}");
+            };
+            let Some(&Value::Returned(forced)) = arena.value(argument)
+            else {
+                panic!(
+                    "the argument is what the call returns: {:?}",
+                    arena.value(argument)
+                );
+            };
+            let Some(&Computation::Force(head)) = arena.computation(forced)
+            else {
+                panic!(
+                    "the call is its head's force: {:?}",
+                    arena.computation(forced)
+                );
+            };
+            assert_eq!(
+                arena.value(head).cloned(),
+                Some(Value::Constant(ConstantIndex::from(1_usize))),
+                "the head is `plus`, in `{text}`"
+            );
+            let at = text.rfind("plus()").expect("the call is written");
+            let origin = module
+                .origins()
+                .computation(forced)
+                .map(|held: crate::Origin| (held.provenance(), usize::from(held.span().start())));
+            assert_eq!(
+                origin,
+                Maybe::Present((Provenance::Written, at)),
+                "the force is the call the source writes, in `{text}`"
+            );
+        }
     }
 
     /// A binder whose written type names a type member standing for the
