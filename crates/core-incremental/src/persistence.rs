@@ -361,6 +361,19 @@ pub trait CheckpointObserver
     )
     {
     }
+
+    /// A pass adopted or judged `item`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn passed(
+        &mut self,
+        _item: &crate::checkpoint::PassedItem<'_>,
+    )
+    {
+    }
 }
 
 /// Whether a checkpoint store keeps the sets it is handed.

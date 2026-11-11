@@ -619,6 +619,8 @@ pub mod stage;
 pub mod staging;
 mod support;
 mod tactic;
+#[cfg(feature = "instrument")]
+pub mod tally;
 pub mod template;
 pub mod tier;
 pub mod ua;

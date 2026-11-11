@@ -1519,8 +1519,8 @@ impl<'run> Definitions<'run>
     }
 
     /// The types of words whose cells loop in the sort admitted at `sort`, by
-    /// admission position ascending, each with its cells. Cells above
-    /// dimension one are no loops.
+    /// admission position ascending, each with its cells: loops and cells
+    /// above dimension one alike, the order a case keeps its loop arms in.
     ///
     /// # Specification
     /// trivial.
@@ -1536,10 +1536,7 @@ impl<'run> Definitions<'run>
             .filter_map(move |(&words, presented)| {
                 presented
                     .cells()
-                    .filter(|cells| {
-                        cells.sort() == sort
-                            && cells.reflexivities() == gandr_kernel_term::Reflexivities::NONE
-                    })
+                    .filter(|cells| cells.sort() == sort)
                     .map(|cells| (words, cells))
             })
     }

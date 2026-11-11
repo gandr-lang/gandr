@@ -71,9 +71,13 @@ default = []
 # The instrument's recording sinks, which the hub's build compiles and every
 # other build leaves out. Each layer compiles its sink under this feature.
 # The silent sink, which records nothing, is in every build. The activity
-# layer's rings and the pool's recording fork come with the feature.
+# layer's rings and the pool's recording fork come with the feature. The
+# counts layer reads the checker's memo tally and the incremental pass's
+# report of each item, which come with it too.
 instrument = [
+  "gandr-core-checker/instrument",
   "gandr-core-fork/instrument",
+  "gandr-core-incremental/instrument",
   "gandr-surface-dispatcher/instrument",
 ]
 

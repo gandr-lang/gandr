@@ -1995,6 +1995,54 @@ fn cong_reads_a_map_its_signature_states_778()
     }
 }
 
+/// `Path.ap` of a map on a 2-cell parameter, one path type above the map's
+/// domain, moves the cell by the map's action on the paths below: the
+/// transport starts at `Path.ap` of the map at the reflexivity, which is
+/// itself a transport. On a loop parameter at the map's domain no transport
+/// stands below the start, as before.
+#[test]
+fn cong_on_a_cell_above_the_map_s_domain_takes_its_levels()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/cong-on-a-cell-above-the-map-s-domain-takes-its-levels-module.gandr"
+        )),
+        &mut arena,
+    );
+    let start = |name: &str| {
+        let tail = tail_of(&module, &arena, name.into());
+        let Some(&Computation::PathTransport { value, .. }) = arena.computation(tail)
+        else {
+            panic!(
+                "`{name}` lowers to a transport: {:?}",
+                arena.computation(tail)
+            );
+        };
+        let Some(&Value::Here(start)) = arena.value(value)
+        else {
+            panic!("`{name}` transports the reflexivity at its start");
+        };
+        let Some(&Value::Returned(run)) = arena.value(start)
+        else {
+            return None;
+        };
+        arena.computation(run).cloned()
+    };
+    assert!(
+        matches!(
+            start("onCell"),
+            Some(Computation::PathTransport { path, .. })
+                if matches!(arena.value(path), Some(&Value::Here(_)))
+        ),
+        "on the 2-cell the start is `Path.ap` of the map along the reflexivity"
+    );
+    assert!(
+        !matches!(start("onLoop"), Some(Computation::PathTransport { .. })),
+        "on the loop no transport stands below the start"
+    );
+}
+
 #[test]
 fn a_motive_telescope_rebuilds_exactly_when_an_entry_is_an_arrow()
 {

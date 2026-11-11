@@ -10,10 +10,8 @@
 /// for a loop.
 /// No rule identifies a cell with the empty word.
 ///
-/// Limits: a case over a sphere needs a branch for its cell, and `Path.ap` on
-/// the cell needs that case.
-///
-/// - see: #6395 — the case at a higher cell and `Path.ap` on it
+/// - see: corpus/model/identity/sphere-maps.gandr — a case at a higher cell
+///   and `Path.ap` on it
 /// - see: corpus/model/identity/circle.gandr
 
 /// The 2-sphere has a point and a 2-cell at the point's reflexivity.
@@ -81,8 +79,8 @@ def surfDoubled : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
   surf ∷ Path.here (Path.here Base2)
 ) = Path.here (surf ∷ surf ∷ Path.here (Path.here Base2));
 
-/// A case over the 2-sphere waits for a branch at its cell.
-@[refuses("OutOfFragment.higher_cell_case")]
+/// A case with no branch at the cell sends the cell to reflexivity.
+@[checks]
 def squash(x : S2) -> S2 =
   match x where
     | Base2 => Base2

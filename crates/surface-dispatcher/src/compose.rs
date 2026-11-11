@@ -958,7 +958,7 @@ impl Admission
                 leading,
                 (retirement, &mut bridge::Timed::by(Monotonic::started())),
             ),
-            Positioning::Unpositioned => readmitted(
+            Positioning::Tallied | Positioning::Unpositioned => readmitted(
                 &mut self.arena,
                 &self.verdicts,
                 leading,
@@ -975,7 +975,9 @@ impl Admission
                 resumed: readmission.resumed(),
                 judged,
                 positions: match positioning {
-                    Positioning::Positioned => Maybe::Present(ArtifactPositions::of(&readmission)),
+                    Positioning::Positioned | Positioning::Tallied => {
+                        Maybe::Present(ArtifactPositions::of(&readmission))
+                    },
                     Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
                 },
                 declined: declined(&readmission),
@@ -1061,6 +1063,10 @@ pub enum Positioning
     /// check charged and the time the kernel took to admit it, which a measure
     /// reads.
     Positioned,
+    /// It records each crossed declaration's artifact position and the census
+    /// its check charged, which the counts layer of the editor's instrument
+    /// reads, and it reads no clock.
+    Tallied,
     /// It records none, reads no clock, and pays nothing for them.
     #[default]
     Unpositioned,
@@ -1387,10 +1393,11 @@ impl ArtifactPositions
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per readmitted declaration whose outcome is a
-    ///   definition, an axiom or a nominal declaration, at the position its
-    ///   receipt names, with what the environment's entry there answers of its
-    ///   census and the readmitted time.
+    /// - ensures: one entry per readmitted declaration after the ones the
+    ///   readmission resumed whose outcome is a definition, an axiom or a
+    ///   nominal declaration, at the position its receipt names, with what the
+    ///   environment's entry there answers of its census and the readmitted
+    ///   time. A resumed declaration did not cross, so it has no entry.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1404,6 +1411,7 @@ impl ArtifactPositions
             readmission
                 .readmitted()
                 .iter()
+                .skip(usize::from(readmission.resumed()))
                 .filter_map(|entry| match *entry.outcome() {
                     bridge::Outcome::Data { admitted, .. }
                     | bridge::Outcome::Defined { admitted, .. }

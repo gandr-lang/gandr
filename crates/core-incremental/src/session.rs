@@ -59,7 +59,7 @@ quenchant_shape::reason_enum! {
 }
 
 /// A checkpoint observer told nothing.
-struct Unobserved;
+pub struct Unobserved;
 
 impl CheckpointObserver for Unobserved
 {
@@ -418,7 +418,7 @@ impl<Store> IncrementalSession<Store>
         Poll: Retirement,
     {
         let previous = self.starting(program);
-        let polled = resume_or_check(previous, program, self.budget, retirement)
+        let polled = resume_or_check(previous, program, self.budget, (retirement, &mut *observer))
             .map_err(SessionError::Resume)?;
         self.settled(program, polled, observer)
     }
@@ -516,8 +516,9 @@ impl<Store> IncrementalSession<Store>
         Poll: Retirement,
     {
         let previous = self.starting(program);
-        let polled = resume_after_retiring(previous, leading, program, retirement)
-            .map_err(SessionError::Resume)?;
+        let polled =
+            resume_after_retiring(previous, leading, program, (retirement, &mut *observer))
+                .map_err(SessionError::Resume)?;
         self.settled(program, polled, observer)
     }
 

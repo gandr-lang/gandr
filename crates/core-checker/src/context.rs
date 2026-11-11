@@ -524,6 +524,11 @@ pub struct CheckingContext<'arena>
     /// Whether each run of the machine keeps a goal memo. A checkpoint does
     /// not keep it: a resumed context keeps one.
     memo: MemoActivity,
+    /// The goal memo's hits and misses over every run in this context, which
+    /// the counts layer reads before and after each item. A checkpoint does
+    /// not keep it: a resumed context counts from zero.
+    #[cfg(feature = "instrument")]
+    tally: crate::tally::MemoTally,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -864,6 +869,8 @@ impl<'arena> CheckingContext<'arena>
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
             strata: crate::ua::Strata::default(),
             memo: MemoActivity::Active,
+            #[cfg(feature = "instrument")]
+            tally: crate::tally::MemoTally::default(),
         }
     }
 
@@ -948,6 +955,8 @@ impl<'arena> CheckingContext<'arena>
             admitting: _,
             strata: _,
             memo: _,
+            #[cfg(feature = "instrument")]
+                tally: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1155,6 +1164,8 @@ impl<'arena> CheckingContext<'arena>
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
             strata: crate::ua::Strata::default(),
             memo: MemoActivity::Active,
+            #[cfg(feature = "instrument")]
+            tally: crate::tally::MemoTally::default(),
         }
     }
 
@@ -1233,6 +1244,29 @@ impl<'arena> CheckingContext<'arena>
     pub(crate) const fn goal_memo(&self) -> MemoActivity
     {
         self.memo
+    }
+
+    /// The goal memo's hits and misses over every run in this context so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    #[must_use]
+    pub const fn tally(&self) -> crate::tally::MemoTally
+    {
+        self.tally
+    }
+
+    /// The tally each run of the machine counts its memo's consults into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub(crate) const fn tally_mut(&mut self) -> &mut crate::tally::MemoTally
+    {
+        &mut self.tally
     }
 
     /// Recall the strata `ua` statements name from `store`, and keep there

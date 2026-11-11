@@ -707,9 +707,7 @@ pub(super) fn sethood(
         if !expanded.insert(declaration) {
             continue;
         }
-        if presentations.looping(declaration).next().is_some()
-            || presentations.higher(declaration).is_some()
-        {
+        if presentations.looping(declaration).next().is_some() {
             return Sethood::Unread;
         }
         let Some(entry) = entries.get(usize::from(declaration))

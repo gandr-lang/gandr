@@ -226,9 +226,6 @@ impl TrackingIssue
     /// A data block's cell member with parameters, constructor block member
     /// or generator attribute block.
     pub const DATA_MEMBER: Self = Self(2662);
-    /// A case over a family with a cell above dimension one, which takes a
-    /// branch for that cell.
-    pub const HIGHER_CELL_CASE: Self = Self(6395);
     /// A multi-output constructor grading an input or an output `[1]`, whose
     /// values are circuits, and a joint pattern over a node's outputs.
     pub const LINEAR_PORTS: Self = Self(4288);

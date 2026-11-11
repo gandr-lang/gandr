@@ -319,6 +319,8 @@ use gandr_core_incremental::ItemCheckpoint;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::Keeping;
+#[cfg(feature = "instrument")]
+use gandr_core_incremental::PassedItem;
 use gandr_core_incremental::ProgramError;
 use gandr_core_incremental::Restorer;
 use gandr_core_incremental::Resume;
@@ -330,6 +332,8 @@ use gandr_core_incremental::address_of;
 use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
+#[cfg(feature = "instrument")]
+use gandr_core_term::ArenaWatermark;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodedArtifact;
@@ -404,6 +408,12 @@ use crate::account::Account;
 use crate::account::CheckerVerdict;
 use crate::closures;
 use crate::closures::ClosureAdmission;
+#[cfg(feature = "instrument")]
+use crate::counts::CountColumn;
+#[cfg(feature = "instrument")]
+use crate::counts::EventCount;
+#[cfg(feature = "instrument")]
+use crate::counts::uncounted;
 use crate::edit::EditScript;
 use crate::edit::Snapshot;
 use crate::edit::diff;
@@ -533,6 +543,119 @@ struct Quiet;
 
 impl CheckpointObserver for Quiet
 {
+}
+
+/// The observer of a judgement at a sink that may count: it counts each item
+/// that the incremental pass adopts or judges into the recheck's column.
+#[cfg(feature = "instrument")]
+struct Counting<'column>
+{
+    /// The recheck's column, when the sink counts.
+    column: Maybe<&'column mut CountColumn, uncounted::Absent>,
+    /// The arena's watermark before this revision's lowering minted its nodes.
+    fresh: ArenaWatermark,
+}
+
+#[cfg(feature = "instrument")]
+impl CheckpointObserver for Counting<'_>
+{
+    /// Count the memo consults of `item`, its arena nodes, and whether the
+    /// pass judged it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn passed(
+        &mut self,
+        item: &PassedItem<'_>,
+    )
+    {
+        if let Maybe::Present(ref mut column) = self.column {
+            let nodes = usize::from(item.minted)
+                .saturating_add(usize::from(item.reached_since(self.fresh)));
+            column.passed(
+                item.constant,
+                (
+                    item.memo,
+                    EventCount::from(u64::try_from(nodes).unwrap_or(u64::MAX)),
+                    item.adoption,
+                ),
+            );
+        }
+    }
+}
+
+/// Count into `column` the forms of `molded` and the obligations of
+/// `obligations` inside the halves of each declaration of `module` at or after
+/// `base`. The molded forms' bytes start at `origin` of the revision.
+///
+/// # Specification
+/// - requires: `molded` ascends and is in the coordinates of the text that
+///   starts at `origin`; `obligations` ascend by their spans, in the revision's
+///   coordinates.
+/// - ensures: each declaration at or after `base` reads the count of distinct
+///   molded forms that hold the start of one of its halves, and the count of
+///   obligations that start inside one of its distinct halves.
+/// - panics: none.
+/// - economy: two binary searches of each list for each half; nothing allocated
+///   but the column's growth. The walk reads each declaration of the revision's
+///   own text, and #4369 bounds it by the edit.
+/// - executable: none — the predicate would search the halves of each
+///   declaration again, the work the body does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crate::Counts`].
+/// - witness: `tests::counts::a_second_recheck_counts_no_judged_item`
+#[cfg(feature = "instrument")]
+fn count_parse(
+    column: &mut CountColumn,
+    module: &LoweredModule<'_>,
+    (molded, obligations): (&[ByteSpan], &[ObligationInstance]),
+    (base, origin): (ByteOffset, ByteOffset),
+)
+{
+    let local =
+        |at: ByteOffset| ByteOffset::from(usize::from(at).saturating_sub(usize::from(origin)));
+    for declaration in module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.span().start() >= base)
+    {
+        let halves = declaration.halves();
+        let mut forms = 0_u64;
+        let mut owed = 0_u64;
+        let mut last_form = None;
+        let mut last_half = None;
+        for half in [halves.signature, halves.definition] {
+            let Maybe::Present(half) = half
+            else {
+                continue;
+            };
+            if last_half == Some(half.span) {
+                continue;
+            }
+            last_half = Some(half.span);
+            let start = local(half.span.start());
+            let form = molded
+                .partition_point(|form| form.start() <= start)
+                .checked_sub(1)
+                .filter(|&at| molded.get(at).is_some_and(|form| start < form.end()));
+            if form.is_some() && form != last_form {
+                forms = forms.saturating_add(1);
+                last_form = form;
+            }
+            let first = obligations
+                .partition_point(|obligation| obligation.span.start() < half.span.start());
+            let past =
+                obligations.partition_point(|obligation| obligation.span.start() < half.span.end());
+            owed =
+                owed.saturating_add(u64::try_from(past.saturating_sub(first)).unwrap_or(u64::MAX));
+        }
+        column.parsed(
+            declaration.constant(),
+            (EventCount::from(forms), EventCount::from(owed)),
+        );
+    }
 }
 
 /// How many declarations `resumption` offered the kernel again: those it
@@ -1883,7 +2006,9 @@ impl Detached
             .map_or(Maybe::Absent(crossed::Absent::Unasked), |found| {
                 Maybe::Present(found.crossed())
             });
-        let admitted = within(sink, Phase::Admit, || {
+        #[cfg(feature = "instrument")]
+        let admission = admission.positioning(sink.positioning());
+        let admitted = within(sink, Phase::Admit, |_| {
             admission.admit_retiring(LeadingCount::from(record), resumed, retirement)
         });
         match admitted {
@@ -2838,7 +2963,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Some(judged) => {
                     let led = closure.led(root);
                     let onto = led.map_or_else(|| judged.arena(), Led::arena);
-                    within(sink, Phase::Lower, || {
+                    within(sink, Phase::Lower, |_| {
                         lower_onto_closure(
                             judged,
                             onto,
@@ -2858,7 +2983,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                         (lowering, checking, led)
                     })
                 },
-                None => within(sink, Phase::Lower, || {
+                None => within(sink, Phase::Lower, |_| {
                     lower_resumed_unit(
                         closure.lowering(),
                         parsed,
@@ -2888,7 +3013,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 own: (usize::from(base) == 0).then(|| parsed.tree()),
                 closure: None,
             });
-            let lowering = within(sink, Phase::Lower, || {
+            let lowering = within(sink, Phase::Lower, |_| {
                 lower_parsed_unit(
                     &self.grammar,
                     parsed,
@@ -2926,6 +3051,24 @@ impl<Store, Blocks> Session<Store, Blocks>
                 }));
             },
         };
+        // The counts layer counts the nodes this revision's lowering minted:
+        // those past the arena it lowered onto.
+        #[cfg(feature = "instrument")]
+        let fresh = match checking {
+            Checking::After(judged) => led.map_or_else(|| judged.arena(), Led::arena).watermark(),
+            Checking::Whole => ArenaWatermark::default(),
+        };
+        #[cfg(feature = "instrument")]
+        if let Maybe::Present(column) = sink.counts() {
+            let molded: Vec<ByteSpan> = self.forms.molded().collect();
+            let origin = if held.is_some() {
+                base
+            }
+            else {
+                ByteOffset::from(0_usize)
+            };
+            count_parse(column, &module, (&molded, &obligations), (base, origin));
+        }
         // economy: one arena copy per accepted revision, of the revision's own
         // nodes when it lowered onto a judged closure's frozen arena; the
         // reversal is a report assembled from the resume's own verdicts, which
@@ -2952,7 +3095,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         if let Some(closure) = closure {
             closure.keep_snapshot(|| snapshot.leading(ItemOrdinal::from(boundary)));
         }
-        let judged = within(sink, Phase::Judge, || {
+        let judged = within(sink, Phase::Judge, |sink| {
             let judged = match self.tables {
                 Tables::Kept => match judge_member_tabled_retiring(
                     self.root.corpus_root(),
@@ -2998,16 +3141,26 @@ impl<Store, Blocks> Session<Store, Blocks>
                     }));
                 },
             };
+            #[cfg(feature = "instrument")]
+            let mut observer = Counting {
+                column: sink.counts(),
+                fresh,
+            };
+            #[cfg(not(feature = "instrument"))]
+            let mut observer = {
+                let _: &mut Sink = sink;
+                Quiet
+            };
             let submitted = match led {
                 Some(led) => self.incremental.submit_after_retiring(
                     &mut items,
                     led.leading(),
-                    &mut Quiet,
+                    &mut observer,
                     retirement,
                 ),
                 None => self
                     .incremental
-                    .submit_retiring(&mut items, &mut Quiet, retirement),
+                    .submit_retiring(&mut items, &mut observer, retirement),
             };
             let (census, persistence) = match submitted {
                 Ok(Polled::Whole(census)) => (census, match Store::KEEPING {
@@ -3070,6 +3223,11 @@ impl<Store, Blocks> Session<Store, Blocks>
                             .map(|(_, verdict)| (constant, checkpoint.key(), verdict))
                     }),
             );
+            #[cfg(feature = "instrument")]
+            match sink.counts() {
+                Maybe::Present(column) => self.account.counted(Maybe::Present(&*column)),
+                Maybe::Absent(reason) => self.account.counted(Maybe::Absent(reason)),
+            }
         }
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
@@ -3440,6 +3598,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                 return Err(stopped);
             },
         };
+        #[cfg(feature = "instrument")]
+        if let Maybe::Present(ref positions) = resumption.positions {
+            self.account.tallied(positions);
+        }
         self.account.settled(&resumption.tiers);
         let checkpoint = match Store::KEEPING {
             Keeping::Kept => checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref()),
@@ -4269,7 +4431,7 @@ where
         parsed
     }
     #[cfg(not(feature = "instrument"))]
-    within(sink, Phase::Parse, || forms.parse(grammar, revision, pool))
+    within(sink, Phase::Parse, |_| forms.parse(grammar, revision, pool))
 }
 
 /// Parse `revision` through `forms` without changing it, as the judgement of

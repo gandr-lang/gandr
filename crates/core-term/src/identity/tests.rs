@@ -49,6 +49,41 @@ fn compared(
     equal_certificate_syntax(&probe, left, right)
 }
 
+/// Which endpoint of a path type a check reads.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Endpoint
+{
+    /// The left endpoint.
+    Left,
+    /// The right endpoint.
+    Right,
+}
+
+/// Assert that `value`, the endpoint `side`, is `⟨force function argument⟩`.
+///
+/// # Specification
+/// trivial.
+fn assert_applied_at(
+    arena: &CoreArena,
+    value: ValueId,
+    (function, argument): (ValueId, ValueId),
+    side: Endpoint,
+)
+{
+    use crate::syntax::Computation;
+    use crate::syntax::Value;
+    assert!(
+        matches!(arena.value(value), Some(&Value::Returned(run))
+            if matches!(arena.computation(run), Some(&Computation::Application(forced, applied))
+                if applied == argument
+                    && arena.computation(forced) == Some(&Computation::Force(function)))),
+        "the {side:?} endpoint is the map applied at the level's endpoint"
+    );
+}
+
 #[test]
 fn back_transports_reflexivity_into_the_reversed_family()
 {
@@ -224,6 +259,63 @@ fn cong_applies_the_map_to_the_moving_endpoint()
         compared(&arena, built, capturing),
         CertificateEquality::Different,
         "an unshifted map reads the motive's own binder"
+    );
+}
+
+#[test]
+fn cong_above_a_level_transports_along_the_point()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let function = variable(&mut arena, 0_u32.into());
+    let from = variable(&mut arena, 1_u32.into());
+    let point = variable(&mut arena, 2_u32.into());
+    let level = (from, from);
+    let built = super::cong_above(&mut arena, (function, integer), &[level], point)
+        .expect("one level builds");
+    let carrier = super::cong_codomain(&mut arena, (function, integer), &[level])
+        .expect("one level has a type");
+
+    // The start is the map at the level's left endpoint; under the motive's
+    // binder the map and the start are read one binder further out.
+    let forced = arena.computation_force(function);
+    let start = arena.computation_application(forced, from);
+    let start = arena.value_returned(start);
+    let lifted_function = variable(&mut arena, 1_u32.into());
+    let lifted_forced = arena.computation_force(lifted_function);
+    let lifted_from = variable(&mut arena, 2_u32.into());
+    let lifted_start = arena.computation_application(lifted_forced, lifted_from);
+    let lifted_start = arena.value_returned(lifted_start);
+    let moving = variable(&mut arena, 0_u32.into());
+    let image = arena.computation_application(lifted_forced, moving);
+    let image = arena.value_returned(image);
+    let motive = arena.value_type_path(integer, lifted_start, image);
+    let base = arena.value_here(start);
+    let expected = arena.computation_path_transport(motive, point, base);
+    assert_eq!(
+        compared(&arena, built, expected),
+        CertificateEquality::Equal,
+        "one level is cong of the map along the point"
+    );
+    let Some(&crate::syntax::ValueType::Path {
+        carrier: below,
+        left,
+        right,
+    }) = arena.value_type(carrier)
+    else {
+        panic!("one level maps into a path type");
+    };
+    assert_eq!(below, integer, "the paths lie in the codomain");
+    assert_applied_at(&arena, left, (function, from), Endpoint::Left);
+    assert_applied_at(&arena, right, (function, from), Endpoint::Right);
+
+    let applied =
+        super::cong_above(&mut arena, (function, integer), &[], point).expect("no level builds");
+    let direct = arena.computation_application(forced, point);
+    assert_eq!(
+        compared(&arena, applied, direct),
+        CertificateEquality::Equal,
+        "no level is the map applied"
     );
 }
 

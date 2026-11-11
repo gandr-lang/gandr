@@ -38,10 +38,14 @@
 //! reflexivity for a case with no loop arm — or, for a case over another
 //! argument, the branch that argument's constructor selects: the letter where
 //! it returns the occurrence's argument, reflexivity where it ignores it, and
-//! the run of that argument first where it is a call. Each further function's
-//! image of that word is its `cong`: the transport along it in `y. Path[.A =
-//! C](l(pt), ⟨f y⟩)`. The functions are read through the evaluator's admitted
-//! bodies, the reading cong fusion takes
+//! the run of that argument first where it is a call. A letter of a cell above
+//! dimension one maps through `Path.ap` layers of a case, one per wrapping, to
+//! that case's arm for the cell ([`cong_case`]): first the layers the endpoint
+//! writes in place ([`layered`]), then the bodies of `Path.ap` the definitions
+//! give.
+//! Each further function's image of that word is its `cong`: the transport
+//! along it in `y. Path[.A = C](l(pt), ⟨f y⟩)`. The functions are read through
+//! the evaluator's admitted bodies, the reading cong fusion takes
 //! ([`mod@crate::replay`]'s `Replay::fuse`): a loop obligation is decided
 //! δ-free, and the image of a loop under a map out of the circle exists only in
 //! its definition. A configuration no row reads sticks.
@@ -60,6 +64,13 @@
 //! held run in `reduce`), as the evaluator's append runs a held operand.
 //! Reversal: a recorded trace position under a transport's family, which would
 //! let the engine record the unfolding.
+//!
+//! # References
+//!
+//! - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: § 2.2, the
+//!   spheres as presentations with one cell per dimension, and the eliminator
+//!   whose arm at the cell is a cell of the answer at the reflexivity of the
+//!   arm at the point.
 
 use alloc::vec::Vec;
 
@@ -74,6 +85,7 @@ use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FreeCells;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -137,17 +149,22 @@ enum Action
 
 /// One call of an endpoint's reading: the function, every argument it
 /// applies in written order, and the call one of whose arguments it answers.
+/// A call read through `Path.ap` written in place, `⟨tr(y. Path[.A = B](s,
+/// ⟨f y⟩), q, here(s))⟩`, is the call `f q` under one layer per such
+/// transport.
 ///
 /// # Specification
 /// - ensures: some argument of `arguments` reads the binder; `parent` names the
 ///   call this one answers an argument of and that argument's position, `None`
 ///   for the endpoint's own call; for a call bound after another, the one
-///   argument is that call's result.
+///   argument is that call's result; a call under `Path.ap` layers has the
+///   binder as its one argument.
 /// - executable: none — the ids hold no arena to check them against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `mul(b, Base)` is one call of two arguments moving at the
-///   first, and its loop arm reads the second as `Base`.
+///   first, and its loop arm reads the second as `Base`; `Path.ap f q` written
+///   in place is `f` under one layer.
 /// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Node
@@ -160,6 +177,8 @@ struct Node
     /// The call whose argument this call answers, and that argument's
     /// position.
     parent: Option<(usize, usize)>,
+    /// How many `Path.ap` layers written in place stand around the call.
+    layers: Reflexivities,
 }
 
 /// What the walk over an endpoint's calls still reads.
@@ -203,6 +222,14 @@ struct Routes
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Argument(usize);
+
+/// How many arguments a function takes: the lambdas its body opens.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Arity(usize);
 
 /// The calls along one route of an endpoint's [`Routes`], from the call the
 /// binder is an argument of out to the endpoint's own, each with the position
@@ -618,8 +645,24 @@ fn routes(
                 function,
                 arguments,
                 parent,
+                layers: Reflexivities::NONE,
             });
             pending.push(Pending::Call(first, Some((at, 0))));
+            continue;
+        }
+        if let Some((function, layers, along)) = layered(arena, call) {
+            // `Path.ap` written in place along the binder: the call it layers,
+            // moving at its one argument.
+            if !matches!(arena.value(along), Some(&Value::Variable(index)) if index == binder) {
+                return None;
+            }
+            pending.push(Pending::Leaf(at, 0));
+            read.nodes.push(Node {
+                function,
+                arguments: Vec::from([along]),
+                parent,
+                layers,
+            });
             continue;
         }
         let (function, arguments) = spine(arena, call)?;
@@ -647,9 +690,66 @@ fn routes(
             function,
             arguments,
             parent,
+            layers: Reflexivities::NONE,
         });
     }
     Some(read)
+}
+
+/// The call `call` layers when it is `Path.ap` written in place, one or more
+/// times: the function, how many layers, and the path the outermost layer
+/// moves along.
+///
+/// Each layer is the transport `tr(y. Path[.A = B](s, ⟨e⟩), q, here(s))`
+/// whose `e` is the next layer along `y`, the innermost `e` the call `force f
+/// y`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some((f, n, q))` exactly when `call` is `n` such layers, `n` at
+///   least one, around `force f y` for a constant `f`, `q` the outermost
+///   transport's path; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` opens one layer per turn.
+/// - measure: the layers left inside `call`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Path.ap` of the sphere's identity on the 2-cell is the
+///   identity under one layer, as the evaluator reads it.
+/// - witness: `tests::native_formers::a_map_s_image_of_a_2_cell_in_place_is_its_arm`
+#[spec(ensures: |ret| ret.is_none_or(|(_, layers, _)| layers != Reflexivities::NONE))]
+fn layered(
+    arena: &TermArena,
+    call: ComputationId,
+) -> Option<(ConstantIndex, Reflexivities, ValueId)>
+{
+    let innermost = |value: ValueId| matches!(arena.value(value), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32));
+    let (mut body, mut layers, mut along) = (call, 0_usize, None);
+    while let Some(&Computation::PathTransport { motive, path, .. }) = arena.computation(body) {
+        if along.is_some() && !innermost(path) {
+            return None;
+        }
+        along = along.or(Some(path));
+        let &ValueType::Path { right, .. } = arena.value_type(motive)?
+        else {
+            return None;
+        };
+        let &Value::Returned(inner) = arena.value(right)?
+        else {
+            return None;
+        };
+        body = inner;
+        layers = layers.saturating_add(1);
+    }
+    let (function, arguments) = spine(arena, body)?;
+    let [argument] = *arguments.as_slice()
+    else {
+        return None;
+    };
+    (layers > 0 && innermost(argument)).then_some((function, Reflexivities::from(layers), along?))
 }
 
 /// The function and the arguments, the first outermost, of the call `call`
@@ -739,15 +839,21 @@ pub fn point(
 /// and any other type is read as [`crate::element_identity::path_parts`] reads
 /// it.
 ///
+/// A cell above dimension one stands at its point's reflexivity, so its words
+/// follow a path one path type up per wrapping: a 2-cell's words follow a
+/// path in `Path[.A = S](pt, pt)` from `here(pt)` to `here(pt)`.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `(Data(S, []), pt, pt)` for `ty` a `Data(words, [])` whose
-///   presentation carries free cells over the sort `S` looping at the closed
-///   point `pt` ([`point`]), the path type `Presentations::words` reads as
-///   those words; `(U₀, x, y)` for `ty` a `PathUniverse(x, y)`, the level-zero
-///   value universe at which `Path[.A = U₀](x, y)` and `Path_U(x, y)` are two
-///   readings of one classifier, as `equiv` checks at either; the parts of a
-///   `Path` type otherwise.
+/// - ensures: for `ty` a `Data(words, [])` whose presentation carries free
+///   cells over the sort `S` looping at the closed point `pt` ([`point`]),
+///   `(Data(S, []), pt, pt)` wrapped once per reflexivity of the cells, each
+///   wrapping taking `(C, x, x)` to `(Path[.A = C](x, x), here(x), here(x))`:
+///   the path type `Presentations::words` reads as those words; `(U₀, x, y)`
+///   for `ty` a `PathUniverse(x, y)`, the level-zero value universe at which
+///   `Path[.A = U₀](x, y)` and `Path_U(x, y)` are two readings of one
+///   classifier, as `equiv` checks at either; the parts of a `Path` type
+///   otherwise.
 /// - provides: the reading the element and telescope transports give the path
 ///   they follow, the checker's own.
 /// - fails: the value-shape mismatch naming `ty` for any other type.
@@ -756,19 +862,25 @@ pub fn point(
 /// # Errors
 /// As `fails`.
 ///
+/// # Termination
+/// - reason: one `for` over the cells' wrappings.
+/// - measure: the wrappings left.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a composite and an inverse transported along a word
 ///   written inline admit at the circle's point and refuse at the wrong
 ///   endpoints; reading the words as their own type refuses by shape; a list
 ///   transported along a native path written in place admits as along one
-///   declared at the identity.
+///   declared at the identity; `Path.ap` of a map along a word of a 2-cell's
+///   words written in place admits at the point's reflexivity.
 /// - witness: `tests::native_formers::a_word_written_as_a_transport_path_is_that_path`
+/// - witness: `tests::native_formers::a_map_s_image_of_a_written_2_cell_word_is_that_word`
 /// - witness: `path_universe::tests::an_element_transport_follows_a_native_path_written_in_place_1064`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(domain, left, right)|
     matches!(arena.value_type(ty), Some(&ValueType::Path { domain: d, left: l, right: r }) if d == domain && l == left && r == right)
         || (matches!(arena.value_type(ty), Some(&ValueType::PathUniverse(l, r)) if l == left && r == right)
             && matches!(arena.value_type(domain), Some(&ValueType::Universe { sort: GroundSort::Value, ref level }) if *level == Level::zero()))
-        || (left == right && matches!(arena.value(left), Some(&Value::Constructor { .. })))))]
+        || (left == right && matches!(arena.value(left), Some(&Value::Constructor { .. } | &Value::Here { .. })))))]
 pub fn followed(
     arena: &mut TermArena,
     presentations: &Presentations,
@@ -780,13 +892,16 @@ pub fn followed(
         ref arguments,
     }) = arena.value_type(ty)
         && arguments.is_empty()
-        && let Some(sort) = presentations
+        && let Some(cells) = presentations
             .presented(words)
             .and_then(crate::presented::PresentedType::cells)
-            .map(FreeCells::sort)
-        && let Some(at) = point(arena, presentations, words)
+        && let Some(point) = point(arena, presentations, words)
     {
-        let carrier = arena.value_type_data(sort, Vec::new());
+        let (mut carrier, mut at) = (arena.value_type_data(cells.sort(), Vec::new()), point);
+        for _ in 0 .. usize::from(cells.reflexivities()) {
+            carrier = arena.value_type_path(carrier, at, at);
+            at = arena.value_here(at);
+        }
         return Ok((carrier, at, at));
     }
     if let Some(&ValueType::PathUniverse(source, target)) = arena.value_type(ty) {
@@ -863,6 +978,128 @@ fn case_of(
         .checked_sub(usize::try_from(u32::from(index)).ok()?)?
         .checked_sub(1)?;
     Some((case, Argument(over)))
+}
+
+/// The data case a definition reaches through `Path.ap` layers, one per
+/// wrapping of a cell's point: the case a cell above dimension one maps by.
+///
+/// A call `g(… q …)` whose body is `Path.ap f q` along its argument `q` acts
+/// on a 2-cell as `f` acts on it: `Path.ap g` of the 2-cell is `f`'s arm for
+/// it. Each wrapping takes one such layer, so a 3-cell reads through two.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(case)` exactly when `function`, of `count` arguments,
+///   through `wrapping` layers, each a thunk of one lambda per argument whose
+///   body is the transport `tr(y. Path[.A = B](s, ⟨force h y⟩), q, here(s))`
+///   along the argument at `moving` for a constant `h` of one argument, reaches
+///   a constant whose body is a data case on its one argument; `case` is that
+///   case. `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `for` reads one layer per wrapping.
+/// - measure: the wrappings left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Path.ap` of the sphere's identity on its loops maps the
+///   2-cell to the identity's arm for it, `surf`, as the evaluator maps it.
+/// - witness: `tests::native_formers::a_map_s_image_of_a_2_cell_in_place_is_its_arm`
+#[spec(ensures: |ret| ret.is_none_or(|case| matches!(arena.computation(case), Some(&Computation::DataCase { .. }))))]
+fn cong_case(
+    arena: &TermArena,
+    unfoldings: &Unfoldings,
+    (function, arity): (ConstantIndex, Arity),
+    (moving, wrapping): (Argument, Reflexivities),
+) -> Option<ComputationId>
+{
+    let bound = |value: ValueId, at: usize| {
+        matches!(arena.value(value), Some(&Value::Variable(index))
+            if usize::try_from(u32::from(index)).ok() == Some(at))
+    };
+    let (mut function, mut arity, mut along) = (function, arity, moving.0);
+    for _ in 0 .. usize::from(wrapping) {
+        let body = lambdas(arena, unfoldings, (function, arity))?;
+        let Some(&Computation::PathTransport { motive, path, .. }) = arena.computation(body)
+        else {
+            return None;
+        };
+        if !bound(path, arity.0.checked_sub(along)?.checked_sub(1)?) {
+            return None;
+        }
+        let Some(&ValueType::Path { right, .. }) = arena.value_type(motive)
+        else {
+            return None;
+        };
+        let Some(&Value::Returned(applied)) = arena.value(right)
+        else {
+            return None;
+        };
+        let Some(&Computation::Application(forced, argument)) = arena.computation(applied)
+        else {
+            return None;
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            return None;
+        };
+        let Some(&Value::Constant(inner)) = arena.value(head)
+        else {
+            return None;
+        };
+        if !bound(argument, 0) {
+            return None;
+        }
+        (function, arity, along) = (inner, Arity(1), 0);
+    }
+    let body = lambdas(arena, unfoldings, (function, arity))?;
+    let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(body)
+    else {
+        return None;
+    };
+    bound(scrutinee, 0).then_some(body)
+}
+
+/// The body of the constant `function` under its `arity` lambdas.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(body)` exactly when `unfoldings` holds the constant's body
+///   as a thunk of `arity` lambdas around `body`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `for` opens one lambda per count.
+/// - measure: the lambdas left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cong_case`].
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+#[spec(ensures: |ret| ret.is_none_or(|body| arena.computation(body).is_some()))]
+fn lambdas(
+    arena: &TermArena,
+    unfoldings: &Unfoldings,
+    (function, arity): (ConstantIndex, Arity),
+) -> Option<ComputationId>
+{
+    let Unfoldable::Body(body) = unfoldings.unfolding(function)
+    else {
+        return None;
+    };
+    let Some(&Value::Thunk(mut body)) = arena.value(body)
+    else {
+        return None;
+    };
+    for _ in 0 .. arity.0 {
+        let Some(&Computation::Lambda(inner)) = arena.computation(body)
+        else {
+            return None;
+        };
+        body = inner;
+    }
+    arena.computation(body).map(|_| body)
 }
 
 /// The arm `case` carries for the loop of `cell` in `words`, its arguments
@@ -1235,9 +1472,12 @@ where
 /// - hypothesis: L3 — the flip's image of the loop is its inverse and the
 ///   collapse's is reflexivity, and the flip twice binds the first image into
 ///   the second's cong; `mul(b, Base)`'s image of the loop is `selfloop(Base)`;
-///   each verdict turns on the image.
+///   `Path.ap` of the sphere's identity in place maps the 2-cell to its arm,
+///   and of a case with no arm there to the empty word; each verdict turns on
+///   the image.
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
+/// - witness: `tests::native_formers::a_map_s_image_of_a_2_cell_in_place_is_its_arm`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
 fn route_image<M>(
     arena: &mut TermArena,
@@ -1255,6 +1495,11 @@ where
         return None;
     };
     let cell = FreeCells::generator(tag)?;
+    let wrapping = unfoldings
+        .presentations()
+        .presented(words)
+        .and_then(crate::presented::PresentedType::cells)?
+        .reflexivities();
     // Each argument where the transport stands: the binder it never reads
     // read at the point.
     let arguments: Vec<ValueId> = innermost
@@ -1262,7 +1507,28 @@ where
         .iter()
         .map(|&argument| substitute_value(arena, table, memo, argument, at))
         .collect();
-    let (case, over) = case_of(arena, unfoldings, (innermost.function, &arguments))?;
+    // A loop maps by the call's own case; a cell above dimension one by the
+    // case the call's `Path.ap` layers act by, whose arm stands under that
+    // case's one argument alone.
+    let (case, over, moving, arguments) = if wrapping == Reflexivities::NONE {
+        if innermost.layers != Reflexivities::NONE {
+            return None;
+        }
+        let (case, over) = case_of(arena, unfoldings, (innermost.function, &arguments))?;
+        (case, over, moving, arguments)
+    }
+    else {
+        // The layers the endpoint writes in place come first, and the
+        // definitions give the rest.
+        let layers = usize::from(wrapping).checked_sub(usize::from(innermost.layers))?;
+        let case = cong_case(
+            arena,
+            unfoldings,
+            (innermost.function, Arity(arguments.len())),
+            (moving, Reflexivities::from(layers)),
+        )?;
+        (case, Argument(0), Argument(0), Vec::from([at]))
+    };
     let mut built = if over == moving {
         let arm = loop_arm(
             arena,

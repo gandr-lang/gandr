@@ -125,6 +125,10 @@ use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::RunCount;
 use gandr_surface_parser::TokenCount;
 use gandr_surface_parser::TokenRun;
+#[cfg(feature = "instrument")]
+use gandr_surface_syntax::ByteOffset;
+#[cfg(feature = "instrument")]
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 
@@ -273,6 +277,10 @@ pub struct FormStore
     generation: Generation,
     /// The serial the next parked unit takes.
     next: Serial,
+    /// The runs the latest parse molded, in source order, which the counts
+    /// layer reads.
+    #[cfg(feature = "instrument")]
+    molded: Vec<(RunPosition, TokenRun)>,
 }
 
 /// A parked unit, the parse that last took it up or parked it, its serial,
@@ -511,7 +519,41 @@ impl FormStore
             kept: FormCount(usize::from(kept)),
             relabeled,
         };
+        #[cfg(feature = "instrument")]
+        {
+            self.molded = missing;
+        }
         Ok((join.into_result(), census))
+    }
+
+    /// The bytes of each form that the latest parse molded, in source order,
+    /// in the coordinates of the text it parsed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one span for each run that the latest parse molded and that
+    ///   holds a token, from the start of its first token to the end of its
+    ///   last, ascending; none before a parse.
+    /// - panics: none.
+    /// - executable: none — the result is a lazy iterator over the store.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recheck at the counts layer reads one molded form
+    ///   in each declaration of a first parse, and none in a second parse of
+    ///   the same text.
+    /// - witness: `tests::counts::a_second_recheck_counts_no_judged_item`
+    #[cfg(feature = "instrument")]
+    pub(crate) fn molded(&self) -> impl Iterator<Item = ByteSpan> + '_
+    {
+        let tokens = match self.labeled {
+            Labeled::Revision { ref labeling, .. } => labeling.tokens(),
+            Labeled::Nothing => &[],
+        };
+        let offset = |at: u32| ByteOffset::from(usize::try_from(at).unwrap_or(usize::MAX));
+        self.molded.iter().filter_map(move |&(_, run)| {
+            let run = tokens.get(usize::from(run.start()) .. usize::from(run.end()))?;
+            ByteSpan::new(offset(run.first()?.start), offset(run.last()?.end)).ok()
+        })
     }
 
     /// The serial the next parked unit takes, and the store's next one past

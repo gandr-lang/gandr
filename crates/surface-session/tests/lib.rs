@@ -19,6 +19,8 @@ mod checkpoint;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
+mod counts;
+#[cfg(test)]
 mod diag;
 #[cfg(test)]
 mod diag_attr;

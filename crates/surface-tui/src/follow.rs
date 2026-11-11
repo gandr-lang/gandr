@@ -417,6 +417,9 @@ fn account_fields(
                 ("judged", counts.judged),
                 ("crossed", counts.crossed),
                 ("obligations", counts.obligations),
+                ("recalled", counts.recalled),
+                ("expanded", counts.expanded),
+                ("kept", counts.kept),
             ]
             .map(|(name, count)| entry(name, Datum::Count(count))),
         );

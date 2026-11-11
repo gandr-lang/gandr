@@ -192,6 +192,8 @@ pub use crate::checkpoint::Checkpoints;
 pub use crate::checkpoint::ContentKey;
 pub use crate::checkpoint::ItemCheckpoint;
 pub use crate::checkpoint::Leading;
+#[cfg(feature = "instrument")]
+pub use crate::checkpoint::PassedItem;
 pub use crate::checkpoint::Resume;
 pub use crate::checkpoint::ResumeCensus;
 pub use crate::checkpoint::ResumeError;

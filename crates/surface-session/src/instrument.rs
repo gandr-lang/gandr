@@ -20,11 +20,15 @@
 //! | items judged | [`Instrument::judged`] | counts | once for each incremental pass that ran whole, with the items it judged |
 //! | declarations crossed | [`Instrument::crossed`] | counts | once for each admission that ran whole, with the declarations it offered the kernel again |
 //! | a fork job starts or ends | `Instrument::activity` | activity | at each fork site of the judgement: with the rings it answers, the site forks through the pool's recording fork, whose jobs mark the rings |
+//! | each declaration's work | `Instrument::counts` | counts | each item the incremental pass adopts or judges, and each declaration's molded forms and obligations after the lowering, into the column the sink answers |
+//! | what an admission records | `Instrument::positioning` | counts | once for each admission, before it starts |
 //!
 //! `Instrument::activity` takes `&self` and answers a shared handle: the
 //! rings are per thread and lock-free, and the pool's threads write them
-//! while the session's thread holds the sink. The method exists with the
-//! `instrument` feature alone.
+//! while the session's thread holds the sink. `Instrument::counts` answers
+//! the column of the counts layer, and the session counts into it directly,
+//! so a sink that answers no column costs no attribution. These three methods
+//! exist with the `instrument` feature alone.
 //!
 //! **Alternatives.** A trait object costs one indirect call for each event,
 //! and the compiler cannot remove a call on the silent sink. A flag that each
@@ -40,12 +44,11 @@
 //!
 //! # What it does not cover
 //!
-//! The memo's hits and misses, the nodes named, each judgement step and each
-//! replay step have their sites inside the checker and the kernel, so no
-//! method here names them yet. A fork job deeper than the session's fork
-//! sites, such as a kernel replay inside a judgement, is marked with the kind
-//! of its site. The hub does not compile a declaration, so no phase names a
-//! compile step yet.
+//! Each judgement step and each replay step has its site inside the checker
+//! and the kernel, so no method here names it yet. A fork job deeper than the
+//! session's fork sites, such as a kernel replay inside a judgement, is marked
+//! with the kind of its site. The hub does not compile a declaration, so no
+//! phase names a compile step yet.
 //!
 //! # References
 //!
@@ -56,10 +59,16 @@
 #[cfg(feature = "instrument")]
 use gandr_core_fork::activity::Activity;
 use gandr_core_incremental::ItemCount;
+#[cfg(feature = "instrument")]
+use gandr_surface_dispatcher::Positioning;
 use gandr_surface_lowering::DeclarationCount;
 #[cfg(feature = "instrument")]
 use quenchant_shape::shape::Maybe;
 
+#[cfg(feature = "instrument")]
+use crate::counts::CountColumn;
+#[cfg(feature = "instrument")]
+use crate::counts::uncounted;
 use crate::forms::FormCount;
 
 #[cfg(feature = "instrument")]
@@ -200,6 +209,44 @@ pub trait Instrument
     {
         Maybe::Absent(unrecorded::Absent::Unselected)
     }
+
+    /// The column that this sink counts each declaration's work into, when it
+    /// records the counts.
+    ///
+    /// # Specification
+    /// - ensures: the default answers [`uncounted::Absent::Unselected`], so the
+    ///   session attributes no form and counts nothing.
+    /// - panics: none.
+    /// - executable: none — a handle the sink holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sink that answers a column reads each declaration's
+    ///   counts in the account, and a silent sink reads none.
+    /// - witness: `tests::counts::a_second_recheck_counts_no_judged_item`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn counts(&mut self) -> Maybe<&mut CountColumn, uncounted::Absent>
+    {
+        Maybe::Absent(uncounted::Absent::Unselected)
+    }
+
+    /// What an admission at this sink records of each declaration it crosses.
+    ///
+    /// # Specification
+    /// - ensures: the default answers [`Positioning::Unpositioned`], so an
+    ///   admission records nothing and reads no clock.
+    /// - panics: none.
+    /// - executable: none — a constant of the sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Instrument::counts`].
+    /// - witness: `tests::counts::a_second_recheck_counts_no_judged_item`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn positioning(&self) -> Positioning
+    {
+        Positioning::Unpositioned
+    }
 }
 
 /// The sink that records nothing.
@@ -216,14 +263,14 @@ impl Instrument for Silent
 {
 }
 
-/// `work`, run inside `phase`: `sink` is told the phase starts before it and
-/// ends after it.
+/// `work`, run inside `phase` with `sink`: `sink` is told the phase starts
+/// before it and ends after it.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `sink` is told [`Instrument::entered`] of `phase`, then `work`
-///   runs once, then `sink` is told [`Instrument::left`] of `phase`. The answer
-///   is the answer of `work`.
+///   runs once with `sink`, then `sink` is told [`Instrument::left`] of
+///   `phase`. The answer is the answer of `work`.
 /// - provides: both boundaries of a phase on each path out of it, a fault and a
 ///   retirement included, since `work` answers each of them.
 /// - fails: never; a fault of `work` is in its answer.
@@ -241,10 +288,10 @@ pub fn within<Sink, Work, Out>(
 ) -> Out
 where
     Sink: Instrument,
-    Work: FnOnce() -> Out,
+    Work: FnOnce(&mut Sink) -> Out,
 {
     sink.entered(phase);
-    let out = work();
+    let out = work(sink);
     sink.left(phase);
     out
 }

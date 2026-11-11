@@ -1144,6 +1144,10 @@ pub struct Admitted
     /// in admission order: none when the admission did not run, and the one
     /// it stopped at when the kernel disagreed.
     pub tiers: Vec<(ConstantIndex, Tier)>,
+    /// Each row of the session's account after the admission, by admission
+    /// position, with the kernel's counts that the admission recorded.
+    #[cfg(feature = "instrument")]
+    pub rows: Vec<(ConstantIndex, ContentKey, AccountRow)>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1440,10 +1444,16 @@ pub fn settle(
             },
         },
     );
+    #[cfg(feature = "instrument")]
+    let rows = session
+        .as_mut()
+        .map_or_else(|_| Vec::new(), |session| session.account().rows().collect());
     Admitted {
         fault,
         declined,
         tiers,
+        #[cfg(feature = "instrument")]
+        rows,
         timing: Timing {
             admitted: Maybe::Present(wall.saturating_add(started.elapsed())),
             crossed,

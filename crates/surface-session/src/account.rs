@@ -15,6 +15,7 @@
 //! | the checker's verdict | [`CheckerVerdict`] | the judgement | at each judgement |
 //! | the kernel tier | [`KernelState`]: pending, or the tier an admission settled | the judgement keeps it or sets pending, the admission writes it | when the admission ends |
 //! | the compile tier | [`CompileTier`], or [`compiled::Absent::Uncompiled`] | the emitter's record | never yet: the hub compiles nothing |
+//! | the counts, with the `instrument` feature | `DeclarationCounts`, or none when the judgement ran at a sink that counts nothing | the judgement writes the counts of the recheck's column, the admission writes the kernel's | at each judgement and when the admission ends |
 //!
 //! A judgement keeps the row of each declaration whose key and verdict are
 //! unchanged, with its kernel tier, so an edit to a comment or to another
@@ -56,8 +57,17 @@ use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::recall;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::Produced;
+#[cfg(feature = "instrument")]
+use gandr_surface_dispatcher::ArtifactPositions;
 use gandr_surface_dispatcher::KernelTier;
 use quenchant_shape::shape::Maybe;
+
+#[cfg(feature = "instrument")]
+use crate::counts::CountColumn;
+#[cfg(feature = "instrument")]
+use crate::counts::DeclarationCounts;
+#[cfg(feature = "instrument")]
+use crate::counts::uncounted;
 
 quenchant_shape::reason_enum! {
     /// Why a row has no compile tier.
@@ -194,6 +204,9 @@ pub struct AccountRow
     kernel: KernelState,
     /// How the emitter compiled it.
     compile: Maybe<CompileTier, compiled::Absent>,
+    /// What the engine did for it in the latest recheck.
+    #[cfg(feature = "instrument")]
+    counts: Maybe<DeclarationCounts, uncounted::Absent>,
 }
 
 impl AccountRow
@@ -228,6 +241,18 @@ impl AccountRow
     pub const fn compile(&self) -> Maybe<CompileTier, compiled::Absent>
     {
         self.compile
+    }
+
+    /// What the engine did for the declaration in the latest recheck, when the
+    /// recheck counted it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub const fn counts(&self) -> Maybe<DeclarationCounts, uncounted::Absent>
+    {
+        self.counts
     }
 }
 
@@ -339,6 +364,8 @@ impl Account
                         verdict,
                         kernel: KernelState::Pending,
                         compile: Maybe::Absent(compiled::Absent::Uncompiled),
+                        #[cfg(feature = "instrument")]
+                        counts: Maybe::Absent(uncounted::Absent::Unselected),
                     }));
                 },
             }
@@ -396,6 +423,91 @@ impl Account
                 });
             if let Some(&mut (_, ref mut row)) = self.rows.get_mut(&key) {
                 row.kernel = kernel;
+            }
+        }
+    }
+
+    /// Take the counts of the latest judgement: each row of the revision's own
+    /// text holds the counts of `column` at its position, with no kernel
+    /// count, or none when the judgement counted nothing.
+    ///
+    /// # Specification
+    /// - requires: the latest judgement counted into `column`, when present.
+    /// - ensures: each listed row holds the column's counts at its position, or
+    ///   none; the rows, their verdicts and their tiers are unchanged.
+    /// - provides: the judgement's half of the counts.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one lookup for each listed declaration; nothing allocated.
+    ///   The judgement lists each declaration of the revision's own text, and
+    ///   #4369 bounds the list by the edit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Counts`].
+    /// - witness: `tests::counts::a_second_recheck_counts_no_judged_item`
+    #[cfg(feature = "instrument")]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body writes the row of every listed declaration once; the check reads each listed declaration's row once; #4369 bounds the list by the edit"
+        )
+    )]
+    #[spec(captures: [count = self.rows.len()],
+        ensures: self.rows.len() == count
+        && self.declared.iter().all(|&(at, key)| self.rows.get(&key).is_some_and(|&(_, row)|
+            row.counts == match column {
+                Maybe::Present(column) => Maybe::Present(column.at(at)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            })))]
+    pub(crate) fn counted(
+        &mut self,
+        column: Maybe<&CountColumn, uncounted::Absent>,
+    )
+    {
+        for &(at, key) in &self.declared {
+            if let Some(&mut (_, ref mut row)) = self.rows.get_mut(&key) {
+                row.counts = match column {
+                    Maybe::Present(column) => Maybe::Present(column.at(at)),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                };
+            }
+        }
+    }
+
+    /// Take the kernel's counts of an admission of the latest judged revision
+    /// that recorded `positions`: each counted row holds whether its
+    /// declaration crossed and what the kernel's check of it charged.
+    ///
+    /// # Specification
+    /// - requires: the admission judged the latest judged revision.
+    /// - ensures: each listed row with counts holds the kernel's counts of the
+    ///   position `positions` places it at, or crossed and kernel counts of
+    ///   zero when it places none there; a row without counts stays without.
+    ///   The rows, their verdicts and their tiers are unchanged.
+    /// - provides: the admission's half of the counts.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one lookup in the positions and one in the rows for each
+    ///   listed declaration; nothing allocated. The judgement lists each
+    ///   declaration of the revision's own text, and #4369 bounds the list by
+    ///   the edit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Counts`].
+    /// - witness: `tests::counts::a_second_recheck_counts_no_judged_item`
+    #[cfg(feature = "instrument")]
+    #[spec(captures: [count = self.rows.len()], ensures: self.rows.len() == count)]
+    pub(crate) fn tallied(
+        &mut self,
+        positions: &ArtifactPositions,
+    )
+    {
+        for &(at, key) in &self.declared {
+            if let Some(&mut (_, ref mut row)) = self.rows.get_mut(&key)
+                && let Maybe::Present(counts) = row.counts
+            {
+                row.counts = Maybe::Present(counts.admitted(positions.placed(at)));
             }
         }
     }

@@ -485,6 +485,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kerne
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','compose','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-dispatcher','schedule','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-lsp','tier','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-session','counts','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','surface-session','session','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-checker','capability','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-incremental','typing','lineage',NULL,NULL,NULL);
@@ -674,6 +675,11 @@ INSERT INTO reference VALUES('vault:01a1b278-4fbc-7c31-a4f3-2a171b335796','theor
 INSERT INTO reference VALUES('vault:01a1b278-54ca-7062-94f4-4c94748c971e','theory-exact-reals','minimal','exemplar','b2f9eac7d4078d3e8ed85141317c9a171de7b4e7','2026-11-07','5348640e9c4186d136c37c2c3e79eb9872aa1cfb');
 INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theory-exact-reals','ackermann','exemplar','578de397edfc0e1cf510674eb9325ce9f7418ab6','2026-11-07','b94955e326d1fedb2039fe89e7736d72a76a471e');
 INSERT INTO reference VALUES('vault:01a1b32b-755c-7b73-85f1-3055991c2bee','theory-exact-reals','dyadic','exemplar','8f97dfc1113b4fc1febb9a04e053f6cdba9f6861','2026-11-07','efc1b3ca0f4e734dbbec66e0cb9e66048f3844e8');
+INSERT INTO reference VALUES('vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e','core-checker','loops','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e','core-nbe','eval::words','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e','core-term','identity','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e','kernel-core','words','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e','surface-lowering','lower::identity','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1b53e-d768-7e62-8825-088be647563b','theory-exact-reals','recurrence','exemplar','1c8ce077c60d346ee2ad18982b90b168809e8526','2026-11-07','9d0ddffe5990a84e450a607a284c76457bf5ff76');
 INSERT INTO reference VALUES('vault:01a1b567-b34b-77a2-9ace-075796f0eb3e','core-checker','divergence','exemplar','4a92e372fd0ce78fd4e257276266d7c97b0d8c38','2026-11-07','5e292eca6ae863067b2f03cb2d34ab7d50ebf993');
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','core-fork','activity','newest',NULL,NULL,NULL);
@@ -682,6 +688,7 @@ INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surfa
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','tier','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-render-remote','visual','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','account','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','counts','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','instrument','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-tui','','anchor',NULL,NULL,NULL);
 CREATE TABLE work(

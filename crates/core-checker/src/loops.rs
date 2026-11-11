@@ -72,6 +72,12 @@
 //! scrutinee, which refused `rotInv1`–`rotInv4` (#464). **Reversal.** A fibre
 //! shown a set by some other means than its presentation, or a square the
 //! tree computes, lifts the refusal off a set.
+//!
+//! # References
+//!
+//! - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: § 2.2, the
+//!   eliminator of the spheres, whose arm at a cell checks at the paths of
+//!   paths at the reflexivity of the answer at the point.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -88,7 +94,9 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::TermId;
+use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
+use gandr_core_term::shift_value_type_under;
 use gandr_core_term::substitute_environment;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
@@ -116,18 +124,18 @@ pub struct Loop
     pub cell: CellIndex,
 }
 
-/// The loops in the sort `datatype` names, in the order a case's loop arms
+/// The cells in the sort `datatype` names, in the order a case's loop arms
 /// follow its constructors' branches: by the admission position of the words
-/// they mint, then in written order. Cells above dimension one are no loops
-/// ([`higher`]).
+/// they mint, then in written order. A cell above dimension one is owed as a
+/// loop is, at the dimension [`lifted`] reads.
 ///
 /// # Specification
 /// - requires: `datatype` is formed.
 /// - ensures: one [`Loop`] per cell of every admitted type of words whose cells
-///   loop in the parameterless data type `datatype` is, at its point and not at
-///   its reflexivity, words ascending by admission position and cells in
-///   written order; none for any other type. Each type of words read is logged
-///   as consulted.
+///   loop in the parameterless data type `datatype` is, at its point or at its
+///   reflexivity, words ascending by admission position and cells in written
+///   order; none for any other type. Each type of words read is logged as
+///   consulted.
 /// - provides: the loops a case over the sort owes, and the order its loop arms
 ///   take.
 /// - fails: never.
@@ -158,8 +166,7 @@ pub fn loops(
         .iter()
         .filter_map(|(&words, signature)| {
             let cells = signature.presentation().cells()?;
-            (cells.sort() == sort && cells.reflexivities() == Reflexivities::NONE)
-                .then_some((words, cells.cells().len()))
+            (cells.sort() == sort).then_some((words, cells.cells().len()))
         })
         .collect();
     let mut owed = Vec::new();
@@ -173,48 +180,75 @@ pub fn loops(
     owed
 }
 
-/// The type of words whose cells stand above dimension one in the sort
-/// `datatype` names, when there is one.
+/// How a case's motive carries its answer along a path.
 ///
 /// # Specification
-/// - requires: `datatype` is formed.
-/// - ensures: `Some(words)` exactly when `datatype` is a parameterless data
-///   type and the admitted type of words `words` has cells over it at its
-///   point's reflexivity. That type of words is logged as consulted.
-/// - provides: the refusal of a case over the sort until a case has a branch
-///   for such a cell.
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Carrying
+{
+    /// The motive ignores its binder, so the answer stays as it is.
+    Constant,
+    /// The motive reads its binder, so the answer moves by transport.
+    Transported,
+}
+
+/// The family, the point and the answer a cell's obligation reads at the
+/// cell's dimension.
+///
+/// A loop reads the motive's family `A`, its point `pt` and the answer `b`
+/// there. Each wrapping of a cell's point in reflexivity lifts the three one
+/// dimension up. The family becomes the paths in the fibre below from the
+/// answer carried along the path to the answer, `q. Path[.A = A[pt]](
+/// ⟨transport(A, q, b)⟩, b)`. The point becomes `here(pt)` and the answer
+/// `here(b)`. A motive that ignores its binder carries by the identity, so
+/// its family is `q. Path[.A = A[pt]](b, b)`.
+///
+/// # Specification
+/// - requires: `family` stands under the scrutinee's binder; `at` and
+///   `answered` are read in the case's context.
+/// - ensures: `(family, at, answered)` for no wrapping; otherwise the lift of
+///   the triple for one wrapping fewer, as above.
+/// - provides: the dimension the kernel's own lift reads the same cell at.
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Termination
+/// - reason: one `for` over the wrappings, not recursion.
+/// - measure: the wrappings left.
+///
 /// # Adequacy
-/// - hypothesis: L3 — the sphere's case is refused, the circle's is not.
+/// - hypothesis: L3 — the sphere's 2-cell arm checks at the paths of paths at
+///   its answer's reflexivity, and the circle's loop reads its triple as it
+///   stands.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
-#[spec(ensures: |ret| ret.is_none_or(|words| context.data_signatures().get(&words).and_then(|signature| signature.presentation().cells()).is_some_and(|cells| cells.reflexivities() != Reflexivities::NONE)))]
-#[must_use]
-pub fn higher(
-    context: &mut CheckingContext<'_>,
-    datatype: ValueTypeId,
-) -> Option<ConstantIndex>
+#[spec(captures: before = (family, at, answered), ensures: |ret| reflexivities != Reflexivities::NONE || ret == before)]
+fn lifted(
+    arena: &mut gandr_core_term::CoreArena,
+    (family, at, answered): (ValueTypeId, ValueId, ValueId),
+    (reflexivities, carrying): (Reflexivities, Carrying),
+) -> (ValueTypeId, ValueId, ValueId)
 {
-    let Some(&ValueType::Data {
-        declaration: sort,
-        ref arguments,
-    }) = context.arena().value_type(datatype)
-    else {
-        return None;
-    };
-    if !arguments.is_empty() {
-        return None;
+    let (mut family, mut at, mut answered) = (family, at, answered);
+    for _ in 0 .. usize::from(reflexivities) {
+        let fibre = gandr_core_term::instantiate_value_type(arena, family, at);
+        let lifted_fibre = shift_value_type(arena, fibre, Binders::ONE).settle(arena);
+        let lifted_answer = shift_value(arena, answered, Binders::ONE).settle(arena);
+        let left = if carrying == Carrying::Constant {
+            lifted_answer
+        }
+        else {
+            let inner =
+                shift_value_type_under(arena, family, Binders::ONE, Binders::ONE).settle(arena);
+            let along = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let carried = arena.computation_path_transport(inner, along, lifted_answer);
+            arena.value_returned(carried)
+        };
+        family = arena.value_type_path(lifted_fibre, left, lifted_answer);
+        at = arena.value_here(at);
+        answered = arena.value_here(answered);
     }
-    let found = context
-        .data_signatures()
-        .iter()
-        .find_map(|(&words, signature)| {
-            let cells = signature.presentation().cells()?;
-            (cells.sort() == sort && cells.reflexivities() != Reflexivities::NONE).then_some(words)
-        })?;
-    let _logged = context.consult_data(found);
-    Some(found)
+    (family, at, answered)
 }
 
 /// Decide that the case `at` over the sort `datatype` respects every loop in
@@ -309,14 +343,20 @@ pub fn respected(
     let (mut environment, mut choice) = (Vec::new(), Vec::new());
     for owed in owed {
         let point = point(context, (datatype, &arities), owed.words)?;
+        let reflexivities = reflexivities(context, owed.words)?;
         let arena = context.arena_mut();
         let word = letter(arena, owed);
         let words = arena.value_type_data(owed.words, Vec::new());
         let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
         let carried =
             gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
-        let transported = arena.computation_path_transport(family, word, carried);
-        let stayed = arena.computation_path_transport(family, empty, carried);
+        let (along, _, carried) = lifted(
+            arena,
+            (family, point, carried),
+            (reflexivities, Carrying::Transported),
+        );
+        let transported = arena.computation_path_transport(along, word, carried);
+        let stayed = arena.computation_path_transport(along, empty, carried);
         let held = scrutinees(context, (point, &branches))?;
         if held.is_empty() {
             owe(context, (at, owed.cell), (transported, stayed))?;
@@ -665,13 +705,16 @@ pub fn arm_type(
         .map(|fields| FieldCount::from(fields.len()))
         .collect();
     let point = point(context, (datatype, &arities), owed.words)?;
+    let reflexivities = reflexivities(context, owed.words)?;
     let arena = context.arena_mut();
-    let constant = matches!(
-        gandr_core_term::strengthen_comp_type(arena, motive),
-        Maybe::Present(_)
-    );
+    let carrying = match gandr_core_term::strengthen_comp_type(arena, motive) {
+        Maybe::Present(_) => Carrying::Constant,
+        Maybe::Absent(_) => Carrying::Transported,
+    };
     let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
-    let left = if constant {
+    let (family, point, carried) =
+        lifted(arena, (family, point, carried), (reflexivities, carrying));
+    let left = if carrying == Carrying::Constant {
         carried
     }
     else {
@@ -682,6 +725,37 @@ pub fn arm_type(
     let fibre = gandr_core_term::instantiate_value_type(arena, family, point);
     let path = arena.value_type_path(fibre, left, carried);
     Ok(arena.comp_type_returner(path))
+}
+
+/// How many times the point of the cells of the type of words at `words` is
+/// wrapped in its reflexivity.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the wrapping the context's signature at `words` carries.
+/// - fails: [`CheckRefusal::MachineInvariant`] when the context holds no cells
+///   at `words`.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the circle's loop is at its point and the sphere's 2-cell
+///   at its reflexivity.
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
+fn reflexivities(
+    context: &CheckingContext<'_>,
+    words: ConstantIndex,
+) -> Result<Reflexivities, CheckRefusal>
+{
+    context
+        .data_signatures()
+        .get(&words)
+        .and_then(|signature| signature.presentation().cells())
+        .map(FreeCells::reflexivities)
+        .ok_or(CheckRefusal::MachineInvariant)
 }
 
 /// The point the cells of the type of words at `words` loop at, as a

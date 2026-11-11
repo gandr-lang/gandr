@@ -244,8 +244,8 @@ impl Presentations
 
     /// The types of words whose cells loop in the sort admitted at `sort`, by
     /// admission position ascending, each with its cells: the order a case
-    /// over the sort keeps its loop arms in. Cells above dimension one are no
-    /// loops ([`Self::higher`]).
+    /// over the sort keeps its loop arms in. Cells above dimension one loop
+    /// at the point's reflexivity, and a case keeps an arm for them too.
     ///
     /// # Specification
     /// trivial.
@@ -260,37 +260,10 @@ impl Presentations
                 presented
                     .presentation
                     .cells()
-                    .filter(|cells| {
-                        cells.sort() == sort && cells.reflexivities() == Reflexivities::NONE
-                    })
+                    .filter(|cells| cells.sort() == sort)
                     .map(|cells| (words, cells))
             })
         })
-    }
-
-    /// The type of words whose cells stand above dimension one in the sort
-    /// admitted at `sort`, when there is one.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub(crate) fn higher(
-        &self,
-        sort: ConstantIndex,
-    ) -> Option<ConstantIndex>
-    {
-        self.0
-            .iter()
-            .flat_map(|table| table.iter())
-            .find_map(|(&words, presented)| {
-                presented
-                    .presentation
-                    .cells()
-                    .is_some_and(|cells| {
-                        cells.sort() == sort && cells.reflexivities() != Reflexivities::NONE
-                    })
-                    .then_some(words)
-            })
     }
 
     /// The field counts of the constructors of the sort the type of words at
