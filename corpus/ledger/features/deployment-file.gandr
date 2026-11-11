@@ -14,7 +14,7 @@
 /// runs each field to its string. One file may hold both the site and the
 /// manifold placing a world at it.
 ///
-/// - owes: #3381 — a manifold that names its program by its address
+/// - owes: #6768 — a manifold that names its program by its address
 /// - see: corpus/model/worlds/two-processes.site.gandr
 /// - see: corpus/model/worlds/two-processes.manifold.gandr
 /// - see: crates/surface-driver/tests/net.rs
