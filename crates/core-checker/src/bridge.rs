@@ -384,6 +384,32 @@
 //! declaration per handler. The choice reverses if the kernel gains effect
 //! rows of its own.
 //!
+//! # A hold crosses as its state-passing reduct
+//!
+//! The kernel has no store, so readmission simulates memory. A hold crosses
+//! as its reduct, which the erasure mints into the core arena and erases in
+//! its place, as it erases a handler's. The reduct reads the hold's block
+//! along its spine and passes the held value along it as a value. An
+//! exclusive access answers its result beside the value that its view
+//! leaves: `resume` sets that value, and `abort` runs the unwind and keeps the
+//! held value. The steps after the access read the value left. A shared view
+//! and a consuming read answer the held value. The reduct keeps no linear
+//! binder, and the kernel types it: a reduct that leaves the wrong value is
+//! the kernel's type error, not a fact that the bridge vouches for. The
+//! checker alone decides linear use, and the reduct relies on its verdict
+//! that each view ends once on each path.
+//!
+//! The reduct reads the lexical case alone: each access stands on the spine
+//! of the block that holds its slot, at the whole place, and each read of a
+//! slot stands in a step's own values, under no binder. Any other memory form
+//! refuses the hold whole as `OutOfFragment` under
+//! [`TrackingIssue::KERNEL_MEMORY`]. The witness
+//! `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
+//! crosses an access that resumes, one that aborts, a shared view and a
+//! consuming read, and
+//! `bridge::tests::a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609`
+//! forges a reduct that the kernel refuses.
+//!
 //! # The export carries the producer's names
 //!
 //! [`Readmission::export`] encodes the environment the kernel built: each
@@ -557,6 +583,7 @@ use crate::retire::Unretired;
 use crate::template::Clock;
 use crate::view::CompTypeView;
 
+mod held;
 mod native;
 
 use crate::view::FragmentRefusal;
@@ -7860,6 +7887,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
             Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
             Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
+            Computation::Memory(gandr_core_term::memory::MemoryForm::Hold { .. }) => (
+                Frame::Rewritten { at },
+                TermNode::Computation(self.hold_reduct(at)?),
+            ),
             Computation::Memory(_) => return Err(unadmitted(UnadmittedFormer::Memory)),
             Computation::Decompose(_) => return Err(unadmitted(UnadmittedFormer::Run)),
             Computation::World(_) => return Err(Refusal::Located { at: node }),

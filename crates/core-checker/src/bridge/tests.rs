@@ -8420,3 +8420,238 @@ fn a_matches_derivation_crosses_and_the_kernel_replays_it_5104()
         "a derivation that leaves `S` out is the kernel's to refuse"
     );
 }
+
+/// How [`hold_over_zero`] reads its slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HoldReading
+{
+    /// `access c as v { resume v 0 }; return c`.
+    Resumed,
+    /// `access c as v { abort v } unwind { return () }; return c`.
+    Aborted,
+    /// `access shared c as w { return w }`.
+    Shared,
+    /// The consuming read of `c`.
+    Consumed,
+    /// `return (thunk (return c))`, a read under a binder.
+    Thunked,
+    /// `access c.#[0] as v { abort v } unwind { return () }; return c`, an
+    /// access at an index.
+    Indexed,
+}
+
+/// `hold c = 0; …`, the block reading `c` as `held` names; the hold's node.
+///
+/// # Specification
+/// trivial.
+fn hold_over_zero(
+    arena: &mut CoreArena,
+    held: HoldReading,
+) -> gandr_core_term::ComputationId
+{
+    use gandr_core_term::memory::AccessMode;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::memory::Place;
+    let slot = DeBruijnIndex::from(0_u32);
+    let zero = arena.value_literal(integer_literal());
+    let unit = arena.value_unit();
+    let unwind = arena.computation_return(unit);
+    let read = arena.value_variable(Zone::Linear, slot);
+    let read_back = arena.computation_return(read);
+    let exclusive = |arena: &mut CoreArena, place, body| {
+        let access = arena.computation_memory(MemoryForm::Access {
+            mode: AccessMode::Exclusive { unwind },
+            held: slot,
+            place,
+            body,
+        });
+        arena.computation_bind(access, read_back)
+    };
+    let body = match held {
+        HoldReading::Resumed => {
+            let written = arena.value_literal(integer_literal());
+            let resumed = arena.computation_memory(MemoryForm::Resume {
+                view: slot,
+                value: written,
+            });
+            exclusive(arena, Place::Whole, resumed)
+        },
+        HoldReading::Aborted => {
+            let aborted = arena.computation_memory(MemoryForm::Abort { view: slot });
+            exclusive(arena, Place::Whole, aborted)
+        },
+        HoldReading::Indexed => {
+            let aborted = arena.computation_memory(MemoryForm::Abort { view: slot });
+            let index = arena.value_literal(integer_literal());
+            exclusive(arena, Place::At { index }, aborted)
+        },
+        HoldReading::Shared => arena.computation_memory(MemoryForm::Access {
+            mode: AccessMode::Shared,
+            held: slot,
+            place: Place::Whole,
+            body: read_back,
+        }),
+        HoldReading::Consumed => arena.computation_memory(MemoryForm::Consume { held: slot }),
+        HoldReading::Thunked => {
+            let delayed = arena.value_thunk(read_back);
+            arena.computation_return(delayed)
+        },
+    };
+    arena.computation_memory(MemoryForm::Hold {
+        value: zero,
+        body,
+        grade: HoldGrade::Many,
+    })
+}
+
+/// Holds of an integer cross as their state-passing reducts: an exclusive
+/// access that resumes and one that aborts, each with the hold read after it,
+/// a shared view's read, and a consuming read. The kernel types each reduct,
+/// so each declaration is the kernel's own definition.
+#[test]
+fn a_lexical_hold_crosses_as_its_state_passing_reduct_6609()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returner = arena.comp_type_returner(integer);
+    let declared = arena.value_type_thunk(returner);
+    let module: Vec<Declaration> = [
+        HoldReading::Resumed,
+        HoldReading::Aborted,
+        HoldReading::Shared,
+        HoldReading::Consumed,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, held)| {
+        let hold = hold_over_zero(&mut arena, held);
+        let body = arena.value_thunk(hold);
+        declaration(At(position), Maybe::Present(declared), Maybe::Present(body))
+    })
+    .collect();
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    for entry in readmission.readmitted() {
+        assert!(
+            matches!(entry.outcome(), Outcome::Defined { .. }),
+            "the hold at {:?} crosses as its reduct: {:?}",
+            entry.constant(),
+            entry.outcome()
+        );
+    }
+}
+
+/// A hold read under a thunk, and a hold accessed at an index, are outside
+/// the lexical reduct: the erasure refuses each at the hold, by name.
+#[test]
+fn a_hold_read_under_a_thunk_is_refused_by_name_6609()
+{
+    for held in [HoldReading::Thunked, HoldReading::Indexed] {
+        let mut arena = CoreArena::new();
+        let hold = hold_over_zero(&mut arena, held);
+        let root = CoreNode::Term(TermNode::Computation(hold));
+        let (_, image) = erase(&mut arena, root);
+        assert_eq!(
+            image,
+            Err(Refusal::OutOfFragment {
+                at: root,
+                former: UnadmittedFormer::Memory,
+            }),
+            "{held:?} is refused at the hold"
+        );
+    }
+}
+
+/// A reduct that reads an access's answer as the value its view left is the
+/// kernel's rejection: the resumed hold's artifact, its two projections
+/// swapped, makes the hold's last read the unit where the declaration
+/// returns an integer.
+#[test]
+fn a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609()
+{
+    use gandr_kernel_term::Computation as KernelComputation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::MarkedDeclaration;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returner = arena.comp_type_returner(integer);
+    let declared = arena.value_type_thunk(returner);
+    let hold = hold_over_zero(&mut arena, HoldReading::Resumed);
+    let body = arena.value_thunk(hold);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[declaration(
+        At(0),
+        Maybe::Present(declared),
+        Maybe::Present(body),
+    )]);
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the resumed hold crosses: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let mut declarations = artifact.declarations().to_vec();
+    let mut kernel = artifact.arena().clone();
+    let statement = declarations.last_mut().expect("the hold crossed");
+    let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+    else {
+        panic!("the hold crosses as a definition");
+    };
+    // `p ← b′; s ← p.1; y ← p.0; return s`, forged to read `s ← p.0` and
+    // `y ← p.1`.
+    let Some(&KernelValue::Thunk(reduct)) = kernel.value(body)
+    else {
+        panic!("the hold crosses as a thunk");
+    };
+    let Some(&KernelComputation::Bind(answered, left)) = kernel.computation(reduct)
+    else {
+        panic!("the reduct binds the access's pair");
+    };
+    let Some(&KernelComputation::Bind(left_read, result)) = kernel.computation(left)
+    else {
+        panic!("the reduct binds the value left");
+    };
+    let Some(&KernelComputation::Bind(result_read, rest)) = kernel.computation(result)
+    else {
+        panic!("the reduct binds the access's result");
+    };
+    let (
+        Some(&KernelComputation::TupleProjection(pair, _)),
+        Some(&KernelComputation::TupleProjection(shifted, _)),
+    ) = (
+        kernel.computation(left_read),
+        kernel.computation(result_read),
+    )
+    else {
+        panic!("the reduct projects the pair twice");
+    };
+    let misread = kernel.computation_tuple_projection(shifted, Component::from(1_usize));
+    let forged = kernel.computation_bind(misread, rest);
+    let misread = kernel.computation_tuple_projection(pair, Component::from(0_usize));
+    let forged = kernel.computation_bind(misread, forged);
+    let forged = kernel.computation_bind(answered, forged);
+    let forged = kernel.value_thunk(forged);
+    let content = DeclarationBuilder::new(&mut kernel).def(
+        statement.declaration().levels().clone(),
+        declared,
+        forged,
+    );
+    *statement = MarkedDeclaration::new(
+        statement.mark(),
+        content.named(statement.declaration().name().clone()),
+    );
+    let position = ConstantIndex::from(declarations.len().saturating_sub(1));
+    let refusal = gandr_kernel_core::Environment::replay(kernel, &declarations)
+        .expect_err("the forged reduct returns the unit where an integer is declared");
+    assert_eq!(refusal.position(), position);
+    assert!(
+        matches!(
+            refusal.error(),
+            &gandr_kernel_core::KernelError::ValueTypeMismatch(_)
+        ),
+        "the kernel names the mismatch: {:?}",
+        refusal.error()
+    );
+}
