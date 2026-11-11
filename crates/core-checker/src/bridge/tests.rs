@@ -3625,6 +3625,292 @@ fn a_call_folds_into_a_rest_that_reads_a_parameter_6642()
     }
 }
 
+/// #6672: a case on a run, at a row and over a type variable, crosses at the
+/// records of its second run. `armed = λa. λx. case ⟨decide ()⟩ { _ => return
+/// x; _ => y ← (return x : F (El a)); return y }` is judged twice: the second
+/// run judges the body that binds the run before the case. The node `return
+/// y` stands in both bodies, beneath one binder more in the second, so only
+/// the second run's record reads the row at the type of `y`.
+#[test]
+fn a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672()
+{
+    use gandr_core_term::effect::EffectRow;
+    let mut arena = CoreArena::new();
+    let [asked, _] = asking_declarations(&mut arena);
+    let &crate::DeclarationContent::Value {
+        signature: Maybe::Present(declared),
+        ..
+    } = asked.content()
+    else {
+        panic!("`asked` states its type");
+    };
+    let Some(&ValueType::Thunk(returner)) = arena.value_type(declared)
+    else {
+        panic!("`asked` stands at a thunk");
+    };
+    let Some(&gandr_core_term::CompType::Returner { ref effects, .. }) = arena.comp_type(returner)
+    else {
+        panic!("`asked` returns at a row");
+    };
+    let ask = effects
+        .signatures()
+        .next()
+        .cloned()
+        .expect("the row holds `Ask`");
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // `decide : U (1 → F (1 + 1))`, answering the left summand.
+    let unit = arena.value_type_unit();
+    let boolean = arena.value_type_sum(&[unit, unit]);
+    let decides = arena.comp_type_returner(boolean);
+    let decides = arena.comp_type_arrow(unit, decides);
+    let decide_type = arena.value_type_thunk(decides);
+    let empty = arena.value_unit();
+    let left = arena.value_injection(0_usize.into(), empty);
+    let decided = arena.computation_return(left);
+    let decided = arena.computation_lambda(decided);
+    let decide = arena.value_thunk(decided);
+    // `armed : U (Π(a : Type). El a → [Ask] El a)`.
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let parameter = variable(&mut arena, 0);
+    let element = arena.value_type_element(parameter, Level::zero());
+    let answer = arena.comp_type_returner_with_effects(element, EffectRow::singleton(ask));
+    let arrow = arena.comp_type_arrow(element, answer);
+    let polymorphic = arena.comp_type_pi(small, arrow);
+    let armed_type = arena.value_type_thunk(polymorphic);
+    let decision = arena.value_constant(ConstantIndex::from(0_usize));
+    let decision = arena.computation_force(decision);
+    let empty = arena.value_unit();
+    let decision = arena.computation_application(decision, empty);
+    let scrutinee = arena.value_nested(decision);
+    // Beneath the arm's payload, `x` is the second binder and `a` the third.
+    // Each arm returns `x` at a node of its own, as the lowering mints them.
+    let returned = |arena: &mut CoreArena| {
+        let x = variable(arena, 1);
+        arena.computation_return(x)
+    };
+    let first = returned(&mut arena);
+    let second = returned(&mut arena);
+    let a = variable(&mut arena, 2);
+    let held = arena.value_type_element(a, Level::zero());
+    let held = arena.comp_type_returner(held);
+    let ascribed = arena.computation_ascribe(second, held);
+    let y = variable(&mut arena, 0);
+    let y = arena.computation_return(y);
+    let bound = arena.computation_bind(ascribed, y);
+    let case = arena.computation_case(scrutinee, &[first, bound]);
+    let body = arena.computation_lambda(case);
+    let body = arena.computation_lambda(body);
+    let armed = arena.value_thunk(body);
+    let module = [
+        declaration(At(0), Maybe::Present(decide_type), Maybe::Present(decide)),
+        declaration(At(1), Maybe::Present(armed_type), Maybe::Present(armed)),
+    ];
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    for crossed in [0_usize, 1] {
+        assert!(
+            matches!(
+                readmission.readmitted()[crossed].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the declaration at {crossed} crosses: {:?}",
+            readmission.readmitted()[crossed].outcome()
+        );
+    }
+}
+
+/// A module whose handlers fold the program of a call: `asked` requests
+/// `ask`; `relayed` handles a call of `asked`, and each of its clauses relays
+/// its request outward, so its answer stands at the row `Ask` too; `curried`
+/// scopes a call of `asked` whose subject returns a function into that row;
+/// `abandoned` handles a call of `asked` and ends the stack of `ask`.
+///
+/// # Specification
+/// trivial.
+fn handling_declarations(arena: &mut CoreArena) -> [Declaration; 4]
+{
+    use gandr_core_term::control::EffectClause;
+    let [asked, _] = asking_declarations(arena);
+    let &crate::DeclarationContent::Value {
+        signature: Maybe::Present(declared),
+        ..
+    } = asked.content()
+    else {
+        panic!("`asked` states its type");
+    };
+    let Some(&ValueType::Thunk(returner)) = arena.value_type(declared)
+    else {
+        panic!("`asked` stands at a thunk");
+    };
+    let Some(&gandr_core_term::CompType::Returner { ref effects, .. }) = arena.comp_type(returner)
+    else {
+        panic!("`asked` returns at a row");
+    };
+    let ask = effects
+        .signatures()
+        .next()
+        .cloned()
+        .expect("the row holds `Ask`");
+    let called = |arena: &mut CoreArena| {
+        let asked = arena.value_constant(ConstantIndex::from(0_usize));
+        arena.computation_force(asked)
+    };
+    let returned = |arena: &mut CoreArena| {
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        arena.computation_return(bound)
+    };
+    // `y ← op(p); resume(k, return y)`: beneath the reply, the stack is the
+    // second binder and the payload the third.
+    let relay = |arena: &mut CoreArena, operation: &str| {
+        let payload = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let requested = arena.computation_perform(ask.clone(), operation.into(), payload);
+        let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let reply = returned(arena);
+        let resumed = arena.computation_resume(stack, reply);
+        EffectClause {
+            operation: operation.into(),
+            body: arena.computation_bind(requested, resumed),
+        }
+    };
+    // `resume(k, return v)`.
+    let resume = |arena: &mut CoreArena, operation: &str, value: ValueId| {
+        let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let reply = arena.computation_return(value);
+        EffectClause {
+            operation: operation.into(),
+            body: arena.computation_resume(stack, reply),
+        }
+    };
+    let subject = called(arena);
+    let on_return = returned(arena);
+    let clauses = [relay(arena, "ask"), relay(arena, "tell")];
+    let relayed = arena.computation_handle(ask.clone(), subject, on_return, clauses.into());
+    let relayed = arena.value_thunk(relayed);
+    // `x ← force asked; return thunk(λz. force asked)`, checked beneath the
+    // capability's binder, which no step reads.
+    let first = called(arena);
+    let later = called(arena);
+    let later = arena.computation_lambda(later);
+    let later = arena.value_thunk(later);
+    let later = arena.computation_return(later);
+    let subject = arena.computation_bind(first, later);
+    let zero = arena.value_literal(integer_literal());
+    let unit = arena.value_unit();
+    let clauses = [resume(arena, "ask", zero), resume(arena, "tell", unit)];
+    let on_return = returned(arena);
+    let curried = arena.computation_scope(ask.clone(), subject, on_return, clauses.into());
+    let curried = arena.value_thunk(curried);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let function = arena.comp_type_arrow(integer, returner);
+    let function = arena.value_type_thunk(function);
+    let function = arena.comp_type_returner(function);
+    let function = arena.value_type_thunk(function);
+    // The clause of `ask` ends its stack, `_ ← abandon(k); return 0`.
+    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let ended = arena.computation_abandon(stack);
+    let zero = arena.value_literal(integer_literal());
+    let zero = arena.computation_return(zero);
+    let ended = arena.computation_bind(ended, zero);
+    let unit = arena.value_unit();
+    let clauses = [
+        EffectClause {
+            operation: "ask".into(),
+            body: ended,
+        },
+        resume(arena, "tell", unit),
+    ];
+    let subject = called(arena);
+    let on_return = returned(arena);
+    let abandoned = arena.computation_handle(ask, subject, on_return, clauses.into());
+    let abandoned = arena.value_thunk(abandoned);
+    let pure = arena.comp_type_returner(integer);
+    let pure = arena.value_type_thunk(pure);
+    [
+        asked,
+        declaration(At(1), Maybe::Present(declared), Maybe::Present(relayed)),
+        declaration(At(2), Maybe::Present(function), Maybe::Present(curried)),
+        declaration(At(3), Maybe::Present(pure), Maybe::Present(abandoned)),
+    ]
+}
+
+/// #6672: a handler folds the program of a call at its row. `relayed` relays
+/// each request outward, so its answer and each clause stand at the row
+/// `Ask`, and each clause crosses as a program of the row's model. The
+/// subject of `curried` returns a function into the row, so the fold's types
+/// are copies of that function's type past the fold's binders, and each copy
+/// reads the level of its original. `abandoned` ends a stack. The kernel
+/// replays all four declarations.
+#[test]
+fn a_handler_whose_clauses_return_programs_crosses_6672()
+{
+    let mut arena = CoreArena::new();
+    let module = handling_declarations(&mut arena);
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    for crossed in [0_usize, 1, 2, 3] {
+        assert!(
+            matches!(
+                readmission.readmitted()[crossed].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the declaration at {crossed} crosses: {:?}",
+            readmission.readmitted()[crossed].outcome()
+        );
+    }
+}
+
+/// #6672: a fold that answers a request at another operation's clause is the
+/// kernel's refusal. `relayed`'s artifact, its two clauses given to the fold
+/// in the other order, gives the clause of `tell` the request of `ask`: that
+/// clause takes an integer, and `ask` carries the unit.
+#[test]
+fn a_handled_call_folded_at_another_operation_is_the_kernels_refusal_6672()
+{
+    use gandr_kernel_term::Computation as KernelComputation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::MarkedDeclaration;
+    let mut arena = CoreArena::new();
+    let module = handling_declarations(&mut arena);
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let mut declarations = artifact.declarations().to_vec();
+    let mut kernel = artifact.arena().clone();
+    // The model, `asked`, then `relayed`.
+    let relayed = &mut declarations[2];
+    let DeclarationContent::Def { declared, body } = *relayed.declaration().content()
+    else {
+        panic!("`relayed` crosses as a definition");
+    };
+    let Some(&KernelValue::Thunk(applied)) = kernel.value(body)
+    else {
+        panic!("`relayed` crosses as a thunk");
+    };
+    // `head s r h_ask h_tell`, forged to `head s r h_tell h_ask`.
+    let Some(&KernelComputation::Application(applied, told)) = kernel.computation(applied)
+    else {
+        panic!("the fold takes the clause of `tell` last");
+    };
+    let Some(&KernelComputation::Application(head, asked)) = kernel.computation(applied)
+    else {
+        panic!("the fold takes the clause of `ask` before it");
+    };
+    let swapped = kernel.computation_application(head, told);
+    let swapped = kernel.computation_application(swapped, asked);
+    let forged = kernel.value_thunk(swapped);
+    let content = DeclarationBuilder::new(&mut kernel).def(
+        relayed.declaration().levels().clone(),
+        declared,
+        forged,
+    );
+    *relayed = MarkedDeclaration::new(
+        relayed.mark(),
+        content.named(relayed.declaration().name().clone()),
+    );
+    let refusal = gandr_kernel_core::Environment::replay(kernel, &declarations)
+        .expect_err("the clause of `tell` takes an integer where `ask` carries the unit");
+    assert_eq!(refusal.position(), ConstantIndex::from(2_usize));
+}
+
 /// A deep handler of two operations crosses as one fold of its effect's free
 /// model, one case for each clause: `first : Unit ↠ Integer` resumed at zero
 /// and `second : Integer ↠ Unit` answered with its payload, the signature and

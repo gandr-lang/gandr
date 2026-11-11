@@ -377,6 +377,18 @@
 //! declarations at one row read one model, and the row and the level fix its
 //! name, so every session names it alike.
 //!
+//! A handler inside a declaration at a row crosses as the same fold (#6672).
+//! A step of its subject whose image is a program, such as a call of a
+//! declaration at the handled row, folds into the subject's program. The
+//! clauses and the answer stand at the outer row, so each clause returns a
+//! program of the outer row's model, and the fold answers that program. Each
+//! resumption of a clause's stack calls the thunk of the rest of the fold.
+//! The module check judges a body that holds a nested run twice: once as
+//! written, and once with each run bound before its region. The bridge
+//! crosses the second body, and one node can stand in both bodies beneath
+//! other binders. So the module check forgets the rows records of the first
+//! run before the second run starts (`Rows::forget`).
+//!
 //! The checker decides a handled body's row by its sealed-set arithmetic, and
 //! the kernel re-derives it by typing the program: the program is a value of
 //! the handled effect's model alone, so a payload of another type than its
@@ -385,8 +397,8 @@
 //! vouches for. The two can disagree only where the bridge leaves a request
 //! unread, which it then erases as it stands and refuses; it never drops one.
 //! Every form past this one — a request off the spine, a reset or a shallow
-//! handler, a handler inside a row (#6672), control and stacks, a row with a
-//! tail or with divergence — is refused `OutOfFragment` under
+//! handler, control and stacks, a row with a tail, an instance or divergence
+//! — is refused `OutOfFragment` under
 //! [`TrackingIssue::KERNEL_EFFECTS`]. The witness
 //! `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
 //! crosses a handler that resumes and one that answers through one model,
@@ -6026,6 +6038,13 @@ struct Erasure<'source, 'positions>
     /// program, beside the program the bind or the split stands for, past
     /// their binders.
     assigned: BTreeMap<ComputationId, Programmed>,
+    /// Each returner over a row of operations that a reduct copied past
+    /// binders, beside the returner it copies: the copy's result inhabits the
+    /// universe the original's does, so the copy reads the original's level.
+    copied: BTreeMap<CompTypeId, CompTypeId>,
+    /// The pairs the last shift carried, kept so each shift reuses one
+    /// buffer ([`Self::shifted`]).
+    carrying: Vec<gandr_core_term::Carried>,
     /// The declaration the erasure met that the environment does not hold
     /// yet — a native operation's signature or a handled effect's free model
     /// — which stops it.
@@ -6062,6 +6081,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             bodies: BTreeMap::new(),
             rebuilt: BTreeMap::new(),
             assigned: BTreeMap::new(),
+            copied: BTreeMap::new(),
+            carrying: Vec::new(),
             crossing: &[],
             restated: &[],
             unseeded: None,
@@ -8057,7 +8078,39 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::Rewritten { at },
                 TermNode::Computation(self.handler_reduct(at)?),
             ),
+            // A handler clause binds its stack, a variable, to the thunk of
+            // the rest of its fold, which a resumption calls (#6672); a
+            // stack no clause binds holds a former of its own, which is
+            // refused where it stands.
+            Computation::Resume(stack, resumed)
+                if matches!(
+                    self.arena.value(stack),
+                    Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        ..
+                    })
+                ) =>
+            {
+                (
+                    Frame::Rewritten { at },
+                    TermNode::Computation(self.resumption_reduct(at, (stack, resumed))?),
+                )
+            },
             Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
+            Computation::Abandon(stack)
+                if matches!(
+                    self.arena.value(stack),
+                    Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        ..
+                    })
+                ) =>
+            {
+                (
+                    Frame::Rewritten { at },
+                    TermNode::Computation(self.abandonment_reduct(at)?),
+                )
+            },
             Computation::Abandon(_) => return Err(unadmitted(UnadmittedFormer::Abandon)),
             Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
             Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
@@ -9961,33 +10014,43 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - ensures: for a handler of the operations `op₁ : A₁ ↠ B₁, …, opₙ : Aₙ ↠
     ///   Bₙ`, `n ≥ 1`, in the order the signature enumerates them, none of
     ///   whose payloads and replies mentions a binder, judged with subject
-    ///   result `R` and answer `C` ([`Source::handled`]), the computation `t ←
-    ///   T; ((fix f. λt. case t of Return(x) ⇒ r | op₁(p, k) ⇒ u₁′ | … | opₙ(p,
-    ///   k) ⇒ uₙ′) : Free(R) → C) t`. `T` is the subject read along its bind
-    ///   spine, a split at the ambient motive read as the projection binds it
-    ///   reduces to: a request of `opᵢ`, performed by the interface's name or
-    ///   exercised through a scope's own capability, is `return opᵢ(v,
-    ///   thunk(λy. K))`, `K` the rest of the spine; any other step `M` runs as
-    ///   `y ← M; K`, the subject's last step ascribed its result, `y ← (M : F
-    ///   R); K`, as the judgement checked it there; the spine ends in `return
-    ///   Return(x)`. A scope's capability is bound to the unit, which none but
-    ///   its own requests read. `uᵢ′` is `opᵢ`'s clause with each resumption
-    ///   `resume(k, M)` read as `y ← M; t′ ← force k y; force f t′` and each
-    ///   abandonment as the unit returned
-    ///   ([`gandr_core_term::resume_through`]), so the fold handles the rest of
-    ///   the program deeply. A request off the spine, a resumption of another
-    ///   stack, or a type the fold does not inhabit is left to the erasure,
-    ///   which refuses it, or to the kernel, whose type error it is.
+    ///   result `R` and answer `C` ([`Source::handled`]), the computation
+    ///   `((λs. λr. λh₁. … λhₙ. t ← force s; ((fix f. λt. case t of Return(x) ⇒
+    ///   force r x | opᵢ(v, κ) ⇒ force hᵢ v (thunk(λy. t′ ← force κ y; force f
+    ///   t′))) : Free(R) → C) t) : U(F Free(R)) → U(R → C) → U(A₁ → U(B₁ → C) →
+    ///   C) → … → U(Aₙ → U(Bₙ → C) → C) → C) (thunk T) (thunk(λx. r))
+    ///   (thunk(λp. λk. u₁)) … (thunk(λp. λk. uₙ))`. `T` is the subject read
+    ///   along its bind spine, a split at the ambient motive read as the
+    ///   projection binds it reduces to: a request of `opᵢ`, performed by the
+    ///   interface's name or exercised through a scope's own capability, is
+    ///   `return opᵢ(v, thunk(λy. K))`, `K` the rest of the spine; a step `M`
+    ///   whose image is a program of the handled effect, as a call of a
+    ///   declaration at its row is, folds into `K` ([`Self::fold`]); any other
+    ///   step runs as `y ← M; K`, the subject's last step ascribed its result,
+    ///   `y ← (M : F R); K`, as the judgement checked it there; the spine ends
+    ///   in `return Return(x)`. A scope's capability is bound to the unit,
+    ///   which none but its own requests read. The return clause `r` and each
+    ///   operation clause `uᵢ` stand beneath their own binders, so the reduct
+    ///   copies none of them and each crosses at the records the judgement
+    ///   keeps for it. A clause's stack `k` is the thunk of the rest of the
+    ///   fold, and each resumption of it calls that thunk
+    ///   ([`Self::resumption_reduct`]). An answer at a row of operations is the
+    ///   program of that row's model, `F Free'(A)` (#6672). A request off the
+    ///   spine, a step at another row, or a type the fold does not inhabit is
+    ///   left to the erasure, which refuses it, or to the kernel, whose type
+    ///   error it is.
     /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Handle`]
     ///   for a handler of no operation, one an operation of whose payload or
     ///   reply mentions a binder, one whose subject's result inhabits a
-    ///   universe at a level that mentions a level variable, or one the
-    ///   judgement recorded no types for; [`Refusal::MachineInvariant`] for
-    ///   clauses that do not cover the operations exactly once, which the
-    ///   judgement's coverage rules out, and when the environment holds no free
-    ///   model of the handled effect at that level yet, which the erasure names
-    ///   as the seed it stopped at; [`Refusal::DanglingNode`] for an absent
-    ///   source or one that is no handler.
+    ///   universe at a level that mentions a level variable, one whose answer
+    ///   is a returner over a row the model does not translate, one whose
+    ///   subject holds a step at another row, or one the judgement recorded no
+    ///   types for; [`Refusal::MachineInvariant`] for clauses that do not cover
+    ///   the operations exactly once, which the judgement's coverage rules out,
+    ///   and when the environment holds no free model of the handled effect or
+    ///   of the answer's row at that level yet, which the erasure names as the
+    ///   seed it stopped at; [`Refusal::DanglingNode`] for an absent source or
+    ///   one that is no handler.
     /// - panics: none.
     ///
     /// # Errors
@@ -10008,7 +10071,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   one answering, crosses through one model, so each request and each
     ///   clause stands at its own operation's tag; a subject whose last step
     ///   returns a function crosses, checked at its result; a scope judged at
-    ///   no type is refused by name at its node. An unshifted clause, a request
+    ///   no type is refused by name at its node; a handler over a call of a
+    ///   declaration at the handled row, whose clauses return functions into
+    ///   another row, crosses, and a fold of that call at another operation's
+    ///   tag is the kernel's refusal. A clause at another parameter, a request
     ///   or a clause at another operation's tag, a last step left to be
     ///   synthesised, or a fold over the wrong model is the kernel's rejection
     ///   instead.
@@ -10017,6 +10083,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::a_handled_subject_returning_a_function_crosses_checked_at_its_result_2750`
     /// - witness: `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`
     /// - witness: `bridge::tests::each_effect_former_is_refused_by_name_where_it_stands`
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    /// - witness: `bridge::tests::a_handled_call_folded_at_another_operation_is_the_kernels_refusal_6672`
     #[spec(ensures: |ret| match ret {
         | Ok(reduct) => self.arena.computation(reduct).is_some(),
         | Err(Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Handle } | Refusal::DanglingNode { node: site }) =>
@@ -10058,15 +10126,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             return Err(uncovered);
         };
         // The model stands at the top level, where no level variable is bound.
-        // A handler whose answer stands at a row of operations folds a program
-        // inside that row, which the kernel does not replay yet (#6672).
-        if signature.operations().len() == 0
-            || handled.level.atoms().next().is_some()
-            || matches!(
-                crate::program::programmed(self.arena, handled.answer),
-                Maybe::Present(_)
-            )
-        {
+        if signature.operations().len() == 0 || handled.level.atoms().next().is_some() {
             return Err(uncovered);
         }
         for operation in signature.operations() {
@@ -10096,45 +10156,52 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             bodies.push(body);
         }
         let model = self.free_model(core::slice::from_ref(&signature), &handled.level)?;
+        // An answer at a row of operations is a program of that row's model.
+        let outer = match crate::program::programmed(self.arena, handled.answer) {
+            Maybe::Present(_) => match self
+                .programmed(handled.answer)
+                .map_err(|_outside| uncovered)?
+            {
+                Imaged::Program(answer) => {
+                    Some((self.free_model(&answer.row, &answer.level)?, answer))
+                },
+                Imaged::Pure => None,
+            },
+            Maybe::Absent(_) => None,
+        };
         let variable = |arena: &mut CoreArena, index: u32| {
             arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
         };
-        // `Free(R)` beneath `depth` binders past the handler's context.
-        let program = |arena: &mut CoreArena, depth: u32| {
-            let result =
-                gandr_core_term::shift_value_type(arena, handled.subject, Binders::from(depth))
-                    .settle(arena);
-            let code = arena.value_quote(result);
-            arena.value_type_data(model, Vec::from([code]))
+        // `Free(R)`, in the handler's context.
+        let program = Programmed {
+            result: handled.subject,
+            row: Vec::from([signature.clone()]),
+            level: handled.level.clone(),
         };
         let binder = u32::from(scoped);
         let past = |depth: u32| binder.checked_add(depth).ok_or(Refusal::MachineInvariant);
-        // The spine's end, beneath the binder of the value it returns.
-        let datatype = program(self.arena, past(1)?);
-        let returned = variable(self.arena, 0);
-        let returned = self.arena.value_constructor(
-            model,
-            datatype,
-            gandr_kernel_term::ConstructorTag::from(0_usize),
-            Vec::from([returned]),
-        );
-        let mut continuation = self.arena.computation_return(returned);
+        // The rest of the spine past the step at hand, once a step stands:
+        // the spine's end is minted where its step stands, so no shift
+        // copies its types.
+        let mut continuation: Option<ComputationId> = None;
         // Each bound computation waits, at its depth, for the program its
         // bind's body reads as, which is its own continuation.
         let mut waiting: Vec<(ComputationId, u32)> = Vec::new();
         let (mut current, mut depth) = (subject, 0_u32);
-        // The first step the spine reaches is the subject's last.
-        let mut tail = true;
         let tree = loop {
             if let Some(&Computation::Bind(bound, rest)) = self.arena.computation(current) {
                 waiting.push((bound, depth));
-                continuation = gandr_core_term::shift_computation_under(
-                    self.arena,
-                    continuation,
-                    Binders::from(1_u32),
-                    Binders::from(1_u32),
-                )
-                .settle(self.arena);
+                if let Some(later) = continuation {
+                    continuation = Some(
+                        gandr_core_term::shift_computation_under(
+                            self.arena,
+                            later,
+                            Binders::from(1_u32),
+                            Binders::from(1_u32),
+                        )
+                        .settle(self.arena),
+                    );
+                }
                 current = rest;
                 depth = depth.checked_add(1).ok_or(Refusal::MachineInvariant)?;
                 continue;
@@ -10181,18 +10248,26 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 _ => None,
             };
-            // A step whose image is a program, as a call of a declaration at a
-            // row is, binds into the subject's program: a handler inside a
-            // row, which the kernel does not replay yet (#6672).
-            if request.is_none() && !matches!(self.imaged(current), Ok(Imaged::Pure)) {
-                return Err(uncovered);
+            // The first step the spine reaches is the subject's last, and its
+            // rest is the spine's end, beneath the binder of the value it
+            // returns.
+            let tail = continuation.is_none();
+            let next = if let Some(later) = continuation {
+                later
             }
+            else {
+                let returned = variable(self.arena, 0);
+                let beneath = past(depth)?
+                    .checked_add(1)
+                    .ok_or(Refusal::MachineInvariant)?;
+                self.returning(model, &program, (returned, Binders::from(beneath)))
+            };
             let step = match request {
                 Some((index, payload)) => {
                     let tag = index.checked_add(1).ok_or(Refusal::MachineInvariant)?;
-                    let rest = self.arena.computation_lambda(continuation);
+                    let rest = self.arena.computation_lambda(next);
                     let rest = self.arena.value_thunk(rest);
-                    let datatype = program(self.arena, past(depth)?);
+                    let datatype = self.answer(model, &program, Binders::from(past(depth)?));
                     let requested = self.arena.value_constructor(
                         model,
                         datatype,
@@ -10201,26 +10276,36 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     );
                     self.arena.computation_return(requested)
                 },
-                // The subject's last step is checked at its result, as the
-                // judgement checked it; a bound step is synthesised, as the
-                // judgement synthesised it.
-                None if tail => {
-                    let result = gandr_core_term::shift_value_type(
-                        self.arena,
-                        handled.subject,
-                        Binders::from(past(depth)?),
-                    )
-                    .settle(self.arena);
-                    let returner = self.arena.comp_type_returner(result);
-                    let typed = self.arena.computation_ascribe(current, returner);
-                    self.arena.computation_bind(typed, continuation)
+                None => match self.imaged(current).map_err(|_outside| uncovered)? {
+                    // A step whose image is a program of the handled effect,
+                    // as a call of a declaration at its row is, folds into
+                    // the rest of the subject's program (#6672).
+                    Imaged::Program(inner) => {
+                        if inner.row.iter().any(|held| held.name() != signature.name()) {
+                            return Err(uncovered);
+                        }
+                        let here = Programmed {
+                            result: self.shifted(handled.subject, Binders::from(past(depth)?)),
+                            row: program.row.clone(),
+                            level: program.level.clone(),
+                        };
+                        self.fold((current, &inner), next, (model, &here))?
+                    },
+                    // The subject's last step is checked at its result, as
+                    // the judgement checked it; a bound step is synthesised,
+                    // as the judgement synthesised it.
+                    Imaged::Pure if tail => {
+                        let result = self.shifted(handled.subject, Binders::from(past(depth)?));
+                        let returner = self.arena.comp_type_returner(result);
+                        let typed = self.arena.computation_ascribe(current, returner);
+                        self.arena.computation_bind(typed, next)
+                    },
+                    Imaged::Pure => self.arena.computation_bind(current, next),
                 },
-                None => self.arena.computation_bind(current, continuation),
             };
-            tail = false;
             match waiting.pop() {
                 Some((bound, at_depth)) => {
-                    (current, depth, continuation) = (bound, at_depth, step);
+                    (current, depth, continuation) = (bound, at_depth, Some(step));
                 },
                 None => break step,
             }
@@ -10233,21 +10318,35 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         else {
             tree
         };
-        // The fold stands beneath the program's binder; its clauses beneath
-        // that, the fold's own binder and its argument.
-        let motive =
-            gandr_core_term::shift_comp_type(self.arena, handled.answer, Binders::from(4_u32))
-                .settle(self.arena);
-        let returned = gandr_core_term::shift_computation_under(
-            self.arena,
-            on_return,
-            Binders::from(1_u32),
-            Binders::from(3_u32),
-        )
-        .settle(self.arena);
-        let returned = self.arena.computation_lambda(returned);
+        // `C` beneath `depth` binders past the handler's context.
+        let answered = |this: &mut Self, depth: u32| match outer {
+            Some((outside, ref answer)) => {
+                let tree = this.answer(outside, answer, Binders::from(depth));
+                this.arena.comp_type_returner(tree)
+            },
+            None => this.shifted_computation(handled.answer, Binders::from(depth)),
+        };
+        let operations =
+            u32::try_from(bodies.len()).map_err(|_overflow| Refusal::MachineInvariant)?;
+        // Past the parameters: the subject's thunk, the return clause's and
+        // one for each operation clause, outermost first.
+        let beneath = |extra: u32| {
+            operations
+                .checked_add(extra)
+                .ok_or(Refusal::MachineInvariant)
+        };
+        let answer = answered(self, 0);
+        // The case stands beneath the parameters, the program's binder, the
+        // fold's and its argument's, and its motive beneath the scrutinee's.
+        let motive = answered(self, beneath(6)?);
+        // Beneath the returned value, the return clause is the second
+        // parameter.
+        let on_returned = variable(self.arena, beneath(4)?);
+        let on_returned = self.arena.computation_force(on_returned);
+        let value = variable(self.arena, 0);
+        let on_returned = self.arena.computation_application(on_returned, value);
         // Beneath the reply: the continuation field is one, the fold five
-        // once the bind's binder stands. Every clause resumes through it.
+        // once the rest's binder stands. Every clause resumes through it.
         let later = variable(self.arena, 1);
         let later = self.arena.computation_force(later);
         let reply = variable(self.arena, 0);
@@ -10257,30 +10356,33 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let rest = variable(self.arena, 0);
         let folded = self.arena.computation_application(fold, rest);
         let resumed = self.arena.computation_bind(resumed, folded);
+        let resumed = self.arena.computation_lambda(resumed);
+        let resumed = self.arena.value_thunk(resumed);
         let mut branches = Vec::with_capacity(bodies.len().saturating_add(1));
         let mut fields = Vec::with_capacity(bodies.len().saturating_add(1));
-        branches.push(returned);
+        let mut parameters = Vec::with_capacity(bodies.len());
+        branches.push(self.arena.computation_lambda(on_returned));
         fields.push(gandr_kernel_term::FieldCount::from(1_usize));
-        for body in bodies {
-            let clause = gandr_core_term::shift_computation_under(
-                self.arena,
-                body,
-                Binders::from(2_u32),
-                Binders::from(3_u32),
-            )
-            .settle(self.arena);
-            // The continuation field binds between the payload and the stack.
-            let clause = gandr_core_term::shift_computation_under(
-                self.arena,
-                clause,
-                Binders::from(1_u32),
-                Binders::from(1_u32),
-            )
-            .settle(self.arena);
-            let clause = gandr_core_term::resume_through(self.arena, clause, resumed);
-            let clause = self.arena.computation_lambda(clause);
-            branches.push(self.arena.computation_lambda(clause));
+        for (clause, operation) in (0_u32 ..).zip(signature.operations()) {
+            // Beneath the payload and the continuation field, clause `i` is
+            // the parameter `n + 4 - i` binders out.
+            let handler = beneath(4)?
+                .checked_sub(clause)
+                .ok_or(Refusal::MachineInvariant)?;
+            let handler = variable(self.arena, handler);
+            let handler = self.arena.computation_force(handler);
+            let payload = variable(self.arena, 1);
+            let answered = self.arena.computation_application(handler, payload);
+            let answered = self.arena.computation_application(answered, resumed);
+            let answered = self.arena.computation_lambda(answered);
+            branches.push(self.arena.computation_lambda(answered));
             fields.push(gandr_kernel_term::FieldCount::from(2_usize));
+            // `U(Aᵢ → U(Bᵢ → C) → C)`, in the handler's context.
+            let stack = self.arena.comp_type_arrow(operation.reply, answer);
+            let stack = self.arena.value_type_thunk(stack);
+            let parameter = self.arena.comp_type_arrow(stack, answer);
+            let parameter = self.arena.comp_type_arrow(operation.payload, parameter);
+            parameters.push(self.arena.value_type_thunk(parameter));
         }
         let scrutinee = variable(self.arena, 0);
         let case = self
@@ -10290,15 +10392,143 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let fold = self
             .arena
             .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
-        let domain = program(self.arena, 1);
-        let codomain =
-            gandr_core_term::shift_comp_type(self.arena, handled.answer, Binders::from(1_u32))
-                .settle(self.arena);
+        // The fold's classifier stands beneath the parameters and the
+        // program's binder.
+        let domain = self.answer(model, &program, Binders::from(beneath(3)?));
+        let codomain = answered(self, beneath(3)?);
         let classifier = self.arena.comp_type_arrow(domain, codomain);
         let fold = self.arena.computation_ascribe(fold, classifier);
         let bound = variable(self.arena, 0);
         let folded = self.arena.computation_application(fold, bound);
-        Ok(self.arena.computation_bind(tree, folded))
+        // Beneath the parameters, the subject's thunk is the outermost.
+        let ran = variable(self.arena, beneath(1)?);
+        let ran = self.arena.computation_force(ran);
+        let mut head = self.arena.computation_bind(ran, folded);
+        for _parameter in 0 .. beneath(2)? {
+            head = self.arena.computation_lambda(head);
+        }
+        let mut classifier = answer;
+        for &parameter in parameters.iter().rev() {
+            classifier = self.arena.comp_type_arrow(parameter, classifier);
+        }
+        let on_return_type = self.arena.comp_type_arrow(handled.subject, answer);
+        let on_return_type = self.arena.value_type_thunk(on_return_type);
+        classifier = self.arena.comp_type_arrow(on_return_type, classifier);
+        let subject_type = self.answer(model, &program, Binders::from(0_u32));
+        let subject_type = self.arena.comp_type_returner(subject_type);
+        let subject_type = self.arena.value_type_thunk(subject_type);
+        classifier = self.arena.comp_type_arrow(subject_type, classifier);
+        let head = self.arena.computation_ascribe(head, classifier);
+        // Each argument stands in the handler's context, beneath its own
+        // binders.
+        let tree = self.arena.value_thunk(tree);
+        let mut reduct = self.arena.computation_application(head, tree);
+        let on_return = self.arena.computation_lambda(on_return);
+        let on_return = self.arena.value_thunk(on_return);
+        reduct = self.arena.computation_application(reduct, on_return);
+        for body in bodies {
+            let clause = self.arena.computation_lambda(body);
+            let clause = self.arena.computation_lambda(clause);
+            let clause = self.arena.value_thunk(clause);
+            reduct = self.arena.computation_application(reduct, clause);
+        }
+        Ok(reduct)
+    }
+
+    /// The reduct of the resumption `resume(k, M)` at `at` of a handler
+    /// clause's stack `k`, which the handler's reduct binds to the thunk of
+    /// the rest of its fold ([`Self::handler_reduct`]): `force k v` for `M`
+    /// the return of `v`; `y ← M; force k y` for any other `M`, or the fold
+    /// of `M` into `force k y` when the image of `M` is a program.
+    ///
+    /// # Specification
+    /// - requires: `at` is `resume(stack, resumed)`.
+    /// - ensures: the reduct above. A returned value stands where it stands in
+    ///   `at`, and the kernel checks it at the stack's reply, as a returned
+    ///   list must be. Past the reply's binder, `k` reads one binder past where
+    ///   `at` stands; `M` stands where it stands in `at`, so it keeps its
+    ///   records.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Resume`]
+    ///   at `at` for a program fed to a stack where `at` stands for no program,
+    ///   which the judgement's rows rule out; as [`Self::imaged`],
+    ///   [`Self::program_of`] and [`Self::fold`].
+    /// - panics: none.
+    /// - executable: none — the reduct is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::handler_reduct`]: a clause that resumes
+    ///   crosses as a call of the rest of the fold, which the kernel types.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn resumption_reduct(
+        &mut self,
+        at: ComputationId,
+        (stack, resumed): (ValueId, ComputationId),
+    ) -> Result<ComputationId, Refusal>
+    {
+        if let Some(&Computation::Return(value)) = self.arena.computation(resumed) {
+            let later = self.arena.computation_force(stack);
+            return Ok(self.arena.computation_application(later, value));
+        }
+        let stack = gandr_core_term::shift_value(self.arena, stack, Binders::from(1_u32))
+            .settle(self.arena);
+        let later = self.arena.computation_force(stack);
+        let reply = self
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let continued = self.arena.computation_application(later, reply);
+        match self.imaged(resumed)? {
+            Imaged::Pure => Ok(self.arena.computation_bind(resumed, continued)),
+            Imaged::Program(inner) => {
+                let Some(program) = self.program_of(at)?
+                else {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Computation(at)),
+                        former: UnadmittedFormer::Resume,
+                    });
+                };
+                let model = self.free_model(&program.row, &program.level)?;
+                self.fold((resumed, &inner), continued, (model, &program))
+            },
+        }
+    }
+
+    /// The reduct of the abandonment `abandon(k)` at `at` of a handler
+    /// clause's stack: the unit returned, as a program when `at` stands for
+    /// one.
+    ///
+    /// # Specification
+    /// - ensures: `return Return(())` of the model of the program
+    ///   [`Self::program_of`] reads at `at`; `return ()` when it reads none.
+    /// - fails: as [`Self::program_of`] and [`Self::free_model`].
+    /// - panics: none.
+    /// - executable: none — the reduct is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause that abandons its stack crosses, and the
+    ///   kernel admits it.
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn abandonment_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<ComputationId, Refusal>
+    {
+        let unit = self.arena.value_unit();
+        match self.program_of(at)? {
+            Some(program) => {
+                let model = self.free_model(&program.row, &program.level)?;
+                Ok(self.returning(model, &program, (unit, Binders::from(0_u32))))
+            },
+            None => Ok(self.arena.computation_return(unit)),
+        }
     }
 
     /// How the image of `at` stands to a row of operations: a program of the
@@ -10339,8 +10569,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Specification
     /// - ensures: [`Imaged::Program`] for a returner over a row of operations
     ///   ([`crate::program::programmed`]) whose level the judgement recorded,
-    ///   mentions no level variable, and whose operations' payloads and replies
-    ///   mention no binder; [`Imaged::Pure`] for a pure returner.
+    ///   or recorded for the returner a reduct copied it from
+    ///   ([`Self::shifted`]), that mentions no level variable, and whose
+    ///   operations' payloads and replies mention no binder; [`Imaged::Pure`]
+    ///   for a pure returner.
     /// - fails: [`Refusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::EffectRow`] at `ty` for any other type.
     /// - panics: none.
@@ -10368,7 +10600,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Maybe::Absent(crate::program::unprogrammed::Absent::Pure) => return Ok(Imaged::Pure),
             Maybe::Absent(_) => return Err(outside),
         };
-        let Some(level) = self.source.rows.level(ty)
+        // A copy a reduct shifted reads the level of the type it copies.
+        let Some(level) = self.level_of(ty)
         else {
             return Err(outside);
         };
@@ -10533,12 +10766,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
         // The fold's classifier stands beneath the two parameters and the
         // program's binder.
-        let result = gandr_core_term::shift_value_type(
-            self.arena,
-            inner.result,
-            gandr_core_term::Binders::from(3_u32),
-        )
-        .settle(self.arena);
+        let result = self.shifted(inner.result, Binders::from(3_u32));
         let code = self.arena.value_quote(result);
         let domain = self.arena.value_type_data(source, Vec::from([code]));
         let codomain = self.answer(model, program, Binders::from(3_u32));
@@ -10583,10 +10811,108 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         depth: Binders,
     ) -> ValueTypeId
     {
-        let result =
-            gandr_core_term::shift_value_type(self.arena, program.result, depth).settle(self.arena);
+        let result = self.shifted(program.result, depth);
         let code = self.arena.value_quote(result);
         self.arena.value_type_data(model, Vec::from([code]))
+    }
+
+    /// `ty` shifted past `depth` binders, each returner over a row of
+    /// operations the shift copies reading the level of the returner it
+    /// copies.
+    ///
+    /// # Specification
+    /// - ensures: [`gandr_core_term::shift_value_type`] of `ty` by `depth`;
+    ///   [`Self::programmed`] reads at each returner the shift copies the level
+    ///   it reads at the original.
+    /// - panics: none.
+    /// - executable: none — the copies are records the erasure keeps, and the
+    ///   witness crosses them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler whose subject returns a function into a row
+    ///   of operations crosses: its fold's types are copies of that function's
+    ///   type past the fold's binders.
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn shifted(
+        &mut self,
+        ty: ValueTypeId,
+        depth: Binders,
+    ) -> ValueTypeId
+    {
+        let mut carried = core::mem::take(&mut self.carrying);
+        carried.clear();
+        let shifted = gandr_core_term::shift_value_type(self.arena, ty, depth)
+            .settle_traced(self.arena, &mut carried);
+        self.carry(&carried);
+        self.carrying = carried;
+        shifted
+    }
+
+    /// [`Self::shifted`] of the computation type `ty`.
+    ///
+    /// # Specification
+    /// - ensures: [`gandr_core_term::shift_comp_type`] of `ty` by `depth`, the
+    ///   copies recorded as [`Self::shifted`] records them.
+    /// - panics: none.
+    /// - executable: none — as [`Self::shifted`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::shifted`].
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn shifted_computation(
+        &mut self,
+        ty: CompTypeId,
+        depth: Binders,
+    ) -> CompTypeId
+    {
+        let mut carried = core::mem::take(&mut self.carrying);
+        carried.clear();
+        let shifted = gandr_core_term::shift_comp_type(self.arena, ty, depth)
+            .settle_traced(self.arena, &mut carried);
+        self.carry(&carried);
+        self.carrying = carried;
+        shifted
+    }
+
+    /// Record each computation type a shift wrote beside the computation type
+    /// it held, so the copy reads the level of the original.
+    ///
+    /// # Specification
+    /// trivial.
+    fn carry(
+        &mut self,
+        carried: &[gandr_core_term::Carried],
+    )
+    {
+        for &copied in carried {
+            if let gandr_core_term::Carried::CompType(held, written) = copied
+                && held != written
+            {
+                let _first = self.copied.entry(written).or_insert(held);
+            }
+        }
+    }
+
+    /// The level the judgement recorded for the returner `ty`, or for the
+    /// returner that `ty` copies, through each copy in turn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn level_of(
+        &self,
+        ty: CompTypeId,
+    ) -> Option<&Level>
+    {
+        let mut at = ty;
+        // Each copy is minted after the returner it copies, so a chain of
+        // copies holds no cycle and ends within the count of copies.
+        for _copy in 0 ..= self.copied.len() {
+            if let Some(level) = self.source.rows.level(at) {
+                return Some(level);
+            }
+            at = *self.copied.get(&at)?;
+        }
+        None
     }
 
     /// `return Return(value)` of the model at `model`, `depth` binders past
@@ -10719,8 +11045,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         if self.source.rows.checked(body).is_some() {
             return;
         }
-        let result = gandr_core_term::shift_value_type(self.arena, program.result, binders)
-            .settle(self.arena);
+        let result = self.shifted(program.result, binders);
         self.assigned.insert(body, Programmed {
             result,
             row: program.row.clone(),
@@ -10863,6 +11188,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at: CoreNode::Term(TermNode::Computation(at)),
                 });
             },
+            // A clause's resumption and abandonment cross at their own
+            // reducts, which read the program here (#6672).
+            Some(&(Computation::Resume(..) | Computation::Abandon(_))) => return Ok(None),
             Some(_) | None if checked => return Ok(None),
             Some(_) | None => return Err(outside),
         }
