@@ -57,8 +57,9 @@ pub const HOVERED: Count = Count(100);
 /// - provides: the card that the render bus sends a client of the trace layer.
 /// - fails: never.
 /// - panics: none.
-/// - intension: one print of each node's goal and type, so the work is linear
-///   in the nodes and in the text that their prints lay out.
+/// - intension: one read of the declaration's binders, then one print of each
+///   node's goal and type, so the work is linear in the declaration's nodes and
+///   in the text that the prints lay out.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an attached view of the trace layer hears the card of the
@@ -79,6 +80,7 @@ pub fn card(
     let placed = |offset: gandr_surface_syntax::ByteOffset| {
         ByteOffset::from(usize::from(start).saturating_add(usize::from(offset)))
     };
+    let goals = derivation.goals();
     let rows = derivation
         .nodes()
         .iter()
@@ -93,11 +95,11 @@ pub fn card(
                 Maybe::Present(_) => Direction::Checking,
                 Maybe::Absent(_) => Direction::Synthesis,
             },
-            goal: match derivation.goal(node, page) {
+            goal: match goals.goal(node, page) {
                 Maybe::Present(goal) => Some(alloc::format!("{goal}")),
                 Maybe::Absent(_) => None,
             },
-            ty: match derivation.ty(node, page) {
+            ty: match goals.ty(node, page) {
                 Maybe::Present(ty) => Some(alloc::format!("{ty}")),
                 Maybe::Absent(_) => None,
             },

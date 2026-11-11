@@ -153,7 +153,7 @@ fn each_judged_declaration_keeps_the_tree_its_judgement_visited()
         );
         let root = nodes.first().expect("a tree has a root");
         assert!(
-            matches!(derivation.goal(root, page), Maybe::Present(ref goal) if !goal.as_ref().is_empty())
+            matches!(derivation.goals().goal(root, page), Maybe::Present(ref goal) if !goal.as_ref().is_empty())
                 && !derivation.rule(root).as_ref().is_empty(),
             "the root at {constant:?} prints its goal and names its rule"
         );
@@ -176,5 +176,66 @@ fn each_judged_declaration_keeps_the_tree_its_judgement_visited()
     assert_eq!(
         again, kept,
         "a second recheck adopts each item and keeps each tree"
+    );
+}
+
+/// The goals of a corpus source's trees, printed at a page of 80 columns,
+/// spell each binder as the source writes it and each variable by the name of
+/// its binder. `identity(x)` and `first(x, y)` lower to lambdas, whose goals
+/// and whose bodies' goals the source names `x` and `y`. A printer that named
+/// a lambda's binder by its own scheme, or a variable bound above the printed
+/// node by no name at all, prints `a`, `b` or `?` where the source writes `x`
+/// and `y`.
+#[test]
+fn a_goal_prints_its_binders_as_the_source_names_them_6717()
+{
+    let path = source();
+    let text = std::fs::read_to_string(&path).expect("the corpus source is read");
+    let mut traced = session(SourceRoot::Strict);
+    recheck(&mut traced, (&path, Text(&text)), Trace::default);
+    let page = PageWidth::from(80_u32);
+    let goals: Vec<Vec<String>> = traced
+        .account()
+        .rows()
+        .map(|(constant, ..)| {
+            let Maybe::Present(derivation) = traced.account().derivation_at(constant)
+            else {
+                panic!("the declaration at {constant:?} holds a tree");
+            };
+            let goals = derivation.goals();
+            derivation
+                .nodes()
+                .iter()
+                .filter_map(|node| match goals.goal(node, page) {
+                    Maybe::Present(goal) => Some(format!("{goal}")),
+                    Maybe::Absent(_) => None,
+                })
+                .collect()
+        })
+        .collect();
+    // The goals from each body's lambda on: the declared types before them
+    // bind no name.
+    let bodies: Vec<Vec<&str>> = goals
+        .iter()
+        .take(2)
+        .map(|goals| {
+            goals
+                .iter()
+                .skip_while(|goal| !goal.starts_with("fun"))
+                .map(String::as_str)
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        bodies,
+        [
+            Vec::from(["fun (x) { x }", "x", "x", "x"]),
+            Vec::from(["fun (x) { fun (y) { x } }", "fun (y) { x }", "x", "x", "x"]),
+        ],
+        "each lambda's goal spells its binder as written, and each goal under it the variable"
+    );
+    assert!(
+        goals.iter().flatten().all(|goal| !goal.contains('?')),
+        "no goal prints a variable with no name: {goals:?}"
     );
 }
