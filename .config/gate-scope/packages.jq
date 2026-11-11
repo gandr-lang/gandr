@@ -18,6 +18,12 @@
 # gate refuses a witness that names a test of another crate. So a change
 # breaks only the witnesses of the packages it touches.
 #
+# A path that the table maps to the `corpus-tests` group and not to `rust`,
+# a source under `corpus/`, touches the table's `readers`: the packages whose
+# tests read the corpus (#6725). #6709 changed `corpus/model/identity/hopf.gandr`,
+# no package held it, and two tests of `gandr-surface-dispatcher` that read it
+# reached `landing` red.
+#
 # Input:
 #   changed   the paths the change touches
 #   packages  the workspace's packages: [{name, dir, deps: [name]}], `dir`
@@ -38,8 +44,11 @@ include "rows";
 | ($table.groups | keys) as $every
 | .packages as $packages
 | [.changed[] as $path
-    | select((first($table.paths[] | select(mapped(.; $path)) | .groups) // $every) | index("rust"))
-    | (first($packages[] | select(.dir as $dir | $path | startswith($dir + "/")) | .name) // null)] as $touched
+    | ((first($table.paths[] | select(mapped(.; $path)) | .groups) // $every) as $groups
+      | if ($groups | index("rust")) then
+          (first($packages[] | select(.dir as $dir | $path | startswith($dir + "/")) | .name) // null)
+        elif ($groups | index("corpus-tests")) then ($table.readers // [])[]
+        else empty end)] as $touched
 | if any($touched[]; . == null) then "workspace"
   else
     def grow: . as $set

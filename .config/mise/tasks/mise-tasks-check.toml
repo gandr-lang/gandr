@@ -28,9 +28,11 @@
 # gate runs the light checks, which take seconds, and of the heavy checks
 # Clippy and the compiler policy (`check:landing`). It runs the enforcing
 # suite of the packages the change touches (#6595): #6563 broke two tests of
-# the checker, and no stage before `landing` ran them. It runs no sweep and no
-# specification obligation. `gate:all` runs every check over the whole
-# workspace.
+# the checker, and no stage before `landing` ran them. The head watcher sets
+# `GATE_TEST_WHOLE` (#6725): its gate then runs the enforcing suite of the
+# whole workspace on every head, since no test lane runs after the merge
+# queue. It runs no sweep and no specification obligation. `gate:all` runs
+# every check over the whole workspace.
 #
 # It runs those checks that the change selects
 # (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
@@ -56,7 +58,7 @@
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
 [check]
-description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suite of the packages it touches, in one of the host's gate slots"
+description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suite of the packages it touches, or of the whole workspace under GATE_TEST_WHOLE, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -70,6 +72,9 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 tree=$(.config/gate-scope/passed.bash tree)
 selected=$(.config/gate-scope/select.bash --landing)
+if [[ -n ${GATE_TEST_WHOLE:-} ]]; then
+  selected=$(printf '%s\n%s\n' "$selected" check:tests-enforcing | awk 'NF' | sort -u)
+fi
 heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
 if (( heavy > 0 )); then
   hold_gate_slot "mise run check"
@@ -84,7 +89,7 @@ GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
 if [[ " ${checks[*]} " == *" check:witnesses "* || " ${checks[*]} " == *" check:tests-enforcing "* ]]; then
   GATE_WITNESS_SCOPE=$(.config/gate-scope/scope.bash --touched)
-  GATE_TEST_SCOPE=$GATE_WITNESS_SCOPE
+  GATE_TEST_SCOPE=$(.config/gate-scope/test-scope.bash)
   export GATE_WITNESS_SCOPE GATE_TEST_SCOPE
 fi
 tasks=()
