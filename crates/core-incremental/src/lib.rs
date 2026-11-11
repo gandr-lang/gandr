@@ -191,6 +191,7 @@ pub use crate::checkpoint::Answered;
 pub use crate::checkpoint::Checkpoints;
 pub use crate::checkpoint::ContentKey;
 pub use crate::checkpoint::ItemCheckpoint;
+pub use crate::checkpoint::Judgement;
 pub use crate::checkpoint::Leading;
 #[cfg(feature = "instrument")]
 pub use crate::checkpoint::PassedItem;

@@ -2571,6 +2571,21 @@ pub enum Recording<'held>
     Recorded(&'held mut Recorded),
 }
 
+/// Whether a judgement keeps the verdict and the support of each declaration
+/// it decides alone ([`ModuleReport::supported`]), for an incremental pass to
+/// take them in place of a second decision.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Supporting
+{
+    /// The judgement keeps each support.
+    Kept,
+    /// The judgement keeps none.
+    Unkept,
+}
+
 /// The untabled judgement of a module's latest revision, held so that the
 /// next revision whose judgement reads the same inputs takes its verdicts
 /// rather than judging again.
@@ -2937,7 +2952,7 @@ pub fn judge_member_after<'source>(
         arena,
         (grant, checking),
         base,
-        (&Unretired, Recording::Unrecorded),
+        (&Unretired, Recording::Unrecorded, Supporting::Unkept),
     )
     .whole()
 }
@@ -2991,7 +3006,7 @@ pub fn judge_member_after_retiring<'source, Poll>(
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     base: ByteOffset,
-    (retirement, recording): (&Poll, Recording<'_>),
+    (retirement, recording, supporting): (&Poll, Recording<'_>, Supporting),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
     Poll: Retirement,
@@ -3007,6 +3022,7 @@ where
             recording,
             Scheduling::Sequential,
             MemoActivity::Active,
+            supporting,
         ),
     )
 }
@@ -3022,7 +3038,13 @@ fn judge_member_on<'source, Poll>(
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     base: ByteOffset,
-    (retirement, recording, scheduling, memo): (&Poll, Recording<'_>, Scheduling<'_>, MemoActivity),
+    (retirement, recording, scheduling, memo, supporting): (
+        &Poll,
+        Recording<'_>,
+        Scheduling<'_>,
+        MemoActivity,
+        Supporting,
+    ),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
     Poll: Retirement,
@@ -3043,6 +3065,7 @@ where
             recording,
             scheduling,
             memo,
+            supporting,
         ),
         retirement,
     ) {
@@ -3093,7 +3116,7 @@ pub fn judge_member_tabled<'source>(
         arena,
         (grant, checking),
         (unit, base),
-        &Unretired,
+        (&Unretired, Supporting::Unkept),
     )
     .whole()
 }
@@ -3123,7 +3146,7 @@ pub fn judge_member_tabled_retiring<'source, Poll>(
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (unit, base): (&Unit, ByteOffset),
-    retirement: &Poll,
+    (retirement, supporting): (&Poll, Supporting),
 ) -> Polled<(Judged<'source>, Maybe<TypeTable, tabled::Absent>), Poll::Retired, ()>
 where
     Poll: Retirement,
@@ -3144,6 +3167,7 @@ where
             Recording::Unrecorded,
             Scheduling::Sequential,
             MemoActivity::Active,
+            supporting,
         ),
         retirement,
     ) {
@@ -3297,12 +3321,13 @@ fn judge_members<'source, Poll>(
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
-    (spelled, tabling, recording, scheduling, memo): (
+    (spelled, tabling, recording, scheduling, memo, supporting): (
         &mut SpellingCount,
         Tabling<'_>,
         Recording<'_>,
         Scheduling<'_>,
         MemoActivity,
+        Supporting,
     ),
     retirement: &Poll,
 ) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
@@ -3382,6 +3407,9 @@ where
         }
         if let Scheduling::Concurrent(_) = scheduling {
             run.keep_typings();
+        }
+        if supporting == Supporting::Kept {
+            run.keep_supports();
         }
         if let Polled::Retired(retired, ()) =
             run.judge_retiring(&mut context, judged, |_, _, _| {}, retirement)
@@ -4040,6 +4068,7 @@ pub fn judge_component<'source>(
                     Recording::Unrecorded,
                     Scheduling::Sequential,
                     MemoActivity::Active,
+                    Supporting::Unkept,
                 ),
                 &Unretired,
             )
@@ -4465,7 +4494,13 @@ pub fn compose_on<'source>(
             arena,
             (&HostGrant::UNBOUNDED, Checking::Whole),
             ByteOffset::from(0_usize),
-            (&Unretired, Recording::Unrecorded, scheduling, memo),
+            (
+                &Unretired,
+                Recording::Unrecorded,
+                scheduling,
+                memo,
+                Supporting::Unkept,
+            ),
         )
         .whole()
         .admit(),
@@ -8399,6 +8434,7 @@ mod tests
 
         use super::Checking;
         use super::Recording;
+        use super::Supporting;
         use super::judge_member_after;
         use super::judge_member_after_retiring;
         use super::judge_member_tabled;
@@ -8431,7 +8467,7 @@ mod tests
                 arena,
                 (&HostGrant::UNBOUNDED, Checking::Whole),
                 base,
-                (&poll, Recording::Unrecorded),
+                (&poll, Recording::Unrecorded, Supporting::Unkept),
             );
             (answer, poll.readings.get())
         };
@@ -8486,7 +8522,7 @@ mod tests
                 arena,
                 (&HostGrant::UNBOUNDED, Checking::Whole),
                 (&unit, base),
-                &poll,
+                (&poll, Supporting::Unkept),
             );
             (answer, poll.readings.get())
         };
@@ -8578,6 +8614,7 @@ mod tests
         use super::Checking;
         use super::Recorded;
         use super::Recording;
+        use super::Supporting;
         use super::judge_member_after;
         use super::judge_member_after_retiring;
 
@@ -8606,7 +8643,11 @@ mod tests
                 arena,
                 (&HostGrant::UNBOUNDED, Checking::Whole),
                 base,
-                (&poll, Recording::Recorded(&mut recorded)),
+                (
+                    &poll,
+                    Recording::Recorded(&mut recorded),
+                    Supporting::Unkept,
+                ),
             )
             else {
                 panic!("a poll never retired answers whole");

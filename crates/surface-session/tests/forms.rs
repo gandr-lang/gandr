@@ -11,6 +11,7 @@ use core::ops::ControlFlow;
 
 use anodized::spec;
 use gandr_core_fork::Serial;
+use gandr_core_incremental::Checkpoints;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::Composed;
@@ -29,11 +30,13 @@ use gandr_surface_session::FormCensus;
 use gandr_surface_session::FormCount;
 use gandr_surface_session::FormStore;
 use gandr_surface_session::Session;
+use gandr_surface_session::Verdicts;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::any;
 use proptest::proptest;
+use quenchant_shape::shape::Maybe;
 
 use crate::common::GRAMMAR;
 use crate::common::Text;
@@ -424,7 +427,7 @@ fn form_starts(text: Text<'_>) -> Vec<Byte>
 /// then a declaration inserted at its middle form, its first form deleted,
 /// its last form moved first, and the source again, molded at `three`
 /// threads: each revision agrees with the walk's composition and a fresh
-/// session's.
+/// session's, and checkpoints as a session whose pass decides each item.
 mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
@@ -539,7 +542,8 @@ mod sweeps
     ///
     /// # Specification
     /// - ensures: every revision agreed with the walk's composition and a fresh
-    ///   session's.
+    ///   session's, and its checkpoints are those of a session whose pass
+    ///   decides each item and takes no verdict from the judgement.
     /// - panics: when a revision disagrees.
     /// - executable: none — the outcome is the test's panic or its return; the
     ///   function returns nothing a predicate could read.
@@ -580,6 +584,8 @@ mod sweeps
             last = last
         );
         let mut incremental = session(root).with_pool(three());
+        let mut deciding = session(root).with_pool(three());
+        deciding.take(Verdicts::Decided);
         let mut store = FormStore::default();
         for (revision, name) in [
             (&original, "the source"),
@@ -590,7 +596,27 @@ mod sweeps
         ] {
             let context = format!("{}: {name}", path.display());
             let _census = agree(&mut incremental, root, Text::from(revision), &context);
+            let _decided = deciding.submit(SourceText::from(revision.as_str()));
+            assert_eq!(
+                checkpoints_of(&incremental),
+                checkpoints_of(&deciding),
+                "{context}: the checkpoints of a pass that decides each item"
+            );
             let _kept = commits_whole(&mut store, Text::from(revision), &context);
+        }
+    }
+
+    /// The checkpoints of `session`'s latest resume.
+    ///
+    /// # Specification
+    /// trivial.
+    fn checkpoints_of(
+        session: &Session<MemoryCheckpointStore, InMemoryBlockStore>
+    ) -> Option<&Checkpoints>
+    {
+        match session.last() {
+            Maybe::Present(resume) => Some(resume.checkpoints()),
+            Maybe::Absent(_) => None,
         }
     }
 }

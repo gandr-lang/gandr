@@ -3165,6 +3165,36 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
+    /// Stop logging and keep the log as it stands, so that the reads after
+    /// this call stay out of it until [`Self::restore_support`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: logging is off, and the log is returned unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed run's support equals the support of the same
+    ///   declaration judged with no typed run.
+    /// - witness: `module::tests::a_kept_support_is_the_support_of_the_judgement_alone_6573`
+    #[spec(captures: was = core::mem::discriminant(&self.support), ensures: |ret| matches!(self.support, SupportLog::Off) && core::mem::discriminant(&ret) == was)]
+    pub(crate) fn hold_support(&mut self) -> SupportLog
+    {
+        core::mem::replace(&mut self.support, SupportLog::Off)
+    }
+
+    /// Log again into `held`, the log [`Self::hold_support`] kept.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn restore_support(
+        &mut self,
+        held: SupportLog,
+    )
+    {
+        self.support = held;
+    }
+
     /// The arena every id resolves in.
     ///
     /// # Specification
@@ -3176,11 +3206,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.arena
     }
 
-    /// The arena, for minting the types the judgement rewrites.
+    /// The arena, for minting the types the judgement rewrites and the types
+    /// an incremental pass seats. A caller only mints into it: the context's
+    /// ids stay valid because the arena only grows.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn arena_mut(&mut self) -> &mut CoreArena
+    #[inline]
+    pub fn arena_mut(&mut self) -> &mut CoreArena
     {
         self.arena
     }

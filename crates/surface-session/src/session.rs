@@ -320,6 +320,7 @@ use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::ItemCheckpoint;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemOrdinal;
+use gandr_core_incremental::Judgement;
 use gandr_core_incremental::Keeping;
 #[cfg(feature = "instrument")]
 use gandr_core_incremental::PassedItem;
@@ -368,6 +369,7 @@ use gandr_surface_dispatcher::Resumption;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Supporting;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::judge_member;
@@ -1869,6 +1871,9 @@ pub struct Session<Store, Blocks>
     runs: closures::Runs<{ closures::SESSION_RUNS_HELD }>,
     /// Whether each judgement keeps the type table of its revision.
     tables: Tables,
+    /// Whether the incremental pass takes each changed item's verdict from
+    /// the revision's judgement.
+    verdicts: Verdicts,
     /// The latest untabled judgement, which a revision moving no lowered node
     /// takes rather than judging again.
     recorded: Recorded,
@@ -1891,6 +1896,24 @@ pub enum Tables
     /// Each judgement types the revision's bodies as written beside checking
     /// them, and keeps the table ([`Submission::take_table`]).
     Kept,
+}
+
+/// Whether a session's incremental pass takes each changed item's verdict
+/// from the revision's own judgement or decides the item again.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Verdicts
+{
+    /// The judgement keeps the support of each declaration it decides alone,
+    /// and the pass takes that verdict and support: one decision for each
+    /// changed item.
+    Taken,
+    /// The judgement keeps no support, and the pass decides each item it
+    /// does not adopt: the decision a taken verdict stands for, which the
+    /// corpus witness compares against.
+    Decided,
 }
 
 /// A kernel admission a judgement left to run, beside the import closure its
@@ -2153,6 +2176,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             admitted: Vec::new(),
             runs: closures::Runs::new(),
             tables: Tables::Unkept,
+            verdicts: Verdicts::Taken,
             recorded: Recorded::default(),
             account: Account::default(),
         }
@@ -2323,6 +2347,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 admitted: Vec::new(),
                 runs: closures::Runs::new(),
                 tables: Tables::Unkept,
+                verdicts: Verdicts::Taken,
                 recorded: Recorded::default(),
                 account: Account::default(),
             },
@@ -3104,6 +3129,11 @@ impl<Store, Blocks> Session<Store, Blocks>
         // reversal is a report assembled from the resume's own verdicts, which
         // retires the whole-module judgement and this copy with it.
         let mut items = item_program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
+        // The judgement keeps each support only for a pass that takes it.
+        let supporting = match self.verdicts {
+            Verdicts::Taken => Supporting::Kept,
+            Verdicts::Decided => Supporting::Unkept,
+        };
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
         let deprecations = deprecations_of(&module, &arena, own);
@@ -3133,7 +3163,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     arena,
                     (&HostGrant::UNBOUNDED, checking),
                     (unit, base),
-                    retirement,
+                    (retirement, supporting),
                 ) {
                     Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
                     Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
@@ -3144,7 +3174,11 @@ impl<Store, Blocks> Session<Store, Blocks>
                     arena,
                     (&HostGrant::UNBOUNDED, checking),
                     base,
-                    (retirement, Recording::Recorded(&mut self.recorded)),
+                    (
+                        retirement,
+                        Recording::Recorded(&mut self.recorded),
+                        supporting,
+                    ),
                 ) {
                     Polled::Whole(judged) => Polled::Whole((
                         judged.into_parts(),
@@ -3181,16 +3215,26 @@ impl<Store, Blocks> Session<Store, Blocks>
                 let _: &mut Sink = sink;
                 Quiet
             };
+            // The pass takes each changed item's verdict from the judgement,
+            // which decided it once already.
+            let judgement = match self.verdicts {
+                Verdicts::Taken => Some(Judgement::new(admission.arena(), admission.verdicts())),
+                Verdicts::Decided => None,
+            };
             let submitted = match led {
                 Some(led) => self.incremental.submit_after_retiring(
                     &mut items,
                     led.leading(),
                     &mut observer,
                     retirement,
+                    judgement,
                 ),
-                None => self
-                    .incremental
-                    .submit_retiring(&mut items, &mut observer, retirement),
+                None => self.incremental.submit_retiring(
+                    &mut items,
+                    &mut observer,
+                    retirement,
+                    judgement,
+                ),
             };
             let (census, persistence) = match submitted {
                 Ok(Polled::Whole(census)) => (census, match Store::KEEPING {
@@ -3708,6 +3752,21 @@ impl<Store, Blocks> Session<Store, Blocks>
     pub const fn tables(&self) -> Tables
     {
         self.tables
+    }
+
+    /// Have the incremental pass from here on take each changed item's
+    /// verdict from the revision's judgement, or decide the item again, as
+    /// `verdicts` says.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn take(
+        &mut self,
+        verdicts: Verdicts,
+    )
+    {
+        self.verdicts = verdicts;
     }
 
     /// The grammar every revision is parsed under.
