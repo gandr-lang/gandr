@@ -2275,7 +2275,9 @@ run = ".config/landing/rebase-cases.bash"
 # compact JSON that the program gives. `.config/integration/token-cases.bash`
 # runs `watch_token` over a stubbed gh (#6644): with no `GH_TOKEN`, the
 # watcher's gate takes the token gh gives, a token already set stays, and a
-# failed read leaves none.
+# failed read leaves none. `.config/integration/reload-cases.bash` (#6653):
+# each reading runs the checkout's `watch.bash`, and the service's checkout
+# stands after a sweep of a lane's checkout and takes the new head.
 ["check:integration"]
 description = "The integration cycle's step, known-red list, brake and runner, and the head watcher's search, owner and gap, give each recorded case its output"
 tools.jq = "1.8.1"
@@ -2284,6 +2286,7 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash integration .config/integration/cases.json --programs .config/integration --mode c
 .config/integration/token-cases.bash
+.config/integration/reload-cases.bash
 echo "integration check OK: $(jq length .config/integration/cases.json) cases read as recorded"
 '''
 
