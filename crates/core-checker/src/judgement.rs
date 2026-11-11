@@ -12284,7 +12284,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   ([`CheckingContext::relate_solved`]). A conversion that waits for a
     ///   fill ([`CheckingContext::awaits_fill`]) holds with the empty dialogue:
     ///   the run that judges the filled body meets the pair again. On success
-    ///   the context records the two dialogues at `at`.
+    ///   the context records the two dialogues at `at`, and with them each pair
+    ///   the tier met ([`CheckingContext::met_pair`]), which the readmission's
+    ///   machine reads if the kernel reports that pair undecided.
     /// - provides: the endpoint condition of reflexivity's rule, and the
     ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
@@ -12328,8 +12330,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<(), CheckRefusal>
     {
         let mut dialogues = [Vec::new(), Vec::new()];
+        let mut met = [None, None];
         let mut returning = None;
-        for (endpoint, dialogue) in [left, right].into_iter().zip(&mut dialogues) {
+        for ((endpoint, dialogue), met) in
+            [left, right].into_iter().zip(&mut dialogues).zip(&mut met)
+        {
             let arena = self.context.arena();
             let syntactic = point == endpoint
                 || gandr_core_term::equal_certificate_syntax(arena, point, endpoint)
@@ -12355,6 +12360,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }
             if self.context.meet_endpoints(point, endpoint) == crate::tier::Meeting::Met {
                 *dialogue = Vec::from([self.context.met_decision(point, endpoint)]);
+                *met = Some(self.context.met_pair(point, endpoint, &mut returning));
                 continue;
             }
             if returning.is_none() {
@@ -12397,7 +12403,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let [left_dialogue, right_dialogue] = dialogues;
         self.context.record_reflexivity(
             at,
-            crate::code::Reflexivity::new(left_dialogue, right_dialogue),
+            crate::code::Reflexivity::new(left_dialogue, right_dialogue).meeting(met),
         );
         Ok(())
     }
