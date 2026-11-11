@@ -1078,11 +1078,15 @@ INSERT INTO purpose VALUES('kernel-core','encoding::ContentEncoding','struct','A
 INSERT INTO purpose VALUES('kernel-core','encoding::ContentId','struct','The canonical number of one distinct content within a ContentTable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::ContentTable','struct','The session''s canonical content numbering: one id per distinct content, assigned in post-order first-completion order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::EncodingLength','struct','The byte length of a ContentEncoding.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::Exact','enum','The identity on content: the identification a record name is taken up to when no datum relates two records.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::Identification','trait','What a record name identifies records up to, and the context its key derives under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::RecordName','struct','A record''s name: BLAKE3 over its tag, its payload and its members'' names, alike in every session that holds the record.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::RewriteGoal','enum','One rewrite obligation, as the key derivation names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::SupportGoal','enum','Which question one goal expansion asks, in the vocabulary the memo key is derived from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::Telescope','enum','The binders a support folds in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::content_digest','function','The absolute content digest of one node: the digest of the canonical record stream of everything it reaches, built in a table of its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::encode_rewrite','function','Encode one rewrite obligation''s whole key: the direction, the subject''s content, the binder depth, and the rewrite''s own parameter.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','encoding::record_name::Absent','enum','Why a content table gives no name for a record: it names nothing, or it holds no record at that id.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','encoding::support_key','function','Name one goal''s whole support: the goal record of its direction, its obligation''s content, its expected type''s content and its binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Admission','enum','How a declaration was admitted: through the checked choke point, or through the warned bypass.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::AdmittedDeclaration','struct','One admitted declaration and its audit metadata.',NULL,'fits','sound',NULL);
