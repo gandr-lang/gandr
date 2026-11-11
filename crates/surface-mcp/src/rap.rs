@@ -1322,7 +1322,7 @@ impl Toolset
     /// - witness: `rap::tests::a_server_error_is_retried_and_a_refusal_is_not`
     /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509`
     /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
-    /// - witness: `rap::tests::a_newer_revision_retires_a_check_and_a_cancel_ends_a_job`
+    /// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -4112,7 +4112,7 @@ mod tests
     }
 
     #[test]
-    fn a_newer_revision_retires_a_check_and_a_cancel_ends_a_job()
+    fn a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job()
     {
         let scratch = Scratch::new(&json!("rap-retired"));
         let callback = loopback();
@@ -4153,6 +4153,38 @@ mod tests
                 null
             ]),
             "the retired call names the document and its version"
+        );
+
+        editor.edit(
+            &uri,
+            &json!(3_i32),
+            &json!(
+                "def spin() -> [Partial] Integer =\n  var n = 30000000\n  while n > 0 { access n as v { resume v (v - 1) } };\n  pure n\n"
+            ),
+        );
+        let acknowledged = invoke(
+            address,
+            &json!({ "operation": "run", "arguments": { "uri": uri, "entry": "spin" }, "id": "run-1",
+                "callback_url": callback_url, "group_id": "thread-1" }),
+            None,
+        );
+        assert!(
+            acknowledged.head.starts_with("HTTP/1.1 200 "),
+            "{}",
+            acknowledged.head
+        );
+        // The run spends its budget unless a newer revision retires it; the
+        // wait lets it start first, and the edit waits for no part of it.
+        thread::sleep(Duration::from_millis(200));
+        editor.edit(&uri, &json!(4_i32), &json!("def f = 44 ;\n"));
+        assert_eq!(
+            told(&resulted(&callback).0),
+            json!([
+                "run-1",
+                "retired: file:///tmp/wait/held.gandr is at version 4",
+                null
+            ]),
+            "a newer revision retires a run as it retires a check"
         );
 
         start("check-2", "thread-1");

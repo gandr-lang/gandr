@@ -7,9 +7,9 @@
 //! print what `gandr check` and `gandr test` print. The text of the result is
 //! the last line that the verb prints, its verdict, and the display holds each
 //! line that it prints, its faults last. `run` runs on the pool too. It takes
-//! the lock of the workspace and runs the declaration as the run lens of the
-//! document runs it, so the text is the line that the lens shows. The lens
-//! holds the lock for the whole run too.
+//! the lock of the workspace only to read what the run reads, and runs the
+//! declaration as the run lens of the document runs it, with no lock, so the
+//! text is the line that the lens shows. An editor goes on while it runs.
 //! `replay` runs no work of its own. The hub admits each revision that an
 //! editor gives it, and the job answers when the admission of the revision
 //! that it names ends. Its text counts the declarations by the kernel's
@@ -18,8 +18,8 @@
 //! # Retirement and cancellation
 //!
 //! A newer revision of a document that the hub holds retires each `check` and
-//! each `test` whose paths hold the document, and each `replay` of the
-//! document. A document that closes retires them too. The retired call
+//! each `test` whose paths hold the document, and each `replay` and `run` of
+//! the document. A document that closes retires them too. The retired call
 //! answers at once, and its text names the document and its version now. The
 //! result of its job is never delivered. A `POST` to `/cancel_tool_call` with
 //! the `id` of a job, or to `/close_thread` with its `group_id`, ends the job
@@ -66,7 +66,6 @@ use std::io;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 
@@ -80,6 +79,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Watch;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
+use gandr_surface_lsp::Prepared;
 use gandr_surface_lsp::Workspace;
 use gandr_surface_render_remote::DocVersion;
 use gandr_surface_render_remote::Warrant;
@@ -312,16 +312,29 @@ impl Jobs
             Job::Test(paths) => self.walk(row, pending, (Verb::Test, paths), held),
             Job::Replay(document) => self.replay(row, pending, document, held),
             Job::Run { document, entry } => {
+                let prepared = tools::prepared(&lock(held.workspace), (&document, &entry));
+                let prepared = match prepared {
+                    Ok(prepared) => prepared,
+                    Err(refusal) => {
+                        answer(
+                            &pending,
+                            Outcome::bare(alloc::format!("Error: {refusal}")),
+                            held,
+                        );
+                        return;
+                    },
+                };
                 #[cfg(feature = "instrument")]
                 view(&pending, held);
-                drop(self.running.insert(row.clone(), Running {
-                    pending,
-                    documents: BTreeMap::new(),
-                }));
-                let workspace = Arc::clone(held.workspace);
-                let _submitted = self.generations.submit(row, (), move |_watch| {
-                    Ok(ran(&workspace, (&document, &entry)))
-                });
+                let documents = BTreeMap::from([(document, prepared.version())]);
+                self.follow(&row, documents.keys());
+                drop(
+                    self.running
+                        .insert(row.clone(), Running { pending, documents }),
+                );
+                let _submitted = self
+                    .generations
+                    .submit(row, (), move |_watch| Ok(ran(&prepared)));
             },
         }
     }
@@ -740,19 +753,15 @@ fn walked(
     Ok(Outcome { text, display })
 }
 
-/// The answer of a run of the declaration `entry` of `document`, as its run
-/// lens runs it, under the lock of `workspace`.
+/// The answer of the run that `prepared` reads, as the run lens of its
+/// document runs it, with no lock of the workspace.
 ///
 /// # Specification
 /// trivial.
-fn ran(
-    workspace: &Mutex<Workspace>,
-    (document, entry): (&DocumentUri, &String),
-) -> Outcome
+fn ran(prepared: &Prepared) -> Outcome
 {
-    let ran = tools::ran(&lock(workspace), (document, entry));
-    match ran {
-        Ok(line) => Outcome::line(line),
+    match prepared.run() {
+        Ok((_kind, line)) => Outcome::line(line),
         Err(refusal) => Outcome::bare(alloc::format!("Error: {refusal}")),
     }
 }
