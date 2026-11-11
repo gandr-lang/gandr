@@ -35,5 +35,26 @@
     "closes": [2],
     "exit": 1,
     "stderr": "owing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on a `/// - owes:` line that owes the rest (#2635)\nledger check FAILED"
+  },
+  {
+    "name": "#6767: a pull request body that closes an owed issue, with no `Closes` line in any commit, is refused",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse" },
+    "body": "Fixes #2.\n\nThe change.",
+    "exit": 1,
+    "stderr": "owing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on a `/// - owes:` line that owes the rest (#2635)\nledger check FAILED"
+  },
+  {
+    "name": "#6767: a pull request's CI event whose body closes an owed issue is refused",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse" },
+    "event": "Closes #2",
+    "exit": 1,
+    "stderr": "owing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on a `/// - owes:` line that owes the rest (#2635)\nledger check FAILED"
+  },
+  {
+    "name": "#6767: a body that closes an issue no row owes, and names an owed one with no closing keyword, passes",
+    "answers": { "1": "OPEN\ttrue", "2": "OPEN\tfalse" },
+    "body": "Closes #3.\n\nAdvances #2, and the row owes it still.",
+    "exit": 0,
+    "stderr": ""
   }
 ]
