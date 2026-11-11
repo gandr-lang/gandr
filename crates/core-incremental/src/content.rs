@@ -113,7 +113,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x18`; programs use `GPROG\0\0\x0d`. Their
+//! Checkpoint sets use `GCKPT\0\0\x19`; programs use `GPROG\0\0\x0d`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -3415,6 +3415,158 @@ impl Tabled
     }
 }
 
+/// Where a node stands in a content table: the supported node it became and
+/// its support in its ambient scope.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TablePlace
+{
+    /// The supported node.
+    pub node: NodeIndex,
+    /// Its support in its ambient scope.
+    pub support: Thinning,
+}
+
+/// The places in one content table of the arena nodes that it was built
+/// from.
+pub struct Placer
+{
+    /// The de Bruijn entry each arena node took.
+    seen: BTreeMap<ArenaNode, NodeIndex>,
+    /// Where each de Bruijn entry landed in the factored table.
+    placed: Vec<crate::support::Placement>,
+    /// The number each factored node took.
+    numbers: Vec<Option<NodeIndex>>,
+}
+
+/// The content table of the nodes `roots` of `arena`, constants placed
+/// through `layout`, numbered from them in order, beside the place of each
+/// root in it.
+///
+/// # Specification
+/// - requires: every root is held by `arena`.
+/// - ensures: as [`tabled`] for the encoded roots; one place per root, in
+///   order; no table and no place for no root.
+/// - panics: none.
+/// - executable: none — the clause compares with [`tabled`], which a predicate
+///   runs again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the nodes of a report that neither its item nor its entry
+///   holds mint back to themselves from this table.
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+pub fn tabled_roots(
+    arena: &CoreArena,
+    layout: &Layout,
+    roots: &[ArenaNode],
+) -> (Vec<SupportedNode>, Vec<TablePlace>)
+{
+    if roots.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let mut encoder = Encoder::new(arena, layout);
+    let raws: Vec<NodeIndex> = roots.iter().map(|&root| encoder.discover(root)).collect();
+    encoder.drain();
+    let tabled = tabled(&encoder.nodes, &raws);
+    let places = raws
+        .iter()
+        .map(|&raw| TablePlace {
+            node: tabled.of(raw),
+            support: tabled.support(raw),
+        })
+        .collect();
+    (tabled.nodes, places)
+}
+
+impl Placer
+{
+    /// The place of the arena node `node` in the table, when the table was
+    /// built from it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn place(
+        &self,
+        node: ArenaNode,
+    ) -> Option<TablePlace>
+    {
+        let raw = *self.seen.get(&node)?;
+        let placed = self.placed.get(usize::from(raw))?;
+        let number = self
+            .numbers
+            .get(usize::from(placed.node))
+            .copied()
+            .flatten()?;
+        Some(TablePlace {
+            node: number,
+            support: placed.support.clone(),
+        })
+    }
+}
+
+/// A content table minted into an arena from the places of its roots.
+pub struct Minted
+{
+    /// The expanded entry of each place reached from the roots.
+    numbered: BTreeMap<(NodeIndex, Thinning), NodeIndex>,
+    /// The minted node of each expanded entry.
+    nodes: Vec<ArenaNode>,
+}
+
+impl Minted
+{
+    /// Mint the places `roots` of the content table `nodes` into `arena`,
+    /// constants placed through `layout`, and each place beneath them.
+    ///
+    /// # Specification
+    /// - requires: `nodes` is a supported table and each root is a place in it.
+    /// - ensures: on success each place reached from the roots names a node of
+    ///   `arena` whose content is its own.
+    /// - fails: as [`TypeContent::mint`].
+    /// - panics: none.
+    /// - executable: none — a predicate reads each minted node again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the places of a report mint back to the nodes that
+    ///   they were taken from.
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    pub(crate) fn of<Roots>(
+        nodes: &[SupportedNode],
+        roots: Roots,
+        (arena, layout): (&mut CoreArena, &Layout),
+    ) -> Maybe<Self, seating::Absent>
+    where
+        Roots: IntoIterator<Item = TablePlace>,
+    {
+        let Ok(expanded) = crate::support::expand_from(
+            nodes,
+            roots.into_iter().map(|place| (place.node, place.support)),
+        )
+        else {
+            return Maybe::Absent(seating::Absent::Unplaceable);
+        };
+        match mint_all(&expanded.table, arena, layout) {
+            Ok(minted) => Maybe::Present(Self {
+                numbered: expanded.numbered,
+                nodes: minted,
+            }),
+            Err(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The node minted for `place`, when a root reached it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn node(
+        &self,
+        place: &TablePlace,
+    ) -> Option<ArenaNode>
+    {
+        let entry = self.numbered.get(&(place.node, place.support.clone()))?;
+        self.nodes.get(usize::from(*entry)).copied()
+    }
+}
+
 /// Factor the de Bruijn table `raw` and number it from `roots`.
 ///
 /// # Specification
@@ -4110,6 +4262,82 @@ impl TypeContent
         Self::tabulated(&encoder.nodes, raw)
     }
 
+    /// The content of the node `root` of `arena`, as [`TypeContent::of`]
+    /// builds it, beside the place in it of each node it was built from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the content [`TypeContent::of`] gives; each node the walk
+    ///   from `root` reached has its place in that content.
+    /// - panics: none.
+    /// - executable: none — the clause compares with [`TypeContent::of`], which
+    ///   a predicate runs again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the judged body's nodes that a report names mint back
+    ///   to themselves from their places.
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    pub(crate) fn placed(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> (Self, Placer)
+    {
+        let mut encoder = Encoder::new(arena, layout);
+        let raw = encoder.discover(root);
+        encoder.drain();
+        let Tabled {
+            nodes,
+            placed,
+            numbers,
+        } = tabled(&encoder.nodes, &[raw]);
+        let root = placed
+            .get(usize::from(raw))
+            .map_or_else(Thinning::empty, |placement| placement.support.clone());
+        (Self { nodes, root }, Placer {
+            seen: encoder.seen,
+            placed,
+            numbers,
+        })
+    }
+
+    /// Mint the content into `arena` from its root, as [`TypeContent::mint`]
+    /// mints it, beside the node minted at each place beneath the root.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the root's minted node, and the node minted for
+    ///   each place that the root reaches.
+    /// - fails: as [`TypeContent::mint`].
+    /// - panics: none.
+    /// - executable: none — a predicate reads each minted node again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the judged body's nodes that a report names mint back
+    ///   to themselves from their places.
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    pub(crate) fn mint_placed(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+    ) -> Maybe<(ArenaNode, Minted), seating::Absent>
+    {
+        let root = TablePlace {
+            node: NodeIndex::from(0_usize),
+            support: self.root.clone(),
+        };
+        let minted = match Minted::of(&self.nodes, core::iter::once(root.clone()), (arena, layout))
+        {
+            Maybe::Present(minted) => minted,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        minted
+            .node(&root)
+            .map_or(Maybe::Absent(seating::Absent::IllSorted), |node| {
+                Maybe::Present((node, minted))
+            })
+    }
+
     /// The type rooted at `root` of the de Bruijn table `raw`, factored and
     /// numbered from it.
     ///
@@ -4699,69 +4927,6 @@ pub struct Anchor
     pub path: Vec<ChildPosition>,
     /// The item node's place in the item's walk.
     pub at: Discovery,
-}
-
-/// The nodes of an item that the node `root` outside the item holds, each by
-/// its path from `root` and its place in the item's walk.
-///
-/// # Specification
-/// - requires: `sites` are the sites of the item that `root` stands outside.
-/// - ensures: one anchor for each node of the walk from `root` that `sites`
-///   places, by the first path that a breadth-first walk from `root` takes to
-///   it; the walk goes below no node that it anchors, and never anchors `root`.
-/// - panics: none.
-/// - executable: none — a predicate would walk the graph again.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a content outside an item that holds the item's body
-///   anchors the body once, and none of the nodes below it.
-/// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
-pub fn anchors(
-    arena: &CoreArena,
-    layout: &Layout,
-    root: ArenaNode,
-    sites: &Sites,
-) -> Vec<Anchor>
-{
-    let mut encoder = Encoder::new(arena, layout);
-    let top = encoder.discover(root);
-    encoder.drain();
-    let mut numbered: Vec<Option<ArenaNode>> = alloc::vec![None; encoder.nodes.len()];
-    for (&node, &number) in &encoder.seen {
-        if let Some(slot) = numbered.get_mut(usize::from(number)) {
-            *slot = Some(node);
-        }
-    }
-    let mut reached: Vec<Option<()>> = alloc::vec![None; encoder.nodes.len()];
-    if let Some(slot) = reached.get_mut(usize::from(top)) {
-        *slot = Some(());
-    }
-    let mut anchors = Vec::new();
-    let mut queue = VecDeque::from([(top, Vec::new())]);
-    while let Some((number, path)) = queue.pop_front() {
-        if number != top
-            && let Some(&Some(node)) = numbered.get(usize::from(number))
-            && let Maybe::Present(at) = sites.discovery(node)
-        {
-            anchors.push(Anchor { path, at });
-            continue;
-        }
-        let Some(entry) = encoder.nodes.get(usize::from(number))
-        else {
-            continue;
-        };
-        for (position, (child, _)) in entry.children().iter().enumerate() {
-            if let Some(slot) = reached.get_mut(usize::from(child))
-                && slot.is_none()
-            {
-                *slot = Some(());
-                let mut below = path.clone();
-                below.push(ChildPosition::from(position));
-                queue.push_back((child, below));
-            }
-        }
-    }
-    anchors
 }
 
 /// The seal site an item's table names for `site`: the same component, of
@@ -6932,6 +7097,69 @@ impl MintEntry for SupportedNode
     }
 }
 
+/// The nodes of an item that the node `root` outside the item holds, each by
+/// its path from `root` and its place in the item's walk.
+///
+/// # Specification
+/// - requires: `sites` are the sites of the item that `root` stands outside.
+/// - ensures: one anchor for each node of the walk from `root` that `sites`
+///   places, by the first path that a breadth-first walk from `root` takes to
+///   it; the walk goes below no node that it anchors, and never anchors `root`.
+/// - panics: none.
+/// - executable: none — a predicate would walk the graph again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a content outside an item that holds the item's body
+///   anchors the body once, and none of the nodes below it.
+/// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+pub fn anchors(
+    arena: &CoreArena,
+    layout: &Layout,
+    root: ArenaNode,
+    sites: &Sites,
+) -> Vec<Anchor>
+{
+    let mut encoder = Encoder::new(arena, layout);
+    let top = encoder.discover(root);
+    encoder.drain();
+    let mut numbered: Vec<Option<ArenaNode>> = alloc::vec![None; encoder.nodes.len()];
+    for (&node, &number) in &encoder.seen {
+        if let Some(slot) = numbered.get_mut(usize::from(number)) {
+            *slot = Some(node);
+        }
+    }
+    let mut reached: Vec<Option<()>> = alloc::vec![None; encoder.nodes.len()];
+    if let Some(slot) = reached.get_mut(usize::from(top)) {
+        *slot = Some(());
+    }
+    let mut anchors = Vec::new();
+    let mut queue = VecDeque::from([(top, Vec::new())]);
+    while let Some((number, path)) = queue.pop_front() {
+        if number != top
+            && let Some(&Some(node)) = numbered.get(usize::from(number))
+            && let Maybe::Present(at) = sites.discovery(node)
+        {
+            anchors.push(Anchor { path, at });
+            continue;
+        }
+        let Some(entry) = encoder.nodes.get(usize::from(number))
+        else {
+            continue;
+        };
+        for (position, (child, _)) in entry.children().iter().enumerate() {
+            if let Some(slot) = reached.get_mut(usize::from(child))
+                && slot.is_none()
+            {
+                *slot = Some(());
+                let mut below = path.clone();
+                below.push(ChildPosition::from(position));
+                queue.push_back((child, below));
+            }
+        }
+    }
+    anchors
+}
+
 /// Mint the table `nodes`, rooted at its first entry, into `arena`, each node
 /// of `held` standing for the entry at the end of its path.
 ///
@@ -6994,7 +7222,45 @@ where
         }
         *state = MintState::Done(node);
     }
-    let mut frames = alloc::vec![MintFrame::Enter(NodeIndex::from(0_usize))];
+    if let Err(reason) = mint_reached(
+        nodes,
+        &mut states,
+        NodeIndex::from(0_usize),
+        (arena, layout),
+    ) {
+        return Maybe::Absent(reason);
+    }
+    match states.first() {
+        Some(&MintState::Done(minted)) => Maybe::Present(minted),
+        Some(&(MintState::Fresh | MintState::Open)) | None => {
+            Maybe::Absent(seating::Absent::IllSorted)
+        },
+    }
+}
+
+/// Mint the entry `root` of the table `nodes` into `arena`, and each entry
+/// beneath it that `states` does not hold yet, recording each in `states`.
+///
+/// # Specification
+/// - requires: `states` has one slot per entry of `nodes`.
+/// - ensures: on success every entry reached from `root` is done in `states`.
+/// - fails: as [`TypeContent::mint`].
+/// - panics: none.
+/// - executable: none — a predicate walks the table again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mint_table`].
+/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+fn mint_reached<Entry>(
+    nodes: &[Entry],
+    states: &mut [MintState],
+    root: NodeIndex,
+    (arena, layout): (&mut CoreArena, &Layout),
+) -> Result<(), seating::Absent>
+where
+    Entry: MintEntry,
+{
+    let mut frames = alloc::vec![MintFrame::Enter(root)];
     while let Some(frame) = frames.pop() {
         match frame {
             MintFrame::Enter(index) => {
@@ -7003,11 +7269,11 @@ where
                     nodes.get(usize::from(index)),
                 )
                 else {
-                    return Maybe::Absent(seating::Absent::IllSorted);
+                    return Err(seating::Absent::IllSorted);
                 };
                 match *state {
                     MintState::Done(_) => {},
-                    MintState::Open => return Maybe::Absent(seating::Absent::Cyclic),
+                    MintState::Open => return Err(seating::Absent::Cyclic),
                     MintState::Fresh => {
                         *state = MintState::Open;
                         frames.push(MintFrame::Exit(index));
@@ -7024,24 +7290,51 @@ where
             MintFrame::Exit(index) => {
                 let Some(node) = nodes.get(usize::from(index))
                 else {
-                    return Maybe::Absent(seating::Absent::IllSorted);
+                    return Err(seating::Absent::IllSorted);
                 };
-                let minted = match mint_node(node.minted_former(), &states, arena, layout) {
-                    Ok(minted) => minted,
-                    Err(reason) => return Maybe::Absent(reason),
-                };
+                let minted = mint_node(node.minted_former(), states, arena, layout)?;
                 if let Some(state) = states.get_mut(usize::from(index)) {
                     *state = MintState::Done(minted);
                 }
             },
         }
     }
-    match states.first() {
-        Some(&MintState::Done(minted)) => Maybe::Present(minted),
-        Some(&(MintState::Fresh | MintState::Open)) | None => {
-            Maybe::Absent(seating::Absent::IllSorted)
-        },
+    Ok(())
+}
+
+/// Mint every entry of the table `nodes` into `arena`, in table order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the minted node of each entry; each entry is minted
+///   once, after its children.
+/// - fails: as [`TypeContent::mint`].
+/// - panics: none.
+/// - executable: none — a predicate reads each minted node again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the nodes of a report mint back to nodes whose content is
+///   their own.
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn mint_all<Entry>(
+    nodes: &[Entry],
+    arena: &mut CoreArena,
+    layout: &Layout,
+) -> Result<Vec<ArenaNode>, seating::Absent>
+where
+    Entry: MintEntry,
+{
+    let mut states = alloc::vec![MintState::Fresh; nodes.len()];
+    for index in 0 .. nodes.len() {
+        mint_reached(nodes, &mut states, NodeIndex::from(index), (arena, layout))?;
     }
+    states
+        .into_iter()
+        .map(|state| match state {
+            MintState::Done(minted) => Ok(minted),
+            MintState::Fresh | MintState::Open => Err(seating::Absent::IllSorted),
+        })
+        .collect()
 }
 
 /// An arena id of one sort, read from a minted node.

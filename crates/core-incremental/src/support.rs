@@ -929,10 +929,53 @@ pub fn expand(
     placement: &Thinning,
 ) -> Result<Vec<ContentNode>, PlacementError>
 {
+    expand_from(nodes, core::iter::once((root, placement.clone()))).map(|expanded| expanded.table)
+}
+
+/// A de Bruijn table expanded from its roots, beside the entry that each
+/// placed node became.
+pub struct Expanded
+{
+    /// The de Bruijn table, numbered by discovery, the roots first.
+    pub table: Vec<ContentNode>,
+    /// The entry of `table` for each node of the supported table and its
+    /// support in its ambient scope.
+    pub numbered: BTreeMap<(NodeIndex, Thinning), NodeIndex>,
+}
+
+/// The de Bruijn table of the nodes `roots` of `nodes`, each beside its
+/// support in the ambient scope, as [`expand`] builds it for one root. Two
+/// roots with the same node and support share one entry.
+///
+/// # Specification
+/// - requires: as [`expand`], for each root.
+/// - ensures: as [`expand`]; each root and each node placed beneath it names
+///   its entry in `numbered`.
+/// - fails: as [`expand`].
+/// - panics: none.
+/// - executable: none — the clause compares with [`expand`], which a predicate
+///   runs again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the places of the nodes of a report expand to entries
+///   that mint back to the nodes they were taken from.
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+pub fn expand_from<Roots>(
+    nodes: &[SupportedNode],
+    roots: Roots,
+) -> Result<Expanded, PlacementError>
+where
+    Roots: IntoIterator<Item = (NodeIndex, Thinning)>,
+{
     let mut numbered: BTreeMap<(NodeIndex, Thinning), NodeIndex> = BTreeMap::new();
     let mut queue = VecDeque::new();
-    let _root = numbered.insert((root, placement.clone()), NodeIndex::from(0_usize));
-    queue.push_back((root, placement.clone()));
+    for root in roots {
+        let next = NodeIndex::from(numbered.len());
+        let _root = numbered.entry(root).or_insert_with_key(|key| {
+            queue.push_back(key.clone());
+            next
+        });
+    }
     let mut output = Vec::new();
     // One slot buffer for every node's children, refilled per node.
     let mut slots: Vec<(NodeIndex, NodeIndex, bool)> = Vec::new();
@@ -972,7 +1015,10 @@ pub fn expand(
         }
         output.push(former);
     }
-    Ok(output)
+    Ok(Expanded {
+        table: output,
+        numbered,
+    })
 }
 
 /// A decoded node before its references are rebuilt.

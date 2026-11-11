@@ -1,5 +1,6 @@
 //! Executable route laws, separately from the kernel's typing oracle.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -611,6 +612,79 @@ fn dependent_resumption_closes_its_prerequisites()
         );
     }
     assert_eq!(artifacts[0], artifacts[1]);
+}
+
+#[test]
+fn a_supported_judgement_keeps_the_suspension_that_the_module_run_reports()
+{
+    // The route and a reader of its first suspended declaration: judged one
+    // at a time, each suspended declaration waits on what the module run
+    // reports, the reader's equations joined with those it reads. The parts
+    // of a suspension seat that suspension again.
+    let mut arena = CoreArena::new();
+    let mut fixture = route(&mut arena);
+    let reference = arena.value_constant(ConstantIndex::from(1_usize));
+    fixture.declarations.push(declaration(
+        At(4),
+        fixture.decoded,
+        Maybe::Present(reference),
+    ));
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &fixture.declarations)
+    };
+    let supported = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut prior = BTreeMap::new();
+        for declaration in &fixture.declarations {
+            let judged = crate::check_declaration_supported(&mut context, declaration);
+            if let Maybe::Present(suspension) = judged.suspension(&context, &prior) {
+                let _earlier = prior.insert(declaration.constant(), suspension);
+            }
+        }
+        prior
+    };
+    assert_eq!(
+        supported.keys().collect::<Vec<_>>(),
+        report.suspensions().keys().collect::<Vec<_>>(),
+        "the same declarations wait"
+    );
+    // Each judgement mints the rigid side afresh: compare it by its node.
+    let rigid = |node: TypeNode| match node {
+        TypeNode::Value(id) => arena.value_type(id),
+        TypeNode::Computation(_) => None,
+    };
+    for (one, other) in supported.values().zip(report.suspensions().values()) {
+        assert_eq!(
+            (one.declared(), one.blockers(), one.dependencies()),
+            (other.declared(), other.blockers(), other.dependencies()),
+        );
+        assert!(
+            one.equations()
+                .iter()
+                .map(|equation| (equation.hole(), equation.flex(), rigid(equation.rigid())))
+                .eq(other.equations().iter().map(|equation| (
+                    equation.hole(),
+                    equation.flex(),
+                    rigid(equation.rigid())
+                ))),
+            "the equations agree: {one:?} against {other:?}"
+        );
+    }
+    let Some(reader) = supported.get(&ConstantIndex::from(4_usize))
+    else {
+        panic!("the reader waits: {supported:?}");
+    };
+    assert_eq!(
+        (reader.dependencies(), reader.equations().len()),
+        (&BTreeSet::from([ConstantIndex::from(1_usize)]), 1),
+        "the reader waits on the hole through the declaration it reads"
+    );
+    let seated = super::Suspension::seated(
+        (reader.declared().id(), reader.equations().to_vec()),
+        (reader.blockers().clone(), reader.dependencies().clone()),
+    );
+    assert_eq!(&seated, reader, "the parts of a suspension seat it again");
 }
 
 #[test]

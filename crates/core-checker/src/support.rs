@@ -346,6 +346,11 @@ pub struct Supported
     /// The failure of the run that refused the declaration, when this
     /// judgement keeps one.
     failure: Maybe<crate::Failure, crate::kept::Absent>,
+    /// What elaborating the body's nested computations did, when this
+    /// judgement keeps it.
+    elaboration: Maybe<crate::NestedElaboration, crate::elaborated::Absent>,
+    /// What a suspended run left undecided, or why this judgement keeps none.
+    residue: Maybe<crate::elaboration::Residue, crate::waits::Absent>,
     /// The goal memo's consults of the decision, where a module run that
     /// keeps supports counted them; none otherwise.
     #[cfg(feature = "instrument")]
@@ -355,15 +360,18 @@ pub struct Supported
 impl Supported
 {
     /// The verdict `verdict`, reached by consulting `support`, entered so,
-    /// beside the `failure` of a refused run.
+    /// beside the `failure` of a refused run, the `elaboration` of its nested
+    /// computations and the `residue` of a suspended run.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(
-        verdict: Verdict,
-        support: Support,
-        entered: Entered,
+    pub(crate) fn new(
+        (verdict, support, entered): (Verdict, Support, Entered),
         failure: Maybe<crate::Failure, crate::kept::Absent>,
+        (elaboration, residue): (
+            Maybe<crate::NestedElaboration, crate::elaborated::Absent>,
+            Maybe<crate::elaboration::Residue, crate::waits::Absent>,
+        ),
     ) -> Self
     {
         Self {
@@ -371,6 +379,8 @@ impl Supported
             support,
             entered,
             failure,
+            elaboration,
+            residue,
             #[cfg(feature = "instrument")]
             memo: crate::tally::MemoTally::NONE,
         }
@@ -447,6 +457,67 @@ impl Supported
         match self.failure {
             Maybe::Present(ref failure) => Maybe::Present(failure),
             Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// What elaborating the body's nested computations did; absent for a body
+    /// that holds no nested computation, for one the first run refused, and
+    /// for a module run, which keeps its elaborations in its report.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn elaboration(&self) -> Maybe<&crate::NestedElaboration, crate::elaborated::Absent>
+    {
+        match self.elaboration {
+            Maybe::Present(ref elaboration) => Maybe::Present(elaboration),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// What the suspended declaration waits on: its own equations joined with
+    /// those of each waiting declaration in `prior` that it read, and its
+    /// blockers the holes that `context` owes. Absent for a verdict that is
+    /// not suspended, and for a module run, which keeps its suspensions in its
+    /// report.
+    ///
+    /// # Specification
+    /// - requires: `context` is the context the declaration was judged in, and
+    ///   `prior` holds the suspension of each earlier waiting declaration.
+    /// - ensures: as the module run records the suspension of the declaration
+    ///   from the same residue.
+    /// - panics: none.
+    /// - executable: none — the module run that the clause names is not an
+    ///   input of this call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each suspended declaration that a supported judgement
+    ///   decides in turn keeps the suspension that the module run reports. A
+    ///   reader keeps the equations of the declaration that it reads.
+    /// - witness: `elaboration::tests::a_supported_judgement_keeps_the_suspension_that_the_module_run_reports`
+    #[inline]
+    pub fn suspension(
+        &self,
+        context: &crate::context::CheckingContext<'_>,
+        prior: &alloc::collections::BTreeMap<ConstantIndex, crate::elaboration::Suspension>,
+    ) -> Maybe<crate::elaboration::Suspension, crate::waits::Absent>
+    {
+        let residue = match self.residue {
+            Maybe::Present(ref residue) => residue,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        match self.verdict {
+            Verdict::Suspended(declared) => Maybe::Present(crate::elaboration::Suspension::new(
+                declared,
+                residue.clone(),
+                &context.deferrals().owed,
+                prior,
+            )),
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_)
+            | Verdict::Refused(_) => Maybe::Absent(crate::waits::Absent::Unsuspended),
         }
     }
 }

@@ -70,6 +70,21 @@ pub struct Equation
 
 impl Equation
 {
+    /// The equation on `hole` between `flex` and `rigid`, as a seat builds
+    /// it again in another arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn seated(
+        hole: ConstantIndex,
+        (flex, rigid): (TypeNode, TypeNode),
+    ) -> Self
+    {
+        Self { hole, flex, rigid }
+    }
+
     /// The owed constant at the flex head.
     ///
     /// # Specification
@@ -169,7 +184,7 @@ pub enum Signing
 ///   separate the three answers of [`Residue::pending`].
 /// - witness: `elaboration::tests::owed_conversion_suspends`
 /// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Residue
 {
     /// The equations recorded.

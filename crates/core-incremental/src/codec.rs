@@ -66,6 +66,7 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::Sort as TypeSort;
 use gandr_core_term::SortParameter;
 use gandr_core_term::Zone;
+use gandr_core_term::effect::Purity;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::memory::AccessMode;
@@ -137,6 +138,7 @@ use crate::content::ContentNode;
 use crate::content::ItemContent;
 use crate::content::Opacity;
 use crate::content::Sort;
+use crate::content::TablePlace;
 use crate::content::TypeContent;
 use crate::content::seating;
 use crate::entry::EntryContent;
@@ -157,6 +159,17 @@ use crate::footprint::Footprint;
 use crate::footprint::HoleMark;
 use crate::region::ItemKey;
 use crate::region::Reference;
+use crate::report::CrossingContent;
+use crate::report::ElaborationContent;
+use crate::report::EquationContent;
+use crate::report::NestingContent;
+use crate::report::OperandContent;
+use crate::report::Place as ReportPlace;
+use crate::report::ReportContent;
+use crate::report::SuspensionContent;
+use crate::report::nesting;
+use crate::report::reported;
+use crate::report::waiting;
 use crate::support::SupportedNode;
 use crate::typing::EndpointSite;
 use crate::typing::Forcing;
@@ -170,13 +183,14 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x18` keeps the table parts of an item that its judgement entered
-/// elaborated, beside the failure content that `0x17` keeps and the located
-/// program that `0x16` persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x18";
+/// `0x19` keeps what the judgement reported of an item, beside the table parts
+/// that `0x18` keeps of an item that its judgement entered elaborated, the
+/// failure content that `0x17` keeps and the located program that `0x16`
+/// persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x19";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x18`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x19`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1164,6 +1178,9 @@ fn read_entry(reader: &mut Reader<'_>) -> Result<crate::content::EntryRoots, Cod
     Ok(crate::content::EntryRoots { home, capabilities })
 }
 
+/// Why a checkpoint keeps no report, in stable wire order.
+const REPORTEDS: [reported::Absent; 2] = [reported::Absent::Unreported, reported::Absent::Opaque];
+
 /// Read a checkpoint's table parts as [`write_elaborated`] writes them.
 ///
 /// # Specification
@@ -1221,6 +1238,427 @@ fn read_elaborated(
         (body, declared),
         (stage, following),
     )))
+}
+
+/// Write a checkpoint's report: tag 0 and why it keeps none; else tag 1, the
+/// report's own table and the place of each root in it, then the elaboration
+/// and the suspension, each tag 0 when the report keeps none, else tag 1 and
+/// the part.
+///
+/// # Specification
+/// - ensures: [`read_report`] reads back `report` from what was written, given
+///   the table of the body that the checkpoint keeps.
+/// - fails: as [`write_nodes`] and [`write_reference`], and as the count
+///   writer.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the reports of an elaborated item and of a suspended item
+///   read back as written.
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn write_report<Out>(
+    writer: &mut Writer<'_, Out>,
+    report: Maybe<&ReportContent, reported::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let report = match report {
+        Maybe::Present(report) => report,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &REPORTEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    let (outside, roots) = report.outside();
+    write_nodes(writer, outside)?;
+    writer.count(Count(roots.len()))?;
+    for root in roots {
+        write_index(writer, root.node)?;
+        write_selection(writer, &root.support);
+    }
+    match report.elaboration() {
+        Maybe::Present(elaboration) => {
+            writer.tag(Tag(1));
+            write_elaboration(writer, elaboration)?;
+        },
+        Maybe::Absent(nesting::Absent::Unnested) => writer.tag(Tag(0)),
+    }
+    match report.suspension() {
+        Maybe::Present(suspension) => {
+            writer.tag(Tag(1));
+            write_report_place(writer, &suspension.declared)?;
+            writer.count(Count(suspension.equations.len()))?;
+            for equation in &suspension.equations {
+                write_reference(writer, &equation.hole)?;
+                write_report_place(writer, &equation.flex)?;
+                write_report_place(writer, &equation.rigid)?;
+            }
+            for references in [&suspension.blockers, &suspension.dependencies] {
+                writer.count(Count(references.len()))?;
+                for reference in references {
+                    write_reference(writer, reference)?;
+                }
+            }
+        },
+        Maybe::Absent(waiting::Absent::Unsuspended) => writer.tag(Tag(0)),
+    }
+    Ok(())
+}
+
+/// Write an elaboration's content: its decisions, its carried pairs, its
+/// binds and its crossings, each a count and its entries.
+///
+/// # Specification
+/// - ensures: [`read_elaboration`] reads back `elaboration`.
+/// - fails: as [`write_report_place`] and [`write_reference`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn write_elaboration<Out>(
+    writer: &mut Writer<'_, Out>,
+    elaboration: &ElaborationContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(elaboration.decisions.len()))?;
+    for &(ref at, ref decided) in &elaboration.decisions {
+        write_report_place(writer, at)?;
+        match *decided {
+            NestingContent::Suspended => writer.tag(Tag(0)),
+            NestingContent::Ran(Purity::Pure) => writer.tag(Tag(1)),
+            NestingContent::Ran(Purity::Effectful) => writer.tag(Tag(2)),
+            NestingContent::Returned => writer.tag(Tag(3)),
+            NestingContent::Filled(ref fill) => {
+                writer.tag(Tag(4));
+                write_report_place(writer, fill)?;
+            },
+        }
+    }
+    for pairs in [&elaboration.carried, &elaboration.binds] {
+        writer.count(Count(pairs.len()))?;
+        for &(ref from, ref to) in pairs {
+            write_report_place(writer, from)?;
+            write_report_place(writer, to)?;
+        }
+    }
+    writer.count(Count(elaboration.crossings.len()))?;
+    for &(ref at, ref crossing) in &elaboration.crossings {
+        write_report_place(writer, at)?;
+        match crossing.by {
+            Maybe::Present(ref by) => {
+                writer.tag(Tag(1));
+                write_reference(writer, by)?;
+            },
+            Maybe::Absent(()) => writer.tag(Tag(0)),
+        }
+        writer.count(Count(crossing.carriers.len()))?;
+        for carrier in &crossing.carriers {
+            write_report_place(writer, carrier)?;
+        }
+        match crossing.operand {
+            OperandContent::Itself => writer.tag(Tag(0)),
+            OperandContent::Standing(ref standing) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, standing)?;
+            },
+            OperandContent::Overlaid(ref overlay) => {
+                writer.tag(Tag(2));
+                write_report_place(writer, overlay)?;
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Write a report's place: tag 0 and its discovery; tag 1, the judged body's
+/// node and its support; or tag 2 and its root in the report's own table.
+///
+/// # Specification
+/// - fails: as the count writer.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn write_report_place<Out>(
+    writer: &mut Writer<'_, Out>,
+    place: &ReportPlace,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *place {
+        ReportPlace::Written(discovery) => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(discovery)))
+        },
+        ReportPlace::Judged(ref at) => {
+            writer.tag(Tag(1));
+            write_index(writer, at.node)?;
+            write_selection(writer, &at.support);
+            Ok(())
+        },
+        ReportPlace::Outside(index) => {
+            writer.tag(Tag(2));
+            writer.count(Count(usize::from(index)))
+        },
+    }
+}
+
+/// Read a checkpoint's report as [`write_report`] writes it, a judged node's
+/// support read against `body`, the table of the body that the checkpoint
+/// keeps.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, a judged place with no
+///   body or past it, a root or an outside place past the report's own table,
+///   and as the readers it calls; [`CodecError::NonCanonical`] for a table not
+///   numbered from its roots, or decisions, crossings or equations out of the
+///   order of their places.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn read_report(
+    reader: &mut Reader<'_>,
+    body: Option<&[SupportedNode]>,
+) -> Result<Maybe<ReportContent, reported::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &REPORTEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let outside = read_nodes(reader)?;
+    let count = reader.count()?.0;
+    let mut roots = Vec::new();
+    for _ in 0 .. count {
+        roots.push(read_table_place(reader, &outside)?);
+    }
+    check_discovery(&outside, roots.iter().map(|root| root.node))?;
+    let places = Places {
+        body,
+        roots: roots.len(),
+    };
+    let elaboration = match reader.tag()?.0 {
+        0 => Maybe::Absent(nesting::Absent::Unnested),
+        1 => Maybe::Present(read_elaboration(reader, &places)?),
+        _ => return Err(CodecError::Corrupt),
+    };
+    let suspension = match reader.tag()?.0 {
+        0 => Maybe::Absent(waiting::Absent::Unsuspended),
+        1 => {
+            let declared = places.read(reader)?;
+            let count = reader.count()?.0;
+            let mut equations = Vec::new();
+            for _ in 0 .. count {
+                equations.push(EquationContent {
+                    hole: read_reference(reader)?,
+                    flex: places.read(reader)?,
+                    rigid: places.read(reader)?,
+                });
+            }
+            if !equations.is_sorted() {
+                return Err(CodecError::NonCanonical);
+            }
+            let mut references = || -> Result<Vec<Reference>, CodecError> {
+                let count = reader.count()?.0;
+                let mut references = Vec::new();
+                for _ in 0 .. count {
+                    references.push(read_reference(reader)?);
+                }
+                Ok(references)
+            };
+            let blockers = references()?;
+            let dependencies = references()?;
+            Maybe::Present(SuspensionContent {
+                declared,
+                equations,
+                blockers,
+                dependencies,
+            })
+        },
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(Maybe::Present(ReportContent::from_parts(
+        (elaboration, suspension),
+        (outside, roots),
+    )))
+}
+
+/// Read an elaboration's content as [`write_elaboration`] writes it.
+///
+/// # Specification
+/// - fails: as [`read_report`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn read_elaboration(
+    reader: &mut Reader<'_>,
+    places: &Places<'_>,
+) -> Result<ElaborationContent, CodecError>
+{
+    let count = reader.count()?.0;
+    let mut decisions = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let decided = match reader.tag()?.0 {
+            0 => NestingContent::Suspended,
+            1 => NestingContent::Ran(Purity::Pure),
+            2 => NestingContent::Ran(Purity::Effectful),
+            3 => NestingContent::Returned,
+            4 => NestingContent::Filled(places.read(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        decisions.push((at, decided));
+    }
+    if !decisions.is_sorted() {
+        return Err(CodecError::NonCanonical);
+    }
+    let mut pairs = || -> Result<Vec<(ReportPlace, ReportPlace)>, CodecError> {
+        let count = reader.count()?.0;
+        let mut pairs = Vec::new();
+        for _ in 0 .. count {
+            pairs.push((places.read(reader)?, places.read(reader)?));
+        }
+        Ok(pairs)
+    };
+    let carried = pairs()?;
+    let binds = pairs()?;
+    let count = reader.count()?.0;
+    let mut crossings: Vec<(ReportPlace, CrossingContent)> = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let by = match reader.tag()?.0 {
+            0 => Maybe::Absent(()),
+            1 => Maybe::Present(read_reference(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        let carriers_count = reader.count()?.0;
+        let mut carriers = Vec::new();
+        for _ in 0 .. carriers_count {
+            carriers.push(places.read(reader)?);
+        }
+        let operand = match reader.tag()?.0 {
+            0 => OperandContent::Itself,
+            1 => OperandContent::Standing(places.read(reader)?),
+            2 => OperandContent::Overlaid(places.read(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        crossings.push((at, CrossingContent {
+            by,
+            carriers,
+            operand,
+        }));
+    }
+    if !crossings.is_sorted_by(|left, right| left.0 <= right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    Ok(ElaborationContent {
+        decisions,
+        carried,
+        binds,
+        crossings,
+    })
+}
+
+/// What a report's places are read against: the judged body's table, and the
+/// count of the report's own roots.
+///
+/// # Specification
+/// trivial.
+struct Places<'body>
+{
+    /// The table of the body that the checkpoint keeps.
+    body: Option<&'body [SupportedNode]>,
+    /// The count of roots of the report's own table.
+    roots: usize,
+}
+
+impl Places<'_>
+{
+    /// Read one place as [`write_report_place`] writes it.
+    ///
+    /// # Specification
+    /// - fails: [`CodecError::Corrupt`] for an unknown tag, a judged place with
+    ///   no body or past it, or an outside place past the roots, and as the
+    ///   readers it calls.
+    /// - panics: none.
+    /// - executable: none — the witness reads the bytes back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`write_report`].
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    fn read(
+        &self,
+        reader: &mut Reader<'_>,
+    ) -> Result<ReportPlace, CodecError>
+    {
+        match reader.tag()?.0 {
+            0 => Ok(ReportPlace::Written(crate::boundary::Discovery::from(
+                reader.count()?.0,
+            ))),
+            1 => {
+                let body = self.body.ok_or(CodecError::Corrupt)?;
+                Ok(ReportPlace::Judged(read_table_place(reader, body)?))
+            },
+            2 => {
+                let index = reader.count()?.0;
+                if index >= self.roots {
+                    return Err(CodecError::Corrupt);
+                }
+                Ok(ReportPlace::Outside(crate::boundary::OutsideIndex::from(
+                    index,
+                )))
+            },
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+}
+
+/// Read a place in the table `nodes`: a node of it and its support, read
+/// against the node's scope.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a node past the table, and as
+///   [`read_selection`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_report`].
+/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+fn read_table_place(
+    reader: &mut Reader<'_>,
+    nodes: &[SupportedNode],
+) -> Result<TablePlace, CodecError>
+{
+    let node = read_index(reader)?;
+    let scope = nodes
+        .get(usize::from(node))
+        .map(SupportedNode::scope)
+        .ok_or(CodecError::Corrupt)?;
+    let support = read_selection(reader, scope)?;
+    Ok(TablePlace { node, support })
 }
 
 /// Write a level: its constant, then its atoms ascending.
@@ -8963,7 +9401,8 @@ where
     write_typing(writer, checkpoint.typing())?;
     write_entered(writer, checkpoint.entered());
     write_failed(writer, checkpoint.failure())?;
-    write_elaborated(writer, checkpoint.entry())
+    write_elaborated(writer, checkpoint.entry())?;
+    write_report(writer, checkpoint.report())
 }
 
 /// Read one item's checkpoint.
@@ -9038,7 +9477,15 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
     let entered = read_entered(reader)?;
     let checkpoint = ItemCheckpoint::new(content, footprint, support, typing, entered);
     let checkpoint = checkpoint.with_failure(read_failed(reader)?);
-    Ok(checkpoint.with_entry(read_elaborated(reader)?))
+    let entry = read_elaborated(reader)?;
+    let report = read_report(reader, match entry {
+        Maybe::Present(ref entry) => match entry.body() {
+            Maybe::Present(body) => Some(body.nodes()),
+            Maybe::Absent(written::Absent::Written) => None,
+        },
+        Maybe::Absent(_) => None,
+    })?;
+    Ok(checkpoint.with_entry(entry).with_report(report))
 }
 
 /// Write the form the table held an item in: tag 0 as written, tag 1

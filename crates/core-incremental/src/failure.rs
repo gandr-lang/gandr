@@ -1282,7 +1282,7 @@ const fn core_arena_node(node: CoreNode) -> ArenaNode
 ///
 /// # Specification
 /// trivial.
-const fn type_arena_node(node: TypeNode) -> ArenaNode
+pub const fn type_arena_node(node: TypeNode) -> ArenaNode
 {
     match node {
         TypeNode::Value(id) => ArenaNode::ValueType(id),
@@ -1308,7 +1308,7 @@ const fn core_node_of(node: ArenaNode) -> CoreNode
 ///
 /// # Specification
 /// trivial.
-const fn value_of(node: ArenaNode) -> Result<ValueId, seating::Absent>
+pub const fn value_of(node: ArenaNode) -> Result<ValueId, seating::Absent>
 {
     match node {
         ArenaNode::Value(id) => Ok(id),
@@ -1322,7 +1322,7 @@ const fn value_of(node: ArenaNode) -> Result<ValueId, seating::Absent>
 ///
 /// # Specification
 /// trivial.
-const fn computation_of(node: ArenaNode) -> Result<ComputationId, seating::Absent>
+pub const fn computation_of(node: ArenaNode) -> Result<ComputationId, seating::Absent>
 {
     match node {
         ArenaNode::Computation(id) => Ok(id),
@@ -1336,7 +1336,7 @@ const fn computation_of(node: ArenaNode) -> Result<ComputationId, seating::Absen
 ///
 /// # Specification
 /// trivial.
-const fn value_type_of(node: ArenaNode) -> Result<ValueTypeId, seating::Absent>
+pub const fn value_type_of(node: ArenaNode) -> Result<ValueTypeId, seating::Absent>
 {
     match node {
         ArenaNode::ValueType(id) => Ok(id),
@@ -1350,7 +1350,7 @@ const fn value_type_of(node: ArenaNode) -> Result<ValueTypeId, seating::Absent>
 ///
 /// # Specification
 /// trivial.
-const fn comp_type_of(node: ArenaNode) -> Result<CompTypeId, seating::Absent>
+pub const fn comp_type_of(node: ArenaNode) -> Result<CompTypeId, seating::Absent>
 {
     match node {
         ArenaNode::CompType(id) => Ok(id),
@@ -1364,7 +1364,7 @@ const fn comp_type_of(node: ArenaNode) -> Result<CompTypeId, seating::Absent>
 ///
 /// # Specification
 /// trivial.
-const fn type_node_of(node: ArenaNode) -> Result<TypeNode, seating::Absent>
+pub const fn type_node_of(node: ArenaNode) -> Result<TypeNode, seating::Absent>
 {
     match node {
         ArenaNode::ValueType(id) => Ok(TypeNode::Value(id)),
