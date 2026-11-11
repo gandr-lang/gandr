@@ -804,6 +804,7 @@ INSERT INTO purpose VALUES('core-term','hole::matched_sum','function','Matches a
 INSERT INTO purpose VALUES('core-term','hole::matched_thunk','function','Matches a thunk type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::matched_with','function','Matches a with type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::value_type_knowledge','function','Reads a value type''s knowledge, the unknown former and the decode of a hole or a mark as one.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','identity::Level','type_alias','One path type of a tower over a map''s domain: its two endpoints, each a point of the path type one level below.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::Relation','enum','A relation between two types the surface writes infix: an isomorphism, an equivalence, or a flow.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::Whisker','enum','Which half of a composite a whisker moves.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::answer_at','function','The answer a relation''s record gives at a point, read through its maps and round trips.',NULL,'fits','sound',NULL);
@@ -812,6 +813,8 @@ INSERT INTO purpose VALUES('core-term','identity::back_flow','function','The sym
 INSERT INTO purpose VALUES('core-term','identity::back_from','function','The transport back along a path from a fixed endpoint, the inverse of a path in a family of paths.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::bi_invertible','function','The record type A equivalent B abbreviates: a map with a left and a right inverse.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::cong','function','The transport congruence along a path, applying a map to the endpoints of a path.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','identity::cong_above','function','The action of a map on paths as many path types above its domain as a tower holds: the map applied for none, and a transport of the action one level below otherwise, built as a table that mints each term once.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','identity::cong_codomain','function','The type the action of a map on paths above its domain maps into: the codomain for no level, and the paths between the images of the outermost endpoints otherwise.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::cong_lifted','function','The transport congruence along a path, lifted to a map of a function.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::map_type','function','The type of a map from one type to another, both read where the map stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','identity::quasi_inverse','function','The record type A isomorph B abbreviates: a map, a map back, and the two round trips.',NULL,'fits','sound',NULL);

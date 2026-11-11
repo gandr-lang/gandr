@@ -180,6 +180,19 @@ pub fn loops(
     owed
 }
 
+/// How a case's motive carries its answer along a path.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Carrying
+{
+    /// The motive ignores its binder, so the answer stays as it is.
+    Constant,
+    /// The motive reads its binder, so the answer moves by transport.
+    Transported,
+}
+
 /// The family, the point and the answer a cell's obligation reads at the
 /// cell's dimension.
 ///
@@ -213,7 +226,7 @@ pub fn loops(
 fn lifted(
     arena: &mut gandr_core_term::CoreArena,
     (family, at, answered): (ValueTypeId, ValueId, ValueId),
-    (reflexivities, constant): (Reflexivities, bool),
+    (reflexivities, carrying): (Reflexivities, Carrying),
 ) -> (ValueTypeId, ValueId, ValueId)
 {
     let (mut family, mut at, mut answered) = (family, at, answered);
@@ -221,7 +234,7 @@ fn lifted(
         let fibre = gandr_core_term::instantiate_value_type(arena, family, at);
         let lifted_fibre = shift_value_type(arena, fibre, Binders::ONE).settle(arena);
         let lifted_answer = shift_value(arena, answered, Binders::ONE).settle(arena);
-        let left = if constant {
+        let left = if carrying == Carrying::Constant {
             lifted_answer
         }
         else {
@@ -337,7 +350,11 @@ pub fn respected(
         let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
         let carried =
             gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
-        let (along, _, carried) = lifted(arena, (family, point, carried), (reflexivities, false));
+        let (along, _, carried) = lifted(
+            arena,
+            (family, point, carried),
+            (reflexivities, Carrying::Transported),
+        );
         let transported = arena.computation_path_transport(along, word, carried);
         let stayed = arena.computation_path_transport(along, empty, carried);
         let held = scrutinees(context, (point, &branches))?;
@@ -690,14 +707,14 @@ pub fn arm_type(
     let point = point(context, (datatype, &arities), owed.words)?;
     let reflexivities = reflexivities(context, owed.words)?;
     let arena = context.arena_mut();
-    let constant = matches!(
-        gandr_core_term::strengthen_comp_type(arena, motive),
-        Maybe::Present(_)
-    );
+    let carrying = match gandr_core_term::strengthen_comp_type(arena, motive) {
+        Maybe::Present(_) => Carrying::Constant,
+        Maybe::Absent(_) => Carrying::Transported,
+    };
     let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
     let (family, point, carried) =
-        lifted(arena, (family, point, carried), (reflexivities, constant));
-    let left = if constant {
+        lifted(arena, (family, point, carried), (reflexivities, carrying));
+    let left = if carrying == Carrying::Constant {
         carried
     }
     else {

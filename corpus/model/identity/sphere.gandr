@@ -10,10 +10,8 @@
 /// for a loop.
 /// No rule identifies a cell with the empty word.
 ///
-/// Limits: a case over a sphere needs a branch for its cell, and `Path.ap` on
-/// the cell needs that case.
-///
-/// - see: #6395 — the case at a higher cell and `Path.ap` on it
+/// - see: corpus/model/identity/sphere-maps.gandr — a case at a higher cell
+///   and `Path.ap` on it
 /// - see: corpus/model/identity/circle.gandr
 
 /// The 2-sphere has a point and a 2-cell at the point's reflexivity.
