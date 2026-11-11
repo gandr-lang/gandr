@@ -389,7 +389,9 @@ fn reach_value(
     );
     // Rewriting by a presented type's rules would only relate more shifts;
     // reading none keeps the reach conservative.
-    if convert_values(arena, &crate::presented::FREE, from, beyond) == Convertibility::Convertible {
+    let unfoldings =
+        crate::replay::Unfoldings::default().presenting(crate::presented::FREE.clone());
+    if convert_values(arena, &unfoldings, from, beyond) == Convertibility::Convertible {
         Reach::Clear
     }
     else {

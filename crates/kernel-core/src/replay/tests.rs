@@ -1688,11 +1688,17 @@ fn a_literal_identity_test_reduces_on_two_literals()
     )));
     let crossed = call(&mut arena, a, zero);
     let (yes, no) = (answer(&mut arena, 0), answer(&mut arena, 1));
+    let same_value = arena.value_returned(same);
+    let yes_value = arena.value_returned(yes);
     let watermark = arena.watermark();
     let tested = Unfoldings::default().testing_at(BTreeMap::from([(
         test,
         LiteralIdentity::new(IdentityBase::Text, Polarity::Same),
     )]));
+    assert_eq!(
+        crate::conv::convert_values(&mut arena, &tested, same_value, yes_value),
+        crate::conv::Convertibility::Convertible
+    );
     let verdict = |arena: &mut TermArena, unfoldings: &Unfoldings, left, right| {
         convert(
             arena,

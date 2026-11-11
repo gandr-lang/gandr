@@ -626,12 +626,13 @@ pub(crate) fn agree(
     else {
         return Agreement::Differ;
     };
+    let unfoldings = crate::replay::Unfoldings::default().presenting(presentations.clone());
     let agrees = synthesized.reading != wanted.reading
         && convertible_value_types(arena, synthesized.carrier, wanted.carrier)
             == Convertibility::Convertible
-        && convert_values(arena, presentations, synthesized.source, wanted.source)
+        && convert_values(arena, &unfoldings, synthesized.source, wanted.source)
             == Convertibility::Convertible
-        && convert_values(arena, presentations, synthesized.target, wanted.target)
+        && convert_values(arena, &unfoldings, synthesized.target, wanted.target)
             == Convertibility::Convertible;
     if agrees {
         Agreement::Agree
@@ -676,14 +677,15 @@ pub(crate) fn compose(
 {
     let left = ends(arena, first)?;
     let right = ends(arena, second)?;
+    let unfoldings = crate::replay::Unfoldings::default().presenting(presentations.clone());
     if convertible_value_types(arena, left.carrier, right.carrier) != Convertibility::Convertible
-        || convert_values(arena, presentations, left.target, right.source)
+        || convert_values(arena, &unfoldings, left.target, right.source)
             != Convertibility::Convertible
     {
         return Err(FlowError::EndpointMismatch);
     }
     if seam == Seam::Feedback {
-        if convert_values(arena, presentations, right.target, left.source)
+        if convert_values(arena, &unfoldings, right.target, left.source)
             != Convertibility::Convertible
         {
             return Err(FlowError::EndpointMismatch);

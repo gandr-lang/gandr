@@ -193,6 +193,8 @@ fn a_presented_constructor_is_set_aside_on_either_side()
 fn a_unit_against_a_neutral_is_set_aside_6110()
 {
     let mut arena = TermArena::new();
+    let unfoldings =
+        crate::replay::Unfoldings::default().presenting(crate::presented::FREE.clone());
     let unit = arena.value_unit();
     let record = arena.value_record(alloc::collections::BTreeMap::new());
     let neutral = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -219,7 +221,7 @@ fn a_unit_against_a_neutral_is_set_aside_6110()
             Convertibility::Distinct
         );
         assert_eq!(
-            super::convert_values(&mut arena, &crate::presented::FREE, left, right),
+            super::convert_values(&mut arena, &unfoldings, left, right),
             Convertibility::Convertible,
             "the replay relates the pair by η"
         );

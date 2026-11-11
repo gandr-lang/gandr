@@ -919,7 +919,7 @@ pub(crate) fn reflexive_endpoints(
         (EndpointSide::Left, left, &dialogues.left),
         (EndpointSide::Right, right, &dialogues.right),
     ] {
-        if crate::conv::convert_values(arena, unfoldings.presentations(), point, endpoint)
+        if crate::conv::convert_values(arena, unfoldings, point, endpoint)
             == Convertibility::Convertible
         {
             continue;

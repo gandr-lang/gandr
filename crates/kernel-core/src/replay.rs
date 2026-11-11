@@ -1958,12 +1958,8 @@ pub(crate) fn read_endpoints(
                     reading = EndpointReading::Apart;
                     break;
                 };
-                if convert_values(
-                    run.arena,
-                    run.unfoldings.presentations(),
-                    left_normal,
-                    right_normal,
-                ) == Convertibility::Convertible
+                if convert_values(run.arena, run.unfoldings, left_normal, right_normal)
+                    == Convertibility::Convertible
                 {
                     continue;
                 }

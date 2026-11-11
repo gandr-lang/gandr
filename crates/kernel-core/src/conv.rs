@@ -456,7 +456,7 @@ pub(crate) fn equal_values(
 )]
 pub(crate) fn convert_values(
     arena: &mut TermArena,
-    presentations: &crate::presented::Presentations,
+    unfoldings: &crate::replay::Unfoldings,
     left: ValueId,
     right: ValueId,
 ) -> Convertibility
@@ -464,10 +464,9 @@ pub(crate) fn convert_values(
     if equal_values(arena, left, right) == Convertibility::Convertible {
         return Convertibility::Convertible;
     }
-    let unfoldings = crate::replay::Unfoldings::default().presenting(presentations.clone());
     match crate::replay::convert(
         arena,
-        &unfoldings,
+        unfoldings,
         crate::replay::ReplaySides::Values(left, right),
         crate::replay::ReplayBudget::DEFAULT,
     ) {
