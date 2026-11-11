@@ -916,7 +916,6 @@ corpus/model/data/descent.gandr STE-3.6 9651581918c23f62
 corpus/model/data/record-fields-applied.gandr STE-6.4 7ffeb0f63edb2700
 corpus/model/data/unfolded-arm.gandr STE-3.2 3bce94a2736b902a
 corpus/model/deployments/offers.gandr STE-3.5 3afc97ba48cdcf81
-corpus/model/deployments/offers.gandr STE-9.3 5b4b099432f7a25e
 corpus/model/deployments/offers.manifold.gandr STE-3.6 0a9800643f7a530c
 corpus/model/deployments/offers.manifold.gandr STE-3.6 605e22926b667b76
 corpus/model/deployments/offers.manifold.gandr STE-3.6 fc5d5920a59108d1

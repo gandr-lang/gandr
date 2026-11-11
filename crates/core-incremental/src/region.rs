@@ -485,7 +485,7 @@ impl Program
         let located = items.iter().any(|item| {
             matches!(
                 *item.declaration.content(),
-                gandr_core_checker::DeclarationContent::World
+                gandr_core_checker::DeclarationContent::World(_)
             ) || matches!(item.declaration.entry(), Maybe::Present(_))
         });
         Ok(Self {

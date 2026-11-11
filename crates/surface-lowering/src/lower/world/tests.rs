@@ -190,6 +190,59 @@ fn a_world_s_requirement_is_a_row_3523()
     );
 }
 
+/// A world's requirement mints its row: each interface named whole at its
+/// signature, held. A world that requires nothing holds no row, and a
+/// labelled entry adds nothing until its label binds an instance (#3545).
+#[test]
+fn a_world_s_requirement_mints_its_row_3545()
+{
+    let mut arena = CoreArena::new();
+    let text = alloc::format!(
+        "{STORE}{}",
+        concat!(
+            "world near;\n",
+            "world far requires [std.io.Console.Eff, store : Store with sort V = String];\n",
+            "world stored requires [store : Store with sort V = String];\n",
+        )
+    );
+    let text = hosting(text.as_str());
+    let module = hosted(&text, &mut arena);
+    let row = |name: &str| {
+        let declaration = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))?;
+        match module.world_row(declaration) {
+            Maybe::Present(row) => Some(row.clone()),
+            Maybe::Absent(_) => None,
+        }
+    };
+    assert_eq!(row("near"), None, "a bare world holds no row");
+    assert_eq!(
+        row("stored"),
+        None,
+        "a labelled entry adds nothing to the world's row"
+    );
+    let Some(far) = row("far")
+    else {
+        panic!("a world requiring an interface whole holds a row");
+    };
+    assert_eq!(
+        far.signatures()
+            .map(gandr_core_term::effect::EffectSig::name)
+            .collect::<alloc::vec::Vec<_>>(),
+        [&gandr_core_term::effect::EffectName::from(
+            "std.io.Console.Eff"
+        )],
+        "the row holds the interface named whole and not the labelled one"
+    );
+    assert_eq!(
+        far.regions().count(),
+        0,
+        "the interface is held, at no region of its own"
+    );
+}
+
 /// `offers [ … ] ;` files a site's offer by its source, its host interfaces
 /// and its labels with the modules answering them, a module declared after it
 /// among them; an interface no host declares, a module the source does not

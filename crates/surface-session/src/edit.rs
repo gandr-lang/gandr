@@ -1053,7 +1053,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         (&Maybe::Absent(left), Maybe::Absent(right)) => left == right,
         (&Maybe::Present(_), Maybe::Absent(_)) | (&Maybe::Absent(_), Maybe::Present(_)) => false,
     } }
- else if (matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World)) || (matches!(*matched_left_value, DeclarationTree::Codata) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::Codata(_))) { spans.is_empty() }
+ else if (matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World(_))) || (matches!(*matched_left_value, DeclarationTree::Codata) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::Codata(_))) { spans.is_empty() }
  else { false }
 }
                     }
@@ -1219,7 +1219,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                     },
                     Vec::new(),
                 ),
-                gandr_core_checker::DeclarationContent::World => {
+                gandr_core_checker::DeclarationContent::World(_) => {
                     (DeclarationTree::World, Vec::new())
                 },
                 gandr_core_checker::DeclarationContent::Codata(_) => {

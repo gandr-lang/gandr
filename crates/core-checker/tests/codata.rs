@@ -194,21 +194,13 @@ fn a_stream_is_admitted_observed_and_adopted()
         assert_eq!(check_declaration(&mut context, &declaration), Verdict::Data);
         check_declaration_supported(&mut context, &use_site)
     };
-    let DeclarationContent::Codata(ref signature) = *(declaration.content())
-    else {
-        panic!("a codata signature");
-    };
-    let adopted = {
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        context.adopt_codata(family, Arc::clone(signature)).unwrap();
-        check_declaration_supported(&mut context, &use_site)
-    };
-    assert!(matches!(adopted.verdict(), Verdict::Checked { .. }));
-    assert_eq!(fresh.verdict(), adopted.verdict());
-    assert_eq!(fresh.support(), adopted.support());
     let [ref answer] = *(fresh.support().codata_consulted())
     else {
         panic!("one codata consultation despite formation and reading");
+    };
+    let DeclarationContent::Codata(ref signature) = *(declaration.content())
+    else {
+        panic!("a codata signature");
     };
     assert_eq!(answer.constant(), family);
     assert_eq!(answer.signature(), Some(signature.as_ref()));

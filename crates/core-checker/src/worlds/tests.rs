@@ -121,7 +121,26 @@ fn world(position: At) -> World
 /// trivial.
 fn worlds() -> [Declaration; 2]
 {
-    [OPERATOR, SEAT].map(|position| Declaration::world(position.constant(), position.origin()))
+    [OPERATOR, SEAT].map(|position| {
+        Declaration::world(position.constant(), EffectRow::EMPTY, position.origin())
+    })
+}
+
+/// `world operator ;` and `world seat requires [ rand ] ;`, at their
+/// positions.
+///
+/// # Specification
+/// trivial.
+fn drawing_seat(rand: &gandr_core_term::effect::EffectSig) -> [Declaration; 2]
+{
+    [
+        Declaration::world(OPERATOR.constant(), EffectRow::EMPTY, OPERATOR.origin()),
+        Declaration::world(
+            SEAT.constant(),
+            EffectRow::singleton(rand.clone()),
+            SEAT.origin(),
+        ),
+    ]
 }
 
 /// The operator's entry: at its own world, holding one capability to the
@@ -200,7 +219,7 @@ fn body_of(declaration: &Declaration) -> ValueId
         | DeclarationContent::Data(_)
         | DeclarationContent::Codata(_)
         | DeclarationContent::Abstract(_)
-        | DeclarationContent::World => panic!("the fixture reads the body of a defined value"),
+        | DeclarationContent::World(_) => panic!("the fixture reads the body of a defined value"),
     }
 }
 
@@ -660,11 +679,11 @@ fn a_second_migration_without_a_capability_is_refused()
 }
 
 /// #5712: a body run at its world holds no frame of its caller, so the host
-/// answers a draw that the body performs, once. The draw's continuation then
-/// holds the capability of a later migration and spends it once, and the
-/// entry checks. The same draw at the entry's own world can reach a handler
-/// of a caller, which can resume it twice, so the draw captures the
-/// capability.
+/// answers a draw that the body performs, once. The seat requires `rand`, so
+/// the draw is in its row (#3545). The draw's continuation then holds the
+/// capability of a later migration and spends it once, and the entry checks.
+/// The same draw at the entry's own world can reach a handler of a caller,
+/// which can resume it twice, so the draw captures the capability.
 #[test]
 fn a_body_s_draw_crosses_a_later_migration_s_capability_5712()
 {
@@ -684,7 +703,7 @@ fn a_body_s_draw_crosses_a_later_migration_s_capability_5712()
     let second = migrate(&mut arena, SEAT, returned);
     let away = arena.computation_bind(ascribed, second);
     // draw(1); migrate [seat] { return 7 }
-    let drawn_home = arena.computation_perform(host.rand, "draw".into(), width);
+    let drawn_home = arena.computation_perform(host.rand.clone(), "draw".into(), width);
     let ascribed_home = arena.computation_ascribe(drawn_home, drawing);
     let returned_home = arena.computation_return(seven);
     let after = migrate(&mut arena, SEAT, returned_home);
@@ -692,7 +711,7 @@ fn a_body_s_draw_crosses_a_later_migration_s_capability_5712()
     let declared = arena.value_type_thunk(drawing);
     let suspended_away = arena.value_thunk(away);
     let suspended_home = arena.value_thunk(home);
-    let [operator, seat] = worlds();
+    let [operator, seat] = drawing_seat(&host.rand);
     let module = [
         operator,
         seat,
@@ -727,6 +746,85 @@ fn a_body_s_draw_crosses_a_later_migration_s_capability_5712()
             }
         )),
         "a handler of a caller may resume the entry's own draw twice"
+    );
+}
+
+/// #3545: a migration's body performs in the row its world requires, as a
+/// definition's body performs in its declared row. A draw at a seat that
+/// requires `rand` checks under a pure returner, checked or synthesised, and
+/// the migration performs nothing where it stands. The same draw at a seat
+/// that requires nothing is refused, under an enclosing row that holds
+/// `rand` too: checked, at the draw; synthesised, at the migration's body.
+#[test]
+fn a_migration_s_body_performs_in_its_world_s_row_3545()
+{
+    let mut arena = CoreArena::new();
+    let host = gandr_core_term::effect::host::HostSignatures::new(&mut arena)
+        .expect("the host signatures are consistent");
+    let integer = arena.value_type_base(BaseType::Integer);
+    let pure = arena.comp_type_returner(integer);
+    let drawing =
+        arena.comp_type_returner_with_effects(integer, EffectRow::singleton(host.rand.clone()));
+    let width = arena.value_literal(crate::fixture::integer_literal());
+    // migrate [seat] { draw(1) }, checked against `F Integer`
+    let drawn = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let checked = migrate(&mut arena, SEAT, drawn);
+    // x ← migrate [seat] { draw(1) } ; return x
+    let drawn_bound = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let synthesised = migrate(&mut arena, SEAT, drawn_bound);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(bound);
+    let bind = arena.computation_bind(synthesised, returned);
+    // The two entries, `checked` at 2 and `bind` at 3, each of type
+    // `U declared` at the operator's world.
+    let entries = |arena: &mut CoreArena, declared| {
+        let declared = arena.value_type_thunk(declared);
+        [(At(2), checked), (At(3), bind)].map(|(position, body)| {
+            let suspended = arena.value_thunk(body);
+            Declaration::new(
+                position.constant(),
+                Maybe::Present(declared),
+                Maybe::Present(suspended),
+                position.origin(),
+            )
+            .entered(operating())
+        })
+    };
+    let within = entries(&mut arena, pure);
+    let outside = entries(&mut arena, drawing);
+    let module = |[operator, seat]: [Declaration; 2], [first, second]: [Declaration; 2]| {
+        [operator, seat, first, second]
+    };
+    let required = module(drawing_seat(&host.rand), within);
+    let required = verdicts(&mut arena, HostEntry::Unbounded, &required);
+    assert!(
+        matches!(required[..], [
+            Verdict::Data,
+            Verdict::Data,
+            Verdict::Checked { .. },
+            Verdict::Checked { .. }
+        ]),
+        "a draw in the seat's row checks under a pure returner: {required:?}"
+    );
+    let unrequired = module(worlds(), outside);
+    let unrequired = verdicts(&mut arena, HostEntry::Unbounded, &unrequired);
+    assert!(
+        matches!(
+            unrequired.get(2),
+            Some(&Verdict::Refused(CheckRefusal::TypeMismatch(crate::Mismatch::Computation { at, .. })))
+                if at == drawn
+        ),
+        "a checked draw outside the seat's row is refused at the draw: {:?}",
+        unrequired.get(2)
+    );
+    assert!(
+        matches!(
+            unrequired.get(3),
+            Some(&Verdict::Refused(CheckRefusal::TypeMismatch(crate::Mismatch::Computation { at, .. })))
+                if at == drawn_bound
+        ),
+        "a synthesised draw outside the seat's row is refused at the body: {:?}",
+        unrequired.get(3)
     );
 }
 
