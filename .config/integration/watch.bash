@@ -247,6 +247,10 @@ watch_once() {
   memory=$(jq -c --argjson gap "$gap" '.gap = ($gap | del(.paged)) | if $gap.page then .paged = $gap.paged else . end' <<< "$memory")
   head=$(git -C "$watch_tree" rev-parse refs/watch/landing)
   if [[ $(jq -r '.checked // empty' <<< "$memory") == "$head" ]]; then printf '%s\n' "$memory"; return 0; fi
+  # The state holds the gap before the gate runs (#6675): a gate and the
+  # search of a red head can run an hour, and the report reads the gap
+  # meanwhile. The loop writes the state again when the reading returns.
+  watch_remember "$(jq -c --argjson read "$(date +%s)" '.read = $read' <<< "$memory")"
   # The first green head is `main`'s: the integration cycle passed on it.
   green=$(jq -r '.green // empty' <<< "$memory")
   if [[ -z $green ]] || ! git -C "$watch_tree" merge-base --is-ancestor "$green" "$head" 2> /dev/null; then
