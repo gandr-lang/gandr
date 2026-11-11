@@ -1,0 +1,33 @@
+/// `memory-readmission`: Holds replayed by the kernel.
+/// Implemented: the bridge reads a lexical hold as its state-passing reduct.
+/// In a lexical hold, each access stands on the spine of the hold's block, at
+/// the whole place. An exclusive access answers its result beside the value
+/// that it leaves, and the kernel types the pair.
+/// Not implemented: a receiver, a place at an index, an access under a
+/// handler, a view in a thunk and a buffer do not cross.
+///
+/// - owes: #1626
+// The kernel has no store. A hold crosses as its reduct, which passes the
+// held value along the block. `doubled` holds a count and writes it twice.
+// `doubledReduct` is its reduct, written by hand. Both answer twelve, and
+// the kernel replays both.
+
+/// The count starts at three. The block doubles it, then adds six.
+@[runs("12")]
+def doubled() -> Integer =
+  var c = 3
+  access c as v { resume v (v + v) };
+  access c as v { resume v (v + 6) };
+  pure c
+
+/// The reduct of `doubled`. Each access answers the unit beside the value
+/// that it leaves, and the next step reads that value.
+@[runs("12")]
+def doubledReduct() -> Integer =
+  let a = 3 + 3
+  let p = *{*{}, a}
+  let *{_u, s} = p
+  let b = s + 6
+  let q = *{*{}, b}
+  let *{_w, t} = q
+  pure t

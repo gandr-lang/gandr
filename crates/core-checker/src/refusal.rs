@@ -271,8 +271,9 @@ pub enum UnadmittedFormer
     /// consumer, and the kernel's lowering of a session flow refuses to run
     /// one.
     Run,
-    /// A memory form: the kernel has no store, so a held value and its
-    /// accesses stay on the checker's side.
+    /// A memory form the state-passing reduct does not read: the kernel has
+    /// no store, so a hold crosses only as its reduct, and a hold outside the
+    /// lexical case stays on the checker's side.
     Memory,
     /// A stage the kernel cannot read: one of a structural fixpoint named in a
     /// term, since the kernel mints its own fixpoints' stages; one naming no
