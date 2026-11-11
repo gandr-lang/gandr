@@ -137,18 +137,3 @@ copy_wrapper!(
     bool,
     "Whether two reflected VDC cells are replay-equivalent."
 );
-copy_wrapper!(
-    CartesianProjectionPreservation,
-    bool,
-    "Whether a W-cartesian action preserves every product projection."
-);
-copy_wrapper!(
-    CartesianDiagonalPreservation,
-    bool,
-    "Whether a W-cartesian action preserves the product diagonal."
-);
-copy_wrapper!(
-    CartesianStructurePreservation,
-    bool,
-    "Whether a W-cartesian action preserves the complete cartesian structure."
-);
