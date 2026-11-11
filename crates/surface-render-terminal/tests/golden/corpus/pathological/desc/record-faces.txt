@@ -36,11 +36,11 @@ error[IllFormedDescription]: the face `secure` holds a name the boundary `Server
 43 │   type Server = &{host : String, port : Integer, tls : Bool} where
    │ ┏━━━━━━━━━━━━━━━┛
 44 │ ┃   /// `secure` names the port and TLS fields.
-45 │ ┃   face secure = { port, tls };
-   │ ┃                   ┬──╿
-   │ ┗━━━━━━━━━━━━━━━━━━━│━━┥
-   │                     │  what the description check refuses
-   │                     the part the description check refuses
+45 │ ┃   face secure = {port, tls};
+   │ ┃                  ┬──╿
+   │ ┗━━━━━━━━━━━━━━━━━━│━━┥
+   │                    │  what the description check refuses
+   │                    the part the description check refuses
    │
    ├ note: `Server` is refused with IllFormedDescription, as its expectation states
    ╰ help: put in the face only names that the boundary lists

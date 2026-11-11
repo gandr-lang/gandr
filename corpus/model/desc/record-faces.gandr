@@ -26,8 +26,8 @@
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
-  face secure = { port, tls };
-  face addr = { host, port };
+  face secure = {port, tls};
+  face addr = {host, port};
 
 /// A record by label fixes the secure fields.
 def record_by_label : Config[.port = 443, .tls = true] = *{.host = "localhost"};

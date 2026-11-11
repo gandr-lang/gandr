@@ -135,7 +135,14 @@ impl Context
             {
                 Self::Operand
             },
-            "{" if rule == "theory_declaration" => Self::Telescope,
+            "{" if matches!(rule, "theory_declaration" | "module_type_member") => Self::Telescope,
+            "{" if rule == "attributed_module_member"
+                && before
+                    .iter()
+                    .any(|step| step.crossed == StepSym::Tile("type")) =>
+            {
+                Self::Telescope
+            },
             "*{" if SIGNATURES.contains(&rule) => Self::Signature,
             "-" | "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,

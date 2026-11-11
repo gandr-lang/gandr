@@ -39,8 +39,8 @@ def sketch(c : Color) -> Integer =
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
-  face secure = { port, tls };
-  face addr = { host, port };
+  face secure = {port, tls};
+  face addr = {host, port};
 
 /// A face cover of `Config`: both faces, which agree on their meet.
 @[checks]

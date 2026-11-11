@@ -176,6 +176,42 @@ fn bracketed_field_member_and_binder_lists_hug_their_contents()
 }
 
 #[test]
+fn a_face_of_a_type_hugs_its_fields_6529()
+{
+    let grammar = grammar();
+    let source = include_str!("format/unformatted/a-face-of-a-type-hugs-its-fields-6529.gandr");
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "a face's braces hug its fields under a type"
+    );
+}
+
+#[test]
+fn an_attributed_type_face_hugs_its_fields()
+{
+    let grammar = grammar();
+    let source = include_str!("format/unformatted/an-attributed-type-face-hugs-its-fields.gandr");
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "an attributed type face hugs its fields"
+    );
+}
+
+#[test]
+fn an_attributed_def_body_stays_padded()
+{
+    let grammar = grammar();
+    let source = include_str!("format/unformatted/an-attributed-def-body-stays-padded.gandr");
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "an attribute does not change a definition body's braces"
+    );
+}
+
+#[test]
 fn a_block_members_documentation_stays_before_its_member()
 {
     golden(Path::new("members"));
