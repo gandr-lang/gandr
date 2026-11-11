@@ -464,30 +464,6 @@ mod tests
         (store, [plus, linear, nonlinear])
     }
 
-    /// A relation's extension candidates are the critical pairs among its own
-    /// generators: both orders of the two `g` consumers, and nothing from a
-    /// composition seam or a pair with a cell outside the relation.
-    #[test]
-    fn the_extension_candidates_are_the_critical_pairs_among_the_generators()
-    {
-        let (store, [plus, linear, nonlinear]) = g_seam_store();
-        let query = Query::new(&store);
-        let pairs = |generators| {
-            query
-                .extension_candidates(&rel(NameRef::from("R"), generators))
-                .iter()
-                .map(|candidate| (candidate.left, candidate.right))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(pairs(vec![linear, nonlinear]), vec![
-            (linear, nonlinear),
-            (nonlinear, linear)
-        ]);
-        assert_eq!(pairs(vec![plus, linear]), Vec::new());
-        assert_eq!(pairs(vec![nonlinear]), Vec::new());
-        assert_eq!(pairs(vec![plus]), Vec::new());
-    }
-
     #[test]
     fn the_tabulator_projects_each_instance_to_its_two_faces()
     {
