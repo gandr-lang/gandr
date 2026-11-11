@@ -1326,6 +1326,9 @@ where
 {
     type Out = Polled<Finished, Poll::Retired, ()>;
 
+    #[cfg(feature = "instrument")]
+    const TASK: gandr_core_fork::activity::Task = gandr_core_fork::activity::Task::Replay;
+
     /// [`Admitting::run`], polling the second half and telling `sink` what
     /// the admission does.
     ///

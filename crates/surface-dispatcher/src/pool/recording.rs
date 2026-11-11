@@ -73,6 +73,42 @@ pub fn clock() -> Nanos
     Nanos::from(u64::try_from(elapsed).unwrap_or(u64::MAX))
 }
 
+/// `work`, run as one task of the kind `task`, in `world`, on `declared`:
+/// between a start mark and an end mark on the ring of the calling thread.
+///
+/// A job that the pool runs whole, such as an editor's judgement or its
+/// admission, is one task of its thread. The fork sites inside the job mark
+/// their own jobs through [`Pool::recording`].
+///
+/// # Specification
+/// - requires: `activity` is the pool's, as [`Pool::activity`] makes it.
+/// - ensures: the answer of `work`, run once. A thread of the pool writes its
+///   own ring, and every other thread writes the last ring.
+/// - panics: only by propagating a panic of `work`, which leaves the end mark
+///   unwritten.
+/// - executable: none — the marks are atomics, which a postcondition does not
+///   read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a task outside the pool reaches the fold as one start and
+///   one end on the last ring, with its kind, world and declaration.
+/// - witness: `pool::recording::tests::a_marked_task_is_one_start_and_one_end_on_its_thread_s_ring`
+#[inline]
+pub fn marked<Out>(
+    activity: &Activity,
+    (task, world): (Task, World),
+    declared: Declared,
+    work: impl FnOnce() -> Out,
+) -> Out
+{
+    Marks {
+        activity,
+        task,
+        world,
+    }
+    .around(declared, work)
+}
+
 impl Pool
 {
     /// The rings for this pool: one for each of its threads, and one more for
