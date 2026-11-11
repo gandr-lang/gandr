@@ -540,6 +540,7 @@ impl DescriptionDiagnostic
                 };
                 LoweringRefusal::IllFormedDescription {
                     span: self.span,
+                    fault: self.span,
                     kind,
                     subjects: [spelled(Some(rule), written), spelled(port, written)],
                 }
@@ -591,6 +592,7 @@ impl DescriptionDiagnostic
             },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
                 span: self.span,
+                fault: self.span,
                 kind: reason.kind,
                 subjects: [
                     spelled(reason.subjects.first(), written),

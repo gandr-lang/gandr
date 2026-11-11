@@ -1062,6 +1062,7 @@ mod tests
             LoweringRefusal::BareFeedback { span: at, rule: at },
             LoweringRefusal::IllFormedDescription {
                 span: at,
+                fault: at,
                 kind: gandr_surface_lowering::WfKind::DuplicateSortName,
                 subjects: [
                     quenchant_shape::shape::Maybe::Present(name),

@@ -1096,9 +1096,13 @@ pub enum LoweringRefusal<'source>
     /// formed, though its syntax is complete.
     IllFormedDescription
     {
-        /// The bytes the check located the failure at: the rule or face at
-        /// fault, or the whole declaration where the check records none.
+        /// The bytes of the form the check judged: the rule or face at fault,
+        /// a face together with the record it reads, or the whole declaration
+        /// where the check records none.
         span: ByteSpan,
+        /// The bytes of the part at fault inside `span`: the label a face
+        /// lists that its record lacks, or `span` itself.
+        fault: ByteSpan,
         /// Why the check refuses it.
         kind: WfKind,
         /// The names the check's reason names, in its order, as the
@@ -3112,6 +3116,7 @@ mod tests
             },
             LoweringRefusal::IllFormedDescription {
                 span: s(99_usize, 100_usize),
+                fault: s(99_usize, 100_usize),
                 kind: crate::WfKind::NonRepresentableBinder,
                 subjects: [
                     Maybe::Present(SurfaceName::from("Tm")),
@@ -3408,6 +3413,7 @@ mod tests
         .map(|kind| {
             LoweringRefusal::IllFormedDescription {
                 span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                fault: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
                 kind,
                 subjects: [
                     Maybe::Present(SurfaceName::from("first")),
@@ -3490,6 +3496,7 @@ mod tests
         let ill_formed = |kind: crate::WfKind, second: Maybe<SurfaceName<'static>, _>| {
             LoweringRefusal::IllFormedDescription {
                 span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                fault: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
                 kind,
                 subjects: [Maybe::Present(SurfaceName::from("a")), second],
             }

@@ -721,8 +721,9 @@ fn mutants(
 ///   well formed, not filed; a closer doubled or an opener deleted, leaving a
 ///   closer with nothing to close, and an opener deleted, leaving the rest of
 ///   its body at the top level, are counted closed early, not filed; a near
-///   miss that makes an application is marked by the application's location,
-///   and a deletion that leaves a model form by the model form's location.
+///   miss that makes an application is marked by the application's location, a
+///   deletion that leaves a model form by the model form's location, and a
+///   deletion that unlabels a record field by the face check's location.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
@@ -731,6 +732,7 @@ fn mutants(
 /// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
 /// - witness: `ledger::recovery::tests::an_application_a_near_miss_makes_marks_its_mutation_6235`
 /// - witness: `ledger::recovery::tests::a_model_form_a_deletion_leaves_marks_its_mutation_6236`
+/// - witness: `ledger::recovery::tests::a_record_a_deletion_unlabels_marks_its_mutation_6237`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
@@ -1581,5 +1583,37 @@ mod tests
                 "{exemplar}:{at}: `type(` deleted is reported at its mutation: {report}"
             );
         }
+    }
+
+    /// #6237: `:` deleted from `*{left : Integer, right : Integer}` leaves
+    /// `left` no label of the record, so the face `lefty = { left }` lists a
+    /// label the record lacks. The face check judges the face against the
+    /// record. Its refusal marks the record through the label, and the
+    /// deleted site lies inside the record, so the mutant is reported at its
+    /// mutation.
+    #[test]
+    fn a_record_a_deletion_unlabels_marks_its_mutation_6237()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-record", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("staged-type.gandr"),
+            include_str!("../../../../corpus/ledger/syntax/staged-type.gandr"),
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            !report.findings.iter().any(|finding| {
+                finding.exemplar.file_name() == Some("staged-type.gandr".as_ref())
+                    && finding.at == 239
+                    && finding.tile == ":"
+                    && finding.mutation == Mutation::Deleted
+            }),
+            "staged-type.gandr:239: `:` deleted is reported at its mutation: {report}"
+        );
     }
 }
