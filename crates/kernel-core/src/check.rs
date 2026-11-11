@@ -5924,7 +5924,28 @@ where
                     let target =
                         carried_stage(arena, judgement, &context, (value, domain, target))?;
                     frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    // A path motive's endpoints check first, under the binder
+                    // at the path's carrier, and the value after them. A tower
+                    // of `Path.ap` with fewer levels than its cell's depth
+                    // applies its map off the map's domain, and is a type
+                    // error here. No conversion on the lowering's word decides
+                    // it, and no formation that the memo holds skips it.
                     goal = Goal::CheckValue(value, source);
+                    if let Some(&ValueType::Path {
+                        domain: fibre,
+                        left: start,
+                        right: end,
+                    }) = arena.value_type(motive)
+                    {
+                        frames.push(Frame::Pending(alloc::vec![goal], Produced::Checked));
+                        frames.push(Frame::ScopeExit);
+                        frames.push(Frame::Pending(
+                            alloc::vec![Goal::CheckValue(end, fibre)],
+                            Produced::Checked,
+                        ));
+                        context.push(domain);
+                        goal = Goal::CheckValue(start, fibre);
+                    }
                     continue 'expand;
                 },
                 // A telescope transport forms its motive, reads the path's
