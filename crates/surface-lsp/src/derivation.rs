@@ -1,18 +1,23 @@
 //! The trace layer's faces in the hub: the derivation card of the declaration
-//! at a cursor, which the render bus sends a client of the trace layer, and
-//! the hover's derivation section.
+//! at a cursor, which the render bus sends a client of the trace layer, the
+//! whole goal of one node of it, which a client asks for, and the hover's
+//! derivation section.
 //!
 //! A card holds one row for each judgement node of the declaration's tree,
 //! in the tree's order. A row holds the node's warrant, its direction, its
-//! goal and its type laid out at the columns that the client stated, the
-//! rule's short name, the cover, the memo's mark, the nodes that the check
-//! visited, the wall, and the bytes where the goal is written, which the
-//! node's place in its declaration and the declaration's first byte give. The
-//! index stores no text, so the card prints each goal and type here.
+//! goal and its type on one line each, cut to the room that the client's
+//! columns give them, the rule's short name, the cover, the memo's mark, the
+//! nodes that the check visited, the wall, and the bytes where the goal is
+//! written, which the node's place in its declaration and the declaration's
+//! first byte give. The index stores no text, so the card prints each goal and
+//! type here: on one line through the printer's one-line faces, which build no
+//! layout document (#6755). A whole goal is laid out at the client's columns
+//! only when the client opens its node.
 //!
 //! The hover's section shows the row in focus at the hover's position and
 //! each of its ancestors, the root first, one line each: the warrant's glyph,
-//! the direction's glyph, the goal and its type on one line, and the rule.
+//! the direction's glyph, the goal and its type on one line, and the rule. It
+//! prints only the goals and the types of those rows.
 //!
 //! # References
 //!
@@ -22,6 +27,7 @@
 //!   node at the cursor.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt::Write as _;
 
 use anodized::spec;
@@ -34,37 +40,42 @@ use gandr_surface_render_remote::DerivationCard;
 use gandr_surface_render_remote::DerivationRow;
 use gandr_surface_render_remote::Direction;
 use gandr_surface_render_remote::Memo;
+use gandr_surface_render_remote::NodeAt;
+use gandr_surface_render_remote::Room;
 use gandr_surface_render_remote::Warrant;
+use gandr_surface_render_remote::elided;
 use gandr_surface_session::Derivation;
+use gandr_surface_session::DerivationNode;
+use gandr_surface_session::Lay;
 use gandr_surface_session::MemoMark;
 use quenchant_shape::shape::Maybe;
 
-/// The columns that a hover's derivation section lays each goal out at: the
-/// section then joins each goal's lines into one.
-pub const HOVERED: Count = Count(100);
-
 /// The derivation card of `derivation`, the declaration that its account card
 /// keys `key` and that the text names `name`, whose text starts at byte
-/// `start`: its goals and types laid out at `columns`.
+/// `start`: its goals and types on one line each, cut to the room that a pane
+/// `columns` wide gives them.
 ///
 /// # Specification
 /// - requires: `start` is the first byte of the declaration in the text that
 ///   the derivation's places count from.
 /// - ensures: one row for each node, in the tree's order. A row's direction is
 ///   checking for a node checked against a type and synthesis otherwise; its
-///   memo is absent for a node that the memo cannot key; its span is the node's
-///   place moved by `start`, and absent for a node with no place.
+///   goal and its type are their one-line prints cut to the [`Room`] of the
+///   row's depth at `columns`; its memo is absent for a node that the memo
+///   cannot key; its span is the node's place moved by `start`, and absent for
+///   a node with no place.
 /// - provides: the card that the render bus sends a client of the trace layer.
 /// - fails: never.
 /// - panics: none.
-/// - intension: one read of the declaration's binders, then one print of each
-///   node's goal and type, so the work is linear in the declaration's nodes and
-///   in the text that the prints lay out.
+/// - intension: one read of the declaration's binders, then one one-line print
+///   of each node's goal and type, so no goal is laid out and the work is
+///   linear in the declaration's nodes and in the text of their lines.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an attached view of the trace layer hears the card of the
 ///   declaration at the editor's cursor, its first row the root at depth zero,
-///   and each goal written inside the declaration.
+///   each goal written inside the declaration and each goal on one line within
+///   its room.
 /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
 #[spec(ensures: |ret| ret.rows.len() == derivation.nodes().len() && ret.columns == columns)]
 #[must_use]
@@ -75,51 +86,20 @@ pub fn card(
     columns: Count,
 ) -> DerivationCard
 {
-    let page = PageWidth::from(u32::try_from(columns.0).unwrap_or(u32::MAX));
-    let count = |value: u32| Count(u64::from(value));
-    let placed = |offset: gandr_surface_syntax::ByteOffset| {
-        ByteOffset::from(usize::from(start).saturating_add(usize::from(offset)))
-    };
     let goals = derivation.goals();
-    let rows = derivation
-        .nodes()
-        .iter()
-        .map(|node| DerivationRow {
-            depth: count(u32::from(node.depth())),
-            warrant: match derivation.warrant(node) {
-                gandr_surface_session::Warrant::Checked => Warrant::Checked,
-                gandr_surface_session::Warrant::Replayed => Warrant::Replayed,
-                gandr_surface_session::Warrant::Refused => Warrant::Refused,
-            },
-            direction: match node.against() {
-                Maybe::Present(_) => Direction::Checking,
-                Maybe::Absent(_) => Direction::Synthesis,
-            },
-            goal: match goals.goal(node, page) {
-                Maybe::Present(goal) => Some(alloc::format!("{goal}")),
+    let rows = rows(derivation, start, |node, depth| {
+        let room = Room::at(columns, depth);
+        (
+            match goals.goal(node, Lay::Line) {
+                Maybe::Present(goal) => Some(elided(goal.as_ref().split_whitespace(), room.goal)),
                 Maybe::Absent(_) => None,
             },
-            ty: match goals.ty(node, page) {
-                Maybe::Present(ty) => Some(alloc::format!("{ty}")),
+            match goals.ty(node, Lay::Line) {
+                Maybe::Present(ty) => Some(elided(ty.as_ref().split_whitespace(), room.ty)),
                 Maybe::Absent(_) => None,
             },
-            rule: String::from(derivation.rule(node).as_ref()),
-            cover: count(u32::from(node.cover())),
-            memo: match node.memo() {
-                MemoMark::Hit => Some(Memo::Hit),
-                MemoMark::Miss => Some(Memo::Miss),
-                MemoMark::Unkeyed | MemoMark::Closed => None,
-            },
-            nodes: count(u32::from(node.visited())),
-            wall: Count(u64::from(node.wall())),
-            span: match node.written() {
-                Maybe::Present(written) => {
-                    ByteRange::new(placed(written.start()), placed(written.end())).ok()
-                },
-                Maybe::Absent(_) => None,
-            },
-        })
-        .collect();
+        )
+    });
     DerivationCard {
         key,
         declaration,
@@ -128,17 +108,54 @@ pub fn card(
     }
 }
 
-/// The hover's derivation section of `card` at `offset`: one line for the row
-/// in focus and for each of its ancestors, the root first, in a fenced block.
+/// The whole goal of the node at `at` of `derivation`, laid out at `columns`:
+/// none for a place past the tree or a goal that the printer refused.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: nothing; any place is admissible input.
+/// - ensures: the goal of the node at `at` as the printer lays it out at a page
+///   `columns` wide, with its line breaks.
+/// - provides: the whole goal that a client of the trace layer opens.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one read of the declaration's binders and one layout, of the
+///   one goal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a view that opens the node at the cursor hears its whole
+///   goal, and the row's line is that goal on one line.
+/// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+#[must_use]
+pub fn whole(
+    derivation: &Derivation<'_>,
+    at: NodeAt,
+    columns: Count,
+) -> Option<String>
+{
+    let node = derivation.nodes().get(at.0)?;
+    let page = PageWidth::from(u32::try_from(columns.0).unwrap_or(u32::MAX));
+    match derivation.goals().goal(node, Lay::Page(page)) {
+        Maybe::Present(goal) => Some(alloc::format!("{goal}")),
+        Maybe::Absent(_) => None,
+    }
+}
+
+/// The hover's derivation section of `derivation` at `offset`, whose text
+/// starts at byte `start`: one line for the row in focus and for each of its
+/// ancestors, the root first, in a fenced block.
+///
+/// # Specification
+/// - requires: `start` is the first byte of the declaration in the text that
+///   the derivation's places count from.
 /// - ensures: `None` when no row holds `offset`; otherwise a fenced block of
 ///   one line for each row that [`DerivationCard::ancestors`] names for the
-///   focus, each set in by two spaces for each level of its depth.
+///   focus, each set in by two spaces for each level of its depth, its goal and
+///   its type whole on one line.
 /// - provides: the section that a hover adds at the trace layer.
 /// - fails: never.
 /// - panics: none.
+/// - intension: one pass over the nodes to find the focus, then one one-line
+///   print of the goal and the type of each row on its path.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a hover inside a traced declaration's body shows the
@@ -148,14 +165,21 @@ pub fn card(
     text.starts_with("```text\n") && text.ends_with("```")))]
 #[must_use]
 pub fn section(
-    card: &DerivationCard,
+    derivation: &Derivation<'_>,
+    start: ByteOffset,
     offset: ByteOffset,
 ) -> Option<String>
 {
-    let focus = card.focus(offset)?;
+    let placed = DerivationCard {
+        rows: rows(derivation, start, |_, _| (None, None)),
+        ..DerivationCard::default()
+    };
+    let focus = placed.focus(offset)?;
+    let goals = derivation.goals();
+    let nodes = derivation.nodes();
     let mut section = String::from("```text\n");
-    for at in card.ancestors(focus) {
-        let Some(row) = card.rows.get(at.0)
+    for at in placed.ancestors(focus) {
+        let (Some(row), Some(node)) = (placed.rows.get(at.0), nodes.get(at.0))
         else {
             continue;
         };
@@ -168,18 +192,75 @@ pub fn section(
             <&str>::from(row.warrant.glyph()),
             <&str>::from(row.direction.glyph())
         );
-        if let Some(ref goal) = row.goal {
+        if let Maybe::Present(goal) = goals.goal(node, Lay::Line) {
             section.push(' ');
-            joined(&mut section, goal.split_whitespace());
+            joined(&mut section, goal.as_ref().split_whitespace());
         }
-        if let Some(ref ty) = row.ty {
+        if let Maybe::Present(ty) = goals.ty(node, Lay::Line) {
             section.push_str(" : ");
-            joined(&mut section, ty.split_whitespace());
+            joined(&mut section, ty.as_ref().split_whitespace());
         }
         let _written = writeln!(section, "  {}", row.rule);
     }
     section.push_str("```");
     Some(section)
+}
+
+/// One row for each node of `derivation`, whose text starts at byte `start`,
+/// in the tree's order: each its goal and its type as `printed` writes them for
+/// the node at its depth.
+///
+/// # Specification
+/// trivial.
+fn rows<Printed>(
+    derivation: &Derivation<'_>,
+    start: ByteOffset,
+    mut printed: Printed,
+) -> Vec<DerivationRow>
+where
+    Printed: FnMut(&DerivationNode, Count) -> (Option<String>, Option<String>),
+{
+    let count = |value: u32| Count(u64::from(value));
+    let placed = |offset: gandr_surface_syntax::ByteOffset| {
+        ByteOffset::from(usize::from(start).saturating_add(usize::from(offset)))
+    };
+    derivation
+        .nodes()
+        .iter()
+        .map(|node| {
+            let depth = count(u32::from(node.depth()));
+            let (goal, ty) = printed(node, depth);
+            DerivationRow {
+                depth,
+                warrant: match derivation.warrant(node) {
+                    gandr_surface_session::Warrant::Checked => Warrant::Checked,
+                    gandr_surface_session::Warrant::Replayed => Warrant::Replayed,
+                    gandr_surface_session::Warrant::Refused => Warrant::Refused,
+                },
+                direction: match node.against() {
+                    Maybe::Present(_) => Direction::Checking,
+                    Maybe::Absent(_) => Direction::Synthesis,
+                },
+                goal,
+                ty,
+                rule: String::from(derivation.rule(node).as_ref()),
+                cover: count(u32::from(node.cover())),
+                memo: match node.memo() {
+                    MemoMark::Hit => Some(Memo::Hit),
+                    MemoMark::Miss => Some(Memo::Miss),
+                    MemoMark::Unkeyed | MemoMark::Closed => None,
+                },
+                nodes: count(u32::from(node.visited())),
+                wall: Count(u64::from(node.wall())),
+                span: match node.written() {
+                    Maybe::Present(written) => {
+                        ByteRange::new(placed(written.start()), placed(written.end())).ok()
+                    },
+                    Maybe::Absent(_) => None,
+                },
+            }
+        })
+        .collect()
 }
 
 /// Push `words` onto `line` on one line: the words of a text with each run

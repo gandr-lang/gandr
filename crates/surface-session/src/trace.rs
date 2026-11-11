@@ -1093,9 +1093,21 @@ pub struct Goals<'account>
     scoped: Option<Scoped>,
 }
 
+/// Where a goal or a type is written: laid out at a page, or on as few lines
+/// as it admits, with no layout document built.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Lay
+{
+    /// Laid out at the page.
+    Page(PageWidth),
+    /// On one line, as the printer's one-line faces write it: the layout of a
+    /// page wider than every line.
+    Line,
+}
+
 impl Goals<'_>
 {
-    /// The goal of `node`, printed at `page`.
+    /// The goal of `node`, written as `lay` asks.
     ///
     /// # Specification
     /// trivial.
@@ -1103,27 +1115,48 @@ impl Goals<'_>
     pub fn goal(
         &self,
         node: &DerivationNode,
-        page: PageWidth,
+        lay: Lay,
     ) -> Maybe<Presentation, unprinted::Absent>
     {
         let context = self.context(node);
         let source = self.source(&context);
         let style = Style::from(Form::Sugared);
-        let printed = match node.node {
-            CoreNode::Term(TermNode::Value(id)) => gandr_surface_pretty::present_value(
-                &source,
-                gandr_surface_pretty::CoreNode::Value(id),
-                page,
-                style,
-            ),
-            CoreNode::Term(TermNode::Computation(id)) => gandr_surface_pretty::present_computation(
-                &source,
-                gandr_surface_pretty::CoreNode::Computation(id),
-                page,
-                style,
-            ),
-            CoreNode::Type(ty) => {
+        let printed = match (node.node, lay) {
+            (CoreNode::Term(TermNode::Value(id)), Lay::Page(page)) => {
+                gandr_surface_pretty::present_value(
+                    &source,
+                    gandr_surface_pretty::CoreNode::Value(id),
+                    page,
+                    style,
+                )
+            },
+            (CoreNode::Term(TermNode::Value(id)), Lay::Line) => {
+                gandr_surface_pretty::present_value_line(
+                    &source,
+                    gandr_surface_pretty::CoreNode::Value(id),
+                    style,
+                )
+            },
+            (CoreNode::Term(TermNode::Computation(id)), Lay::Page(page)) => {
+                gandr_surface_pretty::present_computation(
+                    &source,
+                    gandr_surface_pretty::CoreNode::Computation(id),
+                    page,
+                    style,
+                )
+            },
+            (CoreNode::Term(TermNode::Computation(id)), Lay::Line) => {
+                gandr_surface_pretty::present_computation_line(
+                    &source,
+                    gandr_surface_pretty::CoreNode::Computation(id),
+                    style,
+                )
+            },
+            (CoreNode::Type(ty), Lay::Page(page)) => {
                 gandr_surface_pretty::present_type(&source, printed(ty), page, style)
+            },
+            (CoreNode::Type(ty), Lay::Line) => {
+                gandr_surface_pretty::present_type_line(&source, printed(ty), style)
             },
         };
         printed.map_or(
@@ -1132,8 +1165,8 @@ impl Goals<'_>
         )
     }
 
-    /// The type of `node`, printed at `page` under the binders of its goal:
-    /// the type it is checked against, or the type its rule synthesised.
+    /// The type of `node`, written as `lay` asks under the binders of its
+    /// goal: the type it is checked against, or the type its rule synthesised.
     ///
     /// # Specification
     /// trivial.
@@ -1141,7 +1174,7 @@ impl Goals<'_>
     pub fn ty(
         &self,
         node: &DerivationNode,
-        page: PageWidth,
+        lay: Lay,
     ) -> Maybe<Presentation, unprinted::Absent>
     {
         let ty = match (node.against, node.handed) {
@@ -1157,12 +1190,12 @@ impl Goals<'_>
             },
         };
         let context = self.context(node);
-        gandr_surface_pretty::present_type(
-            &self.source(&context),
-            ty,
-            page,
-            Style::from(Form::Sugared),
-        )
+        let source = self.source(&context);
+        let style = Style::from(Form::Sugared);
+        match lay {
+            Lay::Page(page) => gandr_surface_pretty::present_type(&source, ty, page, style),
+            Lay::Line => gandr_surface_pretty::present_type_line(&source, ty, style),
+        }
         .map_or(
             Maybe::Absent(unprinted::Absent::Unpresentable),
             Maybe::Present,

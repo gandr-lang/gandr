@@ -20,15 +20,16 @@
 //!
 //! The message set is the projection of one binary session,
 //! `?Attach . !Hello . μX. (!Frame . X & !Stack . X & !Derivation . X &
-//! !Activity . X & ?Trace . X & ?Resync . X & ?Detach . end)`, so a typed
-//! endpoint can carry the same frames as its messages.
+//! !Opened . X & !Activity . X & ?Trace . X & ?Open . X & ?Resync . X &
+//! ?Detach . end)`, so a typed endpoint can carry the same frames as its
+//! messages.
 //!
 //! # The frame
 //!
 //! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame`, `Stack`,
-//! `Derivation` and `Resync` are document-scoped: they carry the document's
-//! URI and the editor's version of it, the version the report describes, and
-//! a renderer paints a report only
+//! `Derivation`, `Open`, `Opened` and `Resync` are document-scoped: they carry
+//! the document's URI and the editor's version of it, the version the report
+//! describes, and a renderer paints a report only
 //! while that version matches the buffer it shows, asking for a resync
 //! otherwise, so a stale report is dropped rather than painted. `Hello`, the
 //! documents a server tracks, `Activity`, the pool's activity at one tick,
@@ -57,8 +58,10 @@ use anodized::spec;
 
 use crate::account::AccountCard;
 use crate::account::AccountEdit;
+use crate::account::AccountKey;
 use crate::activity::PoolActivity;
 use crate::derivation::DerivationCard;
+use crate::derivation::NodeAt;
 use crate::present::DiagCard;
 use crate::present::GoalCard;
 use crate::present::HlSpan;
@@ -297,12 +300,38 @@ pub enum FrameBody
         card: StackCard,
     },
     /// The judgement nodes of the declaration at the cursor of the document
-    /// version, whole: its goals laid out at the columns that the client's
-    /// [`Self::Trace`] stated. Document-scoped.
+    /// version, whole: each goal and type on one line, cut to the room that
+    /// the columns of the client's [`Self::Trace`] give it. Document-scoped.
     Derivation
     {
         /// The card.
         card: DerivationCard,
+    },
+    /// Client to server: the client opens the node at `at` of the derivation
+    /// card keyed `key`, and asks for its whole goal. Document-scoped.
+    Open
+    {
+        /// The key of the card.
+        key: AccountKey,
+        /// The node.
+        at: NodeAt,
+    },
+    /// Server to client, for each [`Self::Open`]: the whole goal of the node
+    /// at `at` of the derivation card keyed `key`, laid out at the client's
+    /// columns. Document-scoped.
+    Opened
+    {
+        /// The key of the card.
+        key: AccountKey,
+        /// The node.
+        at: NodeAt,
+        /// The whole goal; absent when the server holds no such node or the
+        /// printer refused it.
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        goal: Option<String>,
     },
     /// Server to client, for each tick of the hub's work ledger that changes
     /// it: the activity of the hub's pool. Connection-scoped.
@@ -328,11 +357,12 @@ pub enum FrameBody
 ///
 /// # Specification
 /// - ensures: a [`FrameBody::Frame`], [`FrameBody::Resync`],
-///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`], [`FrameBody::Stack`]
-///   or [`FrameBody::Derivation`] is document-scoped and a
-///   [`FrameBody::Hello`], [`FrameBody::Activity`], [`FrameBody::Trace`] or
-///   [`FrameBody::Detach`] is connection-scoped, in every frame built by the
-///   ten constructors or decoded.
+///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`],
+///   [`FrameBody::Stack`], [`FrameBody::Derivation`], [`FrameBody::Open`] or
+///   [`FrameBody::Opened`] is document-scoped and a [`FrameBody::Hello`],
+///   [`FrameBody::Activity`], [`FrameBody::Trace`] or [`FrameBody::Detach`] is
+///   connection-scoped, in every frame built by the twelve constructors or
+///   decoded.
 /// - provides: under the `serde` feature, the wire image `{"schema_version",
 ///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
 ///   connection-scoped frame; the decode refuses another schema version, keys
@@ -569,6 +599,73 @@ impl RenderFrame
         }
     }
 
+    /// The client's ask for the whole goal of the node at `at` of the
+    /// derivation card of `document` keyed `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Open`] carrying `key` and `at` unchanged.
+    /// - provides: the ask of a pane that opens the node in focus.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ask survives a round trip through JSON, and the
+    ///   decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Open { .. }),
+    ))]
+    pub const fn open(
+        document: DocId,
+        key: AccountKey,
+        at: NodeAt,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Open { key, at },
+        }
+    }
+
+    /// The whole goal `goal` of the node at `at` of the derivation card of
+    /// `document` keyed `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Opened`] carrying `key`, `at` and `goal` unchanged.
+    /// - provides: the answer to an [`RenderFrame::open`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the answer with a goal of two lines survives a round
+    ///   trip through JSON, and the decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Opened { .. }),
+    ))]
+    pub const fn opened(
+        document: DocId,
+        key: AccountKey,
+        at: NodeAt,
+        goal: Option<String>,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Opened { key, at, goal },
+        }
+    }
+
     /// The activity of the hub's pool at one tick.
     ///
     /// # Specification
@@ -788,6 +885,10 @@ enum DocumentBody
     Stack,
     /// [`FrameBody::Derivation`].
     Derivation,
+    /// [`FrameBody::Open`].
+    Open,
+    /// [`FrameBody::Opened`].
+    Opened,
 }
 
 /// Why a decoded image is not a frame.
@@ -872,6 +973,8 @@ impl fmt::Display for FrameDecodeError
                     DocumentBody::AccountPatch => "account_patch",
                     DocumentBody::Stack => "stack",
                     DocumentBody::Derivation => "derivation",
+                    DocumentBody::Open => "open",
+                    DocumentBody::Opened => "opened",
                 };
                 write!(f, "{name} render frames require document routing keys")
             },
@@ -933,7 +1036,9 @@ impl RenderFrame
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
                 | FrameBody::Stack { .. }
-                | FrameBody::Derivation { .. } => None,
+                | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. } => None,
             },
             unrouted = match wire.body {
                 FrameBody::Frame { .. } => Some(DocumentBody::Frame),
@@ -942,6 +1047,8 @@ impl RenderFrame
                 FrameBody::AccountPatch { .. } => Some(DocumentBody::AccountPatch),
                 FrameBody::Stack { .. } => Some(DocumentBody::Stack),
                 FrameBody::Derivation { .. } => Some(DocumentBody::Derivation),
+                FrameBody::Open { .. } => Some(DocumentBody::Open),
+                FrameBody::Opened { .. } => Some(DocumentBody::Opened),
                 FrameBody::Hello { .. }
                 | FrameBody::Activity { .. }
                 | FrameBody::Trace { .. }
@@ -994,7 +1101,9 @@ impl RenderFrame
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
                 | FrameBody::Stack { .. }
-                | FrameBody::Derivation { .. }),
+                | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. }),
                 &FrameScope::Document(_),
             ) => None,
             (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
@@ -1027,6 +1136,8 @@ impl RenderFrame
             (&FrameBody::Derivation { .. }, &FrameScope::Connection) => {
                 Some(DocumentBody::Derivation)
             },
+            (&FrameBody::Open { .. }, &FrameScope::Connection) => Some(DocumentBody::Open),
+            (&FrameBody::Opened { .. }, &FrameScope::Connection) => Some(DocumentBody::Opened),
         };
         if let Some(body) = unrouted {
             return Err(FrameDecodeError::DocumentScopedUnrouted { body });
@@ -1082,7 +1193,9 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
                 | FrameBody::Stack { .. }
-                | FrameBody::Derivation { .. })),
+                | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. })),
     )))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1122,6 +1235,7 @@ mod tests
     use crate::derivation::DerivationRow;
     use crate::derivation::Direction;
     use crate::derivation::Memo;
+    use crate::derivation::NodeAt;
     use crate::present::ByteOffset;
     use crate::present::ByteRange;
     use crate::present::GoalCard;
@@ -1482,6 +1596,23 @@ mod tests
                     ],
                 }),
                 super::DocumentBody::Derivation,
+            ),
+            (
+                RenderFrame::open(
+                    document(Version(4)),
+                    AccountKey::from(alloc::string::String::from("k")),
+                    NodeAt(1),
+                ),
+                super::DocumentBody::Open,
+            ),
+            (
+                RenderFrame::opened(
+                    document(Version(4)),
+                    AccountKey::from(alloc::string::String::from("k")),
+                    NodeAt(1),
+                    Some(alloc::string::String::from("let a = x ;\n  a")),
+                ),
+                super::DocumentBody::Opened,
             ),
         ];
         for (frame, body) in frames {

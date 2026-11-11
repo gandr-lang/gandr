@@ -322,6 +322,8 @@ pub use crate::trace::DerivationTree;
 #[cfg(feature = "instrument")]
 pub use crate::trace::Goals;
 #[cfg(feature = "instrument")]
+pub use crate::trace::Lay;
+#[cfg(feature = "instrument")]
 pub use crate::trace::MemoMark;
 #[cfg(feature = "instrument")]
 pub use crate::trace::Rule;

@@ -1116,10 +1116,14 @@ mod tests
     use gandr_surface_render_remote::FrameBody;
     use gandr_surface_render_remote::FrameScope;
     use gandr_surface_render_remote::RenderFrame;
+    #[cfg(feature = "instrument")]
+    use gandr_surface_render_remote::Room;
     use gandr_surface_render_remote::SpineRow;
     use gandr_surface_render_remote::StackCard;
     use gandr_surface_render_remote::Warrant;
     use gandr_surface_render_remote::apply_account_edits;
+    #[cfg(feature = "instrument")]
+    use gandr_surface_render_remote::elided;
     use quenchant_shape::shape::Maybe;
     use serde_json::Value;
 
@@ -1696,6 +1700,8 @@ mod tests
             | FrameBody::Frame { .. }
             | FrameBody::Stack { .. }
             | FrameBody::Derivation { .. }
+            | FrameBody::Open { .. }
+            | FrameBody::Opened { .. }
             | FrameBody::Resync
             | FrameBody::Activity { .. }
             | FrameBody::Trace { .. }
@@ -1767,6 +1773,8 @@ mod tests
             | FrameBody::AccountPatch { .. }
             | FrameBody::Stack { .. }
             | FrameBody::Derivation { .. }
+            | FrameBody::Open { .. }
+            | FrameBody::Opened { .. }
             | FrameBody::Activity { .. }
             | FrameBody::Trace { .. }
             | FrameBody::Detach => {
@@ -2094,11 +2102,15 @@ mod tests
     /// editor's job judged the document at another layer, so the
     /// subscription judges it again at the trace layer, and the view hears
     /// the card at the cursor with no edit (#6716). The edit that follows
-    /// traces the two declarations it changes and adopts the third. A move of
-    /// the cursor inside the declaration sends no card, and a move into the
-    /// other changed declaration sends its card. A face that sent the card of
-    /// another declaration, placed a goal outside its declaration, sent a card
-    /// for a move inside one, or sent no card before an edit fails here.
+    /// traces the two declarations it changes and adopts the third. Each row
+    /// of the card holds its goal and its type on one line, cut to the room of
+    /// its depth, and an open frame for the node at the cursor answers its
+    /// whole goal (#6755). A move of the cursor inside the declaration sends
+    /// no card, and a move into the other changed declaration sends its card.
+    /// A face that sent the card of another declaration, placed a goal outside
+    /// its declaration, sent a goal longer than its room, answered no whole
+    /// goal, sent a card for a move inside one, or sent no card before an edit
+    /// fails here.
     #[cfg(feature = "instrument")]
     #[test]
     fn an_attached_view_follows_the_derivation_at_the_editors_cursor_6716()
@@ -2217,6 +2229,58 @@ mod tests
                 .and_then(|row| row.span)
                 .is_some_and(|span| span.start() <= cursor && cursor <= span.end()),
             "a node of the card holds the cursor"
+        );
+        let fits = |text: Option<&String>, room: Count| {
+            text.is_none_or(|text| {
+                !text.contains('\n')
+                    && u64::try_from(text.chars().count()).unwrap_or(u64::MAX) <= room.0.max(2)
+            })
+        };
+        assert!(
+            main.rows.iter().all(|row| {
+                let room = Room::at(main.columns, row.depth);
+                fits(row.goal.as_ref(), room.goal) && fits(row.ty.as_ref(), room.ty)
+            }),
+            "each row holds its goal and its type on one line within its room: {main:?}"
+        );
+        let focus = main.focus(cursor).expect("a node holds the cursor");
+        view.write_all(
+            format!(
+                "{}\n",
+                encoded(&RenderFrame::open(document(2_i32), main.key.clone(), focus))
+            )
+            .as_bytes(),
+        )
+        .expect("the hub reads");
+        let (scope, key, at, whole) = loop {
+            let (_line, frame) = next_frame(&mut reading);
+            if let FrameBody::Opened {
+                ref key,
+                at,
+                ref goal,
+            } = *frame.body()
+            {
+                break (frame.scope().clone(), key.clone(), at, goal.clone());
+            }
+        };
+        assert_eq!(
+            (scope, key, at),
+            (
+                FrameScope::Document(document(2_i32)),
+                main.key.clone(),
+                focus
+            ),
+            "the answer names the node the view opened"
+        );
+        let row = main.rows.get(focus.0).expect("the focus is a row");
+        let whole = whole.expect("the node at the cursor has a goal");
+        assert_eq!(
+            Some(elided(
+                whole.split_whitespace(),
+                Room::at(main.columns, row.depth).goal
+            )),
+            row.goal,
+            "the row's line is the whole goal on one line, cut to its room"
         );
         // A move inside `main`, then a move into `g`'s body.
         help(
