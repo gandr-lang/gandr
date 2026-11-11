@@ -1505,8 +1505,9 @@ mod sweeps
     use super::*;
 
     /// The random edit scripts each scenario generates under the `sweeps`
-    /// profile, each run from a fresh seed.
-    const CASES: Cases = Cases(32);
+    /// profile, each run from a fresh seed: eleven, a third of the 32 of
+    /// #3013, so the night's sweeps fit its budget (#6704).
+    const CASES: Cases = Cases(11);
 
     /// The random edit scripts each scenario generates under every
     /// pull-request profile: a quarter of the whole's, drawn from
@@ -1541,14 +1542,16 @@ mod sweeps
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// How many parts the nightly typing cuts every source into, one typed a
-    /// night: a 136th of typing the whole corpus each night, and of its
-    /// costliest source, every keystroke within 136 nights. A sixty-eighth
-    /// typed for 222 s on the nightly runner (run 42811839385) and for 50 s on
-    /// a workstation. A 136th typed for 21 s on that workstation (#6238).
+    /// night: a 408th of typing the whole corpus each night, and of its
+    /// costliest source, every keystroke within 408 nights, three times the
+    /// 136 of #6238, so the night's sweeps fit its budget (#6704). A
+    /// sixty-eighth typed for 222 s on the nightly runner (run 42811839385)
+    /// and for 50 s on a workstation. A 136th typed for 21 s on that
+    /// workstation (#6238).
     /// Limits: a night that types `iterated-pair.gandr` past its spine of
     /// level 20 passes the limit at any count, because the server takes about
     /// 5 s to check each keystroke there (#6245).
-    const TYPED_NIGHTS: Nights = Nights(136);
+    const TYPED_NIGHTS: Nights = Nights(408);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
     /// oracle.
@@ -1558,15 +1561,16 @@ mod sweeps
     };
 
     /// The nights the nightly erasure takes to erase every source: the
-    /// night's part of each, a fourteenth of its erasure (#3850, #4406). A
-    /// rotation by source left a night to the costliest source alone: the
-    /// buddy allocator's model erased for 141.7 s locally and timed out at
-    /// 240 s on the nightly runner (run 40858957539). A seventh of the corpus
-    /// erased for 178.3 s, 205.9 s and past 240 s on the nightly runner (runs
-    /// 41042290086, 41191255434 and 41440364719), over the 170 s a sweep's
-    /// night is sized to. A part's erasure costs a fixed share of the
-    /// source's whole, so a fourteenth halves the night.
-    const ERASED_NIGHTS: Nights = Nights(14);
+    /// night's part of each, a forty-second of its erasure, three times the
+    /// fourteenth of #3850 and #4406, so the night's sweeps fit its budget
+    /// (#6704). A rotation by source left a night to the costliest source
+    /// alone: the buddy allocator's model erased for 141.7 s locally and timed
+    /// out at 240 s on the nightly runner (run 40858957539). A seventh of the
+    /// corpus erased for 178.3 s, 205.9 s and past 240 s on the nightly runner
+    /// (runs 41042290086, 41191255434 and 41440364719), over the 170 s a
+    /// sweep's night is sized to. A part's erasure costs a fixed share of the
+    /// source's whole, so each further part shortens the night.
+    const ERASED_NIGHTS: Nights = Nights(42);
 
     /// The most keystrokes a sampled erasure spends on one source. Each
     /// keystroke checks the whole text left, so erasing a source line by line
