@@ -49,6 +49,7 @@ use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
 use gandr_core_checker::EndpointMiss;
+use gandr_core_checker::Entered;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::RunFault;
 use gandr_core_checker::RunStep;
@@ -147,8 +148,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x13` names each hole by its form and its place in the form.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x13";
+/// `0x14` keeps, beside each typing, whether the table held the item as it is
+/// written.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x14";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0b";
@@ -8483,7 +8485,9 @@ where
         write_reference(writer, answered.reference())?;
         write_answer(writer, answered.answer())?;
     }
-    write_typing(writer, checkpoint.typing())
+    write_typing(writer, checkpoint.typing())?;
+    write_entered(writer, checkpoint.entered());
+    Ok(())
 }
 
 /// Read one item's checkpoint.
@@ -8555,7 +8559,40 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
         support.push(Answered::new(reference, answer));
     }
     let typing = read_typing(reader)?;
-    Ok(ItemCheckpoint::new(content, footprint, support, typing))
+    let entered = read_entered(reader)?;
+    Ok(ItemCheckpoint::new(
+        content, footprint, support, typing, entered,
+    ))
+}
+
+/// Write the form the table held an item in: tag 0 as written, tag 1
+/// elaborated.
+///
+/// # Specification
+/// trivial.
+fn write_entered<Out>(
+    writer: &mut Writer<'_, Out>,
+    entered: Entered,
+) where
+    Out: Sink,
+{
+    writer.tag(Tag(match entered {
+        Entered::AsWritten => 0,
+        Entered::Elaborated => 1,
+    }));
+}
+
+/// Read the form the table held an item in.
+///
+/// # Specification
+/// trivial.
+fn read_entered(reader: &mut Reader<'_>) -> Result<Entered, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(Entered::AsWritten),
+        1 => Ok(Entered::Elaborated),
+        _ => Err(CodecError::Corrupt),
+    }
 }
 
 /// Check the decoder work bound in every checkpoint plane without copying it.

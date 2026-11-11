@@ -90,7 +90,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x13`; programs use `GPROG\0\0\x0b`. Their
+//! Checkpoint sets use `GCKPT\0\0\x14`; programs use `GPROG\0\0\x0b`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different

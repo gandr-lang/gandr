@@ -4,16 +4,20 @@
 //! # Record provenance and reuse validation
 //!
 //! An item's checkpoint records its content, its footprint, the support its
-//! judgement consulted — each signature answer it read, by reference — and
-//! its typing. A later revision recalls a checkpoint by content, through the
-//! one check memo batch and incremental runs share, and adopts it only when
-//! three things hold: every recorded answer equals, pointwise and by content,
-//! the answer the edited program's table gives at that point of the pass; no
-//! reference in the item's type positions, nor in any recorded answer's type,
-//! names a definition whose value changed; and the adopted type can be seated.
-//! Otherwise the item is judged again. Persisted checkpoints go through the
-//! same pass as in-memory records. Neither decoding nor this pass proves that
-//! recorded typing and support truthfully describe a prior judgement.
+//! judgement consulted — each signature answer it read, by reference — its
+//! typing, and whether the table held it as written. A later revision recalls
+//! a checkpoint by content, through the one check memo batch and incremental
+//! runs share, and adopts it only when four things hold: every recorded answer
+//! equals, pointwise and by content, the answer the edited program's table
+//! gives at that point of the pass; no reference in the item's type positions,
+//! nor in any recorded answer's type, names a definition whose value changed;
+//! the judgement entered the item as written; and the adopted type can be
+//! seated. Adoption seats the written signature and body, so an item its
+//! judgement elaborated — its holes filled, its nested runs bound — is judged
+//! again, and a reader unfolds what a fresh check's reader unfolds. Otherwise
+//! the item is judged again. Persisted checkpoints go through the same pass as
+//! in-memory records. Neither decoding nor this pass proves that recorded
+//! typing and support truthfully describe a prior judgement.
 //!
 //! # The same pass, two memos
 //!
@@ -123,6 +127,7 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Demand;
+use gandr_core_checker::Entered;
 use gandr_core_checker::FormedValueType;
 use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
@@ -204,6 +209,12 @@ quenchant_shape::reason_enum! {
             /// reads every other declaration's role, which no support records,
             /// so the declaration is judged again.
             Marked,
+            /// The judgement entered the declaration elaborated: its holes
+            /// filled, its nested runs bound, its law discharged, its stages
+            /// at the plain type or its recursion's following position kept.
+            /// Adoption seats the written form, so the declaration is judged
+            /// again.
+            Elaborated,
         }
     }
 }
@@ -411,6 +422,8 @@ struct CheckpointParts
     support: Vec<Answered>,
     /// The item's typing.
     typing: Typing,
+    /// The form the table held the item in after its judgement.
+    entered: Entered,
 }
 
 impl ItemCheckpoint
@@ -448,6 +461,7 @@ impl ItemCheckpoint
         footprint: Footprint,
         support: Vec<Answered>,
         typing: Typing,
+        entered: Entered,
     ) -> Self
     {
         let key = content_key_of(&content);
@@ -458,6 +472,7 @@ impl ItemCheckpoint
                 footprint,
                 support: canonical_support(support),
                 typing,
+                entered,
             }),
         }
     }
@@ -534,6 +549,18 @@ impl ItemCheckpoint
     pub fn typing(&self) -> &Typing
     {
         &self.parts.typing
+    }
+
+    /// The form the table held the item in after its judgement: an item
+    /// entered elaborated is judged again, never adopted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn entered(&self) -> Entered
+    {
+        self.parts.entered
     }
 
     /// The checkpoint with its footprint replaced, for a test that shows the
@@ -2181,6 +2208,8 @@ struct Outcome
     support: Vec<Answered>,
     /// Its typing.
     typing: Typing,
+    /// The form the table holds it in: as written for an adopted item.
+    entered: Entered,
     /// Whether it was adopted.
     adoption: Adoption,
 }
@@ -2563,6 +2592,7 @@ where
                 footprint: outcome.footprint,
                 support: outcome.support,
                 typing: outcome.typing,
+                entered: outcome.entered,
             }),
         });
     }
@@ -2810,6 +2840,7 @@ where
                         footprint,
                         support,
                         typing,
+                        entered: Entered::AsWritten,
                         adoption: Adoption::Adopted,
                     },
                     answer,
@@ -2822,6 +2853,7 @@ where
                     recall::Absent::Opaque
                     | recall::Absent::Missed
                     | recall::Absent::Unseated
+                    | recall::Absent::Elaborated
                     | recall::Absent::Derived
                     | recall::Absent::Marked => {},
                 }
@@ -2857,6 +2889,7 @@ where
                         footprint,
                         support,
                         typing,
+                        entered: supported.entered(),
                         adoption: Adoption::Judged,
                     },
                     answer,
@@ -2987,14 +3020,16 @@ enum Seat
 /// - requires: `input.supplied` holds the answer of every item before
 ///   `input.ordinal`.
 /// - ensures: when the item is transparent, the support holds pointwise, no
-///   type position meets the value-changed set, the body is no accepted
-///   univalence statement, path product or equivalence and the type seats, the
-///   item is admitted with its seated type and the checkpoint's support, typing
-///   and answer are returned; otherwise the context is unchanged. A type the
-///   recalled verdict checked or synthesised under is seated as its judgement
-///   formed it; any other signature is formed again.
+///   type position meets the value-changed set, the declaration takes no
+///   built-in role, its judgement entered it as written, the body is no
+///   accepted univalence statement, path product or equivalence and the type
+///   seats, the item is admitted with its seated type and the checkpoint's
+///   support, typing and answer are returned; otherwise the context is
+///   unchanged. A type the recalled verdict checked or synthesised under is
+///   seated as its judgement formed it; any other signature is formed again.
 /// - provides: the reason the checkpoint does not answer: `Opaque`, `Outdated`,
-///   `ValueRead`, `Derived` or `Unseated`, checked in that order.
+///   `ValueRead`, `Marked`, `Elaborated`, `Derived` or `Unseated`, checked in
+///   that order.
 /// - panics: none.
 /// - economy: a checked or synthesised verdict's type takes no formation walk.
 ///
@@ -3006,7 +3041,8 @@ enum Seat
 ///   statement, path product or equivalence is judged again, so a later
 ///   transport along it, a path identifying it or a product reading it unfolds
 ///   to the native path or decision the judgement records, as a fresh check's
-///   does.
+///   does. A declaration its judgement entered elaborated is judged again, so a
+///   reader unfolds the filled body, as a fresh check's reader does.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::an_ascription_endpoint_is_a_read`
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
@@ -3014,6 +3050,7 @@ enum Seat
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 /// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
 /// - witness: `tests::native_formers::an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752`
+/// - witness: `tests::incremental::a_filled_implicit_is_judged_again_so_its_reader_unfolds_it_6549`
 #[spec(
     requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
@@ -3025,12 +3062,14 @@ enum Seat
             support_holds(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let marked = matches!(input.declaration.builtin(), Maybe::Present(_));
+        let elaborated = input.candidate.checkpoint.entered() == Entered::Elaborated;
         match ret {
             | Maybe::Present((ref support, ref typing, _)) => {
                 transparent
                     && supported
                     && untouched
                     && !marked
+                    && !elaborated
                     && !derived
                     && support.as_slice() == input.candidate.checkpoint.support()
                     && typing == input.candidate.checkpoint.typing()
@@ -3048,6 +3087,9 @@ enum Seat
                     }
                     else if marked {
                         recall::Absent::Marked
+                    }
+                    else if elaborated {
+                        recall::Absent::Elaborated
                     }
                     else if derived {
                         recall::Absent::Derived
@@ -3076,6 +3118,9 @@ fn adopt(
     }
     if let Maybe::Present(_) = input.declaration.builtin() {
         return Maybe::Absent(recall::Absent::Marked);
+    }
+    if checkpoint.entered() == Entered::Elaborated {
+        return Maybe::Absent(recall::Absent::Elaborated);
     }
     let (signature, body) = match *(input.declaration.content()) {
         gandr_core_checker::DeclarationContent::Value {

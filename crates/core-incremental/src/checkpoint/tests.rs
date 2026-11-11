@@ -80,6 +80,7 @@ fn recorded_answer_references_participate_in_value_invalidation()
         footprint.clone(),
         vec![Answered::new(Reference::Unoccupied, Answer::Typed(table))],
         Typing::Owed,
+        gandr_core_checker::Entered::AsWritten,
     );
     let candidate = Candidate {
         checkpoint: &checkpoint,
@@ -187,7 +188,13 @@ fn support_canonicalization_keeps_the_first_answer()
         ItemOrdinal::from(0_usize),
     );
     let footprint = footprint_of(&item.content);
-    let checkpoint = ItemCheckpoint::new(item.content, footprint, support.clone(), Typing::Owed);
+    let checkpoint = ItemCheckpoint::new(
+        item.content,
+        footprint,
+        support.clone(),
+        Typing::Owed,
+        gandr_core_checker::Entered::AsWritten,
+    );
     assert_eq!(checkpoint.support(), [
         Answered::new(a.clone(), typed.clone()),
         Answered::new(b.clone(), Answer::Untyped)
@@ -345,6 +352,7 @@ fn value_change_closure_handles_cycles_and_opaque_readers()
                     footprint.clone(),
                     vec![],
                     Typing::Owed,
+                    gandr_core_checker::Entered::AsWritten,
                 )
             })
             .collect(),
@@ -461,6 +469,7 @@ fn a_checkpoint_keeps_the_content_key_of_its_item_6286()
             checkpoint.footprint().clone(),
             checkpoint.support().to_vec(),
             checkpoint.typing().clone(),
+            gandr_core_checker::Entered::AsWritten,
         )
         .key()
     });

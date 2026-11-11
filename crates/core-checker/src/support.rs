@@ -282,7 +282,36 @@ impl Support
     }
 }
 
-/// One declaration's verdict, beside the support its judgement consulted.
+/// Whether the table holds an accepted value declaration as it is written.
+///
+/// A judgement can enter a declaration in a form other than the written one.
+/// It fills the holes of the signature or the body, binds the body's nested
+/// runs, or discharges an omitted law. It enters a signature quantified over
+/// stages at its plain type, and keeps the position a recursion follows. A
+/// caller that seats the written form in place of a judgement gives the same
+/// table only for [`Entered::AsWritten`].
+///
+/// # Specification
+/// - executable: none — a data type; [`crate::check_declaration_supported`]
+///   states when each variant is given.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration whose omitted implicit is filled enters
+///   elaborated, and the declaration it calls enters as written.
+/// - witness: `bridge::tests::a_declaration_whose_implicit_is_filled_enters_elaborated_6549`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Entered
+{
+    /// The table holds the written signature and the written body, and
+    /// nothing beside them; or the verdict defines no body.
+    AsWritten,
+    /// The table holds a signature or a body that the judgement elaborated,
+    /// or a stage signature or a following position beside them.
+    Elaborated,
+}
+
+/// One declaration's verdict, beside the support its judgement consulted and
+/// the form the table holds it in.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Supported
 {
@@ -290,20 +319,27 @@ pub struct Supported
     verdict: Verdict,
     /// The answers the judgement consulted.
     support: Support,
+    /// The form the table holds the declaration in.
+    entered: Entered,
 }
 
 impl Supported
 {
-    /// The verdict `verdict`, reached by consulting `support`.
+    /// The verdict `verdict`, reached by consulting `support`, entered so.
     ///
     /// # Specification
     /// trivial.
     pub(crate) const fn new(
         verdict: Verdict,
         support: Support,
+        entered: Entered,
     ) -> Self
     {
-        Self { verdict, support }
+        Self {
+            verdict,
+            support,
+            entered,
+        }
     }
 
     /// The verdict.
@@ -326,6 +362,17 @@ impl Supported
     pub const fn support(&self) -> &Support
     {
         &self.support
+    }
+
+    /// The form the table holds the declaration in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn entered(&self) -> Entered
+    {
+        self.entered
     }
 }
 

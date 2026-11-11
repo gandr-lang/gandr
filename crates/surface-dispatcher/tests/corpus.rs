@@ -1706,6 +1706,115 @@ mod sweeps
         );
     }
 
+    /// The resume parity's sample: sixty-four sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The nightly profile resumes the night's
+    /// slice, and the `sweeps` profile every source.
+    const RESUMED: Sample = Sample {
+        name: SampleName("a_resume_onto_the_unchanged_program_gives_the_fresh_set_6549"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to resume every source: a seventh
+    /// a night, the count the nightly's sweeps share (#3013). Every source,
+    /// checked fresh and resumed once, took 32 s in one local debug run.
+    const RESUMED_NIGHTS: Nights = Nights(7);
+
+    /// #6549: every corpus source, checked fresh and then resumed onto its
+    /// unchanged program, gives the fresh set: each item's typing, support
+    /// and entered form. An adoption that seats the written form of a
+    /// declaration its judgement entered elaborated changes the verdict or
+    /// the support of an item that reads it.
+    #[test]
+    fn a_resume_onto_the_unchanged_program_gives_the_fresh_set_6549()
+    {
+        resumes_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn a_resume_onto_the_unchanged_program_gives_the_fresh_set_6549_changed()
+    {
+        resumes_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits, laid out after its import closure, checked
+    /// fresh and resumed onto its unchanged program, gives the fresh set.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resumes_alike(sweep: &Sweep)
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::check_program;
+        use gandr_core_incremental::resume_from;
+        use gandr_surface_dispatcher::Unshadowed;
+        use gandr_surface_dispatcher::classify;
+        use gandr_surface_dispatcher::item_program;
+        use gandr_surface_dispatcher::lay_out_shadowed;
+        use gandr_surface_dispatcher::lower_unit_source;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(
+            RESUMED,
+            RESUMED_NIGHTS,
+            &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+        );
+        assert!(
+            visited.len() >= sweep.drawn(RESUMED).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let program_of = |path: &Path| -> Option<Program> {
+            let own = std::fs::read_to_string(path).expect("a corpus source reads");
+            let laid = lay_out_shadowed(
+                &grammar,
+                path,
+                classify(path),
+                SourceText::from(own.as_str()),
+                &Unshadowed,
+            );
+            let lowering = lower_unit_source(
+                &grammar,
+                SourceText::from(laid.text.as_str()),
+                &laid.unit,
+                &mut LoweringCount::default(),
+            )
+            .ok()?;
+            let Lowered::Module { module, arena } = lowering.into_lowered()
+            else {
+                return None;
+            };
+            item_program(&module, arena).ok()
+        };
+        let mut resumed = 0_usize;
+        let mut differing = Vec::new();
+        for source in visited {
+            let (Some(mut checked), Some(mut again)) =
+                (program_of(&source.path), program_of(&source.path))
+            else {
+                continue;
+            };
+            let fresh = check_program(&mut checked, CheckBudget::DEFAULT)
+                .expect("a lowered program checks");
+            let again = resume_from(fresh.checkpoints(), &mut again)
+                .expect("a set resumes onto the program it was checked from");
+            resumed = resumed.saturating_add(1);
+            if again.checkpoints() != fresh.checkpoints() {
+                differing.push(source.path);
+            }
+        }
+        eprintln!("resumed {resumed} of the sources visited");
+        assert!(
+            differing.is_empty(),
+            "over {resumed} sources, a resume onto the unchanged program gives the fresh set; \
+             differing: {differing:?}"
+        );
+    }
+
     /// The bytes of a step's `Debug` spelling, folded into one hash.
     #[repr(transparent)]
     #[derive(Default)]

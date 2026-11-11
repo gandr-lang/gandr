@@ -752,5 +752,6 @@ pub use crate::seal::minted_site;
 pub use crate::support::CodataConsulted;
 pub use crate::support::Consulted;
 pub use crate::support::DataConsulted;
+pub use crate::support::Entered;
 pub use crate::support::Support;
 pub use crate::support::Supported;

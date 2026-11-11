@@ -218,8 +218,9 @@ INSERT INTO purpose VALUES('core-checker','staging::check','function','Checks a 
 INSERT INTO purpose VALUES('core-checker','support::CodataConsulted','struct','One codata-signature answer, including a missing declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','support::Consulted','struct','One answer a judgement read from the signature table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','support::DataConsulted','struct','One nominal-signature answer, including a missing declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','support::Entered','enum','Says whether a judgement enters its declaration into the table as written or elaborated, so a resume adopts only a declaration entered as written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','support::Support','struct','The answers one declaration''s judgement consulted, ascending by position, each position once.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','support::Supported','struct','A supported judgement: the support it consulted and the verdict it returned.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','support::Supported','struct','A supported judgement: the support it consulted, the verdict it returned and the form it entered the declaration in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::Analysis','enum','Preparation without replay, preserving malformed-family refusals.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::Candidate','struct','An untrusted candidate and its transient discovery columns, before inheritance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','template::FamilyPrices','struct','Both prices, computed before any inheritance check.',NULL,'fits','sound',NULL);
