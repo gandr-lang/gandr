@@ -7,12 +7,16 @@
 // `far` requires the console, and a store of strings under the label
 // `store`. A site hosting `far` must grant the console and bind a model of
 // `Store` at `V = String` to `store`. `gandr check` of the manifold judges
-// each entry of the row against the site's `offers`.
+// each entry of the row against the site's `offers`. The migration to `far`
+// prints through the console, because code at `far` performs under that row.
+// `main` itself performs nothing, because its print runs at `far`.
 //
 // - see: `offers.site.gandr` — the site answering the row
 // - see: `offers.manifold.gandr` — the manifold placing `far` there
 // - see: `corpus/pathological/worlds/offers.gandr` — sites leaving an entry
 //   unanswered, and a world the program lacks
+// - see: `corpus/pathological/worlds/rows.gandr` — a print at a world that
+//   requires nothing
 
 // The console's host interface.
 import std.io;
@@ -36,7 +40,7 @@ pub world near;
 /// `store`.
 pub world far requires [std.io.Console.Eff, store : Store with sort V = String];
 
-/// `far` computes forty-two and hands it back.
-@[entry(*{near, far}), runs("42")]
+/// `far` prints its name, computes forty-two and returns it.
+@[entry(*{near, far}), runs("far\n42")]
 def main() -> Integer =
-  migrate [far] { pure (6 * 7) }
+  migrate [far] { std.io.Console.print "far"; pure (6 * 7) }

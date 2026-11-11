@@ -3894,7 +3894,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                         (Maybe::Absent(_), Maybe::Absent(_)) => true,
                         (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
                     } }
- else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
+ else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World(_), DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
 } && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
             && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies,ref models} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
@@ -3959,7 +3959,7 @@ pub fn encode_item(
                         }),
                     })
                 },
-                gandr_core_checker::DeclarationContent::World => DeclarationRoots::World,
+                gandr_core_checker::DeclarationContent::World(_) => DeclarationRoots::World,
                 gandr_core_checker::DeclarationContent::Codata(_) => DeclarationRoots::Codata,
             };
             let reference = layout

@@ -212,7 +212,15 @@ pub(in crate::lower) fn judged(
                     };
                 },
                 DeclarationOutcome::World => {
-                    return Some(Declaration::world(declaration.constant(), origin));
+                    let requirement = match module.world_row(declaration) {
+                        Maybe::Present(row) => row.clone(),
+                        Maybe::Absent(_) => gandr_core_term::effect::EffectRow::EMPTY,
+                    };
+                    return Some(Declaration::world(
+                        declaration.constant(),
+                        requirement,
+                        origin,
+                    ));
                 },
                 DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };

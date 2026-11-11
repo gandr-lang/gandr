@@ -910,7 +910,11 @@ fn an_item_of_a_located_program_is_opaque()
     let beside = vec![
         Item::new(
             ItemKey::from("seat"),
-            Declaration::world(ConstantIndex::from(0_usize), OriginToken::from(0_usize)),
+            Declaration::world(
+                ConstantIndex::from(0_usize),
+                gandr_core_term::effect::EffectRow::EMPTY,
+                OriginToken::from(0_usize),
+            ),
         ),
         item(&mut arena, 1),
     ];

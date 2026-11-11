@@ -142,8 +142,13 @@
 //!                 ));
 //!             },
 //!             DeclarationOutcome::World => {
+//!                 let requirement = match module.world_row(lowered) {
+//!                     Maybe::Present(row) => row.clone(),
+//!                     Maybe::Absent(_) => gandr_core_term::effect::EffectRow::EMPTY,
+//!                 };
 //!                 return Some(Declaration::world(
 //!                     lowered.constant(),
+//!                     requirement,
 //!                     OriginToken::from(usize::from(lowered.origin())),
 //!                 ));
 //!             },

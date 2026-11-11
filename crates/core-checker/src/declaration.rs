@@ -463,8 +463,11 @@ pub enum DeclarationContent
     Codata(alloc::sync::Arc<gandr_core_term::CodataSignature>),
     /// A sealed abstract type; an atom, neither a value nor an assumption.
     Abstract(AbstractType),
-    /// A world: its position is its identity, and it carries nothing.
-    World,
+    /// A world: its position is its identity. It carries the row its
+    /// requirement names, `world w requires [ … ] ;`. The code at the world
+    /// performs in this row. The row is empty for a world that requires
+    /// nothing.
+    World(gandr_core_term::effect::EffectRow),
 }
 /// One declaration, as the judgement reads it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -668,7 +671,8 @@ impl Declaration
         }
     }
 
-    /// A world declaration at its own admission position.
+    /// A world declaration at its own admission position, with the row its
+    /// requirement names.
     ///
     /// # Specification
     /// trivial.
@@ -676,13 +680,14 @@ impl Declaration
     #[must_use]
     pub fn world(
         constant: ConstantIndex,
+        requirement: gandr_core_term::effect::EffectRow,
         origin: OriginToken,
     ) -> Self
     {
         Self {
             constant,
             origin,
-            content: DeclarationContent::World,
+            content: DeclarationContent::World(requirement),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
             covers: Vec::new(),
@@ -825,7 +830,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -866,7 +871,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -904,7 +909,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -954,7 +959,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -990,7 +995,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -1026,7 +1031,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -1065,7 +1070,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 
@@ -1105,7 +1110,7 @@ impl Declaration
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
-            | DeclarationContent::World => self,
+            | DeclarationContent::World(_) => self,
         }
     }
 

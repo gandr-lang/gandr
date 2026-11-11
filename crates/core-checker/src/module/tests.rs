@@ -288,7 +288,11 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
         Verdict::Refused(repeated),
         "the refusals leave the first holder in place"
     );
-    let world = Declaration::world(ConstantIndex::from(6_usize), OriginToken::from(6_usize));
+    let world = Declaration::world(
+        ConstantIndex::from(6_usize),
+        gandr_core_term::effect::EffectRow::EMPTY,
+        OriginToken::from(6_usize),
+    );
     assert_eq!(
         check_declaration(&mut context, &world.built_in(Builtin::IrArgs)),
         Verdict::Refused(CheckRefusal::BuiltinMisplaced(Builtin::IrArgs)),

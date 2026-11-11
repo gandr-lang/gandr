@@ -1082,7 +1082,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
 gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some()
     && match sealed.interface() { Maybe::Present(interface) => program.arena().value(interface.relation()).is_some() && program.arena().value(interface.reflexivity()).is_some() && match interface.law() { Maybe::Present(law) => program.arena().value(law).is_some(), Maybe::Absent(_) => true }, Maybe::Absent(_) => true },
-gandr_core_checker::DeclarationContent::World => true,
+gandr_core_checker::DeclarationContent::World(_) => true,
 gandr_core_checker::DeclarationContent::Codata(_) => false,
 }
         }),
@@ -1242,7 +1242,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
 gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some()
     && match sealed.interface() { Maybe::Present(interface) => program.arena().value(interface.relation()).is_some() && program.arena().value(interface.reflexivity()).is_some() && match interface.law() { Maybe::Present(law) => program.arena().value(law).is_some(), Maybe::Absent(_) => true }, Maybe::Absent(_) => true },
-gandr_core_checker::DeclarationContent::World => true,
+gandr_core_checker::DeclarationContent::World(_) => true,
 gandr_core_checker::DeclarationContent::Codata(_) => false,
 }
         }),
@@ -1342,7 +1342,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
 gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some()
     && match sealed.interface() { Maybe::Present(interface) => program.arena().value(interface.relation()).is_some() && program.arena().value(interface.reflexivity()).is_some() && match interface.law() { Maybe::Present(law) => program.arena().value(law).is_some(), Maybe::Absent(_) => true }, Maybe::Absent(_) => true },
-gandr_core_checker::DeclarationContent::World => true,
+gandr_core_checker::DeclarationContent::World(_) => true,
 gandr_core_checker::DeclarationContent::Codata(_) => false,
 }
         }),

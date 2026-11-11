@@ -4831,7 +4831,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 DeclarationOutcome::Abstract(sealing) =>
                     *actual.content() == gandr_core_checker::DeclarationContent::Abstract(abstract_type(sealing, module.interface(lowered))),
                 DeclarationOutcome::World =>
-                    *actual.content() == gandr_core_checker::DeclarationContent::World,
+                    matches!(*actual.content(), gandr_core_checker::DeclarationContent::World(ref row) if match module.world_row(lowered) { Maybe::Present(minted) => minted == row, Maybe::Absent(_) => *row == gandr_core_term::effect::EffectRow::EMPTY }),
                 DeclarationOutcome::Refused(_) => false,
             }
     })) && expected.next().is_none()
@@ -4899,8 +4899,13 @@ pub fn adapt(
                 continue;
             },
             DeclarationOutcome::World => {
+                let requirement = match module.world_row(lowered) {
+                    Maybe::Present(row) => row.clone(),
+                    Maybe::Absent(_) => gandr_core_term::effect::EffectRow::EMPTY,
+                };
                 declarations.push(marked(Declaration::world(
                     lowered.constant(),
+                    requirement,
                     OriginToken::from(usize::from(lowered.origin())),
                 )));
                 continue;
@@ -4994,7 +4999,7 @@ pub fn adapt(
                             (DeclarationOutcome::Data(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
                             (DeclarationOutcome::Codata(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Codata(ref held) if module.codata(index) == Maybe::Present(held)),
                             (DeclarationOutcome::Abstract(sealing),&gandr_core_checker::DeclarationContent::Abstract(sealed)) => sealed.kind() == sealing.kind && sealed.representation() == sealing.representation && sealed.extent() == sealing.extent,
-                            (DeclarationOutcome::World, &gandr_core_checker::DeclarationContent::World) => true,
+                            (DeclarationOutcome::World, &gandr_core_checker::DeclarationContent::World(_)) => true,
                             _ => false,
                         }
                 })

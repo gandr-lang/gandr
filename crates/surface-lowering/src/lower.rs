@@ -4227,6 +4227,10 @@ struct Lowerer<'run, 'source>
             gandr_core_term::effect::capability::RegionBinder,
         ),
     >,
+    /// The row each world requires, `world w requires [ … ] ;`, its
+    /// interfaces named whole each held, by the world's position. A world
+    /// that requires none of them has no entry.
+    world_rows: BTreeMap<ConstantIndex, gandr_core_term::effect::EffectRow>,
     /// The interface and region binder of each instance parameter, by its
     /// binder tile: what the declared type mints its capability type from.
     instance_parameters: BTreeMap<
@@ -5130,6 +5134,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_models(sink);
         self.match_signatures(sink);
         self.check_requirements();
+        self.mint_requirements(sink);
         self.check_families(sink);
         self.check_sorts();
         self.mint_data(sink);
@@ -5405,6 +5410,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Some((entry.constant, theory.name))
             }))
             .collect();
+        // The row each world requires, as its interfaces named whole mint it.
+        let world_rows = core::mem::take(&mut self.world_rows);
         // The row each world requires, as its declaration writes the entries.
         let requirements: BTreeMap<ConstantIndex, Vec<crate::module::Required>> = self
             .collected
@@ -5796,6 +5803,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_models(models)
         .with_qualified(qualified)
         .with_requirements(requirements)
+        .with_world_rows(world_rows)
         .with_offer(offer)
         .with_reducts(reducts)
         .with_forgets(forgets)
@@ -6157,6 +6165,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             theory_capabilities: BTreeMap::new(),
             answered: BTreeMap::new(),
             labelled: BTreeMap::new(),
+            world_rows: BTreeMap::new(),
             instance_parameters: BTreeMap::new(),
             instance_theories: BTreeMap::new(),
             regions: BTreeMap::new(),

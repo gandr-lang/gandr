@@ -55,12 +55,24 @@
 //!   declaration form, which would need a keyword for what only a host grants.
 //! - Reversal: an attribute on signature components, or entries inferred from
 //!   the migrations a body makes.
+//!
+//! # A world's requirement is a row
+//!
+//! `world w requires [ … ] ;` files its entries as a labelled row writes them
+//! ([`crate::LoweredModule::requirement`]). Each interface the requirement
+//! names whole also mints into the world's row, held
+//! ([`crate::LoweredModule::world_row`]). The checker checks a migration's
+//! body under that row, as it checks a definition's body under its declared
+//! row. A labelled entry mints no instance yet: the label binders that place
+//! it are #6546's.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::capability::Region;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
@@ -81,6 +93,7 @@ use super::Site;
 use super::Statement;
 use super::StatementBinding;
 use super::capability::Interface;
+use super::capability::Standing;
 use super::closed;
 use super::exhausted;
 use super::exits;
@@ -481,6 +494,96 @@ impl<'source> Lowerer<'_, 'source>
         for (slot, refusal) in refusals {
             let _first = self.faults.entry(slot).or_insert(refusal);
         }
+    }
+
+    /// Mint the row each world of the current source requires: its
+    /// interfaces named whole, each held.
+    ///
+    /// # Specification
+    /// - requires: [`Self::check_requirements`] has run over the current
+    ///   source.
+    /// - ensures: each world of the current source written with a requirement,
+    ///   neither refused nor faulted, holds in `world_rows` the row of its
+    ///   unlabelled entries. Each entry gives its interface ([`Self::handled`])
+    ///   at its signature ([`Self::interface_signature`]), held. A labelled
+    ///   entry adds nothing: its instance waits on the label binders of #6546.
+    ///   A world with no unlabelled entry holds no row.
+    /// - fails: never; a world with an entry that mints no signature holds no
+    ///   row, and the requirement check rules that out.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a world requiring a host interface whole holds a row
+    ///   of its signature, held; a world requiring nothing and a labelled entry
+    ///   add none.
+    /// - witness: `lower::world::tests::a_world_s_requirement_mints_its_row_3545`
+    #[spec(
+        captures: before = self.world_rows.len(),
+        ensures: self.world_rows.len() >= before,
+    )]
+    pub(super) fn mint_requirements(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        let source = self.current.source;
+        let mut rows = Vec::new();
+        let mut placed = Vec::new();
+        for (&slot, entries) in &self.collected.requirements {
+            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            else {
+                continue;
+            };
+            let Maybe::Present(half) = entry.definition
+            else {
+                continue;
+            };
+            if self.collected.unit.source_at(entry.named.span.start()) != source
+                || matches!(entry.refusal, Maybe::Present(_))
+                || self.faults.contains_key(&slot)
+            {
+                continue;
+            }
+            let site = Site {
+                at: half.declaration,
+                name: FormName::WORLD_DECLARATION,
+                reading: Reading::Unread,
+            };
+            placed.clear();
+            let mut minted = true;
+            for required in entries {
+                if let Maybe::Present(_) = required.label {
+                    continue;
+                }
+                let signature = match (
+                    self.handled(
+                        site,
+                        &required.interface,
+                        required.interface.last.node,
+                        &required.manifest,
+                    ),
+                    self.origin_at(required.interface.last.node),
+                ) {
+                    (Ok(interface), Maybe::Present(origin)) => {
+                        self.interface_signature(&interface, Standing::Read, sink, origin)
+                    },
+                    (Err(_), _) | (_, Maybe::Absent(_)) => Maybe::Absent(lowered::Absent::Unminted),
+                };
+                let Maybe::Present(signature) = signature
+                else {
+                    minted = false;
+                    break;
+                };
+                placed.push((signature, Region::Held));
+            }
+            if !minted || placed.is_empty() {
+                continue;
+            }
+            if let Ok(row) = EffectRow::from_placed(placed.iter().cloned()) {
+                rows.push((entry.constant, row));
+            }
+        }
+        self.world_rows.extend(rows);
     }
 
     /// Read the entries of a requirement row written at `site` as a labelled

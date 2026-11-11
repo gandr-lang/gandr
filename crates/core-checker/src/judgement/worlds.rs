@@ -553,18 +553,23 @@ impl Machine<'_, '_>
     }
 
     /// Start the migration `at` to `to`: spend a capability for `to` standing
-    /// at the register, move the register and judge `body` there.
+    /// at the register, move the register and judge `body` there, under the
+    /// row `to` requires.
     ///
     /// # Specification
     /// - requires: `at` is a migration to `to` of `body`.
     /// - ensures: one capability slot for `to` located at the register, still
     ///   available, is spent; the register is `to`; one `MigrateBody` frame
-    ///   waits on the body, holding the world left. A typed run keeps the move
-    ///   with the linear zone before and after the spend.
+    ///   waits on the body, holding the world left. A checked body is checked
+    ///   against the returner of the expected result at the row `to` requires
+    ///   ([`Self::at_world`]). A typed run keeps the move with the linear zone
+    ///   before and after the spend.
     /// - fails: [`LocatedDefect::UndeclaredWorld`] for a position no world
     ///   declaration holds; [`LocatedDefect::CapabilityCaptured`] under a
     ///   former that may run the migration other than once;
-    ///   [`LocatedDefect::CapabilityMissing`] when no such capability is left.
+    ///   [`LocatedDefect::CapabilityMissing`] when no such capability is left;
+    ///   [`CheckRefusal::ShapeMismatch`] at the migration, wanting a returner,
+    ///   when it is checked against any other former.
     /// - panics: none.
     ///
     /// # Errors
@@ -573,9 +578,11 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a migration with its capability, a second one
     ///   without, and one under a thunk the entry did not force, each answered
-    ///   by name.
+    ///   by name; a perform in the world's row checks and one outside it is
+    ///   refused at the perform, whichever row the enclosing returner states.
     /// - witness: `worlds::tests::a_migration_consumes_its_capability_visibly`
     /// - witness: `worlds::tests::a_second_migration_without_a_capability_is_refused`
+    /// - witness: `worlds::tests::a_migration_s_body_performs_in_its_world_s_row_3545`
     #[spec(ensures: |ret| ret.is_err()
         || (self.context.world() == to && matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))))]
     fn migrate(
@@ -594,6 +601,10 @@ impl Machine<'_, '_>
         self.uncaptured(node, to)?;
         let register = self.context.binders().world();
         let index = self.capability(node, to, register)?;
+        let direction = match direction {
+            Direction::Check(expected) => Direction::Check(self.at_world(at, to, expected)?),
+            Direction::Synthesise => Direction::Synthesise,
+        };
         let recording = self.context.recording() == Recording::On;
         let before = recording.then(|| self.context.binders().linear_zone());
         let _spent = self
@@ -624,19 +635,66 @@ impl Machine<'_, '_>
         }))
     }
 
+    /// The type the body of the migration `at` to `to` is checked against,
+    /// when the migration is checked against `expected`: the returner of the
+    /// expected result at the row `to` requires.
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: `expected` itself when it is a returner at exactly that row,
+    ///   so a world that requires nothing mints nothing under a pure returner;
+    ///   otherwise a fresh returner of its result at that row.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a returner,
+    ///   for any other former; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::migrate`]: a body under an effectful
+    ///   returner checks under the world's row, not the enclosing one.
+    /// - witness: `worlds::tests::a_migration_s_body_performs_in_its_world_s_row_3545`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ty) => matches!(crate::view::comp_type_view(self.context.arena(), ty), Ok(crate::view::CompTypeView::Returner { effects, .. }) if *effects == self.context.worlds().row(to)),
+        | Err(_) => true,
+    })]
+    fn at_world(
+        &mut self,
+        at: ComputationId,
+        to: World,
+        expected: CompTypeId,
+    ) -> Result<CompTypeId, CheckRefusal>
+    {
+        let result = self.returner_expected(at, expected)?;
+        let row = self.context.worlds().row(to);
+        if let Ok(crate::view::CompTypeView::Returner { effects, .. }) =
+            crate::view::comp_type_view(self.context.arena(), expected)
+            && *effects == row
+        {
+            return Ok(expected);
+        }
+        Ok(self
+            .context
+            .arena_mut()
+            .comp_type_returner_with_effects(result, row))
+    }
+
     /// Finish a migration whose body was judged at the world it moved to: put
     /// the register back at `from` and cross the body's result there, a thunk
     /// the body returns by its image.
     ///
     /// # Specification
-    /// - requires: the body was judged in `direction` at the register.
+    /// - requires: the body was judged in `direction` at the register; a
+    ///   checked body against the returner [`Self::at_world`] gives.
     /// - ensures: the register is `from`; the migration checked, or synthesised
-    ///   the body's type. A typed run keeps the return.
+    ///   the body's type as [`Self::performed`] reads it at the world the
+    ///   migration names. A typed run keeps the return.
     /// - fails: [`LocatedDefect::Immobile`] at the migration naming
     ///   [`Crossed::Result`] for a result whose type does not cross where no
     ///   thunk's image answers it; at the read in a thunk the body returns,
     ///   naming [`Crossed::Capture`] or [`Crossed::Homed`], for a thunk whose
-    ///   image stays.
+    ///   image stays; the refusal of [`Self::performed`].
     /// - panics: none.
     ///
     /// # Errors
@@ -671,9 +729,15 @@ impl Machine<'_, '_>
             },
         };
         let result = self.returner_expected(at, ty)?;
-        let WorldForm::Migrate { body, .. } = self.world_form(at)?
+        let WorldForm::Migrate { world, body } = self.world_form(at)?
         else {
             return Err(CheckRefusal::MachineInvariant);
+        };
+        let produced = match produced {
+            Produced::CompType(synthesised) => {
+                Produced::CompType(self.performed(body, world, synthesised, result)?)
+            },
+            Produced::Checked | Produced::ValueType(_) => produced,
         };
         match self.result_crossing(body, result)? {
             Returned::Crosses => {},
@@ -699,6 +763,65 @@ impl Machine<'_, '_>
         }
         self.context.keep_move(WorldMove::Returned { at, to: from });
         Ok(Step::Ascend(produced))
+    }
+
+    /// The type a synthesised migration has at the world it returns to: its
+    /// body's returner of `result`, synthesised as `synthesised` at `to`,
+    /// with no operation, once the body's row is within the row `to`
+    /// requires.
+    ///
+    /// # Specification
+    /// - requires: `result` is the result of `synthesised`, a returner.
+    /// - ensures: `synthesised` itself when its row is pure, or when it is no
+    ///   returner the row can be read off; otherwise a fresh pure returner of
+    ///   `result`, after the body's type crosses the computation bridge to the
+    ///   returner of `result` at the row `to` requires.
+    /// - fails: the computation bridge's refusal at `body`, a
+    ///   [`CheckRefusal::TypeMismatch`] naming that returner for a row the
+    ///   world's does not include.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a synthesised migration performing in its world's row
+    ///   produces a pure returner, and one performing outside it is refused at
+    ///   the body.
+    /// - witness: `worlds::tests::a_migration_s_body_performs_in_its_world_s_row_3545`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ty) => ty == synthesised || matches!(crate::view::comp_type_view(self.context.arena(), ty), Ok(crate::view::CompTypeView::Returner { result: held, effects }) if held == result && effects.purity() == gandr_core_term::effect::Purity::Pure),
+        | Err(_) => true,
+    })]
+    fn performed(
+        &mut self,
+        body: ComputationId,
+        to: World,
+        synthesised: CompTypeId,
+        result: ValueTypeId,
+    ) -> Result<CompTypeId, CheckRefusal>
+    {
+        let Ok(crate::view::CompTypeView::Returner { effects, .. }) =
+            crate::view::comp_type_view(self.context.arena(), synthesised)
+        else {
+            return Ok(synthesised);
+        };
+        if effects.purity() == gandr_core_term::effect::Purity::Pure {
+            return Ok(synthesised);
+        }
+        let row = self.context.worlds().row(to);
+        let wanted = self
+            .context
+            .arena_mut()
+            .comp_type_returner_with_effects(result, row);
+        crate::conversion::comp_bridge(
+            self.context,
+            body,
+            synthesised,
+            wanted,
+            &mut self.conversions,
+        )?;
+        Ok(self.context.arena_mut().comp_type_returner(result))
     }
 
     /// Whether the result of the migration whose body is `body` crosses at
