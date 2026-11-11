@@ -274,8 +274,6 @@ pub enum ExpectedValueShape
     Data,
     /// A structural record, for a record literal or projection.
     Record,
-    /// A universe path, for transport or a product-path component.
-    PathUniverse,
     /// An element identity, for `here`, a higher form or an identity
     /// eliminator.
     Path,
