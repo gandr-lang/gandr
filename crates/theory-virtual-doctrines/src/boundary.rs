@@ -83,6 +83,26 @@ copy_wrapper!(
     "Number of descriptions registered in a reflected VDC description table."
 );
 copy_wrapper!(
+    DiagramCarrierEmptyStatus,
+    bool,
+    "Whether a finite reflected diagram has an empty carrier."
+);
+copy_wrapper!(
+    DiagramCarrierLength,
+    usize,
+    "Number of carrier objects in a finite reflected diagram."
+);
+copy_wrapper!(
+    DirectedContextDeclaration,
+    bool,
+    "Whether a directed VDC context declares an object variable."
+);
+copy_wrapper!(
+    DirectedHomReflexivity,
+    bool,
+    "Whether a directed hom lies on the reflexive diagonal."
+);
+copy_wrapper!(
     DirectedObjectCovariance,
     bool,
     "Whether a directed reflected object is sorted covariantly."
@@ -131,4 +151,19 @@ copy_wrapper!(
     VdcCellEquality,
     bool,
     "Whether two reflected VDC cells are replay-equivalent."
+);
+copy_wrapper!(
+    CartesianProjectionPreservation,
+    bool,
+    "Whether a W-cartesian action preserves every product projection."
+);
+copy_wrapper!(
+    CartesianDiagonalPreservation,
+    bool,
+    "Whether a W-cartesian action preserves the product diagonal."
+);
+copy_wrapper!(
+    CartesianStructurePreservation,
+    bool,
+    "Whether a W-cartesian action preserves the complete cartesian structure."
 );

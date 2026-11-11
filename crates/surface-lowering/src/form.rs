@@ -517,6 +517,8 @@ pub struct TileName(&'static str);
 
 impl TileName
 {
+    /// The acquire keyword `acquire`, opening a statement.
+    pub const ACQUIRE: Self = Self("acquire");
     /// The arrow `->` of a function type and of a function's result.
     pub const ARROW: Self = Self("->");
     /// The linear arrow `⊸` of a linear function type and of a linear
@@ -698,6 +700,8 @@ impl TileName
     pub const RECORD: Self = Self("*{");
     /// The receive keyword `recv`, opening a statement.
     pub const RECV: Self = Self("recv");
+    /// The release keyword `release`, opening a statement.
+    pub const RELEASE: Self = Self("release");
     /// The returner keyword `pure`.
     pub const PURE: Self = Self("pure");
     /// The function exit `return`.

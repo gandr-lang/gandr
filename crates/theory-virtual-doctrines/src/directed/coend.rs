@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::boundary::DiagramCarrierEmptyStatus;
+use crate::boundary::DiagramCarrierLength;
 use crate::boundary::DiscreteHomInhabitation;
 use crate::vdc::TermRef;
 
@@ -23,6 +25,16 @@ pub struct Diagram
 
 impl Diagram
 {
+    /// A diagram over the given `(object, component)` entries.
+    #[inline]
+    #[must_use]
+    /// # Specification
+    /// trivial.
+    pub fn new(entries: Vec<(TermRef, TermRef)>) -> Self
+    {
+        Self { entries }
+    }
+
     /// The component `F(object)` at a carrier object, or `Absent` when the
     /// object is off the carrier.
     ///
@@ -54,6 +66,103 @@ impl Diagram
             }
         }
         Maybe::Absent(carrier_lookup::Absent::OffCarrier)
+    }
+
+    /// The number of carrier objects.
+    #[inline]
+    #[must_use]
+    /// # Specification
+    /// trivial.
+    pub fn len(&self) -> DiagramCarrierLength
+    {
+        DiagramCarrierLength::from(self.entries.len())
+    }
+
+    /// Whether the carrier is empty.
+    #[inline]
+    #[must_use]
+    /// # Specification
+    /// trivial.
+    pub fn is_empty(&self) -> DiagramCarrierEmptyStatus
+    {
+        DiagramCarrierEmptyStatus::from(self.entries.is_empty())
+    }
+}
+
+/// The **end** `∫_x F(x, x)` over a finite discrete carrier — the universal
+/// quantifier, realized as the product of the diagram's diagonal components.
+///
+/// The wedge condition is vacuous over a discrete (refl-generated) carrier — no
+/// non-identity morphisms constrain the components — so the end is the full
+/// product.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct End
+{
+    /// The product components `F(x, x)`, one per carrier object.
+    pub components: Vec<TermRef>,
+}
+
+impl End
+{
+    /// The end of `diagram` — its diagonal components as a product.
+    ///
+    /// # Specification
+    /// - ensures: `components` are the diagram's entry components, in carrier
+    ///   order (the discrete-carrier product `Π_x F(x, x)`).
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered equality to the carrier components detects
+    ///   missing, duplicated or permuted factors.
+    /// - witness: `tests::directed::tests::the_end_and_coend_collect_the_diagonal_components`
+    #[spec(ensures: |out| out.components.iter().eq(diagram.entries.iter().map(|entry| &entry.1)))]
+    pub fn of(diagram: &Diagram) -> Self
+    {
+        let mut components = Vec::with_capacity(diagram.entries.len());
+        for entry in &diagram.entries {
+            components.push(entry.1.clone());
+        }
+        Self { components }
+    }
+}
+
+/// The **coend** `∫^x F(x, x)` over a finite discrete carrier — the existential
+/// quantifier, realized as the coproduct of the diagram's diagonal components.
+///
+/// The cowedge quotient is trivial over a discrete carrier, so the coend is the
+/// full coproduct.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Coend
+{
+    /// The coproduct summands `F(x, x)`, one per carrier object.
+    pub summands: Vec<TermRef>,
+}
+
+impl Coend
+{
+    /// The coend of `diagram` — its diagonal components as a coproduct.
+    ///
+    /// # Specification
+    /// - ensures: `summands` are the diagram's entry components, in carrier
+    ///   order (the discrete-carrier coproduct `Σ_x F(x, x)`).
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered equality to the carrier components detects
+    ///   missing, duplicated or permuted summands.
+    /// - witness: `tests::directed::tests::the_end_and_coend_collect_the_diagonal_components`
+    #[spec(ensures: |out| out.summands.iter().eq(diagram.entries.iter().map(|entry| &entry.1)))]
+    pub fn of(diagram: &Diagram) -> Self
+    {
+        let mut summands = Vec::with_capacity(diagram.entries.len());
+        for entry in &diagram.entries {
+            summands.push(entry.1.clone());
+        }
+        Self { summands }
     }
 }
 

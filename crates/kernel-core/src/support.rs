@@ -86,6 +86,7 @@ use gandr_kernel_check_memo::CheckMemo as _;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
+use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Binders;
@@ -107,6 +108,7 @@ use crate::encoding::Telescope;
 use crate::encoding::support_key;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::RewriteMemo;
+use crate::rewrite::RewritePlane;
 
 /// The state one checking session derives its memo keys against.
 ///
@@ -458,6 +460,37 @@ impl SupportContext
     pub(crate) const fn rewrite_parts(&mut self) -> (&mut ContentTable, &mut RewriteMemo)
     {
         (&mut self.table, &mut self.rewrites)
+    }
+
+    /// How many rewrites of `plane` this session has recorded.
+    ///
+    /// The two rewrites account separately, so a suite can pin the shifting
+    /// machine's reuse without the substitution machine's numbers standing in
+    /// for it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `|ret| ret == self.rewrites.plane_entry_count(plane)` — the
+    ///   number of entries this session's rewrite memo holds on `plane`, one
+    ///   per distinct rewritten `(content, depth)` pair.
+    /// - provides: the per-plane accounting an acceptance case pins the two
+    ///   wiring sites through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surface is the plane projection, separated by a
+    ///   check that reaches both wiring sites and finds both planes non-empty.
+    /// - witness: `tests::acceptance::the_rewrite_planes_account_separately_through_a_real_check`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == self.rewrites.plane_entry_count(plane))]
+    pub fn rewrite_entry_count(
+        &self,
+        plane: RewritePlane,
+    ) -> MemoEntryCount
+    {
+        self.rewrites.plane_entry_count(plane)
     }
 
     /// Open an accrual for a goal expanded in `context`: every binder its

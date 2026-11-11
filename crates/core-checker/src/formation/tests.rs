@@ -21,10 +21,10 @@ use proptest::prelude::ProptestConfig;
 use proptest::prelude::prop_assert_eq;
 use proptest::prelude::proptest;
 
+use super::classify_comp_type;
 use super::classify_value_type;
 use super::form_comp_type;
 use super::form_value_type;
-use super::level_of;
 use super::path_code;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
@@ -112,11 +112,8 @@ fn classified_comp(
     comp_type: CompTypeId,
 ) -> Result<Classifier, CheckRefusal>
 {
-    form_comp_type(context, comp_type)?;
-    Ok(Classifier {
-        sort: GroundSort::Computation,
-        level: level_of(context, TypeNode::Computation(comp_type))?,
-    })
+    let formed = form_comp_type(context, comp_type)?;
+    classify_comp_type(context, formed)
 }
 
 #[test]

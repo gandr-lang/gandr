@@ -78,7 +78,8 @@ fn a_total_run_marks_where_a_strict_run_refuses()
         "the unit is marked with the strict refusal, and the run goes on"
     );
     assert_eq!(
-        elaboration.produced, expected,
+        elaboration.produced(),
+        expected,
         "a check produces its expected type"
     );
     let Some(&[first, second]) = context
@@ -255,7 +256,7 @@ fn a_term_that_cannot_synthesise_is_checked_against_the_unknown_type()
     let strict = synthesise_comp(&mut context, lambda).unwrap_err();
     let elaboration = elaborate_comp(&mut context, lambda, Direction::Synthesise).unwrap();
     assert_eq!(
-        context.arena().comp_type(elaboration.produced.id()),
+        context.arena().comp_type(elaboration.produced().id()),
         Some(&CompType::Unknown),
         "a marked synthesis produces the unknown type"
     );
@@ -424,7 +425,7 @@ proptest! {
                     | (Err(_), &Err(ref fault)) => prop_assert_eq!(fault.classify(), FailureClass::EngineFault, "only an engine fault ends a total run"),
                 }
                 if let Ok(elaboration) = total {
-                    let rechecked = check_value(&mut context, elaboration.root(), elaboration.produced);
+                    let rechecked = check_value(&mut context, elaboration.root(), elaboration.produced());
                     prop_assert!(rechecked.is_ok(), "the marked term has the type the run produced: {:?}", rechecked);
                 }
             }
@@ -448,7 +449,7 @@ proptest! {
                     | (Err(_), &Err(ref fault)) => prop_assert_eq!(fault.classify(), FailureClass::EngineFault, "only an engine fault ends a total run"),
                 }
                 if let Ok(elaboration) = total {
-                    let rechecked = check_comp(&mut context, elaboration.root(), elaboration.produced);
+                    let rechecked = check_comp(&mut context, elaboration.root(), elaboration.produced());
                     prop_assert!(rechecked.is_ok(), "the marked term has the type the run produced: {:?}", rechecked);
                 }
             }

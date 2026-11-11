@@ -1874,6 +1874,34 @@ impl<'source> Scope<'source>
             .map_or(Mentioned(false), |entry| entry.binds_in(telescope))
     }
 
+    /// The de Bruijn index the binder `binder` has from `from` in the
+    /// signature's telescope: [`Self::index_in`] at [`Telescope::Signature`].
+    ///
+    /// # Specification
+    /// - requires: as [`Self::index_in`].
+    /// - ensures: as [`Self::index_in`], counting a typed binder only when a
+    ///   signature's type position names it.
+    /// - provides: the index a decode in a function tail's signature carries.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned typed binder, an unmentioned one and an
+    ///   untyped one between the use site and the binder, each asserted to
+    ///   count or not.
+    /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    #[spec(ensures: |ret| ret == self.index_in(from, binder, Telescope::Signature))]
+    #[inline]
+    #[must_use]
+    pub fn telescope_index(
+        &self,
+        from: Frame,
+        binder: ScopeId,
+    ) -> DeBruijnIndex
+    {
+        self.index_in(from, binder, Telescope::Signature)
+    }
+
     /// The de Bruijn index the binder `binder` has from `from` in
     /// `telescope`: the binders strictly between, counting a typed binder only
     /// when a type of that telescope names it.
@@ -1963,9 +1991,9 @@ impl<'source> Scope<'source>
     /// - requires: `from` is outermost or an existing frame position; every
     ///   mention has been recorded.
     /// - ensures: one answer per intuitionistic frame from `from` to the
-    ///   outermost, in that order, each the rule [`Self::index_in`] counts by;
-    ///   nothing for a linear frame, which no type names, and nothing for the
-    ///   outermost frame.
+    ///   outermost, in that order, each the rule [`Self::telescope_index`]
+    ///   counts by; nothing for a linear frame, which no type names, and
+    ///   nothing for the outermost frame.
     /// - provides: the difference between a type's telescope indices and the
     ///   term indices of the same chain, which relocating a type into a term
     ///   reads.
@@ -2620,20 +2648,20 @@ mod tests
         let inner = scope.extend(Frame::Inner(typed), SurfaceName::from("inner"), UNWRITTEN);
         let sibling = scope.extend(Frame::Outermost, SurfaceName::from("sibling"), UNWRITTEN);
         assert_eq!(
-            scope.index_in(Frame::Inner(inner), sibling, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(inner), sibling),
             DeBruijnIndex::from(2_u32)
         );
         scope.mention(typed);
         assert_eq!(
-            scope.index_in(Frame::Inner(inner), sibling, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(inner), sibling),
             DeBruijnIndex::from(3_u32)
         );
         assert_eq!(
-            scope.index_in(Frame::Inner(inner), inner, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(inner), inner),
             DeBruijnIndex::from(0_u32)
         );
         assert_eq!(
-            scope.index_in(Frame::Outermost, sibling, Telescope::Signature),
+            scope.telescope_index(Frame::Outermost, sibling),
             DeBruijnIndex::from(0_u32)
         );
     }
@@ -3002,17 +3030,17 @@ mod tests
             "the flag is set on the mentioned binder alone"
         );
         assert_eq!(
-            scope.index_in(Frame::Inner(x), a, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(x), a),
             DeBruijnIndex::from(1_u32),
             "a mentioned typed binder between counts"
         );
         assert_eq!(
-            scope.index_in(Frame::Inner(x), b, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(x), b),
             DeBruijnIndex::from(0_u32),
             "an unmentioned typed binder between counts nothing"
         );
         assert_eq!(
-            scope.index_in(Frame::Inner(y), b, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(y), b),
             DeBruijnIndex::from(1_u32),
             "an untyped binder between always counts"
         );
@@ -3043,7 +3071,7 @@ mod tests
             "a body quote's read leaves the signature's arrow independent"
         );
         assert_eq!(
-            scope.index_in(Frame::Inner(n), x, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(n), x),
             DeBruijnIndex::from(0_u32),
             "the signature's telescope skips the quoted binder"
         );
@@ -3169,7 +3197,7 @@ mod tests
             "a telescope reports the intuitionistic frames alone"
         );
         assert_eq!(
-            scope.index_in(Frame::Inner(y), a, Telescope::Signature),
+            scope.telescope_index(Frame::Inner(y), a),
             DeBruijnIndex::from(2_u32)
         );
     }

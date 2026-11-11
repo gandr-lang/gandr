@@ -33,6 +33,17 @@ impl ProVar
     {
         Self(Name::from(name))
     }
+
+    /// The variable's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn name(&self) -> NameRef<'_>
+    {
+        NameRef::from(self.0.as_ref())
+    }
 }
 
 /// A reference to an **embedded engine derivation** — an index into the
@@ -590,6 +601,16 @@ impl<'syntax> ProtermNode<'syntax>
     pub fn children(self) -> ProtermChildren<'syntax>
     {
         ProtermChildren(self.0.children())
+    }
+    /// Copy this subtree into an owned flat table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn to_owned(self) -> Proterm
+    {
+        Proterm(self.0.to_tree())
     }
 }
 /// The child nodes of a reflected proterm.
