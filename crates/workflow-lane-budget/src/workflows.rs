@@ -9,12 +9,10 @@
 //! run passes the ceiling; each such run is a line naming the job furthest past
 //! its own median over the window, the job that grew.
 //!
-//! Over is a report. The refusal is narrower: a workflow whose newest
-//! completed run passed its ceiling ([`Workflows::past_ceiling`]).
-//! The window keeps a run past the ceiling for ten nights, so refusing on
-//! "over" would hold a workflow red for ten nights after it came back within.
-//! The newest run alone turns the next run red, and the next night within
-//! clears it.
+//! Over is a report, never a refusal. A report never blocks the
+//! pipeline, and a red run past its ceiling gives no sign of which failure
+//! is a defect and which is a cost. So a run past its ceiling is a row of
+//! the one budget issue, with the job that grew, and the command exits 0.
 
 extern crate alloc;
 
@@ -520,10 +518,11 @@ impl fmt::Display for Grown<'_>
 }
 
 /// A budgeted workflow whose newest completed run passed its ceiling: what
-/// `lane-budget` refuses after reporting.
+/// `lane-budget` reports after its table, beside the budget the median holds.
 ///
 /// # Specification
-/// - provides: one clause of [`BudgetError::Ceiling`].
+/// - provides: one line of the report on a night past the owner's ceiling of
+///   twenty minutes, a report and never a refusal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PastCeiling
 {
@@ -662,9 +661,10 @@ impl Workflows
     /// - ensures: one entry per budgeted row, in the table's order, whose
     ///   newest run's summed time passes the ceiling; an older run past the
     ///   ceiling, an unbudgeted row and a row without runs give none.
-    /// - provides: what `lane-budget` refuses after its report, so a night past
-    ///   the ceiling turns the next run red and a night within clears it, where
-    ///   [`Workflows::standing`] stays over for the whole window.
+    /// - provides: what `lane-budget` reports after its table, so the report
+    ///   says whether the newest night passed the ceiling of twenty minutes or
+    ///   the budget of fifteen alone, where [`Workflows::standing`] stays over
+    ///   for the whole window.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the selection is the clause.

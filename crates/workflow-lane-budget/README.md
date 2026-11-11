@@ -21,8 +21,8 @@ Each CI lane's median job time over the latest runs that hold it, against the bu
 
 - `lane-budget --budget NAME=SECONDS...` prints the report; `NAME:deep=SECONDS` names the deep budget of a cone-classified lane; `--integration NAME=SECONDS` holds a test lane over the dispatches on `integration` and tables it over the pushes to `main` as information; `--daily NAME=SECONDS` holds a lane of the daily scheduled run over the scheduled runs; `--nightly NAME=SECONDS` holds a lane of the nightly workflow over its scheduled runs; `--summed NAME=BUDGET/CEILING` holds a workflow's summed job time per run and adds the table of every workflow's run times, naming the job that grew in each run past the ceiling; `--runs N` sets each window, ten by default.
 - `--issue TITLE` opens, updates, reopens or closes the one issue with exactly that title.
-- A `--summed` workflow whose newest completed run passed its ceiling makes the command exit 2 after its report and its filing (#3013), so a night past the ceiling turns the next run red.
-- `BudgetError` names the argument or the `gh` invocation behind every refusal.
+- A `--summed` workflow whose newest completed run passed its ceiling gets a line after its report and before its filing (#3013), so the report says whether a night passed the ceiling or the budget alone. The run is a row of the one issue too, and the command exits 0 (#6704): a report never turns a run red.
+- `BudgetError` names the argument or the `gh` invocation behind every refusal. A run past its ceiling is no refusal.
 
 ## Expected features
 

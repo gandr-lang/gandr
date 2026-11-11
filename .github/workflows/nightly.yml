@@ -284,7 +284,7 @@ jobs:
   # of work each once the dependency report read in one pass (#3192). The job
   # waits on the recovery sweep for the causes it files. A failing step hides
   # none after it: each runs unless the run was cancelled, and the lane
-  # budget, which refuses a night past the ceiling, runs last.
+  # budget runs last.
   #
   # The recovery sweep's causes, filed (`mise run ci:recovery-file`): one
   # issue per first error and mutation kind, at most three new a night, a
@@ -323,10 +323,10 @@ jobs:
   #
   # Each lane's median job time over the newest ten runs of ci.yml that hold
   # it, against its budget, as the job summary and on one issue while any
-  # lane is over (`mise run ci:lane-budget`). Alerting,
-  # never a gate: nothing waits on this job. The one refusal is the nightly's
-  # sum: the job reports past 900 s, its budget, and fails when the newest
-  # completed nightly passed 1200 s, its ceiling (#3013). A budget changes
+  # lane is over (`mise run ci:lane-budget`). Alerting, never a gate:
+  # nothing waits on this job, and the lane budget fails no run. The nightly's
+  # sum is reported past 900 s, its budget, and a night past 1200 s, its
+  # ceiling, is a row of the same issue (#3013, #6704). A budget changes
   # with its lane's shape, in the same commit; the name is the job's display
   # name. Each budget is about 1.5 times the lane's median once build state
   # was pruned, the toolchain installed once and Clippy given its own state.
