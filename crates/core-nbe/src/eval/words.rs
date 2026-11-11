@@ -176,6 +176,18 @@ enum Action
     Carried(ValueTypeId),
 }
 
+/// How a path family's endpoint moves a closed word.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WordImage
+{
+    /// The endpoint takes the word to its letters' images in order, so the
+    /// word moves in one step.
+    Whole,
+    /// The endpoint's image of the word is not its letters' images in order,
+    /// so the word moves one letter at a time.
+    ByLetter,
+}
+
 /// One call of an endpoint's reading: the function, every argument it
 /// applies in written order, and the call one of whose arguments it answers.
 /// A call read through `Path.ap` written in place, `⟨tr(y. Path[.A = B](s,
@@ -1655,12 +1667,14 @@ fn loop_arm(
 /// - requires: `path` is the evaluated path and `value` the evaluated operand
 ///   of a transport in `motive`, both already taken off the value stack.
 /// - ensures: [`Moved::Stepped`] with the result returned or the step's tasks
-///   pushed — the operand unchanged along the empty word; the first letter's
-///   transport with the rest's bound after it along a longer word; along a
-///   one-letter word in a path family, an operand a definition names reread as
-///   its word whichever way the endpoints act, and any other operand
-///   conjugating as the module states — and [`Moved::Unmoved`] with the machine
-///   unchanged otherwise.
+///   pushed — the operand unchanged along the empty word; along a closed word
+///   in a path family whose endpoints each take the whole word to its letters'
+///   images in order ([`whole_image`]), one step along the whole word; the
+///   first letter's transport with the rest's bound after it along any other
+///   longer word; along a one-letter word or a whole word in a path family, an
+///   operand a definition names reread as its word whichever way the endpoints
+///   act, and any other operand conjugating as the module states — and
+///   [`Moved::Unmoved`] with the machine unchanged otherwise.
 /// - fails: as [`head`], and the free-index walk's fault.
 /// - panics: none.
 ///
@@ -1708,7 +1722,23 @@ pub(super) fn transport(
         Head::Letter { tag, rest, .. } => (tag, rest),
         Head::Other => return Ok(Moved::Unmoved),
     };
-    if head(core, domain, machine, rest)? != Head::Empty {
+    // A closed word moves whole when each endpoint's image of the word is the
+    // images of its letters in order: the transport is then one conjugation
+    // by the two images of the whole word.
+    let actions = family_actions(core, domain, machine, motive)?;
+    let whole = match actions {
+        Some((family, left, right))
+            if whole_image(core, domain, (motive, family), (Side::Left, left))?
+                == WordImage::Whole
+                && whole_image(core, domain, (motive, family), (Side::Right, right))?
+                    == WordImage::Whole =>
+        {
+            spelled(core, domain, machine, path)?.map(|(_, end)| end)
+        },
+        Some(_) | None => None,
+    };
+    let rest = whole.unwrap_or(rest);
+    if whole.is_none() && head(core, domain, machine, rest)? != Head::Empty {
         let Some(&DomainValue::Constructor {
             family, datatype, ..
         }) = domain.value(path)
@@ -1725,7 +1755,7 @@ pub(super) fn transport(
         machine.values.extend([first, value]);
         return Ok(Moved::Stepped);
     }
-    let Some((family, left, right)) = family_actions(core, domain, machine, motive)?
+    let Some((family, left, right)) = actions
     else {
         return Ok(Moved::Unmoved);
     };
@@ -2015,6 +2045,79 @@ fn family_actions(
         return Ok(None);
     };
     Ok(Some((family, left, right)))
+}
+
+/// Whether the endpoint at `side` of `motive`'s family `family` takes a whole
+/// word to the images of its letters in order, so that a transport moves
+/// along the word in one step.
+///
+/// A fixed endpoint takes each word to the empty word and a moving one to the
+/// word itself. Calls along one route map the word letter by letter
+/// ([`map`]). Calls along more routes map the whole word along each route in
+/// turn, and a carried endpoint conjugates each letter on its own: neither is
+/// the images of the letters in order, so the word moves letter by letter
+/// there.
+///
+/// # Specification
+/// - requires: `action` is the endpoint's action as [`family_actions`] reads
+///   it.
+/// - ensures: [`WordImage::Whole`] for [`Action::Fixed`], [`Action::Moving`]
+///   and [`Action::Through`] along one route; [`WordImage::ByLetter`]
+///   otherwise.
+/// - fails: [`EvalFault::Domain`] for a closure the arena does not hold; the
+///   free-index walk's fault.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixed, a moving and a flipped endpoint, in every
+///   pairing, move along a word of two and of four letters in one step to the
+///   word the free group computes; the diagonal's two routes and the family at
+///   the 2-sphere's cell keep the move along one letter, and reach the images
+///   their letters give one at a time.
+/// - witness: `eval::words::tests::transport_along_a_word_conjugates_by_its_moving_endpoints`
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `eval::words::tests::transport_along_a_cell_conjugates_its_carried_endpoint_6458`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&image| image == WordImage::ByLetter || !matches!(action, Action::Carried(_))))]
+fn whole_image(
+    core: &CoreArena,
+    domain: &DomainArena,
+    (motive, family): (ValueClosureId, ValueTypeId),
+    (side, action): (Side, Action),
+) -> Result<WordImage, EvalFault>
+{
+    match action {
+        Action::Fixed | Action::Moving => Ok(WordImage::Whole),
+        Action::Carried(_) => Ok(WordImage::ByLetter),
+        Action::Through => {
+            let closure = domain
+                .value_closure(motive)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let Some(&ValueType::Path { left, right, .. }) = core.value_type(family)
+            else {
+                return Ok(WordImage::ByLetter);
+            };
+            let endpoint = match side {
+                Side::Left => left,
+                Side::Right => right,
+            };
+            let scope = Scope {
+                domain,
+                environment: closure.environment(),
+            };
+            let under = BinderDepth::from(1_usize);
+            let whole =
+                routes(core, scope, (endpoint, under))?.is_some_and(|read| read.leaves.len() == 1);
+            Ok(if whole {
+                WordImage::Whole
+            }
+            else {
+                WordImage::ByLetter
+            })
+        },
+    }
 }
 
 /// The state that maps `word` through the endpoint at `side` of `family`
@@ -2347,8 +2450,9 @@ fn held(
 /// v(y))`, `ap_f(p) = ap_{f(-, v(pt))}(ap_u(p)) · ap_{f(u(pt), -)}(ap_v(p))`.
 ///
 /// # Specification
-/// - requires: `state.mapped` and `state.routed` are closed words or empty; the
-///   endpoint at `state.side` of `state.motive`'s family reads as routes.
+/// - requires: `state.mapped`, the image so far inverted, and `state.routed`
+///   are closed words or empty; the endpoint at `state.side` of
+///   `state.motive`'s family reads as routes.
 /// - ensures: on success, either the routes' images returned; or one loop arm's
 ///   run pushed with a [`CompBody::Mapping`] continuation bound after it; or
 ///   the evaluation of the argument a case is over pushed with a
@@ -2419,10 +2523,12 @@ pub(super) fn map(
         let (tag, words, rest) = match head(core, domain, machine, state.rest)? {
             Head::Empty => {
                 state.call = Call::from(usize::from(state.call).saturating_add(1));
-                state.rest = state.mapped;
+                // The call's image, which `mapped` holds inverted.
+                let image = inverted(core, domain, machine, state.mapped)?.ok_or(stuck)?;
+                state.rest = image;
                 // The empty image of the word mapped so far, which is its own
-                // end: an image adds letters after it only once one is read.
-                state.mapped = match spelled(core, domain, machine, state.mapped)? {
+                // end: an image adds letters before it only once one is read.
+                state.mapped = match spelled(core, domain, machine, image)? {
                     Some((_, end)) => end,
                     None => return Err(stuck),
                 };
@@ -2594,12 +2700,14 @@ pub(super) fn selected(
         .and_then(|index| u32::from(index).checked_add(u32::try_from(fields).ok()?))
         .map(DeBruijnIndex::from)
         .ok_or(stuck)?;
+    // The image so far, which `mapped` holds inverted.
+    let so_far = inverted(core, domain, machine, state.mapped)?.ok_or(stuck)?;
     let image = if matches!(core.value(answer), Some(&Value::Variable { zone: Zone::Intuitionistic, index: read }) if read == index)
     {
-        concatenated(core, domain, machine, (state.mapped, state.rest))?.ok_or(stuck)?
+        concatenated(core, domain, machine, (so_far, state.rest))?.ok_or(stuck)?
     }
     else if reads_through(core, CoreTerm::Value(answer), index)? == Reading::Ignores {
-        state.mapped
+        so_far
     }
     else {
         return Err(stuck);
@@ -2697,8 +2805,9 @@ pub(super) fn arm_entered(
 /// # Specification
 /// - requires: `image` is the loop arm's answer for the letter `state` was
 ///   mapping.
-/// - ensures: as [`map`], the image, inverted for an inverse letter, after
-///   `state.mapped`.
+/// - ensures: as [`map`], the image, inverted for an inverse letter, after the
+///   image so far: its inverse goes before `state.mapped`, so the step copies
+///   that image alone.
 /// - fails: [`EvalFault::TransportedNonPath`] for an image that does not
 ///   splice; as [`map`] otherwise.
 /// - panics: none.
@@ -2736,11 +2845,13 @@ pub(super) fn mapped(
         });
         return Ok(());
     }
-    let image = match state.orientation {
-        Orientation::Forward => image,
-        Orientation::Inverse => inverted(core, domain, machine, image)?.ok_or(stuck)?,
+    // `mapped` holds the image so far inverted, so the inverse of this
+    // letter's image goes before it.
+    let piece = match state.orientation {
+        Orientation::Forward => inverted(core, domain, machine, image)?.ok_or(stuck)?,
+        Orientation::Inverse => image,
     };
-    state.mapped = concatenated(core, domain, machine, (state.mapped, image))?.ok_or(stuck)?;
+    state.mapped = concatenated(core, domain, machine, (piece, state.mapped))?.ok_or(stuck)?;
     map(core, domain, machine, state)
 }
 
@@ -2749,8 +2860,8 @@ pub(super) fn mapped(
 /// reads no letter at once.
 ///
 /// # Specification
-/// - requires: `image` is the image the stage names; `along` the one-letter
-///   word, whose rest is empty.
+/// - requires: `image` is the image the stage names; `along` the word
+///   transported along, one letter or a closed word that moves whole.
 /// - ensures: the spliced path returned, or the right endpoint's image pushed
 ///   under a continuation at [`Conjugating::Right`].
 /// - fails: [`EvalFault::TransportedNonPath`] for pieces that do not splice; as
@@ -2777,7 +2888,7 @@ pub(super) fn conjugated(
 ) -> Result<(), EvalFault>
 {
     let stuck = EvalFault::TransportedNonPath;
-    let Head::Letter { rest: empty, .. } = head(core, domain, machine, along)?
+    let Some((_, empty)) = spelled(core, domain, machine, along)?
     else {
         return Err(EvalFault::MachineInvariant);
     };

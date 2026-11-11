@@ -915,6 +915,7 @@ fn transport_along_a_word_conjugates_by_its_moving_endpoints()
         Along::Spelled(&[Letter::Inverse]),
         Along::Spelled(&[Letter::Loop, Letter::Loop]),
         Along::Spelled(&[Letter::Loop, Letter::Inverse]),
+        Along::Spelled(&[Letter::Loop, Letter::Loop, Letter::Inverse, Letter::Loop]),
         Along::Named,
     ];
     let operands = [
