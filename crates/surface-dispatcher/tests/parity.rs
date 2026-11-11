@@ -638,6 +638,9 @@ enum Held
     /// A printing that writes a constructor bare where more than one family
     /// or import answers its name, so the lowering refuses it (#5779).
     BareName,
+    /// A `let` of a call that the formatter keeps and the printer folds into
+    /// its one read (#6423).
+    LetFolded,
 }
 
 impl fmt::Display for Held
@@ -658,6 +661,7 @@ impl fmt::Display for Held
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
             Self::SeveralResults => "#5173, a bind of a call's outputs",
             Self::BareName => "#5779, a constructor written bare where its name is ambiguous",
+            Self::LetFolded => "#6423, a let of a call the printer folds into its read",
         })
     }
 }
@@ -1670,14 +1674,24 @@ fn bodies(
             let shown = |tokens: Option<Vec<String>>| {
                 tokens.map_or_else(|| String::from("(none)"), |tokens| tokens.join(" "))
             };
-            let compared = match reread.shape {
+            // The formatter keeps a `let` of a call (#6209), and the printer
+            // folds it into its one read (#6423): held when the formatter's
+            // spelling holds more `let`s than the printer's.
+            let lets = |tokens: &Option<Vec<String>>| {
+                tokens.as_ref().map_or(0, |tokens| {
+                    tokens.iter().filter(|token| *token == "let").count()
+                })
+            };
+            let (compared, folded) = match reread.shape {
                 Shape::Halves { ref ty, ref body } => {
                     let (want_type, want_body) = (want(ty), want(body));
                     let (got_type, got_body) = (
                         signatures.get(&declaration.name).cloned(),
                         definitions.get(&declaration.name).cloned(),
                     );
-                    ((got_type.clone(), got_body.clone()) != (want_type.clone(), want_body.clone()))
+                    let folded = lets(&got_body) > lets(&want_body);
+                    let compared = ((got_type.clone(), got_body.clone())
+                        != (want_type.clone(), want_body.clone()))
                         .then(|| {
                             format!(
                                 "formatter: {} = {}\n  printer:   {} = {}",
@@ -1686,19 +1700,29 @@ fn bodies(
                                 shown(want_type),
                                 shown(want_body),
                             )
-                        })
+                        });
+                    (compared, folded)
                 },
                 Shape::Whole(ref whole) => {
                     let (wanted, got) = (want(whole), recursions.get(&declaration.name).cloned());
-                    (got != wanted).then(|| {
+                    let folded = lets(&got) > lets(&wanted);
+                    let compared = (got != wanted).then(|| {
                         format!("formatter: {}\n  printer:   {}", shown(got), shown(wanted))
-                    })
+                    });
+                    (compared, folded)
                 },
             };
             let Some(compared) = compared
             else {
                 continue;
             };
+            if folded {
+                found.held.entry(Held::LetFolded).or_default().push(format!(
+                    "{name} `{}` from {from:?} into {into}",
+                    declaration.name
+                ));
+                continue;
+            }
             // The formatter withdraws its desugar of a product of thunk types
             // inside a type quote, `+U C * +U D` into `*{…}`, reading a `+U` as
             // a computation type (#5207): held when the withdrawal says so and
