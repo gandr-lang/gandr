@@ -1089,6 +1089,11 @@ mod tests
                 json!({ "root": "/nonexistent", "id": "a" }),
                 "/nonexistent/ledger/features.sql: cannot read",
             ),
+            (
+                "subscribe_diagnostics",
+                json!({ "uri": "file:///tmp/followed.gandr" }),
+                "`subscribe_diagnostics` opens a subscription",
+            ),
         ] {
             let refused = call(&mut connection, &mut workspace, &json!(tool), &arguments);
             assert_eq!(

@@ -21,17 +21,17 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 
 The same tools reach an agent runtime through the Reactive Agent Protocol, the default face for an agent. A RAP call answers by a callback, so a long call blocks no agent, and an agent can subscribe to new states. One table holds each operation's name, description, schema and function over the hub. `tools/list` and the toolset's manifest each encode that table, and both faces call through it, so the faces cannot drift. `gandr serve` gives the hub a `Toolset` on a free port of the loopback interface, or on the port that `--port` names. The hub writes the manifest's URL to a file beside its socket, with the extension `rap`, and a runtime reads the URL there.
 
-The `Toolset` acknowledges each invocation at once with a row in its store under the XDG state directory, and owes each answer to the caller's callback URL as a `tool_result`. The answer of `diagnostics` is a frame of the render bus: the document's cards and version, with the lines `gandr view` prints as its `display_as`. A subscription hears a `subscription_event` that holds the whole frame after each publication that changes it. Each callback carries an `Idempotency-Key`, and each delivery leaves on a thread of the toolset, retried as the `Policy` states.
+The `Toolset` acknowledges each invocation at once with a row in its store under the XDG state directory, and owes each answer to the caller's callback URL as a `tool_result`. The answer of `diagnostics` is a frame of the render bus: the document's cards and version, with the lines `gandr view` prints as its `display_as`. `subscribe_diagnostics` and `subscribe_account` open a subscription, which the manifest offers and `tools/list` does not. A subscription to a document hears a `subscription_event` that holds the whole frame after each publication that changes it. A subscription to a declaration hears its account card after each admission that changes the card. The subscriptions are rows of one table per workspace under the XDG state directory, so a later hub resumes each row. `/cancel_tool_call` and `/close_thread` drop rows. Each callback carries an `Idempotency-Key`, and each delivery leaves on a thread of the toolset, retried as the `Policy` states.
 
 The Model Context Protocol stays for compatibility, and `gandr mcp` serves it on request. A runtime that proxies MCP servers reaches `gandr mcp` as any server. A runtime that speaks RAP reads the manifest directly and needs no proxy.
 
 ## Provided features
 
 - `Connection`, `MODERN` and `LEGACY`: either era's opening, the tool list, resource listing and reading, both subscription styles and their notifications, and the protocol's error codes.
-- The nine operations of one table and `ToolRefusal`: each answered off the shared workspace through either face, a refusal answered as a tool error the model reads.
+- The eleven operations of one table and `ToolRefusal`: each call answered off the shared workspace through either face, each subscription opened through the toolset alone, and a refusal answered as a tool error the model reads.
 - `serve`, on Unix: a model's connection to the hub, notified as editors' synchronisations publish.
 - `relay`, on Unix: a host's standard streams carried to the hub as lines.
-- `Toolset`, on Unix: the Reactive Agent Protocol's manifest and invoke endpoint beside the hub's socket, each call answered by a callback, each call that a crash cut short answered again or with an error, and each subscription's new frame owed as an event.
+- `Toolset`, on Unix: the Reactive Agent Protocol's manifest and invoke endpoint beside the hub's socket, each call answered by a callback, each call that a crash cut short answered again or with an error, each subscription's new frame or card owed as an event, and each subscription kept in a table that a later hub resumes.
 - `Announcement` and `Announced`, on Unix: the file beside the hub's socket that names the toolset's URL, refused while another toolset listens there, and removed when the hub stops.
 - `Policy` and `Retries`, on Unix: when the toolset tries a failed callback again and how often, which the `[deliveries]` table of the user's configuration names.
 
@@ -41,7 +41,7 @@ The Model Context Protocol stays for compatibility, and `gandr mcp` serves it on
 - Normalisation and conversion queries, once the session exposes them.
 - The explanation of a refusal, beside the verbosity levels of the diagnostics renderer.
 - A transport beside the hub's socket for the Model Context Protocol: streamable HTTP, and the authorisation it carries.
-- The toolset's subscription operations and their durable table; its long operations and view updates.
+- The toolset's long operations and view updates, and a subscription to the engine's activity.
 
 ## Examples
 
@@ -75,6 +75,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | One socket, two faces | [`face`](src/face.rs) |
 | The Reactive Agent Protocol's toolset, its store, its bearer, its frames and its subscriptions | [`rap`](src/rap.rs) |
 | The deliveries of the toolset, their lanes and their retries | [`rap::deliver`](src/rap/deliver.rs) |
+| The table of the subscriptions, its file and its resume | [`rap::subscriptions`](src/rap/subscriptions.rs) |
 
 ## License
 
