@@ -222,6 +222,7 @@ use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
 use gandr_core_incremental::SourceTag;
+use gandr_core_incremental::Started;
 use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
 use gandr_core_term::Computation;
@@ -774,6 +775,128 @@ pub struct Admission
     /// Whether the admission records where each declaration stands in its
     /// artifact.
     positioning: Positioning,
+    /// What the admission judges the module whole from before it crosses,
+    /// when its verdicts are a report that the incremental pass assembled.
+    whole: Maybe<Rejudging, rejudged::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an admission judges its module no second time.
+    mod rejudged {
+        /// The reason the module is not judged again.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The verdicts are the module's whole judgement.
+            Judged,
+        }
+    }
+}
+
+/// What an admission of an assembled report judges its module whole from:
+/// the report keeps no node table of a standing item — the lifts, the
+/// coercions, the covers and the rest that the kernel's crossing reads.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+struct Rejudging
+{
+    /// The module's declarations, as the checker reads them.
+    declarations: Vec<Declaration>,
+    /// The settings the module's context is opened under.
+    settings: ModuleSettings,
+    /// Where the judgement starts.
+    opening: Reopening,
+}
+
+/// Where an admission's whole judgement starts.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+enum Reopening
+{
+    /// At the module's first declaration, under the grant and its entry.
+    Fresh
+    {
+        /// The grant.
+        grant: HostGrant,
+        /// The entry the grant names against the module's worlds.
+        entry: HostEntry,
+    },
+    /// After the closure's declarations, continuing their run.
+    Resumed
+    {
+        /// The checker's state after the closure's last declaration.
+        checkpoint: Arc<Checkpoint>,
+        /// The run over the closure's declarations.
+        run: Arc<ModuleRun>,
+        /// How many declarations the closure holds.
+        leading: usize,
+    },
+}
+
+impl Rejudging
+{
+    /// The module's whole report in `arena`, polling `retirement` before each
+    /// declaration.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the module's lowered nodes at the ids its
+    ///   declarations name.
+    /// - ensures: while every poll answers wanted, the report the module's
+    ///   judgement gives from where the judgement starts; retired, the
+    ///   retirement.
+    /// - panics: none.
+    /// - executable: none — the clause names the judgement that the body makes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission of an assembled report exports what an
+    ///   admission of the whole judgement exports.
+    /// - witness: `compose::tests::an_assembled_report_admits_as_the_whole_judgement_6620`
+    fn judge<Poll>(
+        self,
+        arena: &mut CoreArena,
+        retirement: &Poll,
+    ) -> Polled<ModuleReport, Poll::Retired, ()>
+    where
+        Poll: Retirement,
+    {
+        let Self {
+            declarations,
+            settings,
+            opening,
+        } = self;
+        let (mut context, mut run, judged) = match opening {
+            Reopening::Fresh { grant, entry } => {
+                let grants = grant.grants(arena);
+                (
+                    checking_context(
+                        arena,
+                        Opening::Fresh(grants, entry, CheckBudget::DEFAULT),
+                        &settings,
+                    ),
+                    ModuleRun::new(),
+                    declarations.as_slice(),
+                )
+            },
+            Reopening::Resumed {
+                checkpoint,
+                run,
+                leading,
+            } => (
+                checking_context(arena, Opening::Resumed(&checkpoint), &settings),
+                ModuleRun::clone(&run),
+                declarations.get(leading ..).unwrap_or_default(),
+            ),
+        };
+        if let Polled::Retired(retired, ()) =
+            run.judge_retiring(&mut context, judged, |_, _, _| {}, retirement)
+        {
+            return Polled::Retired(retired, ());
+        }
+        Polled::Whole(run.finish(&mut context))
+    }
 }
 
 impl Admission
@@ -948,6 +1071,22 @@ impl Admission
     where
         Poll: Retirement,
     {
+        // An assembled report keeps no node table of a standing item, so the
+        // admission judges the module whole before it crosses, off the
+        // keystroke that assembled it.
+        if let Maybe::Present(rejudging) =
+            core::mem::replace(&mut self.whole, Maybe::Absent(rejudged::Absent::Judged))
+        {
+            match rejudging.judge(&mut self.arena, retirement) {
+                Polled::Whole(verdicts) => self.verdicts = verdicts,
+                Polled::Retired(retired, ()) => {
+                    return Polled::Retired(
+                        retired,
+                        Maybe::Absent(bridge::crossed::Absent::Unasked),
+                    );
+                },
+            }
+        }
         let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
         let leading = (boundary, crossed);
         // A measured admission times the kernel's admission of each
@@ -2295,10 +2434,11 @@ struct ClosureJudgement<'held>
     arena: CoreArena,
     /// The closure's declarations, as the checker reads them.
     declarations: Vec<Declaration>,
-    /// The run over them.
-    run: ModuleRun,
-    /// The checker's state after the last of them.
-    checkpoint: Checkpoint,
+    /// The run over them, shared with each admission that judges a module
+    /// after them whole.
+    run: Arc<ModuleRun>,
+    /// The checker's state after the last of them, shared as the run is.
+    checkpoint: Arc<Checkpoint>,
     /// The grant they were judged under.
     grant: HostGrant,
     /// The entry `grant` names against the closure's worlds.
@@ -2469,7 +2609,19 @@ impl JudgedClosure
         let judgement = self.judgement();
         (declarations.get(.. judgement.declarations.len())
             == Some(judgement.declarations.as_slice()))
-        .then_some((&judgement.checkpoint, judgement.declarations.as_slice()))
+        .then_some((&*judgement.checkpoint, judgement.declarations.as_slice()))
+    }
+
+    /// The checker's run over the closure's declarations, which a module
+    /// judged after them continues.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn run(&self) -> &ModuleRun
+    {
+        &self.judgement().run
     }
 }
 
@@ -2564,8 +2716,8 @@ fn judge_closure<'held>(
     Some(ClosureJudgement {
         arena,
         declarations,
-        run,
-        checkpoint,
+        run: Arc::new(run),
+        checkpoint: Arc::new(checkpoint),
         grant: grant.clone(),
         entry,
         root,
@@ -2596,7 +2748,8 @@ pub enum Checking<'closure>
 }
 
 /// Whether an untabled judgement answers from, and keeps, the judgement of a
-/// module's revision before.
+/// module's revision before, or answers from the report that the revision's
+/// incremental pass assembled.
 ///
 /// # Specification
 /// trivial.
@@ -2608,6 +2761,11 @@ pub enum Recording<'held>
     /// A judgement whose inputs are those `held` was made over takes its
     /// verdicts and arena; any other is judged and then held in its place.
     Recorded(&'held mut Recorded),
+    /// The revision's incremental pass assembled this report in the arena the
+    /// judgement is given, starting where it says. A judgement that starts
+    /// there takes it and judges no declaration; its admission judges the
+    /// module whole before it crosses. Any other judgement is judged.
+    Assembled(Box<(ModuleReport, Started)>),
 }
 
 /// Whether a judgement keeps the verdict and the support of each declaration
@@ -3385,14 +3543,27 @@ where
         Tabling::Untabled => None,
     };
     // A recorded answer keeps no typings, so neither a table nor the
-    // concurrent schedule's writers read one.
-    let recorded = match (recording, tabling, scheduling) {
+    // concurrent schedule's writers read one. Nor does an assembled report,
+    // which the judgement takes only where the pass started where it starts.
+    let (recorded, assembled) = match (recording, tabling, scheduling) {
         (Recording::Recorded(recorded), Tabling::Untabled, Scheduling::Sequential) => {
-            Some(recorded)
+            (Some(recorded), None)
         },
-        (Recording::Recorded(_), Tabling::Tabled(_), _)
-        | (Recording::Recorded(_), Tabling::Untabled, Scheduling::Concurrent(_))
-        | (Recording::Unrecorded, ..) => None,
+        (Recording::Assembled(assembled), Tabling::Untabled, Scheduling::Sequential) => {
+            let (report, started) = *assembled;
+            let continues = match started {
+                Started::Whole => after.is_none(),
+                Started::After => after.is_some(),
+            };
+            (None, continues.then_some(report))
+        },
+        (Recording::Recorded(_) | Recording::Assembled(_), Tabling::Tabled(_), _)
+        | (
+            Recording::Recorded(_) | Recording::Assembled(_),
+            Tabling::Untabled,
+            Scheduling::Concurrent(_),
+        )
+        | (Recording::Unrecorded, ..) => (None, None),
     };
     let reading = recorded.as_ref().map(|_| Read {
         arena: arena.clone(),
@@ -3406,9 +3577,28 @@ where
         .as_deref()
         .zip(reading.as_ref())
         .and_then(|(recorded, reading)| recorded.answering(reading));
-    let (verdicts, read, writers) = if let Some((judged, verdicts)) = answered {
+    let (verdicts, read, writers, rejudging) = if let Some((judged, verdicts)) = answered {
         arena = judged;
-        (verdicts, None, Writers::NONE)
+        (verdicts, None, Writers::NONE, None)
+    }
+    else if let Some(verdicts) = assembled {
+        let opening = after.map_or_else(
+            || Reopening::Fresh {
+                grant: grant.clone(),
+                entry,
+            },
+            |closure| Reopening::Resumed {
+                checkpoint: Arc::clone(&closure.checkpoint),
+                run: Arc::clone(&closure.run),
+                leading: closure.declarations.len(),
+            },
+        );
+        let rejudging = Rejudging {
+            declarations,
+            settings,
+            opening,
+        };
+        (verdicts, None, Writers::NONE, Some(rejudging))
     }
     else {
         let (opening, mut run, judged) = after.map_or_else(
@@ -3422,7 +3612,7 @@ where
             |closure| {
                 (
                     Opening::Resumed(&closure.checkpoint),
-                    closure.run.clone(),
+                    ModuleRun::clone(&closure.run),
                     declarations
                         .get(closure.declarations.len() ..)
                         .unwrap_or_default(),
@@ -3461,7 +3651,7 @@ where
         if let (Some(recorded), Some(reading)) = (recorded, reading) {
             recorded.keep(reading, (arena.clone(), verdicts.clone()));
         }
-        (verdicts, read, writers)
+        (verdicts, read, writers, None)
     };
     if let Demand::Retired(retired) = retirement.demand() {
         return Polled::Retired(retired, ());
@@ -3583,6 +3773,7 @@ where
             verdicts,
             names,
             positioning: Positioning::Unpositioned,
+            whole: rejudging.map_or(Maybe::Absent(rejudged::Absent::Judged), Maybe::Present),
         },
         table,
         after.map(|closure| bridge::LeadingCount::from(closure.declarations.len())),
@@ -7151,6 +7342,113 @@ mod tests
         assert_eq!(
             resumed.artifact, whole,
             "the resumed artifact is the whole one, byte for byte"
+        );
+    }
+
+    /// An admission of a report that the incremental pass assembled judges the
+    /// module whole before it crosses. So the report of a fresh pass, which
+    /// decides each item, and of an unchanged pass, which takes each item from
+    /// its checkpoint, each admit to what the admission of the whole judgement
+    /// exports, byte for byte.
+    #[test]
+    fn an_assembled_report_admits_as_the_whole_judgement_6620()
+    {
+        use gandr_core_incremental::BackendArtifact;
+        use gandr_core_incremental::CheckpointObserver;
+        use gandr_core_incremental::IncrementalSession;
+        use gandr_core_incremental::ItemCount;
+        use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::Reporting;
+        use gandr_core_incremental::Supply;
+        use gandr_core_incremental::leading;
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Checking;
+        use super::Recording;
+        use super::Supporting;
+        use super::item_program;
+        use super::judge_member_after_retiring;
+
+        /// An observer that hears nothing.
+        struct Quiet;
+
+        impl CheckpointObserver for Quiet
+        {
+        }
+
+        let grammar = grammar();
+        let text = SourceText::from(include_str!(
+            "compose/fixtures/an-assembled-report-admits-as-the-whole-judgement-6620.gandr"
+        ));
+        let lowered = || {
+            let Lowered::Module { module, arena } =
+                lower_source(&grammar, text, &mut LoweringCount::default())
+                    .expect("the revision lowers")
+                    .into_lowered()
+            else {
+                panic!("the revision is not refused whole");
+            };
+            (module, arena)
+        };
+        let (module, arena) = lowered();
+        let whole = judge(
+            CorpusRoot::Fixture,
+            (module, text),
+            arena,
+            &HostGrant::UNBOUNDED,
+        )
+        .into_parts()
+        .1
+        .admit()
+        .expect("the kernel re-derives the revision");
+        let mut session = IncrementalSession::new(
+            MemoryCheckpointStore::default(),
+            BackendArtifact::from(b"core-checker".as_slice()),
+            CheckBudget::DEFAULT,
+        );
+        let mut admitted = Vec::new();
+        for _pass in ["fresh", "unchanged"] {
+            let (module, arena) = lowered();
+            let mut program = item_program(&module, arena).expect("the module lays out");
+            let mut reporting = Reporting::new(Maybe::Absent(leading::Absent::Whole));
+            let census = session
+                .submit_retiring(
+                    &mut program,
+                    &mut Quiet,
+                    &Unretired,
+                    Supply::Reported(&mut reporting),
+                )
+                .expect("the order builds")
+                .whole();
+            let Maybe::Present(assembled) = reporting.into_assembled()
+            else {
+                panic!("the pass assembles the module's report");
+            };
+            let admission = judge_member_after_retiring(
+                CorpusRoot::Fixture,
+                (module, text),
+                program.arena().clone(),
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                ByteOffset::from(0_usize),
+                (
+                    &Unretired,
+                    Recording::Assembled(Box::new(assembled)),
+                    Supporting::Unkept,
+                ),
+            )
+            .whole()
+            .into_parts()
+            .1;
+            admitted.push((census.adopted, admission.admit()));
+        }
+        assert_eq!(
+            admitted,
+            [
+                (ItemCount::from(0_usize), Ok(whole.clone())),
+                (ItemCount::from(3_usize), Ok(whole)),
+            ],
+            "each pass's report admits to the whole judgement's artifact, the unchanged pass \
+             taking every item from its checkpoint"
         );
     }
 

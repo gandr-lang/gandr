@@ -11,6 +11,7 @@ use std::sync::LazyLock;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Verdict;
 use gandr_core_checker::check_module;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::HoleMark;
@@ -23,15 +24,25 @@ use gandr_core_incremental::Typing;
 use gandr_core_incremental::project;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
+use gandr_surface_corpus::Produced;
+use gandr_surface_diagnostics::Diagnostic;
+use gandr_surface_diagnostics::producer;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Refusals;
 use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Standing;
+use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::entries;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_session::Session;
 use gandr_surface_session::Submission;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -349,6 +360,154 @@ pub fn names(composed: &Composed<'_>) -> Vec<String>
         Composed::Refused(ref refusal) => panic!("refused as a whole: {refusal}"),
     }
 }
+
+/// Where `ours` reads to a face apart from `theirs`, two compositions of the
+/// text `text` under `root`, up to the arenas their verdicts name: the first
+/// part that differs, written out, or none.
+///
+/// A face reads the arena nodes of a verdict only through the diagnostics it
+/// prints and the program it runs. So the two compare as their diagnostics,
+/// with every refusal asked and each producer's image left out. They compare
+/// as each declaration's report, with its verdict read as its kind and its
+/// evidence. They compare exactly in every other part, which names no arena
+/// node.
+///
+/// # Specification
+/// trivial.
+pub fn faced_apart<'source>(
+    (ours, theirs): (&Composed<'source>, &Composed<'source>),
+    root: SourceRoot,
+    text: SourceText<'source>,
+) -> Option<String>
+{
+    /// The diagnostics a face prints of `composed`, each producer's image
+    /// left out: the image prints arena ids.
+    ///
+    /// # Specification
+    /// trivial.
+    fn printed<'step>(
+        composed: &Composed<'step>,
+        root: SourceRoot,
+        text: SourceText<'step>,
+    ) -> Vec<Diagnostic>
+    {
+        let step = Step::Source {
+            path: Path::new(""),
+            root,
+            text,
+            base: ByteOffset::from(0_usize),
+            standing: Standing::of(root, composed),
+            composed: composed.clone(),
+        };
+        entries(&step, Verb::Check(Goals::Reported))
+            .refusals(Refusals::Every)
+            .map(|mut diagnostic| {
+                diagnostic.detail.producer = Maybe::Absent(producer::Absent::Statement);
+                diagnostic
+            })
+            .collect()
+    }
+
+    /// The ledger's size and each declaration's report in `composed`, its
+    /// verdict read as its kind and its evidence.
+    ///
+    /// # Specification
+    /// trivial.
+    fn declared(composed: &Composed<'_>) -> Vec<String>
+    {
+        let Composed::Settled { ref report, .. } = *composed
+        else {
+            return Vec::new();
+        };
+        let read = |produced: Produced<'_>| match produced {
+            Produced::Judged(verdict) => format!("{:?}", match verdict {
+                Verdict::Data => ("data", None),
+                Verdict::Checked { evidence, .. } => ("checked", Some(evidence.conversions())),
+                Verdict::Synthesised { synthesised, .. } => {
+                    ("synthesised", Some(synthesised.conversions()))
+                },
+                Verdict::Owed(_) => ("owed", None),
+                Verdict::Suspended(_) => ("suspended", None),
+                Verdict::Refused(_) => ("refused", None),
+            }),
+            produced @ (Produced::Unlowered(_) | Produced::Guarded(_)) => format!("{produced:?}"),
+        };
+        core::iter::once(format!("{:?}", report.ledger()))
+            .chain(report.declarations().iter().map(|declaration| {
+                format!(
+                    "{:?}",
+                    (
+                        (
+                            declaration.name(),
+                            declaration.span(),
+                            declaration.constant(),
+                            declaration.membership(),
+                            declaration.stated(),
+                        ),
+                        (
+                            read(declaration.produced()),
+                            declaration.owed(),
+                            declaration.waits(),
+                            declaration.outcome(),
+                            declaration.settlement(),
+                        ),
+                        (
+                            declaration.admitted(),
+                            declaration.discharged(),
+                            declaration.image(),
+                        ),
+                    )
+                )
+            }))
+            .collect()
+    }
+
+    let printed = (printed(ours, root, text), printed(theirs, root, text));
+    if printed.0 != printed.1 {
+        return Some(format!(
+            "the diagnostics: {:#?} against {:#?}",
+            printed.0, printed.1
+        ));
+    }
+    let declared = (declared(ours), declared(theirs));
+    if declared.0 != declared.1 {
+        return Some(format!(
+            "the reports: {:#?} against {:#?}",
+            declared.0, declared.1
+        ));
+    }
+    // The parts that name arena nodes are compared above, so they are taken
+    // from `theirs`, and the rest is compared as it is.
+    let mut grafted = ours.clone();
+    if let (
+        &mut Composed::Settled {
+            ref mut report,
+            ref mut origins,
+            ref mut spellings,
+            ref mut failures,
+            ref mut program,
+            ..
+        },
+        &Composed::Settled {
+            report: ref their_report,
+            origins: ref their_origins,
+            spellings: ref their_spellings,
+            failures: ref their_failures,
+            program: ref their_program,
+            ..
+        },
+    ) = (&mut grafted, theirs)
+    {
+        report.clone_from(their_report);
+        origins.clone_from(their_origins);
+        spellings.clone_from(their_spellings);
+        failures.clone_from(their_failures);
+        program.clone_from(their_program);
+    }
+    (grafted != *theirs)
+        .then(|| format!("the parts that name no arena node: {grafted:?} against {theirs:?}"))
+}
+
 /// A sink that refuses the first attempted write.
 #[derive(Debug)]
 pub struct RefusingWriter;

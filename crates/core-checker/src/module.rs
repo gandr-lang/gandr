@@ -156,6 +156,7 @@ use crate::code::EndpointRelation;
 use crate::code::Lift;
 use crate::code::Reflexivity;
 use crate::context::CheckingContext;
+use crate::conversion::ConversionCount;
 use crate::declaration::AbstractType;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
@@ -633,6 +634,179 @@ impl Judged
     pub const fn verdict(&self) -> Verdict
     {
         self.verdict
+    }
+}
+
+/// How a declaration was decided, without its evidence.
+///
+/// A caller that entered the declaration into a context without deciding it
+/// again reads the rest of its verdict — the declared type and the body — from
+/// that context, through [`Given::verdict`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Given
+{
+    /// A nominal declaration that formed.
+    Data,
+    /// The body checked against the declared type, after these conversions.
+    Checked(ConversionCount),
+    /// The unsigned body synthesised its type, after these conversions.
+    Synthesised(ConversionCount),
+    /// The body is a hole under the declared type.
+    Owed,
+    /// The declaration waits on owed holes.
+    Suspended,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a given decision gives no verdict in a context.
+    pub mod taken {
+        /// The reason the decision gives no verdict.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The context holds no type for a declaration that the given
+            /// decision types.
+            Untyped,
+            /// The context holds no body for a declaration whose body the
+            /// given decision accepted.
+            Undefined,
+            /// The given decision owes a hole, and the declaration is no
+            /// signed hole that the context holds as owed, or it is staged.
+            Unowed,
+        }
+    }
+}
+
+/// What a caller gives a run of a declaration that the run does not decide:
+/// the verdict, and the failure, the elaboration and the suspension that its
+/// own judgement kept, each seated in the run's arena.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Taken
+{
+    /// The verdict.
+    verdict: Verdict,
+    /// The failure of a refused declaration, or why none is kept.
+    failure: Maybe<Failure, kept::Absent>,
+    /// What elaborating the body's nested computations did, or why none is
+    /// kept.
+    elaboration: Maybe<NestedElaboration, elaborated::Absent>,
+    /// What a suspended declaration waits on, or why none is kept.
+    suspension: Maybe<Suspension, waits::Absent>,
+}
+
+impl Taken
+{
+    /// The `verdict` of one declaration, beside its `failure`, its
+    /// `elaboration` and its `suspension`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        verdict: Verdict,
+        (failure, elaboration, suspension): (
+            Maybe<Failure, kept::Absent>,
+            Maybe<NestedElaboration, elaborated::Absent>,
+            Maybe<Suspension, waits::Absent>,
+        ),
+    ) -> Self
+    {
+        Self {
+            verdict,
+            failure,
+            elaboration,
+            suspension,
+        }
+    }
+}
+
+impl Given
+{
+    /// The verdict that this decision gives `declaration`, with the declared
+    /// type and the body that `context` holds of it.
+    ///
+    /// # Specification
+    /// - requires: the caller entered the declaration into `context`, as an
+    ///   adopted declaration enters it, and this is how its judgement in that
+    ///   context decided it.
+    /// - ensures: on success, the verdict of this decision, with the type and
+    ///   the body that `context` holds at the declaration's position; an owed
+    ///   verdict owes that type at that position, from the declaration's
+    ///   origin.
+    /// - fails: [`taken::Absent::Untyped`] when `context` holds no type that
+    ///   the decision reads; [`taken::Absent::Undefined`] when it holds no body
+    ///   of an accepted one; [`taken::Absent::Unowed`] for an owed decision of
+    ///   a declaration that is no signed, unstaged hole that `context` holds as
+    ///   owed.
+    /// - panics: none.
+    /// - executable: none — the clause restates the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run that takes a declaration from another run's
+    ///   report and judges the rest reports as the run that judges each one.
+    /// - witness: `module::tests::a_run_that_takes_a_declaration_reports_as_the_run_that_judges_it`
+    #[inline]
+    pub fn verdict(
+        self,
+        context: &CheckingContext<'_>,
+        declaration: &Declaration,
+    ) -> Maybe<Verdict, taken::Absent>
+    {
+        let constant = declaration.constant();
+        let declared = || match context.signature(constant) {
+            Maybe::Present(declared) => Maybe::Present(declared),
+            Maybe::Absent(_) => Maybe::Absent(taken::Absent::Untyped),
+        };
+        let body = || match context.definitions().body(constant) {
+            Maybe::Present(body) => Maybe::Present(body),
+            Maybe::Absent(_) => Maybe::Absent(taken::Absent::Undefined),
+        };
+        let verdict =
+            match self {
+                Self::Data => Verdict::Data,
+                Self::Checked(conversions) => match (declared(), body()) {
+                    (Maybe::Present(declared), Maybe::Present(body)) => Verdict::Checked {
+                        declared,
+                        body,
+                        evidence: Checked::new(conversions),
+                    },
+                    (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                        return Maybe::Absent(reason);
+                    },
+                },
+                Self::Synthesised(conversions) => match (declared(), body()) {
+                    (Maybe::Present(produced), Maybe::Present(body)) => Verdict::Synthesised {
+                        body,
+                        synthesised: Synthesised::new(produced, conversions),
+                    },
+                    (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                        return Maybe::Absent(reason);
+                    },
+                },
+                Self::Owed => {
+                    let hole = matches!(*declaration.content(), crate::DeclarationContent::Value {
+                        signature: Maybe::Present(_),
+                        body: Maybe::Absent(_),
+                    });
+                    if !hole
+                        || !declaration.stages().is_empty()
+                        || !context.deferrals().owed.contains(&constant)
+                    {
+                        return Maybe::Absent(taken::Absent::Unowed);
+                    }
+                    match declared() {
+                        Maybe::Present(declared) => Verdict::Owed(ObligationEntry::from(
+                            Absence::new(constant, declared, declaration.origin()),
+                        )),
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    }
+                },
+                Self::Suspended => match declared() {
+                    Maybe::Present(declared) => Verdict::Suspended(declared),
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                },
+            };
+        Maybe::Present(verdict)
     }
 }
 
@@ -3236,6 +3410,67 @@ impl ModuleRun
             });
         }
         Polled::Whole(())
+    }
+
+    /// Record `declaration` as `taken` gives it, after the declarations this
+    /// run judged.
+    ///
+    /// # Specification
+    /// - requires: the caller entered the declaration into the context that
+    ///   judges the rest, as an adopted declaration enters it, and `taken` is
+    ///   what the declaration's judgement gives in that context.
+    /// - ensures: the declaration follows the ones judged, with `taken`'s
+    ///   verdict; its failure, its elaboration and the suspension of a
+    ///   suspended verdict are kept by position, and an owed verdict's hole
+    ///   joins the ledger.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run that takes a declaration from another run's
+    ///   report and judges the rest reports as the run that judges each one.
+    /// - witness: `module::tests::a_run_that_takes_a_declaration_reports_as_the_run_that_judges_it`
+    #[spec(
+        captures: before = self.judged.len(),
+        ensures: self.judged.len() == before.saturating_add(1)
+            && self.judged.last().is_some_and(|last| last.constant == declaration.constant()),
+    )]
+    #[inline]
+    pub fn take(
+        &mut self,
+        declaration: &Declaration,
+        taken: Taken,
+    )
+    {
+        let Taken {
+            verdict,
+            failure,
+            elaboration,
+            suspension,
+        } = taken;
+        let constant = declaration.constant();
+        if let Maybe::Present(failure) = failure {
+            self.failures.insert(constant, failure);
+        }
+        if let Maybe::Present(elaboration) = elaboration {
+            self.nested_elaborations.insert(constant, elaboration);
+        }
+        match verdict {
+            Verdict::Owed(entry) => self.ledger.record(entry),
+            Verdict::Suspended(_) => {
+                if let Maybe::Present(suspension) = suspension {
+                    self.suspensions.insert(constant, suspension);
+                }
+            },
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Refused(_) => {},
+        }
+        self.judged.push(Judged {
+            constant,
+            origin: declaration.origin(),
+            verdict,
+        });
     }
 
     /// Keep, from here on, what [`type_module`] keeps of each declaration

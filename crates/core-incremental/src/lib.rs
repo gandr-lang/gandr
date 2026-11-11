@@ -166,6 +166,7 @@ extern crate alloc;
 // refusals and `refusals.toml`: macros `typing`, `failure` and `codec` expand.
 include!(concat!(env!("OUT_DIR"), "/refusal.rs"));
 
+mod assembly;
 mod boundary;
 mod bundle;
 mod checkpoint;
@@ -186,6 +187,10 @@ mod stream;
 mod support;
 mod typing;
 
+pub use crate::assembly::Reporting;
+pub use crate::assembly::Started;
+pub use crate::assembly::Supply;
+pub use crate::assembly::assembled;
 pub use crate::boundary::ItemCount;
 pub use crate::boundary::ItemOrdinal;
 pub use crate::boundary::LivenessEmpty;

@@ -14,9 +14,11 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ModuleRun;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::Unretired;
+use gandr_core_checker::Verdict;
 use gandr_core_checker::signature;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Answer;
@@ -29,20 +31,27 @@ use gandr_core_incremental::Item;
 use gandr_core_incremental::ItemCheckpoint;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemKey;
+use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::Judgement;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::Opacity;
 use gandr_core_incremental::Opener;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
+use gandr_core_incremental::Reporting;
 use gandr_core_incremental::Resume;
+use gandr_core_incremental::Started;
+use gandr_core_incremental::Supply;
 use gandr_core_incremental::TypeContent;
 use gandr_core_incremental::Typing;
+use gandr_core_incremental::assembled;
 use gandr_core_incremental::check_program;
 use gandr_core_incremental::decode_checkpoints;
 use gandr_core_incremental::encode_checkpoints;
 use gandr_core_incremental::footprint_of;
 use gandr_core_incremental::lead;
+use gandr_core_incremental::leading;
+use gandr_core_incremental::project;
 use gandr_core_incremental::resume;
 use gandr_core_incremental::resume_after;
 use gandr_core_incremental::resume_from;
@@ -1608,6 +1617,23 @@ fn a_sealed_module_is_adopted_and_its_seal_still_holds()
     );
 }
 
+/// The whole judgement of `program` in a copy of its arena: the copy and the
+/// module's report.
+///
+/// # Specification
+/// trivial.
+fn judged_whole(program: &Program) -> (CoreArena, ModuleReport)
+{
+    let mut arena = program.arena().clone();
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut run = ModuleRun::new();
+        run.judge(&mut context, &program.declarations(), |_, _, _| {});
+        run.finish(&mut context)
+    };
+    (arena, report)
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
 
@@ -1677,7 +1703,7 @@ proptest! {
                     program,
                     &mut Quiet,
                     &Unretired,
-                    Some(Judgement::new(arena, &report)),
+                    Supply::Judged(Judgement::new(arena, &report)),
                 )
                 .expect("the order builds")
                 .whole();
@@ -1693,6 +1719,81 @@ proptest! {
                 taken.checkpoints().items(),
                 decided.checkpoints().items(),
                 "the checkpoints, for {:?}",
+                revision
+            );
+        }
+    }
+
+    /// Over a chain of edits, a session whose pass assembles the checker's
+    /// report gives, at each revision, the report of the revision's whole
+    /// judgement: by position, the same verdicts as typings, failures, owed
+    /// holes, definitions, elaborations and suspensions. A revision whose whole
+    /// judgement refuses an item gives no report, and every other revision
+    /// gives one.
+    #[test]
+    fn a_reported_pass_assembles_the_report_of_the_whole_judgement_6620(
+        (statements, edits) in program_and_edits()
+    ) {
+        let mut reporting = IncrementalSession::new(
+            MemoryCheckpointStore::default(),
+            BackendArtifact::from(b"core-checker".as_slice()),
+            CheckBudget::DEFAULT,
+        );
+        let mut current = statements;
+        let mut revisions = vec![current.clone()];
+        for edit in &edits {
+            current = apply(&current, edit);
+            revisions.push(current.clone());
+        }
+        for revision in &revisions {
+            let mut program = lower(revision);
+            let (arena, whole) = judged_whole(&program);
+            let mut assembly = Reporting::new(Maybe::Absent(leading::Absent::Whole));
+            let _census = reporting
+                .submit_retiring(&mut program, &mut Quiet, &Unretired, Supply::Reported(&mut assembly))
+                .expect("the order builds")
+                .whole();
+            let refused = whole
+                .judged()
+                .iter()
+                .any(|judged| matches!(judged.verdict(), Verdict::Refused(_)));
+            let report = match assembly.into_assembled() {
+                Maybe::Present((report, Started::Whole)) if !refused => report,
+                Maybe::Absent(assembled::Absent::Refused) if refused => continue,
+                other @ (Maybe::Present(_) | Maybe::Absent(_)) => panic!(
+                    "a whole pass assembles a report from the first item exactly when nothing is refused, for {revision:?}: {:?}",
+                    other.map(|(_, started)| started)
+                ),
+            };
+            let shape = |report: &ModuleReport, arena: &CoreArena| {
+                (
+                    report
+                        .judged()
+                        .iter()
+                        .enumerate()
+                        .map(|(ordinal, judged)| {
+                            (
+                                judged.constant(),
+                                project(&program, arena, ItemOrdinal::from(ordinal), &judged.verdict()),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    report.failures().keys().copied().collect::<Vec<_>>(),
+                    report
+                        .ledger()
+                        .entries()
+                        .iter()
+                        .map(|entry| entry.absence().constant())
+                        .collect::<Vec<_>>(),
+                    report.definitions().keys().copied().collect::<Vec<_>>(),
+                    report.nested_elaborations().keys().copied().collect::<Vec<_>>(),
+                    report.suspensions().keys().copied().collect::<Vec<_>>(),
+                )
+            };
+            prop_assert_eq!(
+                shape(&report, program.arena()),
+                shape(&whole, &arena),
+                "the assembled report, for {:?}",
                 revision
             );
         }

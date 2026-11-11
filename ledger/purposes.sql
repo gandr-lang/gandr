@@ -154,11 +154,13 @@ INSERT INTO purpose VALUES('core-checker','ledger::Absence','struct','A hole met
 INSERT INTO purpose VALUES('core-checker','ledger::ObligationCount','struct','How many obligations a ledger holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ledger::ObligationEntry','struct','One obligation a ledger holds: the absence it records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ledger::ObligationLedger','struct','The obligations a run owes, in the order their holes were met.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','module::Given','enum','The verdict a checkpoint holds of a declaration, without its evidence, so a run takes a standing declaration and the checker rebuilds the verdict in the run''s context.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::Judged','struct','One declaration''s verdict, beside the position and origin it was offered with.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::Membership','enum','Says whether a declaration is a member of the mutual block a schedule holds open.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::ModuleReport','struct','A module''s verdicts, in the order given, and the obligations they owe.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::ModuleRun','struct','A module run part way: the verdicts of the declarations judged so far and the schedule''s state after the last of them, so that judging the rest later continues the run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::Schedule','struct','The admission schedule of a module''s mutual blocks, which every judgement of a module in admission order and the incremental pass step.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','module::Taken','struct','A declaration''s verdict and its report parts taken from its checkpoint, so a run reports the declaration as the run that judged it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::TypedModule','struct','What type_module keeps of a module''s typed run: the types each declaration''s run formed and judged, the declared type each judgement filled, and the refusal of each declaration the run refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::Verdict','enum','A declaration''s verdict.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::check_declaration','function','Judges one declaration in context.',NULL,'fits','sound',NULL);
@@ -293,6 +295,9 @@ INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run insid
 INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Spawn','trait','Starts jobs inside a fork''s scope, and waits for each job it started.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Unwound','struct','A spawned job panicked on another worker, so its waiter only stops waiting.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','assembly::Reporting','struct','Holds the module run a reporting pass continues, and the report it assembles from each item it adopts or decides, so the judgement reads the report and judges no item again.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','assembly::Started','enum','Says whether an assembled report starts at the module''s first item or after a leading state, so a judgement reads only a report of its own start.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','assembly::Supply','enum','Says what a pass takes the verdicts of its changed items from: its own decisions, the whole-module judgement, or a report it assembles.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ChildPosition','struct','Names where a child sits among its content node''s children, so a path from a node outside an item reaches the item''s node it holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::Discovery','struct','Names where an arena node sits in the order its item''s walk discovers nodes, so a kept failure names one node of the item.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemCount','struct','Names a count of items or of the steps a resume took over them, so it cannot be passed where an ordinal or record count is wanted.',NULL,'fits','sound',NULL);

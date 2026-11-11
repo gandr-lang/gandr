@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc e81a7c6b75f5c5c1267c9dd6ba204cc940a6fad7a15d44e7c1d80cd5a740acf6 # shrinks to (statements, edits) = ([Stmt { name: 0, ascription: None, body: Int(0) }], [Replace(0, Stmt { name: 0, ascription: None, body: Int(0) })])
 cc fb8e880dafc0101f96378a1cb7c8d83f4dd79a59add6a8ee5bed8ec3a228987b # shrinks to (statements, edits) = ([Stmt { name: 0, ascription: None, body: Int(0) }], [Insert(0, Stmt { name: 0, ascription: None, body: Function(0) })])
+cc d899e465c293154fb486b136419cb589d39df26efb8d86130502aedc39fa585f # shrinks to (statements, edits) = ([Stmt { name: 5, ascription: None, body: Ref(1) }, Stmt { name: 3, ascription: Some(Delayed), body: Call(4) }], [Replace(1, Stmt { name: 2, ascription: Some(Delayed), body: Call(5) }), Insert(0, Stmt { name: 1, ascription: Some(Integer), body: Int(0) }), Ascribe(1, None)])

@@ -15,11 +15,18 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::SealExtent;
 use quenchant_shape::shape::Maybe;
 
+use super::Given;
 use super::ModuleRun;
+use super::Taken;
 use super::Verdict;
 use super::check_declaration;
 use super::check_module;
+use super::elaborated;
+use super::kept;
+use super::taken;
 use super::type_module;
+use super::waits;
+use crate::code::unfolding;
 use crate::context::Atom;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
@@ -37,6 +44,7 @@ use crate::failure::judged;
 use crate::fixture::RetireAt;
 use crate::fixture::integer_literal;
 use crate::fixture::text_literal;
+use crate::formation::FormedValueType;
 use crate::nested::Nesting;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
@@ -4027,6 +4035,128 @@ fn an_adopted_answer_is_read_as_if_judged()
             Verdict::Checked { .. }
         ),
         "a decode of the adopted code unfolds to the adopted body"
+    );
+}
+
+#[test]
+fn a_run_that_takes_a_declaration_reports_as_the_run_that_judges_it()
+{
+    // def code    : Type    = Integer ;
+    // def wrong   : Integer = () ;
+    // def owed    : Integer = ? ;
+    // def reader  : El code = 0 ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let code = arena.value_quote(integer);
+    let unit = arena.value_unit();
+    let read = arena.value_constant(ConstantIndex::from(0_usize));
+    let decoded = arena.value_type_element(read, Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let module = [
+        declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
+        declaration(At(1), Maybe::Present(integer), Maybe::Present(unit)),
+        declaration(At(2), Maybe::Present(integer), HOLE),
+        declaration(At(3), Maybe::Present(decoded), Maybe::Present(zero)),
+    ];
+    let whole = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    let &[first, second, ..] = whole.judged()
+    else {
+        panic!("each declaration is judged: {whole:?}");
+    };
+    let (
+        Verdict::Checked {
+            declared, evidence, ..
+        },
+        Verdict::Refused(refusal),
+    ) = (first.verdict(), second.verdict())
+    else {
+        panic!("the code checks and the unit is refused: {whole:?}");
+    };
+    let [ref coded, ref wrong, ref owed, ref reader] = module;
+    let unkept = || {
+        (
+            Maybe::Absent(kept::Absent::Accepted),
+            Maybe::Absent(elaborated::Absent::Unnested),
+            Maybe::Absent(waits::Absent::Unsuspended),
+        )
+    };
+    let taking = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut run = ModuleRun::new();
+        context
+            .adopt(
+                coded.constant(),
+                Maybe::Present(declared),
+                Maybe::Present(code),
+            )
+            .expect("the first position is free");
+        let checked = Given::Checked(evidence.conversions()).verdict(&context, coded);
+        assert_eq!(
+            checked,
+            Maybe::Present(first.verdict()),
+            "the checked code gives its verdict with the type and the body the context holds"
+        );
+        let Maybe::Present(checked) = checked
+        else {
+            panic!("the code checked: {checked:?}");
+        };
+        run.take(coded, Taken::new(checked, unkept()));
+        context
+            .adopt(
+                wrong.constant(),
+                Maybe::Present(FormedValueType::derived(integer)),
+                Maybe::Absent(unfolding::Absent::Rigid),
+            )
+            .expect("the second position follows the first");
+        let failure = whole
+            .failures()
+            .get(&wrong.constant())
+            .cloned()
+            .map_or(Maybe::Absent(kept::Absent::Unrun), Maybe::Present);
+        run.take(
+            wrong,
+            Taken::new(
+                Verdict::Refused(refusal),
+                (
+                    failure,
+                    Maybe::Absent(elaborated::Absent::Unnested),
+                    Maybe::Absent(waits::Absent::Unsuspended),
+                ),
+            ),
+        );
+        assert_eq!(
+            Given::Owed.verdict(&context, reader),
+            Maybe::Absent(taken::Absent::Unowed),
+            "a declaration with a body owes no hole"
+        );
+        context
+            .adopt(
+                owed.constant(),
+                Maybe::Present(FormedValueType::derived(integer)),
+                Maybe::Absent(unfolding::Absent::Owed),
+            )
+            .expect("the third position follows the second");
+        let Maybe::Present(hole) = Given::Owed.verdict(&context, owed)
+        else {
+            panic!("the adopted hole is owed");
+        };
+        run.take(owed, Taken::new(hole, unkept()));
+        run.judge(&mut context, core::slice::from_ref(reader), |_, _, _| {});
+        run.finish(&mut context)
+    };
+    assert_eq!(
+        (taking.judged(), taking.failures(), taking.ledger()),
+        (whole.judged(), whole.failures(), whole.ledger()),
+        "the verdicts, the failure and the owed hole are the whole run's"
+    );
+    assert_eq!(
+        taking.definitions(),
+        whole.definitions(),
+        "the adopted code unfolds for the reader as the judged code does"
     );
 }
 

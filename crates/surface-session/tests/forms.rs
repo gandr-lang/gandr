@@ -42,6 +42,7 @@ use quenchant_shape::shape::Maybe;
 use crate::common::GRAMMAR;
 use crate::common::Text;
 use crate::common::backend;
+use crate::common::faced_apart;
 use crate::common::grammar;
 use crate::common::resumed;
 use crate::common::session;
@@ -67,9 +68,10 @@ const LARGE: usize = if cfg!(anodized_panic) { 32 } else { 2_000 };
 /// # Specification
 /// - requires: `incremental` sits under `root`.
 /// - ensures: the incremental submission faults exactly when the composition
-///   does, with the same fault; otherwise its composition is the walk's, and
-///   its standing, completion obligations, kernel checkpoint and resume typings
-///   are a fresh session's. Answers the incremental submission's form census.
+///   does, with the same fault; otherwise its composition reads to a face as
+///   the walk's, up to the arena its verdicts name, and its standing,
+///   completion obligations, kernel checkpoint and resume typings are a fresh
+///   session's. Answers the incremental submission's form census.
 /// - panics: when any of those differ, naming `context`.
 ///
 /// # Adequacy
@@ -121,9 +123,9 @@ fn agree(
         ),
     };
     assert_eq!(
-        *submission.composed(),
-        walked,
-        "{context}: the composition is the walk's"
+        faced_apart((submission.composed(), &walked), root, source),
+        None,
+        "{context}: the composition reads as the walk's"
     );
     let mut whole = session(root);
     let fresh = whole

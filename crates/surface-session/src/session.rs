@@ -45,6 +45,13 @@
 //! same report. The dispatcher's `a_judged_module_renders_before_its_admission`
 //! checks that order against the one-step composition.
 //!
+//! **A reported keystroke.** When the session keeps no type table, the
+//! incremental pass runs first. It takes each standing declaration from its
+//! checkpoint, decides the rest, and assembles the module's report. The
+//! judgement settles that report and judges no declaration again. The report
+//! holds no node tables of a standing declaration, so the admission judges the
+//! module whole before it crosses, off the keystroke.
+//!
 //! **Disagreement.** A kernel that does not re-derive an acceptance is a fault,
 //! never a verdict. When the judgement's settle comparison refuses the
 //! verdicts, `judge` runs the admission there and reports a disagreement first,
@@ -188,19 +195,32 @@
 //! The report a submission carries is the dispatcher's `judge`'s, the second
 //! half of the composition `gandr check` runs, over the module `lower_source`
 //! read — so a submission and a walk step agree by construction, and the corpus
-//! agreement suite checks it source by source. The resume runs beside it over a
-//! copy of the arena. An untabled revision whose lowering moves no node of the
-//! one judged before it — a comment, a blank line — takes that judgement's
-//! verdicts and arena (`Recorded`), and makes again only what reads a span:
-//! the settle, the origins, the spellings and the program.
+//! agreement suite checks it source by source.
 //!
-//! The alternative was a report assembled from the resume's own verdicts. The
-//! incremental checker keeps typings, not the checker's verdicts, and a settle
-//! report is built from a judged module; assembling one from adopted
-//! checkpoints would be a second judgement to keep in agreement with the first.
-//! The cost of the choice is one arena copy and one whole-module judgement per
-//! accepted revision. It reverses when a step can be assembled from adopted
-//! checkpoints; the whole-module judgement and the copy retire then.
+//! A revision whose session keeps no type table is assembled. The incremental
+//! pass runs first, over the arena itself. It takes each standing declaration
+//! from its checkpoint, decides the rest in one module run, and finishes that
+//! run as the module's report. `judge` settles that report and judges no
+//! declaration again. A pass that seats no part of a report, that holds a
+//! refused item, or that a newer revision retires, assembles no report, and
+//! `judge` then judges the module whole. A refusal names the types that the
+//! judgement meets, and a type that an adoption seated has no origin to locate
+//! it by. The report names the nodes that the pass minted, so it equals the
+//! whole judgement's report up to the arena. The corpus agreement suite
+//! compares the two as a face reads them.
+//!
+//! A revision whose session keeps its type table, or that the session decides
+//! or takes from the judgement (`Verdicts`), is judged whole. The resume runs
+//! beside it over a copy of the arena. Such an untabled revision whose
+//! lowering moves no node of the one judged before it — a comment, a blank
+//! line — takes that judgement's verdicts and arena (`Recorded`). It makes
+//! again only what reads a span: the settle, the origins, the spellings and the
+//! program.
+//!
+//! The alternative was a whole-module judgement on each revision. It decides
+//! each standing declaration again, so its cost grows with the module whatever
+//! the edit. It reverses when an assembled report reads to a face apart from
+//! the whole judgement's.
 //!
 //! # Refusals are the report
 //!
@@ -331,13 +351,16 @@ use gandr_core_incremental::Keeping;
 #[cfg(feature = "instrument")]
 use gandr_core_incremental::PassedItem;
 use gandr_core_incremental::ProgramError;
+use gandr_core_incremental::Reporting;
 use gandr_core_incremental::Restorer;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::ResumeCensus;
 use gandr_core_incremental::ResumeError;
 use gandr_core_incremental::SessionError;
+use gandr_core_incremental::Supply;
 use gandr_core_incremental::SynthesisStream;
 use gandr_core_incremental::address_of;
+use gandr_core_incremental::leading;
 use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
@@ -1917,8 +1940,8 @@ pub struct Session<Store, Blocks>
     runs: closures::Runs<{ closures::SESSION_RUNS_HELD }>,
     /// Whether each judgement keeps the type table of its revision.
     tables: Tables,
-    /// Whether the incremental pass takes each changed item's verdict from
-    /// the revision's judgement.
+    /// How the untabled keystroke gives each item it does not adopt its
+    /// verdict.
     verdicts: Verdicts,
     /// The latest untabled judgement, which a revision moving no lowered node
     /// takes rather than judging again.
@@ -1944,17 +1967,22 @@ pub enum Tables
     Kept,
 }
 
-/// Whether a session's incremental pass takes each changed item's verdict
-/// from the revision's own judgement or decides the item again.
+/// How a session's untabled keystroke gives each item it does not adopt its
+/// verdict.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Verdicts
 {
+    /// The incremental pass runs first and decides each item it does not
+    /// adopt, then assembles the report that the keystroke settles: one
+    /// decision for each changed item, and none for a standing one. The
+    /// admission judges the module whole before it crosses.
+    Reported,
     /// The judgement keeps the support of each declaration it decides alone,
     /// and the pass takes that verdict and support: one decision for each
-    /// changed item.
+    /// item, and none again in the pass.
     Taken,
     /// The judgement keeps no support, and the pass decides each item it
     /// does not adopt: the decision a taken verdict stands for, which the
@@ -2223,7 +2251,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             admitted: Vec::new(),
             runs: closures::Runs::new(),
             tables: Tables::Unkept,
-            verdicts: Verdicts::Taken,
+            verdicts: Verdicts::Reported,
             recorded: Recorded::default(),
             account: Account::default(),
         }
@@ -2395,7 +2423,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 admitted: Vec::new(),
                 runs: closures::Runs::new(),
                 tables: Tables::Unkept,
-                verdicts: Verdicts::Taken,
+                verdicts: Verdicts::Reported,
                 recorded: Recorded::default(),
                 account: Account::default(),
             },
@@ -2661,7 +2689,8 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   and each molded form parked once; the lowered arena is cloned once per
     ///   accepted revision, so the judgement and the resume each check over
     ///   their own copy; the snapshot and its diff are each one walk of the
-    ///   revision's terms.
+    ///   revision's terms. A session that keeps no type table decides only the
+    ///   declarations that the pass does not take from their checkpoints.
     ///
     /// # Errors
     /// As above. A persistence failure with a retained resume is carried as
@@ -3178,19 +3207,42 @@ impl<Store, Blocks> Session<Store, Blocks>
             };
             count_parse(column, &module, (&molded, &obligations), (base, origin));
         }
-        // economy: one arena copy per accepted revision, of the revision's own
-        // nodes when it lowered onto a judged closure's frozen arena; the
-        // reversal is a report assembled from the resume's own verdicts, which
-        // retires the whole-module judgement and this copy with it.
-        let mut items = item_program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
+        // At the trace layer the pass decides each item again, so the machine
+        // writes the item's steps into the buffer that the pass lends. #6645
+        // reads the judgement's own steps.
+        #[cfg(feature = "instrument")]
+        let traced = matches!(sink.trace(), Maybe::Present(_));
+        #[cfg(not(feature = "instrument"))]
+        let traced = false;
+        // A reported keystroke settles the report that the incremental pass
+        // assembles, and judges no module whole.
+        let reported =
+            self.tables == Tables::Unkept && self.verdicts == Verdicts::Reported && !traced;
         // The judgement keeps each support only for a pass that takes it.
         let supporting = match self.verdicts {
             Verdicts::Taken => Supporting::Kept,
-            Verdicts::Decided => Supporting::Unkept,
+            Verdicts::Reported | Verdicts::Decided => Supporting::Unkept,
         };
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
         let deprecations = deprecations_of(&module, &arena, own);
+        // economy: one arena copy per accepted revision, of the revision's own
+        // nodes when it lowered onto a judged closure's frozen arena. A
+        // reported keystroke hands the pass the arena, and its judgement takes
+        // the copy of the arena that the pass left; any other judges the
+        // arena beside the pass's copy.
+        let (mut items, judging) = if reported {
+            (
+                item_program(&module, arena).map_err(SessionFault::Unordered)?,
+                None,
+            )
+        }
+        else {
+            (
+                item_program(&module, arena.clone()).map_err(SessionFault::Unordered)?,
+                Some(arena),
+            )
+        };
         // A traced tree prints its goals on demand by the names of the
         // revision's constants and of the binders its source writes, and
         // places its nodes by the revision's origins, read here because the
@@ -3223,55 +3275,6 @@ impl<Store, Blocks> Session<Store, Blocks>
             closure.keep_snapshot(|| snapshot.leading(ItemOrdinal::from(boundary)));
         }
         let judged = within(sink, Phase::Judge, |sink| {
-            let judged = match self.tables {
-                Tables::Kept => match judge_member_tabled_retiring(
-                    self.root.corpus_root(),
-                    (module, revision),
-                    arena,
-                    (&HostGrant::UNBOUNDED, checking),
-                    (unit, base),
-                    (retirement, supporting),
-                ) {
-                    Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
-                    Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
-                },
-                Tables::Unkept => match judge_member_after_retiring(
-                    self.root.corpus_root(),
-                    (module, revision),
-                    arena,
-                    (&HostGrant::UNBOUNDED, checking),
-                    base,
-                    (
-                        retirement,
-                        Recording::Recorded(&mut self.recorded),
-                        supporting,
-                    ),
-                ) {
-                    Polled::Whole(judged) => Polled::Whole((
-                        judged.into_parts(),
-                        Maybe::Absent(tabled::Absent::Untabled),
-                    )),
-                    Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
-                },
-            };
-            // Retired before a declaration or the settle: as retired before an
-            // item, the session keeps what its last accepted revision left.
-            let ((settled, admission), table) = match judged {
-                Polled::Whole(judged) => judged,
-                Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
-            };
-            let composed = match settled {
-                Ok(composed) => composed,
-                // The readmission ran before the settle comparison once; a
-                // kernel disagreement still takes precedence over a settle
-                // fault.
-                Err(fault) => {
-                    return Err(SessionFault::Compose(match admission.admit() {
-                        Ok(_) => ComposeFault::Settle(fault),
-                        Err(disagreement) => ComposeFault::Readmission(disagreement),
-                    }));
-                },
-            };
             #[cfg(feature = "instrument")]
             let mut observer = Observed {
                 sink: &mut *sink,
@@ -3282,35 +3285,116 @@ impl<Store, Blocks> Session<Store, Blocks>
                 let _: &mut Sink = sink;
                 Quiet
             };
-            // The pass takes each changed item's verdict from the judgement,
-            // which decided it once already. At the trace layer the pass
-            // decides each item again, so the machine writes the item's steps
-            // into the buffer that the pass lends. #6645 reads the judgement's
-            // own steps.
-            #[cfg(feature = "instrument")]
-            let traced = matches!(observer.sink.trace(), Maybe::Present(_));
-            #[cfg(not(feature = "instrument"))]
-            let traced = false;
-            let judgement = match self.verdicts {
-                Verdicts::Taken if !traced => {
-                    Some(Judgement::new(admission.arena(), admission.verdicts()))
-                },
-                Verdicts::Taken | Verdicts::Decided => None,
-            };
-            let submitted = match led {
+            let mut submit = |items: &mut gandr_core_incremental::Program, supply| match led {
                 Some(led) => self.incremental.submit_after_retiring(
-                    &mut items,
+                    items,
                     led.leading(),
                     &mut observer,
                     retirement,
-                    judgement,
+                    supply,
                 ),
-                None => self.incremental.submit_retiring(
-                    &mut items,
-                    &mut observer,
-                    retirement,
-                    judgement,
-                ),
+                None => self
+                    .incremental
+                    .submit_retiring(items, &mut observer, retirement, supply),
+            };
+            // The readmission ran before the settle comparison once; a kernel
+            // disagreement still takes precedence over a settle fault.
+            let composing = |settled, admission: Admission| match settled {
+                Ok(composed) => Ok((composed, admission)),
+                Err(fault) => Err(SessionFault::Compose(match admission.admit() {
+                    Ok(_) => ComposeFault::Settle(fault),
+                    Err(disagreement) => ComposeFault::Readmission(disagreement),
+                })),
+            };
+            let ((composed, admission, table), submitted) = if let Some(arena) = judging {
+                let judged = match self.tables {
+                    Tables::Kept => match judge_member_tabled_retiring(
+                        self.root.corpus_root(),
+                        (module, revision),
+                        arena,
+                        (&HostGrant::UNBOUNDED, checking),
+                        (unit, base),
+                        (retirement, supporting),
+                    ) {
+                        Polled::Whole((judged, table)) => {
+                            Polled::Whole((judged.into_parts(), table))
+                        },
+                        Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+                    },
+                    Tables::Unkept => match judge_member_after_retiring(
+                        self.root.corpus_root(),
+                        (module, revision),
+                        arena,
+                        (&HostGrant::UNBOUNDED, checking),
+                        base,
+                        (
+                            retirement,
+                            Recording::Recorded(&mut self.recorded),
+                            supporting,
+                        ),
+                    ) {
+                        Polled::Whole(judged) => Polled::Whole((
+                            judged.into_parts(),
+                            Maybe::Absent(tabled::Absent::Untabled),
+                        )),
+                        Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+                    },
+                };
+                // Retired before a declaration or the settle: as retired before
+                // an item, the session keeps what its last accepted revision
+                // left.
+                let ((settled, admission), table) = match judged {
+                    Polled::Whole(judged) => judged,
+                    Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
+                };
+                let (composed, admission) = composing(settled, admission)?;
+                // The pass takes each changed item's verdict from the
+                // judgement, which decided it once already.
+                let supply = match self.verdicts {
+                    Verdicts::Taken if !traced => {
+                        Supply::Judged(Judgement::new(admission.arena(), admission.verdicts()))
+                    },
+                    Verdicts::Taken | Verdicts::Reported | Verdicts::Decided => Supply::Decided,
+                };
+                let submitted = submit(&mut items, supply);
+                ((composed, admission, table), submitted)
+            }
+            else {
+                // The pass runs first: it adopts each standing item, decides
+                // the rest, and assembles the report that the judgement takes.
+                // A pass after the closure's items continues the closure's run.
+                let mut reporting = Reporting::new(match (led, checking) {
+                    (Some(_), Checking::After(closure)) => Maybe::Present(closure.run().clone()),
+                    (Some(_) | None, Checking::After(_) | Checking::Whole) => {
+                        Maybe::Absent(leading::Absent::Whole)
+                    },
+                });
+                let submitted = submit(&mut items, Supply::Reported(&mut reporting));
+                if let Ok(Polled::Retired(retired, ())) = submitted {
+                    return Ok(Polled::Retired(retired, ()));
+                }
+                // A report that the pass could not assemble leaves the
+                // judgement to judge the module itself.
+                let recording = match reporting.into_assembled() {
+                    Maybe::Present(assembled) => Recording::Assembled(Box::new(assembled)),
+                    Maybe::Absent(_) => Recording::Unrecorded,
+                };
+                let (settled, admission) = match judge_member_after_retiring(
+                    self.root.corpus_root(),
+                    (module, revision),
+                    items.arena().clone(),
+                    (&HostGrant::UNBOUNDED, checking),
+                    base,
+                    (retirement, recording, supporting),
+                ) {
+                    Polled::Whole(judged) => judged.into_parts(),
+                    Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
+                };
+                let (composed, admission) = composing(settled, admission)?;
+                (
+                    (composed, admission, Maybe::Absent(tabled::Absent::Untabled)),
+                    submitted,
+                )
             };
             let (census, persistence) = match submitted {
                 Ok(Polled::Whole(census)) => (census, match Store::KEEPING {
@@ -3838,9 +3922,8 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.tables
     }
 
-    /// Have the incremental pass from here on take each changed item's
-    /// verdict from the revision's judgement, or decide the item again, as
-    /// `verdicts` says.
+    /// Have the untabled keystroke from here on give each item it does not
+    /// adopt its verdict as `verdicts` says.
     ///
     /// # Specification
     /// trivial.

@@ -1,0 +1,3 @@
+def one : Integer = 1;
+def two : Integer = one;
+def three = two;

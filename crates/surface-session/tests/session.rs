@@ -262,9 +262,15 @@ fn checkpointed_session_matches_from_scratch()
         include_str!("session/fixtures/checkpointed-session-matches-from-scratch-appended.gandr"),
     );
     assert_eq!(
-        appended.composed(),
-        whole.composed(),
-        "the appended revision reports exactly what the whole text reports from scratch"
+        crate::common::faced_apart(
+            (appended.composed(), whole.composed()),
+            SourceRoot::Strict,
+            gandr_surface_syntax::SourceText::from(include_str!(
+                "session/fixtures/checkpointed-session-matches-from-scratch-appended.gandr"
+            )),
+        ),
+        None,
+        "the appended revision reports what the whole text reports from scratch"
     );
     assert_eq!(
         resumed(&checkpointed),
@@ -1464,7 +1470,9 @@ impl gandr_core_checker::Retirement for After
 /// #1547: an admission retired part way leaves the record of the declarations
 /// it crossed, inside the import closure or past it, and the next admission of
 /// the same revision offers the kernel only those after it, exporting what a
-/// whole admission exports.
+/// whole admission exports. The admission of a report that the incremental
+/// pass assembled judges the document's own declarations again before it
+/// crosses, and it polls before each of them.
 #[test]
 fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
 {
@@ -1514,16 +1522,19 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
         };
         detached
     };
+    // The document's own declarations, which each admission judges again
+    // before it crosses.
+    let rejudged = 2_usize;
     // Each retirement, then the whole admission after it: what it counted and
     // the artifact it exported.
-    let mut retire_then_admit = |wanted: usize| {
+    let mut retire_then_admit = |crossings: usize| {
         let retired = judge(&mut session).run(
-            &After(core::cell::Cell::new(wanted)),
+            &After(core::cell::Cell::new(rejudged.saturating_add(crossings))),
             &mut gandr_surface_session::Silent,
         );
         assert!(
             matches!(retired, Polled::Retired((), ())),
-            "the admission is retired after {wanted} crossings"
+            "the admission is retired after {crossings} crossings"
         );
         let ran = judge(&mut session)
             .run(
@@ -1620,10 +1631,11 @@ fn a_retired_judgement_leaves_the_next_its_resume_1547()
     );
 }
 
-/// #1663: a judgement polls its retirement before each declaration of the
-/// revision it checks and once before their settle, then before each item the
-/// incremental pass adopts or judges, so a change made while the revision's
-/// declarations are checked retires the judgement there.
+/// #1663: a judgement polls its retirement before each item the incremental
+/// pass adopts or decides, and once before the settle, so a change made while
+/// the revision's declarations are decided retires the judgement there. A
+/// session that keeps no type table decides each declaration in the pass
+/// alone, and its judgement checks none again.
 #[test]
 fn a_judgement_polls_before_each_declaration_it_checks_1663()
 {
@@ -1647,14 +1659,12 @@ fn a_judgement_polls_before_each_declaration_it_checks_1663()
     };
     let polled = usize::MAX.saturating_sub(poll.0.get());
     let items = census(&judged);
-    let declarations = 3_usize;
     assert_eq!(
         polled,
-        declarations
-            .saturating_add(1_usize)
-            .saturating_add(usize::from(items.adopted))
-            .saturating_add(usize::from(items.judged)),
-        "one poll before each declaration, one before the settle, one before each item: {items:?}"
+        usize::from(items.adopted)
+            .saturating_add(usize::from(items.judged))
+            .saturating_add(1_usize),
+        "one poll before each item, one before the settle: {items:?}"
     );
 }
 

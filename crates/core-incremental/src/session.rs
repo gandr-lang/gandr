@@ -11,8 +11,8 @@ use gandr_core_checker::Retirement;
 use gandr_core_checker::Unretired;
 use quenchant_shape::shape::Maybe;
 
+use crate::assembly::Supply;
 use crate::checkpoint::Checkpoints;
-use crate::checkpoint::Judgement;
 use crate::checkpoint::Leading;
 use crate::checkpoint::Resume;
 use crate::checkpoint::ResumeCensus;
@@ -361,7 +361,7 @@ impl<Store> IncrementalSession<Store>
         Store: CheckpointStore,
         Observer: CheckpointObserver,
     {
-        self.submit_retiring(program, observer, &Unretired, None)
+        self.submit_retiring(program, observer, &Unretired, Supply::Decided)
             .map(Polled::whole)
     }
 
@@ -369,9 +369,10 @@ impl<Store> IncrementalSession<Store>
     /// pass adopts or judges: retired, the pass stops before the item it
     /// polled at, nothing is persisted, and the session keeps the resume it
     /// held, or the set it restored when it held none, for the next submission
-    /// to resume from. When `judgement` is the revision's own judgement, the
-    /// pass takes each changed item's verdict and support from it
-    /// ([`Judgement`]) and decides the item no second time.
+    /// to resume from. `supply` names what the pass does with each item it
+    /// does not adopt: it decides it, it takes its verdict and support from
+    /// the revision's own judgement ([`Supply::Judged`]), or it decides it and
+    /// assembles the checker's report of the revision ([`Supply::Reported`]).
     ///
     /// # Specification
     /// - requires: nothing.
@@ -414,7 +415,7 @@ impl<Store> IncrementalSession<Store>
         program: &mut Program,
         observer: &mut Observer,
         retirement: &Poll,
-        judgement: Option<Judgement<'_>>,
+        supply: Supply<'_>,
     ) -> Result<Polled<ResumeCensus, Poll::Retired, ()>, SessionError>
     where
         Store: CheckpointStore,
@@ -426,7 +427,7 @@ impl<Store> IncrementalSession<Store>
             previous,
             program,
             self.budget,
-            (retirement, &mut *observer, judgement),
+            (retirement, &mut *observer, supply),
         )
         .map_err(SessionError::Resume)?;
         self.settled(program, polled, observer)
@@ -473,13 +474,13 @@ impl<Store> IncrementalSession<Store>
         Store: CheckpointStore,
         Observer: CheckpointObserver,
     {
-        self.submit_after_retiring(program, leading, observer, &Unretired, None)
+        self.submit_after_retiring(program, leading, observer, &Unretired, Supply::Decided)
             .map(Polled::whole)
     }
 
     /// [`submit_after`](Self::submit_after), polling `retirement` before each
-    /// item the pass adopts or judges and taking each changed item's verdict
-    /// from `judgement`, as [`submit_retiring`](Self::submit_retiring) does.
+    /// item the pass adopts or judges and treating each item it does not adopt
+    /// as `supply` says, as [`submit_retiring`](Self::submit_retiring) does.
     ///
     /// # Specification
     /// - requires: as [`resume_after`](crate::resume_after).
@@ -518,7 +519,7 @@ impl<Store> IncrementalSession<Store>
         leading: &Arc<Leading>,
         observer: &mut Observer,
         retirement: &Poll,
-        judgement: Option<Judgement<'_>>,
+        supply: Supply<'_>,
     ) -> Result<Polled<ResumeCensus, Poll::Retired, ()>, SessionError>
     where
         Store: CheckpointStore,
@@ -530,7 +531,7 @@ impl<Store> IncrementalSession<Store>
             previous,
             leading,
             program,
-            (retirement, &mut *observer, judgement),
+            (retirement, &mut *observer, supply),
         )
         .map_err(SessionError::Resume)?;
         self.settled(program, polled, observer)
