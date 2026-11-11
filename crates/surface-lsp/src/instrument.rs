@@ -18,9 +18,12 @@
 //! # What it does not cover
 //!
 //! A client cannot subscribe to a layer yet, because the subscription on the
-//! render bus is a later unit. Until then, each subscription holds the silent
-//! layer, and the layer units add their layers beside it.
+//! render bus is a later unit. Until then, each connection holds the silent
+//! layer, and a test selects another layer through its constant, such as
+//! [`Subscription::COUNTS`].
 
+#[cfg(feature = "instrument")]
+use gandr_surface_session::Counts;
 use gandr_surface_session::Instrument;
 use gandr_surface_session::Silent;
 
@@ -34,6 +37,16 @@ pub enum Layer
 {
     /// No layer: each job runs at [`Silent`].
     Silent,
+    /// The counts layer: each job runs at a fresh [`Counts`], so each recheck
+    /// counts into its own column.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
+        )
+    )]
+    Counts,
 }
 
 /// What a client subscribed to, read once by each job of a recheck.
@@ -55,6 +68,19 @@ impl Subscription
     pub const SILENT: Self = Self {
         #[cfg(feature = "instrument")]
         layer: Layer::Silent,
+    };
+
+    /// The subscription of a client that subscribed to the counts layer.
+    #[cfg(feature = "instrument")]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
+        )
+    )]
+    pub const COUNTS: Self = Self {
+        layer: Layer::Counts,
     };
 }
 
@@ -96,7 +122,7 @@ impl Subscription
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the answer of `job` run at the sink of the layer, [`Silent`]
-    ///   for [`Layer::Silent`].
+    ///   for [`Layer::Silent`] and a fresh [`Counts`] for [`Layer::Counts`].
     /// - provides: the one branch of a job on its layer.
     /// - fails: never.
     /// - panics: only by propagating a panic of `job`.
@@ -118,6 +144,7 @@ impl Subscription
     {
         match self.layer {
             Layer::Silent => job.run(&mut Silent),
+            Layer::Counts => job.run(&mut Counts::default()),
         }
     }
 }

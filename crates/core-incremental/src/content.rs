@@ -2467,6 +2467,31 @@ impl Sites
             None => Maybe::Absent(site::Absent::Unreached),
         }
     }
+
+    /// How many of the reached nodes the arena minted at or after `mark`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    pub(crate) fn minted_since(
+        &self,
+        mark: gandr_core_term::ArenaWatermark,
+    ) -> gandr_kernel_term::ArenaLength
+    {
+        self.0
+            .keys()
+            .filter(|&&node| {
+                let minted = match node {
+                    ArenaNode::Value(id) => mark.of_value(id),
+                    ArenaNode::Computation(id) => mark.of_computation(id),
+                    ArenaNode::ValueType(id) => mark.of_value_type(id),
+                    ArenaNode::CompType(id) => mark.of_comp_type(id),
+                };
+                matches!(minted, gandr_core_term::Minted::Since)
+            })
+            .count()
+            .into()
+    }
 }
 
 /// Whether a table holds an id another arena minted.

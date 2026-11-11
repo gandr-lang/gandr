@@ -176,25 +176,32 @@ pub struct KernelMark
     pub title: String,
 }
 
-/// The engine's counts for one declaration's judgement.
+/// The engine's counts for one declaration in its latest recheck: the
+/// checker's and the kernel's apart.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct AccountCounts
 {
-    /// The memo's hits.
+    /// The goals the checker's memo answered.
     pub hits: Count,
-    /// The memo's misses.
+    /// The goals the checker's memo keyed and held no answer for.
     pub misses: Count,
-    /// The nodes the judgement named.
+    /// The arena nodes of its lowering and its judgement.
     pub nodes: Count,
-    /// The forms the parser molded.
+    /// The forms of its halves that the parser molded.
     pub molded: Count,
-    /// The items the checker judged.
+    /// One when the incremental checker judged it, zero when it adopted it.
     pub judged: Count,
-    /// The declarations that crossed to the kernel.
+    /// One when it crossed to the kernel again.
     pub crossed: Count,
-    /// The obligations the judgement left.
+    /// The parse's completion obligations inside its halves.
     pub obligations: Count,
+    /// The goals of the kernel's check that the kernel's memo recalled.
+    pub recalled: Count,
+    /// The goals of the kernel's check that the kernel expanded.
+    pub expanded: Count,
+    /// The goals of the kernel's check that a kept outcome answered.
+    pub kept: Count,
 }
 
 /// One declaration's block of the account: its verdict, its tiers, and the

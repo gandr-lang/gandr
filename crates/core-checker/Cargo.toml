@@ -82,6 +82,10 @@ default = []
 # kernel readmission timed and their allocations counted for the benchmark
 # report (the driver's `hotpath` bench).
 hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# The goal memo's tally in each checking context: a hit or a miss counted at
+# each consult, which the counts layer of the hub's instrument reads. Off, the
+# context holds no tally and a consult counts nothing.
+instrument = []
 unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
 
 [lints]
