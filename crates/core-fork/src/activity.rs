@@ -517,6 +517,19 @@ impl From<NonZeroUsize> for Slots
     }
 }
 
+impl From<Slots> for NonZeroUsize
+{
+    /// The count of slots.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(slots: Slots) -> Self
+    {
+        slots.0
+    }
+}
+
 /// The ring of one producer, on cache lines of its own.
 ///
 /// # Specification

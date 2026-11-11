@@ -623,6 +623,8 @@ mod tactic;
 pub mod tally;
 pub mod template;
 pub mod tier;
+#[cfg(feature = "instrument")]
+pub mod trace;
 pub mod ua;
 mod univalence;
 mod view;

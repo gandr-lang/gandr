@@ -529,6 +529,11 @@ pub struct CheckingContext<'arena>
     /// not keep it: a resumed context counts from zero.
     #[cfg(feature = "instrument")]
     tally: crate::tally::MemoTally,
+    /// The buffer each run of the machine writes its steps into, while a
+    /// tracer lends one. A checkpoint does not keep it: a resumed context
+    /// holds none until a tracer lends it one.
+    #[cfg(feature = "instrument")]
+    trace: Option<crate::trace::StepBuffer>,
     /// The step [`Self::unfold`] certified at each code: the reduct and what
     /// the step unfolded. The definitions only grow, and a certified step
     /// reads only them and the arena. So a second unfold of a code reads the
@@ -878,6 +883,8 @@ impl<'arena> CheckingContext<'arena>
             #[cfg(feature = "instrument")]
             tally: crate::tally::MemoTally::default(),
             unfolded: BTreeMap::new(),
+            #[cfg(feature = "instrument")]
+            trace: None,
         }
     }
 
@@ -965,6 +972,8 @@ impl<'arena> CheckingContext<'arena>
             #[cfg(feature = "instrument")]
                 tally: _,
             unfolded: _,
+            #[cfg(feature = "instrument")]
+                trace: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1175,6 +1184,8 @@ impl<'arena> CheckingContext<'arena>
             #[cfg(feature = "instrument")]
             tally: crate::tally::MemoTally::default(),
             unfolded: BTreeMap::new(),
+            #[cfg(feature = "instrument")]
+            trace: None,
         }
     }
 
@@ -1276,6 +1287,85 @@ impl<'arena> CheckingContext<'arena>
     pub(crate) const fn tally_mut(&mut self) -> &mut crate::tally::MemoTally
     {
         &mut self.tally
+    }
+
+    /// Write each step of the machine's runs into `buffer`, until the buffer
+    /// is taken back.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn trace_into(
+        &mut self,
+        buffer: crate::trace::StepBuffer,
+    )
+    {
+        self.trace = Some(buffer);
+    }
+
+    /// The buffer the machine's runs write their steps into, or why the
+    /// context holds none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub const fn trace(
+        &self
+    ) -> quenchant_shape::shape::Maybe<&crate::trace::StepBuffer, crate::trace::untraced::Absent>
+    {
+        match self.trace {
+            Some(ref buffer) => quenchant_shape::shape::Maybe::Present(buffer),
+            None => quenchant_shape::shape::Maybe::Absent(crate::trace::untraced::Absent::Unlent),
+        }
+    }
+
+    /// Forget the steps the buffer holds, and keep the buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn retrace(&mut self)
+    {
+        if let Some(ref mut buffer) = self.trace {
+            buffer.clear();
+        }
+    }
+
+    /// Take the buffer back: the machine's runs then write no step.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn take_trace(
+        &mut self
+    ) -> quenchant_shape::shape::Maybe<crate::trace::StepBuffer, crate::trace::untraced::Absent>
+    {
+        self.trace.take().map_or(
+            quenchant_shape::shape::Maybe::Absent(crate::trace::untraced::Absent::Unlent),
+            quenchant_shape::shape::Maybe::Present,
+        )
+    }
+
+    /// Write the step that `step` makes of the clock's reading, when a
+    /// tracer lent a buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub(crate) fn traced<Make>(
+        &mut self,
+        step: Make,
+    ) where
+        Make: FnOnce(gandr_core_fork::activity::Nanos) -> crate::trace::Step,
+    {
+        if let Some(ref mut buffer) = self.trace {
+            buffer.write(step);
+        }
     }
 
     /// Recall the strata `ua` statements name from `store`, and keep there
