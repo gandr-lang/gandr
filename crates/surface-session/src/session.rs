@@ -1898,6 +1898,10 @@ pub struct Session<Store, Blocks>
     /// that a revision deciding a block it left as it was answers it from the
     /// last decision.
     decisions: Decisions,
+    /// The closure that the latest revision laid itself after, which a later
+    /// revision after the same closure is lowered onto and resumed after,
+    /// whatever lowering of it the process's store holds.
+    closure: Option<Arc<Closure>>,
     /// Every form of the latest parsed revision, by identity.
     forms: FormStore,
     /// The pool a revision's changed forms are molded on and a trial's
@@ -2212,6 +2216,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             deprecations: BTreeMap::new(),
             lowerings: LoweringCount::default(),
             decisions: Decisions::held(),
+            closure: None,
             forms: FormStore::default(),
             pool: Arc::default(),
             admission: Maybe::Absent(admission::Absent::Idle),
@@ -2383,6 +2388,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 deprecations,
                 lowerings,
                 decisions,
+                closure: None,
                 forms,
                 pool,
                 admission: Maybe::Absent(admission::Absent::Idle),
@@ -2891,18 +2897,20 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   offset zero of [`Unit::single`]. When the closure's text is one a
     ///   document can be laid after, the tree is the document's parse laid
     ///   after the closure's ([`ParseResult::after`]), the closure's lowering
-    ///   is held in `slot` and in the process's store, and the form census is
-    ///   the document's own; when the closure's lowering reached its end, its
-    ///   declarations are judged, and the incremental pass led over their items
-    ///   ([`Closure::led`]), once per process and root; the document is lowered
-    ///   onto the arena that pass left, which extends the judgement's
-    ///   ([`lower_onto_closure`]), judged on a copy of the judgement's state
-    ///   ([`judge_member_after_retiring`]), or, untabled, handed the session's
-    ///   last judgement when that one lowered to the same nodes, and submitted
-    ///   after the pass's state ([`IncrementalSession::submit_after`]) — onto
-    ///   the judgement's own arena and submitted whole when the pass holds no
-    ///   state — and otherwise the module is the closure's lowering resumed
-    ///   over the tree ([`lower_resumed_unit`]), judged whole.
+    ///   is held in `slot`, in the session and in the process's store, and the
+    ///   session lays each later revision after the same closure after the
+    ///   lowering it holds; the form census is the document's own; when the
+    ///   closure's lowering reached its end, its declarations are judged, and
+    ///   the incremental pass led over their items ([`Closure::led`]), once per
+    ///   process and root; the document is lowered onto the arena that pass
+    ///   left, which extends the judgement's ([`lower_onto_closure`]), judged
+    ///   on a copy of the judgement's state ([`judge_member_after_retiring`]),
+    ///   or, untabled, handed the session's last judgement when that one
+    ///   lowered to the same nodes, and submitted after the pass's state
+    ///   ([`IncrementalSession::submit_after`]) — onto the judgement's own
+    ///   arena and submitted whole when the pass holds no state — and otherwise
+    ///   the module is the closure's lowering resumed over the tree
+    ///   ([`lower_resumed_unit`]), judged whole.
     /// - provides: an editor's judgement of a document that imports a sibling,
     ///   whose diagnostics are those `gandr check` gives the file.
     /// - fails: as [`judge`](Self::judge).
@@ -2916,9 +2924,11 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — every corpus source, an importer among them, submits
     ///   as the walk composes it; an importer submitted twice lowers its
-    ///   closure once.
+    ///   closure once; a second recheck judges no item while another session
+    ///   lowers and keeps the same closure.
     /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    /// - witness: `tests::counts::a_second_recheck_judges_no_item_when_another_session_keeps_the_closure_6536`
     #[inline]
     pub fn judge_unit_reading<'text, Read>(
         &mut self,
@@ -3871,7 +3881,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// Parse `revision`, the text `unit` lays out with the document's own
     /// text from `base` on, through the session's form store, leaving the
     /// store as it was: the document's own text laid after its closure's tree
-    /// when the process holds the closure's lowering, as
+    /// when the session or the process holds the closure's lowering, as
     /// [`judge_unit_reading`](Self::judge_unit_reading) parses it, else the
     /// whole text as [`parse_held`](Self::parse_held) parses it.
     ///
@@ -3906,6 +3916,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             &self.forms,
             revision,
             Some((unit, base)),
+            self.closure.as_ref(),
             &*self.pool,
         )
         .map(|(parsed, _census, _closure)| parsed)
@@ -3915,16 +3926,17 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// document's own text from `base` on, parsed as
     /// [`parse_held_unit`](Self::parse_held_unit) parses it, `read` handed its
     /// tree first, beside the key of the closure's lowering when the tree is
-    /// laid after the lowering the process holds: typed after the closure's
-    /// judgement under the session's root when the process holds the closure's
-    /// lowering and the closure lowers to its end, else typed whole. A reader
-    /// keeps what it reads off the closure's part once, under that key.
+    /// laid after the lowering the session or the process holds: typed after
+    /// the closure's judgement under the session's root when one of them holds
+    /// the closure's lowering and the closure lowers to its end, else typed
+    /// whole. A reader keeps what it reads off the closure's part once, under
+    /// that key.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
     /// - ensures: [`TypeTable::of_parsed_after`] over the closure's judgement
-    ///   ([`Closure::judged`]) under the session's root when the process holds
-    ///   the closure's lowering and that judgement is made, else
+    ///   ([`Closure::judged`]) under the session's root when the session or the
+    ///   process holds the closure's lowering and that judgement is made, else
     ///   [`TypeTable::of_parsed_unit`]; `None` when the text does not parse or
     ///   the lowering faults.
     /// - provides: the table a hover reads, typed in the document's size.
@@ -3953,6 +3965,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             &self.forms,
             revision,
             Some((unit, base)),
+            self.closure.as_ref(),
             &*self.pool,
         )
         .ok()?;
@@ -3971,27 +3984,40 @@ impl<Store, Blocks> Session<Store, Blocks>
         }
     }
 
-    /// The lowering the process holds for `revision`'s closure — its text
-    /// before `base`, `unit`'s sources before its last — lowered and kept
-    /// when the process holds none.
+    /// The lowering of `revision`'s closure — its text before `base`, `unit`'s
+    /// sources before its last: the one the session holds, or else the one
+    /// the process holds, lowered and kept when the process holds none.
+    ///
+    /// The incremental pass resumes after the lead of the closure that the
+    /// last revision laid itself after, and it knows that lead by its
+    /// identity. So the session holds its own closure, and a lowering of the
+    /// same closure that another session keeps in the process's store does
+    /// not move the session's resume.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Held::Whole`] when `unit` lays out one source, or `base` is
-    ///   not where its last source starts; otherwise what the process holds for
-    ///   the closure, or, when it holds nothing, the closure's lowering
-    ///   ([`lower_closure`]) — [`Held::Whole`] when the closure is not one a
-    ///   document can be laid after — kept in the process's store and counted
-    ///   among the session's lowerings.
+    ///   not where its last source starts; otherwise the closure the session
+    ///   holds when its text and sources are the closure's, else what the
+    ///   process holds for the closure, or, when it holds nothing, the
+    ///   closure's lowering ([`lower_closure`]) — [`Held::Whole`] when the
+    ///   closure is not one a document can be laid after — kept in the
+    ///   process's store and counted among the session's lowerings. The session
+    ///   holds the lowering that the call answers, and none for
+    ///   [`Held::Whole`].
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses read the process's store, which the
-    ///   call locks inside; the witness counts the lowerings a second judgement
-    ///   makes.
+    ///   call locks inside; the witnesses count the lowerings a second
+    ///   judgement makes, and the items that a session adopts while another
+    ///   keeps the same closure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an importer submitted twice lowers its closure once.
+    /// - hypothesis: L3 — an importer submitted twice lowers its closure once,
+    ///   and a second recheck judges no item while another session lowers and
+    ///   keeps the same closure.
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
+    /// - witness: `tests::counts::a_second_recheck_judges_no_item_when_another_session_keeps_the_closure_6536`
     fn closure_lowering(
         &mut self,
         revision: SourceText<'_>,
@@ -4001,33 +4027,41 @@ impl<Store, Blocks> Session<Store, Blocks>
     {
         let Some((text, sources)) = closure_of(revision, unit, base)
         else {
+            self.closure = None;
             return Held::Whole;
         };
-        let fingerprint = self.grammar.fingerprint();
-        if let Some(held) = lowerings::find(text, sources, fingerprint) {
-            return held;
+        if let Some(own) = own_closure(self.closure.as_ref(), text, sources) {
+            return Held::Lowered(own);
         }
-        let held = unit
-            .before_last()
-            .ok()
-            .and_then(|closure| {
-                lower_closure(
-                    Arc::clone(&self.grammar),
-                    String::from(<&str>::from(text)),
-                    closure,
-                    &mut self.lowerings,
-                )
+        let fingerprint = self.grammar.fingerprint();
+        let held = lowerings::find(text, sources, fingerprint).unwrap_or_else(|| {
+            let held = unit
+                .before_last()
                 .ok()
-            })
-            .map_or(Held::Whole, |lowered| {
-                Held::Lowered(Arc::new(Closure::new(lowered)))
-            });
-        lowerings::keep(
-            String::from(<&str>::from(text)),
-            sources.to_vec(),
-            fingerprint,
-            held.clone(),
-        );
+                .and_then(|closure| {
+                    lower_closure(
+                        Arc::clone(&self.grammar),
+                        String::from(<&str>::from(text)),
+                        closure,
+                        &mut self.lowerings,
+                    )
+                    .ok()
+                })
+                .map_or(Held::Whole, |lowered| {
+                    Held::Lowered(Arc::new(Closure::new(lowered)))
+                });
+            lowerings::keep(
+                String::from(<&str>::from(text)),
+                sources.to_vec(),
+                fingerprint,
+                held.clone(),
+            );
+            held
+        });
+        self.closure = match held {
+            Held::Lowered(ref closure) => Some(Arc::clone(closure)),
+            Held::Whole => None,
+        };
         held
     }
 
@@ -4555,6 +4589,35 @@ fn closure_of<'revision, 'unit>(
     Some((SourceText::from(text), sources))
 }
 
+/// `own`, the closure a session holds, when it is the lowering of the closure
+/// laid out as `text` over `sources`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `own` when its lowering's text is `text` and its unit's sources
+///   are `sources`; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Session::judge_unit_reading`]: a session judges
+///   after the closure it holds while another session keeps another lowering of
+///   it.
+/// - witness: `tests::counts::a_second_recheck_judges_no_item_when_another_session_keeps_the_closure_6536`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|found| own.is_some_and(|own| Arc::ptr_eq(found, own))))]
+fn own_closure(
+    own: Option<&Arc<Closure>>,
+    text: SourceText<'_>,
+    sources: &[UnitSource],
+) -> Option<Arc<Closure>>
+{
+    own.filter(|own| {
+        <&str>::from(own.lowering().text()) == <&str>::from(text)
+            && own.lowering().unit().sources() == sources
+    })
+    .map(Arc::clone)
+}
+
 /// `revision` parsed through `forms` inside [`Phase::Parse`], its molding
 /// forked on `pool`. When `sink` answers rings, the molding forks through the
 /// pool's recording fork, and each molding job marks the ring of its thread.
@@ -4611,13 +4674,14 @@ where
 /// Parse `revision` through `forms` without changing it, as the judgement of
 /// a document laid out by `laid`'s unit with its own text from `laid`'s base
 /// on reads it: the document's own text laid after its closure's tree when
-/// the process holds the closure's lowering, else the whole text.
+/// `own` or the process holds the closure's lowering, else the whole text.
 ///
 /// # Specification
 /// - requires: `laid`, when given, lays `revision` out.
 /// - ensures: the joined parse, the document's form census and the closure when
-///   the process holds the closure's lowering, else [`FormStore::parse_held`]
-///   of `revision` and no closure.
+///   `own` is the closure's lowering ([`own_closure`]), else when the process
+///   holds the closure's lowering; else [`FormStore::parse_held`] of `revision`
+///   and no closure.
 /// - fails: the commit's [`MeldError`], and a join the closure's tree refuses
 ///   as [`MeldError::Build`].
 /// - panics: only by propagating a molding job's panic.
@@ -4636,6 +4700,7 @@ fn parse_held_laid<'text, F>(
     forms: &FormStore,
     revision: SourceText<'text>,
     laid: Option<(&Unit, ByteOffset)>,
+    own: Option<&Arc<Closure>>,
     fork: &F,
 ) -> Result<(ParseResult<'text>, FormCensus, Option<Arc<Closure>>), MeldError>
 where
@@ -4643,7 +4708,11 @@ where
 {
     let held = laid
         .and_then(|(unit, base)| closure_of(revision, unit, base))
-        .and_then(|(text, sources)| lowerings::find(text, sources, grammar.fingerprint()));
+        .and_then(|(text, sources)| {
+            own_closure(own, text, sources)
+                .map(Held::Lowered)
+                .or_else(|| lowerings::find(text, sources, grammar.fingerprint()))
+        });
     match held {
         Some(Held::Lowered(closure)) => {
             let document = SourceText::from(
@@ -4712,8 +4781,9 @@ where
         Laying::Alone => None,
         Laying::Member { unit, base: own } => Some((unit, own)),
     };
-    let (parsed, census, _closure) = parse_held_laid(grammar, forms, candidate, laid_out, fork)
-        .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
+    let (parsed, census, _closure) =
+        parse_held_laid(grammar, forms, candidate, laid_out, None, fork)
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
     let lowering = match laying {
         Laying::Alone => lower_parsed(
             grammar,

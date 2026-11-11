@@ -243,6 +243,47 @@ fn a_second_recheck_counts_no_judged_item()
     );
 }
 
+/// #6536: two sessions judge two corpus sources laid out after the same
+/// closure, each on its own thread, and recheck each unchanged text twice.
+/// Both sessions lower the closure at once, and the process's store keeps
+/// the lowering that the later keep gives it. The adoption of an item reads
+/// only the session's own checkpoints and the content of the closure, so
+/// each second recheck judges no item. A session that resumes after the
+/// lead of the other session's lowering judges its first item again.
+#[test]
+fn a_second_recheck_judges_no_item_when_another_session_keeps_the_closure_6536()
+{
+    let sources = ["functions.gandr", "values.gandr"].map(|name| {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/strict")
+            .join(name);
+        let text = std::fs::read_to_string(&path).expect("the corpus source is read");
+        (path, text)
+    });
+    for round in 0_u8 .. 50 {
+        std::thread::scope(|scope| {
+            let runs = sources.each_ref().map(|&(ref path, ref text)| {
+                scope.spawn(move || {
+                    let mut session = session(SourceRoot::Strict);
+                    let _first = recheck(&mut session, (path, Text(text)));
+                    recheck(&mut session, (path, Text(text)))
+                })
+            });
+            for (run, &(ref path, _)) in runs.into_iter().zip(&sources) {
+                let second = run.join().expect("the session's thread ends");
+                for counts in &second {
+                    assert_eq!(
+                        work(counts).judged,
+                        0,
+                        "round {round}: a second recheck of {} judges no item: {counts:?}",
+                        path.display()
+                    );
+                }
+            }
+        });
+    }
+}
+
 /// #6566: in a process that holds its kernel's verdicts, as the language
 /// server does, the first recheck of a corpus source checks each declaration,
 /// expanding goals, and records each one's verdict. The second recheck of the
