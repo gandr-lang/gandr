@@ -9,9 +9,9 @@
 // A face lists only labels its record holds, and each face has its own name. A
 // static bracket fixes only the fields its record type writes, and a face only
 // when the type member names it. A face's refusal covers its record and marks
-// the label; the others stand at the second name or at the face. A fixed value
-// has its field's type: a refusal stands at the value. A fixed field holds its
-// bracket's value: a refusal stands at the field or the configuration.
+// the label, and the others stand at the second name or at the face. A fixed
+// value has its field's type, and a fixed field holds its bracket's value. Each
+// of the two refusals stands at the value, the field or the configuration.
 //
 // The types stand in a module, whose members carry the verdict each refusal
 // states. Each refusal names the face and the record type. Two faces of a
