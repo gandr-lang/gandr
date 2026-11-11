@@ -406,10 +406,12 @@
 //! # A readmission resumes the leading declarations it was handed
 //!
 //! [`readmit_resuming`] records what its first declarations built — the
-//! kernel environment, the positions they took, their kernel bodies, exports
-//! and outcomes, as a [`Crossed`] — and a later readmission of a report that
-//! leads with the same declarations starts from that record rather than
-//! crossing them again. An editor's recheck readmits a document laid out after
+//! kernel environment with the outcomes its checks kept, the positions they
+//! took, their kernel bodies, exports and outcomes, as a [`Crossed`] — and a
+//! later readmission of a report that leads with the same declarations starts
+//! from that record rather than crossing them again, its declarations after
+//! the boundary answered from those kept outcomes as a whole readmission
+//! answers them. An editor's recheck readmits a document laid out after
 //! its import closure, and an edit to the document leaves the closure's
 //! declarations as they were; on the λ-calculus closure of #776 readmitting
 //! them took 85 ms of each recheck with specifications enforced, the
@@ -1690,13 +1692,13 @@ impl Crossed
     ///   follows the `from` resumed; as [`crossed::Absent::Unadmitted`] when an
     ///   entry is neither admitted nor static; as
     ///   [`crossed::Absent::Unaligned`] when a seal is open; otherwise the
-    ///   environment handed on ([`Environment::handed_on`]: its key chain
-    ///   without the verdicts this readmission checked or recalled, which its
-    ///   own receipt answers for), the entries, and the positions with no core
-    ///   body and no open seal. A record made freezes the readmission's
-    ///   environment ([`Environment::freeze`]) before keeping it, so the record
-    ///   and every readmission [`Crossed::resume`] starts from it share its
-    ///   arena.
+    ///   environment handed on ([`Environment::handed_on`]: its key chain and
+    ///   the outcomes its checks kept, without the verdicts this readmission
+    ///   checked or recalled, which its own receipt answers for), the entries,
+    ///   and the positions with no core body and no open seal. A record made
+    ///   freezes the readmission's environment ([`Environment::freeze`]) before
+    ///   keeping it, so the record and every readmission [`Crossed::resume`]
+    ///   starts from it share its arena.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1774,13 +1776,14 @@ impl Crossed
     ///   under a verdict of the kind that entry's outcome crossed: a body for
     ///   [`Outcome::Defined`], a body or a world for [`Outcome::Static`], a
     ///   nominal declaration for [`Outcome::Data`], a signed one for
-    ///   [`Outcome::Assumed`]. Then the record's environment, its positions
-    ///   with each core body defined and each data signature presented again
-    ///   from `report` in order, as crossing them did, and its entries with
-    ///   `report`'s origins. The native signatures and the free models the
-    ///   record holds are the ones its declarations read, each seeded at its
-    ///   first reader, so the native operations and the effects of the arena
-    ///   past them do not enter the agreement.
+    ///   [`Outcome::Assumed`]. Then the record's environment as
+    ///   [`Environment::handed_on`] copies it, with the outcomes its run kept,
+    ///   its positions with each core body defined and each data signature
+    ///   presented again from `report` in order, as crossing them did, and its
+    ///   entries with `report`'s origins. The native signatures and the free
+    ///   models the record holds are the ones its declarations read, each
+    ///   seeded at its first reader, so the native operations and the effects
+    ///   of the arena past them do not enter the agreement.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1837,7 +1840,7 @@ impl Crossed
         }
         let mut positions = self.positions.clone();
         positions.definitions = definitions;
-        Some((self.environment.clone(), positions, readmitted))
+        Some((self.environment.handed_on(), positions, readmitted))
     }
 }
 

@@ -1409,12 +1409,18 @@ pub(crate) static NO_ENTRIES: Entries = Entries::new();
 /// for the environment's life, and the scratch table admission names each
 /// plain definition through.
 ///
-/// A clone starts empty and names the nodes it reads afresh.
+/// A clone starts empty and names the nodes it reads afresh;
+/// [`Self::carried`] keeps the names and the kept outcomes.
 #[derive(Debug, Default)]
 struct Names
 {
-    /// The session every admission's check is lent.
+    /// The session every admission's check is lent, empty while `shared`
+    /// holds it.
     session: crate::support::SupportContext,
+    /// The session shared with the environments that
+    /// [`Environment::handed_on`] made after a freeze, until a check of this
+    /// environment takes it ([`Self::session_mut`]).
+    shared: Option<alloc::sync::Arc<crate::support::SupportContext>>,
     /// The table [`crate::encoding::name_definition`] clears and reuses.
     definitions: crate::encoding::ContentTable,
 }
@@ -1429,6 +1435,75 @@ impl Clone for Names
     fn clone(&self) -> Self
     {
         Self::default()
+    }
+}
+
+impl Names
+{
+    /// The names and the kept outcomes of this session, for an environment
+    /// that continues this one's arena: shared when the session is shared,
+    /// else copied as
+    /// [`SupportContext::carried`](crate::support::SupportContext::carried)
+    /// copies them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn carried(&self) -> Self
+    {
+        self.shared.as_ref().map_or_else(
+            || Self {
+                session: self.session.carried(),
+                ..Self::default()
+            },
+            |shared| Self {
+                shared: Some(alloc::sync::Arc::clone(shared)),
+                ..Self::default()
+            },
+        )
+    }
+
+    /// Share the session with the environments handed on after this call.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn share(&mut self)
+    {
+        if self.shared.is_none() {
+            self.shared = Some(alloc::sync::Arc::new(core::mem::take(&mut self.session)));
+        }
+    }
+
+    /// The session, read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    fn session(&self) -> &crate::support::SupportContext
+    {
+        self.shared.as_deref().unwrap_or(&self.session)
+    }
+
+    /// The session, to lend a check: this environment's own, taken from the
+    /// share when no other environment holds it, else copied as
+    /// [`SupportContext::carried`](crate::support::SupportContext::carried)
+    /// copies it. So only an environment that checks a declaration pays for
+    /// the copy.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn session_mut(&mut self) -> &mut crate::support::SupportContext
+    {
+        if let Some(shared) = self.shared.take() {
+            // economy: the copy is linear in the table and the kept memo that
+            // the share holds, and the first check of each resumed readmission
+            // pays it; #4369 bounds the keystroke by the edit.
+            self.session =
+                alloc::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| shared.carried());
+        }
+        &mut self.session
     }
 }
 
@@ -1551,15 +1626,18 @@ impl Environment
     }
 
     /// This environment for a later run that resumes it: the same arena,
-    /// declarations and key chain, without the verdicts this run checked or
-    /// recalled, which its own receipt and [`Self::recalls`] answer for.
+    /// declarations and key chain, and the names and kept outcomes of its
+    /// session, without the verdicts this run checked or recalled, which its
+    /// own receipt and [`Self::recalls`] answer for. After a [`Self::freeze`]
+    /// the copy shares the session until its first check; before one, it
+    /// copies the session at once.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: every read of the declarations answers as `self` answers it,
-    ///   and a declaration admitted next is keyed as it would be in `self`;
-    ///   [`Self::receipt`] answers absent and [`Self::recalls`] zero until the
-    ///   copy admits a declaration.
+    ///   and a declaration admitted next is keyed and answered from kept
+    ///   outcomes as it would be in `self`; [`Self::receipt`] answers absent
+    ///   and [`Self::recalls`] zero until the copy admits a declaration.
     /// - provides: the environment a readmission records for another to resume,
     ///   so each receipt signs only what its own run checked.
     /// - fails: never.
@@ -1569,9 +1647,11 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a copy handed on after a recorded run recalls a later
-    ///   declaration under the key the run would have given it, and neither
-    ///   signs nor counts what the run admitted.
+    ///   declaration under the key the run would have given it, stands on the
+    ///   outcomes the run kept, and neither signs nor counts what the run
+    ///   admitted.
     /// - witness: `tests::verdicts::a_handed_on_environment_keys_on_and_signs_only_its_own`
+    /// - witness: `env::tests::a_handed_on_environment_stands_on_the_kept_outcomes_of_its_run_6468`
     #[inline]
     #[must_use]
     pub fn handed_on(&self) -> Self
@@ -1583,7 +1663,7 @@ impl Environment
             outstanding: self.outstanding.clone(),
             manifest: self.manifest.clone(),
             verdicts: self.verdicts.handed_on(),
-            names: Names::default(),
+            names: self.names.carried(),
             admitting: crate::admitted::AdmissionPolicy::Derive,
             admitted: crate::admitted::AdmittedCount::NONE,
         }
@@ -1592,7 +1672,10 @@ impl Environment
     /// Share the arena's nodes and the admitted declarations with every clone
     /// of the environment made after: such a clone copies, and its drop
     /// releases, only what was minted and admitted after the freeze
-    /// ([`TermArena::freeze`], [`Family::freeze`]).
+    /// ([`TermArena::freeze`], [`Family::freeze`]). Share the session's names
+    /// and kept outcomes with every environment [`Self::handed_on`] makes
+    /// after: the first check of an environment that shares them with another
+    /// copies them.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1600,7 +1683,8 @@ impl Environment
     ///   admission, rejection and every read answer as they would have
     ///   unfrozen.
     /// - provides: the environment a readmission records, which each
-    ///   readmission resuming it copies at the cost of what it admits.
+    ///   readmission resuming it copies at the cost of what it admits, and of
+    ///   the session when it checks a declaration.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1619,6 +1703,7 @@ impl Environment
     {
         self.arena.freeze();
         self.entries.freeze();
+        self.names.share();
     }
 
     /// The arena, for a consumer reading admitted content.
@@ -1960,7 +2045,7 @@ impl Environment
                             .unsealing(manifest)
                             .taking(crate::admitted::Taking::under(admitting, &taken)),
                         &declaration,
-                        &mut names.session,
+                        names.session_mut(),
                         &mut census,
                     ),
                     Admission::Checked,
@@ -2227,7 +2312,7 @@ impl Environment
                 // admitted at a reused position is named as its own admission
                 // names it.
                 self.names
-                    .session
+                    .session_mut()
                     .forget_constants_from(ConstantIndex::from(usize::from(base)));
                 self.manifest = manifest;
                 self.arena.truncate_to(rejected);
@@ -2304,7 +2389,7 @@ impl Environment
                         members,
                     ),
                 member.declared_id(),
-                &mut names.session,
+                names.session_mut(),
                 census,
             )?;
             self.arena.truncate_to(content_end);
@@ -2339,7 +2424,7 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member, &mut names.session, census)?
+                check::check_declaration(arena, judgement, member, names.session_mut(), census)?
             };
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
@@ -3707,6 +3792,7 @@ mod tests
 
     use super::CheckedId;
     use super::Environment;
+    use super::ExpansionCensus;
     use super::OutstandingCount;
     use super::StagedDeclaration;
     use super::StagedMarks;
@@ -3746,30 +3832,36 @@ mod tests
         );
     }
 
+    /// The census of a unit definition admitted into `environment`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_unit(environment: &mut Environment) -> ExpansionCensus
+    {
+        let staged = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        let admitted = environment
+            .add_decl(staged)
+            .expect("a unit definition admits");
+        let super::Maybe::Present(census) = environment
+            .entries()
+            .get(usize::from(admitted.position()))
+            .expect("an admitted declaration has an entry")
+            .census()
+        else {
+            panic!("a checked admission keeps its census");
+        };
+        census
+    }
+
     #[test]
     fn a_repeated_declaration_is_answered_by_the_kept_outcomes_of_the_first()
     {
         let mut environment = Environment::new();
-        let admit_unit = |environment: &mut Environment| {
-            let staged = {
-                let mut staging = environment.stage();
-                let declared = staging.arena().value_type_unit();
-                let body = staging.arena().value_unit();
-                staging.def(LevelSignature::monomorphic(), declared, body)
-            };
-            let admitted = environment
-                .add_decl(staged)
-                .expect("a unit definition admits");
-            let super::Maybe::Present(census) = environment
-                .entries()
-                .get(usize::from(admitted.position()))
-                .expect("an admitted declaration has an entry")
-                .census()
-            else {
-                panic!("a checked admission keeps its census");
-            };
-            census
-        };
         let first = admit_unit(&mut environment);
         let second = admit_unit(&mut environment);
         assert_eq!(
@@ -3803,6 +3895,36 @@ mod tests
                 .map(super::AdmittedDeclaration::census),
             Some(super::Maybe::Absent(super::tallied::Absent::Unchecked)),
             "the bypass runs no check, so it answers no tally"
+        );
+    }
+
+    /// An environment handed on before a freeze copies the session at once.
+    /// One handed on after it shares the session: the first to check copies
+    /// it, and the last holder takes it whole. Each path stands on the kept
+    /// outcomes, and a copy that dropped them, or a share that one check
+    /// changed for another, changes a census.
+    #[test]
+    fn a_handed_on_environment_stands_on_the_kept_outcomes_of_its_run_6468()
+    {
+        let mut environment = Environment::new();
+        let _first = admit_unit(&mut environment);
+        let mut copied = environment.handed_on();
+        environment.freeze();
+        let mut shared = environment.handed_on();
+        let mut last = environment.handed_on();
+        let continued = admit_unit(&mut environment);
+        assert!(
+            u64::from(continued.kept()) > 0,
+            "the recorded run stands on its own kept outcomes: {continued:?}"
+        );
+        assert_eq!(
+            [
+                admit_unit(&mut copied),
+                admit_unit(&mut shared),
+                admit_unit(&mut last)
+            ],
+            [continued; 3],
+            "each environment handed on charges the goals the recorded run charges"
         );
     }
 
@@ -3866,7 +3988,7 @@ mod tests
             .expect("a reference to the definition admits");
         assert!(
             matches!(
-                environment.names.session.constant_name(definition),
+                environment.names.session().constant_name(definition),
                 Some(crate::encoding::ConstantName::Definition { .. })
             ),
             "the refused member's positional name leaves the table with it, so \
