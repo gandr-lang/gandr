@@ -1,0 +1,88 @@
+test: corpus::every_refusing_source_renders_as_its_golden
+package: gandr-surface-render-terminal
+command: mise run debug:test gandr-surface-render-terminal corpus::every_refusing_source_renders_as_its_golden --break rendered
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-render-terminal/dcd47e57f5c68496/out/tests-dcd47e57f5c68496"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-render-terminal/dcd47e57f5c68496/out/tests-dcd47e57f5c68496' (x86_64).
+(lldb) settings set -- target.run-args  "corpus::every_refusing_source_renders_as_its_golden" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex rendered
+Breakpoint 1: 152 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-dcd47e57f5c68496`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000048bb768
+(lldb) run
+
+running 1 test
+test corpus::every_refusing_source_renders_as_its_golden ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1241538 launched: 'target/debug-trace/debug/build/gandr-surface-render-terminal/dcd47e57f5c68496/out/tests-dcd47e57f5c68496' (x86_64)
+Process 1241538 stopped
+* thread #2, name = 'corpus::every_r', stop reason = breakpoint 1.37
+       frame #0: 0x00005555565732bb tests-dcd47e57f5c68496`tests::corpus::rendered(repository="~/Development/gandr-lang/gandr-worktrees/triage-6479-faces-landing") at corpus.rs:79:9
+   76  	/// trivial.
+   77  	fn rendered(repository: &Path) -> BTreeMap<PathBuf, String>
+   78  	{
+-> 79  	    let corpus = repository.join("corpus");
+    	        ^
+   80  	    let prefix = format!("{}/", repository.display());
+   81  	    let roots = REFUSING.map(|directory| corpus.join(directory)).to_vec();
+   82  	    let mut rendered = BTreeMap::new();
+(lldb) bt 24
+* thread #2, name = 'corpus::every_r', stop reason = breakpoint 1.37
+   * frame #0: 0x00005555565732bb tests-dcd47e57f5c68496`tests::corpus::rendered(repository="~/Development/gandr-lang/gandr-worktrees/triage-6479-faces-landing") at corpus.rs:79:9
+     frame #1: 0x0000555556573be3 tests-dcd47e57f5c68496`tests::corpus::every_refusing_source_renders_as_its_golden at corpus.rs:130:29
+     frame #2: 0x00005555565718d7 tests-dcd47e57f5c68496`tests::corpus::every_refusing_source_renders_as_its_golden::{closure#0}((null)={}) at corpus.rs:124:49
+     frame #3: 0x0000555556562fe6 tests-dcd47e57f5c68496`<tests::corpus::every_refusing_source_renders_as_its_golden::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x000055555658a0eb tests-dcd47e57f5c68496`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x000055555658a0e9 tests-dcd47e57f5c68496`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x0000555556597635 tests-dcd47e57f5c68496`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x0000555556597630 tests-dcd47e57f5c68496`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555556597630 tests-dcd47e57f5c68496`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x000055555659761b tests-dcd47e57f5c68496`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x000055555659761b tests-dcd47e57f5c68496`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x000055555659761b tests-dcd47e57f5c68496`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x0000555556597606 tests-dcd47e57f5c68496`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x0000555556591ff4 tests-dcd47e57f5c68496`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x0000555556591f79 tests-dcd47e57f5c68496`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x000055555659a792 tests-dcd47e57f5c68496`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x000055555659a783 tests-dcd47e57f5c68496`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x000055555659a783 tests-dcd47e57f5c68496`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x000055555659a773 tests-dcd47e57f5c68496`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x000055555659a773 tests-dcd47e57f5c68496`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x000055555659a773 tests-dcd47e57f5c68496`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x000055555659a764 tests-dcd47e57f5c68496`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x0000555559e3569f tests-dcd47e57f5c68496`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x0000555559e35698 tests-dcd47e57f5c68496`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(&std::path::Path) repository = "~/Development/gandr-lang/gandr-worktrees/triage-6479-faces-landing" {
+  data_ptr = 0x00007ffff0000e50 {inner:{inner:{inner:"~/Development/gandr-lang/gandr-worktrees/triage-6479-faces-landing"}}}
+  length = 82
+}
+(lldb) up
+frame #1: 0x0000555556573be3 tests-dcd47e57f5c68496`tests::corpus::every_refusing_source_renders_as_its_golden at corpus.rs:130:29
+   127 	    let goldens = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/corpus");
+   128 	    let update = std::env::var_os("UPDATE_EXPECT").is_some();
+   129 	    let mut expected: BTreeSet<PathBuf> = BTreeSet::new();
+-> 130 	    for (relative, text) in rendered(&repository) {
+    	                            ^
+   131 	        let golden = goldens.join(relative).with_extension("txt");
+   132 	        if update && let Some(parent) = golden.parent() {
+   133 	            std::fs::create_dir_all(parent).expect("the golden's directory is created");
+(lldb) frame variable --depth 3
+(std::path::PathBuf) repository = "~/Development/gandr-lang/gandr-worktrees/triage-6479-faces-landing" {
+  inner = "~/Development/gandr-lang/gandr-worktrees/triage-6479-faces-landing" {
+    inner = {inner:size=82}
+  }
+}
+(std::path::PathBuf) goldens = "crates/surface-render-terminal/tests/golden/corpus" {
+  inner = "crates/surface-render-terminal/tests/golden/corpus" {
+    inner = {inner:size=133}
+  }
+}
+(bool) update = false
+(alloc::collections::btree::set::BTreeSet<std::path::PathBuf, alloc::alloc::Global>) expected = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
