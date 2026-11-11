@@ -459,10 +459,11 @@ mod sweeps
     };
 
     /// The nights the nightly profile takes to script every source: a
-    /// seventh a night, the count the nightly's sweeps share (#3013). An
-    /// eighth of the corpus scripted with specifications enforced took 67 s
-    /// on the nightly runner (run 40602657172).
-    const NIGHTS: Nights = Nights(7);
+    /// twenty-first a night, three times the seventh of #3013, so the night's
+    /// sweeps fit its budget (#6704). An eighth of the corpus scripted with
+    /// specifications enforced took 67 s on the nightly runner (run
+    /// 40602657172).
+    const NIGHTS: Nights = Nights(21);
 
     /// The longest source text, its import closure laid out before it, a
     /// sampled run scripts. A script submits the text ten times, and where
