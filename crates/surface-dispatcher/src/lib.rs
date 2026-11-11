@@ -267,6 +267,7 @@ pub use crate::compose::admitted;
 pub use crate::compose::compose;
 pub use crate::compose::compose_on;
 pub use crate::compose::item_program;
+pub use crate::compose::item_sources;
 pub use crate::compose::judge;
 pub use crate::compose::judge_member;
 pub use crate::compose::judge_member_after;
