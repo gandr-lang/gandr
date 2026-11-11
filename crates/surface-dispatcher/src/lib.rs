@@ -259,6 +259,7 @@ pub use crate::compose::Recording;
 pub use crate::compose::Rejection;
 pub use crate::compose::Resumption;
 pub use crate::compose::SpellingCount;
+pub use crate::compose::Supporting;
 pub use crate::compose::Unheld;
 pub use crate::compose::Unruled;
 pub use crate::compose::adapt;

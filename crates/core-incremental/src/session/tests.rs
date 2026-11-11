@@ -298,7 +298,7 @@ fn a_retired_submission_keeps_the_resume_it_held_1547()
         readings: core::cell::Cell::new(0),
     };
     let retired = session
-        .submit_retiring(&mut edited(), &mut Quiet, &poll)
+        .submit_retiring(&mut edited(), &mut Quiet, &poll, None)
         .expect("a retired submission does not fail");
     assert!(
         matches!(retired, Polled::Retired((), ())),

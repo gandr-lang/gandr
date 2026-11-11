@@ -12,17 +12,25 @@ use Adoption::Adopted;
 use Adoption::Judged;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::ModuleRun;
 use gandr_core_checker::OriginToken;
+use gandr_core_checker::Unretired;
 use gandr_core_checker::signature;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Answer;
 use gandr_core_incremental::Answered;
+use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::Checkpoints;
+use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::Item;
 use gandr_core_incremental::ItemCheckpoint;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemKey;
+use gandr_core_incremental::Judgement;
+use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::Opacity;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
@@ -41,6 +49,7 @@ use gandr_core_incremental::submitted;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use proptest::prelude::ProptestConfig;
+use proptest::prop_assert_eq;
 use proptest::proptest;
 use quenchant_shape::shape::Maybe;
 
@@ -64,6 +73,14 @@ use crate::generate::CASES;
 use crate::generate::apply;
 use crate::generate::program_and_edit;
 use crate::generate::program_and_edits;
+
+/// An observer that ignores what it is told.
+#[derive(Debug, Default)]
+struct Quiet;
+
+impl CheckpointObserver for Quiet
+{
+}
 
 /// The type content of `String`, read off a program that ascribes it.
 ///
@@ -1602,6 +1619,72 @@ proptest! {
         for edit in &edits {
             current = apply(&current, edit);
             resumed = step(resumed, &mut lower(&current))?.resumed;
+        }
+    }
+
+    /// Over a chain of edits, a session whose pass takes each changed item's
+    /// verdict from the revision's own judgement keeps the checkpoints of a
+    /// session whose pass decides each item itself, and takes every item it
+    /// judges.
+    #[test]
+    fn a_pass_that_takes_the_judgement_checkpoints_as_one_that_decides_6573(
+        (statements, edits) in program_and_edits()
+    ) {
+        let session = || {
+            IncrementalSession::new(
+                MemoryCheckpointStore::default(),
+                BackendArtifact::from(b"core-checker".as_slice()),
+                CheckBudget::DEFAULT,
+            )
+        };
+        let (mut taking, mut deciding) = (session(), session());
+        let mut current = statements;
+        let mut revisions = vec![current.clone()];
+        for edit in &edits {
+            current = apply(&current, edit);
+            revisions.push(current.clone());
+        }
+        // Each revision's judgement mints into a copy of its lowered arena, as
+        // the dispatcher judges a revision beside the program the pass reads.
+        let mut lowered: Vec<_> = revisions
+            .iter()
+            .map(|revision| {
+                let program = lower(revision);
+                let arena = program.arena().clone();
+                (program, arena)
+            })
+            .collect();
+        for (revision, &mut (ref mut program, ref mut arena)) in revisions.iter().zip(&mut lowered) {
+            let mut run = ModuleRun::new();
+            run.keep_supports();
+            let report = {
+                let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+                run.judge(&mut context, &program.declarations(), |_, _, _| {});
+                run.finish(&mut context)
+            };
+            let census = taking
+                .submit_retiring(
+                    program,
+                    &mut Quiet,
+                    &Unretired,
+                    Some(Judgement::new(arena, &report)),
+                )
+                .expect("the order builds")
+                .whole();
+            let _decided = deciding
+                .submit(&mut lower(revision), &mut Quiet)
+                .expect("the order builds");
+            prop_assert_eq!(census.taken, census.judged, "each judged item is taken, for {:?}", revision);
+            let (Maybe::Present(taken), Maybe::Present(decided)) = (taking.last(), deciding.last())
+            else {
+                panic!("a submitted session holds a resume");
+            };
+            prop_assert_eq!(
+                taken.checkpoints().items(),
+                decided.checkpoints().items(),
+                "the checkpoints, for {:?}",
+                revision
+            );
         }
     }
 }
