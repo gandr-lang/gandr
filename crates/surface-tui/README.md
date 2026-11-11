@@ -29,6 +29,7 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 | Styling | Both const style maps have executable predicates. Finite witnesses cover all 23 roles and eight line kinds, semantic contrast and emphasis. |
 | Event loop | `drive` draws before reading and stops on quit or failure. Scripted input, modifier boundaries and partial-write failure observe its transitions and error provenance. |
 | Side view | `Following` keeps the last report of each document the render bus sends and follows the one checked last, and keeps the last activity of the hub's pool; `Following::frame` builds its fields and `rendering` lays them out as the visual language's cells, which every rule of `gandr-surface-render-remote` checks; `drive_following` paints them, the activity pane at the foot of the screen, and stops at `q`, Esc, Ctrl-C, a detach or the hub's end; `follow` runs it on the terminal and `follow_plain` prints each report to a pipe, without the activity pane. |
+| Captures | `svg` draws a run of the panes of a rendering as SVG through the view's own layout, one `<tspan>` per cell at its column and each warrant's hue a CSS variable of its colour's name. The capture tests replay the recorded frames of a scene through the view, check each state against every rule, and compare each capture with its file under `tests/captures`; `UPDATE_EXPECT=1` records them again. |
 
 ## Expected features
 
@@ -54,6 +55,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The renderer and its dependency cost, the smoke face | [`run`](src/run.rs) |
 | The style maps | [`theme`](src/theme.rs) |
 | The transcript pane | [`view`](src/view.rs) |
+| The SVG capture | [`capture`](src/capture.rs) |
 | Keys | [`app`](src/app.rs) |
 
 ## References

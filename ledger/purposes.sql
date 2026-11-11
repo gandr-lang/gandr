@@ -3529,6 +3529,7 @@ INSERT INTO purpose VALUES('surface-syntax','tree::slice::TreeSlice','struct','H
 INSERT INTO purpose VALUES('surface-tui','app::App','struct','Holds the face''s state over one read-evaluate loop, so the loop''s transcript and the line being edited are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Handled','enum','Names what a key leaves the face to do, so the key''s handling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','app::Key','enum','Names one key the face acts on, so the key''s action is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-tui','capture::svg','function','Draws a run of the panes of a rendering as SVG on a grid of monospace cells, so the capture of a pane is the view''s own layout and a changed renderer changes it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::Following','struct','Holds what the side view knows, so the last report of each document it heard is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::Heard','enum','Names what hearing a frame leaves the view to do, so the frame''s handling is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-tui','follow::Seen','enum','Names what the side view has seen, so the view''s state is read.',NULL,'fits','sound',NULL);
