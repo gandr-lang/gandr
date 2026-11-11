@@ -9,6 +9,12 @@
 // its free fields. A selection returns a fixed value. A record type ends at
 // `}` and keeps its labels as its boundary without a block. `|->` spells `↦`
 // in ASCII.
+// - record label
+// - record face
+// - record system
+// - theory boundary
+// - lazy record
+// - codata
 //
 // - see: `pathological/desc/record-faces.gandr` — a face past the labels, a
 //   face named twice, a bracket naming a field or a face the type lacks, a
@@ -16,11 +22,31 @@
 //   disagree on their meet, refused
 // - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
 //   faces
+// - owes: #6504 — a lazy record and a codata declaration hold faces.
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
   face secure = { port, tls };
   face addr = { host, port };
+
+/// A record by label fixes the secure fields.
+def record_by_label : Config[.port = 443, .tls = true] = *{.host = "localhost"};
+
+/// A record by face fixes the secure fields.
+def record_by_face : Config[secure ↦ *{.port = 443, .tls = true}] = *{.host = "localhost"};
+
+/// A record by a system of faces fixes their meet.
+def record_by_system : Config[
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+] = *{};
+
+/// A square with a far face.
+theory Sq where
+  /// Square has four boundary points.
+  boundary Square {a, b, c, d};
+  /// `far` names its two points.
+  face far = {b, c};
 
 /// A configuration states the record whatever faces it names.
 def local : Config = *{.host = "localhost", .port = 443, .tls = true};

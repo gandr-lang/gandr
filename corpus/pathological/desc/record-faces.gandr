@@ -20,6 +20,7 @@
 // - see: `model/desc/record-faces.gandr` — the faces read, and the bracket read
 // - see: `pathological/desc/shaped-signature.gandr` — a theory's faces refused
 //   alike
+// - see: #6504 — faces on lazy records and codata declarations.
 
 /// Two record types, each with a faces block the check refuses.
 module Faces where {
@@ -36,6 +37,22 @@ module Faces where {
     face addr = { host };
     face addr = { port };
 }
+
+/// An `&` record cannot declare a face.
+@[refuses("IllFormedDescription")]
+type Server = &{host : String, port : Integer, tls : Bool} where
+  /// `secure` names the port and TLS fields.
+  face secure = { port, tls };
+
+/// Stream is a codata. It cannot declare a face.
+@[refuses("MalformedForm")]
+codata Stream(a : Type) : Type[-] where
+  /// `head` yields an element.
+  head : a;
+  /// `tail` yields a stream.
+  tail : Stream a;
+  /// `front` names the head face.
+  face front = {head};
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
