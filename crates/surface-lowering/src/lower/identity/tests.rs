@@ -2043,6 +2043,49 @@ fn cong_on_a_cell_above_the_map_s_domain_takes_its_levels()
     );
 }
 
+/// #6811: `Path.ap` of a bound map on a 2-cell read no domain off the map, so
+/// it took no levels and spelled a tower one level short of the cell. A
+/// binder whose written type states a map, as a value function or as a thunk
+/// of an arrow, now gives that map's domain, and the start is `Path.ap` of the
+/// map along the reflexivity, as for a named map.
+#[test]
+fn cong_at_a_bound_map_takes_its_levels_6811()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/cong-at-a-bound-map-takes-its-levels-6811-module.gandr"
+        )),
+        &mut arena,
+    );
+    for name in ["onBoundCell", "onThunkedCell"] {
+        let tail = tail_of(&module, &arena, name.into());
+        let Some(&Computation::PathTransport { value, .. }) = arena.computation(tail)
+        else {
+            panic!(
+                "`{name}` lowers to a transport: {:?}",
+                arena.computation(tail)
+            );
+        };
+        let Some(&Value::Here(start)) = arena.value(value)
+        else {
+            panic!("`{name}` transports the reflexivity at its start");
+        };
+        let run = match arena.value(start) {
+            Some(&Value::Returned(run)) => arena.computation(run),
+            _ => None,
+        };
+        assert!(
+            matches!(
+                run,
+                Some(&Computation::PathTransport { path, .. })
+                    if matches!(arena.value(path), Some(&Value::Here(_)))
+            ),
+            "at `{name}` the start is `Path.ap` of the bound map along the reflexivity: {run:?}"
+        );
+    }
+}
+
 /// #6492: `Path.ap f (Path.here c)` in a type, `c` a point of a family with
 /// no parameters, was refused `Unannotated`: the reflexivity read no type off
 /// a constructor, and a reflexivity of a reflexivity read none either. The

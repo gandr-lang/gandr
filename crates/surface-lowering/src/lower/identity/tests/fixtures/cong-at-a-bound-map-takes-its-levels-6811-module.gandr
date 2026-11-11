@@ -1,0 +1,17 @@
+data S2 : Type where
+  | Base2 : S2
+  | surf : Path.here Base2 <-> Path.here Base2
+
+def onBoundCell(
+  g : S2 -> S2,
+  c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
+) -> Path[.A = Path[.A = S2](g Base2, g Base2)](Path.here (g Base2), Path.here (g Base2)) {
+  become Path.ap g c
+}
+
+def onThunkedCell(
+  h : +U (S2 -> -F S2),
+  c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
+) -> Path[.A = Path[.A = S2](h Base2, h Base2)](Path.here (h Base2), Path.here (h Base2)) {
+  become Path.ap h c
+}
