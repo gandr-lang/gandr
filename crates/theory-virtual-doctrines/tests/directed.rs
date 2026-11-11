@@ -418,10 +418,12 @@ mod tests
     #[test]
     fn the_end_and_coend_collect_the_diagonal_components()
     {
-        let diagram = Diagram::new(vec![
-            (ct(NameRef::from("P0")), ct(NameRef::from("V0"))),
-            (ct(NameRef::from("P1")), ct(NameRef::from("V1"))),
-        ]);
+        let diagram = Diagram {
+            entries: vec![
+                (ct(NameRef::from("P0")), ct(NameRef::from("V0"))),
+                (ct(NameRef::from("P1")), ct(NameRef::from("V1"))),
+            ],
+        };
         assert_eq!(
             End::of(&diagram).components,
             vec![ct(NameRef::from("V0")), ct(NameRef::from("V1"))],
@@ -497,7 +499,9 @@ mod tests
     #[test]
     fn coyoneda_is_none_off_carrier()
     {
-        let diagram = Diagram::new(vec![(ct(NameRef::from("P0")), ct(NameRef::from("V0")))]);
+        let diagram = Diagram {
+            entries: vec![(ct(NameRef::from("P0")), ct(NameRef::from("V0")))],
+        };
         assert_eq!(
             Maybe::Absent(
                 gandr_theory_virtual_doctrines::directed::coend::carrier_lookup::Absent::OffCarrier
@@ -516,12 +520,12 @@ mod tests
                 pick in 0_usize .. 64,
             ) {
                 let mut spelled = String::new();
-                let diagram = Diagram::new(
-                    indices
+                let diagram = Diagram {
+                    entries: indices
                         .iter()
                         .map(|&index| (spelled_ct(&mut spelled, format_args!("P{index}")), spelled_ct(&mut spelled, format_args!("V{index}"))))
                         .collect::<Vec<_>>(),
-                );
+                };
                 let chosen = pick.checked_rem(diagram.entries.len()).expect("entries are nonempty");
                 let object = diagram.entries[chosen].0.clone();
                 let expected = ct(NameRef::from(format!("V{}", indices[chosen]).as_str()));
