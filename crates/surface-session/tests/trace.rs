@@ -18,6 +18,7 @@ use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::Counts;
 use gandr_surface_session::DerivationNode;
 use gandr_surface_session::Instrument;
+use gandr_surface_session::Lay;
 use gandr_surface_session::MemoMark;
 use gandr_surface_session::Session;
 use gandr_surface_session::Trace;
@@ -155,7 +156,7 @@ fn each_judged_declaration_keeps_the_tree_its_judgement_visited()
         );
         let root = nodes.first().expect("a tree has a root");
         assert!(
-            matches!(derivation.goals().goal(root, page), Maybe::Present(ref goal) if !goal.as_ref().is_empty())
+            matches!(derivation.goals().goal(root, Lay::Page(page)), Maybe::Present(ref goal) if !goal.as_ref().is_empty())
                 && !derivation.rule(root).as_ref().is_empty(),
             "the root at {constant:?} prints its goal and names its rule"
         );
@@ -212,7 +213,7 @@ fn a_deep_goal_prints_as_it_does_with_no_ceiling_6747()
     let printed: Vec<String> = derivation
         .nodes()
         .iter()
-        .filter_map(|node| match goals.goal(node, page) {
+        .filter_map(|node| match goals.goal(node, Lay::Page(page)) {
             Maybe::Present(goal) => Some(format!("{goal}")),
             Maybe::Absent(_) => None,
         })
@@ -257,7 +258,7 @@ fn a_goal_prints_its_binders_as_the_source_names_them_6717()
             derivation
                 .nodes()
                 .iter()
-                .filter_map(|node| match goals.goal(node, page) {
+                .filter_map(|node| match goals.goal(node, Lay::Page(page)) {
                     Maybe::Present(goal) => Some(format!("{goal}")),
                     Maybe::Absent(_) => None,
                 })

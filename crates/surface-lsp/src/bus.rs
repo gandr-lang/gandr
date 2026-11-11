@@ -39,15 +39,18 @@
 //! A client that sends a trace frame subscribes to the trace layer
 //! (`Workspace::trace`): each job of every connection then traces while the
 //! client is attached. The face sends it the derivation card of the
-//! declaration at the cursor (`Workspace::derived`), its goals laid out at the
-//! columns that the client stated: at once, then after each publication, each
-//! admission and each move of the cursor, and nothing when the frame did not
-//! change. So a cursor that moves inside one declaration sends no card. A
-//! client that sends no trace frame is sent no card, and its attachment makes
-//! no job trace. A declaration that a job judged before the first trace frame
-//! holds no tree, so the first trace frame makes each connection judge its
-//! documents again at the trace layer (#6716). A view that attaches after the
-//! editor's last job thus hears the card with no edit.
+//! declaration at the cursor (`Workspace::derived`), each goal and type on one
+//! line, cut to the room that the client's columns leave it: at once, then
+//! after each publication, each admission and each move of the cursor, and
+//! nothing when the frame did not change. So a cursor that moves inside one
+//! declaration sends no card. A card holds no layout: an open frame from the
+//! client names one node of the card, and the face answers its whole goal laid
+//! out at the client's columns (`Workspace::opened`). A client that sends no
+//! trace frame is sent no card, and its attachment makes no job trace. A
+//! declaration that a job judged before the first trace frame holds no tree,
+//! so the first trace frame makes each connection judge its documents again at
+//! the trace layer (#6716). A view that attaches after the editor's last job
+//! thus hears the card with no edit.
 //!
 //! In the build with the `instrument` feature, the face also watches the
 //! hub's work ledger at the cadence of the rows while the renderer is
@@ -92,10 +95,12 @@ use std::sync::mpsc::channel;
 use std::thread;
 
 use gandr_surface_render_remote::AccountCard;
+use gandr_surface_render_remote::AccountKey;
 use gandr_surface_render_remote::Count;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::FrameBody;
 use gandr_surface_render_remote::FrameScope;
+use gandr_surface_render_remote::NodeAt;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_render_remote::account_edits;
 
@@ -245,12 +250,15 @@ fn send(
 ///   layer, and the first one makes every connection judge its documents again
 ///   at that layer; after it, each of those events and the trace frame itself
 ///   also send the derivation card at the document's cursor when its frame
-///   changed, and a resync sends it whole. Frames are written one line each, in
-///   the order the face made them. In the build with the `instrument` feature,
-///   each tick of the hub's work ledger that changes the pane sends the pool's
-///   activity, connection-scoped, and a tick that leaves it as it was sends
-///   nothing. The face returns when the client's stream ends, a line is not a
-///   frame, or a write fails.
+///   changed, and a resync sends it whole. An open frame from a subscribed
+///   client is answered with the whole goal of the node it names, absent when
+///   the card at the cursor has another key or the node has no goal; an open
+///   frame from any other client is answered with nothing. Frames are written
+///   one line each, in the order the face made them. In the build with the
+///   `instrument` feature, each tick of the hub's work ledger that changes the
+///   pane sends the pool's activity, connection-scoped, and a tick that leaves
+///   it as it was sends nothing. The face returns when the client's stream
+///   ends, a line is not a frame, or a write fails.
 /// - provides: `gandr serve`'s render-bus face, which `gandr view` attaches to.
 /// - fails: never; a fault ends the connection.
 /// - panics: none.
@@ -269,7 +277,8 @@ fn send(
 ///   time leaves the window. The view hears the stack card at the cursor the
 ///   editor's signature help names, and a card again after an edit changes it.
 ///   A view of the trace layer hears the derivation card of the declaration at
-///   that cursor with no edit, and nothing while the cursor moves inside it.
+///   that cursor with no edit, each row on one line in its room, the whole goal
+///   of the node it opens, and nothing while the cursor moves inside it.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
@@ -472,6 +481,13 @@ pub fn serve(
                         drop(held);
                         (frames, false)
                     },
+                    (&FrameScope::Document(ref document), &FrameBody::Open { ref key, at }) => {
+                        let uri = DocumentUri::from(&document.uri);
+                        let held = lock(workspace);
+                        let answer = opened(&held, &uri, (key, at), traced);
+                        drop(held);
+                        (answer.into_iter().collect(), false)
+                    },
                     (_, &FrameBody::Detach) => (Vec::from([RenderFrame::detach()]), true),
                     (
                         _,
@@ -482,6 +498,8 @@ pub fn serve(
                         | FrameBody::AccountPatch { .. }
                         | FrameBody::Stack { .. }
                         | FrameBody::Derivation { .. }
+                        | FrameBody::Open { .. }
+                        | FrameBody::Opened { .. }
                         | FrameBody::Activity { .. }),
                     ) => (Vec::new(), false),
                 },
@@ -520,6 +538,39 @@ fn derived(
 const fn derived(
     _held: &Workspace,
     _uri: &DocumentUri,
+    _columns: Option<Count>,
+) -> Option<RenderFrame>
+{
+    None
+}
+
+/// The answer to a client of the trace layer, whose panes are `columns` wide,
+/// that opens the node at `at` of the card keyed `key` of the document at
+/// `uri`: none for a client that did not subscribe.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "instrument")]
+fn opened(
+    held: &Workspace,
+    uri: &DocumentUri,
+    (key, at): (&AccountKey, NodeAt),
+    columns: Option<Count>,
+) -> Option<RenderFrame>
+{
+    held.opened(uri, (key, at), columns?)
+}
+
+/// None: without the `instrument` feature the hub sends no derivation card, so
+/// no client opens a node of one.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(feature = "instrument"))]
+const fn opened(
+    _held: &Workspace,
+    _uri: &DocumentUri,
+    _node: (&AccountKey, NodeAt),
     _columns: Option<Count>,
 ) -> Option<RenderFrame>
 {

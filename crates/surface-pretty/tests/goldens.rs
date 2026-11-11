@@ -103,6 +103,7 @@ use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_type_line;
 use gandr_surface_pretty::present_value;
+use gandr_surface_pretty::present_value_line;
 use gandr_surface_pretty::present_whole;
 use gandr_surface_pretty::whole;
 use gandr_theory_sites::Degree;
@@ -4298,6 +4299,20 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
             spelled(source, Root::Value(CoreNode::Value(root))),
             expected,
             "{root:?} spells its constructor"
+        );
+        let wide = present_value(
+            source,
+            CoreNode::Value(root),
+            PageWidth::from(4_096_u32),
+            Form::Sugared.into(),
+        )
+        .expect("the value lays out");
+        let line = present_value_line(source, CoreNode::Value(root), Form::Sugared.into())
+            .expect("the value writes");
+        assert_eq!(
+            (line.as_ref(), line.fidelity()),
+            (wide.as_ref(), wide.fidelity()),
+            "{root:?} on one line is its wide layout"
         );
     }
 }

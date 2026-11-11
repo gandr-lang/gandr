@@ -3,13 +3,23 @@
 //! derivation pane shows at a cursor.
 //!
 //! A [`DerivationCard`] names the declaration by its content key, as an
-//! account card does, and states the columns that its goals were printed at.
-//! A [`DerivationRow`] holds the node's depth, its warrant, its direction, its
-//! goal and its type as the printer laid them out at those columns, the rule's
-//! short name, the cover, the memo's mark, the nodes that the check visited,
-//! the wall of the node, and the bytes of the document where the goal is
-//! written. A field that the producer does not know is absent and takes no
-//! bytes on the wire.
+//! account card does, and states the columns that its rows were cut to. A
+//! [`DerivationRow`] holds the node's depth, its warrant, its direction, its
+//! goal and its type on one line each, cut to the [`Room`] that the pane gives
+//! them at those columns, the rule's short name, the cover, the memo's mark,
+//! the nodes that the check visited, the wall of the node, and the bytes of
+//! the document where the goal is written. A field that the producer does not
+//! know is absent and takes no bytes on the wire.
+//!
+//! # A row holds what the pane shows
+//!
+//! The pane shows each goal and each type on one line, cut to its column, so
+//! the producer prints only that line and never lays a goal out. The pane
+//! shows a whole goal only for the node in focus, and only when the user opens
+//! it: the client then asks for that one goal with an `open` frame, and the
+//! producer lays it out at the card's columns and answers with an `opened`
+//! frame. So a card of many deep goals costs one line for each row, and one
+//! layout for each goal that a user opens.
 //!
 //! # The pane follows the cursor
 //!
@@ -108,15 +118,17 @@ pub struct DerivationRow
     pub warrant: Warrant,
     /// Whether the node checks or synthesises.
     pub direction: Direction,
-    /// The goal, laid out at the card's columns; a goal longer than one line
-    /// holds its line breaks. Absent when the printer refused it.
+    /// The goal on one line, cut to the room of its column at its depth with
+    /// an ellipsis at the end when it is longer ([`Room`]). Absent when the
+    /// printer refused it.
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub goal: Option<String>,
-    /// The type the node is checked against or synthesised, laid out the same
-    /// way; absent when the node holds none or the printer refused it.
+    /// The type the node is checked against or synthesised, on one line and
+    /// cut the same way; absent when the node holds none or the printer
+    /// refused it.
     #[cfg_attr(
         feature = "serde",
         serde(rename = "type", default, skip_serializing_if = "Option::is_none")
@@ -146,9 +158,106 @@ pub struct DerivationRow
 }
 
 /// The place of a row in its card, counted from zero in pre-order.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeAt(pub usize);
+
+/// The columns of a derivation pane that a goal and its type do not take: the
+/// warrant, the direction, the rule, the cover, the memo, the nodes, the wall
+/// and the spaces between the nine columns.
+pub const FIXED: Count = Count(35);
+
+/// The columns that a row of a derivation pane gives its goal and its type.
+///
+/// # Specification
+/// - ensures: in a pane of `columns`, the type takes half of what [`FIXED`]
+///   leaves, and the goal takes the same less two columns for each level of its
+///   depth, which the pane sets it in by.
+/// - provides: the one rule by which the producer cuts a row and the pane draws
+///   it, so the two agree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a row two levels deep in a pane of 80 columns gives its
+///   type 22 columns and its goal 18.
+/// - witness: `derivation::tests::a_row_is_cut_to_the_room_of_its_column`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Room
+{
+    /// The columns of the goal.
+    pub goal: Count,
+    /// The columns of the type.
+    pub ty: Count,
+}
+
+impl Room
+{
+    /// The room of a row at `depth` in a pane `columns` wide.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn at(
+        columns: Count,
+        depth: Count,
+    ) -> Self
+    {
+        let ty = match columns.0.saturating_sub(FIXED.0).checked_div(2) {
+            Some(half) => Count(half),
+            None => Count(0),
+        };
+        Self {
+            goal: Count(ty.0.saturating_sub(depth.0.saturating_mul(2))),
+            ty,
+        }
+    }
+}
+
+/// The text of `words` on one line, one space between two words, and cut to
+/// `room` columns with an ellipsis at the end when it is longer; a room under
+/// two columns counts as two.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the words joined by single spaces when they fit; otherwise the
+///   first `room - 1` characters of them and an ellipsis, `room` characters in
+///   all. A text that this cut leaves cuts to itself again.
+/// - provides: the cut of a row's goal and type, the same in the producer and
+///   in the pane.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Room`].
+/// - witness: `derivation::tests::a_row_is_cut_to_the_room_of_its_column`
+#[spec(ensures: |ret| ret.chars().count() <= usize::try_from(room.0).unwrap_or(usize::MAX).max(2))]
+#[inline]
+#[must_use]
+pub fn elided(
+    words: core::str::SplitWhitespace<'_>,
+    room: Count,
+) -> String
+{
+    let mut line = String::new();
+    for (at, word) in words.enumerate() {
+        if at > 0 {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    let room = usize::try_from(room.0).unwrap_or(usize::MAX).max(2);
+    if line.chars().count() > room {
+        let cut = line
+            .char_indices()
+            .nth(room.saturating_sub(1))
+            .map_or(line.len(), |(at, _)| at);
+        line.truncate(cut);
+        line.push('…');
+    }
+    line
+}
 
 /// The judgement nodes of one declaration, in the order the checker met them:
 /// each node is followed by the nodes under it, then by its siblings.
@@ -160,7 +269,7 @@ pub struct DerivationCard
     pub key: AccountKey,
     /// The declaration's name.
     pub declaration: String,
-    /// The columns that the goals and the types were laid out at.
+    /// The columns of the pane that the rows were cut for.
     pub columns: Count,
     /// The nodes, in pre-order.
     pub rows: Vec<DerivationRow>,
@@ -339,10 +448,35 @@ mod tests
     use super::DerivationRow;
     use super::Direction;
     use super::NodeAt;
+    use super::Room;
+    use super::elided;
     use crate::present::ByteOffset;
     use crate::present::ByteRange;
     use crate::visual::Count;
     use crate::visual::Warrant;
+
+    /// A pane of 80 columns gives a type 22 columns and a root's goal 22, and
+    /// a goal two levels deep 18. A goal that fits keeps its words on one line;
+    /// a longer one is cut to the room with an ellipsis, and the cut text cuts
+    /// to itself. A room that set the goal in by the wrong amount, or a cut
+    /// one character off, changes a line here.
+    #[test]
+    fn a_row_is_cut_to_the_room_of_its_column()
+    {
+        assert_eq!(Room::at(Count(80), Count(2)), Room {
+            goal: Count(18),
+            ty: Count(22),
+        });
+        assert_eq!(Room::at(Count(30), Count(0)), Room {
+            goal: Count(0),
+            ty: Count(0),
+        });
+        assert_eq!(elided("a +\n  b".split_whitespace(), Count(18)), "a + b");
+        let cut = elided("let a = { x + y } ; a".split_whitespace(), Count(10));
+        assert_eq!(cut, "let a = {…");
+        assert_eq!(elided(cut.split_whitespace(), Count(10)), cut);
+        assert_eq!(elided("abc".split_whitespace(), Count(0)), "a…");
+    }
 
     /// A row at `depth` over `nodes` nodes, written at `span`.
     ///
