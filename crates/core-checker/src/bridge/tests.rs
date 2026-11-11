@@ -117,9 +117,12 @@ use proptest::prelude::proptest;
 use proptest::test_runner::TestCaseError;
 use quenchant_shape::shape::Maybe;
 
+use super::AllocationCount;
 use super::Erasure;
 use super::Frame;
 use super::LeadingCount;
+use super::Meter;
+use super::Metered;
 use super::Mode as Reading;
 use super::Outcome;
 use super::Positions;
@@ -129,10 +132,12 @@ use super::Recall;
 use super::Refusal;
 use super::Replayed;
 use super::Source;
+use super::Spent;
 use super::Timed;
 use super::Untimed;
 use super::crossed;
 use super::fault;
+use super::metered;
 use super::readmit;
 use super::readmit_resuming;
 use super::readmit_retiring;
@@ -1309,7 +1314,10 @@ fn a_timed_readmission_times_each_admission_it_makes()
     );
     for entry in timed.readmitted() {
         let expected = if offered(entry.outcome()) {
-            Maybe::Present(Duration::from_micros(1))
+            Maybe::Present(Spent::new(
+                Duration::from_micros(1),
+                Maybe::Absent(metered::Absent::Unmetered),
+            ))
         }
         else {
             Maybe::Absent(timed::Absent::Unoffered)
@@ -1366,12 +1374,68 @@ fn a_timed_readmission_times_each_admission_it_makes()
             .map(Readmitted::took)
             .collect::<Vec<_>>(),
         vec![
-            Maybe::Present(Duration::from_micros(1)),
-            Maybe::Present(Duration::from_micros(1)),
+            Maybe::Present(Spent::new(
+                Duration::from_micros(1),
+                Maybe::Absent(metered::Absent::Unmetered)
+            )),
+            Maybe::Present(Spent::new(
+                Duration::from_micros(1),
+                Maybe::Absent(metered::Absent::Unmetered)
+            )),
             Maybe::Absent(timed::Absent::Untimed),
             Maybe::Absent(timed::Absent::Untimed),
         ],
         "the two resumed declarations keep the timed run's ticks, and the two crossed again read no clock"
+    );
+}
+
+/// A meter three allocations past its last reading at each reading.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default)]
+struct Allocating(u64);
+
+impl Meter for Allocating
+{
+    /// Three allocations past the last reading.
+    ///
+    /// # Specification
+    /// trivial.
+    fn allocations(&mut self) -> AllocationCount
+    {
+        self.0 = self.0.saturating_add(3);
+        AllocationCount::from(self.0)
+    }
+}
+
+/// A readmission metered by a clock and a meter that each tick once per
+/// reading counts, for each declaration it offers the kernel, the one tick of
+/// each that its admission spans. A declaration it never offers reads neither.
+#[test]
+fn a_metered_readmission_counts_the_allocations_of_each_admission()
+{
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Integer, At(4));
+    let metered = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Metered::by(Ticking::default(), Allocating::default()),
+    )
+    .whole()
+    .0;
+    let costs: Vec<_> = metered.readmitted().iter().map(Readmitted::took).collect();
+    let spent = Maybe::Present(Spent::new(
+        Duration::from_micros(1),
+        Maybe::Present(AllocationCount::from(3_u64)),
+    ));
+    assert!(
+        costs.contains(&spent)
+            && costs.contains(&Maybe::Absent(timed::Absent::Unoffered))
+            && costs
+                .iter()
+                .all(|cost| *cost == spent || *cost == Maybe::Absent(timed::Absent::Unoffered)),
+        "each admission spans one tick and three allocations, and `Alias` is never offered: {costs:?}"
     );
 }
 
@@ -1459,6 +1523,55 @@ fn a_readmission_recalls_what_its_own_receipt_recorded()
     let other = KernelSigner::from([6_u8; 32]);
     let distrusting = readmitted_under(&Recall::trusting(trusting(&other), held));
     assert_eq!(usize::from(distrusting.environment().recalls()), 0);
+}
+
+/// #6566: a readmission resumed from a record reads the source of its own
+/// recall, not the source the record was made under. A cold run under no
+/// source records its leading declaration; a warm run resumes that record
+/// under a source holding the cold run's receipt, and recalls the declarations
+/// after it, to the same outcomes.
+#[test]
+fn a_resumed_readmission_recalls_from_its_own_source_6566()
+{
+    let signer = KernelSigner::from([5_u8; 32]);
+    let trusting = TrustPolicy::Trusted(BTreeSet::from([signer.identity()]));
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Num, At(4));
+    let (cold, record) = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount(1), Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::trusting(trusting.clone(), Arc::new(NoVerdicts)),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    let Maybe::Present(record) = record
+    else {
+        panic!("the cold run records its leading declaration");
+    };
+    let Maybe::Present(receipt) = cold.environment().receipt(&signer)
+    else {
+        panic!("a cold readmission under keys gives a receipt");
+    };
+    let (warm, _) = readmit_retiring(
+        &mut arena,
+        &report,
+        (LeadingCount(1), Maybe::Present(&record)),
+        &Recall::trusting(trusting, Arc::new(Held(Arc::new(receipt)))),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole();
+    assert_eq!(
+        usize::from(warm.resumed()),
+        1,
+        "the warm run resumes the record"
+    );
+    assert!(
+        usize::from(warm.environment().recalls()) > 0,
+        "the resumed run recalls what the cold run checked after its record"
+    );
+    assert_eq!(warm.readmitted(), cold.readmitted());
 }
 
 /// A run's certificate keeps a code constant it is handed as the constant:

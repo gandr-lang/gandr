@@ -211,6 +211,8 @@ use gandr_surface_session::Instrument;
 use gandr_surface_session::JudgedParse;
 use gandr_surface_session::KernelState;
 use gandr_surface_session::Laying;
+#[cfg(feature = "instrument")]
+use gandr_surface_session::Phase;
 use gandr_surface_session::Ran;
 use gandr_surface_session::Session;
 use gandr_surface_session::SessionFault;
@@ -409,7 +411,8 @@ pub fn open(
 
 /// What one synchronisation cost: the forms its parse molded, the items the
 /// incremental checker judged, the wall of the recheck and, once it ran, the
-/// wall of the admission after it.
+/// wall of the admission after it. At the timings layer each wall is the sum
+/// of its phases' samples, so the line and the account read one source.
 ///
 /// # Specification
 /// - requires: constructed by [`judge_laid`], its admission's wall added by
@@ -432,9 +435,11 @@ pub struct Timing
     /// What the incremental checker judged, when the revision was not
     /// refused whole.
     judged: Maybe<ResumeCensus, judged::Absent>,
-    /// The recheck's wall: from the text to its diagnostics.
+    /// The recheck's wall: from the text to its diagnostics, or, at the timings
+    /// layer, the parse's, the lowering's and the judgement's samples.
     wall: Duration,
-    /// The admission's wall: from the diagnostics to the kernel artifact.
+    /// The admission's wall: from the diagnostics to the kernel artifact, or,
+    /// at the timings layer, the admission's sample.
     admitted: Maybe<Duration, admitted::Absent>,
     /// How many declarations the admission offered the kernel again, of
     /// those judged.
@@ -1044,11 +1049,79 @@ where
         timing: Timing {
             forms,
             judged,
-            wall: started.elapsed(),
+            wall: sampled(sink, Timed::Recheck).unwrap_or_else(|| started.elapsed()),
             admitted: Maybe::Absent(pending),
             crossed: Maybe::Absent(pending),
         },
     })
+}
+
+/// The phases a timing line's wall spans.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Timed
+{
+    /// The recheck's: the parse, the lowering and the judgement.
+    Recheck,
+    /// The admission's.
+    Admission,
+}
+
+/// The wall of `timed`'s phases by the samples of `sink`, when `sink` times
+/// them: the timing line then reads its numbers from the timings layer and
+/// reads no clock of its own.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the sum of the walls of the samples of `timed`'s phases that
+///   `sink`'s column holds, when `sink` answers a timing column; `None`
+///   otherwise, and always without the `instrument` feature.
+/// - panics: none.
+/// - executable: none — the column is read through `sink`'s mutable borrow,
+///   which a clause cannot take beside the call's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recheck and its admission at the timings layer log the
+///   walls of their samples.
+/// - witness: `recheck::tests::a_timed_recheck_logs_the_walls_of_its_samples`
+#[cfg(feature = "instrument")]
+fn sampled<Sink>(
+    sink: &mut Sink,
+    timed: Timed,
+) -> Option<Duration>
+where
+    Sink: Instrument,
+{
+    let phases: &[Phase] = match timed {
+        Timed::Recheck => &[Phase::Parse, Phase::Lower, Phase::Judge],
+        Timed::Admission => &[Phase::Admit],
+    };
+    match sink.timings() {
+        Maybe::Present(column) => Some(
+            phases
+                .iter()
+                .filter_map(|&phase| match column.sample(phase) {
+                    Maybe::Present(sample) => Some(sample.wall()),
+                    Maybe::Absent(_) => None,
+                })
+                .fold(Duration::ZERO, Duration::saturating_add),
+        ),
+        Maybe::Absent(_) => None,
+    }
+}
+
+/// No wall: without the `instrument` feature no sink times a phase.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(feature = "instrument"))]
+fn sampled<Sink>(
+    _sink: &mut Sink,
+    _timed: Timed,
+) -> Option<Duration>
+where
+    Sink: Instrument,
+{
+    None
 }
 
 /// The import closure `text`, the document at `uri`, is laid out in under the
@@ -1205,6 +1278,9 @@ pub struct Finished
     timing: Timing,
     /// How long the run took.
     wall: Duration,
+    /// Whether the run's wall is its sink's sample, so the settle adds no
+    /// clock reading of its own.
+    sampled: bool,
 }
 
 /// Take the admission the document's latest recheck left in its `session`.
@@ -1310,11 +1386,16 @@ impl Admitting
     {
         let started = Instant::now();
         match self.detached.run(retirement, sink) {
-            Polled::Whole(ran) => Polled::Whole(Finished {
-                ran,
-                timing: self.timing,
-                wall: started.elapsed(),
-            }),
+            Polled::Whole(ran) => {
+                let (wall, from_sink) = sampled(sink, Timed::Admission)
+                    .map_or_else(|| (started.elapsed(), false), |wall| (wall, true));
+                Polled::Whole(Finished {
+                    ran,
+                    timing: self.timing,
+                    wall,
+                    sampled: from_sink,
+                })
+            },
             Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
         }
     }
@@ -1354,12 +1435,13 @@ where
 /// - requires: `finished` ran the admission [`admission`] took from `session`,
 ///   and no later recheck replaced the revision it judged.
 /// - ensures: the timing carries the admission's wall, the run's and the
-///   settling's, and, when it exported, how many declarations it offered the
-///   kernel of those judged; each judged declaration's kernel tier at its
-///   admission position; a kernel disagreement is one error at the origin
-///   naming the fault `submit` would have reported, to publish in place of the
-///   recheck's diagnostics, and one tier at the declaration the kernel stopped
-///   at, with the rejection's reason.
+///   settling's, or the run's sample alone at the timings layer, and, when it
+///   exported, how many declarations it offered the kernel of those judged;
+///   each judged declaration's kernel tier at its admission position; a kernel
+///   disagreement is one error at the origin naming the fault `submit` would
+///   have reported, to publish in place of the recheck's diagnostics, and one
+///   tier at the declaration the kernel stopped at, with the rejection's
+///   reason.
 /// - provides: the second half of every synchronisation, run once its admission
 ///   ended.
 /// - fails: never; a disagreement is a diagnostic.
@@ -1386,8 +1468,13 @@ pub fn settle(
     finished: Finished,
 ) -> Admitted
 {
-    let Finished { ran, timing, wall } = finished;
-    let started = Instant::now();
+    let Finished {
+        ran,
+        timing,
+        wall,
+        sampled: from_sink,
+    } = finished;
+    let started = (!from_sink).then(Instant::now);
     let (fault, crossed, declined, tiers) = session.as_mut().map_or(
         (
             Maybe::Absent(agreed::Absent::Agreed),
@@ -1458,7 +1545,9 @@ pub fn settle(
         #[cfg(feature = "instrument")]
         rows,
         timing: Timing {
-            admitted: Maybe::Present(wall.saturating_add(started.elapsed())),
+            admitted: Maybe::Present(
+                started.map_or(wall, |started| wall.saturating_add(started.elapsed())),
+            ),
             crossed,
             ..timing
         },
@@ -2930,6 +3019,158 @@ mod tests
         );
         assert!(matches!(super::admission(&mut session, refused.timing),
             super::Taken::Unrun(unrun) if unrun == refused.timing));
+    }
+
+    /// #6290: at the timings layer the timing line reads its walls from the
+    /// sink's samples. The judgement and the admission each run as a job of
+    /// the timings subscription. The recheck's wall is the sum of the samples
+    /// of its parse, its lowering and its judgement, and the admission's wall
+    /// is the sample of the admission. A subscription that ran a job at
+    /// another sink, a line that read a clock of its own, or a sum that left
+    /// out a phase or counted one twice changes a wall.
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn a_timed_recheck_logs_the_walls_of_its_samples()
+    {
+        use core::time::Duration;
+
+        use gandr_surface_session::Instrument;
+        use gandr_surface_session::Phase;
+
+        use crate::instrument::Job;
+        use crate::instrument::Subscription;
+
+        /// The sum of the walls of the samples of `phases` in `sink`'s column.
+        ///
+        /// # Specification
+        /// trivial.
+        fn walls<Sink>(
+            sink: &mut Sink,
+            phases: &[Phase],
+        ) -> Duration
+        where
+            Sink: Instrument,
+        {
+            let Maybe::Present(column) = sink.timings()
+            else {
+                panic!("the timings layer answers a column");
+            };
+            phases
+                .iter()
+                .map(|&phase| match column.sample(phase) {
+                    Maybe::Present(sample) => sample.wall(),
+                    Maybe::Absent(reason) => panic!("the job samples its {phase:?}: {reason:?}"),
+                })
+                .fold(Duration::ZERO, Duration::saturating_add)
+        }
+
+        /// A judgement, answered with the walls of its phases' samples.
+        struct Judged<'session>
+        {
+            /// The document's address.
+            uri: &'session DocumentUri,
+            /// The document's session.
+            session: &'session mut super::DocumentSession,
+            /// The document's text.
+            text: SourceText<'session>,
+        }
+
+        impl Job for Judged<'_>
+        {
+            type Out = (super::Rechecked, Duration);
+
+            const TASK: gandr_core_fork::activity::Task = gandr_core_fork::activity::Task::Fork;
+
+            /// Judge the text at `sink`, then sum its phases' samples.
+            ///
+            /// # Specification
+            /// trivial.
+            fn run<Sink>(
+                self,
+                sink: &mut Sink,
+            ) -> Self::Out
+            where
+                Sink: Instrument,
+            {
+                let laid = super::lay(
+                    self.uri,
+                    self.text,
+                    &gandr_surface_dispatcher::Unshadowed,
+                    Maybe::Absent(super::written::Absent::Unread),
+                );
+                let rechecked = super::judge_laid(
+                    self.uri,
+                    self.session,
+                    (self.text, laid),
+                    (Verbosity::User, Spelling::Unicode, UNCARETED),
+                    (
+                        std::time::Instant::now(),
+                        &gandr_surface_dispatcher::Unretired,
+                        super::Readings::Unkept,
+                    ),
+                    sink,
+                )
+                .whole();
+                (
+                    rechecked,
+                    walls(sink, &[Phase::Parse, Phase::Lower, Phase::Judge]),
+                )
+            }
+        }
+
+        /// An admission, answered with the wall of its sample.
+        #[repr(transparent)]
+        struct Admitted(super::Admitting);
+
+        impl Job for Admitted
+        {
+            type Out = (super::Finished, Duration);
+
+            const TASK: gandr_core_fork::activity::Task = gandr_core_fork::activity::Task::Replay;
+
+            /// Run the admission at `sink`, then read its sample.
+            ///
+            /// # Specification
+            /// trivial.
+            fn run<Sink>(
+                self,
+                sink: &mut Sink,
+            ) -> Self::Out
+            where
+                Sink: Instrument,
+            {
+                let finished = self
+                    .0
+                    .run(&gandr_surface_dispatcher::Unretired, sink)
+                    .whole();
+                (finished, walls(sink, &[Phase::Admit]))
+            }
+        }
+
+        let uri = DocumentUri::from("file:///strict/timed.gandr");
+        let mut session = open(&uri, &Arc::default());
+        let (rechecked, judged) = Subscription::TIMINGS.run(Judged {
+            uri: &uri,
+            session: &mut session,
+            text: SourceText::from(include_str!(
+                "recheck/fixtures/an-admission-follows-the-published-diagnostics-rechecked.gandr"
+            )),
+        });
+        assert_eq!(
+            rechecked.timing.wall, judged,
+            "the recheck's wall is the sum of its phases' samples"
+        );
+        let super::Taken::Running(admitting) = admission(&mut session, rechecked.timing)
+        else {
+            panic!("the recheck left its admission");
+        };
+        let (finished, admitted) = Subscription::TIMINGS.run(Admitted(admitting));
+        let admission = settle(&mut session, finished);
+        assert_eq!(
+            admission.timing.admitted,
+            Maybe::Present(admitted),
+            "the admission's wall is its sample"
+        );
     }
 
     #[test]

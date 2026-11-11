@@ -306,6 +306,8 @@ use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge::LeadingCount;
 use gandr_core_checker::bridge::Readmitted;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::bridge::Spent;
 use gandr_core_checker::bridge::crossed;
 use gandr_core_fork::Fork;
 use gandr_core_fork::Serial;
@@ -412,8 +414,6 @@ use crate::closures::ClosureAdmission;
 use crate::counts::CountColumn;
 #[cfg(feature = "instrument")]
 use crate::counts::EventCount;
-#[cfg(feature = "instrument")]
-use crate::counts::uncounted;
 use crate::edit::EditScript;
 use crate::edit::Snapshot;
 use crate::edit::diff;
@@ -427,6 +427,8 @@ use crate::lowerings;
 use crate::lowerings::Closure;
 use crate::lowerings::Held;
 use crate::lowerings::Led;
+#[cfg(feature = "instrument")]
+use crate::timings::untimed;
 
 quenchant_shape::reason_enum! {
     /// Why a submission carries no resume.
@@ -545,22 +547,37 @@ impl CheckpointObserver for Quiet
 {
 }
 
-/// The observer of a judgement at a sink that may count: it counts each item
-/// that the incremental pass adopts or judges into the recheck's column.
+/// The observer of a judgement at a sink that may count or time: it counts
+/// each item that the incremental pass adopts or judges into the recheck's
+/// count column, and samples each item it judges into its timing column.
 #[cfg(feature = "instrument")]
-struct Counting<'column>
+struct Observed<'sink, Sink>
 {
-    /// The recheck's column, when the sink counts.
-    column: Maybe<&'column mut CountColumn, uncounted::Absent>,
+    /// The sink of the recheck.
+    sink: &'sink mut Sink,
     /// The arena's watermark before this revision's lowering minted its nodes.
     fresh: ArenaWatermark,
 }
 
 #[cfg(feature = "instrument")]
-impl CheckpointObserver for Counting<'_>
+impl<Sink> CheckpointObserver for Observed<'_, Sink>
+where
+    Sink: Instrument,
 {
-    /// Count the memo consults of `item`, its arena nodes, and whether the
-    /// pass judged it.
+    /// Start the span of the pass's first item, when the sink times.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn opened(&mut self)
+    {
+        if let Maybe::Present(timings) = self.sink.timings() {
+            timings.opened();
+        }
+    }
+
+    /// Sample `item` when the sink times and the pass judged it, then count
+    /// its memo consults, its arena nodes, and whether the pass judged it.
     ///
     /// # Specification
     /// trivial.
@@ -570,7 +587,10 @@ impl CheckpointObserver for Counting<'_>
         item: &PassedItem<'_>,
     )
     {
-        if let Maybe::Present(ref mut column) = self.column {
+        if let Maybe::Present(timings) = self.sink.timings() {
+            timings.passed(item.constant, item.adoption);
+        }
+        if let Maybe::Present(column) = self.sink.counts() {
             let nodes = usize::from(item.minted)
                 .saturating_add(usize::from(item.reached_since(self.fresh)));
             column.passed(
@@ -1945,6 +1965,9 @@ pub struct Ran
     /// The readmission it resumed from, when the process or the session held
     /// one.
     found: Option<Arc<ClosureAdmission>>,
+    /// The admission's sample, when its sink timed it.
+    #[cfg(feature = "instrument")]
+    admit: Maybe<Spent, untimed::Absent>,
 }
 
 impl Detached
@@ -2014,12 +2037,19 @@ impl Detached
         match admitted {
             Polled::Whole(resumption) => {
                 sink.crossed(crossed_of(&resumption));
+                #[cfg(feature = "instrument")]
+                let admit = match sink.timings() {
+                    Maybe::Present(column) => column.sample(Phase::Admit),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                };
                 Polled::Whole(Ran {
                     resumption,
                     boundary,
                     closure,
                     checkpoints,
                     found,
+                    #[cfg(feature = "instrument")]
+                    admit,
                 })
             },
             Polled::Retired(retired, record) => {
@@ -3142,8 +3172,8 @@ impl<Store, Blocks> Session<Store, Blocks>
                 },
             };
             #[cfg(feature = "instrument")]
-            let mut observer = Counting {
-                column: sink.counts(),
+            let mut observer = Observed {
+                sink: &mut *sink,
                 fresh,
             };
             #[cfg(not(feature = "instrument"))]
@@ -3228,6 +3258,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Maybe::Present(column) => self.account.counted(Maybe::Present(&*column)),
                 Maybe::Absent(reason) => self.account.counted(Maybe::Absent(reason)),
             }
+        }
+        #[cfg(feature = "instrument")]
+        if let Maybe::Present(column) = sink.timings() {
+            self.account.timed(column);
         }
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
@@ -3572,6 +3606,8 @@ impl<Store, Blocks> Session<Store, Blocks>
             closure,
             checkpoints,
             found,
+            #[cfg(feature = "instrument")]
+            admit,
         } = ran;
         let offered = crossed_of(&resumption);
         let held = match resumption.crossed {
@@ -3602,6 +3638,11 @@ impl<Store, Blocks> Session<Store, Blocks>
         if let Maybe::Present(ref positions) = resumption.positions {
             self.account.tallied(positions);
         }
+        #[cfg(feature = "instrument")]
+        self.account.admitted(admit, match resumption.positions {
+            Maybe::Present(ref positions) => Maybe::Present(positions),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        });
         self.account.settled(&resumption.tiers);
         let checkpoint = match Store::KEEPING {
             Keeping::Kept => checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref()),

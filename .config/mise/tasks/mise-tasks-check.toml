@@ -2438,7 +2438,12 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 # `.config/claims/hand-off.json` a transcript's size, and the block
 # `observed.bash` prints for a change adding it (#3871); each in
 # `.config/claims/comments.json` a Rust diff, and the files of it that change
-# only comments (`comments.jq`, #5498). The
+# only comments (`comments.jq`, #5498); each in `.config/claims/claim.json` a
+# unit's body, the vault's absorption statuses and its body when the rule
+# landed, and the rows that lack a design page's claim (`claim.jq`, #6569);
+# each in `.config/claims/measured.json` a unit's body and a comment that
+# sets it aside on a probe, and the refusal of a saving left unmeasured
+# (`measured.jq`, #6569). The
 # term map itself, `.config/references/terms.toml`, is read whole: every row
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
@@ -2473,6 +2478,8 @@ cases period period.jq period.json --mode c
 cases terms terms.jq terms.json
 cases motivating motivating.jq motivating.json
 cases absorbing absorbing.jq absorbing.json
+cases claim claim.jq claim.json
+cases measured measured.jq measured.json
 cases design design.jq design.json
 cases reads reads.jq reads.json --mode c
 cases recovery recovery.jq recovery.json

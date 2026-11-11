@@ -46,7 +46,7 @@ theory ZeroFiber where
 /// A server's configuration, whose face `secure` holds its port and its
 /// transport.
 type Config = *{host : String, port : Integer, tls : Bool} where
-  face secure = { port, tls };
+  face secure = {port, tls};
 
 /// A configuration on the secure face holds its host alone, and reads its
 /// fixed port back.

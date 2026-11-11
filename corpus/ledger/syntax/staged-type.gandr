@@ -6,7 +6,7 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 @[checks]
 type Pair = *{left : Integer, right : Integer} where
-  face lefty = { left };
+  face lefty = {left};
 @[checks]
 def kept[i : Size](n : Nat[i], p : Pair[.left = 1], q : Pair[lefty ↦ *{.left = 1}]) -> -F Nat[i] {
   return n

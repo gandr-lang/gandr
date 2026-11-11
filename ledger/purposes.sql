@@ -46,17 +46,21 @@ CREATE TABLE purpose(
   CONSTRAINT "a finding is written exactly when naming is not fits or doc is not sound" CHECK((finding IS NULL) = (naming = 'fits' AND doc = 'sound'))
 ) WITHOUT ROWID;
 INSERT INTO purpose VALUES('core-checker','access::AccessDefect','enum','How a held value or a view broke the access discipline.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','bridge::AdmissionTime','type_alias','How long the kernel took to admit one declaration, or why no time was read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::AdmissionCost','type_alias','What the kernel spent to admit one declaration, or why no time was read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::AllocationCount','struct','Counts the allocations one thread made.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::ArtifactAudit','struct','What a readmitted artifact rests on: the union of its declarations'' audits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Crossed','struct','The environment once the leading declarations crossed, beside the declarations that crossed and their boundary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::LeadingCount','struct','Counts the leading declarations a readmission crosses before the rest.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Meter','trait','Reads how many allocations the calling thread has made.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Metered','struct','A stopwatch that reads the caller''s clock and meter around each admission.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Outcome','enum','What became of one declaration at the kernel boundary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Readmission','struct','A module''s readmission: the kernel environment it built, one outcome per declaration, the artifact''s audit, and the declarations the kernel admitted.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','bridge::Readmitted','struct','One declaration''s outcome, beside the position and origin the judgement echoed, the certificates its erasure replayed and the time its admission took.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Readmitted','struct','One declaration''s outcome, beside the position and origin the judgement echoed, the certificates its erasure replayed and what its admission spent.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Readmitting','type_alias','The declarations a readmitting run crossed before it, as a polled readmission beside what retired it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Recall','struct','Holds whose recorded kernel verdicts a fresh readmission believes and the source it reads them from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Refusal','enum','Whose fact a readmission''s refusal records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Replayed','struct','One certificate the kernel replayed for a declaration: what its step unfolded, the content of the instance it fired at, and the kernel''s verdict on its trace.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','bridge::Spent','struct','The wall and the allocations of one span of work.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Stopwatch','trait','How a readmission times each admission it asks of the kernel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Timed','struct','A stopwatch that reads the caller''s clock around each admission.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','bridge::Untimed','struct','A stopwatch that reads no clock.',NULL,'fits','sound',NULL);
@@ -3119,6 +3123,8 @@ INSERT INTO purpose VALUES('surface-lsp','rpc::Progress','enum','A message repor
 INSERT INTO purpose VALUES('surface-lsp','rpc::Refusal','struct','The error object of a refusing response.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','rpc::RequestId','struct','A request''s identifier, echoed in its response: a number, a string, or null for a message whose identifier could not be read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','rpc::Retrigger','struct','Whether the client sends a request the server cancelled again.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','run::Prepared','struct','Holds what a run of one declaration reads, taken under the lock of the workspace, so the run itself goes on the pool with no lock and a keystroke waits for no part of it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','run::Unran','enum','Names why a run shows no line, so the run lens and the toolset answer one sentence for it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','saved::Saved','struct','Where saves keep their copies'' checkpoints and opens restore from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Admissions','struct','The judgements and kernel admissions one connection started.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','server::Awaiting','enum','Whether settling admissions waits for those still running.',NULL,'fits','sound',NULL);

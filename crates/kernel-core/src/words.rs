@@ -10,8 +10,12 @@
 //!   v)` when `loop`'s admitted body is a word, and likewise for an operand the
 //!   empty-word and splicing rows read;
 //! - along the empty word, the operand: `tr(P, ε, v) ⇝ return v`;
-//! - along a longer word, letter by letter: `tr(P, ℓ ∷ u, v) ⇝ y ← tr(P, ℓ ∷ ε,
-//!   v); tr(P↑, u↑, y)`;
+//! - along a closed word of more letters in a path family whose carrier never
+//!   reads `y`, where each endpoint is fixed, moving or through calls, the
+//!   whole word in one step: `l(w)⁻¹ · v · r(w)`, each endpoint's image of the
+//!   word its letters' images in order ([`word_image`]);
+//! - along any other longer word, letter by letter: `tr(P, ℓ ∷ u, v) ⇝ y ←
+//!   tr(P, ℓ ∷ ε, v); tr(P↑, u↑, y)`;
 //! - with a returned operand or path, that value first — the operand before the
 //!   path, as the evaluator's append runs a held operand — as an elimination
 //!   meeting one runs it: `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)` and `tr(P,
@@ -79,6 +83,7 @@
 //!   whose arm at the cell is a cell of the answer at the reflexivity of the
 //!   arm at the point.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -458,8 +463,9 @@ fn head(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the conjugated and mapped loop witnesses splice closed
-///   words letter by letter.
+///   words, and a word of four letters moves whole to its letters' images.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_closed_word_moves_whole_to_its_letters_images`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref letters, end)| head(arena, presentations, end) == Head::Empty && letters.iter().all(|&letter| matches!(head(arena, presentations, letter), Head::Letter { .. }))))]
 fn spelled(
     arena: &TermArena,
@@ -1672,6 +1678,130 @@ where
     built
 }
 
+/// The image of the closed word `letters` under an endpoint's calls, as a
+/// computation returning the image word: the images of its letters in order,
+/// as [`image`] gives each, the image of each distinct letter computed once.
+///
+/// The images bind first, one binder per distinct letter. The word's image
+/// then gathers inverted, from `here(fixed)`: each letter's step transports
+/// the image so far along that letter's image in `z. Path[.A = C](z, fixed)`,
+/// which puts the inverse of the letter's image before it and copies that
+/// image alone. The steps nest to the left, so each continuation stands under
+/// the same binders and the replay unloads a term of constant size at each
+/// step. A last transport along the gathered word from `here(fixed)` inverts
+/// it once.
+///
+/// # Specification
+/// - requires: as [`image`]; `letters` are the letters of the closed word
+///   `path`, first to last, at least one.
+/// - ensures: `x₁ ← I₁; …; xₖ ← Iₖ; F` for the images `Iⱼ` of the `k` distinct
+///   one-letter words, where `F` moves `here(fixed)` along `xⱼ` for each letter
+///   in turn and then along the gathered word; `None` when [`image`] gives no
+///   image of some letter, or `path` is no constructor.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the letters, one over the distinct letters, and one
+///   over their images, not recursion.
+/// - measure: the letters left, then the distinct letters left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the identity's image of a word of four letters, two of
+///   them distinct, is the word, and the flip's is each letter inverted in
+///   place; the gathered word read back uninverted is the image's inverse,
+///   which the claim refuses.
+/// - witness: `tests::native_formers::a_closed_word_moves_whole_to_its_letters_images`
+#[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
+fn word_image<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    unfoldings: &Unfoldings,
+    (routes, at): (&Routes, ValueId),
+    (letters, path): (&[ValueId], ValueId),
+    (carrier, fixed): (ValueTypeId, ValueId),
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let presentations = unfoldings.presentations();
+    let &Value::Constructor {
+        family, datatype, ..
+    } = arena.value(path)?
+    else {
+        return None;
+    };
+    // Each letter's position among the distinct letters, first seen first.
+    let mut distinct: Vec<ConstructorTag> = Vec::new();
+    let mut seen: BTreeMap<ConstructorTag, usize> = BTreeMap::new();
+    let mut order: Vec<usize> = Vec::with_capacity(letters.len());
+    for &letter in letters {
+        let Head::Letter { tag, .. } = head(arena, presentations, letter)
+        else {
+            return None;
+        };
+        let next = distinct.len();
+        let position = *seen.entry(tag).or_insert(next);
+        if position == next {
+            distinct.push(tag);
+        }
+        order.push(position);
+    }
+    let mut images = Vec::with_capacity(distinct.len());
+    for &tag in &distinct {
+        let empty = arena.value_constructor(family, datatype, FreeCells::nil(), Vec::new());
+        let one = arena.value_constructor(family, datatype, tag, Vec::from([empty]));
+        images.push(image(
+            arena,
+            (table, memo),
+            unfoldings,
+            (routes, at),
+            (one, (carrier, fixed)),
+        )?);
+    }
+    let kinds = u32::try_from(distinct.len()).ok()?;
+    // Each step stands under the images' binders and the image so far.
+    let inside = BinderDepth::from(kinds.checked_add(1)?);
+    let family = path_family(
+        arena,
+        (table, memo),
+        (carrier, fixed),
+        gandr_kernel_term::Side::Left,
+        inside,
+    );
+    let gathered = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let mut steps = Vec::with_capacity(distinct.len());
+    for position in 0 .. kinds {
+        // `xⱼ` read under the image so far: the binders after it, and that one.
+        let along = arena.value_variable(DeBruijnIndex::from(kinds.checked_sub(position)?));
+        steps.push(arena.computation_path_transport(family, along, gathered));
+    }
+    let here_at = |arena: &mut TermArena, table: &mut ContentTable, memo: &mut M, depth| {
+        let lifted = shift_value(arena, table, memo, fixed, BinderDepth::NONE, depth);
+        arena.value_here(lifted)
+    };
+    let start = here_at(arena, table, memo, BinderDepth::from(kinds));
+    let mut built = arena.computation_return(start);
+    for position in order {
+        built = arena.computation_bind(built, *steps.get(position)?);
+    }
+    let end = here_at(arena, table, memo, inside);
+    let read_back = arena.computation_path_transport(family, gathered, end);
+    built = arena.computation_bind(built, read_back);
+    for (position, &computed) in images.iter().enumerate().rev() {
+        let lifted = shift_computation(
+            arena,
+            table,
+            memo,
+            computed,
+            BinderDepth::NONE,
+            BinderDepth::from(u32::try_from(position).ok()?),
+        );
+        built = arena.computation_bind(lifted, built);
+    }
+    Some(built)
+}
+
 /// The image of the one-letter word `letter` along one route of an
 /// endpoint's calls, as a computation returning the image word, or `None`
 /// when a definition is no case the route reads.
@@ -1924,13 +2054,16 @@ where
 ///   side runs; with a returned operand that is no held transport
 ///   ([`crate::element_identity::held_path`]) run first, and a returned path
 ///   next; with the operand returned along the empty word, or its named word
-///   reread; with the first letter's transport bound into the rest's along a
-///   longer word; along one letter in a path family over a carrier its binder
-///   never reads, with the spliced word returned when both endpoints are fixed
-///   or moving and the words splice, or with the images of the endpoints bound
-///   and the operand transported along them as the module states; along a path
-///   no row reads, or a letter whose splice fails, by [`appended`]'s rows;
-///   `Stuck` otherwise.
+///   reread; along a closed word of more than one letter in a path family over
+///   a carrier its binder never reads, whose endpoints are each fixed, moving
+///   or calls, with one step along the whole word, the calls' image by
+///   [`word_image`]; with the first letter's transport bound into the rest's
+///   along any other longer word; along one letter or such a whole word in a
+///   path family over a carrier its binder never reads, with the spliced word
+///   returned when both endpoints are fixed or moving and the words splice, or
+///   with the images of the endpoints bound and the operand transported along
+///   them as the module states; along a path no row reads, or a word whose
+///   splice fails, by [`appended`]'s rows; `Stuck` otherwise.
 /// - provides: the replay's reading of transport along a word, the engine's
 ///   evaluator's rows as reducts.
 /// - fails: never.
@@ -1942,16 +2075,18 @@ where
 ///   a map with a loop arm carries the loop to the arm's image, as the loop
 ///   obligations the witnesses admit and refuse read them; a composite along
 ///   the inverse's returned transport runs that path and cancels to the empty
-///   word; a word of two letters moves a path one letter at a time, appended on
-///   the right and inverted on the left. The circle's corpus rows replay
-///   through the same reducts in `gandr-surface-corpus`'s
+///   word; a word of two letters moves a path whole, appended on the right and
+///   inverted on the left; a map moves a word of four letters whole to its
+///   letters' images in order. The circle's corpus rows replay through the same
+///   reducts in `gandr-surface-corpus`'s
 ///   `kernel_export::kernel_loop_elimination_readmission`.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
 /// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
 /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
-/// - witness: `tests::native_formers::a_word_of_two_letters_moves_a_path_letter_by_letter`
+/// - witness: `tests::native_formers::a_word_of_two_letters_moves_a_path_whole`
+/// - witness: `tests::native_formers::a_closed_word_moves_whole_to_its_letters_images`
 /// - witness: `replay::tests::a_bind_over_a_link_on_a_named_univalence_runs_it_6321`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
@@ -2007,7 +2142,27 @@ where
         Head::Letter { tag, words, rest } => (tag, Some(words), rest),
         Head::Other => return appended(arena, unfoldings, term),
     };
-    if words.is_some() && head(arena, presentations, rest) != Head::Empty {
+    // A closed word moves whole in a path family over a carrier its binder
+    // never reads, whose endpoints are each fixed, moving or calls: each
+    // endpoint's image of the word is then its letters' images in order, as
+    // the evaluator reads it. A carried endpoint moves letter by letter.
+    let whole = match arena.value_type(motive) {
+        Some(&ValueType::Path {
+            domain: carrier,
+            left,
+            right,
+        }) if words.is_some()
+            && head(arena, presentations, rest) != Head::Empty
+            && binder_use(arena, Family::Type(carrier)) == BinderUse::Ignored
+            && action(arena, left).is_some()
+            && action(arena, right).is_some() =>
+        {
+            spelled(arena, presentations, path)
+        },
+        _ => None,
+    };
+    let rest = whole.as_ref().map_or(rest, |&(_, end)| end);
+    if whole.is_none() && words.is_some() && head(arena, presentations, rest) != Head::Empty {
         let Some(&Value::Constructor {
             family, datatype, ..
         }) = arena.value(path)
@@ -2081,13 +2236,23 @@ where
     let mut images = |action: &Action, fixed: ValueId| match *action {
         Action::Fixed => Some(None),
         Action::Moving => Some(Some(arena.computation_return(path))),
-        Action::Through(ref read) => image(
-            arena,
-            (table, memo),
-            unfoldings,
-            (read, at),
-            (path, (base, fixed)),
-        )
+        Action::Through(ref read) => match whole {
+            Some((ref letters, _)) => word_image(
+                arena,
+                (table, memo),
+                unfoldings,
+                (read, at),
+                (letters, path),
+                (base, fixed),
+            ),
+            None => image(
+                arena,
+                (table, memo),
+                unfoldings,
+                (read, at),
+                (path, (base, fixed)),
+            ),
+        }
         .map(Some),
         Action::Carried(ref carrying) => carried_image(
             arena,

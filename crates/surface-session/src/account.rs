@@ -16,6 +16,7 @@
 //! | the kernel tier | [`KernelState`]: pending, or the tier an admission settled | the judgement keeps it or sets pending, the admission writes it | when the admission ends |
 //! | the compile tier | [`CompileTier`], or [`compiled::Absent::Uncompiled`] | the emitter's record | never yet: the hub compiles nothing |
 //! | the counts, with the `instrument` feature | `DeclarationCounts`, or none when the judgement ran at a sink that counts nothing | the judgement writes the counts of the recheck's column, the admission writes the kernel's | at each judgement and when the admission ends |
+//! | the timings, with the `instrument` feature | a ring of the last 32 samples for the judgement and the admission of each declaration, and for each phase of the document, kept beside the rows | the judgement writes the samples of the recheck's column, the admission writes the kernel's | at each judgement and when the admission ends |
 //!
 //! A judgement keeps the row of each declaration whose key and verdict are
 //! unchanged, with its kernel tier, so an edit to a comment or to another
@@ -47,12 +48,16 @@
 //!   engine-surface-items keys the verdict and the tiers by the declaration's
 //!   content key and keeps the table across rechecks.
 
+#[cfg(feature = "instrument")]
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_checker::Verdict;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::bridge::Spent;
 use gandr_core_incremental::ContentKey;
 use gandr_core_incremental::recall;
 use gandr_kernel_term::ConstantIndex;
@@ -60,6 +65,8 @@ use gandr_surface_corpus::Produced;
 #[cfg(feature = "instrument")]
 use gandr_surface_dispatcher::ArtifactPositions;
 use gandr_surface_dispatcher::KernelTier;
+#[cfg(feature = "instrument")]
+use gandr_surface_dispatcher::positioned;
 use quenchant_shape::shape::Maybe;
 
 #[cfg(feature = "instrument")]
@@ -68,6 +75,16 @@ use crate::counts::CountColumn;
 use crate::counts::DeclarationCounts;
 #[cfg(feature = "instrument")]
 use crate::counts::uncounted;
+#[cfg(feature = "instrument")]
+use crate::instrument::Phase;
+#[cfg(feature = "instrument")]
+use crate::timings::PhaseRings;
+#[cfg(feature = "instrument")]
+use crate::timings::RowRings;
+#[cfg(feature = "instrument")]
+use crate::timings::TimingColumn;
+#[cfg(feature = "instrument")]
+use crate::timings::untimed;
 
 quenchant_shape::reason_enum! {
     /// Why a row has no compile tier.
@@ -281,6 +298,12 @@ pub struct Account
     declared: Vec<(ConstantIndex, ContentKey)>,
     /// How many judgements the account took.
     judgements: Judgement,
+    /// The rings of the document's phases.
+    #[cfg(feature = "instrument")]
+    document: PhaseRings,
+    /// The rings of each row whose phases were sampled, by its key.
+    #[cfg(feature = "instrument")]
+    sampled: BTreeMap<ContentKey, Box<RowRings>>,
 }
 
 /// How many judgements an account took: the mark of the judgement that
@@ -371,6 +394,11 @@ impl Account
             }
         }
         self.rows.retain(|_, &mut (listed, _)| listed == judgement);
+        #[cfg(feature = "instrument")]
+        if !self.sampled.is_empty() {
+            let rows = &self.rows;
+            self.sampled.retain(|key, _| rows.contains_key(key));
+        }
     }
 
     /// Take an admission of the latest judged revision that reported `tiers`:
@@ -512,6 +540,96 @@ impl Account
         }
     }
 
+    /// Take the samples of the latest judgement: each phase of the document
+    /// that `column` sampled into the document's ring, and each item it judged
+    /// into the judgement ring of its row.
+    ///
+    /// # Specification
+    /// - requires: the latest judgement sampled into `column`.
+    /// - ensures: the document's ring of each phase `column` sampled holds that
+    ///   sample as its latest; the judgement ring of each listed row whose
+    ///   position `column` sampled holds that sample as its latest; the rows,
+    ///   their verdicts and their tiers are unchanged.
+    /// - provides: the judgement's half of the timings.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one search of the positions for each judged item, a ring
+    ///   allocated only for a row sampled the first time, and one write into a
+    ///   ring for each sample. The pass judges the items the edit reaches, and
+    ///   #4369 bounds them by the edit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Timings`].
+    /// - witness: `tests::timings::a_recheck_samples_each_phase_and_each_judged_declaration`
+    #[cfg(feature = "instrument")]
+    #[spec(captures: [count = self.rows.len()], ensures: self.rows.len() == count)]
+    pub(crate) fn timed(
+        &mut self,
+        column: &TimingColumn,
+    )
+    {
+        for phase in [Phase::Parse, Phase::Lower, Phase::Judge] {
+            if let Maybe::Present(sample) = column.sample(phase) {
+                self.document.push(phase, sample);
+            }
+        }
+        for &(constant, sample) in column.judged() {
+            if let Some(&(_, key)) = self
+                .declared
+                .binary_search_by_key(&constant, |&(at, _)| at)
+                .ok()
+                .and_then(|found| self.declared.get(found))
+            {
+                self.sampled.entry(key).or_default().judged(sample);
+            }
+        }
+    }
+
+    /// Take the samples of an admission of the latest judged revision: `admit`
+    /// into the document's admission ring, and what `positions` records of
+    /// each declaration that crossed into the admission ring of its row.
+    ///
+    /// # Specification
+    /// - requires: the admission judged the latest judged revision.
+    /// - ensures: the document's admission ring holds a present `admit` as its
+    ///   latest; the admission ring of each listed row that `positions` places
+    ///   with a time holds what it spent as its latest; the rows, their
+    ///   verdicts and their tiers are unchanged.
+    /// - provides: the admission's half of the timings.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one lookup in the positions for each listed declaration, a
+    ///   ring allocated only for a row sampled the first time, and one write
+    ///   into a ring for each sample. The pass reads each declaration of the
+    ///   revision's own text, and #4369 bounds it by the edit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Timings`].
+    /// - witness: `tests::timings::a_recheck_samples_each_phase_and_each_judged_declaration`
+    #[cfg(feature = "instrument")]
+    #[spec(captures: [count = self.rows.len()], ensures: self.rows.len() == count)]
+    pub(crate) fn admitted(
+        &mut self,
+        admit: Maybe<Spent, untimed::Absent>,
+        positions: Maybe<&ArtifactPositions, positioned::Absent>,
+    )
+    {
+        if let Maybe::Present(sample) = admit {
+            self.document.push(Phase::Admit, sample);
+        }
+        let Maybe::Present(positions) = positions
+        else {
+            return;
+        };
+        for &(at, key) in &self.declared {
+            if let Maybe::Present(placed) = positions.placed(at)
+                && let Maybe::Present(spent) = placed.took()
+            {
+                self.sampled.entry(key).or_default().admitted(spent);
+            }
+        }
+    }
+
     /// The content key and the row of the latest judged revision's
     /// declaration at `constant`.
     ///
@@ -569,5 +687,50 @@ impl Account
         self.declared.iter().filter_map(|&(constant, key)| {
             self.rows.get(&key).map(|&(_, row)| (constant, key, row))
         })
+    }
+
+    /// The rings of the document's phases: the last 32 samples of each.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    #[must_use]
+    pub const fn document_timings(&self) -> &PhaseRings
+    {
+        &self.document
+    }
+
+    /// The rings of the latest judged revision's declaration at `constant`,
+    /// or [`untimed::Absent::Unsampled`] when no phase of it was sampled.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when the latest judgement listed a key at
+    ///   `constant` and a phase of that key's row was sampled.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Timings`].
+    /// - witness: `tests::timings::a_recheck_samples_each_phase_and_each_judged_declaration`
+    #[cfg(feature = "instrument")]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_))
+        == self.declared.binary_search_by_key(&constant, |&(at, _)| at).ok()
+            .and_then(|found| self.declared.get(found))
+            .is_some_and(|&(_, key)| self.sampled.contains_key(&key)))]
+    #[inline]
+    pub fn timings_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<&RowRings, untimed::Absent>
+    {
+        self.declared
+            .binary_search_by_key(&constant, |&(at, _)| at)
+            .ok()
+            .and_then(|found| self.declared.get(found))
+            .and_then(|&(_, key)| self.sampled.get(&key))
+            .map_or(Maybe::Absent(untimed::Absent::Unsampled), |rings| {
+                Maybe::Present(&**rings)
+            })
     }
 }

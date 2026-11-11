@@ -3126,7 +3126,7 @@ fn a_word_appends_on_its_first_word()
 }
 
 #[test]
-fn a_word_of_two_letters_moves_a_path_letter_by_letter()
+fn a_word_of_two_letters_moves_a_path_whole()
 {
     /// Which endpoint of the family the transport moves.
     #[derive(Clone, Copy, Debug)]
@@ -3139,8 +3139,8 @@ fn a_word_of_two_letters_moves_a_path_letter_by_letter()
     }
     let mut environment = one_loop();
     // `Path[.A = Path[.A = S](Base, Base)](tr(family, loop ∷ loop ∷ ε, ε), right)`
-    // at reflexivity on `right`: the word splits into its first letter and the
-    // rest, and the empty path moves along each in turn.
+    // at reflexivity on `right`: the family's endpoints are fixed and moving,
+    // so the empty path moves along the whole word in one step.
     let mut moves_to = |moving: Moving, tag: usize| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -3189,6 +3189,86 @@ fn a_word_of_two_letters_moves_a_path_letter_by_letter()
                 ))
             ),
             "{moving:?}: {refused:?}"
+        );
+    }
+}
+
+#[test]
+fn a_closed_word_moves_whole_to_its_letters_images()
+{
+    let mut environment = one_loop();
+    let flip = case_over(&mut environment, Family::Kept, Built::Point, &[
+        Built::Inverse,
+    ])
+    .expect("a non-dependent loop arm chooses the loop's image");
+    let identity = case_over(&mut environment, Family::Kept, Built::Point, &[
+        Built::Named,
+    ])
+    .expect("the loop arm `loop` is the identity's");
+    // `Path[.A = Path[.A = S](Base, Base)](⟨tr(y. Path[.A = S](Base, ⟨f y⟩), w,
+    // ε)⟩, right)` at reflexivity on `right`, for `w` the word `loop loop
+    // back(loop) loop`: the right endpoint maps the whole word at once, each
+    // distinct letter's image once, in the order of the letters.
+    let mut moves_to = |function: ConstantIndex, right: &[usize]| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let point = build(arena, Built::Point);
+        let empty = build(arena, Built::Empty);
+        let spelled = |arena: &mut TermArena, letters: &[usize]| {
+            letters.iter().rev().fold(empty, |rest, &tag| {
+                arena.value_constructor(
+                    ConstantIndex::from(WORDS),
+                    words,
+                    ConstructorTag::from(tag),
+                    vec![rest],
+                )
+            })
+        };
+        let along = spelled(arena, &[1, 1, 2, 1]);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let function = arena.value_constant(function);
+        let forced = arena.computation_force(function);
+        let applied = arena.computation_application(forced, bound);
+        let image = arena.value_returned(applied);
+        let family = arena.value_type_path(carrier, point, image);
+        let moved = arena.computation_path_transport(family, along, empty);
+        let moved = arena.value_returned(moved);
+        let at_point = arena.value_type_path(carrier, point, point);
+        let right = spelled(arena, right);
+        let declared = arena.value_type_path(at_point, moved, right);
+        let body = arena.value_here(right);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(staged)
+    };
+    // Over one loop a word is its exponent, so the image read back uninverted,
+    // the inverse of the image, is the word that must be refused.
+    for (function, reached, missed, what) in [
+        (
+            identity,
+            &[1, 1, 2, 1][..],
+            &[2, 1, 2, 2][..],
+            "the identity maps the word to itself, not to its inverse",
+        ),
+        (
+            flip,
+            &[2, 2, 1, 2][..],
+            &[1, 2, 1, 1][..],
+            "the flip inverts each letter in place, and the image is not inverted again",
+        ),
+    ] {
+        let admitted = moves_to(function, reached);
+        assert!(admitted.is_ok(), "{what}: {admitted:?}");
+        let refused = moves_to(function, missed);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer { .. }
+                ))
+            ),
+            "{what}: {refused:?}"
         );
     }
 }

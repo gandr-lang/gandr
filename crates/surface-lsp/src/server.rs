@@ -332,9 +332,10 @@ use crate::rpc::success;
 use crate::rpc::tell;
 use crate::rpc::trace;
 use crate::rpc::unregister;
+use crate::run::Prepared;
 use crate::run::Unran;
-use crate::run::run;
 use crate::run::runs;
+use crate::run::taken;
 use crate::saved::Saved;
 use crate::search::Declared;
 use crate::search::FOUND_HELD;
@@ -601,16 +602,6 @@ impl Lent<'_>
     {
         &self.0
     }
-
-    /// The session, or the fault that kept its grammar from building, to
-    /// judge again.
-    ///
-    /// # Specification
-    /// trivial.
-    fn whole_mut(&mut self) -> &mut DocumentSession
-    {
-        &mut self.0
-    }
 }
 
 /// Where a copy's judgement stands.
@@ -694,9 +685,9 @@ struct HeldText
     /// the text changed.
     hovering: OnceCell<Hovering>,
     /// The import closure the latest recheck of `text` laid it out in, or why
-    /// it was judged alone; none until a recheck since the text or its
-    /// closure last changed.
-    laid: Option<Maybe<Laid, laid::Absent>>,
+    /// it was judged alone, shared with each run that reads it; none until a
+    /// recheck since the text or its closure last changed.
+    laid: Option<Arc<Maybe<Laid, laid::Absent>>>,
     /// The type table the latest recheck of `text` kept, with the heads read
     /// off its parse, until the hover table is made from them; none until a
     /// recheck since the text or its closure last changed.
@@ -848,7 +839,7 @@ impl HeldText
             }
             self.laid.as_ref().map_or_else(
                 || hovering(self.source(), path, session, shadows),
-                |laid| hovering_laid(self.source(), path, session, (laid, judged)),
+                |laid| hovering_laid(self.source(), path, session, (&**laid, judged)),
             )
         })
     }
@@ -870,7 +861,7 @@ impl HeldText
         ),
     )
     {
-        self.laid = Some(laid);
+        self.laid = Some(Arc::new(laid));
         self.wanted.set(Tables::Unkept);
         self.reads.set(Readings::Unkept);
         self.judged = Cell::new(match table {
@@ -1233,17 +1224,35 @@ pub struct Admissions
     generations: Generations<DocumentUri, Submission, Finished>,
     /// The line of each document's synchronisation whose admission runs.
     waiting: BTreeMap<DocumentUri, Logged>,
-    /// How many judgements and admissions were submitted; the next is
+    /// The running runs, one slot for each.
+    runs: Generations<Submission, (), Result<(MessageType, String), Unran>>,
+    /// How many judgements, admissions and runs were submitted; the next is
     /// numbered after them.
     submitted: Submission,
     /// The source judged for the workspace's diagnostics, while one is.
     sweeping: Option<Sweeping>,
 }
 
-/// One judgement's or admission's place among those a connection submitted.
+/// One judgement's, admission's or run's place among those a connection
+/// submitted.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Submission(u64);
+
+/// The runs a connection was asked for and has not answered: each is due
+/// until [`Server::admit`] starts it on the pool, then running until
+/// [`Server::admitted`] answers it, or until a change to its document answers
+/// it as [`Server::unran`] states.
+#[derive(Debug, Default)]
+struct Runs
+{
+    /// The runs to start, each with its request and its document, in the
+    /// order asked.
+    due: Vec<(RequestId, DocumentUri, Prepared)>,
+    /// The runs on the pool, each with its request and its document, keyed
+    /// by the submission that delivers it.
+    running: BTreeMap<Submission, (RequestId, DocumentUri)>,
+}
 
 impl Admissions
 {
@@ -1260,12 +1269,17 @@ impl Admissions
     ) -> Self
     {
         let judged = waking.clone();
+        let ran = waking.clone();
         Self {
             judgements: Generations::waking(Arc::clone(&pool), Arc::new(move || judged.admitted())),
             judging: BTreeMap::new(),
             ending: Vec::new(),
-            generations: Generations::waking(pool, Arc::new(move || waking.admitted())),
+            generations: Generations::waking(
+                Arc::clone(&pool),
+                Arc::new(move || waking.admitted()),
+            ),
             waiting: BTreeMap::new(),
+            runs: Generations::waking(pool, Arc::new(move || ran.admitted())),
             submitted: Submission(0_u64),
             sweeping: None,
         }
@@ -2188,19 +2202,18 @@ impl Workspace
     /// - ensures: a request is answered as [`Server::handle`] answers it on a
     ///   running connection, under its own identifier; `initialize` and
     ///   `shutdown` are refused as a running connection refuses or answers
-    ///   them, and change nothing here. A `workspace/executeCommand` of [`RUN`]
-    ///   is answered as a connection answers it, with no `window/showMessage`;
-    ///   another command is not served. A notification or a response is
-    ///   answered `null`; a body that is not a message, with the error the
-    ///   protocol owes it.
-    /// - provides: every read-only request of the language server, and the run
-    ///   of a declaration, for a face that speaks another protocol over the
-    ///   same documents.
+    ///   them, and change nothing here. A `workspace/executeCommand` is not
+    ///   served: a run takes [`Workspace::prepared`], so it holds no lock of
+    ///   the workspace while it runs. A notification or a response is answered
+    ///   `null`; a body that is not a message, with the error the protocol owes
+    ///   it.
+    /// - provides: every read-only request of the language server for a face
+    ///   that speaks another protocol over the same documents.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a hover, an outline and a run answer as a
-    ///   connection's would; a notification answers `null`.
+    /// - hypothesis: L3 — a hover and an outline answer as a connection's
+    ///   would; a notification answers `null`.
     /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
     #[spec(ensures: |ret| ret.is_null() || ret.get("jsonrpc").is_some())]
     #[inline]
@@ -2251,20 +2264,10 @@ impl Workspace
             notebooks: BTreeMap::new(),
             sweep: Sweep::new(),
             opening: Value::Null,
+            runs: Runs::default(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
-            // A run changes no document, so a face that holds no copy runs a
-            // declaration as the run lens of an editor runs it.
-            Ok(Incoming::Request { id, method, params })
-                if method.as_ref() == "workspace/executeCommand"
-                    && params.get("command").and_then(Value::as_str) == Some(RUN) =>
-            {
-                match reader.execute(self, id, params).messages.pop() {
-                    Some(answer) => answer,
-                    None => return Value::Null,
-                }
-            },
             Ok(Incoming::Request { id, method, params }) => {
                 reader.request(self, id, &method, params)
             },
@@ -2582,6 +2585,8 @@ pub struct Server
     /// them: the opening a replay rebuilds the connection from on another
     /// build's hub.
     opening: Value,
+    /// The runs its client asked for and is not yet answered.
+    runs: Runs,
 }
 
 /// Where a choice put to the user stands.
@@ -2673,6 +2678,10 @@ impl Server
             notebooks: BTreeMap::new(),
             sweep: Sweep::new(),
             opening: Value::Null,
+            runs: Runs {
+                due: Vec::new(),
+                running: BTreeMap::new(),
+            },
         }
     }
 
@@ -3190,14 +3199,16 @@ impl Server
     ///   session that [`Superseded::of`] finds changed again in `later` is
     ///   applied to the copy as `Server::deferred` states, neither judged nor
     ///   published, so a burst of changes is judged once, at its last; a change
-    ///   of a document this connection holds and whose syntax tree its client
-    ///   asked for asks the client for the tree again under each URI it asked
-    ///   by, after the change's own messages. A request of a running session,
-    ///   neither withdrawn nor `shutdown`, whose `textDocument` names a copy
-    ///   this connection holds whose judgement is due or running is held on the
-    ///   copy and answered nothing now: [`Server::admitted`] answers it once
-    ///   the copy is published, and a change or close of the copy first answers
-    ///   it `ContentModified`, or a pull of the copy's diagnostics
+    ///   of a running session first answers each run of its document as
+    ///   `Server::unran` states; a change of a document this connection holds
+    ///   and whose syntax tree its client asked for asks the client for the
+    ///   tree again under each URI it asked by, after the change's own
+    ///   messages. A request of a running session, neither withdrawn nor
+    ///   `shutdown`, whose `textDocument` names a copy this connection holds
+    ///   whose judgement is due or running is held on the copy and answered
+    ///   nothing now: [`Server::admitted`] answers it once the copy is
+    ///   published, and a change or close of the copy first answers it
+    ///   `ContentModified`, or a pull of the copy's diagnostics
     ///   `ServerCancelled` with `retriggerRequest`, which its client asks again
     ///   instead of reading the refusal as an empty report. A
     ///   `workspace/diagnostic` pull is answered nothing now unless the sweep's
@@ -3305,10 +3316,11 @@ impl Server
                     return self.deferred(workspace, params);
                 }
                 let mut outcome = self.notification(workspace, &method, params);
-                if let Some(uri) = changed
-                    && workspace.documents.contains_key(&uri)
-                {
-                    outcome.messages.extend(self.reviewed(&uri));
+                if let Some(uri) = changed {
+                    outcome.messages.extend(self.unran(&uri));
+                    if workspace.documents.contains_key(&uri) {
+                        outcome.messages.extend(self.reviewed(&uri));
+                    }
                 }
                 outcome
             },
@@ -3326,7 +3338,8 @@ impl Server
     /// - ensures: the copy holds the version and the text the change brings it
     ///   to and no proposal, as a judged change leaves it, and the requests it
     ///   held are answered `ContentModified`, a pull of its diagnostics
-    ///   `ServerCancelled`; nothing is published, logged or asked.
+    ///   `ServerCancelled`; each run of the document is answered as
+    ///   [`Server::unran`] states; nothing is published, logged or asked.
     /// - fails: never; unreadable parameters and a document this connection
     ///   holds no copy of are ignored.
     /// - panics: none.
@@ -3340,7 +3353,7 @@ impl Server
             Outgoing::Failure { ref error, .. }
                 if error.code == ErrorCode::CONTENT_MODIFIED || error.code == ErrorCode::SERVER_CANCELLED)))]
     fn deferred(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         params: Value,
     ) -> Outcome
@@ -3360,6 +3373,7 @@ impl Server
                 outcome.messages = document.withdrawn();
             }
         }
+        outcome.messages.extend(self.unran(&text_document.uri));
         outcome
     }
 
@@ -3387,9 +3401,8 @@ impl Server
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     #[spec(ensures: |ret| ret.flow == Flow::Continue
         && matches!(ret.messages.as_slice(),
-            [Outgoing::Failure { .. }]
-            | [Outgoing::Request { .. }, Outgoing::Success { result: Answer::Nothing, .. }]
-            | [Outgoing::Notification { .. }, Outgoing::Success { result: Answer::Ran(_), .. }]))]
+            [] | [Outgoing::Failure { .. }]
+            | [Outgoing::Request { .. }, Outgoing::Success { result: Answer::Nothing, .. }]))]
     fn execute(
         &mut self,
         workspace: &Workspace,
@@ -3460,20 +3473,19 @@ impl Server
         }
     }
 
-    /// Run the declaration the [`RUN`] command's `arguments` name, answering
-    /// request `id`: show the line `gandr run` prints of the run, and answer
-    /// it.
+    /// Ask for a run of the declaration the [`RUN`] command's `arguments` name,
+    /// answering request `id` once the run ends on the pool.
     ///
     /// # Specification
     /// - requires: nothing; any arguments are admissible input.
     /// - ensures: arguments other than a document's URI and a position are
-    ///   `InvalidParams`. A document this connection does not hold, and a
-    ///   position at which [`run`] finds nothing that runs, are
-    ///   `ContentModified`; a declaration [`run`] declines is `RequestFailed`
-    ///   carrying why. Otherwise a `window/showMessage` of the run's line, as
-    ///   [`run`] reads it, then the answer [`Answer::Ran`] carrying the line.
-    ///   The run reads the document's copy, judged over the closure its latest
-    ///   recheck laid out, else over the one [`lay`] lays out now.
+    ///   `InvalidParams`, and a run that [`Workspace::run_of`] refuses is
+    ///   answered as [`refusal`] states. Otherwise nothing is written now: what
+    ///   the run reads is kept, [`Server::admit`] starts it on the pool, and
+    ///   [`Server::admitted`] writes a `window/showMessage` of the run's line,
+    ///   then the answer [`Answer::Ran`] carrying the line, or the run's
+    ///   refusal. A change to the document before then answers the request
+    ///   `ContentModified` at once, as [`Server::unran`] states.
     /// - fails: never; every refusal is an answer.
     /// - panics: none.
     ///
@@ -3483,12 +3495,11 @@ impl Server
     ///   position naming no run and arguments of another shape are refused,
     ///   each at its exact messages.
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
+    /// - witness: `server::tests::a_change_during_a_run_answers_it_as_modified`
     #[spec(ensures: |ret| ret.flow == Flow::Continue
-        && matches!(ret.messages.as_slice(),
-            [Outgoing::Failure { .. }]
-            | [Outgoing::Notification { .. }, Outgoing::Success { result: Answer::Ran(_), .. }]))]
+        && matches!(ret.messages.as_slice(), [] | [Outgoing::Failure { .. }]))]
     fn ran(
-        &self,
+        &mut self,
         workspace: &Workspace,
         id: RequestId,
         arguments: &[Value],
@@ -3508,63 +3519,59 @@ impl Server
                 return Outcome::say(failure(id, ErrorCode::INVALID_PARAMS, message));
             },
         };
-        let Maybe::Present(document) = workspace.view(&uri, self.peer)
-        else {
-            return Outcome::say(failure(
-                id,
-                ErrorCode::CONTENT_MODIFIED,
-                String::from("the document is not open, so nothing in it runs"),
-            ));
-        };
-        let shadows = workspace.shadowing(self.peer);
-        let text = document.text.source();
-        let ran = match document.hovering(&uri, &shadows) {
-            Ok(hovering) => {
-                let over = |laid: &Maybe<Laid, laid::Absent>| {
-                    run(
-                        document.session().whole_mut(),
-                        (text, laid),
-                        hovering,
-                        position,
-                    )
-                };
-                document.text.laid.as_ref().map_or_else(
-                    || {
-                        over(&lay(
-                            &uri,
-                            text,
-                            &shadows,
-                            Maybe::Absent(written::Absent::Unread),
-                        ))
-                    },
-                    over,
-                )
+        match workspace.run_of(&uri, position, self.peer) {
+            Ok(prepared) => {
+                self.runs.due.push((id, uri, prepared));
+                Outcome::quiet()
             },
-            Err(Unlent) => Err(Unran::Declined(String::from(
-                "gandr's grammar did not build, so nothing runs",
-            ))),
-        };
-        match ran {
-            Ok((kind, line)) => Outcome {
-                messages: Vec::from([
-                    tell(Told::Shown, MessageParams {
-                        kind,
-                        message: line.clone(),
-                    }),
-                    success(id, Answer::Ran(line)),
-                ]),
-                flow: Flow::Continue,
-            },
-            Err(Unran::Unnamed) => Outcome::say(failure(
-                id,
-                ErrorCode::CONTENT_MODIFIED,
-                String::from(
-                    "nothing that runs is named there: the document changed since the lens was \
-                     offered",
-                ),
-            )),
-            Err(Unran::Declined(why)) => Outcome::say(failure(id, ErrorCode::REQUEST_FAILED, why)),
+            Err(refused) => Outcome::say(refusal(id, &refused)),
         }
+    }
+
+    /// The answers owed each run this connection asked for on the document at
+    /// `uri`, now a newer revision of it retires them: `ContentModified`, in
+    /// the order asked. A run on the pool goes on to its end, and its result
+    /// is dropped.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no run this connection asked for reads the document; one
+    ///   `ContentModified` answer for each run that did.
+    /// - provides: the retirement of a run by its document's next revision.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change during a run answers the run at once, and
+    ///   the run's end writes nothing.
+    /// - witness: `server::tests::a_change_during_a_run_answers_it_as_modified`
+    #[spec(ensures: |ret| ret.iter().all(|message| matches!(*message,
+        Outgoing::Failure { ref error, .. } if error.code == ErrorCode::CONTENT_MODIFIED)))]
+    fn unran(
+        &mut self,
+        uri: &DocumentUri,
+    ) -> Vec<Outgoing>
+    {
+        let modified = |id: RequestId| {
+            failure(
+                id,
+                ErrorCode::CONTENT_MODIFIED,
+                String::from("the document changed during the run, so its line is dropped"),
+            )
+        };
+        let mut answers: Vec<Outgoing> = self
+            .runs
+            .due
+            .extract_if(.., |&mut (_, ref read, _)| read == uri)
+            .map(|(id, ..)| modified(id))
+            .collect();
+        answers.extend(
+            self.runs
+                .running
+                .extract_if(.., |_, &mut (_, ref read)| read == uri)
+                .map(|(_, (id, _))| modified(id)),
+        );
+        answers
     }
 
     /// Answer the pull of the workspace's diagnostics `id` with `params` once
@@ -3808,7 +3815,10 @@ impl Server
     ///   the copy's judgement runs, delivered by [`Server::admitted`], and no
     ///   copy is left due. A source the sweep judges whose copy is now judged
     ///   is swept no more; then the sweep's next step starts, as
-    ///   [`Server::sweep_next`] states.
+    ///   [`Server::sweep_next`] states. Then each run this connection was asked
+    ///   for and has not started starts on the pool, in the order asked, as
+    ///   [`Prepared::run`] runs it, with no lock of the workspace; its end is
+    ///   delivered by [`Server::admitted`].
     /// - provides: the first half of every synchronisation; the connection
     ///   reads its next frame while the copy is judged.
     /// - fails: never.
@@ -3822,7 +3832,7 @@ impl Server
     /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
     #[spec(
         captures: copies = workspace.documents.len(),
-        ensures: |ret| ret.len() <= copies,
+        ensures: |ret| ret.len() <= copies && self.runs.due.is_empty(),
     )]
     #[inline]
     #[must_use]
@@ -3905,6 +3915,13 @@ impl Server
             }
         }
         self.sweep_next(workspace, admissions);
+        for (id, uri, prepared) in core::mem::take(&mut self.runs.due) {
+            let submission = admissions.next();
+            let _started = admissions
+                .runs
+                .submit(submission, (), move |_watch| Ok(prepared.run()));
+            let _earlier = self.runs.running.insert(submission, (id, uri));
+        }
         retired
     }
 
@@ -3954,9 +3971,14 @@ impl Server
     ///   copy, still at its version, keeps: over the same closure (the same
     ///   text before the document and the same unit) it stands, its lay-out and
     ///   named paths the new lay-out's; over another it publishes nothing and
-    ///   ends no progress, and while the copy runs it is judged again. With
-    ///   [`Awaiting::All`], no judgement or admission is left running and no
-    ///   progress end left waiting.
+    ///   ends no progress, and while the copy runs it is judged again. Each run
+    ///   that ended and that no change answered first writes a
+    ///   `window/showMessage` of its line, as [`Prepared::run`] reads it, then
+    ///   the answer [`Answer::Ran`] carrying the line, or the refusal
+    ///   [`refusal`] makes; a run a change answered writes nothing, and a run
+    ///   still running is never waited for, so the lock of the workspace waits
+    ///   for no run. With [`Awaiting::All`], no judgement or admission is left
+    ///   running and no progress end left waiting.
     /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
     /// - fails: never; a disagreement is a diagnostic.
@@ -3993,6 +4015,31 @@ impl Server
         // A publication no admission follows: a client that refreshes its
         // lenses is asked for them again here, not when an admission ends.
         let mut unadmitted = false;
+        // A run is delivered once it ended and is never waited for: the
+        // caller holds the lock of the workspace.
+        while let Maybe::Present(Delivered {
+            slot: submission,
+            output: ran,
+            ..
+        }) = admissions.runs.ready()
+        {
+            // The slot ended; its entry goes.
+            admissions.runs.retire(&submission);
+            let Some((id, _)) = self.runs.running.remove(&submission)
+            else {
+                continue;
+            };
+            match ran {
+                Ok((kind, line)) => {
+                    settled.messages.push(tell(Told::Shown, MessageParams {
+                        kind,
+                        message: line.clone(),
+                    }));
+                    settled.messages.push(success(id, Answer::Ran(line)));
+                },
+                Err(refused) => settled.messages.push(refusal(id, &refused)),
+            }
+        }
         loop {
             // The sweep judges its next source while no copy is judged.
             if admissions.judging.is_empty() {
@@ -6373,6 +6420,101 @@ impl Workspace
             .map_or(Maybe::Absent(unheld::Absent::Forgotten), |held| {
                 Maybe::Present(held.view(peer))
             })
+    }
+
+    /// What a run of the declaration named at `position` of the document at
+    /// `uri` reads, from the copy `peer` is answered from: the copy's session
+    /// and its laid closure, shared, its text, its version and the constant
+    /// of the declaration. A copy no recheck laid out since its text or its
+    /// closure changed is laid out now, each import read as `peer`'s editors
+    /// hold it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Unran::Unheld`] when no connection holds the document; a
+    ///   decline when its grammar did not build; otherwise what [`taken`]
+    ///   answers for the copy, at the copy's version.
+    /// - provides: the half of a run that the lock of the workspace covers, for
+    ///   a connection's run lens and for the toolset's `run`.
+    /// - fails: as above.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Unran::Unheld`], [`Unran::Unnamed`], or [`Unran::Declined`] for a
+    /// grammar that did not build.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document not open and a position naming no run are
+    ///   refused, and a value runs to its line.
+    /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
+    /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|prepared| self.documents.get(uri)
+        .is_some_and(|held| held.view(peer).version == prepared.version()))
+        || ret.is_err())]
+    fn run_of(
+        &self,
+        uri: &DocumentUri,
+        position: Position,
+        peer: Peer,
+    ) -> Result<Prepared, Unran>
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Err(Unran::Unheld);
+        };
+        let shadows = self.shadowing(peer);
+        let Ok(hovering) = document.hovering(uri, &shadows)
+        else {
+            return Err(Unran::Declined(String::from(
+                "gandr's grammar did not build, so nothing runs",
+            )));
+        };
+        let text = document.text.source();
+        let laid = document.text.laid.clone().unwrap_or_else(|| {
+            Arc::new(lay(
+                uri,
+                text,
+                &shadows,
+                Maybe::Absent(written::Absent::Unread),
+            ))
+        });
+        taken(
+            (&document.session, laid),
+            (text, document.version),
+            hovering,
+            position,
+        )
+    }
+
+    /// What a run of the declaration named at `position` of the document at
+    /// `uri` reads, from its latest copy, as [`Workspace::run_of`] takes it
+    /// for a connection that holds no copy. [`Prepared::run`] then runs it
+    /// with no lock of the workspace.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Workspace::run_of`], for the latest copy.
+    /// - provides: the toolset's `run`, which takes the lock for this call
+    ///   alone.
+    /// - fails: as [`Workspace::run_of`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Workspace::run_of`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Workspace::run_of`].
+    /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
+    #[spec(ensures: |ret| ret.is_err() || self.documents.contains_key(uri))]
+    #[inline]
+    pub fn prepared(
+        &self,
+        uri: &DocumentUri,
+        position: Position,
+    ) -> Result<Prepared, Unran>
+    {
+        // No connection is numbered so, so the latest copy answers.
+        self.run_of(uri, position, Peer(u64::MAX))
     }
 
     /// Each document whose latest copy `peer` holds and that keeps a fill,
@@ -9151,11 +9293,29 @@ fn edited(
 ///
 /// # Specification
 /// trivial.
-fn locked(session: &Mutex<DocumentSession>) -> MutexGuard<'_, DocumentSession>
+pub fn locked(session: &Mutex<DocumentSession>) -> MutexGuard<'_, DocumentSession>
 {
     // A judgement that panicked resumes its panic where it is delivered;
     // until then the session it left is read as it is.
     session.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The answer to the run request `id` that `refused` refuses: a document not
+/// held and a position naming no run are `ContentModified`, and a declined
+/// run is `RequestFailed`, each carrying the refusal's sentence.
+///
+/// # Specification
+/// trivial.
+fn refusal(
+    id: RequestId,
+    refused: &Unran,
+) -> Outgoing
+{
+    let code = match *refused {
+        Unran::Unheld | Unran::Unnamed => ErrorCode::CONTENT_MODIFIED,
+        Unran::Declined(_) => ErrorCode::REQUEST_FAILED,
+    };
+    failure(id, code, refused.to_string())
 }
 
 /// What a judgement whose parse misread its lay-out's imports leaves, once its
@@ -18184,21 +18344,35 @@ mod tests
                 .cloned(),
             "a query answers as a connection answers"
         );
+        let at = Position {
+            line: crate::position::Line::from(0_u32),
+            character: crate::position::Character::from(4_u32),
+        };
+        assert_eq!(
+            workspace
+                .prepared(&uri, at)
+                .map(|prepared| prepared.version().to_string()),
+            Err(crate::run::Unran::Unnamed),
+            "a refused declaration stands no run in the latest copy"
+        );
+        assert_eq!(
+            workspace
+                .prepared(
+                    &crate::protocol::DocumentUri::from("file:///tmp/other.gandr"),
+                    at
+                )
+                .map(|prepared| prepared.version().to_string()),
+            Err(crate::run::Unran::Unheld),
+            "a document no connection holds runs nothing"
+        );
         let run = Body::from(
             br#"{"jsonrpc":"2.0","id":4,"method":"workspace/executeCommand","params":{
                 "command":"gandr.run","arguments":["file:///tmp/shared.gandr",{"line":0,"character":4}]}}"#
                 .to_vec(),
         );
-        let ran = workspace.query(&run);
-        assert_eq!(ran.get("id"), Some(&serde_json::json!(4_i32)));
-        assert_eq!(
-            Some(ran),
-            serde_json::to_value(&first.handle(&mut workspace, &run).messages)
-                .expect("a message encodes")
-                .as_array()
-                .and_then(|messages| messages.last())
-                .cloned(),
-            "a run answers as a connection's run lens answers, with no message shown"
+        assert!(
+            workspace.query(&run).get("error").is_some(),
+            "a query runs no command, so it holds the lock for no run"
         );
         assert!(
             workspace
@@ -19312,6 +19486,81 @@ mod tests
             execute(8, &serde_json::json!(["file:///tmp/run.gandr"])).pointer("/0/error/code"),
             Some(&serde_json::json!(-32_602_i32)),
             "a position is wanted"
+        );
+    }
+
+    /// A change to a document answers each run of it `ContentModified` at
+    /// once: a run not yet started never starts, and a run on the pool writes
+    /// nothing when it ends.
+    #[test]
+    fn a_change_during_a_run_answers_it_as_modified()
+    {
+        let mut connected = Connected::default();
+        let _answered = send(
+            &mut connected,
+            Json(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#),
+        );
+        let _published = send(
+            &mut connected,
+            Json(include_str!(
+                "server/unformatted/a-run-lens-runs-its-declaration-1818--published.gandr"
+            )),
+        );
+        let run = |id: u32| {
+            Body::from(
+                serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "workspace/executeCommand",
+                    "params": {"command": "gandr.run",
+                        "arguments": ["file:///tmp/run.gandr", {"line": 0_i32, "character": 4_i32}]}})
+                .to_string()
+                .into_bytes(),
+            )
+        };
+        let change = |version: u32| {
+            Body::from(
+                serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+                    "params": {"textDocument": {"uri": "file:///tmp/run.gandr", "version": version},
+                        "contentChanges": [{"text": "def answer = 43 ;\n"}]}})
+                .to_string()
+                .into_bytes(),
+            )
+        };
+        let answers = |messages: &[Outgoing], id: u32| -> Vec<Value> {
+            messages
+                .iter()
+                .map(|outgoing| serde_json::to_value(outgoing).expect("a message encodes"))
+                .filter(|message| message.get("id") == Some(&serde_json::json!(id)))
+                .collect()
+        };
+        let modified = |id: u32| {
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32_801_i32,
+                "message": "the document changed during the run, so its line is dropped"}})
+        };
+        let asked = connected.server.handle(&mut connected.workspace, &run(3));
+        assert_eq!(asked.messages, [], "a run answers nothing while it is due");
+        let changed = connected.handle(&change(2));
+        assert_eq!(
+            answers(&changed.messages, 3),
+            [modified(3)],
+            "a change answers a run that has not started"
+        );
+        let asked = connected.server.handle(&mut connected.workspace, &run(4));
+        assert_eq!(asked.messages, [], "a run answers nothing while it is due");
+        let _logged = connected
+            .server
+            .admit(&mut connected.workspace, &mut connected.admissions);
+        let changed = connected
+            .server
+            .handle(&mut connected.workspace, &change(3));
+        assert_eq!(
+            answers(&changed.messages, 4),
+            [modified(4)],
+            "a change answers a run on the pool at once"
+        );
+        let settled = connected.settle();
+        assert_eq!(
+            answers(&settled.messages, 4),
+            Vec::<Value>::new(),
+            "the end of a run that a change answered writes nothing"
         );
     }
 

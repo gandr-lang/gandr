@@ -651,13 +651,14 @@ pub enum CompBody
         /// The held operand.
         operand: DomainValueId,
     },
-    /// After the image of a letter under one endpoint of a path family ran,
-    /// run the other's or splice the transported path between them.
+    /// After the image of a word under one endpoint of a path family ran, run
+    /// the other's or splice the transported path between them.
     Conjugated
     {
         /// The path family, closed over its environment.
         motive: crate::arena::ValueClosureId,
-        /// The one-letter word transported along.
+        /// The word transported along: one letter, or a closed word that
+        /// moves whole.
         along: DomainValueId,
         /// The path transported.
         value: DomainValueId,
@@ -723,7 +724,9 @@ pub struct Mapping
     pub routed: DomainValueId,
     /// The letters still to map.
     pub rest: DomainValueId,
-    /// The image of the letters mapped so far.
+    /// The image of the letters mapped so far, inverted: each letter's image
+    /// goes before it inverted, so a step copies that image alone, and the
+    /// call inverts it once when its word is through.
     pub mapped: DomainValueId,
     /// Whether the letter whose image binds next is inverted.
     pub orientation: Orientation,

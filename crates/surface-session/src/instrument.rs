@@ -21,14 +21,17 @@
 //! | declarations crossed | [`Instrument::crossed`] | counts | once for each admission that ran whole, with the declarations it offered the kernel again |
 //! | a fork job starts or ends | `Instrument::activity` | activity | at each fork site of the judgement: with the rings it answers, the site forks through the pool's recording fork, whose jobs mark the rings |
 //! | each declaration's work | `Instrument::counts` | counts | each item the incremental pass adopts or judges, and each declaration's molded forms and obligations after the lowering, into the column the sink answers |
-//! | what an admission records | `Instrument::positioning` | counts | once for each admission, before it starts |
+//! | each phase's samples | `Instrument::timings` | timings | each phase entered and left, and each item the incremental pass judges, into the column the sink answers |
+//! | what an admission records | `Instrument::positioning` | counts, timings | once for each admission, before it starts |
 //!
 //! `Instrument::activity` takes `&self` and answers a shared handle: the
 //! rings are per thread and lock-free, and the pool's threads write them
 //! while the session's thread holds the sink. `Instrument::counts` answers
 //! the column of the counts layer, and the session counts into it directly,
-//! so a sink that answers no column costs no attribution. These three methods
-//! exist with the `instrument` feature alone.
+//! so a sink that answers no column costs no attribution.
+//! `Instrument::timings` answers the column of the timings layer, so a sink
+//! that answers none reads no clock for an item. These four methods exist
+//! with the `instrument` feature alone.
 //!
 //! **Alternatives.** A trait object costs one indirect call for each event,
 //! and the compiler cannot remove a call on the silent sink. A flag that each
@@ -70,6 +73,10 @@ use crate::counts::CountColumn;
 #[cfg(feature = "instrument")]
 use crate::counts::uncounted;
 use crate::forms::FormCount;
+#[cfg(feature = "instrument")]
+use crate::timings::TimingColumn;
+#[cfg(feature = "instrument")]
+use crate::timings::untimed;
 
 #[cfg(feature = "instrument")]
 quenchant_shape::reason_enum! {
@@ -228,6 +235,26 @@ pub trait Instrument
     fn counts(&mut self) -> Maybe<&mut CountColumn, uncounted::Absent>
     {
         Maybe::Absent(uncounted::Absent::Unselected)
+    }
+
+    /// The column that this sink keeps each sample of a recheck in, when it
+    /// records the timings.
+    ///
+    /// # Specification
+    /// - ensures: the default answers [`untimed::Absent::Unselected`], so the
+    ///   session's incremental pass reads no clock for an item.
+    /// - panics: none.
+    /// - executable: none — a handle the sink holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sink that answers a column reads each phase's
+    ///   samples in the account, and a silent sink reads none.
+    /// - witness: `tests::timings::a_recheck_samples_each_phase_and_each_judged_declaration`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn timings(&mut self) -> Maybe<&mut TimingColumn, untimed::Absent>
+    {
+        Maybe::Absent(untimed::Absent::Unselected)
     }
 
     /// What an admission at this sink records of each declaration it crosses.

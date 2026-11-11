@@ -60,6 +60,7 @@ quenchant-shape.workspace = true
 # its `instrument` feature on.
 [dev-dependencies]
 allocation-counter.workspace = true
+gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-render-terminal.workspace = true
@@ -74,7 +75,8 @@ default = []
 # The silent sink, which records nothing, is in every build. The activity
 # layer's rings and the pool's recording fork come with the feature. The
 # counts layer reads the checker's memo tally and the incremental pass's
-# report of each item, which come with it too.
+# report of each item, which come with it too. The timings layer reads the
+# dispatcher's allocation meter, which comes with it too.
 instrument = [
   "gandr-core-checker/instrument",
   "gandr-core-fork/instrument",

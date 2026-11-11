@@ -508,17 +508,66 @@ impl Presentation
     /// subterm is copied normal — so the scan resumes at the end of what the
     /// rewrite built.
     ///
+    /// A type of words takes that strategy in one pass ([`Self::cancelled`]):
+    /// each rule cancels two letters, and a word is one chain of letters, so
+    /// the redex at a letter is that letter and the first letter of the
+    /// normal suffix after it.
+    ///
     /// # Specification
     /// - requires: `self` passed [`Self::validate`] against the table `arities`
     ///   counts; `term` is one well-formed pre-order term.
     /// - ensures: [`Normalized::Unchanged`] with `term` untouched when no rule
     ///   matches anywhere; otherwise [`Normalized::Rewritten`] with `term`
     ///   rewritten until no rule matches at any position. Each node compared or
-    ///   copied costs one unit of `fuel`.
+    ///   copied costs one unit of `fuel`; in the pass over a word, each letter
+    ///   costs one.
     /// - provides: the normal form both conversions compare a presented type's
     ///   terms by.
     /// - fails: [`Exhausted`] when `fuel` runs out first; `term` then holds
     ///   some intermediate term of the rewriting.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle word with nested inverse pairs normalizes to
+    ///   its reduced word, a reduced word comes back unchanged, a leaf standing
+    ///   for a variable is carried through a rewrite, and a starved fuel is
+    ///   exhausted. Over a type of words, the pass and the rewriting give one
+    ///   term and one outcome for every word of up to six letters over two
+    ///   cells.
+    /// - witness: `presented::tests::normalization_reduces_circle_words`
+    /// - witness: `presented::tests::the_pass_over_a_word_rewrites_as_the_rules_do`
+    #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
+        && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
+    #[inline]
+    pub fn normalize<C, L, F>(
+        &self,
+        arities: &[FieldCount],
+        term: &mut Vec<RuleTerm<C, L>>,
+        fresh: F,
+        fuel: &mut RewriteFuel,
+    ) -> Result<Normalized, Exhausted>
+    where
+        C: Copy,
+        L: Copy,
+        F: Fn(&C) -> C,
+    {
+        if let Some(outcome) = self.cancelled(term, fuel)? {
+            return Ok(outcome);
+        }
+        self.rewritten(arities, term, fresh, fuel)
+    }
+
+    /// Rewrite `term` to its normal form by the strategy [`Self::normalize`]
+    /// states, one redex at a time.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::normalize`].
+    /// - ensures: as [`Self::normalize`], each node compared or copied costing
+    ///   one unit of `fuel`.
+    /// - fails: as [`Self::normalize`].
     /// - panics: none.
     ///
     /// # Errors
@@ -531,15 +580,11 @@ impl Presentation
     ///   validated presentation lowers; and `fuel`, which every node charges.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a circle word with nested inverse pairs normalizes to
-    ///   its reduced word, a reduced word comes back unchanged, a leaf standing
-    ///   for a variable is carried through a rewrite, and a starved fuel is
-    ///   exhausted.
+    /// - hypothesis: L3 — as [`Self::normalize`].
     /// - witness: `presented::tests::normalization_reduces_circle_words`
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
-    #[inline]
-    pub fn normalize<C, L, F>(
+    fn rewritten<C, L, F>(
         &self,
         arities: &[FieldCount],
         term: &mut Vec<RuleTerm<C, L>>,
@@ -597,6 +642,116 @@ impl Presentation
             }
             return Ok(outcome);
         }
+    }
+
+    /// The normal form of a word in one pass from its last letter, when this
+    /// presentation is a type of words whose every rule cancels two letters.
+    ///
+    /// The pass keeps the normal suffix as a stack, its first letter on top.
+    /// Each letter, read from the last to the first, cancels with the top when
+    /// a rule's left side is the two letters over a variable, and goes on top
+    /// otherwise. [`Self::rewritten`] rewrites in that order: its next redex
+    /// starts last, and the suffix after it is normal. So the pass removes the
+    /// pairs that the rewriting removes, and keeps each other letter as
+    /// written.
+    ///
+    /// # Specification
+    /// - requires: `self` passed [`Self::validate`] against the arities that
+    ///   the nodes of `term` carry.
+    /// - ensures: `Ok(None)` with `term` untouched unless `self` carries cells,
+    ///   each rule is `[a, b, x] ==> [x]` over two constructors and a variable,
+    ///   and `term` is letters of one field each over a last node of no field
+    ///   or a leaf. Otherwise [`Normalized::Unchanged`] with `term` untouched
+    ///   when no two neighbouring letters cancel, and [`Normalized::Rewritten`]
+    ///   with `term` the letters that no pair removes, in order, over the last
+    ///   node: the term and the outcome [`Self::rewritten`] gives. Each letter
+    ///   costs one unit of `fuel`.
+    /// - fails: [`Exhausted`] when `fuel` runs out first; `term` is then
+    ///   untouched.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: one `for` loop over the letters, from the last to the first.
+    /// - measure: the letters still to read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::normalize`]: every word of up to six
+    ///   letters over two cells, over a leaf or the empty word, gives the
+    ///   rewriting's term and outcome; a presentation without cells is left to
+    ///   the rewriting.
+    /// - witness: `presented::tests::the_pass_over_a_word_rewrites_as_the_rules_do`
+    #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
+        && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
+    fn cancelled<C, L>(
+        &self,
+        term: &mut Vec<RuleTerm<C, L>>,
+        fuel: &mut RewriteFuel,
+    ) -> Result<Option<Normalized>, Exhausted>
+    where
+        C: Copy,
+        L: Copy,
+    {
+        let one = FieldCount::from(1_usize);
+        let pair = |rule: &PresentedRule| match (rule.left(), rule.right()) {
+            (
+                &[
+                    RuleNode::Constructor(first),
+                    RuleNode::Constructor(second),
+                    RuleNode::Variable(rest),
+                ],
+                &[RuleNode::Variable(kept)],
+            ) if rest == kept => Some((first, second)),
+            _ => None,
+        };
+        if self.cells.is_none() || !self.rules().iter().all(|rule| pair(rule).is_some()) {
+            return Ok(None);
+        }
+        let Some((&last, letters)) = term.split_last()
+        else {
+            return Ok(None);
+        };
+        let ends = match last {
+            RuleTerm::Leaf(_) => true,
+            RuleTerm::Constructor { arity, .. } => arity == FieldCount::default(),
+        };
+        let tag_at = |at: usize| match letters.get(at) {
+            Some(&RuleTerm::Constructor { tag, arity, .. }) if arity == one => Some(tag),
+            _ => None,
+        };
+        if !ends || (0 .. letters.len()).any(|at| tag_at(at).is_none()) {
+            return Ok(None);
+        }
+        let cancels = |first, second| {
+            self.rules()
+                .iter()
+                .any(|rule| pair(rule) == Some((first, second)))
+        };
+        // The positions of the normal suffix, its first letter last.
+        let mut kept: Vec<usize> = Vec::with_capacity(letters.len());
+        for at in (0 .. letters.len()).rev() {
+            fuel.charge()?;
+            let matched = match (tag_at(at), kept.last().and_then(|&top| tag_at(top))) {
+                (Some(first), Some(second)) => cancels(first, second),
+                _ => false,
+            };
+            if matched {
+                let _cancelled = kept.pop();
+            }
+            else {
+                kept.push(at);
+            }
+        }
+        if kept.len() == letters.len() {
+            return Ok(Some(Normalized::Unchanged));
+        }
+        let mut normal: Vec<RuleTerm<C, L>> = Vec::with_capacity(kept.len().saturating_add(1));
+        normal.extend(kept.iter().rev().filter_map(|&at| letters.get(at).copied()));
+        normal.push(last);
+        *term = normal;
+        Ok(Some(Normalized::Rewritten))
     }
 
     /// Decide whether these rules give every term one normal form, by joining
@@ -2649,6 +2804,150 @@ mod tests
             Err(Exhausted)
         );
         assert_eq!(u64::from(starved), 0);
+    }
+
+    /// The words over two loops at one point: tags 1 and 2 the first loop's
+    /// letter and inverse, 3 and 4 the second's.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_loops() -> Presentation
+    {
+        let base =
+            || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
+        Presentation::words(FreeCells::new(
+            crate::term::ConstantIndex::from(3_usize),
+            alloc::vec![FreeCell::new(base(), base()), FreeCell::new(base(), base())],
+        ))
+    }
+
+    /// `letters` over `end`, each letter carrying its position as written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelled(
+        letters: &[ConstructorTag],
+        end: RuleTerm<Letter, Point>,
+    ) -> Vec<RuleTerm<Letter, Point>>
+    {
+        let mut term: Vec<RuleTerm<Letter, Point>> = letters
+            .iter()
+            .enumerate()
+            .map(|(position, &tag)| RuleTerm::Constructor {
+                tag,
+                arity: FieldCount::from(1_usize),
+                payload: Letter(position),
+            })
+            .collect();
+        term.push(end);
+        term
+    }
+
+    #[test]
+    fn the_pass_over_a_word_rewrites_as_the_rules_do()
+    {
+        let words = two_loops();
+        let arities = [0_usize, 1, 1, 1, 1].map(FieldCount::from);
+        let kept = |&letter: &Letter| letter;
+        let empty = RuleTerm::Constructor {
+            tag: ConstructorTag::from(0_usize),
+            arity: FieldCount::from(0_usize),
+            payload: Letter(usize::MAX),
+        };
+        let mut compared = 0_usize;
+        let mut letters: Vec<ConstructorTag> = Vec::with_capacity(6);
+        let mut rewritten: Vec<RuleTerm<Letter, Point>> = Vec::with_capacity(7);
+        for length in 0 ..= 6_u32 {
+            for code in 0 .. 4_usize.pow(length) {
+                letters.clear();
+                letters.extend((0 .. length).map(|place| {
+                    ConstructorTag::from(code.div_euclid(4_usize.pow(place)) % 4 + 1)
+                }));
+                for end in [RuleTerm::Leaf(Point), empty] {
+                    let mut passed = spelled(&letters, end);
+                    rewritten.clear();
+                    rewritten.extend_from_slice(&passed);
+                    let mut fuel = RewriteFuel::from(10_000_u64);
+                    let by_pass = words.normalize(&arities, &mut passed, kept, &mut fuel);
+                    let by_rules = words.rewritten(
+                        &arities,
+                        &mut rewritten,
+                        kept,
+                        &mut RewriteFuel::from(10_000_u64),
+                    );
+                    assert_eq!(
+                        (by_pass, &passed),
+                        (by_rules, &rewritten),
+                        "the pass removes the pairs the rules remove, and keeps each other \
+                         letter as written: {letters:?}"
+                    );
+                    assert_eq!(
+                        u64::from(fuel),
+                        10_000 - u64::from(length),
+                        "the pass reads each letter once: {letters:?}"
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(
+            compared,
+            2 * 5_461,
+            "every word of up to six letters, over both ends"
+        );
+        let mut unpresented = spelled(
+            &[1_usize, 2].map(ConstructorTag::from),
+            RuleTerm::Leaf(Point),
+        );
+        assert_eq!(
+            circle().cancelled(&mut unpresented, &mut RewriteFuel::from(10_u64)),
+            Ok(None),
+            "the same rules without cells are the rewriting's"
+        );
+    }
+
+    #[test]
+    fn a_word_keeps_its_critical_letters_and_matches_the_rest()
+    {
+        // The words the timings read: `loop` written `n` times, which `Path.ap`
+        // of the identity maps to itself, and `loop` then `back loop`, each
+        // `n / 2` times.
+        let words = two_loops();
+        let arities = [0_usize, 1, 1, 1, 1].map(FieldCount::from);
+        let kept = |&letter: &Letter| letter;
+        let (forward, back) = (ConstructorTag::from(1_usize), ConstructorTag::from(2_usize));
+        for letters in [100_usize, 589, 10_000] {
+            let mut fuel = RewriteFuel::from(u64::MAX);
+            let mut looped = spelled(&alloc::vec![forward; letters], RuleTerm::Leaf(Point));
+            assert_eq!(
+                words.normalize(&arities, &mut looped, kept, &mut fuel),
+                Ok(Normalized::Unchanged)
+            );
+            assert_eq!(
+                looped.len(),
+                letters + 1,
+                "each of the {letters} letters is critical, and no pair matches"
+            );
+            let half = letters.div_euclid(2);
+            let mut cancelling = spelled(
+                &[alloc::vec![forward; half], alloc::vec![back; half]].concat(),
+                RuleTerm::Leaf(Point),
+            );
+            assert_eq!(
+                words.normalize(&arities, &mut cancelling, kept, &mut fuel),
+                Ok(Normalized::Rewritten)
+            );
+            assert_eq!(
+                cancelling,
+                [RuleTerm::Leaf(Point)],
+                "the {half} pairs match, and no letter is critical"
+            );
+            assert_eq!(
+                u64::MAX - u64::from(fuel),
+                u64::try_from(letters + 2 * half).unwrap_or(u64::MAX),
+                "each word costs one unit of fuel per letter"
+            );
+        }
     }
 
     #[test]

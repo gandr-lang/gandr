@@ -96,6 +96,32 @@ def source_rows: source_rows("Sources");
 # names a section, and is no part of the key.
 def source_key: sub("\\s*§.*$"; "");
 
+# The claim of a design page (#6569, `units.md` § units-issue) in the text of
+# a `## Sources` row or a `## Sources read` item: the parts `builds:`,
+# `saves:` and `decides:`, each its text up to the next part, with the
+# separators between parts trimmed. A part the text does not name is absent.
+def claim_labels: ["builds", "saves", "decides"];
+def claim_parts:
+  . as $text
+  | [match("\\b(builds|saves|decides):"; "g") | {label: .captures[0].string, from: .offset, at: (.offset + .length)}] as $marks
+  | reduce range(0; $marks | length) as $i ({};
+      .[$marks[$i].label] = ($text[$marks[$i].at:($marks[$i + 1].from // ($text | length))] | gsub("^[\\s,;]+|[\\s,;.]+$"; "")));
+
+# What a claim's parts lack, one phrase for each part: absent, empty, `n/a`
+# with no reason, or a `saves:` that names no instrument. A part reads
+# `n/a — <reason>` where the design claims nothing of it.
+def claim_gaps:
+  . as $parts
+  | [claim_labels[] as $label
+      | $parts[$label] as $part
+      | if $part == null then "`\($label):` is missing"
+        elif $part == "" then "`\($label):` is empty"
+        elif $part | test("^n/a\\b") then
+          if $part | test("^n/a\\s*—\\s*\\S") then empty else "`\($label):` reads `n/a` with no reason" end
+        elif $label == "saves" and ($part | test("\\bread by\\s+\\S") | not) then "`saves:` names no instrument after `read by`"
+        else empty
+        end];
+
 # Whether the key `.` stands in `$text`, the lines of a `## Sources`: a
 # page's filename or a tree path as it is, and `#<issue>` only when no digit
 # follows it. A row whose role is `not read` cites its key too, so a seat may

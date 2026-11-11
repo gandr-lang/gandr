@@ -40,7 +40,7 @@
 //!   and unshared sizes a row reads.
 
 use anodized::spec;
-use gandr_core_checker::bridge::AdmissionTime;
+use gandr_core_checker::bridge::AdmissionCost;
 use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::tallied;
 use gandr_kernel_term::ByteCount;
@@ -82,8 +82,8 @@ pub struct Measure<'source>
     /// What the kernel's check of it charged, goal by goal, or why no check
     /// was tallied.
     census: Maybe<ExpansionCensus, tallied::Absent>,
-    /// How long the kernel took to admit it, or why no time was read.
-    took: AdmissionTime,
+    /// What the kernel spent to admit it, or why no time was read.
+    took: AdmissionCost,
 }
 
 impl<'source> Measure<'source>
@@ -145,13 +145,13 @@ impl<'source> Measure<'source>
         self.census
     }
 
-    /// How long the kernel took to admit the declaration, or why no time was
+    /// What the kernel spent to admit the declaration, or why no time was
     /// read.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn took(&self) -> AdmissionTime
+    pub const fn took(&self) -> AdmissionCost
     {
         self.took
     }

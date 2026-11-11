@@ -1130,6 +1130,22 @@ mod tests
         assert!(halved.0 >= CHUNK.0, "{halved:?}");
     }
 
+    /// A region holds the bytes of one word for each word from its base to
+    /// a limit, on every host. The memory bound reads these bytes when it
+    /// stops a run.
+    #[test]
+    fn a_region_holds_a_word_s_bytes_for_each_word_6578()
+    {
+        let region = Reservation::of(CHUNK);
+        let word = u64::try_from(core::mem::size_of::<Word>()).unwrap_or(u64::MAX);
+        assert_eq!(Bytes(0), region.held(region.base()));
+        assert_eq!(
+            Bytes(word.saturating_mul(3)),
+            region.held(region.base().wrapping_add(3))
+        );
+        assert_eq!(region.bytes(), region.held(region.end()));
+    }
+
     /// Past a run, a region keeps the words of its first chunk and gives
     /// back the pages past it, which read as zero again.
     #[cfg(target_os = "linux")]

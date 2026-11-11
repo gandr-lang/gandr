@@ -1,19 +1,24 @@
 //! The kernel verdicts a process recalls and records.
 //!
 //! A driver that keeps the kernel's verdicts installs one [`VerdictCache`]
-//! before its walk: the policy naming whose receipts it believes, the store
-//! receipts are read from and written to, and the key this installation signs
-//! with. Every readmission the composition makes then admits under the
-//! cache's recall, and one that crossed whole has the kernel sign what it
-//! checked and keeps the receipt. A process that installs none — the language
-//! server, the sweeps, every test — rechecks every declaration.
+//! before its walk: the policy naming whose receipts it believes, where
+//! receipts are read from and kept, and the key this installation signs with.
+//! Every readmission the composition makes then admits under the cache's
+//! recall, and one that crossed whole has the kernel sign what it checked and
+//! keeps the receipt. `gandr check` keeps its receipts in a store on disk,
+//! which a later process reads. The language server keeps them in the process
+//! ([`VerdictCache::held`]), which a later readmission of the process reads. A
+//! process that installs none — the sweeps, `gandr check --recheck`, every
+//! test — rechecks every declaration.
 //!
 //! # References
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: §
 //!   kernel-verdict-reuse — tests and audits run under the full re-check, so
-//!   only a cache a driver installs recalls.
+//!   only a cache a driver installs recalls; a recalled verdict is the kernel's
+//!   own, under its whole input.
 
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::fmt;
 use core::sync::atomic::AtomicUsize;
@@ -31,6 +36,7 @@ use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictSource;
 use quenchant_shape::shape::Maybe;
 
+use crate::held::HeldVerdicts;
 use crate::receipts::StoredVerdicts;
 
 /// The recall of a process that installed no cache.
@@ -42,26 +48,39 @@ static RECHECK: LazyLock<bridge::Recall> = LazyLock::new(bridge::Recall::recheck
 // threads one through the composition's admission instead.
 static INSTALLED: OnceLock<VerdictCache> = OnceLock::new();
 
+/// Where a cache keeps the receipts its kernel signs, and reads them from.
+#[derive(Debug)]
+enum Kept
+{
+    /// A store on disk, which a later process reads at open.
+    Stored(Arc<StoredVerdicts>),
+    /// The process's own source, which a later readmission of the process
+    /// reads.
+    Held(HeldVerdicts),
+}
+
 /// Where a process's kernel verdicts are recalled from and recorded to.
 ///
 /// # Specification
 /// - ensures: installed, every readmission admits under the cache's policy and
-///   store, and each one that crossed whole keeps the receipt its kernel signs
-///   for what it checked.
+///   source, and each one that crossed whole keeps the receipt its kernel signs
+///   for what it checked; a held cache's next readmission reads that receipt.
 /// - executable: none — the store and the counts are shared state.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module readmitted under one cache records what its
 ///   kernel checked, and readmitted under a second over the same store recalls
-///   each of those declarations, to the same outcomes.
+///   each of those declarations, to the same outcomes; readmitted twice under
+///   one held cache, it recalls them the second time.
 /// - witness: `verdicts::tests::a_second_cache_recalls_what_the_first_recorded_2799`
+/// - witness: `verdicts::tests::a_held_cache_recalls_what_its_process_recorded_6566`
 #[derive(Debug)]
 pub struct VerdictCache
 {
-    /// The policy and store a fresh readmission admits under.
-    recall: bridge::Recall,
-    /// Where receipts are kept.
-    store: Arc<StoredVerdicts>,
+    /// Whose receipts a readmission believes.
+    policy: TrustPolicy,
+    /// Where receipts are kept and read.
+    kept: Kept,
     /// This installation's key.
     signer: KernelSigner,
     /// Admissions a recorded verdict answered.
@@ -87,16 +106,58 @@ impl VerdictCache
         signer: KernelSigner,
     ) -> Self
     {
-        let store = Arc::new(store);
-        let source: Arc<dyn VerdictSource> = Arc::<StoredVerdicts>::clone(&store);
+        Self::keeping(policy, Kept::Stored(Arc::new(store)), signer)
+    }
+
+    /// The cache of a process with no store on disk: it believes the receipts
+    /// `signer` gives alone, and keeps them in the process.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn held(signer: KernelSigner) -> Self
+    {
+        Self::keeping(
+            TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+            Kept::Held(HeldVerdicts::default()),
+            signer,
+        )
+    }
+
+    /// The cache under `policy`, keeping receipts in `kept`, signing with
+    /// `signer`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keeping(
+        policy: TrustPolicy,
+        kept: Kept,
+        signer: KernelSigner,
+    ) -> Self
+    {
         Self {
-            recall: bridge::Recall::trusting(policy, source),
-            store,
+            policy,
+            kept,
             signer,
             recalled: AtomicUsize::new(0),
             recorded: AtomicUsize::new(0),
             unwritten: AtomicUsize::new(0),
         }
+    }
+
+    /// The recall a readmission that starts now admits under: the cache's
+    /// policy over its store, or over the receipts the process holds now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn recall(&self) -> bridge::Recall
+    {
+        let source: Arc<dyn VerdictSource> = match self.kept {
+            Kept::Stored(ref store) => Arc::<StoredVerdicts>::clone(store),
+            Kept::Held(ref held) => held.snapshot(),
+        };
+        bridge::Recall::trusting(self.policy.clone(), source)
     }
 
     /// Count what `readmission` recalled, and keep the receipt for what it
@@ -114,11 +175,19 @@ impl VerdictCache
             .recalled
             .fetch_add(usize::from(environment.recalls()), Ordering::Relaxed);
         if let Maybe::Present(receipt) = environment.receipt(&self.signer) {
-            let _before = match self.store.keep(&receipt) {
-                Ok(()) => self
-                    .recorded
-                    .fetch_add(receipt.records().len(), Ordering::Relaxed),
-                Err(_unwritten) => self.unwritten.fetch_add(1, Ordering::Relaxed),
+            let records = receipt.records().len();
+            let kept = match self.kept {
+                Kept::Stored(ref store) => store.keep(&receipt).is_ok(),
+                Kept::Held(ref held) => {
+                    held.keep(receipt);
+                    true
+                },
+            };
+            let _before = if kept {
+                self.recorded.fetch_add(records, Ordering::Relaxed)
+            }
+            else {
+                self.unwritten.fetch_add(1, Ordering::Relaxed)
             };
         }
     }
@@ -128,15 +197,16 @@ impl VerdictCache
     ///
     /// # Specification
     /// - ensures: the readmission [`bridge::readmit_retiring`] gives under the
-    ///   cache's policy and store; a whole one adds what it recalled to the
-    ///   tally, and the store keeps the receipt its kernel signs for what it
-    ///   checked.
+    ///   cache's policy over its source as it stands now; a whole one adds what
+    ///   it recalled to the tally, and the cache keeps the receipt its kernel
+    ///   signs for what it checked.
     /// - panics: none.
     /// - executable: none — the store and the counts are shared state.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`VerdictCache`].
     /// - witness: `verdicts::tests::a_second_cache_recalls_what_the_first_recorded_2799`
+    /// - witness: `verdicts::tests::a_held_cache_recalls_what_its_process_recorded_6566`
     fn readmit<Poll, Watch>(
         &self,
         arena: &mut CoreArena,
@@ -151,8 +221,14 @@ impl VerdictCache
         Poll: Retirement,
         Watch: bridge::Stopwatch,
     {
-        let polled =
-            bridge::readmit_retiring(arena, report, leading, &self.recall, retirement, stopwatch);
+        let polled = bridge::readmit_retiring(
+            arena,
+            report,
+            leading,
+            &self.recall(),
+            retirement,
+            stopwatch,
+        );
         if let Polled::Whole((ref readmission, _)) = polled {
             self.settle(readmission);
         }
@@ -297,6 +373,7 @@ where
 mod tests
 {
     use alloc::collections::BTreeSet;
+    use alloc::sync::Arc;
 
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
@@ -305,6 +382,8 @@ mod tests
     use gandr_core_checker::check_module;
     use gandr_core_term::CoreArena;
     use gandr_kernel_core::verdict::KernelSigner;
+    use gandr_kernel_core::verdict::NoVerdicts;
+    use gandr_kernel_core::verdict::StoredReceipt;
     use gandr_kernel_core::verdict::TrustPolicy;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::LoweringBudget;
@@ -314,20 +393,28 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Kept;
     use super::VerdictCache;
     use crate::compose::adapt;
     use crate::receipts::StoredVerdicts;
 
-    /// The outcomes `cache` readmits a module of two definitions to, the
-    /// second reading the first.
+    /// The fixture: two definitions, the second reading the first.
+    const READMITTED: &str = include_str!("verdicts/fixtures/readmitted.gandr");
+
+    /// The fixture with its second definition changed.
+    const CHANGED: &str = include_str!("verdicts/fixtures/changed.gandr");
+
+    /// The fixture with its first definition changed, so each key differs.
+    const FOREIGN: &str = include_str!("verdicts/fixtures/foreign.gandr");
+
+    /// The arena and the checker's report of the module `text` spells.
     ///
     /// # Specification
     /// trivial.
-    fn readmitted(cache: &VerdictCache) -> Vec<bridge::Outcome>
+    fn reported(text: SourceText<'_>) -> (CoreArena, gandr_core_checker::ModuleReport)
     {
         let grammar = built_in().expect("the built-in grammar builds");
-        let source = SourceText::from(include_str!("verdicts/fixtures/readmitted.gandr"));
-        let tree = parse(&grammar, source).expect("parses").into_tree();
+        let tree = parse(&grammar, text).expect("parses").into_tree();
         let mut arena = CoreArena::new();
         let module = lower_module(
             &grammar,
@@ -342,6 +429,19 @@ mod tests
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &declarations,
         );
+        (arena, report)
+    }
+
+    /// The outcomes `cache` readmits the module `text` spells to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn readmitted_from(
+        cache: &VerdictCache,
+        text: SourceText<'_>,
+    ) -> Vec<bridge::Outcome>
+    {
+        let (mut arena, report) = reported(text);
         cache
             .readmit(
                 &mut arena,
@@ -358,6 +458,49 @@ mod tests
             .iter()
             .map(|readmitted| readmitted.outcome().clone())
             .collect()
+    }
+
+    /// The outcomes `cache` readmits the fixture to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn readmitted(cache: &VerdictCache) -> Vec<bridge::Outcome>
+    {
+        readmitted_from(cache, SourceText::from(READMITTED))
+    }
+
+    /// The receipt `signer` gives over a cold readmission of the module
+    /// `text` spells.
+    ///
+    /// # Specification
+    /// trivial.
+    fn receipt(
+        signer: &KernelSigner,
+        text: SourceText<'_>,
+    ) -> StoredReceipt
+    {
+        let (mut arena, report) = reported(text);
+        let recall = bridge::Recall::trusting(
+            TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+            Arc::new(NoVerdicts),
+        );
+        let (readmission, _) = bridge::readmit_retiring(
+            &mut arena,
+            &report,
+            (
+                bridge::LeadingCount::NONE,
+                Maybe::Absent(bridge::crossed::Absent::Unasked),
+            ),
+            &recall,
+            &Unretired,
+            &mut bridge::Untimed,
+        )
+        .whole();
+        let Maybe::Present(receipt) = readmission.environment().receipt(signer)
+        else {
+            panic!("a cold readmission under keys gives a receipt");
+        };
+        receipt
     }
 
     /// #2799: a module readmitted under a cache keeps what its kernel
@@ -400,5 +543,80 @@ mod tests
             "a recalled verdict admits as a checked one"
         );
         drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// #6566: a module readmitted twice under one held cache recalls, the
+    /// second time, every declaration the first checked, to the same outcomes.
+    #[test]
+    fn a_held_cache_recalls_what_its_process_recorded_6566()
+    {
+        let cache = VerdictCache::held(KernelSigner::from([3_u8; 32]));
+        let checked = readmitted(&cache);
+        let recorded = cache.tally();
+        assert_eq!(recorded.recalled, 0_usize, "{recorded}");
+        assert!(recorded.recorded > 0_usize, "{recorded}");
+        let recalled = readmitted(&cache);
+        let tally = cache.tally();
+        assert_eq!(
+            (tally.recalled, tally.recorded),
+            (recorded.recorded, recorded.recorded),
+            "{tally}"
+        );
+        assert_eq!(
+            recalled, checked,
+            "a recalled verdict admits as a checked one"
+        );
+    }
+
+    /// #6566: under a held cache, a declaration whose text changed is checked
+    /// again, and the one before it, unchanged, is recalled.
+    #[test]
+    fn a_changed_declaration_is_checked_again_6566()
+    {
+        let cache = VerdictCache::held(KernelSigner::from([3_u8; 32]));
+        let _cold = readmitted(&cache);
+        let before = cache.tally();
+        let changed = readmitted_from(&cache, SourceText::from(CHANGED));
+        let after = cache.tally();
+        assert!(
+            changed
+                .iter()
+                .all(|outcome| matches!(outcome, bridge::Outcome::Defined { .. })),
+            "{changed:?}"
+        );
+        assert_eq!(
+            (
+                after.recalled.saturating_sub(before.recalled),
+                after.recorded.saturating_sub(before.recorded)
+            ),
+            (1_usize, 1_usize),
+            "the unchanged definition is recalled and the changed one checked: {after}"
+        );
+    }
+
+    /// #6566: a held source that answers a receipt from a signer the policy
+    /// does not list, or one over keys the module's chain does not produce,
+    /// admits no declaration on it.
+    #[test]
+    fn a_foreign_signer_or_key_admits_nothing_6566()
+    {
+        let signer = KernelSigner::from([3_u8; 32]);
+        let cache = VerdictCache::held(signer.clone());
+        let Kept::Held(ref held) = cache.kept
+        else {
+            panic!("a held cache keeps its receipts in the process");
+        };
+        held.keep(receipt(
+            &KernelSigner::from([5_u8; 32]),
+            SourceText::from(READMITTED),
+        ));
+        held.keep(receipt(&signer, SourceText::from(FOREIGN)));
+        let _checked = readmitted(&cache);
+        let tally = cache.tally();
+        assert_eq!(
+            tally.recalled, 0_usize,
+            "neither receipt admits a declaration of the module: {tally}"
+        );
+        assert!(tally.recorded > 0_usize, "{tally}");
     }
 }

@@ -10,11 +10,13 @@ use std::path::PathBuf;
 use gandr_core_checker::Polled;
 use gandr_core_checker::Unretired;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_kernel_core::verdict::KernelSigner;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::VerdictCache;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::lay_out;
@@ -239,4 +241,49 @@ fn a_second_recheck_counts_no_judged_item()
         walked.iter().map(|&(_, goals)| goals).collect::<Vec<_>>(),
         "the resumed readmission charges each row the goals the measure reads: {walked:?}"
     );
+}
+
+/// #6566: in a process that holds its kernel's verdicts, as the language
+/// server does, the first recheck of a corpus source checks each declaration,
+/// expanding goals, and records each one's verdict. The second recheck of the
+/// same text adopts each item and offers each declaration to the kernel
+/// again, and the kernel recalls each one under its own key. The third
+/// resumes the record the second kept through every declaration. So no row of
+/// either expands, recalls or keeps a goal. A readmission that read no source,
+/// a resumed one that read the source of its record, or a key that a recheck
+/// does not reproduce changes a row.
+#[test]
+fn a_held_process_expands_no_goal_for_an_adopted_declaration_6566()
+{
+    gandr_surface_dispatcher::install_verdict_cache(VerdictCache::held(KernelSigner::from(
+        [3_u8; 32],
+    )))
+    .expect("no cache is installed before the witness's");
+    let path = source();
+    let text = std::fs::read_to_string(&path).expect("the corpus source is read");
+    let mut session = session(SourceRoot::Strict);
+    let first = recheck(&mut session, (&path, Text(&text)));
+    assert!(
+        first.iter().all(|counts| work(counts).crossed == 1)
+            && first.iter().any(|counts| kernel(counts).expanded > 0),
+        "the first recheck offers each declaration and the kernel checks it: {first:?}"
+    );
+    let none = Goals {
+        expanded: 0,
+        recalled: 0,
+        kept: 0,
+    };
+    // The second readmission offers each declaration and the kernel recalls
+    // it; the third resumes the record the second kept through every one.
+    for (later, crossed) in [("second", 1), ("third", 0)] {
+        let rows = recheck(&mut session, (&path, Text(&text)));
+        assert_eq!(rows.len(), first.len(), "the same declarations hold rows");
+        for counts in &rows {
+            assert_eq!(
+                (work(counts).judged, work(counts).crossed, kernel(counts)),
+                (0, crossed, none),
+                "a {later} recheck adopts each item and expands no kernel goal: {counts:?}"
+            );
+        }
+    }
 }

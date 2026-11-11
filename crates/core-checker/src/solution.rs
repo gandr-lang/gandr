@@ -63,6 +63,7 @@
 //!   elim-refine-with-abstraction, one transport per solved equation.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -1579,6 +1580,11 @@ impl gandr_core_term::children::Visit for CopyWalk
 /// - panics: none.
 /// - executable: none — the verdict is the walk itself, which a predicate would
 ///   restate.
+/// - intension: the walk reads each value node once, however many paths reach
+///   it. Whether a node holds a computation outside a thunk does not depend on
+///   the path to it, so one read answers for every path. A bound value that
+///   shares each level twice, as the iterated pair does, has 2^n paths at depth
+///   n and n distinct nodes.
 ///
 /// # Errors
 /// As `- fails:`.
@@ -1586,6 +1592,7 @@ impl gandr_core_term::children::Visit for CopyWalk
 /// # Adequacy
 /// - hypothesis: L3 — as [`defined_body`].
 /// - witness: `tests::native_formers::a_returned_call_binds_as_written`
+/// - witness: `tests::native_formers::a_bound_pair_forty_deep_whose_levels_share_their_halves_checks_6579`
 fn copies(
     arena: &CoreArena,
     value: ValueId,
@@ -1602,7 +1609,11 @@ fn copies(
         values: Vec::from([value]),
         copies: Copies::Yes,
     };
+    let mut read = BTreeSet::new();
     while let Some(at) = walk.values.pop() {
+        if !read.insert(at) {
+            continue;
+        }
         let node = arena.value(at).ok_or_else(|| dangling(at))?;
         if matches!(*node, Value::Thunk(_)) {
             continue;

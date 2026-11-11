@@ -2325,6 +2325,15 @@ echo "wt:warm: removed $removed copied units that read $primary's sources"
 # cites an owner, so a `not read` row cites it too. An epic or a `collector`
 # is not read.
 #
+# The claim of a design page (#6569): a primary `## Sources` row naming a
+# vault page whose status is `design` or `partly` states `builds:`,
+# `saves: <what>, read by <instrument>` and `decides:` in its third cell
+# (`.config/claims/claim.jq`, the calls `.config/claims/claim.bash`). A row
+# lacking a part is refused. The rule stops no unit in flight: an issue that
+# carried `shape:signed` when the rule landed gets a note for each row, and
+# no refusal, while its `## Sources` is as it was then. Without the vault's
+# statuses, as in CI, no row is read. An epic or a `collector` is not read.
+#
 # The dependencies (#2902): an issue is GitHub-`blocked by` each issue its
 # `## After` lists, and an epic by each open sub-issue too; the plan is
 # `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
@@ -2353,6 +2362,7 @@ issue=${usage_issue:?}
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 source "$root/.config/references/vault.bash"
+source "$claims/claim.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
 source "$claims/deps.bash"
 # gh fills `{owner}` and `{repo}` from the checkout's remote, so the
@@ -2372,6 +2382,12 @@ if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > 
   terms=$(jq -n --argjson issued "$issued" --argjson terms "$(yq -o json '.term' "$root/.config/references/terms.toml")" \
     '{title: $issued.title, body: $issued.body, terms: $terms}' | jq -r -L "$claims" -f "$claims/terms.jq")
   findings=$(printf '%s\n%s\n' "$findings" "$terms" | awk 'NF')
+  claimed=$(claim_check "$body" null)
+  if [[ -n $claimed ]] && jq -e '.labels | index("shape:signed")' <<< "$issued" > /dev/null; then
+    claimed=$(claim_check "$body" "$(claim_before "$issue")")
+  fi
+  noted=$(awk '/^note: /' <<< "$claimed")
+  findings=$(printf '%s\n%s\n' "$findings" "$(awk '!/^note: /' <<< "$claimed")" | awk 'NF')
 fi
 subs='[]'
 if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
@@ -2462,6 +2478,7 @@ if [[ $pages != null ]]; then
   shown=$(awk -F'\t' '$1 == "show" { print "  " $2 }' <<< "$vault")
   findings=$(printf '%s\n%s\n' "$findings" "$refused" | awk 'NF')
 fi
+if [[ -n ${noted:-} ]]; then printf '%s\n' "$noted" >&2; fi
 if [[ -n "$findings" ]]; then
   printf 'unit check FAILED: #%s lacks what a unit issue carries (units.md § units-issue; the form is .github/ISSUE_TEMPLATE/unit.yml):\n' "$issue" >&2
   printf '%s\n' "$findings" | sed 's/^/  - /' >&2
@@ -2909,12 +2926,17 @@ findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: 
 # never a silent pass. A title that holds a JSON escape `\uXXXX` is refused
 # too (#6496, `.config/issues/title.jq`): a filer that quotes the title for
 # the shell with a JSON encoder sends the escape, and GitHub shows it as
-# text. `pr:open` runs it on the title and the body before it pushes, and
-# `issue:file` before it files.
+# text. A comment that closes or declines a unit on a probe passes
+# `--sets-aside <n>` (#6569, `.config/claims/measured.jq`): for each
+# `## Sources` row of #n whose `saves:` claims a saving, the comment needs a
+# line `measured: <value> by <instrument>`, or it is refused. One GraphQL
+# read takes the body of #n. `pr:open` runs it on the title and the body
+# before it pushes, and `issue:file` before it files.
 ["body:check"]
-description = "Refuse a body or a title naming anything on the private-names list, and a title holding a JSON escape"
+description = "Refuse a body or a title naming anything on the private-names list, a title holding a JSON escape, and a probe comment with no measured saving"
 usage = '''
 flag "--title <text>" help="a title to scan with the files"
+flag "--sets-aside <issue>" help="the files are a comment that closes or declines this unit on a probe"
 arg "<file>..." help="the body files to scan"
 '''
 tools.jq = "1.8.1"
@@ -2942,6 +2964,14 @@ if [[ -n ${usage_title:-} ]]; then
   escaped=$(printf '%s' "$usage_title" | jq -R -s -r -f "$(git rev-parse --show-toplevel)/.config/issues/title.jq")
 fi
 scan -- "${files[@]}"
+unmeasured=
+if [[ -n ${usage_sets_aside:-} ]]; then
+  [[ $usage_sets_aside =~ ^[0-9]+$ ]] || { echo "body:check: --sets-aside takes an issue number, not \`$usage_sets_aside\`" >&2; exit 2; }
+  root=$(git rev-parse --show-toplevel)
+  unit_body=$(gh issue view "$usage_sets_aside" --json body --jq .body)
+  unmeasured=$(jq -n --arg issue "$unit_body" --rawfile comment <(cat -- "${files[@]}") '{issue: $issue, comment: $comment}' \
+    | jq -r -L "$root/.config/claims" -f "$root/.config/claims/measured.jq")
+fi
 if [[ -s $found ]]; then
   printf 'body:check FAILED: these lines name private material (%s); rewrite them:\n' "$list" >&2
   sed 's/^/  /' "$found" >&2
@@ -2950,7 +2980,10 @@ if [[ -n $escaped ]]; then
   printf 'body:check FAILED: the title holds JSON escapes; pass the title as the text a reader sees, quoted for the shell (shlex.quote in Python), never JSON-encoded:\n' >&2
   printf '%s\n' "$escaped" | sed 's/^/  /' >&2
 fi
-if [[ -s $found || -n $escaped ]]; then
+if [[ -n $unmeasured ]]; then
+  printf 'body:check FAILED: %s\n' "$unmeasured" >&2
+fi
+if [[ -s $found || -n $escaped || -n $unmeasured ]]; then
   exit 1
 fi
 echo "body check OK: nothing on the private-names list in ${usage_title:+the title and }${#files[@]} file(s)"
@@ -3000,7 +3033,8 @@ exit "$status"
 # and an epic keeping `kind:epic` alone (the rule
 # `.config/issues/labels.jq`). A unit (a body with `## Sources`) is refused
 # before it is filed when it lacks a section (`findings.jq`, as `unit:check`
-# reads it), and once filed has the dependencies its `## After` names set by
+# reads it) or a design page's claim (`claim.jq`, #6569), and once filed has
+# the dependencies its `## After` names set by
 # `unit:check --fix`, so no filed unit lacks them. `--epic <n>` links the
 # issue under the epic and sets the epic `blocked by` it, and a body line
 # `Advances #n`, `Part of #n` or `from: #n` naming an open `kind:epic` sets
@@ -3082,6 +3116,13 @@ if [[ $unit == true || $defect == true ]]; then
   concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
   findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" \
     --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/unit.jq" "$body")
+  if [[ $unit == true ]]; then
+    # A unit filed now was signed after the claim rule landed, so it has no
+    # body from before it.
+    source "$root/.config/references/vault.bash"
+    source "$claims/claim.bash"
+    findings=$(printf '%s\n%s\n' "$findings" "$(claim_check "$(< "$body")" null)" | awk 'NF')
+  fi
   if [[ -n $findings ]]; then
     if [[ $unit == true ]]; then
       printf 'issue:file: the body is a unit (it has `## Sources`) and lacks what a unit issue carries (units.md § units-issue):\n' >&2
