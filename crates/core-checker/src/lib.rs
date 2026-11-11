@@ -679,7 +679,6 @@ pub use crate::failure::judged;
 pub use crate::flow::Statement;
 pub use crate::formation::FormedCompType;
 pub use crate::formation::FormedValueType;
-pub use crate::formation::classify_comp_type;
 pub use crate::formation::classify_value_type;
 pub use crate::formation::form_comp_type;
 pub use crate::formation::form_value_type;

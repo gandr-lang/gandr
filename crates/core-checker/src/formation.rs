@@ -337,36 +337,6 @@ pub fn classify_value_type(
     })
 }
 
-/// The classifier of the formed computation type `formed`: the computation
-/// universe at its natural level.
-///
-/// # Specification
-/// - requires: `formed` was formed in the context's arena.
-/// - ensures: the computation sort beside [`level_of`] the type.
-/// - provides: the universe a formed computation type inhabits.
-/// - fails: as [`level_of`], which a formed type never meets.
-/// - panics: none.
-///
-/// # Errors
-/// - [`CheckRefusal`] — as [`level_of`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`form_comp_type`].
-/// - witness: `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`
-/// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
-#[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Computation) == ret.is_ok())]
-#[inline]
-pub fn classify_comp_type(
-    context: &CheckingContext<'_>,
-    formed: FormedCompType,
-) -> Result<Classifier, CheckRefusal>
-{
-    Ok(Classifier {
-        sort: GroundSort::Computation,
-        level: level_of(context, TypeNode::Computation(formed.id()))?,
-    })
-}
-
 /// A step of [`level_of`]'s walk.
 #[derive(Clone, Copy, Debug)]
 enum Task
