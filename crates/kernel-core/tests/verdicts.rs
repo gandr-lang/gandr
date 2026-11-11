@@ -356,6 +356,97 @@ fn a_handed_on_environment_keys_on_and_signs_only_its_own()
     assert_eq!(usize::from(handed.recalls()), 1);
 }
 
+/// #6566: a copy handed on reads the source its own run reads. Over the
+/// receipt of the run it was copied from, it recalls the declaration that run
+/// checked after the copy; over the source it was copied with, it checks it.
+#[test]
+fn a_resumed_environment_recalls_from_the_source_it_reads_6566()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let named = Some(ConstantIndex::from(0_usize));
+    let mut whole = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let _first = admit_one(&mut whole, None);
+    let _second = admit_one(&mut whole, None);
+    let mut reading = whole.handed_on();
+    let mut unread = whole.handed_on();
+    let _third = admit_one(&mut whole, named);
+    let Maybe::Present(receipt) = whole.receipt(&signer)
+    else {
+        panic!("the run checked declarations under keys");
+    };
+    reading.reading(Store::holding(&[&receipt]));
+    assert_eq!(
+        admit_one(&mut reading, named),
+        Admission::Recalled,
+        "the copy reads the receipt its run's source holds now"
+    );
+    assert_eq!(
+        admit_one(&mut unread, named),
+        Admission::Checked,
+        "the copy that reads the source it was made with finds nothing"
+    );
+}
+
+/// Offer a unit definition whose body names the constant at `missing`, which
+/// no declaration holds, so the kernel rejects it.
+///
+/// # Specification
+/// trivial.
+fn reject_one(
+    environment: &mut Environment,
+    missing: ConstantIndex,
+)
+{
+    let staged = {
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = staging.arena().value_constant(missing);
+        staging.def(LevelSignature::monomorphic(), declared, body)
+    };
+    let rejected = environment.add_decl(staged);
+    assert!(
+        rejected.is_err(),
+        "a body naming no declaration is rejected"
+    );
+}
+
+/// #6566: a rejected declaration enters no environment, so the chain keys
+/// the declarations after it as a run that never offered it keys them, and
+/// a receipt of either run recalls the other's.
+#[test]
+fn a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let named = Some(ConstantIndex::from(0_usize));
+    let mut offered = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let _first = admit_one(&mut offered, None);
+    reject_one(&mut offered, ConstantIndex::from(9_usize));
+    let _second = admit_one(&mut offered, named);
+    let mut never = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let _first = admit_one(&mut never, None);
+    let _second = admit_one(&mut never, named);
+    let (Maybe::Present(offered), Maybe::Present(never)) =
+        (offered.receipt(&signer), never.receipt(&signer))
+    else {
+        panic!("each run checked declarations under keys");
+    };
+    assert_eq!(
+        offered.records(),
+        never.records(),
+        "the run that offered a rejected declaration keys the rest as one that never did"
+    );
+    let mut recalling = Environment::recalling(trusting(&signer), Store::holding(&[&offered]));
+    reject_one(&mut recalling, ConstantIndex::from(9_usize));
+    assert_eq!(
+        [
+            admit_one(&mut recalling, None),
+            admit_one(&mut recalling, named)
+        ],
+        [Admission::Recalled; 2],
+        "a rejection before them leaves both recalled"
+    );
+}
+
 /// #4034: a stratum receipt is believed over its own key and image under a
 /// policy listing its signer. A changed image, another key, an unlisted signer
 /// and the recheck policy believe nothing, and a stratum receipt beside an

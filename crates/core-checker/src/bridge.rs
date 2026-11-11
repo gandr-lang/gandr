@@ -1983,14 +1983,18 @@ pub fn readmit_resuming(
 ///   it admits through the checked entry; under [`Recall::trusting`] it admits
 ///   one on a verdict the source answers under a receipt from a signer the
 ///   policy lists, as [`Environment::add_decl`] does. A readmission resumed
-///   from a [`Crossed`] record keeps the recall that record was made under.
+///   from a [`Crossed`] record keeps the policy and the key chain that record
+///   was made under, and reads its own recall's source, which holds what the
+///   runs after the record recorded.
 /// - executable: none — the policy and the source are data the kernel reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module readmitted under the receipt of its own cold
 ///   readmission recalls every declaration that one checked, to the same
-///   artifact, and recalls nothing under another signer's key.
+///   artifact, and recalls nothing under another signer's key; resumed from a
+///   record made under no source, it recalls from its own.
 /// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
+/// - witness: `bridge::tests::a_resumed_readmission_recalls_from_its_own_source_6566`
 #[derive(Clone, Debug)]
 pub struct Recall
 {
@@ -2233,8 +2237,8 @@ where
         definitions: report.definitions(),
     };
     let judged_all = report.judged();
-    let (boundary, offered, fresh) = match resume {
-        Resume::Whole => (None, None, Environment::new()),
+    let (boundary, offered, fresh, recalled) = match resume {
+        Resume::Whole => (None, None, Environment::new(), None),
         Resume::Leading {
             boundary,
             crossed,
@@ -2246,17 +2250,26 @@ where
                 Maybe::Absent(_) => None,
             },
             recall.environment(),
+            Some(&recall.source),
         ),
     };
     let (environment, mut positions, mut readmitted) = offered
         .and_then(|crossed| crossed.resume(report))
-        .unwrap_or_else(|| {
-            (
-                fresh,
-                Positions::default(),
-                Vec::with_capacity(judged_all.len()),
-            )
-        });
+        .map_or_else(
+            || {
+                (
+                    fresh,
+                    Positions::default(),
+                    Vec::with_capacity(judged_all.len()),
+                )
+            },
+            |(mut environment, positions, readmitted)| {
+                if let Some(recalled) = recalled {
+                    environment.reading(Arc::clone(recalled));
+                }
+                (environment, positions, readmitted)
+            },
+        );
     // The kernel takes an admitted result exactly where the run that recorded
     // it ran under the policy: fresh, recalled or handed on.
     let mut environment = environment.admitting(report.admitting());

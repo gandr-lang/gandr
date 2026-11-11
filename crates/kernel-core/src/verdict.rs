@@ -13,9 +13,12 @@
 //! [`TrustPolicy`] lists verifies over the record. Under
 //! [`TrustPolicy::Recheck`] nothing is keyed and nothing is recalled.
 //!
-//! A rejection, a bypass, a mutual block or an open seal ends the chain. A
+//! A bypass, a mutual block or an open seal ends the chain. A rejected
+//! declaration enters no environment, so the chain steps back over it and
+//! keys the next declaration as if the rejected one had never been offered. A
 //! refusal is never recorded. [`Environment::handed_on`] hands the chain to a
-//! resumed run without its records.
+//! resumed run without its records, and the resumed run reads the source of
+//! its own readmission ([`Environment::reading`]).
 //!
 //! An installation's key also signs a stratum of the checker's site, which
 //! the checker certified, under a derivation context no admission receipt
@@ -25,6 +28,7 @@
 //! before it uses it.
 //!
 //! [`Environment::handed_on`]: crate::Environment::handed_on
+//! [`Environment::reading`]: crate::Environment::reading
 //!
 //! # References
 //!
@@ -1102,6 +1106,8 @@ struct Chain
     encoder: SegmentEncoder,
     /// The key of the last admission, or the start.
     last: VerdictKey,
+    /// The key before the last admission, which a refusal steps back to.
+    before: VerdictKey,
 }
 
 /// An environment's verdict state: the policy, the source, the key chain,
@@ -1159,6 +1165,7 @@ impl Verdicts
                 Maybe::Present(Chain {
                     encoder: SegmentEncoder::default(),
                     last: VerdictKey::start(),
+                    before: VerdictKey::start(),
                 }),
             ),
         };
@@ -1216,6 +1223,7 @@ impl Verdicts
         );
         match chain.encoder.segment(arena, &marked) {
             Maybe::Present(segment) => {
+                chain.before = chain.last;
                 chain.last = chain.last.after(&segment);
                 Maybe::Present(chain.last)
             },
@@ -1235,6 +1243,34 @@ impl Verdicts
         if let Maybe::Present(_) = self.chain {
             self.chain = Maybe::Absent(keyed::Absent::Ended);
         }
+    }
+
+    /// Step the chain back over the declaration [`Self::key`] keyed last,
+    /// which the kernel refused: it enters no environment, so the next
+    /// declaration's input does not read it, and the arena mints its nodes'
+    /// ids again.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn refused(&mut self)
+    {
+        if let Maybe::Present(ref mut chain) = self.chain {
+            chain.encoder.forget();
+            chain.last = chain.before;
+        }
+    }
+
+    /// Read recorded verdicts from `source` from now on, as a resumed run reads
+    /// the source of the readmission that resumes it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn reading(
+        &mut self,
+        source: Arc<dyn VerdictSource>,
+    )
+    {
+        self.source = source;
     }
 
     /// The reading a verified receipt attests for `key`, trying each receipt

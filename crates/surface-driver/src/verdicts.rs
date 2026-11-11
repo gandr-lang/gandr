@@ -3,7 +3,8 @@
 //! the user's configuration names (`config` § The kernel's key and its
 //! verdicts). The stratum store beside it believes the same policy and signs
 //! with the same key, and holds its strata in a store under the cache
-//! directory's `strata`.
+//! directory's `strata`. A language server or a hub holds its verdicts in the
+//! process instead, under a key the process mints for itself alone.
 //!
 //! # References
 //!
@@ -134,6 +135,74 @@ pub fn install(kernel: config::Kernel) -> Result<(), Uninstalled>
         })
 }
 
+/// Why a language server or a hub holds no verdicts: what went wrong.
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct Unheld
+{
+    /// What went wrong, in words.
+    why: String,
+}
+
+impl fmt::Display for Unheld
+{
+    /// `the process holds no kernel verdicts: <why>; every declaration is
+    /// checked`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "the process holds no kernel verdicts: {}; every declaration is checked",
+            self.why
+        )
+    }
+}
+
+/// Install the cache a language server or a hub holds its kernel's verdicts
+/// in for the process's life, unless `kernel` asks to recheck.
+///
+/// # Specification
+/// - requires: called once, before the first session.
+/// - ensures: under [`config::Kernel::Trusting`], the process's readmissions
+///   recall what an earlier readmission of the process checked, under a key the
+///   process mints from the operating system's entropy and trusts alone;
+///   otherwise nothing is installed and every declaration is checked.
+/// - fails: the entropy cannot be read, or a cache is installed already.
+/// - panics: none.
+/// - executable: none — the entropy and the installation are external state.
+///
+/// # Errors
+/// [`Unheld`], saying why.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a trusting process installs its cache once, so a second
+///   call finds it installed; a rechecking one installs none.
+/// - witness: `verdicts::tests::a_trusting_process_holds_its_verdicts_once_6566`
+/// - witness: `verdicts::tests::a_rechecking_process_holds_no_verdicts_6566`
+pub fn hold(kernel: &config::Kernel) -> Result<(), Unheld>
+{
+    let config::Kernel::Trusting(_) = *kernel
+    else {
+        return Ok(());
+    };
+    let mut seed = [0_u8; 32];
+    getrandom::fill(&mut seed).map_err(|error| Unheld {
+        why: error.to_string(),
+    })?;
+    install_verdict_cache(VerdictCache::held(KernelSigner::from(seed))).map_err(|_installed| {
+        Unheld {
+            why: String::from("a cache is already installed"),
+        }
+    })
+}
+
 /// The key at `path`, minted there when there is none.
 ///
 /// # Specification
@@ -181,5 +250,44 @@ fn minted(path: &Path) -> io::Result<KernelSigner>
             ..
         }) => stored(path),
         Err(refused) => Err(io::Error::from(refused.kind)),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+
+    use gandr_kernel_core::verdict::KernelSigner;
+    use gandr_surface_dispatcher::VerdictCache;
+    use gandr_surface_dispatcher::install_verdict_cache;
+
+    use super::hold;
+    use crate::config;
+
+    /// #6566: a trusting process installs its held cache, so a second call
+    /// finds a cache installed and says so.
+    #[test]
+    fn a_trusting_process_holds_its_verdicts_once_6566()
+    {
+        let trusting = config::Kernel::Trusting(BTreeSet::new());
+        assert!(hold(&trusting).is_ok(), "the first call installs the cache");
+        let again = hold(&trusting);
+        assert!(
+            again.is_err_and(|unheld| unheld.to_string().contains("already installed")),
+            "the second call finds the cache installed"
+        );
+    }
+
+    /// #6566: a process whose policy rechecks installs no cache, so another
+    /// cache still installs after it.
+    #[test]
+    fn a_rechecking_process_holds_no_verdicts_6566()
+    {
+        assert!(hold(&config::Kernel::Rechecking).is_ok());
+        assert!(
+            install_verdict_cache(VerdictCache::held(KernelSigner::from([3_u8; 32]))).is_ok(),
+            "no cache was installed before"
+        );
     }
 }

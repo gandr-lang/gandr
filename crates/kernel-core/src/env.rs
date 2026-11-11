@@ -1931,7 +1931,8 @@ impl Environment
     ///   without the check; any other key is checked and, on success, recorded
     ///   for [`Self::receipt`] unless its check took an admitted result
     ///   ([`crate::admitted`]), since a receipt attests only what the kernel
-    ///   checked itself. A rejection ends the chain.
+    ///   checked itself. A rejected declaration enters no environment, so the
+    ///   chain stays where it stood before it.
     /// - provides: the one checked entry into the kernel. It takes **no memo**,
     ///   which is the structural form of the memo's one-call lifetime: nothing
     ///   an earlier check recorded can reach a later one through this entry. A
@@ -1957,7 +1958,8 @@ impl Environment
     ///   nothing. A declaration recorded by a trusted signer is recalled under
     ///   its own key, refused after one name changes, refused under an unlisted
     ///   signer or a tampered record, and never recalled under
-    ///   [`TrustPolicy::Recheck`](crate::verdict::TrustPolicy::Recheck).
+    ///   [`TrustPolicy::Recheck`](crate::verdict::TrustPolicy::Recheck); a
+    ///   rejection before it changes no later key.
     /// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
     /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
     /// - witness: `env::tests::a_rejected_declaration_leaves_the_environment_unchanged`
@@ -1968,6 +1970,7 @@ impl Environment
     /// - witness: `tests::verdicts::an_unlisted_signer_recalls_nothing`
     /// - witness: `tests::verdicts::a_tampered_record_recalls_nothing`
     /// - witness: `tests::verdicts::a_rechecking_environment_recalls_nothing`
+    /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
     /// - witness: `element_identity::tests::a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558`
     // The predicate covers the two structural halves of the success
     // postcondition: exactly one entry is appended, and the admission floor
@@ -2012,14 +2015,15 @@ impl Environment
         ) {
             Ok(levels) => levels,
             Err(error) => {
+                // No key was taken: the chain reads the declarations the
+                // environment holds, and a rejected one enters none.
                 self.arena.truncate_to(rejected);
-                self.verdicts.end();
                 return Err(error);
             },
         };
-        // A rejected declaration's nodes are truncated and their ids minted
-        // again, so the key chain, whose encoder remembers nodes by id, ends at
-        // the first rejection.
+        // A rejected declaration enters no environment, so the next one's
+        // input does not read it: the chain steps back over it below, and the
+        // encoder forgets the nodes whose ids the arena mints again.
         let key = self.verdicts.key(&self.arena, &declaration);
         let recalled = match key {
             Maybe::Present(key) => self.verdicts.recall(key),
@@ -2091,7 +2095,7 @@ impl Environment
                 // Drop the intermediates and this declaration's content, down
                 // to the admission floor and no further.
                 self.arena.truncate_to(rejected);
-                self.verdicts.end();
+                self.verdicts.refused();
                 Err(error)
             },
         }
@@ -2123,6 +2127,29 @@ impl Environment
     ) -> Maybe<crate::verdict::StoredReceipt, crate::verdict::stored::Absent>
     {
         self.verdicts.receipt(signer)
+    }
+
+    /// Read recorded verdicts from `source` from now on: a run that resumes
+    /// this environment reads the source of its own readmission, which holds
+    /// what the runs after this environment's recorded.
+    ///
+    /// # Specification
+    /// - ensures: each later admission reads `source` by its key; the policy,
+    ///   the chain and the receipts verified so far are unchanged.
+    /// - panics: none.
+    /// - executable: none — the source is private to the verdicts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a resumed run reads the source of its readmission, so
+    ///   it recalls what a run after the record recorded.
+    /// - witness: `tests::verdicts::a_resumed_environment_recalls_from_the_source_it_reads_6566`
+    #[inline]
+    pub fn reading(
+        &mut self,
+        source: alloc::sync::Arc<dyn crate::verdict::VerdictSource>,
+    )
+    {
+        self.verdicts.reading(source);
     }
 
     /// How many admissions a recorded verdict answered.
