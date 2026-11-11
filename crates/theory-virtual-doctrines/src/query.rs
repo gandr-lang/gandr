@@ -250,49 +250,6 @@ impl<'store> Query<'store>
         out
     }
 
-    /// The **⊲/⊳ extension candidates** — the confluence critical pairs among a
-    /// relation's generators.
-    ///
-    /// This is the query *surface* for the Kan-shaped extension; the
-    /// best-consumer **synthesis** (running budgeted completion to derive
-    /// the frame) is the completion engine's job and is not run here.
-    ///
-    /// # Specification
-    /// - ensures: one [`ExtensionCandidate`] per confluence overlap between two
-    ///   generators of `rel`, in enumeration order — the critical-pair seams
-    ///   the completion loop would resolve into a derived frame.
-    /// - panics: none.
-    #[inline]
-    #[must_use]
-    /// # Adequacy
-    /// - hypothesis: L1 — the predicate observes both generator filters.
-    ///   Confluence classification and exhaustiveness follow the engine
-    ///   enumeration, not membership alone.
-    /// - witness: `tests::laws::tests::the_extension_candidates_are_the_critical_pairs_among_the_generators`
-    #[spec(ensures: |out| out.iter().all(|candidate| rel.generators.contains(&candidate.left) && rel.generators.contains(&candidate.right)))]
-    pub fn extension_candidates(
-        &self,
-        rel: &RelationRef,
-    ) -> Vec<ExtensionCandidate>
-    {
-        let generators: BTreeSet<CellId> = rel.generators.iter().copied().collect();
-        let mut out = Vec::new();
-        for overlap in enumerate_overlaps(self.cells) {
-            if overlap.kind != OverlapKind::Confluence
-                || !generators.contains(&overlap.left)
-                || !generators.contains(&overlap.right)
-            {
-                continue;
-            }
-            out.push(ExtensionCandidate {
-                left: overlap.left,
-                right: overlap.right,
-                peak: overlap.peak,
-            });
-        }
-        out
-    }
-
     /// The **tabulator** `{|R|}` — the instantiation table of a relation, each
     /// generating cell an instance with its two projections.
     ///
