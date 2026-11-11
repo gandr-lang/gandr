@@ -10,14 +10,16 @@
 # `watch_limit` minutes pages the fixer once for each head of `main`.
 #
 # The gate runs in a clone of its own, `watch-landing` under the state
-# directory, which borrows the objects of this checkout's repository. So
+# directory, whose objects link those of this checkout's repository. So
 # the gate holds the lock of the lane `watch` and one of the host's gate
 # slots (`.config/mise/gate.bash`), never a seat's lane. The clone reads
 # `landing` and `main` into `refs/watch/`. Its `origin/landing` holds the
 # last green head, so the gate reads the move since that head as its
 # change, as `pr:open` reads a branch's change against its fork. A move of
 # `landing` during a run waits for the run to end, and the next run checks
-# the newest head alone.
+# the newest head alone. A red check runs on the green head first: a check
+# that fails there fails for the host, and the watcher pages the fixer and
+# files nothing.
 #
 # The watcher calls GitHub only for a red head: one read of the culprit's
 # pull request, one read of the open `landing:` defects, and the writes of
@@ -48,20 +50,29 @@ watch_remember() {
   mv "$watch_state.tmp" "$watch_state"
 }
 
-# Makes the clone when it is absent, then reads `landing` and `main` into
-# its `refs/watch/`.
+# Makes the clone when it is absent, then reads `landing`, `main` and
+# `integration` into its `refs/watch/`. A local clone links the objects of
+# this checkout's repository, so it copies no object. A clone of a shallow
+# repository is shallow too, and a check that clones the clone again then
+# reads it through a pack of its refs alone: a commit that the check wrote
+# is not in that pack (#6587). So the first fetch deepens the clone to the
+# whole history, and each later one keeps it whole.
 watch_fetch() {
+  local -a deepen=()
   if [[ ! -d "$watch_tree/.git" ]]; then
     mkdir -p "$(dirname "$watch_tree")"
-    git clone --quiet --shared --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$watch_tree"
+    git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$watch_tree"
     git -C "$watch_tree" remote set-url origin "$(git remote get-url origin)"
   fi
-  git -C "$watch_tree" fetch --quiet origin '+refs/heads/landing:refs/watch/landing' '+refs/heads/main:refs/watch/main'
+  if [[ $(git -C "$watch_tree" rev-parse --is-shallow-repository) == true ]]; then deepen=(--unshallow); fi
+  git -C "$watch_tree" fetch --quiet "${deepen[@]}" origin '+refs/heads/landing:refs/watch/landing' \
+    '+refs/heads/main:refs/watch/main' '+refs/heads/integration:refs/watch/integration'
 }
 
 # Pages the seat of lane `$1` with the line `$2`, the triage seat for a
-# lane with no seat, and the coordinator with the same line, through the
-# page script of the stall detector's configuration.
+# lane with no seat, through the page script of the stall detector's
+# configuration. With `$3` = `coordinator`, it pages the coordinator with
+# the same line too.
 watch_page() {
   local page
   local -a command seat coordinator
@@ -71,20 +82,22 @@ watch_page() {
   mapfile -t seat < <(jq -r --arg lane "$1" '(.seats[$lane] // .triage)[]' <<< "$page")
   mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
   "${command[@]}" "${seat[@]}" "$2" || :
-  if [[ "${seat[*]}" != "${coordinator[*]}" ]]; then "${command[@]}" "${coordinator[@]}" "$2" || :; fi
+  if [[ ${3:-} == coordinator && "${seat[*]}" != "${coordinator[*]}" ]]; then "${command[@]}" "${coordinator[@]}" "$2" || :; fi
 }
 
-# Reads the gap and pages the fixer when it passes the limit; prints the
-# reading.
+# Reads the gap and pages the fixer when `gap.jq` says so, and the
+# coordinator too when no cycle runs; prints the reading.
 watch_gap() {
-  local memory=$1 oldest main reading
+  local memory=$1 oldest main integration reading
   oldest=$(git -C "$watch_tree" log --first-parent --format=%ct refs/watch/main..refs/watch/landing | tail -n 1)
   main=$(git -C "$watch_tree" rev-parse refs/watch/main)
+  integration=$(git -C "$watch_tree" rev-parse refs/watch/integration)
   reading=$(jq -n -c --argjson now "$(date +%s)" --argjson oldest "${oldest:-null}" --arg main "$main" \
-    --argjson limit "$watch_limit" --argjson paged "$(jq -c '.paged // null' <<< "$memory")" \
-    '{now: $now, oldest: $oldest, main: $main, limit: $limit, paged: $paged}' | jq -c -f "$watch_dir/gap.jq")
+    --arg integration "$integration" --argjson limit "$watch_limit" --argjson paged "$(jq -c '.paged // null' <<< "$memory")" \
+    '{now: $now, oldest: $oldest, main: $main, integration: $integration, limit: $limit, paged: $paged}' | jq -c -f "$watch_dir/gap.jq")
   if [[ $(jq -r .page <<< "$reading") == true ]]; then
-    watch_page triage "GAP $(jq -r .line <<< "$reading"), past $watch_limit minutes: read #5469 and the newest landing:watch defect"
+    watch_page triage "GAP $(jq -r .line <<< "$reading"), past $watch_limit minutes: read #5469 and the newest landing:watch defect" \
+      "$(jq -r 'if .coordinator then "coordinator" else "" end' <<< "$reading")"
   fi
   printf '%s\n' "$reading"
 }
@@ -145,6 +158,12 @@ watch_search() {
 # or comments on the open one, claims it for the lane and pages the lane.
 watch_own() {
   local repo=$1 head=$2 green=$3 check=$4 log=$5 culprit pr open lines input owner number observation
+  # A check that fails on the green head too fails for the host, not for
+  # the move: the watcher pages the fixer and files nothing.
+  if ! watch_run "$green" "$check" "$(mktemp)"; then
+    watch_page triage "LANDING \`$check\` fails on the green head ${green::9} too, so the watcher files nothing: read $log"
+    return 1
+  fi
   culprit=$(watch_search "$green" "$head" "$check") || { echo "landing:watch: the search for \`$check\` failed" >&2; return 1; }
   pr=$(gh api "repos/$repo/commits/$culprit/pulls" --jq '[.[] | {number, branch: .head.ref, title}] | first // null') || pr=null
   open=$(gh issue list -R "$repo" --state open --label kind:defect --search '"landing:" in:title' --limit 100 --json number,title) || return 1
@@ -177,7 +196,7 @@ watch_once() {
   memory=$(watch_memory)
   watch_fetch || { echo "landing:watch: the fetch failed; reading again" >&2; printf '%s\n' "$memory"; return 0; }
   gap=$(watch_gap "$memory")
-  memory=$(jq -c --argjson gap "$gap" '.gap = $gap | if $gap.page then .paged = $gap.main else . end' <<< "$memory")
+  memory=$(jq -c --argjson gap "$gap" '.gap = ($gap | del(.paged)) | if $gap.page then .paged = $gap.paged else . end' <<< "$memory")
   head=$(git -C "$watch_tree" rev-parse refs/watch/landing)
   if [[ $(jq -r '.checked // empty' <<< "$memory") == "$head" ]]; then printf '%s\n' "$memory"; return 0; fi
   # The first green head is `main`'s: the integration cycle passed on it.

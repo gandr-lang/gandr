@@ -1217,6 +1217,7 @@
     "input": {
       "now": 100000,
       "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
       "limit": 45,
       "paged": null,
       "oldest": null
@@ -1224,7 +1225,12 @@
     "output": {
       "minutes": 0,
       "page": false,
-      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "coordinator": true,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": null,
+        "minutes": 0
+      },
       "line": "main holds landing"
     }
   },
@@ -1234,6 +1240,7 @@
     "input": {
       "now": 100000,
       "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
       "limit": 45,
       "paged": null,
       "oldest": 97300
@@ -1241,16 +1248,22 @@
     "output": {
       "minutes": 45,
       "page": false,
-      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-      "line": "main stands 45 minutes behind landing at mmmmmmmmm"
+      "coordinator": false,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 45
+      },
+      "line": "main stands 45 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
     }
   },
   {
-    "name": "#6587: a gap past 45 minutes pages the fixer",
+    "name": "#6587: a gap past 45 minutes while a cycle runs pages the fixer alone",
     "program": "gap.jq",
     "input": {
       "now": 100000,
       "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
       "limit": 45,
       "paged": null,
       "oldest": 97240
@@ -1258,25 +1271,144 @@
     "output": {
       "minutes": 46,
       "page": true,
-      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-      "line": "main stands 46 minutes behind landing at mmmmmmmmm"
+      "coordinator": false,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 46
+      },
+      "line": "main stands 46 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
     }
   },
   {
-    "name": "#6587: a gap past 45 minutes pages once for each head of main",
+    "name": "#6587: a gap past 45 minutes with no cycle running pages the coordinator too",
     "program": "gap.jq",
     "input": {
       "now": 100000,
       "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
       "limit": 45,
-      "paged": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "paged": null,
+      "oldest": 97240
+    },
+    "output": {
+      "minutes": 46,
+      "page": true,
+      "coordinator": true,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": null,
+        "minutes": 46
+      },
+      "line": "main stands 46 minutes behind landing at mmmmmmmmm, and no cycle runs"
+    }
+  },
+  {
+    "name": "#6587: a gap paged for this head of main and this cycle pages nothing a minute later",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+      "limit": 45,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 60
+      },
+      "oldest": 96340
+    },
+    "output": {
+      "minutes": 61,
+      "page": false,
+      "coordinator": false,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 61
+      },
+      "line": "main stands 61 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
+    }
+  },
+  {
+    "name": "#6587: a gap pages again once it grows by 30 minutes past the last page",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+      "limit": 45,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 60
+      },
       "oldest": 94600
     },
     "output": {
       "minutes": 90,
-      "page": false,
+      "page": true,
+      "coordinator": false,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 90
+      },
+      "line": "main stands 90 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
+    }
+  },
+  {
+    "name": "#6587: a gap pages again when the cycle on integration changes",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
       "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-      "line": "main stands 90 minutes behind landing at mmmmmmmmm"
+      "integration": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+      "limit": 45,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "minutes": 60
+      },
+      "oldest": 96280
+    },
+    "output": {
+      "minutes": 62,
+      "page": true,
+      "coordinator": false,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 62
+      },
+      "line": "main stands 62 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
+    }
+  },
+  {
+    "name": "#6587: a move of main starts the gap again and pages for the new head",
+    "program": "gap.jq",
+    "input": {
+      "now": 100000,
+      "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "integration": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+      "limit": 45,
+      "paged": {
+        "main": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 80
+      },
+      "oldest": 97000
+    },
+    "output": {
+      "minutes": 50,
+      "page": true,
+      "coordinator": false,
+      "paged": {
+        "main": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "cycle": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+        "minutes": 50
+      },
+      "line": "main stands 50 minutes behind landing at mmmmmmmmm, and the cycle on integration iiiiiiiii runs"
     }
   }
 ]
