@@ -71,7 +71,7 @@ def commuted3 : Path[.A = Path[.A = Path[.A = Path[.A = Spheres3](Wedge3, Wedge3
 
 /// Two words of 2-cells that differ by a count are apart.
 @[refuses("EndpointMismatch")]
-def counted : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
+def countsApart : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
   Path.here Wedge2,
   Path.here Wedge2
 )](
