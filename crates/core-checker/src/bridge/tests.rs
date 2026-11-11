@@ -8655,3 +8655,388 @@ fn a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609()
         refusal.error()
     );
 }
+
+/// How [`hold_across_two`] reads its slot across a case on `t : Two`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CaseReading
+{
+    /// `case t { Z => y ← (x ← consume c; return x); return y, S(_) =>
+    /// return c }`: a case at the spine's end, whose first arm consumes the
+    /// slot in a bound block.
+    Tail,
+    /// `y ← case t { Z => return c, S(_) => return c }; return y`: a case a
+    /// step binds.
+    Bound,
+    /// `y ← case t { Z => return c, S(_) => let d = fork (s : end) { close s
+    /// }; close d; return c }; return y`: an arm forks, and its parent reads
+    /// the slot past the end it keeps.
+    Forked,
+    /// `y ← case t { Z => return c, S(_) => return c }; return c`: the rest
+    /// reads the slot after the case.
+    ReadAfter,
+    /// `y ← case t { Z => access c as v { resume v 0 }; return c, S(_) =>
+    /// return c }; return c`: an arm writes the slot the rest reads.
+    WrittenAfter,
+}
+
+/// `data Two : Type where { | Z : Two | S : (u : ()) --> Two }`, the first
+/// declaration of a module, and `U (Two -> F Integer)`.
+///
+/// # Specification
+/// trivial.
+fn two_to_integer(arena: &mut CoreArena) -> (Arc<gandr_core_term::DataSignature>, ValueTypeId)
+{
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit_type = arena.value_type_unit();
+    let signature = Arc::new(gandr_core_term::DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::new(), Vec::from([unit_type])]),
+        kind,
+    ));
+    let two = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returner = arena.comp_type_returner(integer);
+    let arrow = arena.comp_type_arrow(two, returner);
+    (signature, arena.value_type_thunk(arrow))
+}
+
+/// `hold c = 0; …` under the binder `t : Two`, the block reading `c` across
+/// a case on `t` as `reading` names; the hold's node and the case's.
+///
+/// # Specification
+/// trivial.
+fn hold_across_two(
+    arena: &mut CoreArena,
+    reading: CaseReading,
+) -> (
+    gandr_core_term::ComputationId,
+    gandr_core_term::ComputationId,
+)
+{
+    use gandr_core_term::memory::AccessMode;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::memory::Place;
+    use gandr_core_term::session::PayloadCount;
+    use gandr_core_term::session::Protocol;
+    use gandr_core_term::session::ProtocolState;
+    use gandr_core_term::session::ProtocolSyntax;
+    use gandr_core_term::session::SessionAction;
+    use gandr_core_term::session::SessionType;
+    use gandr_kernel_term::FieldCount;
+    let slot = DeBruijnIndex::from(0_u32);
+    let zero = arena.value_literal(integer_literal());
+    let read = arena.value_variable(Zone::Linear, slot);
+    let read_back = arena.computation_return(read);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(bound);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let motive = arena.comp_type_returner(integer);
+    let first = match reading {
+        CaseReading::Tail => {
+            let consumed = arena.computation_memory(MemoryForm::Consume { held: slot });
+            let block = arena.computation_bind(consumed, returned);
+            arena.computation_bind(block, returned)
+        },
+        CaseReading::Bound | CaseReading::Forked | CaseReading::ReadAfter => read_back,
+        CaseReading::WrittenAfter => {
+            let unit = arena.value_unit();
+            let unwind = arena.computation_return(unit);
+            let written = arena.value_literal(integer_literal());
+            let resumed = arena.computation_memory(MemoryForm::Resume {
+                view: slot,
+                value: written,
+            });
+            let access = arena.computation_memory(MemoryForm::Access {
+                mode: AccessMode::Exclusive { unwind },
+                held: slot,
+                place: Place::Whole,
+                body: resumed,
+            });
+            arena.computation_bind(access, read_back)
+        },
+    };
+    let second = match reading {
+        CaseReading::Forked => {
+            // Past the parent's end, the slot is the second linear binder.
+            let protocol = Protocol::new(
+                Vec::from([ProtocolSyntax::End]),
+                ProtocolState::from(0_usize),
+                PayloadCount::from(0_usize),
+            )
+            .unwrap();
+            let end = SessionType::new(Arc::new(protocol), Arc::from([])).unwrap();
+            let protocol = arena.value_type_session(end);
+            let close = arena.computation_session(SessionAction::Close { endpoint: slot });
+            let past = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+            let past = arena.computation_return(past);
+            let parent = arena.computation_bind(close, past);
+            arena.computation_session(SessionAction::Fork {
+                protocol,
+                child: close,
+                parent,
+            })
+        },
+        CaseReading::Tail
+        | CaseReading::Bound
+        | CaseReading::ReadAfter
+        | CaseReading::WrittenAfter => read_back,
+    };
+    let past_field = arena.computation_lambda(second);
+    let case = arena.computation_data_case(
+        bound,
+        motive,
+        Vec::from([first, past_field]),
+        Vec::from([FieldCount::from(0_usize), FieldCount::from(1_usize)]),
+    );
+    let body = match reading {
+        CaseReading::Tail => case,
+        CaseReading::Bound | CaseReading::Forked => arena.computation_bind(case, returned),
+        CaseReading::ReadAfter | CaseReading::WrittenAfter => {
+            arena.computation_bind(case, read_back)
+        },
+    };
+    let hold = arena.computation_memory(MemoryForm::Hold {
+        value: zero,
+        body,
+        grade: HoldGrade::Many,
+    });
+    (hold, case)
+}
+
+/// `data Two` and a function `λt. hold c = 0; …` over it for each of
+/// `readings`, in order.
+///
+/// # Specification
+/// trivial.
+fn functions_over_two(
+    arena: &mut CoreArena,
+    readings: &[CaseReading],
+) -> Vec<Declaration>
+{
+    let (signature, declared) = two_to_integer(arena);
+    let mut module = Vec::from([Declaration::data(
+        ConstantIndex::from(0_usize),
+        signature,
+        OriginToken::from(0_usize),
+    )]);
+    for (&reading, position) in readings.iter().zip(1_usize ..) {
+        let (hold, _case) = hold_across_two(arena, reading);
+        let lambda = arena.computation_lambda(hold);
+        let body = arena.value_thunk(lambda);
+        module.push(declaration(
+            At(position),
+            Maybe::Present(declared),
+            Maybe::Present(body),
+        ));
+    }
+    module
+}
+
+/// Holds read across a case's arms cross as their reducts: a case at the
+/// spine's end whose arm consumes the slot in a bound block, a case a step
+/// binds, an arm that forks and reads the slot past its end, and a case
+/// whose rest reads the slot after it. The kernel types each reduct.
+#[test]
+fn a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641()
+{
+    let mut arena = CoreArena::new();
+    let module = functions_over_two(&mut arena, &[
+        CaseReading::Tail,
+        CaseReading::Bound,
+        CaseReading::Forked,
+        CaseReading::ReadAfter,
+    ]);
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    assert_eq!(readmission.readmitted().len(), 5);
+    for entry in &readmission.readmitted()[1 ..] {
+        assert!(
+            matches!(entry.outcome(), Outcome::Defined { .. }),
+            "the hold at {:?} crosses as its reduct: {:?}",
+            entry.constant(),
+            entry.outcome()
+        );
+    }
+}
+
+/// The derivation of a match a hold reads across crosses at the case its
+/// reduct rebuilds: the kernel replays it there, and a derivation that leaves
+/// `S` out is the kernel's refusal.
+#[test]
+fn a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641()
+{
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::FieldCount;
+    use gandr_kernel_term::cover::Cases;
+    use gandr_kernel_term::cover::Cover;
+    use gandr_kernel_term::cover::CoverRefusal;
+    use gandr_kernel_term::cover::Step;
+    use gandr_kernel_term::cover::StepId;
+    let derivation = |kept: bool| {
+        let mut cover = Cover::new();
+        let zero = cover.mint(Step::Var(0));
+        let mut branches = Vec::from([zero]);
+        let mut constructors =
+            Vec::from([(ConstructorTag::from(0_usize), FieldCount::from(0_usize))]);
+        if kept {
+            branches.push(cover.mint(Step::Var(1)));
+            constructors.push((ConstructorTag::from(1_usize), FieldCount::from(1_usize)));
+        }
+        let _root = cover.mint(Step::Split {
+            cases: Cases::Data {
+                family: ConstantIndex::from(0_usize),
+                constructors,
+                loops: Vec::new(),
+            },
+            branches,
+        });
+        cover
+    };
+    let mut arena = CoreArena::new();
+    let (signature, declared) = two_to_integer(&mut arena);
+    let (hold, case) = hold_across_two(&mut arena, CaseReading::Tail);
+    let lambda = arena.computation_lambda(hold);
+    let body = arena.value_thunk(lambda);
+    let declarations = |kept: bool| {
+        [
+            Declaration::data(
+                ConstantIndex::from(0_usize),
+                Arc::clone(&signature),
+                OriginToken::from(0_usize),
+            ),
+            declaration(At(1), Maybe::Present(declared), Maybe::Present(body))
+                .covering(Vec::from([(case, derivation(kept))])),
+        ]
+    };
+    let (_, readmission) = judge_and_readmit(&mut arena, &declarations(true));
+    assert!(
+        matches!(
+            readmission.readmitted()[1].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the held match and its derivation cross: {:?}",
+        readmission.readmitted()[1].outcome()
+    );
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let crossed: usize = artifact
+        .declarations()
+        .iter()
+        .map(|entry| entry.declaration().covers().len())
+        .sum();
+    assert_eq!(crossed, 1, "the derivation travels on the definition");
+    let (_, readmission) = judge_and_readmit(&mut arena, &declarations(false));
+    assert_eq!(
+        readmission.readmitted()[1].outcome(),
+        &Outcome::Rejected(gandr_kernel_core::KernelError::CoverDisagrees(
+            CoverRefusal::ConstructorCount(StepId::from(1_u32))
+        )),
+        "the kernel replays the derivation against the rebuilt case"
+    );
+}
+
+/// An arm may not write a slot the rest reads after the case: the arms do
+/// not answer the value they leave, so the erasure refuses the hold by
+/// name.
+#[test]
+fn a_write_the_rest_reads_after_a_case_is_refused_by_name_6641()
+{
+    let mut arena = CoreArena::new();
+    let (hold, _case) = hold_across_two(&mut arena, CaseReading::WrittenAfter);
+    let root = CoreNode::Term(TermNode::Computation(hold));
+    let (_, image) = erase(&mut arena, root);
+    assert_eq!(
+        image,
+        Err(Refusal::OutOfFragment {
+            at: root,
+            former: UnadmittedFormer::Memory,
+        }),
+        "the write in the arm is refused at the hold"
+    );
+}
+
+/// A reduct whose arm answers the wrong value is the kernel's rejection:
+/// the bound case's artifact, its second arm forged to return the unit,
+/// answers the unit where the case's motive is an integer.
+#[test]
+fn an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641()
+{
+    use gandr_kernel_term::Computation as KernelComputation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::MarkedDeclaration;
+    let mut arena = CoreArena::new();
+    let module = functions_over_two(&mut arena, &[CaseReading::Bound]);
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    assert!(
+        matches!(
+            readmission.readmitted()[1].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the bound case crosses: {:?}",
+        readmission.readmitted()[1].outcome()
+    );
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let mut declarations = artifact.declarations().to_vec();
+    let mut kernel = artifact.arena().clone();
+    let statement = declarations.last_mut().expect("the hold crossed");
+    let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+    else {
+        panic!("the hold crosses as a definition");
+    };
+    // `λt. y ← case t { Z => return 0, S(_) => return 0 }; return y`, forged
+    // to read `S(_) => return ()`.
+    let Some(&KernelValue::Thunk(lambda)) = kernel.value(body)
+    else {
+        panic!("the function crosses as a thunk");
+    };
+    let Some(&KernelComputation::Lambda(reduct)) = kernel.computation(lambda)
+    else {
+        panic!("the function binds its scrutinee");
+    };
+    let Some(&KernelComputation::Bind(case, rest)) = kernel.computation(reduct)
+    else {
+        panic!("the reduct binds the case");
+    };
+    let Some(&KernelComputation::DataCase {
+        scrutinee,
+        motive,
+        ref branches,
+        equations,
+    }) = kernel.computation(case)
+    else {
+        panic!("the reduct keeps the case");
+    };
+    let first = branches[0];
+    let unit = kernel.value_unit();
+    let wrong = kernel.computation_return(unit);
+    let wrong = kernel.computation_lambda(wrong);
+    let forged = kernel.computation_data_case_with_equations(
+        scrutinee,
+        motive,
+        vec![first, wrong],
+        equations,
+    );
+    let forged = kernel.computation_bind(forged, rest);
+    let forged = kernel.computation_lambda(forged);
+    let forged = kernel.value_thunk(forged);
+    let content = DeclarationBuilder::new(&mut kernel).def(
+        statement.declaration().levels().clone(),
+        declared,
+        forged,
+    );
+    *statement = MarkedDeclaration::new(
+        statement.mark(),
+        content.named(statement.declaration().name().clone()),
+    );
+    let position = ConstantIndex::from(declarations.len().saturating_sub(1));
+    let refusal = gandr_kernel_core::Environment::replay(kernel, &declarations)
+        .expect_err("the forged arm returns the unit where an integer is the motive");
+    assert_eq!(refusal.position(), position);
+    assert!(
+        matches!(
+            refusal.error(),
+            &gandr_kernel_core::KernelError::ValueShapeMismatch { .. }
+        ),
+        "the kernel names the mismatch: {:?}",
+        refusal.error()
+    );
+}

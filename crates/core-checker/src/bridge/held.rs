@@ -5,23 +5,30 @@
 //! An exclusive access answers its result beside the value its view leaves in
 //! the place, and the rest of the block reads that value. A shared access
 //! reads the held value. A consuming read answers it. The reduct keeps no
-//! linear binder: the checker alone decides linear use, and the reduct relies
-//! on its verdict that each view ends once on each path.
+//! linear binder of a slot: the checker alone decides linear use, and the
+//! reduct relies on its verdict that each view ends once on each path. The
+//! end of a session that a fork opens is no slot: the reduct keeps its
+//! binder, and each form that reads no slot keeps its form.
 //!
-//! The reduct covers the lexical case: each access stands on the spine of
-//! the block that holds its slot, at the whole place, and each read of a slot
-//! stands in a step's own values, under no binder. Any other form refuses the
-//! hold whole, as [`UnadmittedFormer::Memory`].
+//! The reduct covers the lexical case: each access stands on the spine of a
+//! block that holds its slot, at the whole place, and each read of a slot
+//! stands in a step's own values, under no binder. A block may end in a case,
+//! and a step may bind a case or a block. The reduct reads each arm, or the
+//! bound block, as a block beneath the same slots. A slot that the frame reads
+//! after the form is fixed there: the form may read it and may not write it.
+//! So no arm answers the value it leaves, and the case keeps its motive. Any
+//! other form refuses the hold whole, as [`UnadmittedFormer::Memory`].
 //!
 //! The reduct reads one block at a time on an explicit stack of frames: a
-//! nested hold or an access's body opens a frame, and its end gives its
-//! reduct to the frame below.
+//! nested hold, an access's body, a bound block and each arm of a case open
+//! a frame, and its end gives its reduct to the frame below.
 //!
 //! # References
 //!
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: memory crosses by
 //!   simulation, a pure translation that the kernel types, never an erasure.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -31,11 +38,13 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::SplitMotive;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Arguments;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -79,6 +88,10 @@ enum Slot
         /// at; none for a shared one.
         unwind: Option<Read>,
     },
+    /// A linear binder the block opens that is no slot: the end of a
+    /// session a fork opens. The reduct keeps the binder and each read of
+    /// it, so such binders stand innermost, past every slot.
+    Kept,
 }
 
 /// The place of a slot among a block's slots, counted from the outermost.
@@ -86,13 +99,13 @@ enum Slot
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Position(usize);
 
-/// Whether a node reads a linear binder outside it.
+/// Whether a node reads a slot of its block.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Reads
 {
-    /// It reads none.
+    /// It reads none: each linear binder it reads is one the reduct keeps.
     Nothing,
-    /// It reads one at least.
+    /// It reads a slot, or a linear binder outside the hold.
     Linear,
 }
 
@@ -124,6 +137,15 @@ enum Wrap
         /// The components it binds.
         arity: ComponentCount,
     },
+    /// `let d = fork (c : protocol) { child }; rest`: the rest runs under
+    /// the parent's end, a binder the reduct keeps.
+    Fork
+    {
+        /// The session type of the child's end.
+        protocol: ValueTypeId,
+        /// The child, which reads no slot.
+        child: ComputationId,
+    },
 }
 
 /// What a block's reduct becomes in the block that holds it.
@@ -148,6 +170,48 @@ enum Resume
         /// The hold the access writes.
         position: Position,
     },
+    /// The block is an arm of a case, under `lambdas` binders of its fields
+    /// and equations: its reduct, under as many lambdas, is the arm of the
+    /// case the frame below reads.
+    Arm
+    {
+        /// The binders the arm's body stands under.
+        lambdas: ComponentCount,
+    },
+}
+
+/// What the reduct of a case becomes in the frame that reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Then
+{
+    /// The case ends the frame's spine.
+    Tail,
+    /// The case is the bound of the step `y ← case; rest`.
+    Bound
+    {
+        /// The rest of the spine past the step.
+        rest: ComputationId,
+    },
+}
+
+/// A case whose arms the reduct reads one at a time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Pending
+{
+    /// The case as written, which a derivation of the match names.
+    origin: ComputationId,
+    /// The case the reduct reads: the form the judgement checked it in.
+    at: ComputationId,
+    /// The reduct of its scrutinee.
+    scrutinee: ValueId,
+    /// The reducts of the arms read so far, in tag order.
+    arms: Vec<ComputationId>,
+    /// The slots each arm reads.
+    slots: Vec<Slot>,
+    /// The reduct's binders above the case.
+    depth: Binders,
+    /// What the case's reduct becomes.
+    then: Then,
 }
 
 /// A block under translation: the spine still to read and the steps read
@@ -167,6 +231,8 @@ struct Frame
     ending: Ending,
     /// What its reduct becomes in the block that holds it.
     resume: Resume,
+    /// The case the frame waits for while the reduct reads its arms.
+    pending: Option<Pending>,
 }
 
 /// What one node of a frame's spine asks of the reduct.
@@ -198,6 +264,12 @@ struct Reduct<'arena>
     arena: &'arena mut CoreArena,
     /// The hold's node, which a refusal names.
     at: ComputationId,
+    /// The nodes the judgement checked in another form than written,
+    /// ascending, each beside the node checked in its place.
+    restated: &'arena [(TermNode, TermNode)],
+    /// Each case the reduct rebuilds, beside its rebuilt node, so the
+    /// derivation of the match crosses at the rebuilt case.
+    rebuilt: &'arena mut BTreeMap<ComputationId, ComputationId>,
 }
 
 impl Erasure<'_, '_>
@@ -218,14 +290,20 @@ impl Erasure<'_, '_>
     ///   `x`; a shared access runs its body with the view and `x` as the held
     ///   value; a consuming read answers the held value; a split of no
     ///   components at the ambient motive is its body; a hold on the spine is
-    ///   its own reduct, reading the outer holds and writing none. The result
-    ///   has no memory form and no linear variable.
+    ///   its own reduct, reading the outer holds and writing none; a case at
+    ///   the spine's end, or bound by a step, is the case of its arms' reducts
+    ///   at its motive, each arm read beneath the slots, each slot the frame
+    ///   reads after the case fixed; a bound block is its own reduct beneath
+    ///   the same fixed slots; a fork runs its parent as the rest of the spine
+    ///   past the end it keeps. The result has no memory form, and its only
+    ///   linear variables are the ends of its forks.
     /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`]
     ///   at the hold for any other form: an access off a spine or at an index,
     ///   a read of a slot under a binder or in a form the reduct does not read,
-    ///   a write of a frozen hold, an unwind that reads a slot, a linear
-    ///   variable of a binder outside the hold; [`Refusal::DanglingNode`] for
-    ///   an absent node.
+    ///   a write of a frozen hold or a fixed slot, an unwind that reads a
+    ///   linear binder, a fork's child that reads a slot, a hold or an access
+    ///   past a fork's end, a linear variable of a binder outside the hold;
+    ///   [`Refusal::DanglingNode`] for an absent node.
     /// - panics: none.
     ///
     /// # Errors
@@ -236,10 +314,17 @@ impl Erasure<'_, '_>
     ///   hold read beside a shared view, and a hold whose view is read under a
     ///   thunk distinguish the state each step reads, the pair an access
     ///   answers and the refusal of a form the reduct does not read; a reduct
-    ///   whose access leaves the wrong value is the kernel's rejection.
+    ///   whose access leaves the wrong value is the kernel's rejection. A hold
+    ///   read across a case at a spine's end, across a case a step binds, past
+    ///   a fork's end and after a case distinguish each arm's reading; a write
+    ///   the rest reads after a case is refused, and an arm forged to answer
+    ///   the wrong value is the kernel's rejection.
     /// - witness: `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
     /// - witness: `bridge::tests::a_hold_read_under_a_thunk_is_refused_by_name_6609`
     /// - witness: `bridge::tests::a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609`
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+    /// - witness: `bridge::tests::a_write_the_rest_reads_after_a_case_is_refused_by_name_6641`
+    /// - witness: `bridge::tests::an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641`
     #[spec(ensures: |ret| match ret {
         | Ok(reduct) => self.arena.computation(reduct).is_some(),
         | Err(Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Memory }) =>
@@ -255,6 +340,8 @@ impl Erasure<'_, '_>
         Reduct {
             arena: self.arena,
             at,
+            restated: self.restated,
+            rebuilt: &mut self.rebuilt,
         }
         .reduce()
     }
@@ -270,9 +357,23 @@ fn frozen(slots: &[Slot]) -> Vec<Slot>
         .iter()
         .map(|&slot| match slot {
             Slot::Held { now, .. } => Slot::Held { now, frozen: true },
-            view @ Slot::View { .. } => view,
+            kept @ (Slot::View { .. } | Slot::Kept) => kept,
         })
         .collect()
+}
+
+/// `slot` held fixed: a hold frozen, a view shared, so a block may read it
+/// and may not write it.
+///
+/// # Specification
+/// trivial.
+const fn pinned(slot: Slot) -> Slot
+{
+    match slot {
+        Slot::Held { now, .. } => Slot::Held { now, frozen: true },
+        Slot::View { now, .. } => Slot::View { now, unwind: None },
+        Slot::Kept => Slot::Kept,
+    }
 }
 
 /// `frame` past the step `y ← bound`, standing at `rest`.
@@ -319,15 +420,17 @@ impl Reduct<'_>
     /// As `- fails:`.
     ///
     /// # Termination
-    /// - reason: the `loop` over the frames.
+    /// - reason: the `loop` over the frames, and the `while` that resumes the
+    ///   frames below a frame that ended.
     /// - measure: the nodes not yet read. Each turn reads one node of a spine,
-    ///   opens a frame on a strict subterm, or ends a frame; the arena is
-    ///   finite and acyclic.
+    ///   opens a frame on a strict subterm, or ends frames; each frame that
+    ///   ends leaves the stack. The arena is finite and acyclic.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Erasure::hold_reduct`].
     /// - witness: `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
     /// - witness: `bridge::tests::a_hold_read_under_a_thunk_is_refused_by_name_6609`
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
     fn reduce(&mut self) -> Result<ComputationId, Refusal>
     {
         let at = self.at;
@@ -337,23 +440,27 @@ impl Reduct<'_>
             else {
                 return Err(self.refused());
             };
-            match self.advance(frame)? {
-                Advance::Stepped => {},
-                Advance::Entered(inner) => frames.push(inner),
-                Advance::Ended(reduct) => {
-                    let Some(ended) = frames.pop()
-                    else {
-                        return Err(self.refused());
+            let mut advance = self.advance(frame)?;
+            // A block that ends resumes the frame below it, which may end in
+            // turn: a case's last arm ends the frame whose spine it ends.
+            while let Advance::Ended(reduct) = advance {
+                let Some(ended) = frames.pop()
+                else {
+                    return Err(self.refused());
+                };
+                let Some(outer) = frames.last_mut()
+                else {
+                    return match ended.resume {
+                        Resume::Root => Ok(reduct),
+                        Resume::Bind { .. } | Resume::Paired { .. } | Resume::Arm { .. } => {
+                            Err(self.refused())
+                        },
                     };
-                    let Some(outer) = frames.last_mut()
-                    else {
-                        return match ended.resume {
-                            Resume::Root => Ok(reduct),
-                            Resume::Bind { .. } | Resume::Paired { .. } => Err(self.refused()),
-                        };
-                    };
-                    self.resumed(outer, ended.resume, reduct)?;
-                },
+                };
+                advance = self.resumed(outer, ended.resume, reduct)?;
+            }
+            if let Advance::Entered(inner) = advance {
+                frames.push(inner);
             }
         }
     }
@@ -394,6 +501,10 @@ impl Reduct<'_>
             });
         };
         let held = self.value(value, slots, depth)?;
+        // A kept binder stands past every slot, so no hold opens past one.
+        if matches!(slots.last(), Some(&Slot::Kept)) {
+            return Err(self.refused());
+        }
         let mut inner = frozen(slots);
         inner.push(Slot::Held {
             now: Read { value: held, depth },
@@ -406,6 +517,7 @@ impl Reduct<'_>
             slots: inner,
             ending: Ending::Plain,
             resume,
+            pending: None,
         })
     }
 
@@ -415,9 +527,12 @@ impl Reduct<'_>
     /// - requires: `outer` holds the block that ended.
     /// - ensures: for [`Resume::Bind`], `outer` past `y ← reduct`; for
     ///   [`Resume::Paired`], `outer` past `p ← reduct; s ← p.1; y ← p.0`, its
-    ///   rest raised past `p` and `s`, and the written hold holding `s`.
+    ///   rest raised past `p` and `s`, and the written hold holding `s`; for
+    ///   [`Resume::Arm`], `reduct` under its lambdas as the next arm of the
+    ///   case `outer` waits for, and `outer` as [`Self::arms`] leaves it.
     /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`]
-    ///   at the hold for [`Resume::Root`] or a position past the slots.
+    ///   at the hold for [`Resume::Root`], a position past the slots, or an arm
+    ///   with no case to wait for; as [`Self::arms`] for an arm.
     /// - panics: none.
     /// - executable: none — the clause names the reduct's steps, which the
     ///   witnesses of [`Erasure::hold_reduct`] observe.
@@ -429,19 +544,17 @@ impl Reduct<'_>
     /// - hypothesis: L3 — as [`Erasure::hold_reduct`].
     /// - witness: `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
     /// - witness: `bridge::tests::a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609`
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
     fn resumed(
         &mut self,
         outer: &mut Frame,
         resume: Resume,
         reduct: ComputationId,
-    ) -> Result<(), Refusal>
+    ) -> Result<Advance, Refusal>
     {
         match resume {
             Resume::Root => Err(self.refused()),
-            Resume::Bind { rest } => {
-                let _stepped = stepped(outer, reduct, rest);
-                Ok(())
-            },
+            Resume::Bind { rest } => Ok(stepped(outer, reduct, rest)),
             Resume::Paired { rest, position } => {
                 // The rest reads `s` for the hold: `p` and `s` stand outside
                 // the rest's own binder `y`.
@@ -468,7 +581,19 @@ impl Reduct<'_>
                 outer.wraps.push(Wrap::Paired(reduct));
                 outer.depth = outer.depth.beyond(Binders::from(3_u32));
                 outer.current = rest;
-                Ok(())
+                Ok(Advance::Stepped)
+            },
+            Resume::Arm { lambdas } => {
+                let mut arm = reduct;
+                for _ in 0 .. usize::from(lambdas) {
+                    arm = self.arena.computation_lambda(arm);
+                }
+                let Some(mut pending) = outer.pending.take()
+                else {
+                    return Err(self.refused());
+                };
+                pending.arms.push(arm);
+                self.arms(outer, pending)
             },
         }
     }
@@ -478,7 +603,10 @@ impl Reduct<'_>
     /// # Specification
     /// - requires: `frame` stands beneath its slots and its depth.
     /// - ensures: a step read, a block opened, or the block's reduct at the
-    ///   spine's end, as [`Erasure::hold_reduct`] reads the node.
+    ///   spine's end, as [`Erasure::hold_reduct`] reads the node; a case at the
+    ///   spine's end that reads a slot opens its arms ([`Self::opened`]); a
+    ///   fork whose parent reads a slot keeps its child and the parent's end
+    ///   ([`Slot::Kept`]), and the frame reads the parent as its rest.
     /// - fails: as [`Erasure::hold_reduct`].
     /// - panics: none.
     /// - executable: none — the clause names the reduct's reading of one node,
@@ -491,6 +619,7 @@ impl Reduct<'_>
     /// - hypothesis: L3 — as [`Erasure::hold_reduct`].
     /// - witness: `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
     /// - witness: `bridge::tests::a_hold_read_under_a_thunk_is_refused_by_name_6609`
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
     fn advance(
         &mut self,
         frame: &mut Frame,
@@ -520,6 +649,26 @@ impl Reduct<'_>
                 let returned = self.arena.computation_return(returned);
                 self.step(frame, current, returned)
             },
+            Some(&Computation::DataCase { .. })
+                if self.reads(TermNode::Computation(current), &frame.slots)? == Reads::Linear =>
+            {
+                self.opened(frame, current, Then::Tail)
+            },
+            Some(&Computation::Session(SessionAction::Fork {
+                protocol,
+                child,
+                parent,
+            })) if self.reads(TermNode::Computation(current), &frame.slots)? == Reads::Linear => {
+                // The parent's end is a binder the reduct keeps. The child runs
+                // apart under its own end, so it may read no slot.
+                frame.slots.push(Slot::Kept);
+                if self.reads(TermNode::Computation(child), &frame.slots)? == Reads::Linear {
+                    return Err(self.refused());
+                }
+                frame.wraps.push(Wrap::Fork { protocol, child });
+                frame.current = parent;
+                Ok(Advance::Stepped)
+            },
             Some(_) => {
                 let tail = self.computation(current, &frame.slots, frame.depth)?;
                 Ok(Advance::Ended(self.ended(frame, tail)?))
@@ -535,7 +684,9 @@ impl Reduct<'_>
     /// # Specification
     /// - requires: `frame` stands at the step.
     /// - ensures: as [`Erasure::hold_reduct`] for one step: a memory form read
-    ///   as the reduct reads it, a block it opens as a frame, and any other
+    ///   as the reduct reads it, a block it opens as a frame, a case that reads
+    ///   a slot with its arms opened ([`Self::opened`]), a bound block that
+    ///   reads a slot as a frame beneath [`Self::fixed`]'s slots, and any other
     ///   step with its reads of a slot replaced.
     /// - fails: as [`Erasure::hold_reduct`].
     /// - panics: none.
@@ -548,6 +699,7 @@ impl Reduct<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Erasure::hold_reduct`].
     /// - witness: `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
     fn step(
         &mut self,
         frame: &mut Frame,
@@ -557,6 +709,25 @@ impl Reduct<'_>
     {
         let form = match self.arena.computation(bound) {
             Some(&Computation::Memory(ref form)) => form.clone(),
+            Some(&Computation::DataCase { .. })
+                if self.reads(TermNode::Computation(bound), &frame.slots)? == Reads::Linear =>
+            {
+                return self.opened(frame, bound, Then::Bound { rest });
+            },
+            Some(&Computation::Bind(..))
+                if self.reads(TermNode::Computation(bound), &frame.slots)? == Reads::Linear =>
+            {
+                let slots = self.fixed(frame, Then::Bound { rest })?;
+                return Ok(Advance::Entered(Frame {
+                    current: bound,
+                    depth: frame.depth,
+                    wraps: Vec::new(),
+                    slots,
+                    ending: Ending::Plain,
+                    resume: Resume::Bind { rest },
+                    pending: None,
+                }));
+            },
             Some(_) => {
                 let bound = self.computation(bound, &frame.slots, frame.depth)?;
                 return Ok(stepped(frame, bound, rest));
@@ -601,6 +772,9 @@ impl Reduct<'_>
                         })
                     },
                 };
+                if matches!(frame.slots.last(), Some(&Slot::Kept)) {
+                    return Err(self.refused());
+                }
                 let mut slots = frozen(&frame.slots);
                 slots.push(Slot::View { now, unwind });
                 Ok(Advance::Entered(Frame {
@@ -610,6 +784,7 @@ impl Reduct<'_>
                     slots,
                     ending,
                     resume,
+                    pending: None,
                 }))
             },
             MemoryForm::Resume { view, value } => {
@@ -649,6 +824,250 @@ impl Reduct<'_>
             },
             MemoryForm::Access { .. } => Err(self.refused()),
         }
+    }
+
+    /// `frame` at the case `origin`, read in the form the judgement checked
+    /// it in, its scrutinee read and its arms opened one at a time beneath
+    /// [`Self::fixed`]'s slots.
+    ///
+    /// # Specification
+    /// - requires: `frame` stands at `origin`, a case at the spine's end for
+    ///   [`Then::Tail`] or the bound of the step `then` names.
+    /// - ensures: as [`Self::arms`] for the case with no arm read.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`]
+    ///   at the hold when the form the judgement checked is no case; as
+    ///   [`Erasure::hold_reduct`] for the scrutinee; as [`Self::fixed`] and
+    ///   [`Self::arms`].
+    /// - panics: none.
+    /// - executable: none — the clause names the reduct's reading of a case,
+    ///   which the witnesses of [`Erasure::hold_reduct`] observe.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case at a spine's end and a case a step binds, each
+    ///   with an arm that reads the slot, cross as their reducts, and a
+    ///   derivation of the match crosses at the rebuilt case.
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+    /// - witness: `bridge::tests::a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641`
+    fn opened(
+        &mut self,
+        frame: &mut Frame,
+        origin: ComputationId,
+        then: Then,
+    ) -> Result<Advance, Refusal>
+    {
+        let at = self.refined(origin);
+        let Some(&Computation::DataCase {
+            scrutinee,
+            ref branches,
+            ..
+        }) = self.arena.computation(at)
+        else {
+            return Err(self.refused());
+        };
+        let arms = Vec::with_capacity(branches.len());
+        let scrutinee = self.value(scrutinee, &frame.slots, frame.depth)?;
+        let slots = self.fixed(frame, then)?;
+        self.arms(frame, Pending {
+            origin,
+            at,
+            scrutinee,
+            arms,
+            slots,
+            depth: frame.depth,
+            then,
+        })
+    }
+
+    /// The node the judgement checked in `at`'s place: its restated form, or
+    /// `at` itself.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refined(
+        &self,
+        at: ComputationId,
+    ) -> ComputationId
+    {
+        self.restated
+            .binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node)
+            .ok()
+            .and_then(|place| self.restated.get(place))
+            .and_then(|&(_, refined)| match refined {
+                TermNode::Computation(refined) => Some(refined),
+                TermNode::Value(_) => None,
+            })
+            .unwrap_or(at)
+    }
+
+    /// `frame` past the arms of `pending` still to read: the next arm that
+    /// reads a slot opened as a frame, each arm that reads none kept as it
+    /// stands, and the case rebuilt once every arm is read.
+    ///
+    /// # Specification
+    /// - requires: `frame` reads `pending`'s case, and `pending` holds the
+    ///   reducts of its leading arms.
+    /// - ensures: the frame of the next arm that reads a slot, beneath
+    ///   `pending`'s slots and its field and equation binders, with `frame`
+    ///   waiting for it; once every arm is read, the case of the reducts at the
+    ///   same motive, as the frame's tail ([`Self::ended`]) or as the bound of
+    ///   its step.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`]
+    ///   at the hold when an arm that reads a slot is no lambda over its
+    ///   binders; [`Refusal::DanglingNode`] when the case is gone; as
+    ///   [`Self::ended`].
+    /// - panics: none.
+    /// - executable: none — the clause names the reduct's reading of the arms,
+    ///   which the witnesses of [`Erasure::hold_reduct`] observe.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` over the arms, and the `for` over an arm's binders.
+    /// - measure: the arms not yet read, and the binders not yet crossed; each
+    ///   turn reads one arm or one binder.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm under a field binder, an arm under none, and
+    ///   an arm that reads no slot cross in tag order.
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+    fn arms(
+        &mut self,
+        frame: &mut Frame,
+        mut pending: Pending,
+    ) -> Result<Advance, Refusal>
+    {
+        let dangling = Refusal::DanglingNode {
+            node: CoreNode::Term(TermNode::Computation(pending.at)),
+        };
+        let (branch, lambdas) = loop {
+            let Some(&Computation::DataCase {
+                ref branches,
+                ref arities,
+                equations,
+                ..
+            }) = self.arena.computation(pending.at)
+            else {
+                return Err(dangling);
+            };
+            let index = pending.arms.len();
+            let Some(&branch) = branches.get(index)
+            else {
+                break (None, 0);
+            };
+            // A constructor's arm binds its fields, then its equations; a
+            // loop arm after the constructors' binds none.
+            let lambdas = arities.get(index).map_or(0, |&fields| {
+                usize::from(fields).saturating_add(usize::from(equations))
+            });
+            if self.reads(TermNode::Computation(branch), &pending.slots)? == Reads::Linear {
+                break (Some(self.refined(branch)), lambdas);
+            }
+            pending.arms.push(branch);
+        };
+        let Some(branch) = branch
+        else {
+            let Some(&Computation::DataCase {
+                motive,
+                ref arities,
+                equations,
+                ..
+            }) = self.arena.computation(pending.at)
+            else {
+                return Err(dangling);
+            };
+            let arities = arities.clone();
+            let built = self.arena.computation_data_case_with_equations(
+                pending.scrutinee,
+                motive,
+                (pending.arms, arities),
+                equations,
+            );
+            // A derivation of the match names the case as written, and it
+            // crosses at the case rebuilt in its place.
+            self.rebuilt.insert(pending.origin, built);
+            return match pending.then {
+                Then::Tail => Ok(Advance::Ended(self.ended(frame, built)?)),
+                Then::Bound { rest } => Ok(stepped(frame, built, rest)),
+            };
+        };
+        let mut body = branch;
+        for _ in 0 .. lambdas {
+            let Some(&Computation::Lambda(inner)) = self.arena.computation(body)
+            else {
+                return Err(self.refused());
+            };
+            body = inner;
+        }
+        let lambdas = ComponentCount::from(lambdas);
+        let arm = Frame {
+            current: body,
+            depth: pending.depth.deeper_by(lambdas),
+            wraps: Vec::new(),
+            slots: pending.slots.clone(),
+            ending: Ending::Plain,
+            resume: Resume::Arm { lambdas },
+            pending: None,
+        };
+        frame.pending = Some(pending);
+        Ok(Advance::Entered(arm))
+    }
+
+    /// The slots a case's arms or a bound block read beneath `frame`: each
+    /// slot the frame reads after the form held fixed, so the form may read
+    /// it and may not write it.
+    ///
+    /// # Specification
+    /// - requires: `frame` stands at the form `then` names.
+    /// - ensures: `frame`'s slots, each hold the rest of the step reads frozen
+    ///   and each view it reads shared; for a frame that answers the value its
+    ///   view leaves ([`Ending::Paired`]), that view shared too. Every other
+    ///   slot keeps its mode: the frame never reads its value past the form.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`]
+    ///   at the hold when the rest reads a linear binder outside the hold;
+    ///   [`Refusal::DanglingNode`] for an absent rest.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hold the rest reads after a case is fixed in its
+    ///   arms, and a hold a bound block consumes and the rest never reads is
+    ///   not.
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+    /// - witness: `bridge::tests::a_write_the_rest_reads_after_a_case_is_refused_by_name_6641`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slots| slots.len() == frame.slots.len()))]
+    fn fixed(
+        &self,
+        frame: &Frame,
+        then: Then,
+    ) -> Result<Vec<Slot>, Refusal>
+    {
+        let mut slots = frame.slots.clone();
+        if let Then::Bound { rest } = then {
+            let Some(support) = self.arena.computation_support(rest)
+            else {
+                return Err(Refusal::DanglingNode {
+                    node: CoreNode::Term(TermNode::Computation(rest)),
+                });
+            };
+            for index in support.indices(Zone::Linear) {
+                let position = self.position(&frame.slots, index)?;
+                if let Some(slot) = slots.get_mut(position.0) {
+                    *slot = pinned(*slot);
+                }
+            }
+        }
+        if matches!(frame.ending, Ending::Paired)
+            && let Some(view) = slots.last_mut()
+        {
+            *view = pinned(*view);
+        }
+        Ok(slots)
     }
 
     /// The reduct of `frame`'s block, whose spine ends at `tail`.
@@ -709,6 +1128,13 @@ impl Reduct<'_>
                 Wrap::Split { scrutinee, arity } => {
                     self.arena.computation_split(scrutinee, arity, built)
                 },
+                Wrap::Fork { protocol, child } => {
+                    self.arena.computation_session(SessionAction::Fork {
+                        protocol,
+                        child,
+                        parent: built,
+                    })
+                },
             };
         }
         Ok(built)
@@ -736,7 +1162,9 @@ impl Reduct<'_>
         unwind: ComputationId,
     ) -> Result<ValueId, Refusal>
     {
-        match self.reads(TermNode::Computation(unwind))? {
+        // The abort forces the unwind past the view's binder, so it may read
+        // no linear binder at all, kept or not.
+        match self.reads(TermNode::Computation(unwind), &[])? {
             Reads::Nothing => Ok(self.arena.value_thunk(unwind)),
             Reads::Linear => Err(self.refused()),
         }
@@ -857,10 +1285,14 @@ impl Reduct<'_>
         )
     }
 
-    /// Whether `node` reads a linear binder outside it.
+    /// Whether `node` reads a slot of `slots`, or a linear binder outside the
+    /// hold.
     ///
     /// # Specification
-    /// - ensures: whether the node's support names a linear index.
+    /// - requires: the binders [`Slot::Kept`] names stand innermost among
+    ///   `slots`.
+    /// - ensures: whether the node's support names a linear index past the kept
+    ///   binders; a read of a kept binder alone is no read.
     /// - fails: [`Refusal::DanglingNode`] for an absent node.
     /// - panics: none.
     ///
@@ -868,9 +1300,11 @@ impl Reduct<'_>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a step that reads no slot keeps its form, and an
-    ///   unwind that reads one refuses the hold.
+    /// - hypothesis: L3 — a step that reads no slot keeps its form, a session
+    ///   action on a kept end keeps its form, and an unwind that reads a slot
+    ///   refuses the hold.
     /// - witness: `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
+    /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
     #[spec(ensures: |ret| ret.is_err() == match node {
         | TermNode::Value(at) => self.arena.value(at).is_none(),
         | TermNode::Computation(at) => self.arena.computation(at).is_none(),
@@ -878,6 +1312,7 @@ impl Reduct<'_>
     fn reads(
         &self,
         node: TermNode,
+        slots: &[Slot],
     ) -> Result<Reads, Refusal>
     {
         let support = match node {
@@ -890,12 +1325,15 @@ impl Reduct<'_>
                 node: CoreNode::Term(node),
             });
         };
-        Ok(if support.indices(Zone::Linear).next().is_some() {
-            Reads::Linear
-        }
-        else {
-            Reads::Nothing
-        })
+        let kept = slots
+            .iter()
+            .rev()
+            .take_while(|&&slot| matches!(slot, Slot::Kept))
+            .count();
+        let read = support
+            .indices(Zone::Linear)
+            .any(|index| usize::try_from(u32::from(index)).map_or(true, |index| index >= kept));
+        Ok(if read { Reads::Linear } else { Reads::Nothing })
     }
 
     /// The value `at` with each read of a slot replaced by the value the slot
@@ -933,7 +1371,7 @@ impl Reduct<'_>
         while let Some(visit) = visits.pop() {
             match visit {
                 Visit::Enter(at) => {
-                    if self.reads(TermNode::Value(at))? == Reads::Nothing {
+                    if self.reads(TermNode::Value(at), slots)? == Reads::Nothing {
                         read.push(at);
                         continue;
                     }
@@ -1013,7 +1451,7 @@ impl Reduct<'_>
     {
         let mut arguments = Vec::new();
         let mut head = at;
-        while self.reads(TermNode::Computation(head))? == Reads::Linear {
+        while self.reads(TermNode::Computation(head), slots)? == Reads::Linear {
             let Some(&Computation::Application(function, argument)) = self.arena.computation(head)
             else {
                 break;
@@ -1021,7 +1459,7 @@ impl Reduct<'_>
             arguments.push(argument);
             head = function;
         }
-        let mut built = match self.reads(TermNode::Computation(head))? {
+        let mut built = match self.reads(TermNode::Computation(head), slots)? {
             Reads::Nothing => head,
             Reads::Linear => match self.arena.computation(head).cloned() {
                 Some(Computation::Return(value)) => {

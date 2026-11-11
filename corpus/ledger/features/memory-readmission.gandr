@@ -1,16 +1,22 @@
 /// `memory-readmission`: Holds replayed by the kernel.
 /// Implemented: the bridge reads a lexical hold as its state-passing reduct.
-/// In a lexical hold, each access stands on the spine of the hold's block, at
-/// the whole place. An exclusive access answers its result beside the value
-/// that it leaves, and the kernel types the pair.
+/// An exclusive access answers its result beside the value that it leaves,
+/// and the kernel types the pair. The reduct takes each arm of a match, and a
+/// bound block, as a block of its own.
 /// Not implemented: a receiver, a place at an index, an access under a
 /// handler, a view in a thunk and a buffer do not cross.
 ///
 /// - owes: #1626
 // The kernel has no store. A hold crosses as its reduct, which passes the
-// held value along the block. `doubled` holds a count and writes it twice.
-// `doubledReduct` is its reduct, written by hand. Both answer twelve, and
-// the kernel replays both.
+// held value along the block. `doubled` holds a count and writes it twice,
+// and `doubledReduct` is its reduct, written by hand. Both answer twelve, and
+// the kernel replays both. `chosen` reads its count in each arm of a match,
+// and `chosenReduct` is its reduct.
+
+/// The two sides that `chosen` matches on.
+data Side : Type where
+  | Left : Side
+  | Right : Side
 
 /// The count starts at three. The block doubles it, then adds six.
 @[runs("12")]
@@ -31,3 +37,19 @@ def doubledReduct() -> Integer =
   let q = *{*{}, b}
   let *{_w, t} = q
   pure t
+
+/// The count starts at three. Each arm of the match reads it.
+@[runs("3")]
+def chosen() -> Integer =
+  var c = 3
+  match Left where
+    | Left => pure c
+    | Right => pure (c + c)
+
+/// The reduct of `chosen`. Each arm reads the value that the hold starts at.
+@[runs("3")]
+def chosenReduct() -> Integer =
+  let c = 3
+  match Left where
+    | Left => pure c
+    | Right => pure (c + c)

@@ -394,21 +394,28 @@
 //! leaves: `resume` sets that value, and `abort` runs the unwind and keeps the
 //! held value. The steps after the access read the value left. A shared view
 //! and a consuming read answer the held value. The reduct keeps no linear
-//! binder, and the kernel types it: a reduct that leaves the wrong value is
-//! the kernel's type error, not a fact that the bridge vouches for. The
-//! checker alone decides linear use, and the reduct relies on its verdict
+//! binder of a slot, and the kernel types it: a reduct that leaves the wrong
+//! value is the kernel's type error, not a fact that the bridge vouches for.
+//! The checker alone decides linear use, and the reduct relies on its verdict
 //! that each view ends once on each path.
 //!
 //! The reduct reads the lexical case alone: each access stands on the spine
-//! of the block that holds its slot, at the whole place, and each read of a
-//! slot stands in a step's own values, under no binder. Any other memory form
-//! refuses the hold whole as `OutOfFragment` under
-//! [`TrackingIssue::KERNEL_MEMORY`]. The witness
+//! of a block that holds its slot, at the whole place, and each read of a
+//! slot stands in a step's own values, under no binder. A case's arms and a
+//! bound block are blocks of their own beneath the same slots. A slot that
+//! the rest reads after such a form is fixed in it, so the case keeps its
+//! motive. A fork's parent runs as the rest of the spine, and the reduct keeps
+//! the end the fork opens. Any other memory form refuses the hold whole as
+//! `OutOfFragment` under [`TrackingIssue::KERNEL_MEMORY`]. The witness
 //! `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
 //! crosses an access that resumes, one that aborts, a shared view and a
-//! consuming read, and
+//! consuming read.
+//! `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+//! crosses a hold read across a case's arms, in a bound block and past a
+//! fork's end.
 //! `bridge::tests::a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609`
-//! forges a reduct that the kernel refuses.
+//! and `bridge::tests::an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641`
+//! forge reducts that the kernel refuses.
 //!
 //! # The export carries the producer's names
 //!
@@ -5864,6 +5871,9 @@ struct Erasure<'source, 'positions>
     /// The nodes the judgement checked in another form than written in the
     /// declaration erased, ascending, each beside the node erased in its place.
     restated: &'positions [(TermNode, TermNode)],
+    /// Each case a hold's reduct rebuilt, beside the node rebuilt in its
+    /// place: a derivation of the match crosses at the rebuilt case's image.
+    rebuilt: BTreeMap<ComputationId, ComputationId>,
     /// The declaration the erasure met that the environment does not hold
     /// yet — a native operation's signature or a handled effect's free model
     /// — which stops it.
@@ -5898,6 +5908,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             operators: BTreeMap::new(),
             pending: Vec::new(),
             bodies: BTreeMap::new(),
+            rebuilt: BTreeMap::new(),
             crossing: &[],
             restated: &[],
             unseeded: None,
@@ -6585,9 +6596,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
 
     /// Each of `covers`' derivations at its root's image in the kernel arena,
     /// each family and loop it names at the kernel position its declaration
-    /// crossed at or is about to take; a derivation whose root this erasure
-    /// did not reach, or that names a declaration no position holds, is left
-    /// out.
+    /// crossed at or is about to take; a root a hold's reduct rebuilt crosses
+    /// at the rebuilt case's image. A derivation whose root this erasure did
+    /// not reach, or that names a declaration no position holds, is left out.
     ///
     /// # Specification
     /// - requires: the erasure has run over the definition `covers` belongs to.
@@ -6599,8 +6610,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a match's derivation crosses at its root's image and
-    ///   the kernel replays it.
+    ///   the kernel replays it, and a held match's derivation crosses at the
+    ///   case its hold's reduct rebuilds.
     /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    /// - witness: `bridge::tests::a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641`
     #[spec(ensures: |ret| ret.len() <= covers.len())]
     fn covered(
         &self,
@@ -6610,6 +6623,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         covers
             .iter()
             .filter_map(|&(root, ref cover)| {
+                let root = self.rebuilt.get(&root).copied().unwrap_or(root);
                 let Some(&Image::Erased(image)) = self.normalized.computations.get(&root)
                 else {
                     return None;
