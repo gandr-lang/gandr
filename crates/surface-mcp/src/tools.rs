@@ -674,7 +674,7 @@ pub fn call(
 ///   and their events follow.
 /// - witness: `rap::tests::a_subscription_hears_each_new_frame`
 /// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
-/// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends`
+/// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509`
 #[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| named.starts_with("subscribe_")))]
 #[inline]
 pub fn subscription(
