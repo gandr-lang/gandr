@@ -3710,6 +3710,36 @@ fn a_family_argument_leaves_its_function_s_thunk_out_5408()
     );
 }
 
+/// A family writes a bound type before a call by juxtaposition.
+///
+/// The reader takes the call as one operand.
+#[test]
+fn a_family_with_a_bound_type_and_a_call_is_juxtaposed_5752()
+{
+    let names = [Name::from("Picked"), Name::from("twice")];
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let twice = core.value_constant(ConstantIndex::from(1_usize));
+    let twice = core.computation_force(twice);
+    let called = core.computation_application(twice, one);
+    let called = core.value_returned(called);
+    let applied = core.value_type_data(ConstantIndex::from(0_usize), vec![bound, called]);
+    let context = [Some(Name::from("a"))];
+    let source = CoreSource::new(&core, &names).within(&context);
+    let presented = presented_in(
+        &source,
+        Root::Type(CoreNode::ValueType(applied)),
+        wide(),
+        Form::Sugared,
+    );
+    assert_eq!(
+        (presented.as_ref(), presented.fidelity()),
+        ("Picked a twice(1)", Fidelity::Faithful),
+        "a family writes its bound type and call by juxtaposition"
+    );
+}
+
 /// #5211: a call inside a lambda inside a type is juxtaposed, as in any
 /// expression. The lambda's body is an expression between braces, and there
 /// a parenthesised list reads as one tuple. The lambda stands as a family's

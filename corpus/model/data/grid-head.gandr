@@ -20,7 +20,7 @@ pub data Grid : (r : Nat, c : Nat) --> Type where
   /// A grid and one more row, whose last cell is `cell`.
   | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid(Succ(r), c)
   /// A grid and one more column, whose last cell is `cell`.
-  | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid(r, Succ c)
+  | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid r (Succ c)
 
 /// The last cell of a grid of at least one row. `GNil` stands at no row, and
 /// the case omits its arm at the first index.
@@ -31,7 +31,7 @@ def rowCell(n : Nat, m : Nat, g : Grid (Succ n) m) -> Integer =
 
 /// The last cell of a grid of at least one column. `GNil` stands at no
 /// column, and the case omits its arm at the second index.
-def colCell(n : Nat, m : Nat, g : Grid(m, Succ n)) -> Integer =
+def colCell(n : Nat, m : Nat, g : Grid m (Succ n)) -> Integer =
   match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell

@@ -6,7 +6,7 @@ data Vec(a : Type) : Nat -> Type where
   | VNil : Vec a Zero
   | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec(a, Succ n)
 
-def called(v : Vec Integer (Succ Zero)) -> Vec Integer (Succ Zero) { v }
+def called(v : Vec(Integer, Succ Zero)) -> Vec(Integer, Succ Zero) { v }
 
 def juxtaposed(v : Vec Integer (Succ Zero)) -> Vec Integer (Succ Zero) { v }
 

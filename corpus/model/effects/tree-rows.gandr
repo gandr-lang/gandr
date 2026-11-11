@@ -30,14 +30,14 @@ pub def rec runState(e : Type, a : Type, p : Prog (Either StateOp e) a, s : Inte
       }) : Prog e a)
 
 /// `runExn` handles exceptions at the front and forwards the remaining row.
-pub def rec runExn(e : Type, a : Type, p : Prog (Either ExnOp e) a) -> Prog(e, Outcome a) =
+pub def rec runExn(e : Type, a : Type, p : Prog (Either ExnOp e) a) -> Prog e (Outcome a) =
   match p where
-    | Done(x) => (Done (Returned x) : Prog(e, Outcome a))
+    | Done(x) => (Done (Returned x) : Prog e (Outcome a))
     | Op(o, k) => match o where
-      | Left(Raise(c)) => (Done (Raised c) : Prog(e, Outcome a))
+      | Left(Raise(c)) => (Done (Raised c) : Prog e (Outcome a))
       | Right(other) => (Op other (fun (r) {
         runExn[<] e a (k r)
-      }) : Prog(e, Outcome a))
+      }) : Prog e (Outcome a))
 
 /// `pureOf` extracts a result from an empty row.
 pub def pureOf(a : Type, p : Prog Void a) -> a =

@@ -51,10 +51,7 @@ def pairCount() -> Nat { vcount (Succ (Succ Zero)) (pair ()) }
 
 /// One vector after another, at the length `plus(m, n)`. Each `VCons` arm
 /// stands at `plus(m, Succ(k))`, the length its tail computes plus one.
-def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec a n, ys : Vec a m) -> Vec(
-  a,
-  plus(m, n)
-) =
+def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec a n, ys : Vec a m) -> Vec a plus(m, n) =
   match xs where
     | VNil => ys
     | VCons(k, x, xt) => VCons (plus m k) x (vappend[<] a k m xt ys)

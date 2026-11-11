@@ -3240,18 +3240,16 @@ impl<'source> Respelling<'_, 'source>
         .then_some(Operation::Action { map, path: along })
     }
 
-    /// Write the type application whose parts are `parts`, `F(a, b)`, as the
-    /// juxtaposition `F a b`, each argument an atom or in its parentheses.
-    /// Nothing is written for a head that is a type variable, which
-    /// juxtaposed reads as the moded type `m T`, a list of no argument, a
-    /// second list, or a comment among the parts. Nothing is written either
-    /// where an argument in parentheses, or a call, follows a lowercase name,
-    /// as the printer keeps the call form there: the type grammar reads
-    /// `a (G b)` as the call `a(G b)`, and `a plus(m, k)` as the moded type
-    /// `a T`. The band of the juxtaposition is returned. One whose first
-    /// argument takes parentheses binds as a bridge, so a returner encloses
-    /// it, as the printer does: the type grammar reads `-F Var (Extend a b) c`
-    /// as the call `Var(Extend a b)` applied to `c`.
+    /// Write the type application whose parts are `parts` as juxtaposition.
+    /// Parenthesize each argument that is no atom.
+    /// Do not write a type variable head.
+    /// Do not write a list with no argument.
+    /// Do not write a second list.
+    /// Do not write a list that holds a comment.
+    /// A returner encloses a juxtaposition whose first argument takes
+    /// parentheses.
+    /// The type grammar reads `-F Var (Extend a b) c` as the call
+    /// `Var(Extend a b)` applied to `c`.
     ///
     /// # Specification
     /// trivial.
@@ -3282,26 +3280,6 @@ impl<'source> Respelling<'_, 'source>
             .map(|operand| self.operand(operand))
             .collect();
         let enclosed = |operand: &Operand<'source>| operand.enclosed() == Enclosed::Yes;
-        let words = |operand: &Operand<'source>| {
-            operand
-                .leaves
-                .iter()
-                .filter(|leaf| leaf.material != Material::Whitespace)
-                .map(|leaf| <&str>::from(leaf.text))
-                .filter(|word| !word.is_empty())
-                .collect::<Vec<&str>>()
-        };
-        let lowered = |word: &&str| word.starts_with(char::is_lowercase);
-        let named = |operand: &Operand<'source>| matches!(words(operand).as_slice(), [word] if lowered(word));
-        let called = |operand: &Operand<'source>| {
-            let words = words(operand);
-            words.first().is_some_and(lowered) && words.last() == Some(&CLOSE_PAREN.0)
-        };
-        if operands.windows(2_usize).any(|pair| {
-            matches!(pair, [before, after] if named(before) && (enclosed(after) || called(after)))
-        }) {
-            return None;
-        }
         let led = operands.first().is_some_and(enclosed);
         out.fragment(head);
         for operand in &operands {

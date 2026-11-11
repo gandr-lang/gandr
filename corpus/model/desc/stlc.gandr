@@ -38,9 +38,9 @@ pub theory STLC where
   /// A variable as a term.
   oper var : (x : Var g a) --> Tm g a;
   /// Abstraction.
-  oper lam : (t : Tm ext(g, a) b) --> Tm(g, arr(a, b));
+  oper lam : (t : Tm ext(g, a) b) --> Tm g arr(a, b);
   /// Application.
-  oper app : (t : Tm(g, arr(a, b)), u : Tm g a) --> Tm g b;
+  oper app : (t : Tm g arr(a, b), u : Tm g a) --> Tm g b;
 
 /// The object types.
 pub data ObjTy : Type where
@@ -68,16 +68,13 @@ pub data Tm : (gamma : Ctx, a : ObjTy) --> Type where
   /// A variable.
   | V : (gamma : Ctx, a : ObjTy, x : Var gamma a) --> Tm gamma a
   /// An abstraction over one more entry.
-  | Lam : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Tm (Extend gamma a) b) --> Tm(
-    gamma,
-    Arr a b
-  )
+  | Lam : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Tm (Extend gamma a) b) --> Tm gamma (Arr a b)
   /// An application.
   | Ap : (
     gamma : Ctx,
     a : ObjTy,
     b : ObjTy,
-    t : Tm(gamma, Arr a b),
+    t : Tm gamma (Arr a b),
     u : Tm gamma a
   ) --> Tm gamma b
 
@@ -92,7 +89,7 @@ rec {
       gamma : Ctx,
       a : ObjTy,
       b : ObjTy,
-      t : Ne(gamma, Arr a b),
+      t : Ne gamma (Arr a b),
       u : Nf gamma a
     ) --> Ne gamma b
   }
@@ -101,10 +98,7 @@ rec {
     /// A neutral at the base type.
     | NNe : (gamma : Ctx, t : Ne gamma Base) --> Nf gamma Base
     /// An abstraction over a normal form.
-    | NLam : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Nf (Extend gamma a) b) --> Nf(
-      gamma,
-      Arr a b
-    )
+    | NLam : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Nf (Extend gamma a) b) --> Nf gamma (Arr a b)
 }
 
 /// The syntax as a model: each operation is the constructor of its sort.
@@ -133,10 +127,10 @@ pub module Syntax : Model(STLC) where
   /// A variable as a term.
   def var(g : Ctx, a : ObjTy, x : Var g a) -> Tm g a { V g a x }
   /// An abstraction.
-  def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Tm (Extend g a) b) -> Tm(g, Arr a b) =
+  def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Tm (Extend g a) b) -> Tm g (Arr a b) =
     Lam g a b t
   /// An application.
-  def app(g : Ctx, a : ObjTy, b : ObjTy, t : Tm(g, Arr a b), u : Tm g a) -> Tm g b =
+  def app(g : Ctx, a : ObjTy, b : ObjTy, t : Tm g (Arr a b), u : Tm g a) -> Tm g b =
     Ap g a b t u
 
 /// A renamer from `g` to `d`: it sends each variable of `g` to a

@@ -2201,7 +2201,7 @@ fn quoted_piece(
     let inside = core::iter::once(None)
         .chain(parts.iter().map(Some))
         .zip(parts.iter())
-        .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_) | Part::Argument(_)))
+        .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_) | Part::Argument))
         .nth(usize::from(index))
         .is_some_and(|(before, _)| matches!(before, Some(Part::Text(text)) if text == "type("));
     if inside {
@@ -3548,78 +3548,16 @@ enum FamilyForm
     Called,
 }
 
-/// What one argument of an applied former is, as [`family_form`] reads it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Argument
-{
-    /// A bound variable, written as its name.
-    Variable,
-    /// A call of a function or of a primitive, written `f(a)`.
-    Call,
-    /// Any other argument.
-    Other,
-}
-
-/// What the argument `at` of the former `node` is.
+/// How a family applied to its arguments is written.
+///
+/// A module-qualified head keeps its call form until #5753.
+/// A bare head juxtaposes its arguments.
 ///
 /// # Specification
 /// trivial.
-fn argument_kind<S>(
-    source: &S,
-    node: S::Node,
-    at: Component,
-) -> Argument
-where
-    S: Source + ?Sized,
+fn family_form(name: &Written) -> FamilyForm
 {
-    let Some(argument) = source.component(node, at)
-    else {
-        return Argument::Other;
-    };
-    let former = source.read(argument);
-    if matches!(former, Former::Variable { .. }) {
-        Argument::Variable
-    }
-    else if matches!(
-        former,
-        Former::Application(..)
-            | Former::StaticApplication(..)
-            | Former::Nested(_)
-            | Former::Returned(_)
-    ) || matches!(former, Former::Primitive { arity, .. } if usize::from(arity) > 0_usize)
-    {
-        Argument::Call
-    }
-    else {
-        Argument::Other
-    }
-}
-
-/// How the former `node`, spelled `name`, applied to `arity` arguments, is
-/// written: in its call form under a module-qualified head,
-/// `Shapes.Box(Integer)`, until #5753, and where a call follows a bound
-/// variable, `Vec(a, plus(m, k))`, which the type grammar reads as the moded
-/// type `a plus(m, k)`. Juxtaposed otherwise; the join keeps the call form
-/// where an argument in parentheses follows a bound variable.
-///
-/// # Specification
-/// trivial.
-fn family_form<S>(
-    source: &S,
-    node: S::Node,
-    (name, arity): (&Written, Arity),
-) -> FamilyForm
-where
-    S: Source + ?Sized,
-{
-    let mut before = Argument::Other;
-    let mut moded = false;
-    for at in 0_usize .. arity.0 {
-        let kind = argument_kind(source, node, Component::from(at));
-        moded = moded || (before == Argument::Variable && kind == Argument::Call);
-        before = kind;
-    }
-    if name.0.contains('.') || moded {
+    if name.0.contains('.') {
         FamilyForm::Called
     }
     else {
@@ -5335,13 +5273,9 @@ enum Part
     /// a child visited after the rest, so the binders it opens are the ones
     /// the join names, though it is written before them.
     Last(Binding),
-    /// The next child's piece, an argument of a family a type reads applied,
-    /// which this names: after a space, bare when it binds at most as an atom.
-    /// Where an argument that takes parentheses follows a bound variable, the
-    /// join writes every argument of the form between the family's own
-    /// parentheses, `F(a, G b)`: the type grammar reads a lowercase name before
-    /// a parenthesis, `a (G b)`, as the call `a(G b)`.
-    Argument(Argument),
+    /// The next child's piece, an argument of a family a type reads applied:
+    /// after a space, bare when it binds at most as an atom.
+    Argument,
     /// The next child's piece, a text literal written inside the string
     /// around it: the piece is taken and this, its escaped content, written
     /// in its place.
@@ -5388,7 +5322,7 @@ impl Parts
     {
         if matches!(
             part,
-            Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument(_)
+            Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument
         ) {
             self.pieces = self.pieces.saturating_add(1_usize);
         }
@@ -5557,34 +5491,7 @@ impl Parts
             Surface::Type | Surface::Enclosed if count.0 == 0_usize => self.juxtaposed(count),
             Surface::Type | Surface::Enclosed => {
                 for _ in 0_usize .. count.0 {
-                    let _ = self.part(Part::Argument(Argument::Other));
-                }
-                self
-            },
-        }
-    }
-
-    /// Appends a family's or a constructor's operands, one for each of
-    /// `kinds`, as [`Self::family`] appends them, each argument named by what
-    /// it is.
-    ///
-    /// # Specification
-    /// trivial.
-    fn family_over(
-        &mut self,
-        kinds: impl ExactSizeIterator<Item = Argument>,
-        surface: Surface,
-    ) -> &mut Self
-    {
-        let count = kinds.len();
-        match surface {
-            Surface::Expression => self.juxtaposed(Arity(count)),
-            Surface::Type | Surface::Enclosed if count == 0_usize => {
-                self.juxtaposed(Arity(0_usize))
-            },
-            Surface::Type | Surface::Enclosed => {
-                for kind in kinds {
-                    let _ = self.part(Part::Argument(kind));
+                    let _ = self.part(Part::Argument);
                 }
                 self
             },
@@ -12544,7 +12451,7 @@ impl Walk<'_, '_>
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
             && matches!(ret, Join::Form { pieces: Arity(count), .. }
-                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument(_))).count() == count)),
+                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument)).count() == count)),
     )]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -12764,9 +12671,7 @@ impl Walk<'_, '_>
                     .and_then(|_| source.declaration(node));
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let count = Arity(usize::from(arity));
-                let form = family_form(source, node, (&name, count));
-                let kinds =
-                    (0_usize .. count.0).map(|at| argument_kind(source, node, Component::from(at)));
+                let form = family_form(&name);
                 // A family the lowering names as a call, a theory's terms
                 // `Terms(Mag)`, is written as the application it names.
                 let minted = (count.0 == 0_usize)
@@ -12789,7 +12694,7 @@ impl Walk<'_, '_>
                     type_applied(self.surface, Production("type_application"))
                 }
                 else {
-                    let _ = parts.family_over(kinds, self.surface);
+                    let _ = parts.family(count, self.surface);
                     family_applied(self.surface)
                 }
             },
@@ -12815,9 +12720,7 @@ impl Walk<'_, '_>
                 let calls = usize::from(arity) > 0_usize || called.is_some();
                 let name = called.unwrap_or(spelled);
                 let count = Arity(usize::from(arity));
-                let form = family_form(source, node, (&name, count));
-                let kinds =
-                    (0_usize .. count.0).map(|at| argument_kind(source, node, Component::from(at)));
+                let form = family_form(&name);
                 if annotated {
                     let _ = parts.text("(");
                 }
@@ -12826,7 +12729,7 @@ impl Walk<'_, '_>
                     let _ = parts.applied(count, self.surface);
                 }
                 else if count.0 > 0_usize {
-                    let _ = parts.family_over(kinds, self.surface);
+                    let _ = parts.family(count, self.surface);
                 }
                 if annotated {
                     let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
@@ -14388,40 +14291,27 @@ impl Walk<'_, '_>
                 for _ in lasts .. count {
                     children.push(self.pop()?);
                 }
-                // A family a type reads applied is its call form where an
-                // argument that takes parentheses follows a bound variable.
-                // One whose first argument takes parentheses binds as a
+                // A family whose first argument takes parentheses binds as a
                 // prefix: the type grammar reads `-F Var (Extend a b) c` as
                 // the call `Var(Extend a b)` applied to `c`.
                 let consumed = parts.iter().filter(|part| {
-                    matches!(
-                        **part,
-                        Part::Piece(_) | Part::Spliced(_) | Part::Argument(_)
-                    )
+                    matches!(**part, Part::Piece(_) | Part::Spliced(_) | Part::Argument)
                 });
                 let mut arguments = 0_usize;
-                let mut before = Argument::Other;
-                let mut called = false;
                 let mut led = false;
                 for (part, piece) in consumed.zip(children.iter().rev()) {
-                    if let Part::Argument(kind) = *part {
+                    if matches!(*part, Part::Argument) {
                         let enclosed = piece.binding > Binding::Atom;
                         led = led || (arguments == 0_usize && enclosed);
-                        called = called || (before == Argument::Variable && enclosed);
-                        before = kind;
                         arguments = arguments.saturating_add(1_usize);
                     }
                 }
-                let binding = if called {
-                    Binding::Atom
-                }
-                else if led && binding == Binding::Application {
+                let binding = if led && binding == Binding::Application {
                     Binding::Prefix
                 }
                 else {
                     binding
                 };
-                let mut written = 0_usize;
                 let mut current = Vec::new();
                 let mut heads = Vec::new();
                 for part in parts {
@@ -14444,27 +14334,7 @@ impl Walk<'_, '_>
                             let piece = last.pop().ok_or(PresentationError::Unbalanced)?;
                             current.push(self.bare_up_to(piece, loosest)?);
                         },
-                        Part::Argument(_) if called => {
-                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
-                            if written == 0_usize {
-                                current.push(self.leaf(Glyphs("("))?);
-                            }
-                            else {
-                                current.push(self.leaf(Glyphs(","))?);
-                                let head =
-                                    self.builder.concat_all(&core::mem::take(&mut current))?;
-                                current.push(self.space_or_break(head)?);
-                            }
-                            current.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
-                            written = written.saturating_add(1_usize);
-                            if written == arguments {
-                                let head =
-                                    self.builder.concat_all(&core::mem::take(&mut current))?;
-                                current.push(self.none_or_break(head)?);
-                                current.push(self.leaf(Glyphs(")"))?);
-                            }
-                        },
-                        Part::Argument(_) => {
+                        Part::Argument => {
                             let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
                             let head = self.builder.concat_all(&core::mem::take(&mut current))?;
                             current.push(self.space_or_break(head)?);

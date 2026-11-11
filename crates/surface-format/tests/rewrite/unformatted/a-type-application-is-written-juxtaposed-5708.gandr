@@ -4,4 +4,6 @@ data Parcel(a : Type) : Type where
 data Pair(a : Type, b : Type) : Type where
   | Paired : (x : a, y : b) --> Pair a b
 
+def plus(a : Type) -> Type {{ return Integer }}
+
 def taken(a : Type, x : {parameter}) -> Integer {{ 0 }}

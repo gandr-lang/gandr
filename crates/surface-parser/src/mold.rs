@@ -4215,9 +4215,12 @@ impl<'pbg> Molder<'pbg>
                 |admission| admission.admits(mold),
             );
             let kept = match binder {
-                Some((tokens, index, source)) => bool::from(
-                    self.direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source),
-                ),
+                Some((tokens, index, source)) => {
+                    let admitted = self
+                        .direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source);
+                    let admitted = MoldAdmissibility::from(bool::from(admitted));
+                    bool::from(self.type_call_head_admits(mold, admitted, tokens, index, source))
+                },
                 None => bool::from(admitted),
             };
             if kept {
@@ -4405,6 +4408,45 @@ impl<'pbg> Molder<'pbg>
         DirectRuleBinderAdmission::from(
             next_significant(tokens, first_index)
                 .is_some_and(|(_, colon)| AsRef::<str>::as_ref(&colon.text(source)) == ":"),
+        )
+    }
+
+    /// Return whether a type-call head has a glued opener.
+    ///
+    /// # Specification
+    /// - requires: `tokens` labels `source`, and `index` names the current
+    ///   head.
+    /// - ensures: admits an already admitted `type_application` head only when
+    ///   its next significant token is a glued `(` or `[`.
+    /// - provides: the admission of a type-call head.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a spaced operand, a glued call and a glued descent
+    ///   marker distinguish a head from an operand.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
+    fn type_call_head_admits(
+        &self,
+        mold: MoldId,
+        admitted: MoldAdmissibility,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &SourceFragment<'_>,
+    ) -> MoldAdmissibility
+    {
+        let head = self.pbg.rule_of(mold).is_ok_and(|rule| {
+            rule.name() == RuleName("type_application")
+                && bool::from(self.pbg.mold_is_form_first(mold))
+        });
+        if !head {
+            return admitted;
+        }
+        let opened = next_significant(tokens, index)
+            .is_some_and(|(_, next)| matches!(<&str>::from(next.text(source)), "(" | "["));
+        MoldAdmissibility::from(
+            bool::from(admitted) && spacing(tokens, index) == Spacing::Glued && opened,
         )
     }
     /// Choose token `index`'s mold, breaking a shared-prefix tie by lookahead.
