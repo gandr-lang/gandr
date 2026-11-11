@@ -1731,10 +1731,13 @@ mod sweeps
         size: SampleSize(64),
     };
 
-    /// The nights the nightly profile takes to read every source's tokens: a
-    /// seventh a night, the count the nightly's sweeps share (#3013). The
-    /// whole corpus read for 150 s on the nightly runner (run 40602657172).
-    const NIGHTS: Nights = Nights(7);
+    /// The nights the nightly profile takes to read every source's tokens: an
+    /// eleventh a night, so the night's sweeps fit its budget (#6704). Each
+    /// night's slice must hold the 64 sources of [`SAMPLE`]: over the 937
+    /// sources of 2026-11-11 the smallest of 11 slices holds 70, and of 21
+    /// slices 32. The whole corpus read for 150 s on the nightly runner (run
+    /// 40602657172).
+    const NIGHTS: Nights = Nights(11);
 
     #[test]
     fn corpus_tokens_cover_the_highlighted_bytes()
