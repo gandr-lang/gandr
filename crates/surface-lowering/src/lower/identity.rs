@@ -352,6 +352,7 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
+use crate::form::FormName;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -1331,6 +1332,90 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Path(relating, carrier, left, right));
 
         Ok(())
+    }
+
+    /// The relation of a path or bridge type standing at `head`, the head of
+    /// a type's juxtaposition, with the form's name.
+    ///
+    /// # Specification
+    /// - requires: nothing — every placed node is admissible input.
+    /// - ensures: the form's name and [`Relating::Path`] for a path type,
+    ///   [`Relating::Bridge`] for a bridge type, and `None` for any other form.
+    /// - fails: yields the unknown-mold refusal for a node of a mold the
+    ///   grammar lacks, as [`Self::form_at`] does.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The unknown-mold refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::carried_path`].
+    /// - witness: `lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn carried_head(
+        &self,
+        head: Placed,
+    ) -> Result<Option<(FormName, Relating)>, LoweringRefusal<'source>>
+    {
+        Ok(self.form_at(head)?.and_then(|(name, former)| {
+            if former == Former::PathType {
+                Some((name, Relating::Path))
+            }
+            else if former == Former::BridgeType {
+                Some((name, Relating::Bridge))
+            }
+            else {
+                None
+            }
+        }))
+    }
+
+    /// Classify a path or bridge type that supplies its carrier and leaves
+    /// its endpoint list to the juxtaposition that applies it:
+    /// `Path[.A = C] a b` is `Path[.A = C](a, b)`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type's juxtaposition whose head, the first piece
+    ///   of `cursor`, is the path or bridge type `head`, as `relating` names;
+    ///   the rest of `cursor` is the call list the spine spells.
+    /// - ensures: the form is read as [`Self::path_type`] reads the head's own
+    ///   pieces followed by the spine's list, and is planned at `site`.
+    /// - fails: the head's repair, as the head's own form names it; otherwise
+    ///   as [`Self::path_type`], so a head that writes its own list, or a spine
+    ///   of other than two operands, is refused as a form out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path[.A = Integer] a a` and `Bridge[.A = Integer] a
+    ///   a` lower to the core of their call forms, and a spine of one operand
+    ///   is refused.
+    /// - witness: `lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Path(planned, ..)) if planned == relating))]
+    pub(super) fn carried_path(
+        &mut self,
+        site: Site,
+        (name, head): (FormName, Placed),
+        mut cursor: Cursor<'_>,
+        relating: Relating,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, head.node, &mut scratch).and_then(|()| {
+            if let Maybe::Present(repaired) = scratch.repair {
+                return Err(repaired.refusal(name));
+            }
+            let _head = cursor.read();
+            while let Maybe::Present(piece) = cursor.read() {
+                scratch.pieces.push(piece);
+            }
+            self.path_type(site, Cursor::new(&scratch.pieces, site.at.span), relating)
+        });
+        self.scratch = scratch;
+
+        read
     }
 
     /// Classify a directed identity type with its carrier supplied by name,

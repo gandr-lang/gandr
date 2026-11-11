@@ -309,6 +309,67 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// #6121: `Path` reads as `Bridge` reads. Before a `(` or a `[` written
+/// straight after it, each keeps its own form, whose endpoints are
+/// expressions, so `Path(Path.walk f p v, w)` reads its endpoint as a
+/// transport. Anywhere else each is a type name that the juxtaposition
+/// applies, `Path a b`, and a spaced `(` opens a group. A carrier supplied in
+/// brackets ends the former's own form, and the juxtaposition applies it,
+/// `Path[.A = Integer] a a`.
+#[test]
+fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def x : Path a b;", 0_usize, 2_usize),
+        ("def x : Bridge a b;", 0, 2),
+        ("def x : Path(a, b);", 1, 0),
+        ("def x : Bridge(a, b);", 1, 0),
+        ("def x : Path(Path.walk f p v, w);", 1, 0),
+        ("def x : Path (g(a)) (g(a));", 0, 2),
+        ("def x : Path[.A = Integer] a a;", 1, 2),
+        ("def x : Bridge[.A = Integer] a a;", 1, 2),
+        ("def x : Path[.A = Integer](a, a);", 1, 0),
+        ("def x : Path a a -> Path a a;", 0, 4),
+    ];
+    let grammar = built();
+    for (source, own, applied) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let rules = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter_map(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => {
+                    let label = grammar.mold(mold).ok()?.label;
+                    Some((grammar.rule_of(mold).ok()?.name().0, label))
+                },
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => None,
+            })
+            .collect::<Vec<_>>();
+        let heads = rules
+            .iter()
+            .filter(|&&(rule, label)| {
+                matches!(rule, "path_type" | "bridge_type") && matches!(label, "Path" | "Bridge")
+            })
+            .count();
+        let juxtaposed = rules
+            .iter()
+            .filter(|&&(rule, _)| rule == "type_application.juxtaposed")
+            .count();
+        assert_eq!(
+            (heads, juxtaposed),
+            (own, applied),
+            "`{source}`: the own forms and the type applications it reads"
+        );
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
 /// #6093: a packed or forgotten model's type ends its form, and a type operand
 /// after it applies that type, `pack M at Model T`, as a value call applies
 /// its function. The call form `Model(T)` keeps its reading.

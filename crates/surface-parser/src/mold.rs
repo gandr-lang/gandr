@@ -1307,12 +1307,22 @@ fn ends_declaration(
 /// [`Molder::gather_reserved_fallback`] re-admits the generic labels so the
 /// word can still name the declaration (`theory Unknown`). `U` and `F` are not
 /// reserved: the bridges are the compound tiles `+U` and `-F`, and the bare
-/// letters are names like any other. `Cap` is reserved as `Path` is: the
-/// capability former's own tile.
+/// letters are names like any other. `Cap` is reserved: the capability
+/// former's own tile. `Path` is not reserved, as `Bridge` is not: its own
+/// tile opens the call form, and as a type name it heads a juxtaposed
+/// application, `Path a b`.
 const UPPER_KEYWORDS: &[&str] = &[
     "Any", "Unknown", "Never", "Boolean", "Integer", "Char", "String", "Symbol", "Unit", "Void",
-    "Path", "Type", "Cap",
+    "Type", "Cap",
 ];
+
+/// The uppercase words whose own form continues with a `(` or a `[` written
+/// straight after the word: `Path(a, b)` and `Bridge[.A = T](a, b)`. Before
+/// a token written straight after it, each word reads as a reserved word
+/// reads: [`Molder::keep_called_former`] keeps its own tile where that tile
+/// is admissible. Before an operand written after a space, each word is also
+/// a type name, so `Path a b` applies `Path` as `Vec a n` applies `Vec`.
+const CALLED_FORMERS: [&str; 2] = ["Path", "Bridge"];
 
 /// The generic labels a reserved uppercase word falls back to where its own
 /// tile cannot mold: [`Molder::gather_reserved_fallback`] re-admits them, and
@@ -1543,9 +1553,11 @@ fn next_labels<'src>(
     Some(labels)
 }
 
-/// The rule of a type's call form, `Vec(A, n)`, whose `(` only a `(` written
-/// straight after the head continues until #5330 retires it.
-const TYPE_CALL_FORM: &str = "type_application";
+/// The forms whose `(` opens a call list only where the source writes it
+/// straight after the head: the call form of a type, `Vec(A, n)`, until #5330
+/// retires it, and the endpoint lists of a path type and a bridge type,
+/// `Path(a, b)`. After a space the `(` opens a group that the head applies.
+const GLUED_CALLS: [&str; 3] = ["type_application", "path_type", "bridge_type"];
 
 /// Whether a space stands between a token and the next significant one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2891,6 +2903,7 @@ impl<'pbg> Molder<'pbg>
             self.note_declared_menu(state);
         }
         self.gather_reserved_fallback(state, lexeme, text, open);
+        self.keep_called_former(state, lexeme, text, ahead);
         self.drop_stray_keyword(state, lexeme, text);
         self.read_reserved_name(state, lexeme, text, ahead);
     }
@@ -3114,6 +3127,72 @@ impl<'pbg> Molder<'pbg>
         self.candidates.extend_from_slice(&reserved);
         self.candidates.sort_unstable();
         self.candidates.dedup();
+    }
+
+    /// Keep only the own tile of a **called former**, `Path` or `Bridge`,
+    /// before a token written straight after it, where that tile is
+    /// admissible at the live frontier.
+    ///
+    /// A called former is a type name only before an operand written after a
+    /// space, so `Path a b` applies it. Before a glued `(` the type name would
+    /// also open the call form of a type, whose arguments are types:
+    /// `Path(Path.walk f p v, w)` would read its endpoint as a type. Before a
+    /// glued `.` in a type, the type name would read `Path.walk` as a type
+    /// path. The former's own form reads its endpoints as expressions, so the
+    /// word keeps its own tile, as a reserved word does. Where that tile is
+    /// not admissible, as in an argument that a value fills or before the
+    /// `.` of `Path.here x`, the type name and the constructor stay.
+    ///
+    /// # Specification
+    /// - requires: the menu of a token of `lexeme` spelled `text` was already
+    ///   gathered into `self.candidates`, sorted and de-duplicated.
+    /// - ensures: leaves `self.candidates` sorted and de-duplicated; narrows it
+    ///   to the molds labelled `text` exactly when the token is a word of
+    ///   [`CALLED_FORMERS`], `ahead` names a stream in which no space stands
+    ///   after the token, and a mold labelled `text` is admissible at the live
+    ///   frontier; otherwise leaves it unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path(Path.walk f p v, w)` reads its endpoints as
+    ///   expressions, `Path a b` applies the type name, and `Path(a, b)` where
+    ///   a value is read stays the call of the type name; a keep that ignores
+    ///   the space or the frontier changes one of them. The recovery sweep
+    ///   reads the source with each token dropped, where a former before a
+    ///   glued `.` in a type keeps its own tile.
+    /// - witness: `tests::grammar::a_called_former_keeps_its_own_opener_6121`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.len() <= before)]
+    fn keep_called_former(
+        &mut self,
+        state: &MeldState<'_>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+        ahead: Ahead<'_, '_>,
+    )
+    {
+        let word = <&str>::from(text);
+        if !matches!(lexeme, Lexeme::UpperWord) || !CALLED_FORMERS.contains(&word) {
+            return;
+        }
+        let Ahead::Stream { tokens, index, .. } = ahead
+        else {
+            return;
+        };
+        if spacing(tokens, index) == Spacing::Spaced {
+            return;
+        }
+        let pbg = self.pbg;
+        let own = |mold: &MoldId| pbg.mold(*mold).is_ok_and(|held| held.label == word);
+        let frontier = state.admissibility_frontier();
+        if self
+            .candidates
+            .iter()
+            .any(|mold| own(mold) && bool::from(state.admits_at(*mold, &frontier)))
+        {
+            self.candidates.retain(own);
+        }
     }
 
     /// Empty a **reserved lowercase word**'s menu when it stands in a
@@ -4971,21 +5050,24 @@ impl<'pbg> Molder<'pbg>
     /// starts a type, since the melder applies the type to it. Until #5330
     /// retires the call form, only a `(` written straight after a type name
     /// continues the call form, so the call form's own `(` does not follow
-    /// the mold here. A type variable is an argument like a type name when an
-    /// operand stands before it, as `head` tells; a type variable that heads
-    /// its type keeps the moded type `m T`.
+    /// the mold here. The endpoint list of a path or bridge type is a call
+    /// list alike: `Path (g(a)) (g(a))` applies `Path` to two groups. A type
+    /// variable is an argument like a type name when an operand stands before
+    /// it, as `head` tells; a type variable that heads its type keeps the
+    /// moded type `m T`.
     ///
     /// # Specification
     /// - requires: `labels` are the labels of a token written after a space.
     /// - ensures: for a mold of a type when the grammar has a type application
     ///   tile, [`Follow::Possible`] exactly when a same-form successor that
-    ///   [`direct_successor`] admits, outside the call form `type_application`,
-    ///   is labelled with one of `labels`, or `mold`'s right bound is the root,
-    ///   it can end its form, and [`Molder::after_form`] admits `labels` or a
-    ///   label in `labels` names a tile that begins a type and `mold` is no
-    ///   type variable that heads its type, or `mold`'s right bound is not the
-    ///   root and a label in `labels` names a tile that begins a form. For any
-    ///   other mold, [`Molder::follow`].
+    ///   [`direct_successor`] admits, outside the `(` of the forms
+    ///   [`GLUED_CALLS`] names, is labelled with one of `labels`, or `mold`'s
+    ///   right bound is the root, it can end its form, and
+    ///   [`Molder::after_form`] admits `labels` or a label in `labels` names a
+    ///   tile that begins a type and `mold` is no type variable that heads its
+    ///   type, or `mold`'s right bound is not the root and a label in `labels`
+    ///   names a tile that begins a form. For any other mold,
+    ///   [`Molder::follow`].
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the mold's
     ///   successors and the fresh candidates of each label.
@@ -4993,11 +5075,14 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — `Vec Integer (Succ Zero)` applies `Vec` to two
     ///   arguments, `Var (Extend g n) n` to two, `Vec a (Succ n)` to two, `-F
-    ///   Maybe A` returns `Maybe A`, `m T` stays a moded type, and `Vec(A, n)`
-    ///   keeps the call form: keeping the call form's `(` reads the group as a
-    ///   call of `Integer` or `a`, and refuting a whole type before a type
-    ///   reads `Maybe` as the call form's head.
+    ///   Maybe A` returns `Maybe A`, `m T` stays a moded type, `Vec(A, n)`
+    ///   keeps the call form, and `Path (g(a)) (g(a))` applies `Path` to two
+    ///   groups: keeping the call form's `(` reads the group as a call of
+    ///   `Integer` or `a`, keeping the endpoint list's `(` reads the groups as
+    ///   the endpoints, and refuting a whole type before a type reads `Maybe`
+    ///   as the call form's head.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    /// - witness: `tests::grammar::a_called_former_keeps_its_own_opener_6121`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -5027,7 +5112,7 @@ impl<'pbg> Molder<'pbg>
                 && !(pbg.mold(right).is_ok_and(|next| next.label == "(")
                     && pbg
                         .rule_of(right)
-                        .is_ok_and(|rule| rule.name().0 == TYPE_CALL_FORM))
+                        .is_ok_and(|rule| GLUED_CALLS.contains(&rule.name().0)))
         });
         // A type variable still opens a moded type, `m T`, until #5330 settles
         // the two readings, so it takes no argument here. After an operand a
