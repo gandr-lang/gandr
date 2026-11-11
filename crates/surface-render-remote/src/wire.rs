@@ -20,9 +20,9 @@
 //!
 //! The message set is the projection of one binary session,
 //! `?Attach . !Hello . μX. (!Frame . X & !Stack . X & !Derivation . X &
-//! !Opened . X & !Activity . X & ?Trace . X & ?Open . X & ?Resync . X &
-//! ?Detach . end)`, so a typed endpoint can carry the same frames as its
-//! messages.
+//! !Opened . X & !Activity . X & !Store . X & ?Trace . X & ?Open . X &
+//! ?Resync . X & ?Detach . end)`, so a typed endpoint can carry the same
+//! frames as its messages.
 //!
 //! # The frame
 //!
@@ -33,8 +33,9 @@
 //! while that version matches the buffer it shows, asking for a resync
 //! otherwise, so a stale report is dropped rather than painted. `Hello`, the
 //! documents a server tracks, `Activity`, the pool's activity at one tick,
-//! `Trace`, the client's subscription to the trace layer, and `Detach` are
-//! connection-scoped. The constructors are the only way to
+//! `Store`, the store under the hub's data directory, `Trace`, the client's
+//! subscription to the trace layer, and `Detach` are connection-scoped. The
+//! constructors are the only way to
 //! build a frame, so the scope always suits the body.
 //!
 //! The wire image is `{"schema_version", "doc_uri", "doc_version", "body"}`,
@@ -67,6 +68,7 @@ use crate::present::GoalCard;
 use crate::present::HlSpan;
 use crate::present::MarkSpan;
 use crate::stack::StackCard;
+use crate::store::StoreCard;
 use crate::visual::Count;
 
 /// A render-bus wire schema version.
@@ -340,6 +342,13 @@ pub enum FrameBody
         /// The activity.
         activity: PoolActivity,
     },
+    /// Server to client, on attach: the values of the store under the hub's
+    /// data directory. Connection-scoped.
+    Store
+    {
+        /// The card.
+        card: StoreCard,
+    },
     /// Client to server: the client shows the trace layer, its panes this
     /// many columns wide. The server traces each judgement while the client
     /// is attached and sends the [`Self::Derivation`] at the cursor.
@@ -360,9 +369,9 @@ pub enum FrameBody
 ///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`],
 ///   [`FrameBody::Stack`], [`FrameBody::Derivation`], [`FrameBody::Open`] or
 ///   [`FrameBody::Opened`] is document-scoped and a [`FrameBody::Hello`],
-///   [`FrameBody::Activity`], [`FrameBody::Trace`] or [`FrameBody::Detach`] is
-///   connection-scoped, in every frame built by the twelve constructors or
-///   decoded.
+///   [`FrameBody::Activity`], [`FrameBody::Store`], [`FrameBody::Trace`] or
+///   [`FrameBody::Detach`] is connection-scoped, in every frame built by the
+///   thirteen constructors or decoded.
 /// - provides: under the `serde` feature, the wire image `{"schema_version",
 ///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
 ///   connection-scoped frame; the decode refuses another schema version, keys
@@ -694,6 +703,35 @@ impl RenderFrame
         }
     }
 
+    /// The values of the store under the hub's data directory.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Store`] carrying `card`
+    ///   unchanged.
+    /// - provides: the message that the store pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a card of two rows, one resident and one refused,
+    ///   with its owed cells survives a round trip through JSON with no routing
+    ///   keys, and the decode refuses it routed.
+    /// - witness: `wire::tests::the_store_body_is_connection_scoped_6296`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Store { .. }),
+    ))]
+    pub const fn store(card: StoreCard) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Store { card },
+        }
+    }
+
     /// The client's subscription to the trace layer, its panes `columns`
     /// wide.
     ///
@@ -862,6 +900,8 @@ enum ConnectionBody
     Hello,
     /// [`FrameBody::Activity`].
     Activity,
+    /// [`FrameBody::Store`].
+    Store,
     /// [`FrameBody::Trace`].
     Trace,
     /// [`FrameBody::Detach`].
@@ -957,6 +997,7 @@ impl fmt::Display for FrameDecodeError
                 let name = match body {
                     ConnectionBody::Hello => "hello",
                     ConnectionBody::Activity => "activity",
+                    ConnectionBody::Store => "store",
                     ConnectionBody::Trace => "trace",
                     ConnectionBody::Detach => "detach",
                 };
@@ -1023,12 +1064,14 @@ impl RenderFrame
                 wire.body,
                 FrameBody::Hello { .. }
                     | FrameBody::Activity { .. }
+                    | FrameBody::Store { .. }
                     | FrameBody::Trace { .. }
                     | FrameBody::Detach
             ),
             routed = match wire.body {
                 FrameBody::Hello { .. } => Some(ConnectionBody::Hello),
                 FrameBody::Activity { .. } => Some(ConnectionBody::Activity),
+                FrameBody::Store { .. } => Some(ConnectionBody::Store),
                 FrameBody::Trace { .. } => Some(ConnectionBody::Trace),
                 FrameBody::Detach => Some(ConnectionBody::Detach),
                 FrameBody::Frame { .. }
@@ -1051,6 +1094,7 @@ impl RenderFrame
                 FrameBody::Opened { .. } => Some(DocumentBody::Opened),
                 FrameBody::Hello { .. }
                 | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
                 | FrameBody::Trace { .. }
                 | FrameBody::Detach => None,
             },
@@ -1091,6 +1135,7 @@ impl RenderFrame
             (
                 &(FrameBody::Hello { .. }
                 | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
                 | FrameBody::Trace { .. }
                 | FrameBody::Detach),
                 &FrameScope::Connection,
@@ -1114,6 +1159,11 @@ impl RenderFrame
             (&FrameBody::Activity { .. }, &FrameScope::Document(_)) => {
                 return Err(FrameDecodeError::ConnectionScopedRouted {
                     body: ConnectionBody::Activity,
+                });
+            },
+            (&FrameBody::Store { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Store,
                 });
             },
             (&FrameBody::Trace { .. }, &FrameScope::Document(_)) => {
@@ -1185,6 +1235,7 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
             &FrameScope::Connection,
             &(FrameBody::Hello { .. }
                 | FrameBody::Activity { .. }
+                | FrameBody::Store { .. }
                 | FrameBody::Trace { .. }
                 | FrameBody::Detach),
         )
@@ -1210,9 +1261,11 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::string::ToString as _;
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::num::NonZeroU32;
 
     use super::DocId;
     use super::DocVersion;
@@ -1243,6 +1296,13 @@ mod tests
     use crate::present::HlSpan;
     use crate::stack::SpineRow;
     use crate::stack::StackCard;
+    use crate::store::OwedCell;
+    use crate::store::StoreCard;
+    use crate::store::StoreKey;
+    use crate::store::StoreKind;
+    use crate::store::StoreResidence;
+    use crate::store::StoreRow;
+    use crate::store::UnitNumber;
     use crate::visual::Count;
     use crate::visual::SampleUnit;
     use crate::visual::Samples;
@@ -1695,6 +1755,67 @@ mod tests
                 body: super::ConnectionBody::Trace
             })
         );
+    }
+
+    /// A store card survives the round trip with no routing keys, each owed
+    /// cell carries its unit as a number, and the decode refuses the body
+    /// routed (#6296).
+    #[test]
+    fn the_store_body_is_connection_scoped_6296()
+    {
+        let unit =
+            |number: u32| UnitNumber::from(NonZeroU32::new(number).expect("a unit is numbered"));
+        let frame = RenderFrame::store(StoreCard {
+            rows: vec![
+                StoreRow {
+                    key: StoreKey::from(String::from("ab")),
+                    kind: StoreKind::Export,
+                    residence: StoreResidence::Cam {
+                        bytes: Count(4_096),
+                        chunks: Count(14),
+                        shared: Count(2),
+                    },
+                },
+                StoreRow {
+                    key: StoreKey::from(String::from("cd")),
+                    kind: StoreKind::Receipt,
+                    residence: StoreResidence::Refused {
+                        why: String::from("a chunk does not verify"),
+                    },
+                },
+            ],
+            owed: vec![OwedCell {
+                column: String::from("wrote"),
+                unit: unit(3_022),
+            }],
+            refused: None,
+        });
+        let decoded: RenderFrame =
+            serde_json::from_value(image(&frame)).expect("a store frame decodes");
+        assert_eq!(decoded, frame, "the card survives the round trip");
+        assert_eq!(decoded.scope, FrameScope::Connection);
+        assert_eq!(
+            image(&frame)["body"]["data"]["card"]["owed"][0]["unit"],
+            serde_json::Value::from(3_022_u32),
+            "an owed cell carries its unit's number"
+        );
+        assert_eq!(
+            unit(3_022).to_string(),
+            "#3022",
+            "a unit prints as its issue"
+        );
+        let mut routed = image(&frame);
+        routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        routed["doc_version"] = serde_json::Value::from(2_i32);
+        let wire = serde_json::from_value(routed).expect("well-typed wire fields");
+        assert_eq!(
+            RenderFrame::from_wire(wire),
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Store
+            })
+        );
+        let zero = serde_json::from_value::<UnitNumber>(serde_json::Value::from(0_u32));
+        assert!(zero.is_err(), "no unit is numbered zero");
     }
 
     #[test]

@@ -54,7 +54,7 @@ use quenchant_shape::shape::Maybe;
 const RECEIPT: u8 = 0x21_u8;
 
 /// The prefix of every root naming a receipt.
-const RECEIPT_ROOTS: &str = "receipt/";
+pub const RECEIPT_ROOTS: &str = "receipt/";
 
 /// Why the store could not do what it was asked.
 ///

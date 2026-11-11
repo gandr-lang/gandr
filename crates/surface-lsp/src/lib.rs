@@ -426,6 +426,8 @@ mod session_trace;
 mod shadowed;
 mod signature;
 mod site;
+#[cfg(unix)]
+mod stored;
 mod sweep;
 mod syntax;
 mod tier;
@@ -516,6 +518,8 @@ pub use crate::site::File;
 pub use crate::site::Sourced;
 pub use crate::site::site;
 pub use crate::site::sourced;
+#[cfg(unix)]
+pub use crate::stored::Stored;
 pub use crate::tokens::TOKEN_MODIFIERS;
 pub use crate::tokens::TOKEN_TYPES;
 pub use crate::transport::Body;

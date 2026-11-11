@@ -8,6 +8,9 @@
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
+extern crate alloc;
+
+use alloc::collections::BTreeSet;
 use core::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -22,6 +25,8 @@ use gandr_storage_store::Store;
 use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Lock;
 use gandr_surface_dispatcher::Package;
+use gandr_surface_dispatcher::StoreAccount;
+use gandr_surface_dispatcher::StoredKind;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::write_frame;
@@ -2853,6 +2858,61 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
             .names()
             .all(|name| !name.as_ref().starts_with("export/")),
         "a package with an unsettled source names no export"
+    );
+}
+
+/// #6296: after `check` of the standard library, the store under the data
+/// directory holds one value of the engine, the library's export, beside the
+/// one node of its roots. The store account reads that export as its one row:
+/// every chunk of the store and the bytes of their files, its root chunk held
+/// by itself alone.
+#[test]
+fn the_store_account_reads_the_standard_library_s_export_6296()
+{
+    let scratch = Scratch::new(Path::new("account"));
+    let data = scratch.0.join("data");
+    let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    let mut command = gandr(&[Path::new("check"), &library]);
+    let _placed = command.env("XDG_DATA_HOME", &data);
+    let output = ran(command);
+    assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    let directory = data.join("gandr/store");
+    let listed = |plane: &str| -> Vec<PathBuf> {
+        std::fs::read_dir(directory.join(plane))
+            .expect("the plane lists")
+            .map(|entry| entry.expect("an entry reads").path())
+            .collect()
+    };
+    let chunks = listed("chunks");
+    let bytes = chunks.iter().fold(0_u64, |sum, chunk| {
+        sum.saturating_add(std::fs::metadata(chunk).expect("a chunk is read").len())
+    });
+    assert_eq!(listed("nodes").len(), 1, "the roots are one node");
+    let mut account = StoreAccount::default();
+    account
+        .read(&directory, &BTreeSet::default())
+        .expect("the store reads");
+    let rows: Vec<_> = account.rows().collect();
+    let &[ref row] = rows.as_slice()
+    else {
+        panic!("the store holds one value of the engine: {rows:?}");
+    };
+    assert_eq!(row.kind, StoredKind::Export);
+    let resident = row.residence.expect("the export resides in its chunks");
+    assert_eq!(
+        usize::from(resident.chunks),
+        chunks.len(),
+        "the export holds every chunk of the store"
+    );
+    assert_eq!(
+        u64::from(resident.bytes),
+        bytes,
+        "the bytes are the lengths of the chunks' files"
+    );
+    assert_eq!(
+        usize::from(resident.shared),
+        1,
+        "no other value holds its root"
     );
 }
 
