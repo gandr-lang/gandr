@@ -42,9 +42,9 @@ def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base)
 
 /// A forged section: the loop arm answers with the rest's path unchanged,
 /// typed at the motive at `q`, where the arm owes the motive at `loop ∷ q`:
-/// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The two path types do
-/// not convert, and the arm is refused.
-@[refuses("TypeMismatch")]
+/// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The machine does not
+/// decide the two path types, and the arm is refused as undecided.
+@[refuses("Undecided")]
 def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   spin (wind p),
   p
