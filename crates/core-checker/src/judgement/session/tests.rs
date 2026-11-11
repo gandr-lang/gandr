@@ -2184,6 +2184,79 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
     );
 }
 
+/// A fork at a row of operations stands for a program of the row's model.
+/// Its reduct copies the parent without the judgement's records, so the
+/// bridge refuses the fork as a session, and the kernel rejects nothing.
+#[test]
+fn a_fork_at_a_row_is_refused_as_a_session_6736()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    let unit = arena.value_type_unit();
+    let string = arena.value_type_base(BaseType::String);
+    let ask = EffectSig::new(EffectName::from("Ask"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: unit,
+        reply: string,
+    }])
+    .expect("one operation");
+    let returns_string = arena.comp_type_returner_with_effects(string, EffectRow::singleton(ask));
+    let reads_a_string = arena.comp_type_arrow(string, returns_string);
+    let declared = arena.value_type_thunk(reads_a_string);
+    // \n. let d = fork (c : end) { close(c) }; close(d) ; return n, at `[Ask]`
+    let child = Program::new(&mut arena).close();
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let returned = arena.computation_return(outer);
+    let parent = Program::new(&mut arena).then(
+        SessionAction::Close {
+            endpoint: DeBruijnIndex::from(0_u32),
+        },
+        returned,
+    );
+    let forked = fork(&mut arena, ended, child, parent);
+    let lambda = arena.computation_lambda(forked);
+    let defined = arena.value_thunk(lambda);
+    let declarations = alloc::vec![Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Present(declared),
+        Maybe::Present(defined),
+        OriginToken::from(0_usize),
+    )];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "the fork checks at the row: {:?}",
+        report
+            .judged()
+            .iter()
+            .map(crate::Judged::verdict)
+            .collect::<Vec<_>>()
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(bridge::Readmitted::outcome)
+        .collect();
+    let at = CoreNode::Term(TermNode::Computation(forked));
+    assert!(
+        matches!(
+            outcomes.as_slice(),
+            [bridge::Outcome::Refused(bridge::Refusal::Session { at: site })] if *site == at
+        ),
+        "the bridge refuses the fork at the row as a session: {outcomes:?}"
+    );
+}
+
 /// A function's parameter at `end`, placed at its body's entry: closed, it
 /// checks and the kernel defines it; left open, the placement is refused
 /// with the endpoint as its residue; closed twice, the second close is

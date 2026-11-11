@@ -10747,7 +10747,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   any other node the judgement checked, whose children carry their own
     ///   records. A node the judgement refined is read as its refinement. No
     ///   original node is shifted, so each keeps its records.
-    /// - fails: [`Refusal::OutOfFragment`] naming
+    /// - fails: [`Refusal::Session`] for a session action, because its reduct
+    ///   returns the unit or copies its continuation without its records (#6746
+    ///   crosses it); [`Refusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::EffectRow`] for a node assigned a program whose
     ///   image the judgement did not record, and for a returned composite;
     ///   [`Refusal::MachineInvariant`] when the environment holds no model yet,
@@ -10856,6 +10858,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Computation::Application(..)
                 | Computation::Primitive { .. }),
             ) => {},
+            Some(&Computation::Session(_)) => {
+                return Err(Refusal::Session {
+                    at: CoreNode::Term(TermNode::Computation(at)),
+                });
+            },
             Some(_) | None if checked => return Ok(None),
             Some(_) | None => return Err(outside),
         }
