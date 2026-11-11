@@ -85,7 +85,8 @@ pub struct VerdictCache
     signer: KernelSigner,
     /// Admissions a recorded verdict answered.
     recalled: AtomicUsize,
-    /// Verdicts kept in a receipt.
+    /// Admissions whose verdicts a kept receipt holds, each once whatever
+    /// number of keys it is kept under.
     recorded: AtomicUsize,
     /// Receipts the store could not keep.
     unwritten: AtomicUsize,
@@ -175,7 +176,7 @@ impl VerdictCache
             .recalled
             .fetch_add(usize::from(environment.recalls()), Ordering::Relaxed);
         if let Maybe::Present(receipt) = environment.receipt(&self.signer) {
-            let records = receipt.records().len();
+            let records = usize::from(environment.recorded());
             let kept = match self.kept {
                 Kept::Stored(ref store) => store.keep(&receipt).is_ok(),
                 Kept::Held(ref held) => {
@@ -295,7 +296,8 @@ pub struct VerdictTally
 {
     /// Admissions a recorded verdict answered.
     recalled: usize,
-    /// Verdicts kept in a receipt.
+    /// Admissions whose verdicts a kept receipt holds, each once whatever
+    /// number of keys it is kept under.
     recorded: usize,
     /// Receipts the store could not keep.
     unwritten: usize,

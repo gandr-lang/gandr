@@ -20,6 +20,18 @@
 //! resumed run without its records, and the resumed run reads the source of
 //! its own readmission ([`Environment::reading`]).
 //!
+//! An entry key narrows the input to what the declaration reads. It covers
+//! the declaration's segment written alone, with each position it names
+//! written by where the segment first names it. It also covers the entry keys
+//! of those positions in that order, the keys of the types of words over each
+//! sort its references reach, and the keys of the atoms it reads as
+//! representations. A generative entry also covers a count of the earlier
+//! entries with the same key. So an edit re-keys only the declarations that
+//! read the edited one, and a declaration keeps its key at a new position. A
+//! recall tries the entry key first and then the chain key. A checked record
+//! is kept under both keys. A bypass, an open seal or an input with no entry
+//! key gives no entry key.
+//!
 //! An installation's key also signs a stratum of the checker's site, which
 //! the checker certified, under a derivation context no admission receipt
 //! uses ([`KernelSigner::sign_stratum`]). A run believes a stored stratum
@@ -61,6 +73,10 @@ const KERNEL_BUILD: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/kernel
 /// The context a verdict key's digest derives under.
 const KEY_CONTEXT: &str = "gandr kernel verdict key 2026-10-27";
 
+/// The context an entry key's digest derives under. It is not
+/// [`KEY_CONTEXT`], so no entry key is a chain key.
+const ENTRY_KEY_CONTEXT: &str = "gandr kernel entry key 2026-11-11";
+
 /// The context a receipt's message derives under.
 const RECEIPT_CONTEXT: &str = "gandr kernel verdict receipt 2026-10-27";
 
@@ -70,20 +86,29 @@ const STRATUM_CONTEXT: &str = "gandr checker stratum receipt 2026-10-30";
 /// The version byte every encoded verdict leads with.
 const VERDICT_VERSION: u8 = 1;
 
-/// A key over the kernel's whole input for one admission: its build, and every
-/// declaration admitted up to and including this one.
+/// A key for one admission.
+///
+/// An entry key covers what the declaration reads, each position it names by
+/// that entry's key. A chain key covers the kernel's whole input: its build,
+/// and every declaration admitted up to and including this one.
 ///
 /// # Specification
-/// - ensures: two keys are equal exactly when, up to a BLAKE3 collision, they
-///   chain the same build identity over the same canonical segments.
+/// - ensures: two entry keys are equal exactly when, up to a BLAKE3 collision,
+///   they cover the same build identity, keyed segments, named keys, manifest
+///   atoms, types of words and generative index. Two chain keys are equal
+///   exactly when they chain the same build identity over the same canonical
+///   segments. No entry key is a chain key, because the two derive under two
+///   contexts.
 /// - provides: the identity a recorded verdict is recalled by.
 /// - panics: none.
 /// - executable: none — collision resistance is BLAKE3's.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a recorded verdict is recalled under its own key and not
-///   after one name changes.
+///   after one name changes; an edit re-keys only what reads the edited
+///   declaration.
 /// - witness: `tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
+/// - witness: `tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct VerdictKey([u8; 32]);
@@ -151,6 +176,162 @@ impl VerdictKey
                 .finalize()
                 .as_bytes(),
         )
+    }
+
+    /// The key of a generative entry whose content key is `self`, after
+    /// `earlier` entries with the same content key: two entries with one
+    /// content are two types, so they take two keys.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn generative(
+        self,
+        earlier: KeyedCount,
+    ) -> Self
+    {
+        let mut keyer = EntryKeyer::tagged(EntryTag::Generative);
+        keyer.key(self);
+        keyer.count(earlier);
+        keyer.finish()
+    }
+
+    /// The key of the member at `ordinal` in the mutual block whose key is
+    /// `self`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn member(
+        self,
+        ordinal: KeyedCount,
+    ) -> Self
+    {
+        let mut keyer = EntryKeyer::tagged(EntryTag::Member);
+        keyer.key(self);
+        keyer.count(ordinal);
+        keyer.finish()
+    }
+}
+
+/// A count an entry key writes: a run's length, a place or an index.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct KeyedCount(usize);
+
+impl From<usize> for KeyedCount
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+/// What an entry key's digest starts with after the build identity, so the
+/// three forms of the key never read one another's bytes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EntryTag
+{
+    /// The key of what one admission reads: a lone declaration, or a mutual
+    /// block whole.
+    Content,
+    /// A generative entry's key, over its content key and its index.
+    Generative,
+    /// A block member's key, over the block's key and the member's place.
+    Member,
+}
+
+/// An entry key as it is written: the build identity, a tag, then what the
+/// admission reads in a fixed order, with each run after its length.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub(crate) struct EntryKeyer(blake3::Hasher);
+
+impl EntryKeyer
+{
+    /// A key under `tag`, over this kernel's build identity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn tagged(tag: EntryTag) -> Self
+    {
+        let mut hasher = blake3::Hasher::new_derive_key(ENTRY_KEY_CONTEXT);
+        let _written = hasher.update(KERNEL_BUILD).update(&[match tag {
+            EntryTag::Content => 0,
+            EntryTag::Generative => 1,
+            EntryTag::Member => 2,
+        }]);
+        Self(hasher)
+    }
+
+    /// Write `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn count(
+        &mut self,
+        count: KeyedCount,
+    )
+    {
+        let _written = self
+            .0
+            .update(&u64::try_from(count.0).unwrap_or(u64::MAX).to_le_bytes());
+    }
+
+    /// Write `segment`'s bytes after their length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn segment(
+        &mut self,
+        segment: &EncodedArtifact,
+    )
+    {
+        self.count(KeyedCount(segment.as_ref().len()));
+        let _written = self.0.update(segment.as_ref());
+    }
+
+    /// Write `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn key(
+        &mut self,
+        key: VerdictKey,
+    )
+    {
+        let _written = self.0.update(&key.0);
+    }
+
+    /// The key the written bytes digest to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn finish(&self) -> VerdictKey
+    {
+        VerdictKey(*self.0.finalize().as_bytes())
     }
 }
 
@@ -1094,6 +1275,15 @@ quenchant_shape::reason_enum! {
             /// An earlier admission was not keyed, so no later key would bind
             /// the whole input.
             Ended,
+            /// The bypass admitted the declaration, so no check read it.
+            Bypassed,
+            /// The declaration is an abstract type sealed to the end of the
+            /// sequence, so its segment is not written.
+            OpenSeal,
+            /// An input of the admission has no entry key: a position it
+            /// names, a type of words its references reach or an atom it reads
+            /// as a representation.
+            Unkeyed,
         }
     }
 }
@@ -1132,6 +1322,9 @@ pub(crate) struct Verdicts
     checked: Vec<VerdictRecord>,
     /// How many admissions a recorded verdict answered.
     recalls: usize,
+    /// How many admissions this kernel checked and recorded, each under
+    /// every key it has.
+    recorded: usize,
 }
 
 impl Default for Verdicts
@@ -1146,8 +1339,41 @@ impl Default for Verdicts
     }
 }
 
+/// Whether an environment keys its admissions.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Keying
+{
+    /// The policy trusts some signers, so each admission is keyed.
+    Keys,
+    /// The policy rechecks every admission, so nothing is keyed.
+    Rechecks,
+}
+
 impl Verdicts
 {
+    /// Whether the policy keys admissions: under [`TrustPolicy::Recheck`] an
+    /// admission computes no key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn keying(&self) -> Keying
+    {
+        match self.chain {
+            Maybe::Absent(keyed::Absent::Rechecking) => Keying::Rechecks,
+            Maybe::Present(_)
+            | Maybe::Absent(
+                keyed::Absent::Ended
+                | keyed::Absent::Bypassed
+                | keyed::Absent::OpenSeal
+                | keyed::Absent::Unkeyed,
+            ) => Keying::Keys,
+        }
+    }
+
     /// The state a run under `policy`, finding recorded verdicts in `source`,
     /// starts with.
     ///
@@ -1177,6 +1403,7 @@ impl Verdicts
             recalled: BTreeMap::new(),
             checked: Vec::new(),
             recalls: 0,
+            recorded: 0,
         }
     }
 
@@ -1196,6 +1423,7 @@ impl Verdicts
             recalled: self.recalled.clone(),
             checked: Vec::new(),
             recalls: 0,
+            recorded: 0,
         }
     }
 
@@ -1324,17 +1552,31 @@ impl Verdicts
             })
     }
 
-    /// Keep the record of an admission this kernel checked itself.
+    /// Keep the record of an admission this kernel checked itself, under its
+    /// entry key and under its chain key, as the two are present.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn checked(
         &mut self,
-        key: VerdictKey,
+        entry: Maybe<VerdictKey, keyed::Absent>,
+        chain: Maybe<VerdictKey, keyed::Absent>,
         accessibility: Accessibility,
     )
     {
-        self.checked.push(VerdictRecord { key, accessibility });
+        let before = self.checked.len();
+        if let Maybe::Present(key) = entry {
+            self.checked.push(VerdictRecord {
+                key,
+                accessibility: accessibility.clone(),
+            });
+        }
+        if let Maybe::Present(key) = chain {
+            self.checked.push(VerdictRecord { key, accessibility });
+        }
+        if self.checked.len() > before {
+            self.recorded = self.recorded.saturating_add(1);
+        }
     }
 
     /// A receipt over the records this kernel checked itself, signed by
@@ -1352,6 +1594,9 @@ impl Verdicts
         }
         let mut records = self.checked.clone();
         records.sort_by_key(|record| record.key);
+        // Two entries with one content share a key, and one record answers
+        // both.
+        records.dedup();
         Maybe::Present(StoredReceipt {
             receipt: signer.sign(&records),
             records,
@@ -1365,6 +1610,15 @@ impl Verdicts
     pub(crate) fn recalls(&self) -> RecallCount
     {
         RecallCount(self.recalls)
+    }
+
+    /// How many admissions this kernel checked and recorded.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn recorded(&self) -> RecordCount
+    {
+        RecordCount(self.recorded)
     }
 }
 
@@ -1384,6 +1638,28 @@ impl From<RecallCount> for usize
     /// trivial.
     #[inline]
     fn from(count: RecallCount) -> Self
+    {
+        count.0
+    }
+}
+
+/// How many admissions a receipt records: each admission once, whether its
+/// verdict is kept under one key or two.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RecordCount(usize);
+
+impl From<RecordCount> for usize
+{
+    /// The count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: RecordCount) -> Self
     {
         count.0
     }

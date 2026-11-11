@@ -295,6 +295,19 @@ impl Presentations
             .map_or(&[], Vec::as_slice)
     }
 
+    /// The sorts some type of words loops in, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn sorts(&self) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        self.0
+            .as_deref()
+            .into_iter()
+            .flat_map(|table| table.words.keys().copied())
+    }
+
     /// The presented type at `constant`, if it presents one.
     ///
     /// # Specification

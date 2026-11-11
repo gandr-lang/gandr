@@ -2581,10 +2581,7 @@ fn a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558()
             boolean.falsity,
         )
         .expect("`not true` is `false`");
-        match environment.receipt(&signer) {
-            quenchant_shape::shape::Maybe::Present(receipt) => receipt.records().len(),
-            quenchant_shape::shape::Maybe::Absent(_) => 0,
-        }
+        usize::from(environment.recorded())
     };
     assert_eq!(
         recorded(crate::admitted::AdmissionPolicy::Derive),

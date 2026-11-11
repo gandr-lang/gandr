@@ -181,6 +181,8 @@ struct Interner
     /// What the last segment assigned, when the interner keeps it: a
     /// [`SegmentEncoder`]'s, so a refused declaration's segment is forgotten.
     journal: Option<Journal>,
+    /// How the segments write an admission position.
+    positions: Positions,
 }
 
 /// What one segment assigned: the nodes it named, the entries it added and
@@ -197,6 +199,77 @@ struct Journal
     contents: Vec<EncodedEntry>,
     /// The next free global index before the segment.
     next: GlobalIndex,
+}
+
+/// How a segment writes an admission position.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+enum Positions
+{
+    /// Each position as itself, as the export format writes it.
+    #[default]
+    Raw,
+    /// Each position by where the segment first names it, so the bytes read
+    /// no admission order.
+    Ordinal(Ordinals),
+}
+
+/// The positions a keyed segment names, in the order it first names them,
+/// and the mutual block whose members it names by their place in it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+struct Ordinals
+{
+    /// The positions named outside the block, first named first.
+    named: Vec<ConstantIndex>,
+    /// Each of them, to its place in `named`.
+    places: BTreeMap<ConstantIndex, usize>,
+    /// The members of the block the declaration belongs to.
+    block: core::ops::Range<ConstantIndex>,
+}
+
+impl Positions
+{
+    /// The position a segment writes for `position`.
+    ///
+    /// # Specification
+    /// - ensures: `position` itself under [`Positions::Raw`]; under
+    ///   [`Positions::Ordinal`], one more than twice its place in the block for
+    ///   a member of the block, and twice the place the segment first names it
+    ///   at for any other position.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the place depends on the positions the segment
+    ///   named before.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`keyed_segment`].
+    /// - witness: `encode::tests::a_keyed_segment_writes_no_admission_order_6568`
+    #[inline]
+    fn rename(
+        &mut self,
+        position: ConstantIndex,
+    ) -> ConstantIndex
+    {
+        let Self::Ordinal(ref mut ordinals) = *self
+        else {
+            return position;
+        };
+        if ordinals.block.contains(&position) {
+            let place = usize::from(position).saturating_sub(usize::from(ordinals.block.start));
+            return ConstantIndex::from(place.saturating_mul(2).saturating_add(1));
+        }
+        let next = ordinals.named.len();
+        let place = *ordinals.places.entry(position).or_insert(next);
+        if place == next {
+            ordinals.named.push(position);
+        }
+        ConstantIndex::from(place.saturating_mul(2))
+    }
 }
 
 impl Interner
@@ -237,6 +310,7 @@ impl Interner
             by_content: BTreeMap::new(),
             next: GlobalIndex::default(),
             journal: None,
+            positions: Positions::Raw,
         }
     }
 
@@ -272,6 +346,7 @@ impl Interner
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
             journal: None,
+            positions: Positions::Raw,
         }
     }
 
@@ -744,6 +819,112 @@ impl SegmentEncoder
     }
 }
 
+/// One declaration's segment as a verdict key reads it.
+///
+/// The segment is written alone, and each admission position by where the
+/// segment first names it, so the bytes read no admission order. The
+/// positions are kept in that order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyedSegment
+{
+    /// The segment's bytes.
+    image: EncodedArtifact,
+    /// The positions the segment names outside its block, first named first.
+    named: Vec<ConstantIndex>,
+}
+
+impl KeyedSegment
+{
+    /// The segment's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn image(&self) -> &EncodedArtifact
+    {
+        &self.image
+    }
+
+    /// The positions the segment names outside its block, in the order it
+    /// first names them: the position the bytes write as twice `n` is the
+    /// `n`th.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn named(&self) -> &[ConstantIndex]
+    {
+        &self.named
+    }
+}
+
+/// `declaration`'s keyed segment over `arena`.
+///
+/// The segment is written alone, as the first of a sequence. Each position
+/// outside `block` is written as twice where the segment first names it, and
+/// each member of `block` as one more than twice its place in the block.
+///
+/// # Specification
+/// - requires: as [`SegmentEncoder`].
+/// - ensures: absent as [`encoded_prefix::Absent::OpenSeal`] when `declaration`
+///   is an abstract type sealed to the end of the sequence; otherwise the
+///   segment, and each position it names outside `block`, once.
+/// - provides: bytes that read no admission position, for a key that reads each
+///   named position as the key of its entry.
+/// - fails: never.
+/// - panics: none within [`encode`]'s domain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one declaration over two constants admitted in two orders
+///   writes one image, the positions listed in the order the image first names
+///   them; a member of the block is written by its place in it.
+/// - witness: `encode::tests::a_keyed_segment_writes_no_admission_order_6568`
+#[inline]
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(encoded_prefix::Absent::OpenSeal)) == matches!(
+    *declaration.declaration().content(),
+    DeclarationContent::AbstractType { scope: SealScope::Open, .. }
+))]
+pub fn keyed_segment(
+    arena: &TermArena,
+    declaration: &MarkedDeclaration,
+    block: core::ops::Range<ConstantIndex>,
+) -> Maybe<KeyedSegment, encoded_prefix::Absent>
+{
+    if let DeclarationContent::AbstractType {
+        scope: SealScope::Open,
+        ..
+    } = *declaration.declaration().content()
+    {
+        return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
+    }
+    let mut interner = Interner {
+        positions: Positions::Ordinal(Ordinals {
+            named: Vec::new(),
+            places: BTreeMap::new(),
+            block,
+        }),
+        ..Interner::new()
+    };
+    let mut image = EncodedArtifact::new();
+    encode_declaration(
+        &mut image,
+        arena,
+        &mut interner,
+        declaration,
+        SealExtent::from(0_usize),
+    );
+    let named = match interner.positions {
+        Positions::Ordinal(ordinals) => ordinals.named,
+        Positions::Raw => Vec::new(),
+    };
+    Maybe::Present(KeyedSegment { image, named })
+}
+
 /// The admission positions of the abstract-type declarations in a sequence,
 /// ascending: the canonical content of the minted-atom table.
 ///
@@ -1154,7 +1335,17 @@ fn encode_declaration(
         // type rather than believing them.
         encode_stage_signature(out, declaration.stages());
         out.put_uvarint(WireU64::from(0_u64));
-        encode_sealing_provenance(out, declaration.provenance());
+        if matches!(interner.positions, Positions::Raw) {
+            encode_sealing_provenance(out, declaration.provenance());
+        }
+        else {
+            let renamed: Vec<ConstantIndex> = declaration
+                .provenance()
+                .iter()
+                .map(|&atom| interner.positions.rename(atom))
+                .collect();
+            encode_sealing_provenance(out, &renamed);
+        }
         out.put_uvarint(WireU64::from(0_u64));
     }
     // The relating block closes a definition's segment: a pair count of at
@@ -1189,14 +1380,15 @@ fn encode_declaration(
     if held || !laws.is_empty() || !operation_rules.is_empty() || covered {
         out.put_uvarint(WireU64::from(WireUsize::from(laws.len())));
         for &law in laws {
-            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(law))));
+            let written = interner.positions.rename(law);
+            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
         }
     }
     if held || !operation_rules.is_empty() || covered {
         out.put_uvarint(WireU64::from(WireUsize::from(operation_rules.len())));
         for rule in operation_rules {
-            encode_operation_side(out, rule.left());
-            encode_operation_side(out, rule.right());
+            encode_operation_side(out, rule.left(), &mut interner.positions);
+            encode_operation_side(out, rule.right(), &mut interner.positions);
         }
     }
     // The cover block closes a covered definition's segment: a cover count of
@@ -1207,7 +1399,7 @@ fn encode_declaration(
         out.put_uvarint(WireU64::from(WireUsize::from(cover_roots.len())));
         for (&root, covered) in cover_roots.iter().zip(declaration.covers()) {
             out.put_uvarint(WireU64::from(u64::from(u32::from(root))));
-            encode_cover(out, &covered.cover);
+            encode_cover(out, &covered.cover, &mut interner.positions);
         }
     }
     // The rule block closes a presented data declaration's segment: a rule
@@ -1232,7 +1424,8 @@ fn encode_declaration(
         }
     }
     if let Some(cells) = cells {
-        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(cells.sort()))));
+        let sort = interner.positions.rename(cells.sort());
+        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(sort))));
         // Cells above dimension one write how many times their point is
         // wrapped, less one, so every count the kind reads is canonical.
         if let Some(above) = usize::from(cells.reflexivities()).checked_sub(1) {
@@ -1462,6 +1655,7 @@ fn encode_rule_side(
 fn encode_operation_side(
     out: &mut EncodedArtifact,
     side: &[crate::operation_rules::OperationNode],
+    positions: &mut Positions,
 )
 {
     out.put_uvarint(WireU64::from(WireUsize::from(side.len())));
@@ -1469,12 +1663,16 @@ fn encode_operation_side(
         match node {
             crate::operation_rules::OperationNode::Operation { constant, arity } => {
                 out.put_tag(tags::RULE_OPERATION);
-                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(constant))));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(
+                    positions.rename(constant),
+                ))));
                 out.put_uvarint(WireU64::from(WireUsize::from(usize::from(arity))));
             },
             crate::operation_rules::OperationNode::Constructor { family, tag } => {
                 out.put_tag(tags::RULE_CONSTRUCTOR);
-                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(family))));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(
+                    positions.rename(family),
+                ))));
                 out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
             },
             crate::operation_rules::OperationNode::Results(count) => {
@@ -1686,7 +1884,7 @@ fn intern(
                 .iter()
                 .map(|&child| interner.node(child).unwrap_or_default()),
         );
-        let encoded = encode_entry(arena, node, &child_globals);
+        let encoded = encode_entry(arena, node, &child_globals, &mut interner.positions);
         let deduplicated = interner.content(&encoded);
         let global = if let Some(global) = deduplicated {
             global
@@ -1836,6 +2034,7 @@ fn encode_entry(
     arena: &TermArena,
     node: AnyNode,
     child_globals: &[GlobalIndex],
+    positions: &mut Positions,
 ) -> EncodedEntry
 {
     let mut out = EncodedArtifact::new();
@@ -1851,7 +2050,8 @@ fn encode_entry(
                     ref arguments,
                 } => {
                     out.put_tag(tags::NODE_VT_DATA);
-                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(declaration))));
+                    let written = positions.rename(declaration);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
                     out.put_uvarint(WireU64::from(WireUsize::from(arguments.len())));
                 },
                 ValueType::Record(ref fields) => {
@@ -1886,7 +2086,8 @@ fn encode_entry(
                 },
                 ValueType::Abstract(atom) => {
                     out.put_tag(tags::NODE_VT_ABSTRACT);
-                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(atom))));
+                    let written = positions.rename(atom);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
                 },
                 ValueType::Product(ref components) => {
                     out.put_tag(tags::NODE_VT_PRODUCT);
@@ -1941,7 +2142,8 @@ fn encode_entry(
                 ref arguments,
             }) => {
                 out.put_tag(tags::NODE_CT_CODATA);
-                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(declaration))));
+                let written = positions.rename(declaration);
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
                 out.put_uvarint(WireU64::from(WireUsize::from(arguments.len())));
             },
         },
@@ -1958,7 +2160,8 @@ fn encode_entry(
                     ..
                 } => {
                     out.put_tag(tags::NODE_V_CONSTRUCTOR);
-                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(family))));
+                    let written = positions.rename(family);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
                     out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
                 },
@@ -1982,7 +2185,8 @@ fn encode_entry(
                 },
                 Value::Constant(index) => {
                     out.put_tag(tags::NODE_V_CONSTANT);
-                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(index))));
+                    let written = positions.rename(index);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
                 },
                 Value::SessionPath { ref evidence, .. } => {
                     out.put_tag(tags::NODE_V_SESSION_PATH);
@@ -2290,6 +2494,7 @@ fn encode_level(
 fn encode_cover(
     out: &mut EncodedArtifact,
     cover: &crate::cover::Cover,
+    positions: &mut Positions,
 )
 {
     out.put_uvarint(WireU64::from(WireUsize::from(cover.steps().count())));
@@ -2308,7 +2513,7 @@ fn encode_cover(
                 ref branches,
             } => {
                 out.put_tag(tags::COVER_SPLIT);
-                encode_cases(out, cases);
+                encode_cases(out, cases, positions);
                 out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
                 for &branch in branches {
                     out.put_uvarint(WireU64::from(u64::from(u32::from(branch))));
@@ -2334,6 +2539,7 @@ fn encode_cover(
 fn encode_cases(
     out: &mut EncodedArtifact,
     cases: &crate::cover::Cases,
+    positions: &mut Positions,
 )
 {
     use crate::cover::Cases;
@@ -2344,7 +2550,8 @@ fn encode_cases(
             ref loops,
         } => {
             out.put_tag(tags::COVER_DATA);
-            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(family))));
+            let written = positions.rename(family);
+            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
             out.put_uvarint(WireU64::from(WireUsize::from(constructors.len())));
             for &(tag, fields) in constructors {
                 out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
@@ -2352,7 +2559,8 @@ fn encode_cases(
             }
             out.put_uvarint(WireU64::from(WireUsize::from(loops.len())));
             for owed in loops {
-                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(owed.words()))));
+                let words = positions.rename(owed.words());
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(words))));
                 out.put_uvarint(WireU64::from(WireUsize::from(usize::from(owed.cell()))));
             }
         },
@@ -2741,7 +2949,15 @@ mod tests
             AnyNode::CompType(negative_type),
             AnyNode::Computation(computation),
         ] {
-            assert!(std::panic::catch_unwind(|| super::encode_entry(&arena, node, &[])).is_err());
+            assert!(
+                std::panic::catch_unwind(|| super::encode_entry(
+                    &arena,
+                    node,
+                    &[],
+                    &mut super::Positions::Raw
+                ))
+                .is_err()
+            );
         }
         assert!(std::panic::catch_unwind(|| super::encode(&arena, &declarations)).is_err());
     }
@@ -3187,7 +3403,7 @@ mod tests
         ];
         for &(node, children, expected) in cases {
             assert_eq!(
-                super::encode_entry(&arena, node, children)
+                super::encode_entry(&arena, node, children, &mut super::Positions::Raw)
                     .0
                     .as_image()
                     .as_ref(),
@@ -3799,7 +4015,7 @@ mod tests
         // The cover block ends the segment, so the first step's tag stands
         // where the derivation's own bytes begin.
         let mut alone = super::EncodedArtifact::new();
-        super::encode_cover(&mut alone, &cover);
+        super::encode_cover(&mut alone, &cover, &mut super::Positions::Raw);
         let first_step = image
             .as_ref()
             .len()
@@ -4832,5 +5048,69 @@ mod tests
                 "a segment after the forgotten one is written as if it had never been given"
             );
         }
+    }
+
+    /// #6568: a keyed segment writes each position by where the segment
+    /// first names it, so one declaration over two constants at two pairs of
+    /// positions writes one image, and a member of its block by its place in
+    /// the block.
+    #[test]
+    fn a_keyed_segment_writes_no_admission_order_6568()
+    {
+        let pair = |arena: &mut TermArena, first: usize, second: usize| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let unit = builder.arena().value_type_unit();
+            let declared = builder.arena().value_type_product(&[unit, unit]);
+            let left = builder.arena().value_constant(ConstantIndex::from(first));
+            let right = builder.arena().value_constant(ConstantIndex::from(second));
+            let body = builder.arena().value_tuple(&[left, right]);
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                builder.def(LevelSignature::monomorphic(), declared, body),
+            )
+        };
+        let mut arena = TermArena::new();
+        let early = pair(&mut arena, 7, 3);
+        let late = pair(&mut arena, 2, 9);
+        let repeated = pair(&mut arena, 7, 7);
+        let keyed = |declaration: &MarkedDeclaration, block: core::ops::Range<ConstantIndex>| {
+            let super::Maybe::Present(keyed) = super::keyed_segment(&arena, declaration, block)
+            else {
+                panic!("no seal is open");
+            };
+            keyed
+        };
+        let none = ConstantIndex::from(20_usize) .. ConstantIndex::from(20_usize);
+        let (early_keyed, late_keyed) = (keyed(&early, none.clone()), keyed(&late, none.clone()));
+        assert_eq!(
+            early_keyed.image(),
+            late_keyed.image(),
+            "two pairs of positions in one shape write one image"
+        );
+        assert_eq!(early_keyed.named(), &[
+            ConstantIndex::from(7_usize),
+            ConstantIndex::from(3_usize)
+        ]);
+        assert_eq!(late_keyed.named(), &[
+            ConstantIndex::from(2_usize),
+            ConstantIndex::from(9_usize)
+        ]);
+        let repeated_keyed = keyed(&repeated, none);
+        assert_ne!(
+            repeated_keyed.image(),
+            early_keyed.image(),
+            "one position named twice is not two positions"
+        );
+        assert_eq!(repeated_keyed.named(), &[ConstantIndex::from(7_usize)]);
+        let member = keyed(
+            &early,
+            ConstantIndex::from(7_usize) .. ConstantIndex::from(9_usize),
+        );
+        assert_eq!(
+            member.named(),
+            &[ConstantIndex::from(3_usize)],
+            "a member of the block is not named outside it"
+        );
+        assert_ne!(member.image(), early_keyed.image());
     }
 }

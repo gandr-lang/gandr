@@ -173,8 +173,9 @@ impl CheckedId
 /// warned bypass.
 ///
 /// A recalled declaration stands on a verdict a trusted kernel recorded for
-/// the same whole input. A provenance, never a trust lattice: a recalled
-/// admission was checked, by the kernel that signed its receipt.
+/// the same input: what the declaration reads, or the whole admitted prefix.
+/// A provenance, never a trust lattice: a recalled admission was checked, by
+/// the kernel that signed its receipt.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Admission
 {
@@ -1178,6 +1179,10 @@ pub struct AdmittedDeclaration
     /// runs a check. [`AdmittedDeclaration::census`] answers it only for a
     /// checked admission.
     census: ExpansionCensus,
+    /// Its entry key: what its admission read, each position named by its
+    /// entry's key. Absent when the policy rechecks, the bypass admitted it or
+    /// an input of it has no entry key.
+    key: Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
 }
 
 impl AdmittedDeclaration
@@ -1255,6 +1260,18 @@ impl AdmittedDeclaration
     pub(crate) const fn key_name(&self) -> ConstantName
     {
         self.key_name
+    }
+
+    /// The declaration's entry key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn key(
+        &self
+    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    {
+        self.key
     }
 
     /// What the declaration's check charged, goal by goal: its admission's
@@ -1452,6 +1469,9 @@ struct EntryLog
     /// The entries that name each position: the reverse of each entry's
     /// direct references.
     dependents: crate::dependents::Dependents,
+    /// The positions of the generative admissions, by their content key:
+    /// the earlier ones with one content are what a new one's key counts.
+    generative: BTreeMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
 }
 
 /// No admitted declaration.
@@ -1653,6 +1673,60 @@ impl Entries
         self.log
             .as_deref()
             .map_or(&crate::presented::FREE, |log| &log.presentations)
+    }
+
+    /// The entry key of the declaration at `position`, read outside any
+    /// support; absent as unkeyed past the last entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn key(
+        &self,
+        position: ConstantIndex,
+    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    {
+        self.family().get(usize::from(position)).map_or(
+            Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed),
+            AdmittedDeclaration::key,
+        )
+    }
+
+    /// How many generative admissions hold the content key `content`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn generative_count(
+        &self,
+        content: crate::verdict::VerdictKey,
+    ) -> crate::verdict::KeyedCount
+    {
+        crate::verdict::KeyedCount::from(
+            self.log
+                .as_deref()
+                .and_then(|log| log.generative.get(&content))
+                .map_or(0, Vec::len),
+        )
+    }
+
+    /// Note the generative admission at `position`, whose content key is
+    /// `content`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn generative(
+        &mut self,
+        content: crate::verdict::VerdictKey,
+        position: ConstantIndex,
+    )
+    {
+        self.log_mut()
+            .generative
+            .entry(content)
+            .or_default()
+            .push(position);
     }
 
     /// The position of the ruled definition whose body thunks the fixpoint
@@ -1864,6 +1938,10 @@ impl Entries
         log.ruled.retain(|_, &mut position| position < first);
         log.roles.retain(|_, &mut position| position < first);
         log.definitions.retain(|_, positions| {
+            positions.retain(|&position| position < first);
+            !positions.is_empty()
+        });
+        log.generative.retain(|_, positions| {
             positions.retain(|&position| position < first);
             !positions.is_empty()
         });
@@ -2481,8 +2559,8 @@ impl Environment
     }
 
     /// Admit a declaration through the checked choke point, or on a verdict
-    /// recorded for the same whole input under a receipt this environment's
-    /// policy trusts.
+    /// recorded for the same input under a receipt this environment's policy
+    /// trusts: first under its entry key, then under its chain key.
     ///
     /// # Specification
     /// - requires: `staged` was built into this environment's arena through
@@ -2600,10 +2678,30 @@ impl Environment
         // A rejected declaration enters no environment, so the next one's
         // input does not read it: the chain steps back over it below, and the
         // encoder forgets the nodes whose ids the arena mints again.
+        let content = self.content_key(core::slice::from_ref(&declaration), position);
+        let generative = !matches!(
+            *declaration.content(),
+            DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
+        );
+        let entry_key = match content {
+            Maybe::Present(content) if generative => {
+                Maybe::Present(content.generative(self.entries.generative_count(content)))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => content,
+        };
         let key = self.verdicts.key(&self.arena, &declaration);
-        let recalled = match key {
-            Maybe::Present(key) => self.verdicts.recall(key),
+        // The entry key first, which an edit the declaration does not read
+        // leaves alone; then the chain key, which a store of an earlier
+        // release holds.
+        let recalled = match entry_key {
+            Maybe::Present(entry_key) => self.verdicts.recall(entry_key),
             Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
+        };
+        let recalled = match (recalled, key) {
+            (Maybe::Absent(crate::verdict::stored::Absent::Unrecorded), Maybe::Present(key)) => {
+                self.verdicts.recall(key)
+            },
+            (recalled, Maybe::Present(_) | Maybe::Absent(_)) => recalled,
         };
         let named = references(&self.arena, &declaration);
         let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
@@ -2640,13 +2738,8 @@ impl Environment
         match outcome {
             Ok(accessibility) => {
                 let took = taken.get();
-                if let (
-                    Admission::Checked,
-                    Maybe::Present(key),
-                    crate::admitted::AdmittedCount::NONE,
-                ) = (admission, key, took)
-                {
-                    self.verdicts.checked(key, accessibility.clone());
+                if (admission, took) == (Admission::Checked, crate::admitted::AdmittedCount::NONE) {
+                    self.verdicts.checked(entry_key, key, accessibility.clone());
                 }
                 self.admitted = self.admitted.and(took);
                 // Keep this declaration's content; drop the intermediates that
@@ -2669,7 +2762,11 @@ impl Environment
                     accessibility,
                     key_name,
                     census,
+                    key: entry_key,
                 });
+                if let (true, Maybe::Present(content)) = (generative, content) {
+                    self.entries.generative(content, position);
+                }
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
             },
@@ -2743,6 +2840,18 @@ impl Environment
     pub fn recalls(&self) -> crate::verdict::RecallCount
     {
         self.verdicts.recalls()
+    }
+
+    /// How many admissions this environment checked itself and recorded, each
+    /// once whether its receipt keeps it under one key or two.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn recorded(&self) -> crate::verdict::RecordCount
+    {
+        self.verdicts.recorded()
     }
 
     /// How many admitted results this environment's checks took.
@@ -2827,6 +2936,7 @@ impl Environment
             accessibility: check::Accessibility::unwalked(),
             key_name: ConstantName::Position,
             census: ExpansionCensus::new(),
+            key: Maybe::Absent(crate::verdict::keyed::Absent::Bypassed),
         });
         self.advance_seals(position);
         CheckedId::new(position)
@@ -2959,9 +3069,24 @@ impl Environment
         content_end: ArenaWatermark,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
-        self.verdicts.end();
         let base = usize::from(self.entries.len());
         let first = ConstantIndex::from(base);
+        // The block is keyed whole, before its first member enters, and each
+        // member by its place in it.
+        let content = self.content_key(members, first);
+        let generative = members.iter().any(|member| {
+            !matches!(
+                *member.content(),
+                DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
+            )
+        });
+        let block_key = match content {
+            Maybe::Present(content) if generative => {
+                Maybe::Present(content.generative(self.entries.generative_count(content)))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => content,
+        };
+        self.verdicts.end();
         let families = members
             .iter()
             .take_while(|member| matches!(*member.content(), DeclarationContent::Data { .. }))
@@ -3069,6 +3194,12 @@ impl Environment
                 // constant, so a key names each by its position.
                 key_name: ConstantName::Position,
                 census: *census,
+                key: match block_key {
+                    Maybe::Present(block_key) => {
+                        Maybe::Present(block_key.member(crate::verdict::KeyedCount::from(offset)))
+                    },
+                    Maybe::Absent(absent) => Maybe::Absent(absent),
+                },
             });
             self.advance_seals(position);
             admitted.push(CheckedId::new(position));
@@ -3084,6 +3215,9 @@ impl Environment
             }
         }
         self.admitted = self.admitted.and(taken.get());
+        if let (true, Maybe::Present(content)) = (generative, content) {
+            self.entries.generative(content, first);
+        }
         Ok(admitted)
     }
 
@@ -3339,6 +3473,142 @@ impl Environment
             }) if reaches_past(position, extent) => manifest.push(position),
             Some(_) | None => {},
         }
+    }
+
+    /// The content key of `members`, admitted as one unit from `first` on:
+    /// what their checks read, with each position they name written as its
+    /// entry's key.
+    ///
+    /// # Specification
+    /// - requires: `first` is the environment's length, and `members` are
+    ///   staged in its arena.
+    /// - ensures: absent as
+    ///   [`keyed::Absent::Rechecking`](crate::verdict::keyed::Absent::Rechecking)
+    ///   under a policy that rechecks, as
+    ///   [`keyed::Absent::OpenSeal`](crate::verdict::keyed::Absent::OpenSeal)
+    ///   when a member is an abstract type sealed to the end of the sequence,
+    ///   and as [`keyed::Absent::Unkeyed`](crate::verdict::keyed::Absent::Unkeyed)
+    ///   when a position a member names, a type of words its references reach
+    ///   or an atom manifest at the admission has no entry key. Otherwise the
+    ///   key over this kernel's build, each member's keyed segment and the keys
+    ///   of the positions it names in the order it names them, each manifest
+    ///   atom's key with how many members read it, and the keys of the types of
+    ///   words over each sort the references reach.
+    /// - provides: one key for two units at two positions exactly when, up to a
+    ///   BLAKE3 collision, their checks read the same content.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the key is a digest, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an edit re-keys the declarations that read the edited
+    ///   one and no other; two axioms of one type take two keys; a type of
+    ///   words over a reached sort re-keys a declaration, and one over another
+    ///   sort does not.
+    /// - witness: `tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
+    /// - witness: `tests::verdicts::two_axioms_of_one_type_take_two_keys_6568`
+    /// - witness: `tests::verdicts::words_over_a_reached_sort_re_key_a_declaration_6568`
+    fn content_key(
+        &self,
+        members: &[Declaration],
+        first: ConstantIndex,
+    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    {
+        use crate::verdict::KeyedCount;
+        use crate::verdict::keyed::Absent;
+        if self.verdicts.keying() == crate::verdict::Keying::Rechecks {
+            return Maybe::Absent(Absent::Rechecking);
+        }
+        let end = ConstantIndex::from(usize::from(first).saturating_add(members.len()));
+        let presentations = self.entries.presentations();
+        let words = presentations.sorts().next().is_some();
+        let mut keyer = crate::verdict::EntryKeyer::tagged(crate::verdict::EntryTag::Content);
+        keyer.count(KeyedCount::from(members.len()));
+        let mut reached = Vec::new();
+        for member in members {
+            let marked = MarkedDeclaration::new(AdmissionMark::Checked, member.clone());
+            let Maybe::Present(segment) =
+                gandr_kernel_term::keyed_segment(&self.arena, &marked, first .. end)
+            else {
+                return Maybe::Absent(Absent::OpenSeal);
+            };
+            keyer.segment(segment.image());
+            keyer.count(KeyedCount::from(segment.named().len()));
+            for &named in segment.named() {
+                let Maybe::Present(key) = self.entries.key(named)
+                else {
+                    return Maybe::Absent(Absent::Unkeyed);
+                };
+                keyer.key(key);
+            }
+            if words {
+                reached.extend_from_slice(segment.named());
+            }
+        }
+        // An atom manifest at the first member stays manifest for each member
+        // its closed scope still reaches.
+        let mut manifest = Vec::with_capacity(self.manifest.len());
+        for &atom in &self.manifest {
+            let (
+                Maybe::Present(key),
+                Some(&DeclarationContent::AbstractType {
+                    scope: SealScope::Closed(extent),
+                    ..
+                }),
+            ) = (
+                self.entries.key(atom),
+                self.entries
+                    .family()
+                    .get(usize::from(atom))
+                    .map(AdmittedDeclaration::content),
+            )
+            else {
+                return Maybe::Absent(Absent::Unkeyed);
+            };
+            let read_by = usize::from(atom)
+                .saturating_add(usize::from(extent))
+                .saturating_add(1)
+                .saturating_sub(usize::from(first))
+                .min(members.len());
+            manifest.push((key, KeyedCount::from(read_by)));
+        }
+        manifest.sort_unstable();
+        keyer.count(KeyedCount::from(manifest.len()));
+        for (key, read_by) in manifest {
+            keyer.key(key);
+            keyer.count(read_by);
+        }
+        // The types of words over each sort the references reach, which a
+        // case over the sort owes a loop arm for.
+        let mut registry = BTreeSet::new();
+        let mut visited = BTreeSet::new();
+        while let Some(position) = reached.pop() {
+            if !visited.insert(position) {
+                continue;
+            }
+            for &word in presentations.over(position) {
+                let Maybe::Present(key) = self.entries.key(word)
+                else {
+                    return Maybe::Absent(Absent::Unkeyed);
+                };
+                let _first = registry.insert(key);
+            }
+            if let Some(entry) = self.entries.family().get(usize::from(position)) {
+                reached.extend(
+                    entry
+                        .references
+                        .iter()
+                        .copied()
+                        .filter(|named| !visited.contains(named)),
+                );
+            }
+        }
+        keyer.count(KeyedCount::from(registry.len()));
+        for key in registry {
+            keyer.key(key);
+        }
+        Maybe::Present(keyer.finish())
     }
 
     /// The transitive audit of an admitted declaration.
