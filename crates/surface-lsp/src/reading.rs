@@ -10,12 +10,13 @@
 //! ([`Reading::of_tree`]) when the judgement parsed the document alone, else
 //! made by the first such request after the text last changed
 //! ([`Reading::of`]). From that one parse the highlighter's spans, the
-//! declarations with their form keys, the folds, the selection skeleton, the
-//! calls and the path imports are read and kept. The reading splits each
-//! comment span at its code fragments that read as gandr, as the `fragment`
-//! module states. Every later request until the next change answers from them.
-//! A change to the text drops the reading, so every answer is read off the
-//! text the copy holds.
+//! declarations with their form keys, the folds, the selection skeleton and
+//! the path imports are read and kept, beside the context stack: the form
+//! store's off a judgement's parse, else read off the tree. The reading splits
+//! each comment span at its code fragments that read as gandr, as the
+//! `fragment` module states. Every later request until the next change answers
+//! from them. A change to the text drops the reading, so every answer is read
+//! off the text the copy holds.
 //!
 //! An editor sends the four structural requests after each keystroke, so a
 //! parse per request parses each text four times or more and pays the molder's
@@ -23,6 +24,7 @@
 //! reading keeps owned answers, not the tree, because the tree borrows the
 //! text it is held beside.
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::path::Path;
 use std::path::PathBuf;
@@ -39,6 +41,8 @@ use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::Frame;
+use gandr_surface_session::Stack;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -71,8 +75,6 @@ use crate::recheck::roles;
 use crate::relocate::Moves;
 use crate::relocate::PathImport;
 use crate::relocate::added;
-use crate::signature::Argument;
-use crate::signature::Calls;
 
 quenchant_shape::reason_enum! {
     /// Why a text has no reading.
@@ -271,7 +273,8 @@ fn head(
 }
 
 /// What one parse of a text answers: its highlighter spans, declarations,
-/// folds, selection skeleton, calls, imports, tiles and own documentation.
+/// folds, selection skeleton, context stack, imports, tiles and own
+/// documentation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Readout
 {
@@ -283,8 +286,8 @@ struct Readout
     folds: Vec<FoldingRange>,
     /// The nodes a selection walks.
     skeleton: Skeleton,
-    /// The calls, by where their arguments open.
-    calls: Calls,
+    /// The spines, by form.
+    stack: Arc<Stack>,
     /// The path imports, in source order; none when the imports do not read.
     imports: Vec<PathImport>,
     /// Where the last import of any address ends; none when the text writes
@@ -317,7 +320,7 @@ impl Reading
     ///   its fragments as [`comments_coloured`] splits it, sorted, pairwise
     ///   disjoint and on character boundaries of `text`, its declarations each
     ///   beside its declaring form's key, its folds, its selection skeleton,
-    ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
+    ///   its spines, as [`crate::outline`] and [`Stack::of`] read each off the
     ///   tree, the address of each path import as [`written_imports`] reads it,
     ///   the bytes of every import and where the last one ends, none when the
     ///   imports do not read, every tile with its rule, whether a declaration
@@ -359,18 +362,22 @@ impl Reading
         else {
             return Self(Maybe::Absent(unread::Absent::Unparsed));
         };
-        Self::of_tree(grammar, roles, parsed.tree())
+        let stack = Arc::new(Stack::of(grammar, parsed.tree()));
+        Self::of_tree(grammar, roles, parsed.tree(), stack)
     }
 
-    /// The reading of `tree`'s text, read off `tree`.
+    /// The reading of `tree`'s text, read off `tree`, with `stack` as its
+    /// spines.
     ///
     /// # Specification
     /// - requires: `tree` is the parse of its source under `grammar`, as
-    ///   [`parse`] makes it, and `roles` is `grammar`'s role table.
+    ///   [`parse`] makes it, `roles` is `grammar`'s role table, and `stack`
+    ///   holds the spines [`Stack::of`] reads off `tree`.
     /// - ensures: the reading [`Reading::of`] gives of `tree`'s source, whose
     ///   spans are sorted, pairwise disjoint and on character boundaries of it.
     /// - provides: the reading a judgement's parse of a text gives, so no
-    ///   request about the text parses it again.
+    ///   request about the text parses it again, and its spines the form store
+    ///   keeps, so no request walks the forms the parse took up whole.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one walk of the tree per answer kind.
@@ -392,6 +399,7 @@ impl Reading
         grammar: &Pbg,
         roles: &RoleTable,
         tree: &SyntaxTree<'_>,
+        stack: Arc<Stack>,
     ) -> Self
     {
         let index = LineIndex::new(<&str>::from(tree.source()).into());
@@ -441,7 +449,7 @@ impl Reading
                 .collect(),
             folds: folds(grammar, tree, &index, &members),
             skeleton: Skeleton::of(tree, &members),
-            calls: Calls::of(grammar, tree),
+            stack,
             imports_end: None,
             imports: Vec::new(),
             written: Vec::new(),
@@ -774,21 +782,22 @@ impl Reading
             .collect()
     }
 
-    /// The head of the innermost call whose arguments hold `offset`, and the
-    /// argument `offset` writes; none when the text was not read.
+    /// Every spine that encloses `offset`, from the innermost outward; none
+    /// when the text was not read.
     ///
     /// # Specification
     /// trivial.
-    #[must_use]
-    pub fn call_at(
+    pub fn frames(
         &self,
         offset: ByteOffset,
-    ) -> Option<(ByteSpan, Argument)>
+    ) -> impl Iterator<Item = Frame> + '_
     {
         match self.0 {
-            Maybe::Present(ref readout) => readout.calls.at(offset),
+            Maybe::Present(ref readout) => Some(readout.stack.at(offset)),
             Maybe::Absent(_) => None,
         }
+        .into_iter()
+        .flatten()
     }
 
     /// For each of `positions`, the nodes around it, innermost first, ranged

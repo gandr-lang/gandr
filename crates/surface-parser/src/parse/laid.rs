@@ -136,13 +136,13 @@ impl<'pbg, 'held> JoinPiece<'pbg, 'held>
     }
 }
 
-/// A laid join's parse, what it laid out for each run, and how many runs it
-/// took up whole.
+/// A laid join's parse, how it took each run's region, and where each run's
+/// region starts.
 ///
 /// # Specification
 /// - requires: constructed by [`FormSplit::join_laid`].
-/// - ensures: one laid entry per run, in run order: a region for the next
-///   parse, or nothing where the run keeps the region it had or has none.
+/// - ensures: one region per run, in run order; one start per run, the first
+///   zero, then the source's length.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; the laid join
 ///   carries the executable clauses.
@@ -155,10 +155,10 @@ pub struct LaidJoin<'source>
 {
     /// The joined parse and its seams.
     join: FormJoin<'source>,
-    /// Per run, the region laid for the next parse.
-    laid: Vec<Option<LaidUnit>>,
-    /// How many runs the join took up as blocks.
-    kept: RunCount,
+    /// Per run, how the join took its region.
+    regions: Vec<RunRegion>,
+    /// Where each run's region starts in the source, then the source's end.
+    starts: Vec<ByteOffset>,
 }
 
 impl<'source> LaidJoin<'source>
@@ -180,21 +180,69 @@ impl<'source> LaidJoin<'source>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn kept(&self) -> RunCount
+    pub fn kept(&self) -> RunCount
     {
-        self.kept
+        RunCount(
+            self.regions
+                .iter()
+                .filter(|&region| *region == RunRegion::Kept)
+                .count(),
+        )
     }
 
-    /// Consume the join: the parse and its seams, and per run the region laid
-    /// for the next parse.
+    /// Consume the join: the parse and its seams, per run how the join took
+    /// its region, and where each run's region starts, then the source's end.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn into_parts(self) -> (FormJoin<'source>, Vec<Option<LaidUnit>>)
+    pub fn into_parts(self) -> (FormJoin<'source>, Vec<RunRegion>, Vec<ByteOffset>)
     {
-        (self.join, self.laid)
+        (self.join, self.regions, self.starts)
+    }
+}
+
+/// How a laid join took one run's region.
+///
+/// # Specification
+/// - requires: constructed by [`FormSplit::join_laid`].
+/// - ensures: a run taken up whole keeps the region the parse before laid for
+///   it, node for node.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; the laid join
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`LaidUnit`].
+/// - witness: `parse::tests::a_laid_join_parses_as_the_whole_source`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RunRegion
+{
+    /// Taken up whole, as the region the parse before laid for the run.
+    Kept,
+    /// Joined, and laid for the next parse: the run kept its own molding to
+    /// the commit.
+    Laid(LaidUnit),
+    /// Joined and not laid: the run's seam broke, or a later fold reached its
+    /// cells.
+    Unlaid,
+}
+
+impl RunRegion
+{
+    /// The region laid for the next parse, when the join laid one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn laid(&self) -> Option<&LaidUnit>
+    {
+        match *self {
+            Self::Laid(ref unit) => Some(unit),
+            Self::Kept | Self::Unlaid => None,
+        }
     }
 }
 
@@ -348,6 +396,9 @@ struct Stretch
 /// those to lay for the next parse.
 type Cut = (Vec<Option<LaidUnit>>, Vec<Laying>);
 
+/// A join's parse and its seams, and how it took each run's region.
+type Joined<'source> = (FormJoin<'source>, Vec<RunRegion>);
+
 impl<'source> FormSplit<'source>
 {
     /// Join `pieces`, one per run in run order, taking up as a block each run
@@ -358,7 +409,8 @@ impl<'source> FormSplit<'source>
     ///   `molder`'s grammar.
     /// - ensures: the parse equals [`parse`](fn@crate::parse) of the source;
     ///   the seams are how each unit met the state before it, and a run taken
-    ///   up as a block meets it joined; one laid entry per run.
+    ///   up as a block meets it joined; one region per run, and one start per
+    ///   run and the source's end.
     /// - provides: the parse of an edited revision at the cost of the forms the
     ///   edit reached and one copy of every node.
     /// - fails: [`MeldError`] when the commit's arena cannot be built.
@@ -380,14 +432,14 @@ impl<'source> FormSplit<'source>
     #[inline]
     #[spec(captures: before = pieces.len(),
         ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|joined| joined.join.seams.len() == before
-            && joined.laid.len() == before && joined.kept.0 <= before))]
+            && joined.regions.len() == before && joined.starts.len() == self.runs.len().saturating_add(1)))]
     pub fn join_laid<'pbg>(
         &self,
         molder: &mut Molder<'pbg>,
         mut pieces: Vec<JoinPiece<'pbg, '_>>,
     ) -> Result<LaidJoin<'source>, MeldError>
     {
-        let regions = self.regions();
+        let starts = self.regions();
         let clean: Vec<UnitCleanness> = pieces
             .iter()
             .map(|piece| piece.parked.cleanness())
@@ -411,13 +463,20 @@ impl<'source> FormSplit<'source>
                 }
             })
             .collect();
-        if pieces.len() == self.runs.len()
+        let (join, regions) = if pieces.len() == self.runs.len()
             && taking.contains(&Taking::Block)
-            && let Some(joined) = self.join_blocks(molder, &mut pieces, &mut taking, &regions)?
+            && let Some(joined) = self.join_blocks(molder, &mut pieces, &mut taking, &starts)?
         {
-            return Ok(joined);
+            joined
         }
-        self.join_whole(molder, pieces, &regions)
+        else {
+            self.join_whole(molder, pieces, &starts)?
+        };
+        Ok(LaidJoin {
+            join,
+            regions,
+            starts: starts.starts,
+        })
     }
 
     /// Where each run's region starts in the source, and then the source's
@@ -499,7 +558,7 @@ impl<'source> FormSplit<'source>
     /// - requires: as [`FormSplit::join_laid`].
     /// - ensures: the whole join's parse and seams; a laid region for each run
     ///   whose seam held and whose cells no later join or the collapse touched,
-    ///   nothing for the others; no run taken up as a block.
+    ///   unlaid for the others; no run taken up as a block.
     /// - fails: the commit's [`MeldError`].
     /// - panics: none.
     /// - executable: none — the clause restates the join.
@@ -515,7 +574,7 @@ impl<'source> FormSplit<'source>
         molder: &mut Molder<'pbg>,
         pieces: Vec<JoinPiece<'pbg, '_>>,
         regions: &Regions,
-    ) -> Result<LaidJoin<'source>, MeldError>
+    ) -> Result<Joined<'source>, MeldError>
     {
         let pbg = molder.pbg();
         let mut whole = MeldState::new(pbg);
@@ -536,14 +595,15 @@ impl<'source> FormSplit<'source>
         let laid = self.cut(&tree, &obligations, stretch, &[], &wanted, regions);
         ordered(&mut obligations);
         let result = place::placed(pbg, ParseResult { tree, obligations });
-        Ok(LaidJoin {
-            join: FormJoin {
+        Ok((
+            FormJoin {
                 result,
                 seams: met.iter().map(|unit| unit.seam).collect(),
             },
-            laid,
-            kept: RunCount(0),
-        })
+            laid.into_iter()
+                .map(|cut| cut.map_or(RunRegion::Unlaid, RunRegion::Laid))
+                .collect(),
+        ))
     }
 
     /// Join the runs that are not blocks in stretches, check each stretch's
@@ -572,7 +632,7 @@ impl<'source> FormSplit<'source>
         pieces: &mut [JoinPiece<'pbg, '_>],
         taking: &mut [Taking],
         regions: &Regions,
-    ) -> Result<Option<LaidJoin<'source>>, MeldError>
+    ) -> Result<Option<Joined<'source>>, MeldError>
     {
         let pbg = molder.pbg();
         let count = pieces.len();
@@ -674,17 +734,17 @@ impl<'source> FormSplit<'source>
         };
         ordered(&mut obligations);
         let result = place::placed(pbg, ParseResult { tree, obligations });
-        let kept = RunCount(taking.iter().filter(|&&take| take == Taking::Block).count());
-        let laid = fresh
+        let taken = fresh
             .into_iter()
             .zip(lay)
-            .map(|(laid, wanted)| laid.filter(|_| wanted == Laying::Lay))
+            .zip(taking.iter())
+            .map(|((laid, wanted), &take)| match (take, laid) {
+                (Taking::Block, _) => RunRegion::Kept,
+                (Taking::Stretched, Some(unit)) if wanted == Laying::Lay => RunRegion::Laid(unit),
+                (Taking::Stretched, _) => RunRegion::Unlaid,
+            })
             .collect();
-        Ok(Some(LaidJoin {
-            join: FormJoin { result, seams },
-            laid,
-            kept,
-        }))
+        Ok(Some((FormJoin { result, seams }, taken)))
     }
 
     /// Check a stretch's commit against its context and the block after it,

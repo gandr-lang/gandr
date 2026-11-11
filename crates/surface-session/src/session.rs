@@ -435,6 +435,7 @@ use crate::lowerings;
 use crate::lowerings::Closure;
 use crate::lowerings::Held;
 use crate::lowerings::Led;
+use crate::stack::Stack;
 #[cfg(feature = "instrument")]
 use crate::timings::untimed;
 
@@ -3051,6 +3052,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             read(JudgedParse {
                 tree: parsed.tree(),
                 own: Some(own.tree()),
+                stack: self.forms.stack(),
                 closure: Some(ClosureKey(Arc::downgrade(held))),
             });
             drop(own);
@@ -3107,6 +3109,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             read(JudgedParse {
                 tree: parsed.tree(),
                 own: (usize::from(base) == 0).then(|| parsed.tree()),
+                stack: self.forms.stack(),
                 closure: None,
             });
             let lowering = within(sink, Phase::Lower, |_| {
@@ -4476,9 +4479,11 @@ impl ClosureKey
     }
 }
 
-/// The parse a judgement hands its reader: the tree it lowers, the document's
-/// own tree when it parsed the document alone, and the closure lowering the
-/// tree is laid after.
+/// The parse a judgement hands its reader.
+///
+/// The tree it lowers, the document's own tree when it parsed the document
+/// alone, the context stack of the text the form store parsed, and the closure
+/// lowering the tree is laid after.
 ///
 /// # Specification
 /// trivial.
@@ -4491,6 +4496,9 @@ pub struct JudgedParse<'held, 'text>
     /// The document's own parse, over its text alone: none when the revision
     /// joins the document to the siblings it imports and was parsed whole.
     pub own: Option<&'held SyntaxTree<'text>>,
+    /// The spines of the text the form store parsed, by form: the document's
+    /// own text when `own` is its parse, else the revision's.
+    pub stack: &'held Arc<Stack>,
     /// The closure lowering `tree` is laid after, when it is.
     pub closure: Option<ClosureKey>,
 }

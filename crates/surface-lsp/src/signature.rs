@@ -1,20 +1,24 @@
-//! Signature help: the declared head of the call a position stands in, and the
-//! argument the position writes.
+//! Signature help and the context stack: each spine a position stands in, the
+//! declared head of each, and the slot the position fills.
 //!
-//! A held text's reading keeps every call the parser molded, a value's call
-//! and a family's application alike, ordered by where its arguments open
-//! ([`Calls`]). A copy's hovering keeps the head of every declaration and
+//! A held text's reading keeps the context stack of the text
+//! ([`Stack`]): the spines of each form, a juxtaposed application and a
+//! family's application alike, which the form store keeps with the form's
+//! region. A copy's hovering keeps the head of every declaration and
 //! constructor its import closure writes ([`Signatures`]): the name through its
 //! parameters and its result on one line, each parameter's place in that label
 //! with the `///` run written before it, and the documentation written for the
-//! head. Both are read once per text, off the parse
-//! each already makes; the heads the closure writes are read once per closure
-//! lowering the process holds and shared by every text laid after it, so a
-//! keystroke reads the document's own forms alone. A request takes the
-//! innermost call whose arguments hold the position. The type table's referent
-//! index ([`TypeTable::referent`]) gives the declaration the call's head refers
-//! to, and the request answers that declaration's head. It reads no text and
-//! resolves no name.
+//! head. The heads are read once per text, off the parse it already makes; the
+//! heads the closure writes are read once per closure lowering the process
+//! holds and shared by every text laid after it, so a keystroke reads the
+//! document's own forms alone. The type table's referent index
+//! ([`TypeTable::referent`]) gives the declaration a spine's head refers to.
+//! Signature help answers the declared head of the innermost spine. A
+//! `gandr/stack` request answers each spine from the innermost outward: its
+//! head, the type the judgement gives the head, the declared head and its
+//! arity, the slot, and the type the judgement checked the slot's argument
+//! against, or none where the judgement typed no term in the slot. Neither
+//! reads text or resolves a name.
 //!
 //! A head is read off its declaring form:
 //!
@@ -29,6 +33,7 @@
 //! layout between them, so a head written over several lines reads on one,
 //! and its comments are dropped.
 //!
+//! [`Stack`]: gandr_surface_session::Stack
 //! [`TypeTable::referent`]: gandr_surface_dispatcher::TypeTable::referent
 
 use alloc::string::String;
@@ -40,6 +45,7 @@ use std::sync::PoisonError;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Referent;
+use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Sort;
@@ -47,6 +53,8 @@ use gandr_surface_lowering::Documentation;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::read_doc;
+use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::ClosureKey;
@@ -60,6 +68,8 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::goto::ranged;
+use crate::hover::HOVER_WIDTH;
 use crate::hover::Hovering;
 use crate::inline::escape_into;
 use crate::position::Position;
@@ -70,10 +80,8 @@ use crate::protocol::ParameterInformation;
 use crate::protocol::ParameterLabel;
 use crate::protocol::SignatureHelp;
 use crate::protocol::SignatureInformation;
+use crate::protocol::StackRow;
 use crate::reading::Reading;
-
-/// The rule of a family's application, `List(a)`.
-const APPLICATION: &str = "type_application";
 
 /// The rule of an attribute block standing before the declaration it
 /// decorates, whose documentation documents that declaration.
@@ -92,310 +100,6 @@ const PARENTHESES: &str = "parenthesized_type";
 
 /// The rule of a function type, `A -> B` or `(a : A) -> B`.
 const ARROW: &str = "function_type";
-
-/// One call the parser molded: its head, where its arguments open, where each
-/// argument after the first starts to be written, and where the call closes.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Call
-{
-    /// The bytes of the head.
-    head: ByteSpan,
-    /// Just past the `(` opening the arguments, or the start of a spine's
-    /// first argument.
-    open: ByteOffset,
-    /// The start of each `,` between the arguments, or the end of each of a
-    /// spine's arguments but the last, ascending.
-    separators: Vec<ByteOffset>,
-    /// The start of the written `)`, or, when the parser closed the call or
-    /// the call is a spine, the end of the form it molded.
-    close: ByteOffset,
-    /// The position of the innermost call holding this one, among the calls
-    /// in order.
-    holder: Option<usize>,
-}
-
-/// Every call of a text, ascending by where its arguments open.
-///
-/// # Specification
-/// - requires: built by [`Calls::of`].
-/// - ensures: ascending by `open`; every holder is the position of a call
-///   holding the one naming it.
-/// - panics: none.
-/// - executable: none — a carrier; [`Calls::of`] and [`Calls::at`] carry the
-///   predicates.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Calls::at`].
-/// - witness: `signature::tests::the_innermost_call_answers_with_its_argument`
-#[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Calls(Vec<Call>);
-
-impl Calls
-{
-    /// The calls of `tree`, parsed under `grammar`.
-    ///
-    /// # Specification
-    /// - requires: `tree` was parsed under `grammar`.
-    /// - ensures: one call per application spine, `f x y`: its head, the start
-    ///   of its first argument as its opening, the end of each argument but the
-    ///   last as a separator, and its end as its close; and one call per family
-    ///   application that writes an opening `(` among its own tiles: its first
-    ///   child as its head, its own `,` tiles as separators, its own `)` as its
-    ///   close, or the form's end when the parser closed it. Ascending by
-    ///   opening, each naming the innermost call holding it; a spine's inner
-    ///   applications are no calls of their own.
-    /// - provides: the calls a reading keeps for signature help.
-    /// - fails: never.
-    /// - panics: none.
-    /// - intension: one walk of the tree with an explicit stack and one sort.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a nested spine, a spine in an argument's parentheses,
-    ///   a recursive call and a family's application are each found where they
-    ///   are written, and each spine's argument is counted where the position
-    ///   stands.
-    /// - witness: `signature::tests::the_innermost_call_answers_with_its_argument`
-    #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if first.open <= second.open)))]
-    #[must_use]
-    pub fn of(
-        grammar: &Pbg,
-        tree: &SyntaxTree<'_>,
-    ) -> Self
-    {
-        let mut found: Vec<Call> = Vec::new();
-        let mut pending: Vec<(NodeIndex, Option<usize>)> = Vec::from([(tree.root(), None)]);
-        while let Some((at, holder)) = pending.pop() {
-            if let Some((mut written, parts)) = spine(grammar, tree, at) {
-                written.holder = holder;
-                found.push(written);
-                let holder = Some(found.len().saturating_sub(1));
-                pending.extend(parts.into_iter().map(|part| (part, holder)));
-                continue;
-            }
-            let holder = call(grammar, tree, at).map_or(holder, |mut written| {
-                written.holder = holder;
-                found.push(written);
-                Some(found.len().saturating_sub(1))
-            });
-            pending.extend(tree.children(at).map(|child| (child, holder)));
-        }
-        let mut order: Vec<usize> = (0 .. found.len()).collect();
-        order.sort_by_key(|&position| found.get(position).map(|written| written.open));
-        let mut placed = alloc::vec![0_usize; found.len()];
-        for (rank, &position) in order.iter().enumerate() {
-            if let Some(slot) = placed.get_mut(position) {
-                *slot = rank;
-            }
-        }
-        let mut calls: Vec<Call> = order
-            .iter()
-            .filter_map(|&position| found.get(position).cloned())
-            .collect();
-        for written in &mut calls {
-            written.holder = written
-                .holder
-                .and_then(|holder| placed.get(holder).copied());
-        }
-        Self(calls)
-    }
-
-    /// The head of the innermost call whose arguments hold `offset`, and how
-    /// many of its separators stand before `offset`.
-    ///
-    /// # Specification
-    /// - requires: nothing; any offset is admitted.
-    /// - ensures: among the calls whose `(` ends at or before `offset` and
-    ///   whose close starts at or after it, the one opened last, with the count
-    ///   of its separators starting before `offset`; none when no call holds
-    ///   it.
-    /// - provides: the call a signature-help request at `offset` answers.
-    /// - fails: never.
-    /// - panics: none.
-    /// - intension: a binary search for the last call opened at or before
-    ///   `offset`, then one step per call holding it.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a position in a nested call answers it, one past its
-    ///   close answers the call around it, one in a call's head answers the
-    ///   call holding that call, and the separators before the position count
-    ///   the argument.
-    /// - witness: `signature::tests::the_innermost_call_answers_with_its_argument`
-    #[spec(ensures: |ret| ret.is_none() || !self.0.is_empty())]
-    #[must_use]
-    pub fn at(
-        &self,
-        offset: ByteOffset,
-    ) -> Option<(ByteSpan, Argument)>
-    {
-        let last = self.0.partition_point(|written| written.open <= offset);
-        let mut at = last.checked_sub(1_usize);
-        while let Some(written) = at.and_then(|position| self.0.get(position)) {
-            if written.open <= offset && offset <= written.close {
-                let argument = written
-                    .separators
-                    .partition_point(|&separator| separator < offset);
-                return Some((written.head, Argument(argument)));
-            }
-            at = written.holder;
-        }
-        None
-    }
-}
-
-/// The position of the argument a position writes among a call's arguments,
-/// from zero.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Argument(pub usize);
-
-/// The call the form at `at` is, when it is a family's application that
-/// writes its opening `(`.
-///
-/// # Specification
-/// trivial.
-fn call(
-    grammar: &Pbg,
-    tree: &SyntaxTree<'_>,
-    at: NodeIndex,
-) -> Option<Call>
-{
-    let node = tree.node(at)?;
-    let NodeLabel::Meld(mold) = node.label()
-    else {
-        return None;
-    };
-    let rule = grammar.rule_of(mold).ok()?.name().0;
-    if rule != APPLICATION {
-        return None;
-    }
-    let mut head = None;
-    let mut open = None;
-    let mut separators = Vec::new();
-    let mut close = node.span().end();
-    for child in tree.children(at) {
-        let Some(held) = tree.node(child)
-        else {
-            continue;
-        };
-        match held.label() {
-            NodeLabel::Tile(tile)
-                if grammar
-                    .rule_of(tile)
-                    .is_ok_and(|owner| owner.name().0 == rule) =>
-            {
-                match tree.fragment(child).map(<&str>::from) {
-                    Some("(") if open.is_none() => open = Some(held.span().end()),
-                    Some(",") if open.is_some() => separators.push(held.span().start()),
-                    Some(")") if open.is_some() => close = held.span().start(),
-                    Some(_) | None => {},
-                }
-                if head.is_none() {
-                    head = Some(held.span());
-                }
-            },
-            NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
-                if head.is_none() {
-                    head = Some(held.span());
-                }
-            },
-            NodeLabel::Wald
-            | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. }
-            | NodeLabel::Space
-            | NodeLabel::Doc => {},
-        }
-    }
-    Some(Call {
-        head: head?,
-        open: open?,
-        separators,
-        close,
-        holder: None,
-    })
-}
-
-/// The call the application spine at `at` writes, `f x y`, and the parts the
-/// walk reads below it: its head, then its arguments.
-///
-/// # Specification
-/// - requires: `tree` was parsed under `grammar`.
-/// - ensures: when `at` is an application whose left operands down to its head
-///   are applications, each with its three parts written, the call with the
-///   innermost left operand as its head, the start of the first argument as its
-///   opening, the end of each argument but the last as a separator, and the end
-///   of `at` as its close; none otherwise.
-/// - panics: none.
-/// - economy: one walk down the spine's left edge.
-/// - executable: none — a clause would walk the spine again.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Calls::of`].
-/// - witness: `signature::tests::the_innermost_call_answers_with_its_argument`
-fn spine(
-    grammar: &Pbg,
-    tree: &SyntaxTree<'_>,
-    at: NodeIndex,
-) -> Option<(Call, Vec<NodeIndex>)>
-{
-    let application = grammar.application()?;
-    let applied = |position: NodeIndex| {
-        tree.node(position)
-            .is_some_and(|node| node.label() == NodeLabel::Meld(application))
-    };
-    if !applied(at) {
-        return None;
-    }
-    let close = tree.node(at)?.span().end();
-    // The arguments are met last to first, then reversed.
-    let mut parts: Vec<NodeIndex> = Vec::new();
-    let mut position = at;
-    let head = loop {
-        let mut written = tree.children(position).filter(|&child| {
-            tree.node(child)
-                .is_some_and(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
-        });
-        let (Some(left), Some(_), Some(right), None) = (
-            written.next(),
-            written.next(),
-            written.next(),
-            written.next(),
-        )
-        else {
-            return None;
-        };
-        parts.push(right);
-        if applied(left) {
-            position = left;
-        }
-        else {
-            break left;
-        }
-    };
-    parts.push(head);
-    parts.reverse();
-    let spans: Vec<ByteSpan> = parts
-        .iter()
-        .filter_map(|&part| tree.node(part).map(Node::span))
-        .collect();
-    let (&head_span, arguments) = spans.split_first()?;
-    let open = arguments.first()?.start();
-    let separators = arguments
-        .iter()
-        .take(arguments.len().saturating_sub(1))
-        .map(|argument| argument.end())
-        .collect();
-    Some((
-        Call {
-            head: head_span,
-            open,
-            separators,
-            close,
-            holder: None,
-        },
-        parts,
-    ))
-}
 
 /// A run of a label: where a piece or a parameter starts and ends in it, in
 /// bytes.
@@ -1904,15 +1608,15 @@ fn telescope(
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
-/// - ensures: for the innermost call whose arguments hold the position
-///   ([`Calls::at`]), when the type table refers its head's first byte to a
-///   declaration or constructor whose head the hovering keeps: that head as the
-///   one signature, active, with its documentation as markdown, each parameter
-///   as its start and end in the label counted in UTF-16 code units when
-///   `offsets` holds or as its text otherwise, with the documentation written
-///   before it as markdown when it has any, and the argument the position
-///   writes as the active parameter, `null` past the last parameter; Nothing
-///   otherwise.
+/// - ensures: for the innermost spine whose slots hold the position
+///   ([`Reading::frames`]), when the type table refers its head's first byte to
+///   a declaration or constructor whose head the hovering keeps: that head as
+///   the one signature, active, with its documentation as markdown, each
+///   parameter as its start and end in the label counted in UTF-16 code units
+///   when `offsets` holds or as its text otherwise, with the documentation
+///   written before it as markdown when it has any, and the argument the
+///   position writes as the active parameter, `null` past the last parameter;
+///   Nothing otherwise.
 /// - provides: the answer to `textDocument/signatureHelp`.
 /// - fails: never.
 /// - panics: none.
@@ -1937,15 +1641,11 @@ pub fn help(
 {
     let index = LineIndex::new(<&str>::from(text).into());
     let at = ByteOffset::from(usize::from(position.byte(&index)));
-    let Some((head, argument)) = reading.call_at(at)
+    let Some(frame) = reading.frames(at).next()
     else {
         return Answer::Nothing;
     };
-    let Maybe::Present((_, referent)) = hovering.table().referent(head.start())
-    else {
-        return Answer::Nothing;
-    };
-    let Some(signature) = hovering.signatures().declared(&referent)
+    let Some(signature) = declared(hovering, frame.head)
     else {
         return Answer::Nothing;
     };
@@ -1984,8 +1684,9 @@ pub fn help(
             }
         })
         .collect();
-    let active = (argument.0 < parameters.len())
-        .then(|| u32::try_from(argument.0).ok())
+    let slot = usize::from(frame.slot);
+    let active = (slot < parameters.len())
+        .then(|| u32::try_from(slot).ok())
         .flatten();
     Answer::Signatures(SignatureHelp {
         signatures: Vec::from([SignatureInformation {
@@ -2004,6 +1705,105 @@ pub fn help(
     })
 }
 
+/// The declared head of the declaration or constructor the head at `head`
+/// refers to, when the hovering keeps one.
+///
+/// # Specification
+/// trivial.
+fn declared(
+    hovering: &Hovering,
+    head: ByteSpan,
+) -> Option<&Signature>
+{
+    let Maybe::Present((_, referent)) = hovering.table().referent(head.start())
+    else {
+        return None;
+    };
+    hovering.signatures().declared(&referent)
+}
+
+/// What a `gandr/stack` request at `position` of `text`, whose reading is
+/// `reading` and whose copy keeps `hovering`, answers: each spine the position
+/// stands in, from the innermost outward, each type spelled in `style`.
+///
+/// # Specification
+/// - requires: `reading` and `hovering` were read off `text`.
+/// - ensures: one row for each frame the reading answers at the position
+///   ([`Reading::frames`]), in its order. A row holds the head as written and
+///   its range, and the type the table gives the term at the head's first byte
+///   when that term lies inside the head, as a hover spells it. It holds the
+///   declared head and its count of parameters when the table refers the head's
+///   first byte to a declaration or constructor whose head the hovering keeps.
+///   It holds the slot, and the type the judgement checked the outermost term
+///   of the slot's argument against ([`TypeTable::outermost`]), its own type
+///   when it was checked against no other. That type is none, which reads owed,
+///   when the slot writes no argument or the table types no term inside it.
+/// - provides: the answer to `gandr/stack`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — at every position of a closed call and of an open one,
+///   each row agrees with the hover at its head, and the first row with the
+///   signature help.
+/// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+///
+/// [`TypeTable::outermost`]: gandr_surface_dispatcher::TypeTable::outermost
+#[spec(ensures: |ret| matches!(ret, Answer::Stack(_)))]
+#[must_use]
+pub fn stack(
+    text: SourceText<'_>,
+    reading: &Reading,
+    hovering: &Hovering,
+    position: Position,
+    style: Style,
+) -> Answer
+{
+    let index = LineIndex::new(<&str>::from(text).into());
+    let at = ByteOffset::from(usize::from(position.byte(&index)));
+    let page = PageWidth::from(HOVER_WIDTH);
+    let table = hovering.table();
+    let inside = |typed: &TypedSpan, within: ByteSpan| {
+        within.start() <= typed.span().start() && typed.span().end() <= within.end()
+    };
+    Answer::Stack(
+        reading
+            .frames(at)
+            .filter_map(|frame| {
+                let range = ranged(&index, frame.head)?;
+                let head = <&str>::from(text)
+                    .get(usize::from(frame.head.start()) .. usize::from(frame.head.end()))?;
+                let ty = match table.at(frame.head.start(), page, style) {
+                    Maybe::Present(ref typed) if inside(typed, frame.head) => {
+                        Some(String::from(typed.ty().as_ref()))
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                };
+                let signature = declared(hovering, frame.head);
+                let expected = frame.argument.and_then(|argument| {
+                    match table.outermost(argument, page, style) {
+                        Maybe::Present(ref typed) => Some(String::from(match typed.expected() {
+                            Maybe::Present(checked) => checked.as_ref(),
+                            Maybe::Absent(_) => typed.ty().as_ref(),
+                        })),
+                        Maybe::Absent(_) => None,
+                    }
+                });
+                Some(StackRow {
+                    head: String::from(head),
+                    range,
+                    ty,
+                    declared: signature.map(|declared| declared.label.clone()),
+                    arity: signature
+                        .and_then(|declared| u32::try_from(declared.parameters.len()).ok()),
+                    slot: u32::try_from(usize::from(frame.slot)).unwrap_or(u32::MAX),
+                    expected,
+                })
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -2012,17 +1812,11 @@ mod tests
 
     use gandr_surface_lowering::Unit;
     use gandr_surface_parser::parse;
-    use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
 
-    use super::Calls;
     use super::Signatures;
     use crate::recheck::grammar;
     use crate::recheck::roles;
-
-    /// A family, a function matching on it, a call nesting a constructor and
-    /// a family applied in a type.
-    const CALLED: &str = include_str!("signature/fixtures/called.gandr");
 
     /// #1403: an importer's heads, read after its closure's lowering, are the
     /// heads read off its whole tree, and a second reading after the same
@@ -2096,80 +1890,6 @@ mod tests
         assert!(
             Arc::ptr_eq(&after.closure, &again),
             "the second reading takes the heads the first kept"
-        );
-    }
-
-    #[test]
-    fn the_innermost_call_answers_with_its_argument()
-    {
-        let grammar = grammar().expect("the grammar builds");
-        let called = |text: &str, marker: &str| {
-            let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
-            let at = text.find(marker).expect("the marker occurs");
-            Calls::of(grammar, parsed.tree())
-                .at(ByteOffset::from(at))
-                .map(|(head, argument)| {
-                    let head = text
-                        .get(usize::from(head.start()) .. usize::from(head.end()))
-                        .unwrap_or_default();
-                    (String::from(head), argument.0)
-                })
-        };
-        let answer = |head: &str, argument: usize| Some((String::from(head), argument));
-        assert_eq!(
-            called(CALLED, "Zero) Zero"),
-            answer("Succ", 0),
-            "a spine nested in an argument answers itself"
-        );
-        assert_eq!(
-            called(CALLED, " Zero }"),
-            answer("plus", 0),
-            "just past an argument, the argument it ends"
-        );
-        assert_eq!(
-            called(CALLED, "Zero }"),
-            answer("plus", 1),
-            "at the next argument, that argument"
-        );
-        assert_eq!(
-            called(
-                CALLED,
-                include_str!(
-                    "signature/unformatted/the-innermost-call-answers-with-its-argument-1.gandr"
-                )
-            ),
-            answer("plus", 1),
-            "just past the last argument, the spine it ends"
-        );
-        assert_eq!(
-            called(
-                CALLED,
-                include_str!(
-                    "signature/unformatted/the-innermost-call-answers-with-its-argument-2.gandr"
-                )
-            ),
-            None,
-            "past the spine, no call"
-        );
-        assert_eq!(
-            called(CALLED, "plus (Succ"),
-            None,
-            "on the head, not the spine it heads"
-        );
-        assert_eq!(
-            called(
-                CALLED,
-                include_str!(
-                    "signature/unformatted/the-innermost-call-answers-with-its-argument-3.gandr"
-                )
-            ),
-            answer("plus[<]", 1),
-            "a recursive call, headed by its claim"
-        );
-        assert_eq!(
-            called(CALLED, "a)\n"),
-            answer("List", 0),
-            "a family's application in a type"
         );
     }
 

@@ -344,6 +344,7 @@ use crate::session_trace::SessionTrace;
 use crate::shadowed;
 use crate::signature::Signatures;
 use crate::signature::help;
+use crate::signature::stack;
 use crate::sweep::Seen;
 use crate::sweep::Sweep;
 use crate::sweep::Sweeping;
@@ -4861,6 +4862,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "gandr/stack") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Stack(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/inlineCompletion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
@@ -5191,6 +5198,20 @@ impl Server
                             self.peer,
                             params.position,
                             self.offsets,
+                        ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "gandr/stack") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.stack(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                            self.style.printed(),
                         ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -6627,7 +6648,7 @@ impl Workspace
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
             | Answer::Diagnosed(_) | Answer::Swept(_)
-            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
+            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) | Answer::Stack(_) => false,
     })]
     fn tokens(
         &self,
@@ -6694,7 +6715,7 @@ impl Workspace
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
             | Answer::Diagnosed(_) | Answer::Swept(_)
-            | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
+            | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) | Answer::Stack(_) => false,
     })]
     fn inlay_hints(
         &self,
@@ -6841,7 +6862,7 @@ impl Workspace
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
             | Answer::Diagnosed(_) | Answer::Swept(_)
-            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
+            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) | Answer::Stack(_) => false,
     })]
     fn inline(
         &self,
@@ -7531,6 +7552,50 @@ impl Workspace
                     hovering,
                     position,
                     offsets,
+                )
+            })
+    }
+
+    /// What a `gandr/stack` request at `position` of the copy of the document
+    /// at `uri` that `peer` is answered from answers, each type spelled in
+    /// `style`.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session did not build,
+    ///   yields Nothing; otherwise what [`stack`] answers off the copy's text,
+    ///   its reading and what it keeps for its hovers, each made now when no
+    ///   request has asked since the text last changed.
+    /// - provides: the answer to `gandr/stack`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`stack`], and an unknown document answers `null`.
+    /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Stack(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn stack(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        style: gandr_surface_pretty::Style,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        document
+            .hovering(uri, &self.shadowing(peer))
+            .map_or(Answer::Nothing, |hovering| {
+                stack(
+                    document.text.source(),
+                    document.text.reading(),
+                    hovering,
+                    position,
+                    style,
                 )
             })
     }
@@ -13310,6 +13375,145 @@ mod tests
                     "activeSignature":0,"activeParameter":0}}]"#
             )),
         );
+    }
+
+    /// The result the request `method` at `line` and `character` of the
+    /// document `stacked.gandr` gets from `server`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn asked_at(
+        server: &mut Connected,
+        method: &str,
+        (line, character): (usize, usize),
+    ) -> Value
+    {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0", "id": 9_i32, "method": method,
+            "params": {"textDocument": {"uri": "file:///tmp/stacked.gandr"},
+                "position": {"line": line, "character": character}},
+        });
+        send(server, Json(&request.to_string()))
+            .as_array()
+            .and_then(|messages| {
+                messages
+                    .iter()
+                    .find(|message| message.get("id") == Some(&Value::from(9_i32)))
+            })
+            .and_then(|message| message.get("result"))
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    /// At every position of a closed call and of the same call left open,
+    /// the first row of the context stack is the head the signature help
+    /// answers, and each row's type is the type the hover at its head shows.
+    #[test]
+    fn the_context_stack_agrees_with_the_hover_and_the_signature_help()
+    {
+        let heads = "def h(c : Integer) -> -F Integer { return c }\n\
+            def g(a : Integer, b : Integer) -> -F Integer { return a + b }\n\
+            def f(a : Integer, b : Integer) -> -F Integer { return a + b }\n";
+        let row = |head: &str, (slot, arity): (u32, u32), expected: Option<&str>| {
+            (String::from(head), slot, arity, expected.map(String::from))
+        };
+        let rows = |answer: &Value| {
+            answer
+                .as_array()
+                .map(|rows| {
+                    rows.iter()
+                        .map(|row| {
+                            (
+                                String::from(row["head"].as_str().unwrap_or_default()),
+                                u32::try_from(row["slot"].as_u64().unwrap_or(u64::MAX))
+                                    .unwrap_or(u32::MAX),
+                                u32::try_from(row["arity"].as_u64().unwrap_or(u64::MAX))
+                                    .unwrap_or(u32::MAX),
+                                row["expected"].as_str().map(String::from),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        for (main, at, stacked) in [
+            (
+                "def main() -> -F Integer { f 1 (g 2 (h ?)) }\n",
+                "?",
+                Vec::from([
+                    row("h", (0, 1), Some("Integer")),
+                    row("g", (1, 2), Some("Integer")),
+                    row("f", (1, 2), Some("Integer")),
+                ]),
+            ),
+            (
+                "def main() -> -F Integer { f 1 (g 2 (h \n",
+                "2 (h",
+                Vec::from([row("g", (0, 2), None), row("f", (1, 2), None)]),
+            ),
+        ] {
+            let text = format!("{heads}{main}");
+            let mut server = initialized();
+            let opened = serde_json::json!({
+                "jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///tmp/stacked.gandr",
+                    "languageId": "gandr", "version": 1_i32, "text": text}},
+            });
+            let _published = send(&mut server, Json(&opened.to_string()));
+            let line = text.lines().count().saturating_sub(1);
+            let marked = main.find(at).expect("the marker occurs");
+            assert_eq!(
+                rows(&asked_at(&mut server, "gandr/stack", (line, marked))),
+                stacked,
+                "{main}: the spines around the marker, innermost first"
+            );
+            for (line, written) in text.lines().enumerate() {
+                for character in 0 ..= written.len() {
+                    let stack = asked_at(&mut server, "gandr/stack", (line, character));
+                    let help =
+                        asked_at(&mut server, "textDocument/signatureHelp", (line, character));
+                    let first = stack.as_array().and_then(|rows| rows.first());
+                    match first.filter(|first| first["declared"].is_string()) {
+                        Some(first) => {
+                            let (slot, arity) = (&first["slot"], &first["arity"]);
+                            assert_eq!(
+                                (&help["signatures"][0]["label"], &help["activeParameter"]),
+                                (
+                                    &first["declared"],
+                                    &if slot.as_u64() < arity.as_u64() {
+                                        slot.clone()
+                                    }
+                                    else {
+                                        Value::Null
+                                    }
+                                ),
+                                "{line}:{character} of {main}: the help answers the innermost spine"
+                            );
+                        },
+                        None => {
+                            assert_eq!(help, Value::Null, "{line}:{character} of {main}: no help");
+                        },
+                    }
+                    for row in stack.as_array().into_iter().flatten() {
+                        let start = &row["range"]["start"];
+                        let head = (
+                            usize::try_from(start["line"].as_u64().unwrap_or_default())
+                                .unwrap_or_default(),
+                            usize::try_from(start["character"].as_u64().unwrap_or_default())
+                                .unwrap_or_default(),
+                        );
+                        let hover = asked_at(&mut server, "textDocument/hover", head);
+                        let shown = hover["contents"]["value"].as_str().unwrap_or_default();
+                        if let Some(ty) = row["type"].as_str() {
+                            assert!(
+                                shown.contains(ty),
+                                "{line}:{character} of {main}: the hover at {head:?} shows {ty}: {shown}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

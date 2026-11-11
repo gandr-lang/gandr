@@ -107,6 +107,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use core::cmp::Reverse;
 
 use anodized::spec;
@@ -123,14 +124,18 @@ use gandr_surface_parser::Molder;
 use gandr_surface_parser::ParkedUnit;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::RunCount;
+use gandr_surface_parser::RunRegion;
 use gandr_surface_parser::TokenCount;
 use gandr_surface_parser::TokenRun;
-#[cfg(feature = "instrument")]
 use gandr_surface_syntax::ByteOffset;
 #[cfg(feature = "instrument")]
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+
+use crate::stack::Spines;
+use crate::stack::Stack;
 
 /// A count of top-level forms.
 #[repr(transparent)]
@@ -277,6 +282,8 @@ pub struct FormStore
     generation: Generation,
     /// The serial the next parked unit takes.
     next: Serial,
+    /// The spines of the latest parsed revision, by form.
+    stack: Arc<Stack>,
     /// The runs the latest parse molded, in source order, which the counts
     /// layer reads.
     #[cfg(feature = "instrument")]
@@ -298,7 +305,8 @@ struct Held
     laid: Option<Laid>,
 }
 
-/// A region a parse laid out for a unit, and the unit the run before it held.
+/// A region a parse laid out for a unit, the unit the run before it held, and
+/// the spines the parse read off the region.
 #[derive(Clone, Debug)]
 struct Laid
 {
@@ -307,6 +315,9 @@ struct Laid
     after: Predecessor,
     /// The region.
     unit: LaidUnit,
+    /// The spines of the region's forms, counted from the region's start;
+    /// none when they hold no spine.
+    spines: Option<Arc<Spines>>,
 }
 
 /// What a run follows: the start of the source, or the unit of one serial.
@@ -364,8 +375,9 @@ impl FormStore
     ///   the run before it holds now. The census counts the runs, the molded
     ///   identities and the runs taken up whole. The store then holds one unit
     ///   per distinct identity of the revision's runs, each with the region the
-    ///   latest parse laid for it, and the revision's labeling, whether the
-    ///   commit succeeded or not.
+    ///   latest parse laid for it and the spines read off that region, the
+    ///   revision's labeling, whether the commit succeeded or not, and the
+    ///   stack of the parse ([`Self::stack`]).
     /// - provides: the parse every submission lowers; a grammar the store's
     ///   units were not molded over molds every form, which is the whole
     ///   revision.
@@ -374,7 +386,8 @@ impl FormStore
     /// - economy: the revision is labeled around its edit; each run's identity
     ///   is looked up once, each molded unit is parked once, and the store is
     ///   pruned in place. A unit is resumed only where the join molds its run
-    ///   again; a run taken up whole costs one copy of its nodes.
+    ///   again; a run taken up whole costs one copy of its nodes and keeps its
+    ///   spines; the spines of every other run are read off its region.
     ///
     /// # Errors
     /// The commit's [`MeldError`].
@@ -483,8 +496,8 @@ impl FormStore
         let laid = pieces.map(|pieces| {
             split.join_laid(&mut molder, pieces).map(|laid| {
                 let kept = laid.kept();
-                let (join, regions) = laid.into_parts();
-                (join, regions, kept)
+                let (join, regions, starts) = laid.into_parts();
+                (join, regions, starts, kept)
             })
         });
         let joined = laid.unwrap_or_else(|| {
@@ -494,25 +507,72 @@ impl FormStore
                 .collect();
             split
                 .join(&mut molder, units)
-                .map(|join| (join, Vec::new(), RunCount::default()))
+                .map(|join| (join, Vec::new(), Vec::new(), RunCount::default()))
         });
         self.labeled = Labeled::Revision {
             text: text.to_owned(),
             labeling: split.into_labeling(),
         };
-        let (join, regions, kept) = joined?;
-        for (position, region) in regions.into_iter().enumerate() {
-            let (Some(unit), Some(after)) = (region, follows(position))
-            else {
-                continue;
-            };
-            if let Some(held) = identities
-                .get(position)
-                .and_then(|identity| self.units.get_mut(identity))
-            {
-                held.laid = Some(Laid { after, unit });
-            }
+        let (join, regions, starts, kept) = match joined {
+            Ok(joined) => joined,
+            Err(fault) => {
+                self.stack = Arc::new(Stack::default());
+                return Err(fault);
+            },
+        };
+        let parsed = join.into_result();
+        let tree = parsed.tree();
+        let stack = if regions.is_empty() {
+            Stack::of(grammar, tree)
         }
+        else {
+            let mut tops = tree
+                .children(tree.root())
+                .filter_map(|child| Some((tree.node(child)?.span().start(), child)))
+                .peekable();
+            let read = |own: &[NodeIndex], start: ByteOffset| {
+                Spines::read(grammar, tree, own, start).map(Arc::new)
+            };
+            let mut spined = Vec::with_capacity(regions.len());
+            let mut own: Vec<NodeIndex> = Vec::new();
+            for (position, region) in regions.into_iter().enumerate() {
+                let Some(&start) = starts.get(position)
+                else {
+                    continue;
+                };
+                let end = starts.get(position.saturating_add(1)).copied();
+                own.clear();
+                while let Some(child) = tops.next_if(|&(at, _)| end.is_none_or(|end| at < end)) {
+                    own.push(child.1);
+                }
+                let held = identities
+                    .get(position)
+                    .and_then(|identity| self.units.get_mut(identity));
+                let spines = match region {
+                    RunRegion::Kept => held
+                        .and_then(|held| held.laid.as_ref())
+                        .and_then(|laid| laid.spines.as_ref())
+                        .map(Arc::clone),
+                    RunRegion::Laid(unit) => {
+                        let spines = read(&own, start);
+                        if let (Some(held), Some(after)) = (held, follows(position)) {
+                            held.laid = Some(Laid {
+                                after,
+                                unit,
+                                spines: spines.as_ref().map(Arc::clone),
+                            });
+                        }
+                        spines
+                    },
+                    RunRegion::Unlaid => read(&own, start),
+                };
+                if let Some(spines) = spines {
+                    spined.push((start, spines));
+                }
+            }
+            Stack::from_forms(spined)
+        };
+        self.stack = Arc::new(stack);
         let census = FormCensus {
             forms,
             molded: FormCount(missing.len()),
@@ -523,7 +583,32 @@ impl FormStore
         {
             self.molded = missing;
         }
-        Ok((join.into_result(), census))
+        Ok((parsed, census))
+    }
+
+    /// The spines of the latest parsed revision, by form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stack [`Stack::of`] reads off the latest parse's tree,
+    ///   spine for spine; empty before a parse and after a parse that did not
+    ///   commit.
+    /// - provides: the context stack of the revision a face's judgement parsed,
+    ///   at no walk of the forms the parse took up whole.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over generated edits of every class and every corpus
+    ///   edit script, the stack the store keeps is the stack read off the whole
+    ///   parse of the same text.
+    /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+    /// - witness: `tests::forms::sweeps::every_corpus_edit_script_submits_as_the_walk_composes_it`
+    #[inline]
+    #[must_use]
+    pub const fn stack(&self) -> &Arc<Stack>
+    {
+        &self.stack
     }
 
     /// The bytes of each form that the latest parse molded, in source order,

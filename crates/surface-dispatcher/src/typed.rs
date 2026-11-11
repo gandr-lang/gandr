@@ -3514,6 +3514,72 @@ impl TypeTable
         self.chosen(offset).map(|entry| entry.span)
     }
 
+    /// The outermost term the table types inside `within`, spelled in `style`
+    /// on a page of `page` columns.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: among the term entries whose span lies inside `within`, one
+    ///   of the widest; among those, the entry latest in the table. The
+    ///   judgement around a term records its entries after the term's own, so a
+    ///   computation written in a value's place answers the value the lowering
+    ///   binds in that place. It is spelled as [`Self::at`] spells an entry.
+    ///   Absent as [`typing::Absent::Untyped`] when no term entry lies inside
+    ///   `within`, and as [`typing::Absent::Unspelled`] when the printer cannot
+    ///   lay the chosen entry's type out.
+    /// - provides: the term that stands in one slot of a call, with the type
+    ///   the slot asks of it.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the argument of each spine around a hole answers the
+    ///   type its slot asks, a computation in a value's slot included, and a
+    ///   slot that holds no typed term answers none.
+    /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every entry for the spans inside the window once; the check scans them once more"
+        )
+    )]
+    #[spec(ensures: |ret| {
+        let inside = |entry: &&Entry| entry.subject == Subject::Term
+            && within.start() <= entry.span.start() && entry.span.end() <= within.end();
+        match ret {
+            Maybe::Present(ref answer) => within.start() <= answer.span.start() && answer.span.end() <= within.end(),
+            Maybe::Absent(typing::Absent::Untyped) => !self.entries.iter().any(|entry| inside(&entry)),
+            Maybe::Absent(typing::Absent::Unspelled) => self.entries.iter().any(|entry| inside(&entry)),
+        }
+    })]
+    #[inline]
+    pub fn outermost(
+        &self,
+        within: ByteSpan,
+        page: PageWidth,
+        style: Style,
+    ) -> Maybe<TypedSpan, typing::Absent>
+    {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|&(_, entry)| {
+                entry.subject == Subject::Term
+                    && within.start() <= entry.span.start()
+                    && entry.span.end() <= within.end()
+            })
+            .max_by_key(|&(position, entry)| {
+                (
+                    usize::from(entry.span.end()).saturating_sub(usize::from(entry.span.start())),
+                    position,
+                )
+            })
+            .map_or(Maybe::Absent(typing::Absent::Untyped), |(_, entry)| {
+                self.answer(entry, page, style)
+            })
+    }
+
     /// The written name holding `offset` and what it refers to: the binder or
     /// the declaration the lowering resolved it to.
     ///

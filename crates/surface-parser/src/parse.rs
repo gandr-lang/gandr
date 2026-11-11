@@ -219,6 +219,7 @@ pub use self::laid::JoinPiece;
 pub use self::laid::LaidJoin;
 pub use self::laid::LaidUnit;
 pub use self::laid::RunCount;
+pub use self::laid::RunRegion;
 
 /// What a form run's molding depends on, spelled out.
 ///
@@ -1211,6 +1212,7 @@ mod tests
     use super::FormSplit;
     use super::JoinPiece;
     use super::ParseResult;
+    use super::RunRegion;
     use super::parse;
     use super::parse_by_form;
     use crate::FormUnit;
@@ -1988,7 +1990,7 @@ mod tests
             0,
             "a join given no region takes nothing up"
         );
-        let (first, laid) = first.into_parts();
+        let (first, laid, _starts) = first.into_parts();
         let identities: Vec<FormIdentity> = before
             .runs()
             .iter()
@@ -2024,7 +2026,7 @@ mod tests
                         (None, Some(_)) | (Some(_), None) => false,
                     };
                     let unit = parked.get(held).ok_or("each held identity has a unit")?;
-                    let region = laid.get(held).and_then(Option::as_ref).filter(|_| follows);
+                    let region = laid.get(held).and_then(RunRegion::laid).filter(|_| follows);
                     JoinPiece::new(unit, None, region)
                 },
                 (None, Some(unit)) => JoinPiece::new(unit, None, None),
