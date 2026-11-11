@@ -114,7 +114,7 @@ fn string_type() -> TypeContent
     else {
         panic!("the fixture is ascribed");
     };
-    TypeContent::of_value_type(&program, *ty)
+    TypeContent::of_node(&program, gandr_core_incremental::ArenaNode::ValueType(*ty))
 }
 
 /// The base checkpoints of `statements`, replacing every row named `at`.

@@ -317,6 +317,7 @@ INSERT INTO purpose VALUES('core-incremental','codec::CheckpointBytes','struct',
 INSERT INTO purpose VALUES('core-incremental','codec::CodecError','enum','Names why bytes are not a canonical encoding, or a value has none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','codec::UnsupportedPersistence','enum','Names a form the persistent encoding has no spelling for, so a store refuses it by name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::AbstractRoots','struct','Holds the roots of a sealed abstract type: its kind, representation, seal extent, minting site, mobility and interface.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','content::ArenaNode','enum','Names a node of a core arena of any of the four sorts: the root a table is read from or minted to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::CellsRoots','struct','Holds the free cells a type of words is minted over, its sort named by reference, not by position.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::ContentNode','enum','Names one node of a content table: a core former over table indices, or an unresolved id of its sort.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::DataContent','struct','Holds a complete nominal signature in arena-independent coordinates, its roots, table and root placements.',NULL,'fits','sound',NULL);
@@ -331,7 +332,7 @@ INSERT INTO purpose VALUES('core-incremental','content::PresentationRoots','stru
 INSERT INTO purpose VALUES('core-incremental','content::RuleRoot','enum','Names one node of an operation rule''s side: an operation, constructor, results or variable, resolved to its item.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::RuleRoots','struct','Holds one operation rule as content: its left and right sides in pre-order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::Sort','enum','Names the four node sorts of the core vocabulary: value, computation, value type, computation type.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-incremental','content::TypeContent','struct','Holds a type''s canonical content: every node reachable from it, numbered by discovery, with its root support.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','content::TypeContent','struct','Holds a node''s canonical content, a type''s or a term''s: every node reachable from it, numbered by discovery, with its root support.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::map_children','function','Copies a content node with every child index replaced by its image, applied left to right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','content::words::Absent','enum','Names why a nominal type''s presentation holds no free cells: the type is no type of words.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','footprint::Footprint','struct','Holds what an item''s terms mention, conservatively, its reads apart from its type reads.',NULL,'fits','sound',NULL);
