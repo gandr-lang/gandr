@@ -1,4 +1,6 @@
 use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -20,8 +22,11 @@ use gandr_kernel_term::OperationRules;
 use gandr_kernel_term::Overlapped;
 use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::RuleVariable;
+use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::Value;
+use quenchant_shape::shape::Maybe;
 
+use crate::env::Admission;
 use crate::env::Environment;
 use crate::error::KernelError;
 use crate::replay::EngineClaim;
@@ -33,6 +38,12 @@ use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::replay::replay;
 use crate::ruled::OperationBodyFault;
+use crate::verdict::KernelSigner;
+use crate::verdict::NoVerdicts;
+use crate::verdict::StoredReceipt;
+use crate::verdict::TrustPolicy;
+use crate::verdict::VerdictKey;
+use crate::verdict::VerdictSource;
 
 /// `or` at position `$constant` over the booleans at 0.
 macro_rules! or {
@@ -556,4 +567,257 @@ fn a_ruled_fixpoint_unfolds_at_its_partial_gate_4291()
             verdict
         );
     }
+}
+
+/// The unary operation at `$constant` over the booleans at 0.
+macro_rules! unary {
+    ($constant:expr) => {
+        OperationNode::Operation {
+            constant: ConstantIndex::from($constant),
+            arity: FieldCount::from(1_usize),
+        }
+    };
+}
+
+/// `environment`, empty, with the booleans at 0, `False` and `True`.
+///
+/// # Specification
+/// trivial.
+fn booleans(mut environment: Environment) -> Environment
+{
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let booleans = staging.data(
+        LevelSignature::monomorphic(),
+        vec![],
+        vec![vec![], vec![]],
+        kind,
+    );
+    let _booleans = environment.add_decl(booleans).expect("the booleans admit");
+    environment
+}
+
+/// Admit, at the next position and ranked at `rank`, the identity on the
+/// booleans as a ruled operation: `f(False) ==> False` and `f(True) ==>
+/// True`, with the laws `laws` gives for its own position beside them.
+///
+/// # Specification
+/// trivial.
+fn admit_identity(
+    environment: &mut Environment,
+    rank: SourceRank,
+    laws: impl Fn(ConstantIndex) -> Vec<OperationRule>,
+) -> Result<(), KernelError>
+{
+    let position = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let booleans = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let motive = arena.comp_type_returner(booleans);
+    let [on_false, on_true] = [FALSE, TRUE].map(|tag| {
+        let constructed = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            booleans,
+            ConstructorTag::from(tag),
+            vec![],
+        );
+        arena.computation_return(constructed)
+    });
+    let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let tree = arena.computation_data_case(x, motive, vec![on_false, on_true]);
+    let inputs = arena.computation_lambda(tree);
+    let fixpoint = arena.computation_fixpoint(inputs, FixpointEvidence::Partial);
+    let body = arena.value_thunk(fixpoint);
+    let signature = arena.comp_type_arrow(booleans, motive);
+    let declared = arena.value_type_thunk(signature);
+    let rule = |left: &[OperationNode], right: &[OperationNode]| {
+        OperationRule::new(Box::from(left), Box::from(right))
+    };
+    let mut rules = vec![
+        rule(&[unary!(position), boolean!(FALSE)], &[boolean!(FALSE)]),
+        rule(&[unary!(position), boolean!(TRUE)], &[boolean!(TRUE)]),
+    ];
+    rules.extend(laws(position));
+    let declaration = staging
+        .def(LevelSignature::monomorphic(), declared, body)
+        .ruled(OperationRules::new(rules))
+        .ranked(rank);
+    environment.add_decl(declaration).map(|_admitted| ())
+}
+
+/// The path order places an operation at its source rank, not at its
+/// position. The source holds `a`, `b` and `c`, each the identity on the
+/// booleans as a ruled operation, and `c` carries the law `c(a(x)) ==>
+/// c(b(x))`, which orients only when `a` ranks above `b`. A fresh admission
+/// ranks `b` above `a` and refuses the law. The second environment admits
+/// `b` before `a` but ranks each where the source states it, so it must
+/// refuse the law too, though `a` stands at the later position.
+#[test]
+fn a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621()
+{
+    let law = |left: usize, right: usize| {
+        move |own: ConstantIndex| {
+            vec![OperationRule::new(
+                Box::from([unary!(own), unary!(left), var!(0_u32)].as_slice()),
+                Box::from([unary!(own), unary!(right), var!(0_u32)].as_slice()),
+            )]
+        }
+    };
+    let plain = |_own: ConstantIndex| Vec::new();
+    let rank = |place: usize| SourceRank::from(place);
+    // In source order: `a` at 1, `b` at 2, `c` at 3, each ranked at its
+    // position.
+    let mut fresh = booleans(Environment::new());
+    assert_eq!(
+        admit_identity(&mut fresh, rank(1), plain),
+        Ok(()),
+        "`a` admits"
+    );
+    assert_eq!(
+        admit_identity(&mut fresh, rank(2), plain),
+        Ok(()),
+        "`b` admits"
+    );
+    let fresh_law = admit_identity(&mut fresh, rank(3), law(1, 2));
+    // Out of source order: `b` at 1 ranked 2, `a` at 2 ranked 1, then `c`.
+    let mut ranked = booleans(Environment::new());
+    assert_eq!(
+        admit_identity(&mut ranked, rank(2), plain),
+        Ok(()),
+        "`b` admits"
+    );
+    assert_eq!(
+        admit_identity(&mut ranked, rank(1), plain),
+        Ok(()),
+        "`a` admits"
+    );
+    let ranked_law = admit_identity(&mut ranked, rank(3), law(2, 1));
+    assert_eq!(
+        fresh_law,
+        Err(KernelError::OperationRulesRefused(OperationRuleRefusal {
+            rule: RuleIndex::from(2_usize),
+            fault: OperationRuleFault::Unoriented,
+        })),
+        "a fresh admission refuses the law"
+    );
+    assert_eq!(
+        ranked_law, fresh_law,
+        "the ranks, not the positions, orient the law"
+    );
+}
+
+/// A source of verdicts that answers one receipt for every key.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+#[repr(transparent)]
+struct Kept(Vec<Arc<StoredReceipt>>);
+
+impl VerdictSource for Kept
+{
+    /// The kept receipt, whatever `key` is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn receipts(
+        &self,
+        _key: VerdictKey,
+    ) -> &[Arc<StoredReceipt>]
+    {
+        &self.0
+    }
+}
+
+/// The ruled twin of `tests::verdicts::a_key_reads_no_admission_order_6568`:
+/// the path order compares the ranks of the operations a rule names, so the
+/// key of a ruled definition holds their rank order. `a` and `b` are the
+/// identity on the booleans at 1 and 2, and `c` carries the law `c(a(x)) ==>
+/// b(x)`, which orients under either order of the two. From the receipt of a
+/// run in order, a second run in order recalls each declaration. A run that
+/// swaps the ranks of `a` and `b` keeps every position and every content, so
+/// it recalls `a` and `b`, and checks `c`.
+#[test]
+fn a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let trusting = || TrustPolicy::Trusted(BTreeSet::from([signer.identity()]));
+    let rank = SourceRank::from;
+    let plain = |_own: ConstantIndex| Vec::new();
+    let law = |own: ConstantIndex| {
+        vec![OperationRule::new(
+            Box::from([unary!(own), unary!(1_usize), var!(0_u32)].as_slice()),
+            Box::from([unary!(2_usize), var!(0_u32)].as_slice()),
+        )]
+    };
+    let run = |environment: Environment, [a, b]: [SourceRank; 2]| {
+        let mut environment = booleans(environment);
+        assert_eq!(
+            admit_identity(&mut environment, a, plain),
+            Ok(()),
+            "`a` admits"
+        );
+        assert_eq!(
+            admit_identity(&mut environment, b, plain),
+            Ok(()),
+            "`b` admits"
+        );
+        assert_eq!(
+            admit_identity(&mut environment, rank(3_usize), law),
+            Ok(()),
+            "`c` admits"
+        );
+        environment
+    };
+    let in_order = run(Environment::recalling(trusting(), Arc::new(NoVerdicts)), [
+        rank(1_usize),
+        rank(2_usize),
+    ]);
+    assert!(
+        matches!(
+            in_order
+                .entries()
+                .get(3_usize)
+                .map(crate::env::AdmittedDeclaration::key),
+            Some(Maybe::Present(_))
+        ),
+        "`c` holds an entry key"
+    );
+    let Maybe::Present(receipt) = in_order.receipt(&signer)
+    else {
+        panic!("a run that checked keyed declarations gives a receipt");
+    };
+    let source: Arc<dyn VerdictSource> = Arc::new(Kept(vec![Arc::new(receipt)]));
+    let admissions = |environment: &Environment| {
+        environment
+            .entries()
+            .iter()
+            .map(crate::env::AdmittedDeclaration::admission)
+            .collect::<Vec<_>>()
+    };
+    let again = run(Environment::recalling(trusting(), Arc::clone(&source)), [
+        rank(1_usize),
+        rank(2_usize),
+    ]);
+    assert_eq!(
+        admissions(&again),
+        [Admission::Recalled; 4],
+        "a run in order recalls each declaration, `c` among them"
+    );
+    let swapped = run(Environment::recalling(trusting(), source), [
+        rank(2_usize),
+        rank(1_usize),
+    ]);
+    assert_eq!(
+        admissions(&swapped),
+        [
+            Admission::Recalled,
+            Admission::Recalled,
+            Admission::Recalled,
+            Admission::Checked
+        ],
+        "the booleans, `a` and `b` are recalled, and `c` is checked"
+    );
 }

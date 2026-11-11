@@ -190,6 +190,69 @@ impl From<ConstantIndex> for usize
     }
 }
 
+/// The place of an admitted declaration in its revision's source order: what
+/// "admitted before" means to every reader of the environment.
+///
+/// A position is storage. It names an entry for the life of an environment,
+/// and an entry never moves. A rank is a fact of the source. A fresh
+/// admission ranks each entry at its position. A readmission that appends
+/// the declarations an edit reaches ranks each live entry at its place in
+/// the edited source, so a reader of ranks answers as over a fresh admission
+/// of that source.
+///
+/// # Specification
+/// - executable: none — data declaration; the environment states which ranks
+///   its entries hold.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceRank(usize);
+
+impl SourceRank
+{
+    /// Above every rank an entry holds: the horizon of a reading outside any
+    /// admission.
+    pub const ABOVE: Self = Self(usize::MAX);
+}
+
+impl From<usize> for SourceRank
+{
+    /// The rank at the place `place`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: usize) -> Self
+    {
+        Self(place)
+    }
+}
+
+impl From<SourceRank> for usize
+{
+    /// The place the rank carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(rank: SourceRank) -> Self
+    {
+        rank.0
+    }
+}
+
+impl From<ConstantIndex> for SourceRank
+{
+    /// The rank a fresh admission gives the entry at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: ConstantIndex) -> Self
+    {
+        Self(position.0)
+    }
+}
+
 /// One side of a binary former: a summand of `A + B`, such as a boolean's, or
 /// an endpoint of a path.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

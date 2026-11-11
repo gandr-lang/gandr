@@ -958,6 +958,17 @@ pub enum KernelError
         /// The first position the check read outside its support.
         position: ConstantIndex,
     },
+    /// A declaration was staged at a rank it may not take: a live entry holds
+    /// the rank, or a member of the same block before it ranks at or above
+    /// it. Two entries never share a rank, so the path order and every other
+    /// reader of ranks stay total.
+    RankTaken
+    {
+        /// The rank the declaration was staged at.
+        rank: gandr_kernel_term::SourceRank,
+        /// The entry or block member that holds the rank or ranks above it.
+        by: ConstantIndex,
+    },
 }
 
 impl From<LevelError> for KernelError
@@ -1201,6 +1212,9 @@ impl core::fmt::Display for KernelError
             },
             Self::OutsideSupport { .. } => {
                 f.write_str("the check read an entry its declaration's content does not reach")
+            },
+            Self::RankTaken { .. } => {
+                f.write_str("another entry holds the rank the declaration was staged at")
             },
         }
     }
@@ -1507,6 +1521,10 @@ mod tests
             },
             KernelError::OutsideSupport {
                 position: ConstantIndex::from(0_usize),
+            },
+            KernelError::RankTaken {
+                rank: gandr_kernel_term::SourceRank::from(0_usize),
+                by: ConstantIndex::from(0_usize),
             },
             KernelError::AbsentRecordField {
                 label: FieldLabel::from(String::from("a")),

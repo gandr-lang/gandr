@@ -1,14 +1,15 @@
 //! The admission of a definition's operation rules: the kernel decides that
 //! the rules an operation was written as converge, reading the declarations
-//! admitted before it, and that the definition's body is their decision tree.
+//! ranked below it, and that the definition's body is their decision tree.
 //!
 //! A definition carrying no rule owes nothing. A definition carrying rules is
 //! admitted only when [`OperationRules::converge`] accepts them over the
 //! environment: their constructors name admitted data declarations, their
-//! calls name the definition itself or ruled definitions admitted before it,
-//! every rule is oriented by the path order and every critical pair joins.
-//! Its body must then be the rules' decision tree ([`link`]): each leaf the
-//! right side of a rule whose left side matches the cases above it.
+//! calls name the definition itself or ruled definitions ranked below it,
+//! every rule is oriented by the path order over source ranks and every
+//! critical pair joins. Its body must then be the rules' decision tree
+//! ([`link`]): each leaf the right side of a rule whose left side matches the
+//! cases above it.
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
@@ -19,6 +20,7 @@ use gandr_kernel_term::OperationRules;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::RuleScope;
+use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
@@ -36,8 +38,8 @@ pub use link::OperationBodyFault;
 /// only keeps a pathological system from running unbounded.
 const CONVERGENCE_FUEL: u64 = 1 << 22;
 
-/// The declarations admitted before a ruled definition, as its rules read
-/// them.
+/// The declarations ranked below a ruled definition, as its rules read them:
+/// the running check reads no other.
 ///
 /// # Specification
 /// trivial.
@@ -106,18 +108,33 @@ impl RuleScope for Admitted<'_>
             .operation_rules();
         (!rules.rules().is_empty()).then_some(rules)
     }
+
+    /// The rank of an entry the running check reads.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rank(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<SourceRank>
+    {
+        self.0
+            .get(usize::from(constant))
+            .map(crate::env::AdmittedDeclaration::rank)
+    }
 }
 
 /// Decide the operation rules of the definition admitted at `position` after
-/// `entries`, declared at `declared` with `body`.
+/// `entries`, declared at `declared` with `body`, ranked at the horizon of
+/// the check that runs.
 ///
 /// # Specification
-/// - requires: `entries` are the declarations admitted before `position`;
-///   `declared` and `body` live in `arena`.
+/// - requires: `entries` are the declarations admitted before `position`, read
+///   under the check of the definition; `declared` and `body` live in `arena`.
 /// - ensures: `Ok(())` exactly when `rules` is empty, or
-///   [`OperationRules::converge`] accepts it over `entries` within the
-///   admission's fuel and `body` is its decision tree ([`link::link`]); `arena`
-///   holds what it held on entry.
+///   [`OperationRules::converge`] accepts it over the entries ranked below the
+///   definition within the admission's fuel and `body` is its decision tree
+///   ([`link::link`]); `arena` holds what it held on entry.
 /// - provides: the kernel's own decision that an operation's rules converge and
 ///   that its body computes them, re-derived at every admission and replay, so
 ///   no producer's verdict is taken on trust.
@@ -133,10 +150,13 @@ impl RuleScope for Admitted<'_>
 /// # Adequacy
 /// - hypothesis: L3 — an operation over an earlier data declaration and an
 ///   earlier ruled operation admits, the same rules forged to part are refused
-///   naming the pair, a rule calling a later definition is refused, and a body
-///   one leaf of which is not its rule's is refused naming the rule.
+///   naming the pair, a rule calling a later definition is refused, a body one
+///   leaf of which is not its rule's is refused naming the rule, and a
+///   definition ranked below an earlier admission orients its rules as a fresh
+///   admission in rank order does.
 /// - witness: `ruled::tests::rules_over_the_environment_admit_and_a_forged_pair_is_refused`
 /// - witness: `ruled::tests::a_body_is_admitted_only_as_its_rules_decision_tree`
+/// - witness: `ruled::tests::a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before && (ret.is_ok() || matches!(ret, Err(KernelError::OperationRulesRefused(_) | KernelError::OperationBodyUnlinked(_)))),
@@ -154,7 +174,7 @@ pub fn admit(
     }
     rules
         .converge(
-            position,
+            (position, entries.horizon()),
             &Admitted(entries),
             &mut RewriteFuel::from(CONVERGENCE_FUEL),
         )

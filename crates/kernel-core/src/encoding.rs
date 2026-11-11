@@ -4793,15 +4793,16 @@ pub fn content_digest(
 }
 
 /// The name of a plain definition of `declared` and `body` about to be
-/// admitted after `entries`: its two roots and its rank among the earlier
-/// definitions named by the same two, each constant they reach read by its
-/// position.
+/// admitted after `entries` at the rank `below`: its two roots and its order
+/// among the definitions ranked below it and named by the same two, each
+/// constant they reach read by its position.
 ///
-/// Each earlier entry's rank already counts the identical entries before it,
-/// and identity in content is an equivalence. So the latest identical entry
-/// decides the rank: one past its own. The search runs from the newest entry
-/// back and stops there, so a module of many identical definitions compares
-/// each new one against one earlier twin, not against all of them (#3686).
+/// Each earlier entry's order already counts the identical entries ranked
+/// below it, and identity in content is an equivalence. So the identical
+/// entry ranked last below `below` decides the order: one past its own. The
+/// search runs from that entry down and stops there, so a module of many
+/// identical definitions compares each new one against one twin, not against
+/// all of them (#3686).
 ///
 /// `table` is scratch: the naming clears it, digests the two roots, and places
 /// each candidate's roots beside them, so admission names every definition
@@ -4810,12 +4811,13 @@ pub fn content_digest(
 /// # Specification
 /// - requires: the roots, and those of every definition `entries` names by
 ///   content, live in `arena`; every definition `entries` names by content is
-///   ranked by the identical entries before it.
-/// - ensures: a definition name over `declared` and `body`, ranked by the
-///   earlier entries whose declared types and bodies are identical in reachable
-///   content: one past the latest such entry's rank, or zero when none is. A
-///   digest filters the entries and one table decides each candidate, so no
-///   digest decides. Whatever `table` held before does not reach the name.
+///   ordered by the identical entries ranked below it.
+/// - ensures: a definition name over `declared` and `body`, ordered by the
+///   entries ranked below `below` whose declared types and bodies are identical
+///   in reachable content: one past the order of the one ranked last, or zero
+///   when none is. A digest filters the entries and one table decides each
+///   candidate, so no digest decides. Whatever `table` held before does not
+///   reach the name.
 /// - provides: admission's naming of a plain definition, injective on the
 ///   environment's positions.
 /// - fails: never.
@@ -4833,7 +4835,7 @@ pub fn content_digest(
 pub(crate) fn name_definition(
     table: &mut ContentTable,
     arena: &TermArena,
-    entries: &crate::env::Entries,
+    (entries, below): (&crate::env::Entries, gandr_kernel_term::SourceRank),
     declared: ValueTypeId,
     body: ValueId,
 ) -> ConstantName
@@ -4845,7 +4847,7 @@ pub(crate) fn name_definition(
     // The environment keeps the definitions of each digest, so the search
     // reads only the candidates and no other entry.
     let rank = entries
-        .digested(digest)
+        .digested(digest, below)
         .iter()
         .rev()
         .filter_map(|&position| entries.get(usize::from(position)))

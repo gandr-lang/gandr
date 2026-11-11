@@ -18,6 +18,7 @@ use crate::presented::RuleNode;
 use crate::presented::RuleVariable;
 use crate::term::ConstantIndex;
 use crate::term::ConstructorTag;
+use crate::term::SourceRank;
 
 /// The operation at position `$constant` applied to `$arity` subterms.
 macro_rules! op {
@@ -57,11 +58,15 @@ macro_rules! free {
     };
 }
 
-/// Decide `$rules` as the definition at position `$own` over `$scope`.
+/// Decide `$rules` as the definition at position `$own` over `$scope`, ranked
+/// at its position.
 macro_rules! decide {
     ($rules:expr, $own:expr, $scope:expr) => {
         OperationRules::new($rules).converge(
-            ConstantIndex::from($own),
+            (
+                ConstantIndex::from($own),
+                SourceRank::from(ConstantIndex::from($own)),
+            ),
             $scope,
             &mut RewriteFuel::from(10_000_u64),
         )
@@ -123,6 +128,19 @@ impl RuleScope for Scope
             .iter()
             .find(|entry| entry.0 == constant)
             .map(|entry| &entry.1)
+    }
+
+    /// The rank of the declaration at `constant`: its position, as a fresh
+    /// admission ranks it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rank(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<SourceRank>
+    {
+        Some(SourceRank::from(constant))
     }
 }
 
@@ -250,7 +268,10 @@ fn an_operation_over_an_earlier_one_converges()
     let mut scope = free!(0, 1);
     assert_eq!(
         add().converge(
-            ConstantIndex::from(1_usize),
+            (
+                ConstantIndex::from(1_usize),
+                SourceRank::from(ConstantIndex::from(1_usize))
+            ),
             &scope,
             &mut RewriteFuel::from(100_u64)
         ),

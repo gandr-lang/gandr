@@ -158,7 +158,11 @@ impl VerdictKey
     }
 
     /// The key of the declaration whose canonical segment is `segment`,
-    /// admitted after the ones this key closes over.
+    /// ranked at `rank` and admitted after the ones this key closes over.
+    ///
+    /// The chain reads each declaration's rank, so two runs of one sequence
+    /// whose ranks differ take two chains: a ruled definition checks under
+    /// the ranks, and its verdict is never recalled under other ranks.
     ///
     /// # Specification
     /// trivial.
@@ -167,12 +171,15 @@ impl VerdictKey
     fn after(
         self,
         segment: &EncodedArtifact,
+        rank: gandr_kernel_term::SourceRank,
     ) -> Self
     {
+        let rank = u64::try_from(usize::from(rank)).unwrap_or(u64::MAX);
         Self(
             *blake3::Hasher::new_derive_key(KEY_CONTEXT)
                 .update(&self.0)
                 .update(segment.as_ref())
+                .update(&rank.to_le_bytes())
                 .finalize()
                 .as_bytes(),
         )
@@ -1427,15 +1434,19 @@ impl Verdicts
         }
     }
 
-    /// The key of `declaration`, admitted next over `arena`, extending the
-    /// chain; the chain ends when the declaration cannot be keyed.
+    /// The key of `declaration`, admitted next over `arena` at the rank
+    /// `rank`, extending the chain; the chain ends when the declaration
+    /// cannot be keyed.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn key(
         &mut self,
         arena: &TermArena,
-        declaration: &gandr_kernel_term::Declaration,
+        (declaration, rank): (
+            &gandr_kernel_term::Declaration,
+            gandr_kernel_term::SourceRank,
+        ),
     ) -> Maybe<VerdictKey, keyed::Absent>
     {
         let Maybe::Present(ref mut chain) = self.chain
@@ -1452,7 +1463,7 @@ impl Verdicts
         match chain.encoder.segment(arena, &marked) {
             Maybe::Present(segment) => {
                 chain.before = chain.last;
-                chain.last = chain.last.after(&segment);
+                chain.last = chain.last.after(&segment, rank);
                 Maybe::Present(chain.last)
             },
             Maybe::Absent(gandr_kernel_term::encoded_prefix::Absent::OpenSeal) => {
