@@ -865,7 +865,7 @@ fn an_unmintable_table_is_refused_by_name()
     let (arena, layout) = program.parts_mut();
     assert!(
         matches!(
-            super::mint_table(&cyclic, arena, layout),
+            super::mint_table(&cyclic, arena, (layout, &[])),
             Maybe::Absent(seating::Absent::Cyclic)
         ),
         "a de Bruijn table no arena can mint child before parent"

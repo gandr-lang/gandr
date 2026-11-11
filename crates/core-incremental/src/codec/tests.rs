@@ -891,6 +891,8 @@ fn control_nodes_persist_names_frames_and_branch_order()
         super::Refusal::HandlerUnlawful {
             at,
             rule: gandr_kernel_term::RuleIndex::from(2_usize),
+            left: at,
+            right: super::Site::Unreached,
         },
         super::Refusal::ShiftWithoutReset { at },
         super::Refusal::DependentStack {
@@ -922,7 +924,10 @@ fn control_nodes_persist_names_frames_and_branch_order()
         },
         super::Refusal::CapabilityEscaped { at, found: typed },
         super::Refusal::CapabilityConsumable(at),
-        super::Refusal::CapabilityUngranted { declared: at },
+        super::Refusal::CapabilityUngranted {
+            constant: crate::region::Reference::Unoccupied,
+            declared: at,
+        },
         super::Refusal::NotSynthesisable {
             form: super::Form::Scope(at),
         },
@@ -1369,7 +1374,13 @@ fn a_loop_refusal_round_trips_with_its_reason_464()
     let cell = gandr_kernel_term::CellIndex::from(1_usize);
     let mut encodings = alloc::collections::BTreeSet::new();
     for reason in [LoopRespect::Apart, LoopRespect::NotPresentedSet] {
-        let refusal = Refusal::LoopNotRespected { at, cell, reason };
+        let refusal = Refusal::LoopNotRespected {
+            at,
+            cell,
+            left: at,
+            right: Site::Unreached,
+            reason,
+        };
         let mut bytes = CheckpointBytes::default();
         super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal).expect("portable refusal");
         assert!(
@@ -1802,7 +1813,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 22, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 23, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -2931,7 +2942,12 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
                 fault: super::RULE_FAULTS[1],
             },
         },
-        Refusal::RuleNotRespected { at, rule },
+        Refusal::RuleNotRespected {
+            at,
+            rule,
+            left: at,
+            right: Site::Unreached,
+        },
         Refusal::NotApart {
             at,
             reason: Apartness::Agree,
@@ -2939,6 +2955,8 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
         Refusal::LoopNotRespected {
             at,
             cell,
+            left: at,
+            right: Site::Unreached,
             reason: LoopRespect::Apart,
         },
         Refusal::LoopUndecided { at, cell },
@@ -2994,7 +3012,10 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
             budget: CheckBudget::from(9_usize),
         },
         Refusal::DanglingNode { node: at },
-        Refusal::AdmissionOrder,
+        Refusal::AdmissionOrder {
+            constant: reference.clone(),
+            admitted: Reference::Unoccupied,
+        },
         Refusal::MachineInvariant,
         Refusal::SortMismatch {
             at,
@@ -3063,7 +3084,14 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
             at,
             reason: gandr_core_checker::Unsolved::Escape,
         },
-        Refusal::ModelUnanswered { at },
+        Refusal::ModelUnanswered {
+            at,
+            forced: crate::typing::Forcing::Type(ty()),
+        },
+        Refusal::ModelUnanswered {
+            at,
+            forced: crate::typing::Forcing::Unforced,
+        },
         Refusal::ModelAmbiguous {
             at,
             survivors: [0_usize, 2, 70]
@@ -3107,7 +3135,10 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
         },
         Refusal::CapabilityEscaped { at, found: ty() },
         Refusal::CapabilityConsumable(at),
-        Refusal::CapabilityUngranted { declared: at },
+        Refusal::CapabilityUngranted {
+            constant: reference.clone(),
+            declared: at,
+        },
         Refusal::FootprintsOverlap {
             at,
             child: ty(),
@@ -3138,6 +3169,8 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
         Refusal::HandlerUnlawful {
             at,
             rule: gandr_kernel_term::RuleIndex::from(2_usize),
+            left: at,
+            right: Site::Unreached,
         },
         Refusal::ShiftWithoutReset { at },
         Refusal::DependentStack {
@@ -3697,6 +3730,140 @@ fn supported_tables_round_trip_and_reject_forged_support()
         Err(CodecError::Corrupt),
         "the previous version is refused, not reinterpreted"
     );
+}
+
+/// A failure content reads back as written: each place, each part, each
+/// frame role by its stable name with a fold's premise, and each content
+/// outside the item or why it does not mint.
+#[test]
+fn a_failure_content_round_trips()
+{
+    use gandr_core_checker::FoldPremise;
+    use gandr_core_checker::FrameRole;
+    use gandr_core_checker::Stage;
+    use gandr_core_checker::compared;
+    use gandr_core_checker::judged;
+    use gandr_core_checker::kept;
+    use gandr_core_checker::session::ForkSide;
+    use gandr_core_term::LinearUse;
+
+    use crate::boundary::Discovery;
+    use crate::boundary::OutsideIndex;
+    use crate::failure::ComparedContent;
+    use crate::failure::EndpointContent;
+    use crate::failure::FailureContent;
+    use crate::failure::FailureParts;
+    use crate::failure::ObligationContent;
+    use crate::failure::Placed;
+    use crate::failure::PursuitContent;
+    use crate::failure::failed;
+
+    let at = |discovery: usize| Placed::At(Discovery::from(discovery));
+    let outside = Placed::Outside(OutsideIndex::from(0_usize));
+    let obligation = |role| ObligationContent {
+        role,
+        at: at(1),
+        expected: Maybe::Present(outside),
+        binders: vec![at(2), outside],
+    };
+    let parts = FailureParts {
+        obligations: vec![
+            obligation(FrameRole::ListFold(FoldPremise::Cons)),
+            obligation(FrameRole::ApplicationArgument),
+            ObligationContent {
+                expected: Maybe::Absent(judged::Absent::Formed),
+                ..obligation(FrameRole::MigrateBody)
+            },
+        ],
+        pursuit: PursuitContent {
+            at: at(3),
+            expected: Maybe::Absent(judged::Absent::Synthesised),
+            stage: Stage::Handing,
+        },
+        hypotheses: vec![outside, at(0)],
+        endpoints: vec![EndpointContent {
+            fork: at(4),
+            side: ForkSide::Received,
+            state: outside,
+            use_state: LinearUse::Moved,
+        }],
+        solved: Maybe::Present(ComparedContent {
+            expected: Maybe::Present(at(5)),
+            found: Maybe::Absent(compared::Absent::Unnamed),
+            unfolded: Maybe::Absent(compared::Absent::InWeakHead),
+        }),
+    };
+    let typed = crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
+    for failure in [
+        FailureContent {
+            refusal: vec![at(0), outside, at(7)],
+            parts: Maybe::Present(parts),
+            outside: vec![
+                crate::failure::OutsideContent {
+                    content: Maybe::Present(typed),
+                    rooted: Maybe::Present(crate::failure::Rooted {
+                        item: crate::region::Reference::Item {
+                            key: crate::region::ItemKey::from("a"),
+                            occurrence: crate::boundary::Occurrence::from(1_usize),
+                        },
+                        root: crate::boundary::RootOrdinal::from(2_usize),
+                        at: crate::boundary::Discovery::from(3_usize),
+                    }),
+                    anchors: vec![
+                        crate::content::Anchor {
+                            path: vec![
+                                crate::boundary::ChildPosition::from(1_usize),
+                                crate::boundary::ChildPosition::from(0_usize),
+                            ],
+                            at: crate::boundary::Discovery::from(4_usize),
+                        },
+                        crate::content::Anchor {
+                            path: vec![crate::boundary::ChildPosition::from(2_usize)],
+                            at: crate::boundary::Discovery::from(9_usize),
+                        },
+                    ],
+                },
+                crate::failure::OutsideContent {
+                    content: Maybe::Absent(crate::content::seating::Absent::Unresolved),
+                    rooted: Maybe::Absent(crate::failure::rooted::Absent::Unrooted),
+                    anchors: Vec::new(),
+                },
+            ],
+        },
+        FailureContent {
+            refusal: Vec::new(),
+            parts: Maybe::Absent(kept::Absent::Unrun),
+            outside: Vec::new(),
+        },
+    ] {
+        let mut bytes = CheckpointBytes::default();
+        super::write_failed(&mut Writer { sink: &mut bytes }, Maybe::Present(&failure))
+            .expect("a failure content writes");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_failed(&mut reader),
+            Ok(Maybe::Present(failure)),
+            "the failure content reads back as written"
+        );
+        assert_eq!(reader.finish(), Ok(()), "and nothing is left");
+    }
+    for reason in [failed::Absent::Unkept, failed::Absent::Opaque] {
+        let mut bytes = CheckpointBytes::default();
+        super::write_failed(&mut Writer { sink: &mut bytes }, Maybe::Absent(reason))
+            .expect("no failure content writes");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_failed(&mut reader),
+            Ok(Maybe::Absent(reason)),
+            "no failure content reads back as none, by its reason"
+        );
+    }
 }
 
 /// #3381: each world former round trips under a tag of its own, at the

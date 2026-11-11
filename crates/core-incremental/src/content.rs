@@ -113,7 +113,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x15`; programs use `GPROG\0\0\x0c`. Their
+//! Checkpoint sets use `GCKPT\0\0\x17`; programs use `GPROG\0\0\x0d`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -322,6 +322,8 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
+use crate::boundary::ChildPosition;
+use crate::boundary::Discovery;
 use crate::boundary::NodeIndex;
 use crate::region::Layout;
 use crate::region::Program;
@@ -350,6 +352,9 @@ quenchant_shape::reason_enum! {
             /// The type's de Bruijn projection places an index past the
             /// index space, or an edge past its node's support.
             Unplaceable,
+            /// A failure names a node at a place the item's walk in the edited
+            /// program does not hold, or past the places it keeps.
+            Unwalked,
         }
     }
 }
@@ -2567,7 +2572,8 @@ impl ContentNode
     }
 }
 
-/// Where an arena node sits in the table of the item that reached it.
+/// Where an arena node sits in the table of the item that reached it, beside
+/// the place the item's walk discovered it at.
 ///
 /// # Specification
 /// - executable: none — the map alone cannot establish which arena and walk
@@ -2579,7 +2585,7 @@ impl ContentNode
 /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Sites(BTreeMap<ArenaNode, NodeIndex>);
+pub struct Sites(BTreeMap<ArenaNode, (NodeIndex, Discovery)>);
 
 impl Sites
 {
@@ -2595,7 +2601,7 @@ impl Sites
     ///   unreached identifier in the same arena.
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
     #[spec(ensures: |ret| match self.0.get(&node) {
-        Some(&index) => ret == Maybe::Present(index),
+        Some(&(index, _)) => ret == Maybe::Present(index),
         None => ret == Maybe::Absent(site::Absent::Unreached),
     })]
     pub(crate) fn of(
@@ -2604,9 +2610,47 @@ impl Sites
     ) -> Maybe<NodeIndex, site::Absent>
     {
         match self.0.get(&node) {
-            Some(&index) => Maybe::Present(index),
+            Some(&(index, _)) => Maybe::Present(index),
             None => Maybe::Absent(site::Absent::Unreached),
         }
+    }
+
+    /// The place the item's walk discovered `node` at, when it reached it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn discovery(
+        &self,
+        node: ArenaNode,
+    ) -> Maybe<Discovery, site::Absent>
+    {
+        match self.0.get(&node) {
+            Some(&(_, discovery)) => Maybe::Present(discovery),
+            None => Maybe::Absent(site::Absent::Unreached),
+        }
+    }
+
+    /// The reached arena nodes, in the order the item's walk discovered them:
+    /// the node at each [`Discovery`].
+    ///
+    /// # Specification
+    /// - ensures: each reached node once, ascending by its discovery.
+    /// - panics: none.
+    /// - executable: none — the clause is the sort this body runs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a failure seated from its checkpoint places each node
+    ///   it names through this walk.
+    /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
+    pub(crate) fn walk(&self) -> Vec<ArenaNode>
+    {
+        let mut walk: Vec<(Discovery, ArenaNode)> = self
+            .0
+            .iter()
+            .map(|(&node, &(_, discovery))| (discovery, node))
+            .collect();
+        walk.sort_unstable();
+        walk.into_iter().map(|(_, node)| node).collect()
     }
 
     /// How many of the reached nodes the arena minted at or after `mark`.
@@ -4131,18 +4175,53 @@ impl TypeContent
         layout: &Layout,
     ) -> Maybe<ArenaNode, seating::Absent>
     {
+        self.mint_holding(arena, layout, &[])
+    }
+
+    /// Mint the content into `arena` as [`TypeContent::mint`] does, with each
+    /// node of `held` at the end of its path: a node outside an item that holds
+    /// a node of the item holds that node again.
+    ///
+    /// A path names the entry it ends at, so an entry that two paths reach is
+    /// the held node at both.
+    ///
+    /// # Specification
+    /// - requires: each node of `held` is a node of `arena`.
+    /// - ensures: as [`TypeContent::mint`]; the entry at the end of each path
+    ///   of `held` is its node, and no entry below it is minted for it.
+    /// - fails: as [`TypeContent::mint`]; [`seating::Absent::Unwalked`] for a
+    ///   path past the table; [`seating::Absent::IllSorted`] for a node of
+    ///   another sort than the entry at the end of its path.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a content outside an item that holds the item's body
+    ///   mints over that body, and a node the item does not hold is minted.
+    /// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(node) => node.held(arena).is_some()
+            && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
+        Maybe::Absent(_) => true,
+    })]
+    pub(crate) fn mint_holding(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+        held: &[(&[ChildPosition], ArenaNode)],
+    ) -> Maybe<ArenaNode, seating::Absent>
+    {
         if self
             .nodes
             .iter()
             .all(|node| node.scope() == gandr_core_term::support::Scope::default())
         {
-            return mint_table(&self.nodes, arena, layout);
+            return mint_table(&self.nodes, arena, (layout, held));
         }
         let Ok(table) = self.debruijn()
         else {
             return Maybe::Absent(seating::Absent::Unplaceable);
         };
-        mint_table(&table, arena, layout)
+        mint_table(&table, arena, (layout, held))
     }
 
     /// Mint the content into `arena` as a value type: the seat a synthesised
@@ -4295,30 +4374,30 @@ pub struct Encoded
 /// - witness: `content::tests::content_is_free_of_arena_ids`
 /// - witness: `content::tests::a_shared_node_is_listed_once`
 /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-#[spec(ensures: |ret| ret.sites.0.values().all(|index| usize::from(*index) < ret.content.nodes.len())
+#[spec(ensures: |ret| ret.sites.0.values().all(|&(index, _)| usize::from(index) < ret.content.nodes.len())
     && ret.content.placements.len() == ret.content.declaration.iter().count()
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
-if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages,supplies:ref actual_supplies,models:ref actual_models,entry:ref actual_entry } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages,supplies:ref actual_supplies,models:ref actual_models,entry:ref actual_entry } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).map(|&(index, _)| index)) == actual_signature.map(Some)
                     && item.declaration().entry().map(|entry| EntryRoots::of(layout, entry)) == *actual_entry
-                    && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some)
+                    && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).map(|&(index, _)| index)) == actual_body.map(Some)
                     && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned())
                     && *actual_rules == rule_roots(layout, item.declaration().operation_rules())
                     && actual_stages.as_slice() == item.declaration().stages()
-                    && actual_supplies.iter().copied().eq(item.declaration().supplies().iter().filter_map(|supply| ret.sites.0.get(&ArenaNode::Value(supply.head)).map(|&head| (head, supply.binder, supply.stage))))
+                    && actual_supplies.iter().copied().eq(item.declaration().supplies().iter().filter_map(|supply| ret.sites.0.get(&ArenaNode::Value(supply.head)).map(|&(head, _)| (head, supply.binder, supply.stage))))
                     && actual_models.len() <= item.declaration().models().len() }
- else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())) == Some(&roots.kind)
-                    && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
+ else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())).map(|&(index, _)| index) == Some(roots.kind)
+                    && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).map(|&(index, _)| index)).eq(roots.parameters.iter().copied().map(Some))
                     && signature.constructors().len() == roots.constructors.len()
-                    && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
- else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
-                    && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
+                    && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).map(|&(index, _)| index)).eq(roots.iter().copied().map(Some))) }
+ else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())).map(|&(index, _)| index) == Some(roots.kind)
+                    && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())).map(|&(index, _)| index) == Some(roots.representation)
                     && roots.extent == sealed.extent() && roots.site == local_site(sealed.site()) && roots.mobility == sealed.mobility()
                     && match (sealed.interface(), roots.interface) {
-                        (Maybe::Present(interface), Maybe::Present(actual)) => ret.sites.0.get(&ArenaNode::Value(interface.relation())) == Some(&actual.relation)
-                            && ret.sites.0.get(&ArenaNode::Value(interface.reflexivity())) == Some(&actual.reflexivity)
-                            && interface.law().map(|law| ret.sites.0.get(&ArenaNode::Value(law)).copied()) == actual.law.map(Some),
+                        (Maybe::Present(interface), Maybe::Present(actual)) => ret.sites.0.get(&ArenaNode::Value(interface.relation())).map(|&(index, _)| index) == Some(actual.relation)
+                            && ret.sites.0.get(&ArenaNode::Value(interface.reflexivity())).map(|&(index, _)| index) == Some(actual.reflexivity)
+                            && interface.law().map(|law| ret.sites.0.get(&ArenaNode::Value(law)).map(|&(index, _)| index)) == actual.law.map(Some),
                         (Maybe::Absent(_), Maybe::Absent(_)) => true,
                         (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
                     } }
@@ -4481,10 +4560,11 @@ pub fn encode_item(
     }
     let raw_roots: Vec<NodeIndex> = declaration.iter().map(|(root, _)| root).collect();
     let tabled = tabled(&encoder.nodes, &raw_roots);
-    let mut sites = encoder.seen;
-    for raw in sites.values_mut() {
-        *raw = tabled.of(*raw);
-    }
+    let sites = encoder
+        .seen
+        .into_iter()
+        .map(|(node, raw)| (node, (tabled.of(raw), Discovery::from(usize::from(raw)))))
+        .collect();
     Encoded {
         content: ItemContent {
             reference,
@@ -4494,6 +4574,194 @@ pub fn encode_item(
         },
         sites: Sites(sites),
     }
+}
+
+/// The arena nodes that root `item`'s declaration, in a fixed order: a
+/// value's signature then its body; a datatype's parameters, indices,
+/// constructor fields, stated results and kind; a codata type's parameters,
+/// observations and kind; an abstract type's kind, representation and
+/// interface; none for a world.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each root once for each place the declaration names it, in the
+///   order above; the order depends on the declaration alone.
+/// - provides: the roots a failure's node outside its item is placed under.
+/// - panics: none.
+/// - executable: none — the clause restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a node of another item's signature, and a codata item's
+///   own kind, are placed under their roots and seat at them again.
+/// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+pub fn item_roots(item: &crate::region::Item) -> Vec<ArenaNode>
+{
+    let mut roots = Vec::new();
+    match *item.declaration().content() {
+        gandr_core_checker::DeclarationContent::Value { signature, body } => {
+            if let Maybe::Present(ty) = signature {
+                roots.push(ArenaNode::ValueType(ty));
+            }
+            if let Maybe::Present(value) = body {
+                roots.push(ArenaNode::Value(value));
+            }
+        },
+        gandr_core_checker::DeclarationContent::Data(ref signature) => {
+            roots.extend(
+                signature
+                    .parameters()
+                    .iter()
+                    .chain(signature.indices())
+                    .chain(signature.constructors().iter().flatten())
+                    .map(|&ty| ArenaNode::ValueType(ty)),
+            );
+            roots.extend(
+                signature
+                    .results()
+                    .iter()
+                    .flatten()
+                    .map(|&value| ArenaNode::Value(value)),
+            );
+            roots.push(ArenaNode::ValueType(signature.kind()));
+        },
+        gandr_core_checker::DeclarationContent::Codata(ref signature) => {
+            roots.extend(
+                signature
+                    .parameters()
+                    .iter()
+                    .map(|&ty| ArenaNode::ValueType(ty)),
+            );
+            roots.extend(
+                signature
+                    .observations()
+                    .iter()
+                    .map(|&ty| ArenaNode::CompType(ty)),
+            );
+            roots.push(ArenaNode::ValueType(signature.kind()));
+        },
+        gandr_core_checker::DeclarationContent::Abstract(sealed) => {
+            roots.push(ArenaNode::ValueType(sealed.kind()));
+            roots.push(ArenaNode::ValueType(sealed.representation()));
+            if let Maybe::Present(interface) = sealed.interface() {
+                roots.push(ArenaNode::Value(interface.relation()));
+                roots.push(ArenaNode::Value(interface.reflexivity()));
+                if let Maybe::Present(law) = interface.law() {
+                    roots.push(ArenaNode::Value(law));
+                }
+            }
+        },
+        gandr_core_checker::DeclarationContent::World(_) => {},
+    }
+    roots
+}
+
+/// The walk of `root` alone: each arena node it reaches, in the order a walk
+/// from `root` discovers them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `root` first, then each node the breadth-first walk of
+///   [`encode_item`] reaches from `root` alone, once each; the order depends on
+///   the graph under `root` alone, so an edit outside it moves no place.
+/// - panics: none.
+/// - executable: none — a predicate would walk the graph again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`item_roots`].
+/// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+pub fn root_walk(
+    arena: &CoreArena,
+    layout: &Layout,
+    root: ArenaNode,
+) -> Vec<ArenaNode>
+{
+    let mut encoder = Encoder::new(arena, layout);
+    let _root = encoder.discover(root);
+    encoder.drain();
+    let mut walk: Vec<(NodeIndex, ArenaNode)> = encoder
+        .seen
+        .into_iter()
+        .map(|(node, raw)| (raw, node))
+        .collect();
+    walk.sort_unstable();
+    walk.into_iter().map(|(_, node)| node).collect()
+}
+
+/// A node of an item that a node outside the item holds: the path of child
+/// positions to it from the outside node, and its place in the item's walk.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Anchor
+{
+    /// The child positions from the outside node down to the item's node.
+    pub path: Vec<ChildPosition>,
+    /// The item node's place in the item's walk.
+    pub at: Discovery,
+}
+
+/// The nodes of an item that the node `root` outside the item holds, each by
+/// its path from `root` and its place in the item's walk.
+///
+/// # Specification
+/// - requires: `sites` are the sites of the item that `root` stands outside.
+/// - ensures: one anchor for each node of the walk from `root` that `sites`
+///   places, by the first path that a breadth-first walk from `root` takes to
+///   it; the walk goes below no node that it anchors, and never anchors `root`.
+/// - panics: none.
+/// - executable: none — a predicate would walk the graph again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a content outside an item that holds the item's body
+///   anchors the body once, and none of the nodes below it.
+/// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+pub fn anchors(
+    arena: &CoreArena,
+    layout: &Layout,
+    root: ArenaNode,
+    sites: &Sites,
+) -> Vec<Anchor>
+{
+    let mut encoder = Encoder::new(arena, layout);
+    let top = encoder.discover(root);
+    encoder.drain();
+    let mut numbered: Vec<Option<ArenaNode>> = alloc::vec![None; encoder.nodes.len()];
+    for (&node, &number) in &encoder.seen {
+        if let Some(slot) = numbered.get_mut(usize::from(number)) {
+            *slot = Some(node);
+        }
+    }
+    let mut reached: Vec<Option<()>> = alloc::vec![None; encoder.nodes.len()];
+    if let Some(slot) = reached.get_mut(usize::from(top)) {
+        *slot = Some(());
+    }
+    let mut anchors = Vec::new();
+    let mut queue = VecDeque::from([(top, Vec::new())]);
+    while let Some((number, path)) = queue.pop_front() {
+        if number != top
+            && let Some(&Some(node)) = numbered.get(usize::from(number))
+            && let Maybe::Present(at) = sites.discovery(node)
+        {
+            anchors.push(Anchor { path, at });
+            continue;
+        }
+        let Some(entry) = encoder.nodes.get(usize::from(number))
+        else {
+            continue;
+        };
+        for (position, (child, _)) in entry.children().iter().enumerate() {
+            if let Some(slot) = reached.get_mut(usize::from(child))
+                && slot.is_none()
+            {
+                *slot = Some(());
+                let mut below = path.clone();
+                below.push(ChildPosition::from(position));
+                queue.push_back((child, below));
+            }
+        }
+    }
+    anchors
 }
 
 /// The seal site an item's table names for `site`: the same component, of
@@ -6664,13 +6932,15 @@ impl MintEntry for SupportedNode
     }
 }
 
-/// Mint the table `nodes`, rooted at its first entry, into `arena`.
+/// Mint the table `nodes`, rooted at its first entry, into `arena`, each node
+/// of `held` standing for the entry at the end of its path.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: each node of `held` is a node of `arena`.
 /// - ensures: on success the root's minted node; each entry is minted once,
-///   after its children.
-/// - fails: as [`TypeContent::mint`].
+///   after its children, but an entry at the end of a path of `held`, which is
+///   its node.
+/// - fails: as [`TypeContent::mint_holding`].
 /// - panics: none.
 ///
 /// # Adequacy
@@ -6684,17 +6954,46 @@ impl MintEntry for SupportedNode
 #[spec(ensures: |ret| match ret {
     Maybe::Present(minted) => minted.held(arena).is_some()
         && nodes.first().is_some_and(|node| node.minted_former().sort() == minted.sort()),
-    Maybe::Absent(reason) => !nodes.is_empty() || reason == seating::Absent::IllSorted,
+    Maybe::Absent(reason) => !nodes.is_empty()
+        || matches!(reason, seating::Absent::IllSorted | seating::Absent::Unwalked),
 })]
 fn mint_table<Entry>(
     nodes: &[Entry],
     arena: &mut CoreArena,
-    layout: &Layout,
+    (layout, held): (&Layout, &[(&[ChildPosition], ArenaNode)]),
 ) -> Maybe<ArenaNode, seating::Absent>
 where
     Entry: MintEntry,
 {
     let mut states = alloc::vec![MintState::Fresh; nodes.len()];
+    for &(path, node) in held {
+        let mut index = NodeIndex::from(0_usize);
+        for &position in path {
+            let child = nodes.get(usize::from(index)).and_then(|entry| {
+                entry
+                    .minted_former()
+                    .children()
+                    .iter()
+                    .nth(usize::from(position))
+            });
+            let Some((child, _)) = child
+            else {
+                return Maybe::Absent(seating::Absent::Unwalked);
+            };
+            index = child;
+        }
+        let (Some(state), Some(entry)) = (
+            states.get_mut(usize::from(index)),
+            nodes.get(usize::from(index)),
+        )
+        else {
+            return Maybe::Absent(seating::Absent::Unwalked);
+        };
+        if entry.minted_former().sort() != node.sort() {
+            return Maybe::Absent(seating::Absent::IllSorted);
+        }
+        *state = MintState::Done(node);
+    }
     let mut frames = alloc::vec![MintFrame::Enter(NodeIndex::from(0_usize))];
     while let Some(frame) = frames.pop() {
         match frame {
@@ -7610,7 +7909,7 @@ where
                 && !layout.references.iter().any(|named| named == reference)
         },
     })]
-fn place(
+pub fn place(
     layout: &Layout,
     reference: &Reference,
 ) -> Maybe<gandr_kernel_term::ConstantIndex, seating::Absent>

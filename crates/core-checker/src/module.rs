@@ -1117,6 +1117,53 @@ impl ModuleReport
         &self.failures
     }
 
+    /// Report the declaration at `constant` as refused with `refusal`, under
+    /// `failure` when the judgement kept one: what a judgement that takes a
+    /// refused declaration from its checkpoint reports for it.
+    ///
+    /// # Specification
+    /// - requires: `failure`, when present, refused with `refusal`.
+    /// - ensures: the judged declaration at `constant`, when the report holds
+    ///   one, has the verdict [`Verdict::Refused`] of `refusal`; the failures
+    ///   hold `failure` at `constant`, or nothing when it is absent; nothing
+    ///   else changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a refused and an accepted declaration, each given a
+    ///   taken refusal with and without a failure, separate the verdict and the
+    ///   failure that the report keeps.
+    /// - witness: `module::tests::a_refusal_taken_from_a_checkpoint_replaces_the_verdict_and_the_failure`
+    #[spec(
+        requires: failure.as_ref().is_none_or(|kept| kept.refusal() == refusal),
+        captures: kept = failure.clone(),
+        ensures: self.failures.get(&constant) == kept.as_ref(),
+    )]
+    #[inline]
+    pub fn refuse(
+        &mut self,
+        constant: ConstantIndex,
+        refusal: CheckRefusal,
+        failure: Option<Failure>,
+    )
+    {
+        if let Some(judged) = self
+            .judged
+            .iter_mut()
+            .find(|judged| judged.constant == constant)
+        {
+            judged.verdict = Verdict::Refused(refusal);
+        }
+        match failure {
+            Some(failure) => {
+                let _replaced = self.failures.insert(constant, failure);
+            },
+            None => {
+                let _removed = self.failures.remove(&constant);
+            },
+        }
+    }
+
     /// What elaborating each body that held a computation written where a
     /// value is read did, by position: the decisions, the rebuilt nodes beside
     /// the nodes they were built from, and each minted bind beside its run.
@@ -1378,7 +1425,7 @@ quenchant_shape::reason_enum! {
 
 quenchant_shape::reason_enum! {
     /// Why a declaration's judgement keeps no failure.
-    mod kept {
+    pub mod kept {
         /// The reason no failure is kept.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
@@ -1386,6 +1433,9 @@ quenchant_shape::reason_enum! {
             Accepted,
             /// The declaration was refused before its body was run.
             Unrun,
+            /// A module run keeps the failure in its report
+            /// ([`crate::ModuleReport::failures`]), not beside its support.
+            Reported,
         }
     }
 }
@@ -2736,7 +2786,8 @@ fn unenclosed_failure(run: ValueId) -> Failure
 ///   table, once per position, ascending by position, and no answer read before
 ///   this call; and [`Entered::Elaborated`] exactly when the verdict defines a
 ///   body and the table departs from the written declaration, as [`entered`]
-///   states. An answer at an earlier position is the table's answer after the
+///   states; and the failure of a refused run, as [`ModuleReport::failures`]
+///   keeps it. An answer at an earlier position is the table's answer after the
 ///   call. An answer at a later position is the one the open mutual block
 ///   foresaw when the judgement read it, which the table can drop after the
 ///   call; outside a block, a later position answers untyped.
@@ -2775,9 +2826,14 @@ pub fn check_declaration_supported(
 ) -> Supported
 {
     context.start_support();
-    let verdict = check_declaration(context, declaration);
-    let entered = entered(context, declaration, verdict);
-    Supported::new(verdict, context.finish_support(), entered)
+    let decision = decide(context, declaration, Run::Judged);
+    let entered = entered(context, declaration, decision.verdict);
+    Supported::new(
+        decision.verdict,
+        context.finish_support(),
+        entered,
+        decision.failure,
+    )
 }
 
 /// The form the table holds `declaration` in after its judgement gave
@@ -3095,7 +3151,12 @@ impl ModuleRun
                     let decision = decide(context, declaration, kind);
                     let support = context.finish_support();
                     let entered = entered(context, declaration, decision.verdict);
-                    let kept = Supported::new(decision.verdict, support, entered);
+                    let kept = Supported::new(
+                        decision.verdict,
+                        support,
+                        entered,
+                        Maybe::Absent(kept::Absent::Reported),
+                    );
                     // The counts layer charges these consults to the item a
                     // pass takes the verdict for.
                     #[cfg(feature = "instrument")]

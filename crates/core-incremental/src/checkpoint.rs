@@ -147,9 +147,11 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Demand;
 use gandr_core_checker::Entered;
+use gandr_core_checker::Failure;
 use gandr_core_checker::FormedValueType;
 use gandr_core_checker::Membership;
 use gandr_core_checker::ModuleReport;
@@ -162,6 +164,7 @@ use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::check_declaration_supported;
 use gandr_core_checker::form_value_type;
+use gandr_core_checker::kept;
 use gandr_core_checker::signature_table;
 #[cfg(feature = "instrument")]
 use gandr_core_checker::tally::MemoTally;
@@ -200,6 +203,8 @@ use crate::content::Sites;
 use crate::content::TypeContent;
 use crate::content::encode_item;
 use crate::content::seating;
+use crate::failure::FailureContent;
+use crate::failure::failed;
 use crate::footprint::Footprint;
 use crate::footprint::footprint_of;
 use crate::order::ItemHandle;
@@ -507,6 +512,8 @@ struct CheckpointParts
     typing: Typing,
     /// The form the table held the item in after its judgement.
     entered: Entered,
+    /// A refused item's failure as content, which a seat builds again.
+    failure: Maybe<Arc<FailureContent>, failed::Absent>,
 }
 
 impl ItemCheckpoint
@@ -556,6 +563,7 @@ impl ItemCheckpoint
                 support: canonical_support(support),
                 typing,
                 entered,
+                failure: Maybe::Absent(failed::Absent::Unkept),
             }),
         }
     }
@@ -644,6 +652,87 @@ impl ItemCheckpoint
     pub fn entered(&self) -> Entered
     {
         self.parts.entered
+    }
+
+    /// This checkpoint, keeping `failure` as its item's failure content, or
+    /// the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_failure(
+        mut self,
+        failure: Maybe<FailureContent, failed::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).failure = match failure {
+            Maybe::Present(failure) => Maybe::Present(Arc::new(failure)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// A refused item's failure as content, or why the checkpoint keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn failure(&self) -> Maybe<&FailureContent, failed::Absent>
+    {
+        match self.parts.failure {
+            Maybe::Present(ref failure) => Maybe::Present(failure),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The checker's refusal and failure of this refused item, seated in
+    /// `arena`: the item at `ordinal` of the edited `program`, walked in
+    /// `arena`, places each node the failure names.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the edited program's lowered nodes at the ids
+    ///   `program`'s own arena holds them; the item at `ordinal` has the
+    ///   content this checkpoint keeps.
+    /// - ensures: on success, the refusal whose projection through the edited
+    ///   item is this checkpoint's refusal, and the failure the judgement kept,
+    ///   or why it kept none.
+    /// - fails: [`seating::Absent::Unseatable`] for an item not refused, or one
+    ///   whose checkpoint keeps no failure content;
+    ///   [`seating::Absent::Unplaced`] for an ordinal past the program; and
+    ///   otherwise as the seat of the content fails.
+    /// - panics: none.
+    /// - executable: none — a predicate would project the seated refusal again,
+    ///   through the walk this call reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the corpus's refusals, a refused item's
+    ///   diagnostic rendered from its checkpoint is the diagnostic of the whole
+    ///   judgement.
+    /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
+    #[inline]
+    pub fn refused(
+        &self,
+        arena: &mut CoreArena,
+        (program, ordinal): (&Program, ItemOrdinal),
+    ) -> Maybe<(CheckRefusal, Maybe<Failure, kept::Absent>), seating::Absent>
+    {
+        let (&Typing::Refused(ref refusal), &Maybe::Present(ref failure)) =
+            (&self.parts.typing, &self.parts.failure)
+        else {
+            return Maybe::Absent(seating::Absent::Unseatable);
+        };
+        let layout = program.layout();
+        let Some(own) = layout
+            .items
+            .get(usize::from(ordinal))
+            .map(|item| item.declaration().constant())
+        else {
+            return Maybe::Absent(seating::Absent::Unplaced);
+        };
+        let item = encode_item(arena, layout, ordinal);
+        match failure.seat(refusal, (arena, layout), &item.sites, own) {
+            Ok(seated) => Maybe::Present(seated),
+            Err(reason) => Maybe::Absent(reason),
+        }
     }
 
     /// The checkpoint with its footprint replaced, for a test that shows the
@@ -2300,6 +2389,8 @@ struct Outcome
     typing: Typing,
     /// The form the table holds it in: as written for an adopted item.
     entered: Entered,
+    /// A refused item's failure as content.
+    failure: Maybe<Arc<FailureContent>, failed::Absent>,
     /// Whether it was adopted.
     adoption: Adoption,
 }
@@ -2474,6 +2565,8 @@ pub struct Judgement<'judged>
     /// The verdict and the support of each declaration the judgement decided
     /// alone, by position.
     supported: &'judged BTreeMap<ConstantIndex, Supported>,
+    /// The failure each refused declaration's run kept, by position.
+    failures: &'judged BTreeMap<ConstantIndex, Failure>,
 }
 
 /// What taking one item's verdict reads.
@@ -2514,6 +2607,7 @@ impl<'judged> Judgement<'judged>
         Self {
             arena,
             supported: report.supported(),
+            failures: report.failures(),
         }
     }
 
@@ -2557,7 +2651,7 @@ impl<'judged> Judgement<'judged>
         &self,
         context: &mut CheckingContext<'_>,
         taking: &Taking<'_>,
-    ) -> Maybe<(Vec<Answered>, Typing, Answer), taken::Absent>
+    ) -> Maybe<(Vec<Answered>, Typing, Answer, Failed), taken::Absent>
     {
         let declaration = taking.declaration;
         if taking.item.content.opacity() == Opacity::Opaque {
@@ -2610,8 +2704,25 @@ impl<'judged> Judgement<'judged>
             layout: taking.layout,
             sites: &taking.item.sites,
             types: taking.types,
+            read: core::cell::RefCell::new(None),
         };
         let typing = projection.typing(&verdict);
+        let support = answered(
+            (supported.support(), None),
+            self.arena,
+            taking.layout,
+            taking.types,
+        );
+        let failure = failure_of(
+            &projection,
+            (
+                verdict,
+                self.failures
+                    .get(&declaration.constant())
+                    .map_or(Maybe::Absent(kept::Absent::Unrun), Maybe::Present),
+            ),
+            (&taking.item.content, &support),
+        );
         // An unsigned item's synthesised type is minted into the edited arena
         // from its content, as an adopted one's is.
         let minted = match (&typing, written) {
@@ -2638,13 +2749,7 @@ impl<'judged> Judgement<'judged>
         else {
             return Maybe::Absent(taken::Absent::Unseated);
         };
-        let support = answered(
-            (supported.support(), None),
-            self.arena,
-            taking.layout,
-            taking.types,
-        );
-        Maybe::Present((support, typing, answer))
+        Maybe::Present((support, typing, answer, failure))
     }
 }
 
@@ -2915,6 +3020,7 @@ where
                 support: outcome.support,
                 typing: outcome.typing,
                 entered: outcome.entered,
+                failure: outcome.failure,
             }),
         });
     }
@@ -3132,6 +3238,9 @@ where
     // Each member of a block the pass decided: its index among the pass's
     // items, its position and its verdict, until its block is refused whole.
     let mut members: Vec<(usize, ConstantIndex, Verdict)> = Vec::new();
+    // The failure each refused member's run kept, by position: a block refused
+    // whole gives each member its culprit's failure, as the judgement does.
+    let mut culprits: BTreeMap<ConstantIndex, Failure> = BTreeMap::new();
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once; the judgement's arena has a memo of its own.
     let types = crate::content::TypeMemo::default();
@@ -3195,12 +3304,19 @@ where
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
+                let failure = match candidates.get(index) {
+                    Some(&Maybe::Present(ref candidate)) => {
+                        candidate.checkpoint.parts.failure.clone()
+                    },
+                    Some(&Maybe::Absent(_)) | None => Maybe::Absent(failed::Absent::Unkept),
+                };
                 (
                     Outcome {
                         footprint,
                         support,
                         typing,
                         entered: Entered::AsWritten,
+                        failure,
                         adoption: Adoption::Adopted,
                     },
                     answer,
@@ -3229,20 +3345,24 @@ where
                     (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
                     (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
                 };
-                let (support, typing, answer, entered) = match taken {
-                    Maybe::Present((support, typing, answer)) => {
+                let (support, typing, answer, entered, failure) = match taken {
+                    Maybe::Present((support, typing, answer, failure)) => {
                         bump(&mut census.taken);
                         #[cfg(feature = "instrument")]
                         if let Some(judgement) = judgement {
                             consulted = judgement.consulted(declaration.constant());
                         }
-                        (support, typing, answer, Entered::AsWritten)
+                        (support, typing, answer, Entered::AsWritten, failure)
                     },
                     Maybe::Absent(_) => {
-                        let (decision, verdict) =
+                        let (decision, supported) =
                             decided(&mut context, item, declaration, layout, &types);
                         if membership == Membership::Member {
-                            members.push((index, declaration.constant(), verdict));
+                            if let Maybe::Present(failure) = supported.failure() {
+                                let _earlier =
+                                    culprits.insert(declaration.constant(), failure.clone());
+                            }
+                            members.push((index, declaration.constant(), supported.verdict()));
                         }
                         decision
                     },
@@ -3253,6 +3373,7 @@ where
                         support,
                         typing,
                         entered,
+                        failure,
                         adoption: Adoption::Judged,
                     },
                     answer,
@@ -3272,21 +3393,33 @@ where
         supplied.own.push(answer);
     }
     // The pass keeps nothing of an open block: it closes the block, and gives
-    // each member the verdict the judgement gives it, its block's refusal.
+    // each member the verdict the judgement gives it, its block's refusal,
+    // and the failure of the block's culprit.
     schedule.close(&mut context);
     schedule.refuse_whole(
         &mut members,
         |&(_, constant, verdict)| (constant, verdict),
-        |&mut (index, _, ref mut verdict), refusal, _| {
+        |&mut (index, _, ref mut verdict), refusal, culprit| {
             *verdict = Verdict::Refused(refusal);
             if let (Some(outcome), Some(item)) = (outcomes.get_mut(index), encoded.get(index)) {
-                outcome.typing = Projection {
+                let projection = Projection {
                     arena: context.arena(),
                     layout,
                     sites: &item.sites,
                     types: &types,
-                }
-                .typing(&Verdict::Refused(refusal));
+                    read: core::cell::RefCell::new(None),
+                };
+                outcome.typing = projection.typing(&Verdict::Refused(refusal));
+                // A culprit whose run kept no failure was refused before its
+                // body ran.
+                let failure = culprits
+                    .get(&culprit)
+                    .map_or(Maybe::Absent(kept::Absent::Unrun), Maybe::Present);
+                outcome.failure = failure_of(
+                    &projection,
+                    (Verdict::Refused(refusal), failure),
+                    (&item.content, &outcome.support),
+                );
             }
         },
     );
@@ -3299,14 +3432,14 @@ where
 }
 
 /// Decide the item in `context`, and read its typing, its support and its
-/// answer through the edited program, beside the verdict they project.
+/// answer through the edited program, beside the run they project.
 ///
 /// # Specification
 /// - requires: `context` has admitted exactly the items before this one.
 /// - ensures: the verdict [`check_declaration_supported`] gives, projected,
 ///   with its support and the item's own entered answer, the answer the table
 ///   then gives of the item, and the form the table holds it in; beside them,
-///   the verdict itself, which a block's refusal replaces.
+///   the run itself, whose verdict and failure a block's refusal replaces.
 /// - panics: none.
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
@@ -3320,7 +3453,7 @@ fn decided(
     declaration: &gandr_core_checker::Declaration,
     layout: &Layout,
     types: &crate::content::TypeMemo,
-) -> ((Vec<Answered>, Typing, Answer, Entered), Verdict)
+) -> ((Vec<Answered>, Typing, Answer, Entered, Failed), Supported)
 {
     let supported = check_declaration_supported(context, declaration);
     let arena = context.arena();
@@ -3329,10 +3462,16 @@ fn decided(
         layout,
         sites: &item.sites,
         types,
+        read: core::cell::RefCell::new(None),
     };
     let typing = projection.typing(&supported.verdict());
     let own = own_entry(context, declaration, (item, layout));
     let support = answered((supported.support(), own), arena, layout, types);
+    let failure = failure_of(
+        &projection,
+        (supported.verdict(), supported.failure()),
+        (&item.content, &support),
+    );
     let answer = match *(declaration.content()) {
         gandr_core_checker::DeclarationContent::Value { .. } => answer_of(
             context.signature(declaration.constant()),
@@ -3350,10 +3489,42 @@ fn decided(
         gandr_core_checker::DeclarationContent::Abstract(_)
         | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
     };
-    (
-        (support, typing, answer, supported.entered()),
-        supported.verdict(),
-    )
+    let entered = supported.entered();
+    ((support, typing, answer, entered, failure), supported)
+}
+
+/// A refused item's failure as content, or why a checkpoint keeps none.
+type Failed = Maybe<Arc<FailureContent>, failed::Absent>;
+
+/// The failure content of `verdict` read through `projection`, beside the
+/// `failure` its run kept, a node outside the item placed under a root of
+/// `item` or of an item `support` consulted; none for a verdict that is not a
+/// refusal, and none for an opaque item, whose checkpoint no pass takes.
+///
+/// # Specification
+/// trivial.
+fn failure_of(
+    projection: &Projection<'_, '_, '_, '_>,
+    (verdict, failure): (Verdict, Maybe<&Failure, kept::Absent>),
+    (item, support): (&ItemContent, &[Answered]),
+) -> Failed
+{
+    match verdict {
+        Verdict::Refused(_) if item.opacity() == Opacity::Opaque => {
+            Maybe::Absent(failed::Absent::Opaque)
+        },
+        Verdict::Refused(refusal) => {
+            let candidates: Vec<&Reference> = core::iter::once(item.reference())
+                .chain(support.iter().map(Answered::reference))
+                .collect();
+            Maybe::Present(Arc::new(projection.failed(refusal, failure, &candidates)))
+        },
+        Verdict::Data
+        | Verdict::Checked { .. }
+        | Verdict::Synthesised { .. }
+        | Verdict::Owed(_)
+        | Verdict::Suspended(_) => Maybe::Absent(failed::Absent::Unkept),
+    }
 }
 
 /// Mint the seat an unsigned item's adopted synthesised type is read from.

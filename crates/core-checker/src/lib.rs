@@ -718,6 +718,7 @@ pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
 pub use crate::module::elaborated_report;
+pub use crate::module::kept;
 pub use crate::module::type_module;
 pub use crate::module::unmarked;
 pub use crate::nested::NestedElaboration;

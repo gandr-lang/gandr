@@ -292,13 +292,17 @@ INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run insid
 INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Spawn','trait','Starts jobs inside a fork''s scope, and waits for each job it started.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Unwound','struct','A spawned job panicked on another worker, so its waiter only stops waiting.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','boundary::ChildPosition','struct','Names where a child sits among its content node''s children, so a path from a node outside an item reaches the item''s node it holds.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','boundary::Discovery','struct','Names where an arena node sits in the order its item''s walk discovers nodes, so a kept failure names one node of the item.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemCount','struct','Names a count of items or of the steps a resume took over them, so it cannot be passed where an ordinal or record count is wanted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::ItemOrdinal','struct','Names where an item sits in its program''s source order, so a resume can count it and a stream report it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::LivenessEmpty','struct','Names whether a liveness map publishes nothing, so a consumer can test emptiness without opening the map.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::MatchOrdinal','struct','Names which match of a source item this is, in source order, so the stream orders matches by it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::NodeIndex','struct','Names a node''s position in a content table, which a former''s child edge and a root placement point at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::Occurrence','struct','Names how many items of the same key precede an item, so a reference names a repeated key''s one occurrence.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','boundary::OutsideIndex','struct','Names a node outside its item in a failure''s table of such nodes, so a kept failure points at its content.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::RecordCount','struct','Names how many records a checkpoint store holds, so its size reads as a count of records.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','boundary::RootOrdinal','struct','Names which root of its item''s declaration a node outside the item stands under, so a seat walks that root alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::SourceItemOrdinal','struct','Names which source item of a submission owns a match, so the stream orders matches by their owner.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::SourceOrdinal','struct','Names where a source sits in its program''s order of sources, so a source''s import names the source it reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','boundary::SubmissionOrdinal','struct','Names which submission of a session a match was written in, so the stream orders matches by submission.',NULL,'fits','sound',NULL);
@@ -389,6 +393,7 @@ INSERT INTO purpose VALUES('core-incremental','stream::SynthesisEvent','enum','N
 INSERT INTO purpose VALUES('core-incremental','stream::SynthesisStream','struct','Holds a deterministic, resumable sequence of synthesis events, its cursor before the first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','support::SupportedNode','struct','Holds one compact former, its cover and scope, and the references beneath it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::EndpointSite','struct','Names an endpoint, by the site of the fork that bound it and its side.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','typing::Forcing','enum','Names what the call of an unanswered model slot forces the slot to, projected: the forced type''s table or no type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Form','enum','Names a checking-only form met where a type had to be synthesised, with its site.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Linearity','enum','Names how an endpoint escaped its one linear use, projected to item sites and type tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Located','enum','Names how a located judgement broke, projected: types as their tables, worlds and positions as references.',NULL,'fits','sound',NULL);

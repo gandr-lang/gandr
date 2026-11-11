@@ -470,7 +470,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::UnboundIndex { .. }) => "unbound-index",
         Typing::Refused(Refusal::BudgetExceeded { .. }) => "budget-exceeded",
         Typing::Refused(Refusal::DanglingNode { .. }) => "dangling-node",
-        Typing::Refused(Refusal::AdmissionOrder) => "admission-order",
+        Typing::Refused(Refusal::AdmissionOrder { .. }) => "admission-order",
         Typing::Refused(Refusal::MachineInvariant) => "machine-invariant",
         Typing::Refused(Refusal::SortMismatch { .. }) => "sort-mismatch",
         Typing::Refused(Refusal::LevelMismatch { .. }) => "level-mismatch",

@@ -132,12 +132,25 @@ use crate::content::ItemContent;
 use crate::content::Opacity;
 use crate::content::Sort;
 use crate::content::TypeContent;
+use crate::content::seating;
+use crate::failure::ComparedContent;
+use crate::failure::EndpointContent;
+use crate::failure::FailureContent;
+use crate::failure::FailureParts;
+use crate::failure::ObligationContent;
+use crate::failure::OutsideContent;
+use crate::failure::Placed;
+use crate::failure::PursuitContent;
+use crate::failure::Rooted;
+use crate::failure::failed;
+use crate::failure::solved;
 use crate::footprint::Footprint;
 use crate::footprint::HoleMark;
 use crate::region::ItemKey;
 use crate::region::Reference;
 use crate::support::SupportedNode;
 use crate::typing::EndpointSite;
+use crate::typing::Forcing;
 use crate::typing::Form;
 use crate::typing::Linearity;
 use crate::typing::Located;
@@ -148,13 +161,15 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x16` persists a located program: a world declaration's row, a stated
-/// entry, the world formers, and the answers the world register and the
-/// host's grant give.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x16";
+/// `0x17` keeps every field of a refusal, and a refused item's failure as
+/// content beside it, beside the located program that `0x16` persists: a
+/// world declaration's row, a stated entry, the world formers, and the
+/// answers the world register and the host's grant give.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x17";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint version `0x16` writes it.
+/// `0x0d` reads its items' content as checkpoint versions `0x16` and `0x17`
+/// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
 /// The decoder's cap on a level atom's offset.
@@ -7991,6 +8006,29 @@ field!(
 );
 
 field!(
+    Forcing,
+    |forcing, writer| {
+        match *forcing {
+            Forcing::Type(ref ty) => {
+                writer.tag(Tag(0));
+                write_type(writer, ty)
+            },
+            Forcing::Unforced => {
+                writer.tag(Tag(1));
+                Ok(())
+            },
+        }
+    },
+    |reader| {
+        Ok(match reader.tag()?.0 {
+            0 => Forcing::Type(read_type(reader)?),
+            1 => Forcing::Unforced,
+            _ => return Err(CodecError::Corrupt),
+        })
+    }
+);
+
+field!(
     Form,
     |form, writer| {
         let (tag, site) = match *form {
@@ -8110,6 +8148,25 @@ impl Contents for Mismatched
     {
         visit(&self.synthesised)?;
         visit(&self.expected)
+    }
+}
+
+impl Contents for Forcing
+{
+    /// Pass the forced type, when the call forces one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Type(ref ty) => visit(ty),
+            Self::Unforced => Ok(()),
+        }
     }
 }
 
@@ -8775,7 +8832,7 @@ where
     }
     write_typing(writer, checkpoint.typing())?;
     write_entered(writer, checkpoint.entered());
-    Ok(())
+    write_failed(writer, checkpoint.failure())
 }
 
 /// Read one item's checkpoint.
@@ -8848,9 +8905,8 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
     }
     let typing = read_typing(reader)?;
     let entered = read_entered(reader)?;
-    Ok(ItemCheckpoint::new(
-        content, footprint, support, typing, entered,
-    ))
+    let checkpoint = ItemCheckpoint::new(content, footprint, support, typing, entered);
+    Ok(checkpoint.with_failure(read_failed(reader)?))
 }
 
 /// Write the form the table held an item in: tag 0 as written, tag 1
@@ -8881,6 +8937,580 @@ fn read_entered(reader: &mut Reader<'_>) -> Result<Entered, CodecError>
         1 => Ok(Entered::Elaborated),
         _ => Err(CodecError::Corrupt),
     }
+}
+
+/// The premises of a List fold, in stable wire order.
+const FOLD_PREMISES: [gandr_core_checker::FoldPremise; 5] = [
+    gandr_core_checker::FoldPremise::Element,
+    gandr_core_checker::FoldPremise::Result,
+    gandr_core_checker::FoldPremise::Input,
+    gandr_core_checker::FoldPremise::Nil,
+    gandr_core_checker::FoldPremise::Cons,
+];
+
+/// Where a refused machine stood, in stable wire order.
+const STAGES: [gandr_core_checker::Stage; 3] = [
+    gandr_core_checker::Stage::Starting,
+    gandr_core_checker::Stage::Resuming,
+    gandr_core_checker::Stage::Handing,
+];
+
+/// Why a judgement names no expected type, in stable wire order.
+const JUDGED: [gandr_core_checker::judged::Absent; 2] = [
+    gandr_core_checker::judged::Absent::Synthesised,
+    gandr_core_checker::judged::Absent::Formed,
+];
+
+/// Why a compared side is empty, in stable wire order.
+const COMPARED: [gandr_core_checker::compared::Absent; 2] = [
+    gandr_core_checker::compared::Absent::Unnamed,
+    gandr_core_checker::compared::Absent::InWeakHead,
+];
+
+/// Why a judgement keeps no failure, in stable wire order.
+const KEPT: [gandr_core_checker::kept::Absent; 3] = [
+    gandr_core_checker::kept::Absent::Accepted,
+    gandr_core_checker::kept::Absent::Unrun,
+    gandr_core_checker::kept::Absent::Reported,
+];
+
+/// The uses a linear endpoint stands at, in stable wire order.
+const USES: [gandr_core_term::LinearUse; 3] = [
+    gandr_core_term::LinearUse::Available,
+    gandr_core_term::LinearUse::Moved,
+    gandr_core_term::LinearUse::Consumed,
+];
+
+/// Why a content table does not mint, in stable wire order.
+const SEATINGS: [seating::Absent; 7] = [
+    seating::Absent::Unresolved,
+    seating::Absent::Cyclic,
+    seating::Absent::Unplaced,
+    seating::Absent::IllSorted,
+    seating::Absent::Unseatable,
+    seating::Absent::Unplaceable,
+    seating::Absent::Unwalked,
+];
+
+/// Why a node outside an item keeps no root place, in stable wire order.
+const ROOTINGS: [crate::failure::rooted::Absent; 1] = [crate::failure::rooted::Absent::Unrooted];
+
+/// Why a checkpoint keeps no failure content, in stable wire order.
+const FAILEDS: [failed::Absent; 2] = [failed::Absent::Unkept, failed::Absent::Opaque];
+
+/// Write the root place of a node outside an item: tag 0 and why it keeps
+/// none; else tag 1, the item's reference, the root and the node's discovery.
+///
+/// # Specification
+/// - ensures: [`read_rooted`] reads back `rooted` from what was written.
+/// - fails: as [`write_reference`] and [`write_listed`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn write_rooted<Out>(
+    writer: &mut Writer<'_, Out>,
+    rooted: &Maybe<Rooted, crate::failure::rooted::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *rooted {
+        Maybe::Present(ref rooted) => {
+            writer.tag(Tag(1));
+            write_reference(writer, &rooted.item)?;
+            writer.count(Count(usize::from(rooted.root)))?;
+            writer.count(Count(usize::from(rooted.at)))
+        },
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            write_listed(writer, &ROOTINGS, &reason)
+        },
+    }
+}
+
+/// Read the root place of a node outside an item.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, and as
+///   [`read_reference`] and [`read_listed`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn read_rooted(
+    reader: &mut Reader<'_>
+) -> Result<Maybe<Rooted, crate::failure::rooted::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        1 => {
+            let item = read_reference(reader)?;
+            let root = crate::boundary::RootOrdinal::from(reader.count()?.0);
+            let at = crate::boundary::Discovery::from(reader.count()?.0);
+            Ok(Maybe::Present(Rooted { item, root, at }))
+        },
+        0 => Ok(Maybe::Absent(read_listed(reader, &ROOTINGS)?)),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write the item nodes that a node outside an item holds: their count, then
+/// for each its discovery, the length of its path and each child position.
+///
+/// # Specification
+/// - ensures: [`read_anchors`] reads back `anchors` from what was written.
+/// - fails: as [`Writer::count`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn write_anchors<Out>(
+    writer: &mut Writer<'_, Out>,
+    anchors: &[crate::content::Anchor],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(anchors.len()))?;
+    for anchor in anchors {
+        writer.count(Count(usize::from(anchor.at)))?;
+        writer.count(Count(anchor.path.len()))?;
+        for &position in &anchor.path {
+            writer.count(Count(usize::from(position)))?;
+        }
+    }
+    Ok(())
+}
+
+/// Read the item nodes that a node outside an item holds.
+///
+/// # Specification
+/// - fails: as [`Reader::count`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn read_anchors(reader: &mut Reader<'_>) -> Result<Vec<crate::content::Anchor>, CodecError>
+{
+    let count = reader.count()?;
+    let mut anchors = Vec::new();
+    for _ in 0 .. count.0 {
+        let at = crate::boundary::Discovery::from(reader.count()?.0);
+        let length = reader.count()?;
+        let mut path = Vec::new();
+        for _ in 0 .. length.0 {
+            path.push(crate::boundary::ChildPosition::from(reader.count()?.0));
+        }
+        anchors.push(crate::content::Anchor { path, at });
+    }
+    Ok(anchors)
+}
+
+/// Write a node's place: tag 0 and its discovery, or tag 1 and its index
+/// outside the item.
+///
+/// # Specification
+/// trivial.
+fn write_placed<Out>(
+    writer: &mut Writer<'_, Out>,
+    placed: Placed,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let (tag, index) = match placed {
+        Placed::At(discovery) => (0, usize::from(discovery)),
+        Placed::Outside(index) => (1, usize::from(index)),
+    };
+    writer.tag(Tag(tag));
+    writer.count(Count(index))
+}
+
+/// Read a node's place.
+///
+/// # Specification
+/// trivial.
+fn read_placed(reader: &mut Reader<'_>) -> Result<Placed, CodecError>
+{
+    let tag = reader.tag()?;
+    let index = reader.count()?.0;
+    match tag.0 {
+        0 => Ok(Placed::At(crate::boundary::Discovery::from(index))),
+        1 => Ok(Placed::Outside(crate::boundary::OutsideIndex::from(index))),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a count of places, then each place.
+///
+/// # Specification
+/// trivial.
+fn write_places<Out>(
+    writer: &mut Writer<'_, Out>,
+    places: &[Placed],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(places.len()))?;
+    places
+        .iter()
+        .try_for_each(|&placed| write_placed(writer, placed))
+}
+
+/// Read a count of places, then each place.
+///
+/// # Specification
+/// trivial.
+fn read_places(reader: &mut Reader<'_>) -> Result<Vec<Placed>, CodecError>
+{
+    let count = reader.count()?;
+    let mut places = Vec::new();
+    for _ in 0 .. count.0 {
+        places.push(read_placed(reader)?);
+    }
+    Ok(places)
+}
+
+/// Write a placed type or why there is none: tag 1 and the place, or tag 0
+/// and the reason's position in `reasons`.
+///
+/// # Specification
+/// trivial.
+fn write_expected<Out, Reason>(
+    writer: &mut Writer<'_, Out>,
+    expected: Maybe<Placed, Reason>,
+    reasons: &[Reason],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+    Reason: Copy + PartialEq,
+{
+    match expected {
+        Maybe::Present(placed) => {
+            writer.tag(Tag(1));
+            write_placed(writer, placed)
+        },
+        Maybe::Absent(ref reason) => {
+            writer.tag(Tag(0));
+            write_listed(writer, reasons, reason)
+        },
+    }
+}
+
+/// Read a placed type or why there is none.
+///
+/// # Specification
+/// trivial.
+fn read_expected<Reason>(
+    reader: &mut Reader<'_>,
+    reasons: &[Reason],
+) -> Result<Maybe<Placed, Reason>, CodecError>
+where
+    Reason: Copy,
+{
+    match reader.tag()?.0 {
+        1 => Ok(Maybe::Present(read_placed(reader)?)),
+        0 => Ok(Maybe::Absent(read_listed(reader, reasons)?)),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Write a frame role by its stable name, then a fold's premise.
+///
+/// # Specification
+/// trivial.
+fn write_role<Out>(
+    writer: &mut Writer<'_, Out>,
+    role: gandr_core_checker::FrameRole,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let name: &[u8] = frame_role_name!(role, {
+        gandr_core_checker::FrameRole::ListFold(_) => b"ListFold",
+    });
+    writer.bytes(Bytes(name))?;
+    if let gandr_core_checker::FrameRole::ListFold(premise) = role {
+        write_listed(writer, &FOLD_PREMISES, &premise)
+    }
+    else {
+        Ok(())
+    }
+}
+
+/// Read a frame role by its stable name.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a name no role holds.
+/// - panics: none.
+/// - executable: none — the generated arms state each name.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a kept failure's roles, a fold's among them, read back as
+///   written.
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn read_role(reader: &mut Reader<'_>) -> Result<gandr_core_checker::FrameRole, CodecError>
+{
+    let name = reader.bytes()?;
+    Ok(frame_role_named!(name.0, {
+        b"ListFold" => gandr_core_checker::FrameRole::ListFold(read_listed(reader, &FOLD_PREMISES)?),
+        _ => return Err(CodecError::Corrupt),
+    }))
+}
+
+/// Write a kept failure's parts.
+///
+/// # Specification
+/// trivial.
+fn write_parts<Out>(
+    writer: &mut Writer<'_, Out>,
+    parts: &FailureParts,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(parts.obligations.len()))?;
+    for obligation in &parts.obligations {
+        write_role(writer, obligation.role)?;
+        write_placed(writer, obligation.at)?;
+        write_expected(writer, obligation.expected, &JUDGED)?;
+        write_places(writer, &obligation.binders)?;
+    }
+    write_placed(writer, parts.pursuit.at)?;
+    write_expected(writer, parts.pursuit.expected, &JUDGED)?;
+    write_listed(writer, &STAGES, &parts.pursuit.stage)?;
+    write_places(writer, &parts.hypotheses)?;
+    writer.count(Count(parts.endpoints.len()))?;
+    for endpoint in &parts.endpoints {
+        write_placed(writer, endpoint.fork)?;
+        write_listed(writer, &SIDES, &endpoint.side)?;
+        write_placed(writer, endpoint.state)?;
+        write_listed(writer, &USES, &endpoint.use_state)?;
+    }
+    match parts.solved {
+        Maybe::Present(compared) => {
+            writer.tag(Tag(1));
+            write_expected(writer, compared.expected, &COMPARED)?;
+            write_expected(writer, compared.found, &COMPARED)?;
+            write_expected(writer, compared.unfolded, &COMPARED)
+        },
+        Maybe::Absent(solved::Absent::Unchanged) => {
+            writer.tag(Tag(0));
+            Ok(())
+        },
+    }
+}
+
+/// Read a kept failure's parts.
+///
+/// # Specification
+/// trivial.
+fn read_parts(reader: &mut Reader<'_>) -> Result<FailureParts, CodecError>
+{
+    let count = reader.count()?;
+    let mut obligations = Vec::new();
+    for _ in 0 .. count.0 {
+        obligations.push(ObligationContent {
+            role: read_role(reader)?,
+            at: read_placed(reader)?,
+            expected: read_expected(reader, &JUDGED)?,
+            binders: read_places(reader)?,
+        });
+    }
+    let pursuit = PursuitContent {
+        at: read_placed(reader)?,
+        expected: read_expected(reader, &JUDGED)?,
+        stage: read_listed(reader, &STAGES)?,
+    };
+    let hypotheses = read_places(reader)?;
+    let count = reader.count()?;
+    let mut endpoints = Vec::new();
+    for _ in 0 .. count.0 {
+        endpoints.push(EndpointContent {
+            fork: read_placed(reader)?,
+            side: read_listed(reader, &SIDES)?,
+            state: read_placed(reader)?,
+            use_state: read_listed(reader, &USES)?,
+        });
+    }
+    let solved = match reader.tag()?.0 {
+        1 => Maybe::Present(ComparedContent {
+            expected: read_expected(reader, &COMPARED)?,
+            found: read_expected(reader, &COMPARED)?,
+            unfolded: read_expected(reader, &COMPARED)?,
+        }),
+        0 => Maybe::Absent(solved::Absent::Unchanged),
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(FailureParts {
+        obligations,
+        pursuit,
+        hypotheses,
+        endpoints,
+        solved,
+    })
+}
+
+/// Write a checkpoint's failure content: tag 0 and why it keeps none; else
+/// tag 1, the refusal's places, the failure's parts or why there are none,
+/// and each node outside the item: its content or why it does not mint, then
+/// its root place.
+///
+/// # Specification
+/// - ensures: [`read_failed`] reads back `failure` from what was written.
+/// - fails: as [`write_listed`] and [`write_type`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refused item's failure content reads back as written.
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn write_failed<Out>(
+    writer: &mut Writer<'_, Out>,
+    failure: Maybe<&FailureContent, failed::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let failure = match failure {
+        Maybe::Present(failure) => failure,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &FAILEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    write_places(writer, &failure.refusal)?;
+    match failure.parts {
+        Maybe::Present(ref parts) => {
+            writer.tag(Tag(1));
+            write_parts(writer, parts)?;
+        },
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            write_listed(writer, &KEPT, &reason)?;
+        },
+    }
+    writer.count(Count(failure.outside.len()))?;
+    for outside in &failure.outside {
+        match outside.content {
+            Maybe::Present(ref content) => {
+                writer.tag(Tag(1));
+                write_type(writer, content)?;
+            },
+            Maybe::Absent(reason) => {
+                writer.tag(Tag(0));
+                write_listed(writer, &SEATINGS, &reason)?;
+            },
+        }
+        write_rooted(writer, &outside.rooted)?;
+        write_anchors(writer, &outside.anchors)?;
+    }
+    Ok(())
+}
+
+/// Read a checkpoint's failure content.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, and as the readers it
+///   calls.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn read_failed(reader: &mut Reader<'_>)
+-> Result<Maybe<FailureContent, failed::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &FAILEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let refusal = read_places(reader)?;
+    let parts = match reader.tag()?.0 {
+        1 => Maybe::Present(read_parts(reader)?),
+        0 => Maybe::Absent(read_listed(reader, &KEPT)?),
+        _ => return Err(CodecError::Corrupt),
+    };
+    let count = reader.count()?;
+    let mut outside = Vec::new();
+    for _ in 0 .. count.0 {
+        let content = match reader.tag()?.0 {
+            1 => Maybe::Present(read_outside(reader)?),
+            0 => Maybe::Absent(read_listed(reader, &SEATINGS)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        outside.push(OutsideContent {
+            content,
+            rooted: read_rooted(reader)?,
+            anchors: read_anchors(reader)?,
+        });
+    }
+    Ok(Maybe::Present(FailureContent {
+        refusal,
+        parts,
+        outside,
+    }))
+}
+
+/// Read the content of a node outside an item: a table of any sort.
+///
+/// # Specification
+/// - fails: as [`read_nodes`] and [`check_discovery`], and
+///   [`CodecError::Corrupt`] for an empty table or a root support of other
+///   widths than the root's.
+/// - panics: none.
+/// - executable: none — as [`read_type`], whose clauses this reader shares but
+///   the root's sort.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_failed`].
+/// - witness: `codec::tests::a_failure_content_round_trips`
+fn read_outside(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
+{
+    let nodes = read_nodes(reader)?;
+    check_discovery(&nodes, core::iter::once(NodeIndex::from(0_usize)))?;
+    let scope = nodes
+        .first()
+        .map(SupportedNode::scope)
+        .ok_or(CodecError::Corrupt)?;
+    let placement = read_selection(reader, scope)?;
+    Ok(TypeContent::from_parts(nodes, placement))
 }
 
 /// Check the decoder work bound in every checkpoint plane without copying it.
@@ -8951,7 +9581,19 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
         .try_for_each(bounded)?;
     checkpoint
         .typing()
-        .each_content(&mut |content| bounded(content.nodes()))
+        .each_content(&mut |content| bounded(content.nodes()))?;
+    match checkpoint.failure() {
+        Maybe::Present(failure) => {
+            failure
+                .outside
+                .iter()
+                .try_for_each(|outside| match outside.content {
+                    Maybe::Present(ref content) => bounded(content.nodes()),
+                    Maybe::Absent(_) => Ok(()),
+                })
+        },
+        Maybe::Absent(_) => Ok(()),
+    }
 }
 
 /// The canonical bytes of a checkpoint set.

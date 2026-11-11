@@ -690,6 +690,47 @@ fn a_refusal_does_not_stop_the_run()
     );
 }
 
+/// A refusal that a judgement takes from a checkpoint replaces the verdict of
+/// its declaration and the failure kept at it, and leaves every other entry.
+#[test]
+fn a_refusal_taken_from_a_checkpoint_replaces_the_verdict_and_the_failure()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let text = arena.value_literal(text_literal());
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let module = [
+        declaration(At(0), Maybe::Present(integer), Maybe::Present(text)),
+        declaration(At(1), Maybe::Present(integer), Maybe::Present(zero)),
+    ];
+    let mut report = check_module(&mut context, &module);
+    let (refused, checked) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
+    let kept = report.failures()[&refused].clone();
+    let refusal = kept.refusal();
+    report.refuse(refused, refusal, None);
+    assert_eq!(
+        report.failures().get(&refused),
+        None,
+        "a refusal taken with no failure keeps none"
+    );
+    report.refuse(checked, refusal, Some(kept.clone()));
+    let [ref first, ref second] = *report.judged()
+    else {
+        panic!("every declaration keeps its verdict");
+    };
+    assert_eq!(
+        (first.verdict(), second.verdict()),
+        (Verdict::Refused(refusal), Verdict::Refused(refusal)),
+        "the taken refusal replaces the accepted verdict, and the refused one stays"
+    );
+    assert_eq!(
+        report.failures().get(&checked),
+        Some(&kept),
+        "the taken failure is kept at its declaration"
+    );
+}
+
 /// #1663: a run polled to retirement before its second declaration judges and
 /// settles the first alone, and answers what retired it; a run whose poll
 /// never retires it judges every declaration, polled once before each, and
