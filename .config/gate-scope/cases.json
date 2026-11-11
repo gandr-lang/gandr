@@ -182,7 +182,14 @@
       "changed": ["crates/core-term/src/lib.rs"],
       "landing": true
     },
-    "output": ["check:claims", "check:corpus", "check:doc", "check:landing", "check:typos"]
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:doc",
+      "check:landing",
+      "check:tests-enforcing",
+      "check:typos"
+    ]
   },
   {
     "name": "#5458: the landing's gate runs no extension check and no Rust check for a corpus source, and of the corpus checks the comment check (#6365) and the corpus check (#6489)",
@@ -224,6 +231,7 @@
       "check:corpus-comments",
       "check:doc",
       "check:landing",
+      "check:tests-enforcing",
       "check:typos"
     ]
   },
@@ -241,7 +249,7 @@
       "changed": ["crates/surface-parser/src/meld.rs", "crates/surface-parser/tests/acceptance.rs"],
       "landing": true
     },
-    "output": ["check:claims", "check:doc", "check:landing", "check:typos"]
+    "output": ["check:claims", "check:doc", "check:landing", "check:tests-enforcing", "check:typos"]
   },
   {
     "name": "#6433: the landing's gate of #6414's change, a driver and a server source, runs the witness check that refuses its renamed witnesses",
@@ -257,7 +265,13 @@
       "changed": ["crates/surface-driver/src/config.rs", "crates/surface-mcp/src/rap.rs"],
       "landing": true
     },
-    "output": ["check:claims", "check:landing", "check:typos", "check:witnesses"]
+    "output": [
+      "check:claims",
+      "check:landing",
+      "check:tests-enforcing",
+      "check:typos",
+      "check:witnesses"
+    ]
   },
   {
     "name": "#6433: the landing's gate of #6430's ledger exemplar runs the exemplar check that reads it as the dispatcher's test does",
@@ -281,6 +295,33 @@
       "check:syntax-exemplars",
       "check:typos"
     ]
+  },
+  {
+    "name": "#6595: the landing's gate of #6563's change, a checker source and its tests, runs the enforcing suite that its pair tests fail in, and no other suite",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:doctests",
+        "check:landing",
+        "check:tests-enforcing",
+        "check:tests-plain-only",
+        "check:typos"
+      ],
+      "changed": ["crates/core-checker/src/code.rs", "crates/core-checker/src/code/tests.rs"],
+      "landing": true
+    },
+    "output": ["check:claims", "check:landing", "check:tests-enforcing", "check:typos"]
+  },
+  {
+    "name": "#6595: the landing's gate of a workflow change runs no suite",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:landing", "check:tests-enforcing", "check:typos"],
+      "changed": [".config/gate-scope/select.jq"],
+      "landing": true
+    },
+    "output": ["check:claims", "check:typos"]
   },
   {
     "name": "#6489: the landing's gate of #6469's moved span and #6484's new refusing source runs the corpus check, both format checks and the renderers' goldens, and no corpus check that the landing list leaves out",
@@ -316,7 +357,13 @@
     "name": "#4911: a check building the toolchain outside every group is a finding",
     "program": "unmapped.jq",
     "input": {
-      "table": { "groups": { "rust": ["check:tests"] }, "light": [], "paths": [] },
+      "table": {
+        "groups": {
+          "rust": ["check:tests"]
+        },
+        "light": [],
+        "paths": []
+      },
       "tasks": [
         {
           "name": "check:tests",
@@ -346,10 +393,23 @@
     "name": "#4911: a check depending on a grouped check is heavy",
     "program": "unmapped.jq",
     "input": {
-      "table": { "groups": { "rust": ["check:dylint"] }, "paths": [] },
+      "table": {
+        "groups": {
+          "rust": ["check:dylint"]
+        },
+        "paths": []
+      },
       "tasks": [
-        { "name": "check:dylint", "run": ["cargo dylint --lib x"], "depends": [] },
-        { "name": "check:obligations", "run": ["jq -n 1"], "depends": ["check:dylint"] }
+        {
+          "name": "check:dylint",
+          "run": ["cargo dylint --lib x"],
+          "depends": []
+        },
+        {
+          "name": "check:obligations",
+          "run": ["jq -n 1"],
+          "depends": ["check:dylint"]
+        }
       ]
     },
     "output": "check:obligations: it builds or runs the toolchain and sits in no group of .config/gate-scope/table.json"
@@ -358,8 +418,18 @@
     "name": "#4911: a light check is no finding",
     "program": "unmapped.jq",
     "input": {
-      "table": { "groups": {}, "light": ["check:prose"], "paths": [] },
-      "tasks": [{ "name": "check:prose", "run": ["cargo run --package prose"], "depends": [] }]
+      "table": {
+        "groups": {},
+        "light": ["check:prose"],
+        "paths": []
+      },
+      "tasks": [
+        {
+          "name": "check:prose",
+          "run": ["cargo run --package prose"],
+          "depends": []
+        }
+      ]
     },
     "output": ""
   },
@@ -367,8 +437,19 @@
     "name": "#4911: a group naming no check task is a finding",
     "program": "unmapped.jq",
     "input": {
-      "table": { "groups": { "rust": ["check:tests", "check:test-groups"] }, "paths": [] },
-      "tasks": [{ "name": "check:tests", "run": ["cargo nextest run"], "depends": [] }]
+      "table": {
+        "groups": {
+          "rust": ["check:tests", "check:test-groups"]
+        },
+        "paths": []
+      },
+      "tasks": [
+        {
+          "name": "check:tests",
+          "run": ["cargo nextest run"],
+          "depends": []
+        }
+      ]
     },
     "output": "rust: it names check:test-groups, which is no check task"
   },
@@ -376,8 +457,20 @@
     "name": "#5458: a landing list naming no check task is a finding",
     "program": "unmapped.jq",
     "input": {
-      "table": { "groups": { "rust": ["check:landing"] }, "landing": ["check:lands"], "paths": [] },
-      "tasks": [{ "name": "check:landing", "run": ["echo ok"], "depends": [] }]
+      "table": {
+        "groups": {
+          "rust": ["check:landing"]
+        },
+        "landing": ["check:lands"],
+        "paths": []
+      },
+      "tasks": [
+        {
+          "name": "check:landing",
+          "run": ["echo ok"],
+          "depends": []
+        }
+      ]
     },
     "output": "landing: it names check:lands, which is no check task"
   },
@@ -390,13 +483,21 @@
         "crates/workflow-prose/tests/debug-traces/cli.a_stale_line_is_refused_and_written_away_5007.txt"
       ],
       "packages": [
-        { "name": "gandr-workflow-ledger", "dir": "crates/workflow-ledger", "deps": [] },
+        {
+          "name": "gandr-workflow-ledger",
+          "dir": "crates/workflow-ledger",
+          "deps": []
+        },
         {
           "name": "gandr-workflow-prose",
           "dir": "crates/workflow-prose",
           "deps": ["gandr-workflow-ledger"]
         },
-        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        }
       ]
     },
     "output": ["gandr-workflow-prose"]
@@ -407,8 +508,16 @@
     "input": {
       "changed": ["Cargo.lock"],
       "packages": [
-        { "name": "gandr-workflow-prose", "dir": "crates/workflow-prose", "deps": [] },
-        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }
+        {
+          "name": "gandr-workflow-prose",
+          "dir": "crates/workflow-prose",
+          "deps": []
+        },
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        }
       ]
     },
     "output": "\"workspace\""
@@ -419,10 +528,26 @@
     "input": {
       "changed": ["crates/core-term/src/lib.rs", ".config/claims/next.jq"],
       "packages": [
-        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] },
-        { "name": "gandr-kernel-core", "dir": "crates/kernel-core", "deps": ["gandr-core-term"] },
-        { "name": "gandr-lang", "dir": "crates/surface-driver", "deps": ["gandr-kernel-core"] },
-        { "name": "gandr-workflow-prose", "dir": "crates/workflow-prose", "deps": [] }
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        },
+        {
+          "name": "gandr-kernel-core",
+          "dir": "crates/kernel-core",
+          "deps": ["gandr-core-term"]
+        },
+        {
+          "name": "gandr-lang",
+          "dir": "crates/surface-driver",
+          "deps": ["gandr-kernel-core"]
+        },
+        {
+          "name": "gandr-workflow-prose",
+          "dir": "crates/workflow-prose",
+          "deps": []
+        }
       ]
     },
     "output": ["gandr-core-term", "gandr-kernel-core", "gandr-lang"]
@@ -433,10 +558,26 @@
     "input": {
       "changed": ["crates/core-term/src/lib.rs", ".config/claims/next.jq"],
       "packages": [
-        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] },
-        { "name": "gandr-kernel-core", "dir": "crates/kernel-core", "deps": ["gandr-core-term"] },
-        { "name": "gandr-lang", "dir": "crates/surface-driver", "deps": ["gandr-kernel-core"] },
-        { "name": "gandr-workflow-prose", "dir": "crates/workflow-prose", "deps": [] }
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        },
+        {
+          "name": "gandr-kernel-core",
+          "dir": "crates/kernel-core",
+          "deps": ["gandr-core-term"]
+        },
+        {
+          "name": "gandr-lang",
+          "dir": "crates/surface-driver",
+          "deps": ["gandr-kernel-core"]
+        },
+        {
+          "name": "gandr-workflow-prose",
+          "dir": "crates/workflow-prose",
+          "deps": []
+        }
       ],
       "touched": true
     },
@@ -447,7 +588,13 @@
     "program": "packages.jq",
     "input": {
       "changed": [".config/claims/next.jq"],
-      "packages": [{ "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }]
+      "packages": [
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        }
+      ]
     },
     "output": []
   },
@@ -457,8 +604,16 @@
     "input": {
       "changed": ["crates/core-term/src/lib.rs"],
       "packages": [
-        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] },
-        { "name": "gandr-kernel-core", "dir": "crates/kernel-core", "deps": ["gandr-core-term"] }
+        {
+          "name": "gandr-core-term",
+          "dir": "crates/core-term",
+          "deps": []
+        },
+        {
+          "name": "gandr-kernel-core",
+          "dir": "crates/kernel-core",
+          "deps": ["gandr-core-term"]
+        }
       ]
     },
     "output": "\"workspace\""
@@ -478,7 +633,10 @@
         }
       ]
     },
-    "output": { "accepted": true, "missing": [] }
+    "output": {
+      "accepted": true,
+      "missing": []
+    }
   },
   {
     "name": "#5076: a tree no gate passed on, as #5066's head changed after its gate, is refused",
@@ -495,7 +653,10 @@
         }
       ]
     },
-    "output": { "accepted": false, "missing": ["check:claims", "check:prose"] }
+    "output": {
+      "accepted": false,
+      "missing": ["check:claims", "check:prose"]
+    }
   },
   {
     "name": "#5076: a reworded commit keeps its tree, so the gate on the first commit counts",
@@ -512,7 +673,10 @@
         }
       ]
     },
-    "output": { "accepted": true, "missing": [] }
+    "output": {
+      "accepted": true,
+      "missing": []
+    }
   },
   {
     "name": "#5076: a gate that skipped a check the head's change selects does not count",
@@ -529,7 +693,10 @@
         }
       ]
     },
-    "output": { "accepted": false, "missing": ["check:corpus"] }
+    "output": {
+      "accepted": false,
+      "missing": ["check:corpus"]
+    }
   },
   {
     "name": "#5076: the checks of two gates on one tree count together",
@@ -552,7 +719,10 @@
         }
       ]
     },
-    "output": { "accepted": true, "missing": [] }
+    "output": {
+      "accepted": true,
+      "missing": []
+    }
   },
   {
     "name": "#5091: a head that pr:open stacks on the top has a new tree, so the gate before the stack does not count",
@@ -569,13 +739,22 @@
         }
       ]
     },
-    "output": { "accepted": false, "missing": ["check:claims", "check:prose", "check:tests"] }
+    "output": {
+      "accepted": false,
+      "missing": ["check:claims", "check:prose", "check:tests"]
+    }
   },
   {
     "name": "#5123: a scoped check under the anodized cfg without the workspace feature unification is a finding",
     "program": "unmapped.jq",
     "input": {
-      "table": { "groups": { "rust": ["check:clippy-enforcing"] }, "light": [], "paths": [] },
+      "table": {
+        "groups": {
+          "rust": ["check:clippy-enforcing"]
+        },
+        "light": [],
+        "paths": []
+      },
       "tasks": [
         {
           "name": "check:clippy-enforcing",
@@ -594,7 +773,9 @@
     "program": "unmapped.jq",
     "input": {
       "table": {
-        "groups": { "rust": ["check:clippy-enforcing", "check:clippy"] },
+        "groups": {
+          "rust": ["check:clippy-enforcing", "check:clippy"]
+        },
         "light": [],
         "paths": []
       },
@@ -629,27 +810,68 @@
     "output": {
       "seconds": 63,
       "tasks": [
-        { "task": "check:tests", "seconds": 62.5 },
-        { "task": "check:tests-enforcing", "seconds": 40.2 },
-        { "task": "check:host-lock", "seconds": 0.3 }
+        {
+          "task": "check:tests",
+          "seconds": 62.5
+        },
+        {
+          "task": "check:tests-enforcing",
+          "seconds": 40.2
+        },
+        {
+          "task": "check:host-lock",
+          "seconds": 0.3
+        }
       ],
       "suites": [
-        { "task": "check:tests", "tests": 3, "seconds": 41.8 },
-        { "task": "check:tests-enforcing", "tests": 1, "seconds": 12 }
+        {
+          "task": "check:tests",
+          "tests": 3,
+          "seconds": 41.8
+        },
+        {
+          "task": "check:tests-enforcing",
+          "tests": 1,
+          "seconds": 12
+        }
       ],
       "tests": [
-        { "task": "check:tests", "test": "gandr-b::tests sweeps::census", "seconds": 34.5 },
-        { "task": "check:tests-enforcing", "test": "gandr-b::tests sweeps::census", "seconds": 12 },
-        { "task": "check:tests", "test": "gandr-b::tests sweeps::parity", "seconds": 7.3 },
-        { "task": "check:tests", "test": "gandr-a tests::quick", "seconds": 0 }
+        {
+          "task": "check:tests",
+          "test": "gandr-b::tests sweeps::census",
+          "seconds": 34.5
+        },
+        {
+          "task": "check:tests-enforcing",
+          "test": "gandr-b::tests sweeps::census",
+          "seconds": 12
+        },
+        {
+          "task": "check:tests",
+          "test": "gandr-b::tests sweeps::parity",
+          "seconds": 7.3
+        },
+        {
+          "task": "check:tests",
+          "test": "gandr-a tests::quick",
+          "seconds": 0
+        }
       ]
     }
   },
   {
     "name": "#5215: a log with no task's line gives the wall time alone",
     "program": "times.jq",
-    "input": { "log": "mise ERROR no task check:missing found\n", "seconds": 2 },
-    "output": { "seconds": 2, "tasks": [], "suites": [], "tests": [] }
+    "input": {
+      "log": "mise ERROR no task check:missing found\n",
+      "seconds": 2
+    },
+    "output": {
+      "seconds": 2,
+      "tasks": [],
+      "suites": [],
+      "tests": []
+    }
   },
   {
     "name": "#5215: a gate past its budget gives its observation and the template's fields, its slowest task and test named",
@@ -662,10 +884,22 @@
         "time": {
           "seconds": 1900,
           "tasks": [
-            { "task": "check:tests-enforcing", "seconds": 421.5 },
-            { "task": "check:tests", "seconds": 268.8 }
+            {
+              "task": "check:tests-enforcing",
+              "seconds": 421.5
+            },
+            {
+              "task": "check:tests",
+              "seconds": 268.8
+            }
           ],
-          "suites": [{ "task": "check:tests-enforcing", "tests": 6000, "seconds": 1598 }],
+          "suites": [
+            {
+              "task": "check:tests-enforcing",
+              "tests": 6000,
+              "seconds": 1598
+            }
+          ],
           "tests": [
             {
               "task": "check:tests-enforcing",
@@ -675,7 +909,9 @@
           ]
         }
       },
-      "budget": { "gate:all": 1800 }
+      "budget": {
+        "gate:all": 1800
+      }
     },
     "output": {
       "over": true,
@@ -696,14 +932,26 @@
         "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
         "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
         "gate": "gate:all",
-        "time": { "seconds": 1800, "tasks": [], "suites": [], "tests": [] }
+        "time": {
+          "seconds": 1800,
+          "tasks": [],
+          "suites": [],
+          "tests": []
+        }
       },
-      "budget": { "gate:all": 1800 }
+      "budget": {
+        "gate:all": 1800
+      }
     },
     "output": {
       "over": false,
       "observation": "## Observation\n\n`mise run gate:all` took 1800 s on main's tree `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, at `1566710c2a0b`. Its budget is 1800 s in `.config/gate-scope/budget.json`.\n\nThe table gives the five slowest tasks.\n\n| Task | Seconds |\n| ---- | ------- |\n\nThe table gives the ten slowest tests.\n\n| Task | Test | Seconds |\n| ---- | ---- | ------- |\n",
-      "fields": { "seconds": "1800", "budget": "1800", "task": "none", "test": "none" }
+      "fields": {
+        "seconds": "1800",
+        "budget": "1800",
+        "task": "none",
+        "test": "none"
+      }
     }
   },
   {
@@ -714,14 +962,26 @@
         "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
         "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
         "gate": "check",
-        "time": { "seconds": 5000, "tasks": [], "suites": [], "tests": [] }
+        "time": {
+          "seconds": 5000,
+          "tasks": [],
+          "suites": [],
+          "tests": []
+        }
       },
-      "budget": { "gate:all": 1800 }
+      "budget": {
+        "gate:all": 1800
+      }
     },
     "output": {
       "over": false,
       "observation": "## Observation\n\n`mise run check` took 5000 s on main's tree `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, at `1566710c2a0b`. It has no budget in `.config/gate-scope/budget.json`.\n\nThe table gives the five slowest tasks.\n\n| Task | Seconds |\n| ---- | ------- |\n\nThe table gives the ten slowest tests.\n\n| Task | Test | Seconds |\n| ---- | ---- | ------- |\n",
-      "fields": { "seconds": "5000", "budget": "none", "task": "none", "test": "none" }
+      "fields": {
+        "seconds": "5000",
+        "budget": "none",
+        "task": "none",
+        "test": "none"
+      }
     }
   }
 ]
