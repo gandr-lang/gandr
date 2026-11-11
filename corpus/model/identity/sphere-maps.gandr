@@ -16,6 +16,7 @@
 /// along the cell does not yet act on an answer carried along the bound path.
 ///
 /// - see: #6458 — the dependent form at a higher cell
+/// - see: #6477 — `apEmptyCell`
 /// - see: corpus/model/identity/sphere.gandr
 /// - see: corpus/model/identity/circle-maps.gandr
 
@@ -66,6 +67,16 @@ def apFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
   Path.here Base2
 )](
   Path.ap flatten surf,
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// `Path.ap` of a map on the reflexivity of the point's reflexivity is that
+/// reflexivity, the empty word of the 2-cell's words.
+def apEmptyCell : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap sphereId (Path.here (Path.here Base2)),
   Path.here (Path.here Base2)
 ) = Path.here (Path.here (Path.here Base2));
 

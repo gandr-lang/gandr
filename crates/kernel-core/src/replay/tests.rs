@@ -16,10 +16,13 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::FreeCell;
+use gandr_kernel_term::FreeCells;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::PresentedRule;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::Side;
@@ -3102,6 +3105,191 @@ fn a_returned_leaf_of_a_presented_term_reads_before_the_rules()
     };
     assert_eq!(verdict(rules), KernelVerdict::Convertible);
     assert_ne!(verdict(Presentation::default()), KernelVerdict::Convertible);
+}
+
+/// A side of a pair at the point of one loop's words, over the sort at
+/// constant 0 (`Base` at tag 0, `Other` at tag 1), the loop's words at 1, the
+/// 2-cell's words at 2 and `ident`, the identity on the sort, at 3.
+#[derive(Clone, Copy, Debug)]
+enum Looped
+{
+    /// `here(⟨ident(Base)⟩)`, its point a held call.
+    HeldHere,
+    /// `here(here(Base))`.
+    TwiceHere,
+    /// `here(Other)`, off the point.
+    OtherHere,
+    /// `here(Base)`.
+    Here,
+    /// The empty word of the loop's words.
+    Empty,
+    /// The empty word of the 2-cell's words.
+    EmptyCell,
+}
+
+/// `side` in `arena`.
+///
+/// # Specification
+/// trivial.
+fn looped_side(
+    arena: &mut TermArena,
+    side: Looped,
+) -> ValueId
+{
+    let carrier = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let at = |arena: &mut TermArena, tag: usize| {
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            carrier,
+            ConstructorTag::from(tag),
+            Vec::new(),
+        )
+    };
+    let empty = |arena: &mut TermArena, words: usize| {
+        let own = arena.value_type_data(ConstantIndex::from(words), Vec::new());
+        arena.value_constructor(
+            ConstantIndex::from(words),
+            own,
+            ConstructorTag::from(0_usize),
+            Vec::new(),
+        )
+    };
+    match side {
+        Looped::HeldHere => {
+            let base = at(arena, 0);
+            let head = arena.value_constant(ConstantIndex::from(3_usize));
+            let forced = arena.computation_force(head);
+            let applied = arena.computation_application(forced, base);
+            let held = arena.value_returned(applied);
+            arena.value_here(held)
+        },
+        Looped::TwiceHere => {
+            let base = at(arena, 0);
+            let once = arena.value_here(base);
+            arena.value_here(once)
+        },
+        Looped::OtherHere => {
+            let other = at(arena, 1);
+            arena.value_here(other)
+        },
+        Looped::Here => {
+            let base = at(arena, 0);
+            arena.value_here(base)
+        },
+        Looped::Empty => empty(arena, 1),
+        Looped::EmptyCell => empty(arena, 2),
+    }
+}
+
+/// The replay of `dialogue` for `left` against `right` under `claim`, the
+/// sort, the loop's words and the 2-cell's words admitted and `ident`
+/// unfolding.
+///
+/// # Specification
+/// trivial.
+fn looped_replay(
+    (left, right): (Looped, Looped),
+    claim: EngineClaim,
+    dialogue: &[ConversionDecision<ReplayNode>],
+) -> KernelVerdict
+{
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        Vec::new(),
+        alloc::vec![alloc::vec![], alloc::vec![]],
+        kind,
+    );
+    let _sort = environment.add_decl(staged).expect("the sort admits");
+    for (words, wraps) in [(1_usize, 0_usize), (2, 1)] {
+        let cells = FreeCells::new(ConstantIndex::from(0_usize), alloc::vec![FreeCell::new(
+            base(),
+            base()
+        )])
+        .wrapped(Reflexivities::from(wraps));
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(words), Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(Presentation::words(cells));
+        let _words = environment.add_decl(staged).expect("the words admit");
+    }
+    let mut arena = environment.arena().clone();
+    let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(occurrence);
+    let lambda = arena.computation_lambda(returned);
+    let ident = arena.value_thunk(lambda);
+    let left = looped_side(&mut arena, left);
+    let right = looped_side(&mut arena, right);
+    let unfoldings = Unfoldings::new(alloc::vec![
+        Unfoldable::Opaque,
+        Unfoldable::Opaque,
+        Unfoldable::Opaque,
+        Unfoldable::Body(ident),
+    ])
+    .presenting(Presentations::of(environment.entries()));
+    run(
+        &mut arena,
+        &unfoldings,
+        ReplaySides::Values(left, right),
+        claim,
+        dialogue,
+    )
+}
+
+#[test]
+fn a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477()
+{
+    // #6477: `here(p)` at the point a type of words loops at, and that type's
+    // empty word, spell one path. Against a side that is no reflexivity, the
+    // reflexivity presents as the empty word, on either side, at dimension one
+    // and two and with a held point: the evaluator's dialogue shares the two
+    // empty words. Two reflexivities keep the rule that compares their points,
+    // so the dialogue that rule recorded replays. A reflexivity off the point
+    // does not convert with the empty word.
+    let ident = ReplayNode::Constant(ConstantIndex::from(3_usize));
+    for (sides, dialogue) in [
+        ((Looped::HeldHere, Looped::Empty), alloc::vec![SHARED]),
+        ((Looped::Empty, Looped::HeldHere), alloc::vec![SHARED]),
+        ((Looped::TwiceHere, Looped::EmptyCell), alloc::vec![SHARED]),
+        ((Looped::HeldHere, Looped::Here), alloc::vec![
+            ConversionDecision::Decompose,
+            ConversionDecision::Unfold { constant: ident },
+            ConversionDecision::ReduceLeft { redex: ident },
+            SHARED,
+        ]),
+    ] {
+        assert_eq!(
+            looped_replay(sides, EngineClaim::Convertible, &dialogue),
+            KernelVerdict::Convertible,
+            "{sides:?}"
+        );
+    }
+    assert_ne!(
+        looped_replay(
+            (Looped::OtherHere, Looped::Empty),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible
+    );
 }
 
 #[test]

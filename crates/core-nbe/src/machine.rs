@@ -286,6 +286,7 @@ use crate::policy::GranularityStance;
 use crate::policy::SchedulingPolicy;
 use crate::policy::Share;
 use crate::presented::NormalForm;
+use crate::presented::Reflexive;
 use crate::resharing::GoalSupport;
 use crate::resharing::SupportEdges;
 use crate::resharing::SupportSides;
@@ -2686,8 +2687,10 @@ where
     /// - ensures: [`Presenting::Normal`] with the goal unchanged when each side
     ///   is its own normal form; [`Presenting::Rewritten`] with each side that
     ///   is not replaced by its normal form, the depth unchanged;
-    ///   [`Presenting::Exhausted`] when the run's budget ran out first. The
-    ///   nodes the rewriting compared or copied are charged to the run.
+    ///   [`Presenting::Exhausted`] when the run's budget ran out first. A side
+    ///   reads a reflexivity at a looped point as its empty word only when the
+    ///   other side is no reflexivity ([`Reflexive::facing`]). The nodes the
+    ///   rewriting compared or copied are charged to the run.
     /// - provides: conversion modulo a presented type's rules.
     /// - fails: every fault [`crate::presented::normal_form`] raises.
     /// - panics: none.
@@ -2713,12 +2716,21 @@ where
         let mut fuel = RewriteFuel::from(budget.saturating_sub(self.spent.0));
         let before = u64::from(fuel);
         let mut presenting = Presenting::Normal;
-        for (side, value) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
+        let reads = [
+            Reflexive::facing(self.domain, right),
+            Reflexive::facing(self.domain, left),
+        ];
+        for ((side, value), reflexive) in
+            [(ConversionSide::Left, left), (ConversionSide::Right, right)]
+                .into_iter()
+                .zip(reads)
+        {
             match crate::presented::normal_form(
                 self.core,
                 self.domain,
                 self.definitions,
                 value,
+                reflexive,
                 &mut fuel,
             )? {
                 NormalForm::Kept => {},

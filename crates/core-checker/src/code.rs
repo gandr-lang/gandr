@@ -794,7 +794,10 @@ impl CodeDefinitions
     /// - ensures: the lowered chain records the signature's constructor count
     ///   at `constant`, and presents `constant` by the signature's rules over
     ///   its constructor table's arities exactly when the signature has rules;
-    ///   a free signature leaves the presentations unchanged.
+    ///   a free signature leaves the presentations unchanged. A type of words
+    ///   carries the field type of its first letter, its own classifier
+    ///   `Data(w, [])`, which the evaluator checks before it mints an empty
+    ///   word there.
     /// - provides: the one place a presented type reaches the checker's
     ///   conversion.
     /// - panics: none.
@@ -825,10 +828,17 @@ impl CodeDefinitions
             .iter()
             .map(|fields| gandr_kernel_term::FieldCount::from(fields.len()))
             .collect();
-        self.lowered.present(
-            constant,
-            gandr_core_nbe::Presented::new(presentation.clone(), arities),
-        );
+        let presented = gandr_core_nbe::Presented::new(presentation.clone(), arities);
+        let own = presentation.cells().and_then(|_cells| {
+            signature
+                .constructors()
+                .iter()
+                .find_map(|fields| fields.first().copied())
+        });
+        self.lowered.present(constant, match own {
+            Some(own) => presented.classified(own),
+            None => presented,
+        });
     }
 
     /// Record that the lawful atom at `atom` reads its identity as

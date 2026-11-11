@@ -9,6 +9,7 @@
 /// The source gives each transport its refusal name.
 ///
 /// - see: #425 — `unitRight`
+/// - see: #6477 — `apEmpty`
 
 // The circle, every point's loop and the multiplication.
 import "./circle-base.gandr";
@@ -64,3 +65,17 @@ def twisted(b : Circle) -> Path[.A = Circle](first b Base, Base) =
 def unitRight(b : Circle) -> Path[.A = Circle](mul b Base, b) =
   match b where
     | Base => Path.here Base
+
+/// `Path.ap` of a map on reflexivity at `Base` is that reflexivity, the empty
+/// word of the loop's words.
+def apEmpty : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.ap circleId (Path.here Base),
+  Path.here Base
+) = Path.here (Path.here Base);
+
+/// The image of reflexivity is the empty word, so it is not the loop.
+@[refuses("EndpointMismatch")]
+def apEmptyLoop : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.ap circleId (Path.here Base),
+  loop ∷ Path.here Base
+) = Path.here (loop ∷ Path.here Base);

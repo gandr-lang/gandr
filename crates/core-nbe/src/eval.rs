@@ -1476,6 +1476,22 @@ impl<'run> Definitions<'run>
         self.chain.presentations.get(&constant)
     }
 
+    /// Every presented data declaration with its rules, by admission position
+    /// ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn presentations(
+        &self
+    ) -> impl Iterator<Item = (ConstantIndex, &'run crate::presented::Presented)>
+    {
+        self.chain
+            .presentations
+            .iter()
+            .map(|(&constant, presented)| (constant, presented))
+    }
+
     /// How many constructors the data declaration at `constant` takes, when
     /// the chain recorded it.
     ///
