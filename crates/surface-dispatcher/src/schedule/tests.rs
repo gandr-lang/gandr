@@ -20,10 +20,10 @@ use super::bound_run;
 use super::independent;
 use crate::compose::Lowered;
 use crate::compose::LoweringCount;
+use crate::compose::ModuleSettings;
 use crate::compose::Opening;
 use crate::compose::adapt;
 use crate::compose::checking_context;
-use crate::compose::pattern_holes;
 
 /// What a call's head applies, through its applications and the force of
 /// the callee's thunk.
@@ -88,12 +88,8 @@ fn typed(listed: &crate::tests::Listed) -> (LoweredModule<'_>, CoreArena, TypedM
         panic!("the source is a module");
     };
     let declarations = adapt(&module, &arena);
-    let mut context = checking_context(
-        &mut arena,
-        Opening::UNBOUNDED,
-        &module,
-        &pattern_holes(&module),
-    );
+    let mut context =
+        checking_context(&mut arena, Opening::UNBOUNDED, &ModuleSettings::of(&module));
     let typed = type_module(&mut context, &declarations);
     (module, arena, typed)
 }

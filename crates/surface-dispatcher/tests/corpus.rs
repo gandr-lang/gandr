@@ -1950,6 +1950,163 @@ mod sweeps
         );
     }
 
+    /// The deciding pass's sample: sixty-four sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The nightly profile decides the night's
+    /// slice, and the `sweeps` profile every source.
+    const DECIDED: Sample = Sample {
+        name: SampleName("a_deciding_pass_admits_nothing_its_judgement_refuses"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to decide every source: a seventh
+    /// a night, the count the nightly's sweeps share.
+    const DECIDED_NIGHTS: Nights = Nights(7);
+
+    /// A pass that decides each item opens its context through the
+    /// judgement's own constructor. So over each corpus source it admits no
+    /// item that the whole judgement refuses: a pattern hole, a reduct or a
+    /// literal reader that the pass's context lacked would admit one. The
+    /// sweep counts the items that the pass refuses and the judgement admits;
+    /// it does not assert them.
+    #[test]
+    fn a_deciding_pass_admits_nothing_its_judgement_refuses()
+    {
+        decides_within(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn a_deciding_pass_admits_nothing_its_judgement_refuses_changed()
+    {
+        decides_within(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits, judged whole and decided item by item by
+    /// a fresh pass, has no item that the pass admits and the judgement
+    /// refuses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decides_within(sweep: &Sweep)
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_checker::Unretired;
+        use gandr_core_incremental::Typing;
+        use gandr_core_incremental::check_program;
+        use gandr_surface_corpus::Refusal;
+        use gandr_surface_dispatcher::Checking;
+        use gandr_surface_dispatcher::Recording;
+        use gandr_surface_dispatcher::Supporting;
+        use gandr_surface_dispatcher::Unshadowed;
+        use gandr_surface_dispatcher::classify;
+        use gandr_surface_dispatcher::item_program;
+        use gandr_surface_dispatcher::judge_member_after_retiring;
+        use gandr_surface_dispatcher::lay_out_shadowed;
+        use gandr_surface_dispatcher::lower_unit_source;
+        use gandr_surface_syntax::ByteOffset;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(
+            DECIDED,
+            DECIDED_NIGHTS,
+            &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+        );
+        assert!(
+            visited.len() >= sweep.drawn(DECIDED).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let mut compared = 0_usize;
+        let mut refused_by_the_pass = 0_usize;
+        let mut admitted_by_the_pass = Vec::new();
+        for source in visited {
+            let path = source.path.as_path();
+            let own = std::fs::read_to_string(path).expect("a corpus source reads");
+            let root = classify(path);
+            let laid = lay_out_shadowed(
+                &grammar,
+                path,
+                root,
+                SourceText::from(own.as_str()),
+                &Unshadowed,
+            );
+            let text = SourceText::from(laid.text.as_str());
+            let lower = || {
+                let lowering =
+                    lower_unit_source(&grammar, text, &laid.unit, &mut LoweringCount::default())
+                        .ok()?;
+                match lowering.into_lowered() {
+                    Lowered::Module { module, arena } => Some((module, arena)),
+                    Lowered::Refused(_) => None,
+                }
+            };
+            let (Some((judged, judged_arena)), Some((decided, decided_arena))) = (lower(), lower())
+            else {
+                continue;
+            };
+            let (settled, _admission) = judge_member_after_retiring(
+                root.corpus_root(),
+                (judged, text),
+                judged_arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                ByteOffset::from(0_usize),
+                (&Unretired, Recording::Unrecorded, Supporting::Unkept),
+            )
+            .whole()
+            .into_parts();
+            let Ok(Composed::Settled { ref report, .. }) = settled
+            else {
+                continue;
+            };
+            let mut refused = BTreeSet::new();
+            let mut admitted = BTreeSet::new();
+            for declaration in report.declarations() {
+                let refusal = declaration.produced().refusal();
+                if let Maybe::Present(Refusal::Checking(_)) = refusal {
+                    let _new = refused.insert(declaration.constant());
+                }
+                else if let Maybe::Absent(_) = refusal {
+                    let _new = admitted.insert(declaration.constant());
+                }
+            }
+            let Ok(mut program) = item_program(&decided, decided_arena)
+            else {
+                continue;
+            };
+            let resume = check_program(&mut program, CheckBudget::DEFAULT)
+                .expect("a lowered program checks");
+            for (item, checkpoint) in program.items().iter().zip(resume.checkpoints().items()) {
+                let constant = item.declaration().constant();
+                let pass_refuses = matches!(checkpoint.typing(), Typing::Refused(_));
+                if refused.contains(&constant) {
+                    compared = compared.saturating_add(1);
+                    if !pass_refuses {
+                        admitted_by_the_pass.push((source.path.clone(), constant));
+                    }
+                }
+                else if admitted.contains(&constant) {
+                    compared = compared.saturating_add(1);
+                    if pass_refuses {
+                        refused_by_the_pass = refused_by_the_pass.saturating_add(1);
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "{compared} items compared; the pass refuses {refused_by_the_pass} that the \
+             judgement admits, and admits {} that it refuses",
+            admitted_by_the_pass.len()
+        );
+        assert!(
+            admitted_by_the_pass.is_empty(),
+            "over {compared} items, a deciding pass admits no item that the whole judgement \
+             refuses; admitted: {admitted_by_the_pass:?}"
+        );
+    }
+
     /// #3381: `corpus/model/worlds/two-processes.gandr` persists its 53
     /// items. Its set is stored at the address of its program, and the model
     /// lowered again restores it. A resume from the restored set adopts each

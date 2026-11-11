@@ -270,6 +270,8 @@ pub use crate::region::Item;
 pub use crate::region::ItemKey;
 pub use crate::region::ItemSource;
 pub use crate::region::KeyName;
+pub use crate::region::Opened;
+pub use crate::region::Opener;
 pub use crate::region::Program;
 pub use crate::region::ProgramError;
 pub use crate::region::Reference;

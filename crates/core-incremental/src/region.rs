@@ -24,8 +24,8 @@
 //! # References
 //!
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
-//!   strata persist in the store, which a [`Program`] hands every context its
-//!   pass makes.
+//!   strata persist in the store, which the [`Opener`] of a [`Program`] hands
+//!   every context its pass makes.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -478,6 +478,127 @@ impl Layout
     }
 }
 
+/// How a pass opens its checking context.
+#[derive(Clone, Copy, Debug)]
+pub enum Opened<'leading>
+{
+    /// At the first item, under the allowance.
+    Fresh(gandr_core_checker::CheckBudget),
+    /// After the leading items, from the checkpoint of their context.
+    Resumed(&'leading gandr_core_checker::Checkpoint),
+}
+
+impl Opened<'_>
+{
+    /// A context with no setting of a front end: a fresh one under the
+    /// allowance, or one resumed from a copy of the checkpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn bare(
+        self,
+        arena: &mut CoreArena,
+    ) -> gandr_core_checker::CheckingContext<'_>
+    {
+        match self {
+            Self::Fresh(budget) => gandr_core_checker::CheckingContext::new(arena, budget),
+            Self::Resumed(checkpoint) => {
+                gandr_core_checker::CheckingContext::resume(arena, checkpoint.clone())
+            },
+        }
+    }
+}
+
+/// What opens a context: given the arena and how the pass opens it, the
+/// context.
+type Open = dyn for<'arena> Fn(&'arena mut CoreArena, Opened<'_>) -> gandr_core_checker::CheckingContext<'arena>
+    + Send
+    + Sync;
+
+/// The constructor of each checking context a pass over a program opens.
+///
+/// A front end hands the one it opens its own judgement's context with, so a
+/// pass decides each item under the module's settings, as the judgement does.
+///
+/// # Specification
+/// - executable: none — a closure no predicate compares; [`Opener::open`]
+///   states what it gives.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tier and a stratum store that the opener hands are read
+///   by a fresh pass and by one resumed after leading items, and a program with
+///   a bare opener reads neither.
+/// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
+/// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_stratum_store_4034`
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct Opener(alloc::sync::Arc<Open>);
+
+impl Opener
+{
+    /// The opener that `open` is.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<Opening>(open: Opening) -> Self
+    where
+        Opening: for<'arena> Fn(
+                &'arena mut CoreArena,
+                Opened<'_>,
+            ) -> gandr_core_checker::CheckingContext<'arena>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self(alloc::sync::Arc::new(open))
+    }
+
+    /// The opener of a program that no front end prepares: each context is
+    /// [`Opened::bare`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn bare() -> Self
+    {
+        Self::new(|arena, opened| opened.bare(arena))
+    }
+
+    /// The context the opener opens over `arena`, as `opened` says.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn open<'arena>(
+        &self,
+        arena: &'arena mut CoreArena,
+        opened: Opened<'_>,
+    ) -> gandr_core_checker::CheckingContext<'arena>
+    {
+        (self.0)(arena, opened)
+    }
+}
+
+impl fmt::Debug for Opener
+{
+    /// The opener, which prints no closure.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str("Opener")
+    }
+}
+
 /// The items a front end offers for one revision, in source order, over the
 /// arena their declarations were minted in.
 ///
@@ -505,15 +626,8 @@ pub struct Program
     arena: CoreArena,
     /// The items and their references.
     layout: Layout,
-    /// What makes the tier each pass's context decides endpoint pairs on,
-    /// with the policy a closed pair it meets crosses under, when the front
-    /// end supplies one.
-    tier: Option<(
-        gandr_core_checker::tier::MakeTier,
-        gandr_kernel_core::AdmissionPolicy,
-    )>,
-    /// The store each pass's context recalls strata from and keeps them to.
-    strata: alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>,
+    /// What opens each context a pass over the program makes.
+    opener: Opener,
     /// The entry the host bounds every declaration of each pass by.
     host: gandr_core_checker::worlds::HostEntry,
 }
@@ -620,8 +734,7 @@ impl Program
                 occupied,
                 named,
             },
-            tier: None,
-            strata: alloc::sync::Arc::new(gandr_core_checker::ua::NoStratumStore),
+            opener: Opener::bare(),
             host: gandr_core_checker::worlds::HostEntry::Unbounded,
         })
     }
@@ -646,84 +759,37 @@ impl Program
         &self.layout
     }
 
-    /// Decide each endpoint pair every later pass meets on a tier `make`
-    /// makes, one per pass, a closed pair it meets crossing as `policy`
-    /// states.
+    /// Open each later pass's context with `opener`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every later pass's context is handed a tier `make` made and
-    ///   `policy` ([`gandr_core_checker::CheckingContext::decide_endpoints_on`]);
-    ///   the last maker and policy handed are the ones kept.
-    /// - provides: the front end's hand-in of its tier to the incremental
-    ///   checker, whose passes make their own contexts.
-    /// - panics: none.
-    /// - executable: none — a function pointer no predicate compares.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a tier meeting every pair checks a claim the machine
-    ///   refutes on a fresh pass and on one resumed after leading items, and a
-    ///   program handed none refuses it on both.
-    /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
-    #[inline]
-    pub fn decide_endpoints_on(
-        &mut self,
-        make: gandr_core_checker::tier::MakeTier,
-        policy: gandr_kernel_core::AdmissionPolicy,
-    )
-    {
-        self.tier = Some((make, policy));
-    }
-
-    /// What makes each pass's tier, and the policy beside it, when one was
-    /// handed.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(crate) const fn tier(
-        &self
-    ) -> Option<(
-        gandr_core_checker::tier::MakeTier,
-        gandr_kernel_core::AdmissionPolicy,
-    )>
-    {
-        self.tier
-    }
-
-    /// Hand each later pass's context `store`, which it recalls strata from
-    /// and keeps them to.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: every later pass's context is handed `store`
-    ///   ([`gandr_core_checker::CheckingContext::keep_strata_in`]); the last
-    ///   store handed is the one kept.
-    /// - provides: the front end's hand-in of its stratum store to the
+    /// - ensures: every later pass opens its context with `opener`; the last
+    ///   opener handed is the one kept.
+    /// - provides: the front end's hand-in of its context's constructor to the
     ///   incremental checker, whose passes make their own contexts.
     /// - panics: none.
-    /// - executable: none — the store is a trait object no predicate compares.
+    /// - executable: none — a closure no predicate compares.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two statements at one stratum ask the program's store
-    ///   once and hand it the stratum once, on a fresh pass and on one resumed
-    ///   after leading items.
+    /// - hypothesis: L3 — as [`Opener`].
+    /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
     /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_stratum_store_4034`
     #[inline]
-    pub fn keep_strata_in(
+    pub fn open_contexts_with(
         &mut self,
-        store: alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>,
+        opener: Opener,
     )
     {
-        self.strata = store;
+        self.opener = opener;
     }
 
-    /// The store each pass's context is handed.
+    /// What opens each pass's context.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn strata(&self) -> alloc::sync::Arc<dyn gandr_core_checker::ua::StratumStore>
+    pub(crate) fn opener(&self) -> Opener
     {
-        alloc::sync::Arc::clone(&self.strata)
+        self.opener.clone()
     }
 
     /// Bound the entry of every declaration each later pass judges by

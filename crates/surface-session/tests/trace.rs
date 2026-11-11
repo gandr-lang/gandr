@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use gandr_core_checker::Polled;
 use gandr_core_checker::Unretired;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_core_incremental::Refusal;
+use gandr_core_incremental::Typing;
 use gandr_kernel_term::ConstantIndex;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::SourceRoot;
@@ -286,5 +288,39 @@ fn a_goal_prints_its_binders_as_the_source_names_them_6717()
     assert!(
         goals.iter().flatten().all(|goal| !goal.contains('?')),
         "no goal prints a variable with no name: {goals:?}"
+    );
+}
+
+/// At the trace layer the pass takes no verdict of the judgement and decides
+/// each item itself, in a context opened as the judgement's is (#6707). So
+/// `rank` and `weigh`, whose matches leave an arm to a pattern hole, keep the
+/// judgement's `UndecidedCoverage` in their checkpoints.
+#[test]
+fn a_traced_pass_keeps_the_judgement_s_refusal_of_a_pattern_hole_6707()
+{
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "tests/incremental/fixtures/a-deciding-pass-refuses-a-pattern-hole-as-its-judgement-does-6707.gandr",
+    );
+    let text = std::fs::read_to_string(&path).expect("the fixture is read");
+    let mut traced = session(SourceRoot::Strict);
+    recheck(&mut traced, (&path, Text(&text)), Trace::default);
+    let Maybe::Present(resume) = traced.last()
+    else {
+        panic!("the recheck leaves a resume");
+    };
+    let undecided = resume
+        .checkpoints()
+        .items()
+        .iter()
+        .filter(|checkpoint| {
+            matches!(
+                checkpoint.typing(),
+                Typing::Refused(Refusal::UndecidedCoverage(_))
+            )
+        })
+        .count();
+    assert_eq!(
+        undecided, 2,
+        "`rank` and `weigh` keep `UndecidedCoverage` at the trace layer"
     );
 }
