@@ -2692,6 +2692,10 @@ done < <(jq -c '.[]' .config/claims/ceilings.json)
 # `pr:hold` renders each held comment through a stubbed GitHub. The cases hold
 # the lead sentence and the Markdown table.
 .config/claims/hold.bash || failed=1
+# `claim:take` and `claim:release` over a stubbed GitHub accept the same
+# lanes (#6639): a lane of the table takes a claim and releases it, and a
+# lane the table does not hold is refused by both.
+.config/claims/take-release-cases.bash || failed=1
 (( failed == 0 )) || exit 1
 terms=$(yq -o json '.term' .config/references/terms.toml)
 map=$(jq -r '.[] | (.name // "?") as $name
