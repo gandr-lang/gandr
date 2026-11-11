@@ -4569,8 +4569,6 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DerivationIndex
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DerivationReplay','struct','Whether a reflected derivation replays in the engine store.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DescTableEmptyStatus','struct','Whether a reflected description registry is empty.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DescTableLength','struct','Number of descriptions registered in a reflected VDC description table.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DiagramCarrierEmptyStatus','struct','Whether a finite reflected diagram has an empty carrier.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DiagramCarrierLength','struct','Number of carrier objects in a finite reflected diagram.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedContextDeclaration','struct','Whether a directed VDC context declares an object variable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedHomReflexivity','struct','Whether a directed hom lies on the reflexive diagonal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::DirectedObjectCovariance','struct','Whether a directed reflected object is sorted covariantly.',NULL,'fits','sound',NULL);

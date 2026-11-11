@@ -5,8 +5,6 @@ use alloc::vec::Vec;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
-use crate::boundary::DiagramCarrierEmptyStatus;
-use crate::boundary::DiagramCarrierLength;
 use crate::boundary::DiscreteHomInhabitation;
 use crate::vdc::TermRef;
 
@@ -66,26 +64,6 @@ impl Diagram
             }
         }
         Maybe::Absent(carrier_lookup::Absent::OffCarrier)
-    }
-
-    /// The number of carrier objects.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn len(&self) -> DiagramCarrierLength
-    {
-        DiagramCarrierLength::from(self.entries.len())
-    }
-
-    /// Whether the carrier is empty.
-    #[inline]
-    #[must_use]
-    /// # Specification
-    /// trivial.
-    pub fn is_empty(&self) -> DiagramCarrierEmptyStatus
-    {
-        DiagramCarrierEmptyStatus::from(self.entries.is_empty())
     }
 }
 
