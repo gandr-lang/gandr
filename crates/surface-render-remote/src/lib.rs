@@ -3,7 +3,7 @@
 //!
 //! The crate parses, lowers, types and marks nothing, and names no other
 //! crate of the workspace, so a language server, a terminal face or an agent
-//! links it without linking the checker. Five modules:
+//! links it without linking the checker. Six modules:
 //!
 //! - `present`: highlight and mark spans over validated byte ranges, diagnostic
 //!   and goal cards, transcript blocks, and the projection from a byte offset
@@ -14,6 +14,8 @@
 //! - `account`: the [`AccountCard`] of each declaration, keyed by its content,
 //!   and the [`AccountEdit`]s that take a renderer's cards from one state to
 //!   the next.
+//! - `activity`: the [`PoolActivity`] of the hub's pool at one tick, one row
+//!   for each core and the totals row.
 //! - `wire`: the render-bus [`RenderFrame`] — a document-scoped or
 //!   connection-scoped [`FrameBody`] under the wire schema version
 //!   [`WIRE_SCHEMA_VERSION`].
@@ -112,6 +114,7 @@
 //! | `GoalCard` | a renderer in another process, once goals carry spelled types |
 //! | `Warrant`, `Glyph`, `Frame`, `Rendering`, `RULES`, `conform` | the language server's tier lenses, which mark each declaration with its warrant, and the side view in `gandr-surface-tui`, whose rendering every rule checks |
 //! | `AccountCard`, `AccountEdit`, `account_edits`, `Samples`, `Sparkline::of` | the engine hub's render-bus face, which sends each document's account and its patches, and the side view, which shows one row per declaration |
+//! | `PoolActivity`, `CoreActivity`, `Load`, `Lengths`, `TaskKind` | the engine hub's render-bus face, which folds its work ledger once for each tick, and the side view, whose activity pane shows one row per core |
 //!
 //! # A leaf beside the pipeline
 //!
@@ -183,6 +186,7 @@
 extern crate alloc;
 
 mod account;
+mod activity;
 mod diagnostic;
 mod present;
 mod visual;
@@ -197,6 +201,11 @@ pub use crate::account::CompileTier;
 pub use crate::account::KernelMark;
 pub use crate::account::account_edits;
 pub use crate::account::apply_account_edits;
+pub use crate::activity::CoreActivity;
+pub use crate::activity::Lengths;
+pub use crate::activity::Load;
+pub use crate::activity::PoolActivity;
+pub use crate::activity::TaskKind;
 pub use crate::diagnostic::DIAGNOSTIC_CODES;
 pub use crate::diagnostic::DiagnosticCode;
 pub use crate::diagnostic::DiagnosticMessage;

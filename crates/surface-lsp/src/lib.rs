@@ -440,6 +440,8 @@ pub use gandr_surface_pretty::Spelling;
 #[cfg(feature = "instrument")]
 pub use crate::activity::Activities;
 #[cfg(feature = "instrument")]
+pub use crate::activity::Cadence;
+#[cfg(feature = "instrument")]
 pub use crate::activity::Tick;
 pub use crate::build::unidentified;
 #[cfg(unix)]

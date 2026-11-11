@@ -28,7 +28,7 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 | Painting | `draw` keeps the newest transcript rows and visible input tail; backend witnesses observe pane layout, roles, cursor geometry and malformed highlight boundaries. |
 | Styling | Both const style maps have executable predicates. Finite witnesses cover all 23 roles and eight line kinds, semantic contrast and emphasis. |
 | Event loop | `drive` draws before reading and stops on quit or failure. Scripted input, modifier boundaries and partial-write failure observe its transitions and error provenance. |
-| Side view | `Following` keeps the last report of each document the render bus sends and follows the one checked last; `Following::frame` builds its fields and `rendering` lays them out as the visual language's cells, which every rule of `gandr-surface-render-remote` checks; `drive_following` paints them and stops at `q`, Esc, Ctrl-C, a detach or the hub's end; `follow` runs it on the terminal and `follow_plain` prints each report to a pipe. |
+| Side view | `Following` keeps the last report of each document the render bus sends and follows the one checked last, and keeps the last activity of the hub's pool; `Following::frame` builds its fields and `rendering` lays them out as the visual language's cells, which every rule of `gandr-surface-render-remote` checks; `drive_following` paints them, the activity pane at the foot of the screen, and stops at `q`, Esc, Ctrl-C, a detach or the hub's end; `follow` runs it on the terminal and `follow_plain` prints each report to a pipe, without the activity pane. |
 
 ## Expected features
 

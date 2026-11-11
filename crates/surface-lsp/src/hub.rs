@@ -1615,12 +1615,28 @@ mod tests
         hub.join().expect("the hub exits");
     }
 
+    /// The next frame the render bus sent on `reading` that is not an activity
+    /// frame, and the line it came on: the pool's activity arrives at the time
+    /// of each tick of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_frame(reading: &mut BufReader<UnixStream>) -> (String, RenderFrame)
+    {
+        loop {
+            let (line, frame) = next_line(reading);
+            if !matches!(*frame.body(), FrameBody::Activity { .. }) {
+                return (line, frame);
+            }
+        }
+    }
+
     /// The next frame the render bus sent on `reading`, and the line it came
     /// on.
     ///
     /// # Specification
     /// trivial.
-    fn next_frame(reading: &mut BufReader<UnixStream>) -> (String, RenderFrame)
+    fn next_line(reading: &mut BufReader<UnixStream>) -> (String, RenderFrame)
     {
         let mut line = String::new();
         assert_ne!(
@@ -1669,6 +1685,7 @@ mod tests
             FrameBody::Hello { .. }
             | FrameBody::Frame { .. }
             | FrameBody::Resync
+            | FrameBody::Activity { .. }
             | FrameBody::Detach => {},
         }
     }
@@ -1735,6 +1752,7 @@ mod tests
             | FrameBody::Resync
             | FrameBody::Accounts { .. }
             | FrameBody::AccountPatch { .. }
+            | FrameBody::Activity { .. }
             | FrameBody::Detach => {
                 panic!("a report was owed, not {frame:?}")
             },
@@ -1796,6 +1814,65 @@ mod tests
             RenderFrame::detach(),
             "another bus version is detached at once"
         );
+        drop(editor);
+        hub.join().expect("the hub exits");
+    }
+
+    #[cfg(feature = "instrument")]
+    #[test]
+    fn an_attached_view_hears_the_pool_at_work()
+    {
+        let scratch = Scratch::new(Json("pool"));
+        let socket = scratch.socket();
+        let hub = hub(&socket);
+        let mut editor = Client::new(&socket);
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                "uri":"file:///tmp/pool.gandr","version":1,"text":"def f : Integer ;\ndef f = 1 ;\n"}}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
+        let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.set_read_timeout(Some(OWED))
+            .expect("the stream takes a deadline");
+        view.write_all(RENDER_BUS_PREFACE.as_bytes())
+            .expect("the hub reads");
+        let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
+        // The greeting comes after the face watches the pool, so the edit's
+        // judgement marks the rings.
+        drop(next_frame(&mut reading));
+        editor.send(Json(
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/pool.gandr","version":2},
+                "contentChanges":[{"text":"def f : Integer ;\ndef f = 2 ;\n"}]}}"#,
+        ));
+        assert_eq!(editor.published(), Some(serde_json::json!(2_i32)));
+        let mut shown: Vec<gandr_surface_render_remote::PoolActivity> = Vec::new();
+        let mut ended = false;
+        while !shown
+            .last()
+            .is_some_and(|activity| ended && activity.totals.busy.0 == 0)
+        {
+            if let FrameBody::Activity { ref activity } = *next_line(&mut reading).1.body() {
+                ended |= activity.totals.lengths.is_some();
+                shown.push(activity.clone());
+            }
+        }
+        let worked = shown
+            .iter()
+            .find(|activity| activity.totals.lengths.is_some())
+            .expect("the judgement's tasks end in the window");
+        assert!(
+            worked.totals.busy.0 > 0 && !worked.cores.is_empty(),
+            "the pool's rows show the busy time of the edit's judgement: {worked:#?}"
+        );
+        assert!(
+            shown.windows(2).all(|pair| pair.first() != pair.last()),
+            "the face sends no pane that did not change"
+        );
+        let mut detach = serde_json::to_string(&RenderFrame::detach()).expect("a frame encodes");
+        detach.push('\n');
+        view.write_all(detach.as_bytes()).expect("the hub reads");
+        assert_eq!(next_unaccounted(&mut reading).1, RenderFrame::detach());
         drop(editor);
         hub.join().expect("the hub exits");
     }
