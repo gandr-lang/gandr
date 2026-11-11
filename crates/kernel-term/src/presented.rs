@@ -42,7 +42,9 @@
 //! conversion modulo rules, the respect check and the replay read them as they
 //! read any presented type, one stratum up; the cells are what lets the
 //! checker and the kernel read `Path[.A = T](a, a)` as the words at `a`, and
-//! what the kernel re-mints the table and the rules from.
+//! what the kernel re-mints the table and the rules from. Above dimension one
+//! the cells are spherical, so their words commute: both conversions read them
+//! as the free abelian group on the cells, by one normal form.
 //!
 //! **Alternatives.** A primitive word node with its own conversion would
 //! duplicate the rewriting presented types already have; the cells on the
@@ -511,16 +513,21 @@ impl Presentation
     /// A type of words takes that strategy in one pass ([`Self::cancelled`]):
     /// each rule cancels two letters, and a word is one chain of letters, so
     /// the redex at a letter is that letter and the first letter of the
-    /// normal suffix after it.
+    /// normal suffix after it. Over cells above dimension one the words are
+    /// abelian, and the pass also sorts the letters by their cells
+    /// ([`Self::counted`]): no rule commutes two letters, so that normal form
+    /// is one the rules alone do not reach.
     ///
     /// # Specification
     /// - requires: `self` passed [`Self::validate`] against the table `arities`
     ///   counts; `term` is one well-formed pre-order term.
     /// - ensures: [`Normalized::Unchanged`] with `term` untouched when no rule
     ///   matches anywhere; otherwise [`Normalized::Rewritten`] with `term`
-    ///   rewritten until no rule matches at any position. Each node compared or
-    ///   copied costs one unit of `fuel`; in the pass over a word, each letter
-    ///   costs one.
+    ///   rewritten until no rule matches at any position. A word of cells above
+    ///   dimension one is also unchanged only when its letters stand in the
+    ///   order of their cells, and is otherwise rewritten to that order. Each
+    ///   node compared or copied costs one unit of `fuel`; in the pass over a
+    ///   word, each letter costs one.
     /// - provides: the normal form both conversions compare a presented type's
     ///   terms by.
     /// - fails: [`Exhausted`] when `fuel` runs out first; `term` then holds
@@ -534,11 +541,13 @@ impl Presentation
     /// - hypothesis: L3 — a circle word with nested inverse pairs normalizes to
     ///   its reduced word, a reduced word comes back unchanged, a leaf standing
     ///   for a variable is carried through a rewrite, and a starved fuel is
-    ///   exhausted. Over a type of words, the pass and the rewriting give one
-    ///   term and one outcome for every word of up to six letters over two
-    ///   cells.
+    ///   exhausted. Over a type of words over loops, the pass and the rewriting
+    ///   give one term and one outcome for every word of up to six letters over
+    ///   two loops. Over cells above dimension one, two words that differ by
+    ///   the order of their letters give one normal form.
     /// - witness: `presented::tests::normalization_reduces_circle_words`
     /// - witness: `presented::tests::the_pass_over_a_word_rewrites_as_the_rules_do`
+    /// - witness: `presented::tests::a_word_of_cells_above_dimension_one_sorts_and_counts_its_letters_6740`
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
     #[inline]
@@ -644,16 +653,19 @@ impl Presentation
         }
     }
 
-    /// The normal form of a word in one pass from its last letter, when this
-    /// presentation is a type of words whose every rule cancels two letters.
+    /// The normal form of a word in one pass, when this presentation is a
+    /// type of words whose every rule cancels two letters.
     ///
-    /// The pass keeps the normal suffix as a stack, its first letter on top.
-    /// Each letter, read from the last to the first, cancels with the top when
-    /// a rule's left side is the two letters over a variable, and goes on top
-    /// otherwise. [`Self::rewritten`] rewrites in that order: its next redex
-    /// starts last, and the suffix after it is normal. So the pass removes the
-    /// pairs that the rewriting removes, and keeps each other letter as
-    /// written.
+    /// Over loops, the pass reads from the last letter and keeps the normal
+    /// suffix as a stack, its first letter on top. Each letter, read from the
+    /// last to the first, cancels with the top when a rule's left side is the
+    /// two letters over a variable, and goes on top otherwise.
+    /// [`Self::rewritten`] rewrites in that order: its next redex starts last,
+    /// and the suffix after it is normal. So the pass removes the pairs that
+    /// the rewriting removes, and keeps each other letter as written.
+    ///
+    /// Over cells above dimension one, the words are abelian, and the pass is
+    /// [`Self::counted`].
     ///
     /// # Specification
     /// - requires: `self` passed [`Self::validate`] against the arities that
@@ -661,11 +673,12 @@ impl Presentation
     /// - ensures: `Ok(None)` with `term` untouched unless `self` carries cells,
     ///   each rule is `[a, b, x] ==> [x]` over two constructors and a variable,
     ///   and `term` is letters of one field each over a last node of no field
-    ///   or a leaf. Otherwise [`Normalized::Unchanged`] with `term` untouched
-    ///   when no two neighbouring letters cancel, and [`Normalized::Rewritten`]
-    ///   with `term` the letters that no pair removes, in order, over the last
-    ///   node: the term and the outcome [`Self::rewritten`] gives. Each letter
-    ///   costs one unit of `fuel`.
+    ///   or a leaf. Otherwise, over cells above dimension one, the outcome of
+    ///   [`Self::counted`]. Over loops, [`Normalized::Unchanged`] with `term`
+    ///   untouched when no two neighbouring letters cancel, and
+    ///   [`Normalized::Rewritten`] with `term` the letters that no pair
+    ///   removes, in order, over the last node: the term and the outcome
+    ///   [`Self::rewritten`] gives. Each letter costs one unit of `fuel`.
     /// - fails: [`Exhausted`] when `fuel` runs out first; `term` is then
     ///   untouched.
     /// - panics: none.
@@ -679,10 +692,11 @@ impl Presentation
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::normalize`]: every word of up to six
-    ///   letters over two cells, over a leaf or the empty word, gives the
+    ///   letters over two loops, over a leaf or the empty word, gives the
     ///   rewriting's term and outcome; a presentation without cells is left to
     ///   the rewriting.
     /// - witness: `presented::tests::the_pass_over_a_word_rewrites_as_the_rules_do`
+    /// - witness: `presented::tests::a_word_of_cells_above_dimension_one_sorts_and_counts_its_letters_6740`
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
     fn cancelled<C, L>(
@@ -724,6 +738,12 @@ impl Presentation
         if !ends || (0 .. letters.len()).any(|at| tag_at(at).is_none()) {
             return Ok(None);
         }
+        if self
+            .cells()
+            .is_some_and(|cells| cells.reflexivities() != Reflexivities::NONE)
+        {
+            return Self::counted(term, fuel).map(Some);
+        }
         let cancels = |first, second| {
             self.rules()
                 .iter()
@@ -752,6 +772,105 @@ impl Presentation
         normal.push(last);
         *term = normal;
         Ok(Some(Normalized::Rewritten))
+    }
+
+    /// The normal form of a word of cells above dimension one: its letters
+    /// sorted by their cells, and each cell's letters and inverses cancelling
+    /// at any distance.
+    ///
+    /// A cell above dimension one is spherical, and a spherical cell is
+    /// central. The Peiffer identity gives `∂c ⋆ c' = c · c' · c⁻¹`, and `∂c`
+    /// is empty. So any two letters commute, and the words are the free
+    /// abelian group on the cells. Its normal form is a sum: the cells in
+    /// order, each written as often as its count, as a letter or an inverse
+    /// by the count's sign. Within a cell, the pass keeps the first letters of
+    /// the count's sign, in written order.
+    ///
+    /// # Specification
+    /// - requires: `term` is letters of one field each, every letter a letter
+    ///   or an inverse of a cell, over a last node of no field or a leaf.
+    /// - ensures: [`Normalized::Unchanged`] with `term` untouched when its
+    ///   letters stand in the order of their cells, with one sign for each
+    ///   cell. Otherwise [`Normalized::Rewritten`] with `term` that normal form
+    ///   over the last node. Each letter costs one unit of `fuel`.
+    /// - fails: [`Exhausted`] when `fuel` runs out first; `term` is then
+    ///   untouched.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: one charge per letter, one stable sort and one walk of the
+    ///   sorted letters, each over a finite slice.
+    /// - measure: the letters still to read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two words of two cells that differ by the order of
+    ///   their letters give one normal form; two that differ by a count give
+    ///   two; a letter cancels its inverse at any distance; a normal word comes
+    ///   back unchanged.
+    /// - witness: `presented::tests::a_word_of_cells_above_dimension_one_sorts_and_counts_its_letters_6740`
+    #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
+        && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
+    fn counted<C, L>(
+        term: &mut Vec<RuleTerm<C, L>>,
+        fuel: &mut RewriteFuel,
+    ) -> Result<Normalized, Exhausted>
+    where
+        C: Copy,
+        L: Copy,
+    {
+        let Some((&last, letters)) = term.split_last()
+        else {
+            return Ok(Normalized::Unchanged);
+        };
+        let tag_at = |at: usize| match letters.get(at) {
+            Some(&RuleTerm::Constructor { tag, .. }) => Some(tag),
+            Some(&RuleTerm::Leaf(_)) | None => None,
+        };
+        let cell_at = |at: usize| tag_at(at).and_then(FreeCells::generator);
+        for _letter in letters {
+            fuel.charge()?;
+        }
+        let normal = (1 .. letters.len()).all(|after| {
+            let before = after.saturating_sub(1);
+            tag_at(before) == tag_at(after) || cell_at(before) < cell_at(after)
+        });
+        if normal {
+            return Ok(Normalized::Unchanged);
+        }
+        let mut order: Vec<usize> = (0 .. letters.len()).collect();
+        order.sort_by_key(|&at| cell_at(at));
+        let mut counted: Vec<RuleTerm<C, L>> = Vec::with_capacity(term.len());
+        for group in order.chunk_by(|&first, &second| cell_at(first) == cell_at(second)) {
+            let Some(cell) = group.first().and_then(|&at| cell_at(at))
+            else {
+                continue;
+            };
+            let letter = FreeCells::letter(cell);
+            let letters_of = group
+                .iter()
+                .filter(|&&at| tag_at(at) == Some(letter))
+                .count();
+            let inverses_of = group.len().saturating_sub(letters_of);
+            let sign = if letters_of >= inverses_of {
+                letter
+            }
+            else {
+                FreeCells::inverse(cell)
+            };
+            counted.extend(
+                group
+                    .iter()
+                    .filter(|&&at| tag_at(at) == Some(sign))
+                    .take(letters_of.abs_diff(inverses_of))
+                    .filter_map(|&at| letters.get(at).copied()),
+            );
+        }
+        counted.push(last);
+        *term = counted;
+        Ok(Normalized::Rewritten)
     }
 
     /// Decide whether these rules give every term one normal form, by joining
@@ -1574,11 +1693,12 @@ impl FreeCell
 /// point wrapped [`Self::reflexivities`] times in its reflexivity, and the
 /// path type at that wrapped point reads as their words. The endpoints stay
 /// closed terms of the sort, so the table, the rules and the validation are
-/// the ones at dimension one. **Alternatives.** The 2-cells over the words of
-/// the point's loops, a type of words with no cell at dimension one; that
-/// needs a type of words with the empty word alone. **Reversal.** A cell
-/// between two distinct words of the dimension below, the torus's square,
-/// needs the cells' endpoints as words, not as wrapped points.
+/// the ones at dimension one. The words commute there: each cell is spherical,
+/// so [`Presentation::normalize`] sorts and counts them. **Alternatives.** The
+/// 2-cells over the words of the point's loops, a type of words with no cell
+/// at dimension one; that needs a type of words with the empty word alone.
+/// **Reversal.** A cell between two distinct words of the dimension below, the
+/// torus's square, needs the cells' endpoints as words, not as wrapped points.
 ///
 /// # Specification
 /// - provides: the cells and the words they mint.
@@ -2487,6 +2607,7 @@ mod tests
     use super::Normalized;
     use super::Presentation;
     use super::PresentedRule;
+    use super::Reflexivities;
     use super::RewriteFuel;
     use super::RuleFault;
     use super::RuleIndex;
@@ -2948,6 +3069,96 @@ mod tests
                 "each word costs one unit of fuel per letter"
             );
         }
+    }
+
+    /// #6740: over cells above dimension one the words are abelian. Two words
+    /// that differ by the order of their letters read as one normal form, and
+    /// two that differ by a count read apart. A letter cancels its inverse at
+    /// any distance. Over two loops, the order still tells two words apart.
+    #[test]
+    fn a_word_of_cells_above_dimension_one_sorts_and_counts_its_letters_6740()
+    {
+        use Node::C;
+        let base =
+            || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
+        let spheres = Presentation::words(
+            FreeCells::new(crate::term::ConstantIndex::from(3_usize), alloc::vec![
+                FreeCell::new(base(), base()),
+                FreeCell::new(base(), base())
+            ])
+            .wrapped(Reflexivities::from(1_usize)),
+        );
+        let arities = [0_usize, 1, 1, 1, 1].map(FieldCount::from);
+        let kept = |&letter: &Letter| letter;
+        // A word's outcome and its tags, the leaf written as `0`, and the fuel
+        // it spends.
+        let normal = |words: &Presentation, letters: &[usize]| {
+            let tags: Vec<ConstructorTag> =
+                letters.iter().copied().map(ConstructorTag::from).collect();
+            let mut term = spelled(&tags, RuleTerm::Leaf(Point));
+            let mut fuel = RewriteFuel::from(100_u64);
+            let outcome = words.normalize(&arities, &mut term, kept, &mut fuel);
+            let read: Vec<usize> = term
+                .iter()
+                .map(|node| match *node {
+                    RuleTerm::Constructor { tag, .. } => usize::from(tag),
+                    RuleTerm::Leaf(Point) => 0,
+                })
+                .collect();
+            (outcome, read, 100 - u64::from(fuel))
+        };
+        assert_eq!(
+            normal(&spheres, &[3, 1]),
+            (Ok(Normalized::Rewritten), alloc::vec![1, 3, 0], 2),
+            "the second cell's letter moves after the first's"
+        );
+        assert_eq!(
+            normal(&spheres, &[1, 3]),
+            (Ok(Normalized::Unchanged), alloc::vec![1, 3, 0], 2),
+            "a word in the order of its cells is normal"
+        );
+        assert_eq!(
+            normal(&spheres, &[1, 3, 2]),
+            (Ok(Normalized::Rewritten), alloc::vec![3, 0], 3),
+            "the first cell's letter cancels its inverse across the second cell"
+        );
+        assert_eq!(
+            normal(&spheres, &[4, 1, 4, 2, 2]),
+            (Ok(Normalized::Rewritten), alloc::vec![2, 4, 4, 0], 5),
+            "each cell keeps its count, as a letter or an inverse by its sign"
+        );
+        assert_eq!(
+            normal(&two_loops(), &[3, 1]),
+            (Ok(Normalized::Unchanged), alloc::vec![3, 1, 0], 2),
+            "two loops do not commute"
+        );
+        let table: Vec<Vec<RuleSlot<Classifier>>> = alloc::vec![
+            alloc::vec![],
+            alloc::vec![RuleSlot::Own],
+            alloc::vec![RuleSlot::Own],
+            alloc::vec![RuleSlot::Own],
+            alloc::vec![RuleSlot::Own],
+        ];
+        let mut terms = Terms::default();
+        let mut apart = |words: &Presentation, left: &[Node], right: &[Node]| {
+            let (left, right) = (terms.build(left, &arities), terms.build(right, &arities));
+            words.apart(&table, (left, right), |at, fields| terms.read(at, fields))
+        };
+        assert_eq!(
+            apart(&spheres, &[C(3), C(1), C(0)], &[C(1), C(3), C(0)]),
+            Apartness::Agree,
+            "two words that differ by the order of their letters are one word"
+        );
+        assert_eq!(
+            apart(&spheres, &[C(1), C(1), C(0)], &[C(1), C(0)]),
+            Apartness::Apart,
+            "two words that differ by a count are apart"
+        );
+        assert_eq!(
+            apart(&two_loops(), &[C(3), C(1), C(0)], &[C(1), C(3), C(0)]),
+            Apartness::Apart,
+            "two words of loops that differ by the order of their letters are apart"
+        );
     }
 
     #[test]

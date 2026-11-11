@@ -1,0 +1,87 @@
+/// This source states the words of two spherical cells at one point, at
+/// dimension two and at dimension three.
+///
+/// A spherical cell is central, so the words of spherical cells commute. Two
+/// words that differ by the order of their letters are one word. A letter
+/// cancels its inverse at any distance. Two words that differ by a count stay
+/// apart. Loops at dimension one do not commute.
+///
+/// The checker and the kernel bring each word above dimension one to one
+/// normal form: the letters sorted by their cells, and each cell counted.
+///
+/// - see: corpus/model/identity/sphere.gandr — one cell for each sphere
+/// - see: corpus/model/identity/circle.gandr — the words of one loop
+
+/// Two 2-spheres that share their point.
+pub data Spheres2 : Type where
+  /// The shared point.
+  | Wedge2 : Spheres2
+  /// The first 2-cell at the reflexivity of the point.
+  | left2 : Path.here Wedge2 <-> Path.here Wedge2
+  /// The second 2-cell at the reflexivity of the point.
+  | right2 : Path.here Wedge2 <-> Path.here Wedge2
+
+/// Two 3-spheres that share their point.
+pub data Spheres3 : Type where
+  /// The shared point.
+  | Wedge3 : Spheres3
+  /// The first 3-cell at the reflexivity of the point's reflexivity.
+  | left3 : Path.here (Path.here Wedge3) <-> Path.here (Path.here Wedge3)
+  /// The second 3-cell at the reflexivity of the point's reflexivity.
+  | right3 : Path.here (Path.here Wedge3) <-> Path.here (Path.here Wedge3)
+
+/// Two circles that share their point.
+pub data Circles : Type where
+  /// The shared point.
+  | Wedge1 : Circles
+  /// The first loop.
+  | left1 : Wedge1 <-> Wedge1
+  /// The second loop.
+  | right1 : Wedge1 <-> Wedge1
+
+/// Two 2-cells commute.
+def commuted : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
+  Path.here Wedge2,
+  Path.here Wedge2
+)](
+  left2 ∷ right2 ∷ Path.here (Path.here Wedge2),
+  right2 ∷ left2 ∷ Path.here (Path.here Wedge2)
+) = Path.here (left2 ∷ right2 ∷ Path.here (Path.here Wedge2));
+
+/// A 2-cell cancels its inverse across the other 2-cell.
+def distant : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
+  Path.here Wedge2,
+  Path.here Wedge2
+)](
+  left2 ∷ right2 ∷ back left2 ∷ Path.here (Path.here Wedge2),
+  right2 ∷ Path.here (Path.here Wedge2)
+) = Path.here (right2 ∷ Path.here (Path.here Wedge2));
+
+/// Two 3-cells commute.
+def commuted3 : Path[.A = Path[.A = Path[.A = Path[.A = Spheres3](Wedge3, Wedge3)](
+  Path.here Wedge3,
+  Path.here Wedge3
+)](
+  Path.here (Path.here Wedge3),
+  Path.here (Path.here Wedge3)
+)](
+  right3 ∷ left3 ∷ Path.here (Path.here (Path.here Wedge3)),
+  left3 ∷ right3 ∷ Path.here (Path.here (Path.here Wedge3))
+) = Path.here (right3 ∷ left3 ∷ Path.here (Path.here (Path.here Wedge3)));
+
+/// Two words of 2-cells that differ by a count are apart.
+@[refuses("EndpointMismatch")]
+def counted : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
+  Path.here Wedge2,
+  Path.here Wedge2
+)](
+  left2 ∷ left2 ∷ right2 ∷ Path.here (Path.here Wedge2),
+  right2 ∷ left2 ∷ Path.here (Path.here Wedge2)
+) = Path.here (left2 ∷ left2 ∷ right2 ∷ Path.here (Path.here Wedge2));
+
+/// Two loops do not commute.
+@[refuses("EndpointMismatch")]
+def loopsOrdered : Path[.A = Path[.A = Circles](Wedge1, Wedge1)](
+  left1 ∷ right1 ∷ Path.here Wedge1,
+  right1 ∷ left1 ∷ Path.here Wedge1
+) = Path.here (left1 ∷ right1 ∷ Path.here Wedge1);
