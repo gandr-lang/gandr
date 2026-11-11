@@ -1570,6 +1570,61 @@ fn shared_contexts_reuse_memo_states() -> Result<(), RenderError>
     Ok(())
 }
 
+/// A spine of 40 blocks, each `let c = {` over the block inside it, as the
+/// printer writes an elaborated body. Its one-line image passes the
+/// computation width, so the blocks deep in it resolve in a forced context. A
+/// forced context that resolves each path to a shared node resolves the block
+/// inside it once for each branch of its group. The frontiers then pass the
+/// default ceiling of 4,000,000 entries, which refuses the render. Memoized
+/// under its mode, each state resolves once, in fewer than 40,000 layout steps
+/// (#6747).
+#[test]
+fn a_forced_spine_of_blocks_resolves_each_state_once_6747()
+{
+    let mut build_meter = BuildMeter::new(generous_limits());
+    let mut builder = expect_build(DocBuilder::try_new(&mut build_meter));
+    let mut doc = expect_build(builder.text(TextSource::from("let c = a + b ; c + a")));
+    let open = expect_build(builder.text(TextSource::from("let c = {")));
+    let close = expect_build(builder.text(TextSource::from("} ;")));
+    let rest = expect_build(builder.text(TextSource::from("a + ?")));
+    for _ in 0_u32 .. 40_u32 {
+        let line = builder.line();
+        let inner = expect_build(builder.concat(line, doc));
+        let nested = expect_build(builder.nest(NestAmount::from(2u32), inner));
+        let before_close = builder.line();
+        let before_rest = builder.line();
+        let body = expect_build(builder.concat_all([
+            open,
+            nested,
+            before_close,
+            close,
+            before_rest,
+            rest,
+        ]));
+        doc = expect_build(builder.group(body));
+    }
+    let arena = expect_build(builder.finish());
+    let options = LayoutOptions::try_new(
+        PageWidth::from(80u32),
+        ComputationWidth::from(160u32),
+        PhysicalLineEnding::Lf,
+    )
+    .expect("the options are in bound");
+    let mut meter = RenderMeter::new(RenderLimits::default());
+    let rendered = render(&arena, doc, &options, &mut meter)
+        .expect("the spine renders within the default ceilings");
+    assert!(
+        rendered.text.starts_with("let c = {\n  let c = {"),
+        "the outer blocks break: {}",
+        rendered.text
+    );
+    assert!(
+        u64::from(meter.usage().layout_steps) < 40_000_u64,
+        "each state resolves once: {} steps",
+        u64::from(meter.usage().layout_steps)
+    );
+}
+
 /// Out-of-bound shared contexts retain taint and complete selected output.
 #[test]
 fn tainted_contexts_preserve_taint_and_output() -> Result<(), RenderError>
