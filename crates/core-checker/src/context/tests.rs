@@ -7,6 +7,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use quenchant_shape::shape::Maybe;
 
 use super::Atom;
 use super::CheckBudget;
@@ -186,5 +187,55 @@ fn an_adopted_abstract_type_mints_its_site_again()
         context.abstract_types().count(),
         1,
         "the refused adoption retains no abstract type"
+    );
+}
+
+#[test]
+fn a_second_unfold_of_a_code_takes_its_held_step()
+{
+    // def Name : Type = Integer ; and the static redex (\A. El A * El A) String.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let body = arena.value_quote(integer);
+    let string_code = arena.value_quote(string);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(bound, Level::zero());
+    let product = arena.value_type_product(&[element, element]);
+    let quoted = arena.value_quote(product);
+    let lambda = arena.value_static_lambda(quoted);
+    let redex = arena.value_static_application(lambda, string_code);
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let constant = ConstantIndex::from(0_usize);
+    let name = arena.value_constant(constant);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let declared = form_value_type(&mut context, universe).unwrap();
+    assert_eq!(
+        context.adopt(constant, Maybe::Present(declared), Maybe::Present(body)),
+        Ok(())
+    );
+    let first = context.unfold(redex);
+    assert!(
+        matches!(first, Ok(Maybe::Present(_))),
+        "a static redex unfolds: {first:?}"
+    );
+    let minted = context.arena().watermark();
+    assert_eq!(
+        (context.unfold(redex), context.arena().watermark()),
+        (first, minted),
+        "a second unfold gives the held reduct and mints no instance again"
+    );
+    let [certified, held] = [(); 2].map(|()| {
+        context.start_support();
+        let reduct = context.unfold(name);
+        (reduct, context.finish_support())
+    });
+    assert!(
+        matches!(certified.0, Ok(Maybe::Present(_))) && !certified.1.consulted().is_empty(),
+        "a defined name unfolds and logs its definition as consulted: {certified:?}"
+    );
+    assert_eq!(
+        held, certified,
+        "a held step gives the same reduct and logs the same consult"
     );
 }
