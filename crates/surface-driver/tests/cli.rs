@@ -1386,14 +1386,14 @@ fn cells_reports_each_hole_s_count()
     assert_eq!(
         stdout(&read),
         format!(
-            "{shown}:17:1: cell 0 frame, strictly linear: v 1, beta 1\n\
-             {shown}:17:1: cell 1 frame, strictly linear: v 1, beta 1\n\
-             {shown}:24:22: cell 2 rule, strictly linear: $ret 1\n\
-             {shown}:25:28: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
-             {shown}:26:20: cell 4 rule, strictly linear: $ret 1\n\
-             {shown}:27:26: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
-             {shown}:28:18: cell 6 rule, duplicating 2: t 2, $ret 1\n\
-             {shown}:29:19: cell 7 rule, duplicating 3: t 3, $ret 1\n"
+            "{shown}:20:1: cell 0 frame, strictly linear: v 1, beta 1\n\
+             {shown}:20:1: cell 1 frame, strictly linear: v 1, beta 1\n\
+             {shown}:27:22: cell 2 rule, strictly linear: $ret 1\n\
+             {shown}:28:28: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
+             {shown}:29:20: cell 4 rule, strictly linear: $ret 1\n\
+             {shown}:30:26: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
+             {shown}:31:18: cell 6 rule, duplicating 2: t 2, $ret 1\n\
+             {shown}:32:19: cell 7 rule, duplicating 3: t 3, $ret 1\n"
         )
     );
 
@@ -1406,14 +1406,14 @@ fn cells_reports_each_hole_s_count()
     let rows = fused
         .strip_prefix(stdout(&read).as_str())
         .unwrap_or_else(|| panic!("the cell rows come first: {fused}"));
-    let fusion = format!("{shown}:17:1: fusion of cell ");
+    let fusion = format!("{shown}:20:1: fusion of cell ");
     assert!(
         rows.lines().all(|row| row.starts_with(fusion.as_str())),
         "{rows}"
     );
     assert_eq!(rows.lines().count(), 46, "{rows}");
     let thrice = format!(
-        "{shown}:17:1: fusion of cell 7 then cell 7, distance 2, exact: $ret 0, $ret' 1, t 9"
+        "{shown}:20:1: fusion of cell 7 then cell 7, distance 2, exact: $ret 0, $ret' 1, t 9"
     );
     assert!(rows.lines().any(|row| row == thrice), "{rows}");
 
