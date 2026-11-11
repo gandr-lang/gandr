@@ -38,8 +38,9 @@ exec "$root/.config/debug/lldb.bash" lldb --source "$root/.config/debug/lldbinit
 # `debug:test` runs one test of a package under lldb, stopped at a panic and
 # where a function `--break` names by regular expression is entered, and
 # prints the backtrace and the frame's locals, the checkout's formatters
-# loaded. The transcript is written to the package's
-# `tests/debug-traces/<test>.txt`, `::` written as `.`
+# loaded. `--features` builds the package under the features it lists, so a
+# test that a feature gates runs too. The transcript is written to the
+# package's `tests/debug-traces/<test>.txt`, `::` written as `.`
 # (`.config/debug/trace.bash`).
 ["debug:test"]
 description = "Run one test under lldb and write its transcript beside the regression"
@@ -48,17 +49,22 @@ usage = '''
 arg "<package>" help="the package holding the test, as cargo names it"
 arg "<test>" help="the test's full path in its binary, as nextest lists it"
 flag "--break <function>" help="stop where a function whose name matches this regular expression is entered"
+flag "--features <features>" help="build the package under these features, for a test that a feature gates"
 '''
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 command="mise run debug:test $usage_package $usage_test"
-breaks=()
+options=()
 if [[ -n ${usage_break:-} ]]; then
-  breaks+=(--break "$usage_break")
+  options+=(--break "$usage_break")
   command+=" --break $usage_break"
 fi
-exec .config/debug/trace.bash "$usage_package" "$usage_test" "${breaks[@]}" --command "$command"
+if [[ -n ${usage_features:-} ]]; then
+  options+=(--features "$usage_features")
+  command+=" --features $usage_features"
+fi
+exec .config/debug/trace.bash "$usage_package" "$usage_test" "${options[@]}" --command "$command"
 '''
 
 # `debug:refusal` is `debug:test` stopped where the refusal is made: each line

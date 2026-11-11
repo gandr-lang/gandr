@@ -17,21 +17,25 @@
 # `<package dir>/tests/debug-traces/<test>.txt`, `::` written as `.`, the
 # workspace root and the home directory taken out of every path in it. Its
 # first lines name the test and the command that wrote it, which
-# `.config/claims/observed.jq` reads.
+# `.config/claims/observed.jq` reads. `--features` builds the package under
+# the features it lists, so a test that a feature gates runs too.
 #
 # Usage: trace.bash <package> <test> [--at <file>:<line>]... [--break <regex>]...
-#   [--command <text>]. Exits 2 when the package holds no such test.
+#   [--features <features>] [--command <text>]. Exits 2 when the package holds
+#   no such test.
 set -euo pipefail
 package=${1:?trace.bash <package> <test>}
 test=${2:?trace.bash <package> <test>}
 shift 2
 ats=()
 breaks=()
+features=()
 command="mise run debug:test $package $test"
 while (( $# > 0 )); do
   case $1 in
     --at) ats+=("${2:?--at takes <file>:<line>}"); shift 2 ;;
     --break) breaks+=("${2:?--break takes a regular expression over function names}"); shift 2 ;;
+    --features) features=(--features "${2:?--features takes the features}"); shift 2 ;;
     --command) command=${2:?--command takes the command}; shift 2 ;;
     *) echo "debug: unknown argument \`$1\`" >&2; exit 2 ;;
   esac
@@ -43,7 +47,7 @@ unset RUSTFLAGS
 export CARGO_TARGET_DIR=$root/target/debug-trace CARGO_PROFILE_TEST_DEBUG=full CARGO_PROFILE_TEST_OPT_LEVEL=0
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-"$root/.config/mise/scope" cargo nextest list --locked --package "$package" --message-format json > "$scratch/listing.json"
+"$root/.config/mise/scope" cargo nextest list --locked --package "$package" "${features[@]}" --message-format json > "$scratch/listing.json"
 suite=$(jq -c --arg test "$test" '[."rust-suites"[] | select(.testcases | has($test))] | first // empty' "$scratch/listing.json")
 if [[ -z $suite ]]; then
   echo "debug: $package holds no test named \`$test\`; \`cargo nextest list --package $package\` names them" >&2
