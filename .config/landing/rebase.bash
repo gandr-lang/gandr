@@ -1,38 +1,44 @@
 #!/usr/bin/env bash
-# The rebase of `landing` onto `main` (#5441). The integration cycle's job on
-# the factory runner runs it after a green verdict that carries a fix: `main`
-# then holds a commit that `landing` lacks. The workflow lane runs it by hand
-# after it resolves a conflict (`mise run landing:rebase`). Thus `landing`
-# takes the fix with no merge commit and no revert, and `main` stays a
-# fast-forward of `integration`. Nothing rewrites `main`.
+# The landing rebase (#5441): `landing` takes each fix that `main` holds and
+# `landing` lacks. The integration cycle's job on the factory runner runs it
+# after a green verdict, when `ci:cycle` reads such a fix (`fixes.bash`). The
+# workflow lane runs it by hand after it resolves a conflict (`mise run
+# landing:rebase`). Thus `landing` takes the fix with no merge commit and no
+# revert. Nothing rewrites `main`.
 #
-# - A `landing` that holds `main` needs nothing.
-# - A `landing` with no commit past `main` fast-forwards to `main`.
-# - Otherwise git rebases `landing`'s commits past `main` onto `main` in a
-#   scratch worktree, with their merges. `main` is the rebase's upstream, so
-#   git drops each commit whose patch `main` holds under another hash
-#   (#5932): a commit that landed on `main` before a rewrite of `landing`.
-#   The rebase moves no other branch, whatever `rebase.updateRefs` says. The
-#   key of the host signs each new commit.
-# - A git note on each old commit under `refs/notes/rebased` holds its new
+# - A fix is a commit of `main`, not a merge, whose patch `landing` lacks
+#   (`fixes.bash`, #6683). A merge of `landing` into `integration` is no fix,
+#   and a commit that `landing` holds under another hash is no fix either.
+#   With no fix, `landing` stays.
+# - The floor is the newest head of `landing` that `integration` holds: the
+#   merge base of the two. The rebase never moves the floor or a commit
+#   below it (#6683), so the next take of `landing` merges with no conflict.
+#   Git puts each fix on the floor, signed, and skips a fix that becomes
+#   empty there. Then git rebases the commits of `landing` above the floor
+#   onto the fixes, with their merges. The rebase moves no other branch,
+#   whatever `rebase.updateRefs` says. The key of the host signs each new
+#   commit.
+# - A git note on each moved commit under `refs/notes/rebased` holds its new
 #   hash, so a seat finds a landed commit from its old hash.
 # - The merge queue builds each group on the tip of `landing`, and a push
 #   from outside the queue makes it build each group again (#6553). So
 #   before it moves `landing`, the task waits while the remote holds a branch
-#   of the queue's groups (`gh-readonly-queue/landing/*`), and reads both
-#   tips again after each wait. Git reads the branches, with no API call. The
+#   of the queue's groups (`gh-readonly-queue/landing/*`), and reads the tips
+#   again after each wait. Git reads the branches, with no API call. The
 #   wait ends after `REBASE_QUEUE_WAIT` seconds, 1500 by default, and then
 #   the push names each group that it makes the queue build again.
 # - One atomic push moves `landing` and the notes. The lease on the old tip
 #   of `landing` refuses the push when a landing arrives during the rebase.
-#   Then the task reads both tips again, at most 3 times in all.
-# - A rebase that conflicts stops before the push and exits 3. A fetch or
-#   another git command that fails stops the attempt and exits 1. Either way
-#   `landing` stays as it was, and the job pages the workflow lane.
+#   Then the task reads the tips again, at most 3 times in all.
+# - A fix or a rebase that conflicts stops before the push and exits 3. A
+#   fetch or another git command that fails stops the attempt and exits 1.
+#   Either way `landing` stays as it was, and the job pages the workflow
+#   lane.
 #
 # Usage: rebase.bash [remote], `origin` by default, in a clone that holds the
-# whole history of `main` and `landing`.
+# whole history of `main`, `landing` and `integration`.
 set -euo pipefail
+here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 remote=${1:-origin}
 notes=refs/notes/rebased
 scratch=$(mktemp -d)
@@ -49,16 +55,18 @@ mkdir "$scratch/hooks"
 printf '#!/usr/bin/env bash\ncat >> %q\n' "$scratch/rewritten" > "$scratch/hooks/post-rewrite"
 chmod +x "$scratch/hooks/post-rewrite"
 
-# One attempt: 0 when `landing` holds `main` at the end, 3 on a conflict, 4
-# when the push loses its lease, 5 after a wait for the queue's groups, and 1
-# when a fetch or another git command fails or the remote refuses the push.
-# The loop below calls `attempt` on the left of `||`, where bash ignores
-# `set -e`. Thus each command that can fail returns on its own (#5627).
+# One attempt: 0 when `landing` holds each patch of `main` at the end, 3 on
+# a conflict, 4 when the push loses its lease, 5 after a wait for the queue's
+# groups, and 1 when a fetch or another git command fails or the remote
+# refuses the push. The loop below calls `attempt` on the left of `||`, where
+# bash ignores `set -e`. Thus each command that can fail returns on its own
+# (#5627).
 attempt() {
-  local main landing base new old moved listed=0 refspecs=()
+  local main landing integration fixes floor onto new old moved listed=0 refspecs=()
   if ! git fetch --quiet --no-tags "$remote" "+refs/heads/main:refs/remotes/$remote/main" \
-    "+refs/heads/landing:refs/remotes/$remote/landing"; then
-    echo "git fetch of main and landing from $remote fails: no rebase runs" >&2
+    "+refs/heads/landing:refs/remotes/$remote/landing" \
+    "+refs/heads/integration:refs/remotes/$remote/integration"; then
+    echo "git fetch of main, landing and integration from $remote fails: no rebase runs" >&2
     return 1
   fi
   # `--exit-code` gives 2 when the remote holds no notes. Only 2 means that.
@@ -78,8 +86,10 @@ attempt() {
   esac
   main=$(git rev-parse "refs/remotes/$remote/main") || return 1
   landing=$(git rev-parse "refs/remotes/$remote/landing") || return 1
-  if git merge-base --is-ancestor "$main" "$landing"; then
-    echo "landing at ${landing:0:12} holds main at ${main:0:12}: nothing to rebase"
+  integration=$(git rev-parse "refs/remotes/$remote/integration") || return 1
+  fixes=$("$here/fixes.bash" "$main" "$landing") || return 1
+  if [[ -z $fixes ]]; then
+    echo "landing at ${landing:0:12} holds each patch of main at ${main:0:12}: nothing to rebase"
     return 0
   fi
   local groups
@@ -95,39 +105,53 @@ attempt() {
   if [[ -n $groups ]]; then
     echo "the merge queue still builds these groups after a wait of ${queue_wait}s, and the push makes it build each again: $(awk '{ sub("refs/heads/gh-readonly-queue/landing/", "", $2); print $2 }' <<< "$groups" | paste -sd ' ' -)" >&2
   fi
-  base=$(git merge-base "$main" "$landing") || return 1
-  if [[ $base == "$landing" ]]; then
-    new=$main
-    echo "landing at ${landing:0:12} holds no commit past main: it fast-forwards to ${main:0:12}"
-  else
-    : > "$scratch/rewritten"
-    git worktree add --quiet --detach "$scratch/tree" "$landing" || return 1
-    if ! git -C "$scratch/tree" -c core.hooksPath="$scratch/hooks" -c rebase.updateRefs=false \
-      rebase --quiet --gpg-sign --rebase-merges "$main" > /dev/null 2> "$scratch/rebase.err"; then
-      local conflicted
-      conflicted=$(git -C "$scratch/tree" diff --name-only --diff-filter=U | paste -sd ' ' -)
-      git -C "$scratch/tree" rebase --abort || true
-      if [[ -z $conflicted ]]; then
-        echo "the rebase of landing at ${landing:0:12} onto main at ${main:0:12} fails: $(< "$scratch/rebase.err")" >&2
-        return 1
-      fi
-      echo "the rebase of landing at ${landing:0:12} onto main at ${main:0:12} conflicts in $conflicted" >&2
-      return 3
+  # The floor: the newest head of `landing` that `integration` holds. Nothing
+  # at or below it moves (#6683).
+  floor=$(git merge-base "$landing" "$integration") || return 1
+  : > "$scratch/rewritten"
+  git worktree add --quiet --detach "$scratch/tree" "$floor" || return 1
+  local conflicted
+  # shellcheck disable=SC2086 # one fix a word
+  if ! git -C "$scratch/tree" cherry-pick --gpg-sign --empty=drop $fixes > /dev/null 2> "$scratch/rebase.err"; then
+    conflicted=$(git -C "$scratch/tree" diff --name-only --diff-filter=U | paste -sd ' ' -)
+    git -C "$scratch/tree" cherry-pick --abort || true
+    if [[ -z $conflicted ]]; then
+      echo "the fixes of main at ${main:0:12} do not go on landing's floor at ${floor:0:12}: $(< "$scratch/rebase.err")" >&2
+      return 1
     fi
-    new=$(git -C "$scratch/tree" rev-parse HEAD) || return 1
-    git worktree remove --force "$scratch/tree" || return 1
-    # A side branch that leaves `main` before the base keeps its commits, and
-    # the hook names each of them as its own new commit. Only a moved commit
-    # gets a note.
-    local count=0
-    while read -r old moved _; do
-      [[ $old == "$moved" ]] && continue
-      git notes --ref=rebased add --force --message "$moved" "$old" || return 1
-      count=$((count + 1))
-    done < "$scratch/rewritten"
-    refspecs+=("$notes:$notes")
-    echo "$count of landing's commits past main move onto main at ${main:0:12}: landing goes to ${new:0:12}"
+    echo "the fixes of main at ${main:0:12} conflict on landing's floor at ${floor:0:12} in $conflicted" >&2
+    return 3
   fi
+  onto=$(git -C "$scratch/tree" rev-parse HEAD) || return 1
+  if [[ $floor != "$landing" ]] \
+    && ! git -C "$scratch/tree" -c core.hooksPath="$scratch/hooks" -c rebase.updateRefs=false \
+      rebase --quiet --gpg-sign --rebase-merges --onto "$onto" "$floor" "$landing" > /dev/null 2> "$scratch/rebase.err"; then
+    conflicted=$(git -C "$scratch/tree" diff --name-only --diff-filter=U | paste -sd ' ' -)
+    git -C "$scratch/tree" rebase --abort || true
+    if [[ -z $conflicted ]]; then
+      echo "the rebase of landing at ${landing:0:12} above its floor at ${floor:0:12} fails: $(< "$scratch/rebase.err")" >&2
+      return 1
+    fi
+    echo "the rebase of landing at ${landing:0:12} above its floor at ${floor:0:12} conflicts in $conflicted" >&2
+    return 3
+  fi
+  new=$(git -C "$scratch/tree" rev-parse HEAD) || return 1
+  git worktree remove --force "$scratch/tree" || return 1
+  if [[ $new == "$landing" ]]; then
+    echo "each fix of main at ${main:0:12} is empty on landing at ${landing:0:12}: nothing moves"
+    return 0
+  fi
+  # A side branch that leaves `landing` below the floor keeps its commits,
+  # and the hook names each of them as its own new commit. Only a moved
+  # commit gets a note.
+  local count=0
+  while read -r old moved _; do
+    [[ $old == "$moved" ]] && continue
+    git notes --ref=rebased add --force --message "$moved" "$old" || return 1
+    count=$((count + 1))
+  done < "$scratch/rewritten"
+  refspecs+=("$notes:$notes")
+  echo "$(wc -w <<< "$fixes" | tr -d ' ') fix(es) of main at ${main:0:12} go on landing's floor at ${floor:0:12}, the head that integration holds, and $count of landing's commits above it move: landing goes to ${new:0:12}"
   if ! git push --quiet --atomic --force-with-lease="refs/heads/landing:$landing" "$remote" \
     "$new:refs/heads/landing" "${refspecs[@]}"; then
     # The lease fails only when `landing` moved. Any other refusal leaves it.

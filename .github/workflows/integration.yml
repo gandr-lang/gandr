@@ -177,8 +177,10 @@ jobs:
           ISSUE: ${{ needs.cycle.outputs.list }}
         run: factory-notify "brake-$BRAKE" "$ISSUE"
 
-  # A `main` that moved to a fix that `landing` lacks: the factory runner
-  # rebases `landing` onto `main` (#5441, `.config/landing/rebase.bash`).
+  # A `main` that moved to a fix whose patch `landing` lacks (#6683,
+  # `.config/landing/fixes.bash`): the factory runner puts the fix on the
+  # newest head of `landing` that `integration` took, and moves only the
+  # commits above that head (#5441, `.config/landing/rebase.bash`).
   # `landing`'s rules accept signed commits alone, and the host's key signs
   # the new commits. The host's credentials push them. The job runs the
   # default branch's script, and the rebase runs no code of `landing`. A

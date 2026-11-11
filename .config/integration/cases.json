@@ -449,7 +449,7 @@
     },
     "output": {
       "page": false,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.",
       "soundness": []
     }
   },
@@ -474,7 +474,7 @@
     },
     "output": {
       "page": false,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nNo cycle has a verdict yet.",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nNo cycle has a verdict yet.",
       "soundness": []
     }
   },
@@ -552,7 +552,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 2, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core|\n|`aborts`|`gandr-surface-parser::recovery`|cargo-test-enforcing-shard-core|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|test enforcing targets (linux, core)|\n\n</details>",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 2, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core|\n|`aborts`|`gandr-surface-parser::recovery`|cargo-test-enforcing-shard-core|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|test enforcing targets (linux, core)|\n\n</details>",
       "soundness": [
         {
           "title": "soundness: gandr-core-term tests::fails fails on integration",
@@ -619,7 +619,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 1, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core, cargo-test-plain-only|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 1, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core, cargo-test-plain-only|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.",
       "soundness": [
         {
           "title": "soundness: gandr-core-term tests::fails fails on integration",
@@ -655,7 +655,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nNo test report names a failure. The failed jobs hold the cause.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|check formatting and lint gates (treefmt)|\n\n</details>",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nNo test report names a failure. The failed jobs hold the cause.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|check formatting and lint gates (treefmt)|\n\n</details>",
       "soundness": []
     }
   },
@@ -685,7 +685,7 @@
     },
     "output": {
       "page": true,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The take\n\nThe tip of `landing`, `111111111111`, does not merge into `integration`. The fixer merges it on `integration` by hand.",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The take\n\nThe tip of `landing`, `111111111111`, does not merge into `integration`. The fixer merges it on `integration` by hand.",
       "soundness": []
     }
   },
@@ -707,7 +707,7 @@
     },
     "output": {
       "page": false,
-      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The brake\n\nThe brake holds the landings (#5442). `main` lags `landing` past a limit of `.config/integration/brake.json`. A passing cycle moves `main`, and then the landings go on.",
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing. The fixer takes a repair on `landing` by a take of `landing`, never by a copy of its commit (#6683).\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The brake\n\nThe brake holds the landings (#5442). `main` lags `landing` past a limit of `.config/integration/brake.json`. A passing cycle moves `main`, and then the landings go on.",
       "soundness": []
     }
   },
