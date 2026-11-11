@@ -9591,3 +9591,98 @@ fn an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641()
         refusal.error()
     );
 }
+
+/// A pair the kernel reports undecided is answered by the machine's dialogue
+/// for that pair alone. `here(b)` at `Path(a, d)` carries `Evaluate` on both
+/// sides, and the tier met its right pair; `a` unfolds to `()`, `b` to `a` and
+/// `d` to `b`. A report that names the digest of `b` and the right side answers
+/// the right pair with the machine's run, and the left pair keeps `Evaluate`.
+/// A report that names another point answers nothing.
+#[test]
+fn an_undecided_pair_crosses_with_its_second_certificate_3557()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_unit();
+    let [a, b, d] =
+        [0_usize, 1, 2].map(|position| arena.value_constant(ConstantIndex::from(position)));
+    let mut positions = Positions::default();
+    for (position, body) in [(0_usize, unit), (1, a), (2, b)] {
+        positions
+            .definitions
+            .define(ConstantIndex::from(position), body);
+        let _crossed = positions
+            .admitted
+            .insert(ConstantIndex::from(position), ConstantIndex::from(position));
+    }
+    let at = arena.value_here(b);
+    let evaluate = || {
+        Vec::from([gandr_kernel_conversion_trace::ConversionDecision::<gandr_core_nbe::TraceNode>::Evaluate])
+    };
+    let reflexivities = BTreeMap::from([(
+        at,
+        crate::code::Reflexivity::new(evaluate(), evaluate())
+            .meeting([None, Some(crate::code::MetPair::new(b, d, Vec::new()))]),
+    )]);
+    let lifts = BTreeMap::new();
+    let definitions = BTreeMap::new();
+    let source = Source {
+        lifts: &lifts,
+        funexts: &BTreeMap::new(),
+        coercions: &BTreeMap::new(),
+        equivalences: &BTreeMap::new(),
+        flows: &BTreeMap::new(),
+        directed: &BTreeMap::new(),
+        motives: &BTreeMap::new(),
+        payloads: &BTreeMap::new(),
+        handled: &BTreeMap::new(),
+        rows: &crate::program::Rows::default(),
+        reflexivities: &reflexivities,
+        relations: &BTreeMap::new(),
+        restatements: &BTreeMap::new(),
+        laws: &BTreeMap::new(),
+        operation_rules: &BTreeMap::new(),
+        covers: &BTreeMap::new(),
+        builtins: &BTreeMap::new(),
+        stage_signatures: &BTreeMap::new(),
+        natives: &BTreeMap::new(),
+        definitions: &definitions,
+    };
+    let mut kernel = TermArena::new();
+    let digest = |kernel: &mut TermArena, position: usize| {
+        let named = kernel.value_constant(ConstantIndex::from(position));
+        gandr_kernel_core::content_digest(kernel, AnyNode::Value(named))
+    };
+    let named_b = digest(&mut kernel, 1);
+    let declared = arena.value_type_unit();
+    let crossing: &[(ConstantIndex, ConstantIndex)] = &[];
+    let staged = (
+        super::Offer::Axiom { declared },
+        crossing,
+        ConstantIndex::from(3_usize),
+    );
+    let right = gandr_kernel_core::EndpointSide::Right;
+    let answers = super::answered(&mut arena, (source, &positions), staged, (named_b, right))
+        .expect("the report names `b`, whose right pair the tier met");
+    let answered = answers.get(&at).expect("the reflexivity stays");
+    assert_eq!(
+        answered.left(),
+        evaluate().as_slice(),
+        "the left pair keeps `Evaluate`"
+    );
+    assert!(
+        !answered.right().is_empty() && answered.right() != evaluate().as_slice(),
+        "the right pair carries the machine's run: {:?}",
+        answered.right()
+    );
+    assert_eq!(
+        answered.met(right),
+        None,
+        "an answered pair is no longer one the tier met"
+    );
+    let named_a = digest(&mut kernel, 0);
+    assert_eq!(
+        super::answered(&mut arena, (source, &positions), staged, (named_a, right)),
+        None,
+        "no reflexivity whose pair the tier met has the point `a`"
+    );
+}

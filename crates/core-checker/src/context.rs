@@ -1509,6 +1509,49 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
+    /// The pair the tier met, with what the machine reads to answer it should
+    /// the kernel's own evaluation leave it undecided. An open pair reads the
+    /// binders whose calls return, `known` once read. A closed pair reads none.
+    ///
+    /// # Specification
+    /// - requires: `point` and `endpoint` stand under the context's binders.
+    /// - ensures: the pair of `point` and `endpoint`; with no binder when both
+    ///   are closed, and otherwise with [`crate::divergence::returning`]'s
+    ///   answer, which `known` keeps, or with no binder when that read fails.
+    /// - provides: the second certificate's input, recorded at the cost of the
+    ///   binders' read alone and only for an open pair.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::code::MetPair::certified`].
+    /// - witness: `bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+    #[spec(ensures: |ret| ret.point() == point)]
+    pub(crate) fn met_pair(
+        &mut self,
+        point: ValueId,
+        endpoint: ValueId,
+        known: &mut Option<Vec<gandr_kernel_term::DeBruijnIndex>>,
+    ) -> crate::code::MetPair
+    {
+        let closed = [point, endpoint]
+            .into_iter()
+            .all(|side| self.closure(side) == Closure::Closed);
+        if closed {
+            return crate::code::MetPair::new(point, endpoint, Vec::new());
+        }
+        let returning = match *known {
+            Some(ref read) => read.clone(),
+            None => crate::divergence::returning(self).map_or_else(
+                |_unread| Vec::new(),
+                |read| {
+                    *known = Some(read.clone());
+                    read
+                },
+            ),
+        };
+        crate::code::MetPair::new(point, endpoint, returning)
+    }
+
     /// Whether `value` selects no variable in either zone.
     ///
     /// # Specification

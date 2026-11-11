@@ -145,7 +145,11 @@
 //! replay unfolds only the constant it names, at the side it names. A dialogue
 //! naming another constant or side, or fewer unfoldings than the endpoint
 //! needs, is refused as [`IdentityError::EndpointsDiffer`], naming the side and
-//! the replay's verdict.
+//! the replay's verdict. A side whose dialogue is the one decision `Evaluate`
+//! is the kernel's own search. A search that runs past the replay's budget
+//! decides nothing, so the kernel reports the pair as
+//! [`IdentityError::EndpointsUndecided`] and never refuses it. The
+//! readmission answers that report with the dialogue of that pair alone.
 //!
 //! - alternatives: the kernel's own reading at reflexivity too, which stops at
 //!   the first thunk because evaluation does not reduce under binders; a δ rule
@@ -385,6 +389,7 @@ use crate::path_universe::anchor;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+use crate::replay::ReplayDecline;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
@@ -432,6 +437,21 @@ pub enum IdentityError
         side: EndpointSide,
         /// That endpoint's dialogue's replay verdict.
         verdict: KernelVerdict,
+    },
+    /// A reflexivity's point and one endpoint that the kernel's own evaluation
+    /// runs past the replay's budget: the evaluation decides nothing, so the
+    /// pair is undecided, not apart. The readmission answers the report with
+    /// the dialogue of that pair alone.
+    EndpointsUndecided
+    {
+        /// The point's content digest.
+        point: ContentDigest,
+        /// The source endpoint's content digest.
+        left: ContentDigest,
+        /// The target endpoint's content digest.
+        right: ContentDigest,
+        /// The endpoint whose pair the evaluation did not decide.
+        side: EndpointSide,
     },
     /// A definition's type conversion meets two path endpoints its forced
     /// reading leaves apart, and the dialogue the definition carries for that
@@ -538,6 +558,9 @@ impl fmt::Display for IdentityError
         match *self {
             Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
             Self::EndpointsDiffer { .. } => f.write_str("reflexivity between differing endpoints"),
+            Self::EndpointsUndecided { .. } => {
+                f.write_str("reflexivity whose endpoint the kernel's evaluation leaves undecided")
+            },
             Self::RelatedEndpointsDiffer { .. } => {
                 f.write_str("a definition's related endpoints do not replay")
             },
@@ -870,14 +893,17 @@ pub(crate) fn law_type(
 ///   A dialogue of the one decision `Evaluate` derives it when
 ///   [`crate::replay::convert_unfolding`] converts the point and the endpoint,
 ///   closed or open over the point's context. Any other dialogue derives it
-///   when it replays. `arena` holds what it held on entry.
+///   when it replays. An evaluation that runs past the budget leaves the pair
+///   undecided, and no later side is read. `arena` holds what it held on entry.
 /// - provides: the `here` rule's endpoint check. In a replayed dialogue a
 ///   constant unfolds only where the dialogue names it, at the head and side it
 ///   names, so a δ-step under a binder is a recorded step and never the
 ///   kernel's own search. An evaluated pair is the kernel's own search, bound
 ///   by the replay's budget, each variable of the context standing for itself.
 ///   A taken pair is the tier's answer, which the admission policy trusts.
-/// - fails: [`IdentityError::EndpointsDiffer`] at the first endpoint neither
+/// - fails: [`IdentityError::EndpointsUndecided`] at the first endpoint whose
+///   evaluation runs past the budget, naming the point, both endpoints and that
+///   side; [`IdentityError::EndpointsDiffer`] at the first endpoint neither
 ///   relates, naming that side and its verdict.
 /// - panics: none.
 ///
@@ -891,12 +917,16 @@ pub(crate) fn law_type(
 ///   names the wrong constant, the wrong side, or fewer unfoldings than the
 ///   endpoint needs. A pair evaluating to one value is admitted by `Evaluate`,
 ///   closed or under a binder it reads, and refused when it evaluates apart. An
-///   admitted closed pair evaluating apart is taken under the policy and
-///   refused without it.
+///   evaluation past the budget is undecided and never refused, and the
+///   dialogue of that pair alone then admits it beside a pair that `Evaluate`
+///   still converts. An admitted closed pair evaluating apart is taken under
+///   the policy and refused without it.
 /// - witness: `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`
 /// - witness: `element_identity::tests::an_endpoint_unfolding_under_a_thunk_replays_its_dialogue`
 /// - witness: `element_identity::tests::a_dialogue_naming_the_wrong_unfolding_is_refused_by_name`
 /// - witness: `element_identity::tests::a_pair_is_converted_by_the_kernel_s_own_evaluation_3557`
+/// - witness: `element_identity::tests::an_evaluation_past_its_budget_is_undecided_3557`
+/// - witness: `element_identity::tests::a_second_certificate_serves_its_pair_alone_3557`
 /// - witness: `element_identity::tests::an_admitted_result_is_taken_only_under_the_policy_3558`
 #[spec(
     captures: before = arena.watermark(),
@@ -904,7 +934,7 @@ pub(crate) fn law_type(
         error,
         &KernelError::Identity(IdentityError::EndpointsDiffer { verdict, .. })
             if verdict != KernelVerdict::Convertible
-    )),
+    ) || matches!(error, &KernelError::Identity(IdentityError::EndpointsUndecided { .. }))),
 )]
 pub(crate) fn reflexive_endpoints(
     arena: &mut TermArena,
@@ -931,12 +961,21 @@ pub(crate) fn reflexive_endpoints(
                 KernelVerdict::Convertible
             },
             [ConversionDecision::Evaluate | ConversionDecision::Admitted] => {
-                crate::replay::convert_unfolding(
+                let evaluated = crate::replay::convert_unfolding(
                     arena,
                     unfoldings,
                     ReplaySides::Values(point, endpoint),
                     ReplayBudget::DEFAULT,
-                )
+                );
+                if evaluated == KernelVerdict::Declined(ReplayDecline::Budget) {
+                    return Err(KernelError::Identity(IdentityError::EndpointsUndecided {
+                        point: content_digest(arena, AnyNode::Value(point)),
+                        left: content_digest(arena, AnyNode::Value(left)),
+                        right: content_digest(arena, AnyNode::Value(right)),
+                        side,
+                    }));
+                }
+                evaluated
             },
             _ => crate::replay::replay(
                 arena,

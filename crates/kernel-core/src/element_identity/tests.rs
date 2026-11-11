@@ -2459,6 +2459,108 @@ fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
     );
 }
 
+/// The pairs of an undecided reflexivity: `a` unfolds to `e` and `e` to `a`,
+/// `b` unfolds to `a` and `d` to `b`, and the point is `b` at `Path(a, d)`.
+/// The evaluation of `b` against `a` unfolds `b` once and meets `a`. The
+/// evaluation of `b` against `d` unfolds the left head first, reaches `a` and
+/// runs between `a` and `e` with no end.
+///
+/// # Specification
+/// trivial.
+fn undecided_pair(arena: &mut TermArena) -> (Unfoldings, ValueId, (ValueId, ValueId))
+{
+    let [a, b, d, e] =
+        [0_usize, 1, 2, 3].map(|position| arena.value_constant(ConstantIndex::from(position)));
+    let unfoldings = Unfoldings::new(Vec::from([
+        Unfoldable::Body(e),
+        Unfoldable::Body(a),
+        Unfoldable::Body(b),
+        Unfoldable::Body(a),
+    ]));
+    (unfoldings, b, (a, d))
+}
+
+/// An evaluation that runs past the replay's budget is undecided: the kernel
+/// reports the point, both endpoints and the side, and never refuses the pair.
+#[test]
+fn an_evaluation_past_its_budget_is_undecided_3557()
+{
+    let mut arena = TermArena::new();
+    let (unfoldings, point, (left, right)) = undecided_pair(&mut arena);
+    let evaluate = EndpointDialogues {
+        left: Vec::from([ConversionDecision::Evaluate]),
+        right: Vec::from([ConversionDecision::Evaluate]),
+    };
+    let watermark = arena.watermark();
+    let reported = super::reflexive_endpoints(
+        &mut arena,
+        &unfoldings,
+        crate::admitted::Taking::Deriving,
+        point,
+        (left, right),
+        &evaluate,
+    );
+    assert_eq!(
+        reported,
+        Err(KernelError::Identity(IdentityError::EndpointsUndecided {
+            point: content_digest(&arena, AnyNode::Value(point)),
+            left: content_digest(&arena, AnyNode::Value(left)),
+            right: content_digest(&arena, AnyNode::Value(right)),
+            side: EndpointSide::Right,
+        })),
+        "the evaluation of `b` against `d` runs past the budget, so the pair is undecided"
+    );
+    assert_eq!(arena.watermark(), watermark);
+}
+
+/// The dialogue of an undecided pair is a second certificate for that pair
+/// alone: with it on the right, the reflexivity admits, and its left pair
+/// stays the kernel's own evaluation. The same dialogue on the left pair does
+/// not relate `b` and `a`.
+#[test]
+fn a_second_certificate_serves_its_pair_alone_3557()
+{
+    let mut arena = TermArena::new();
+    let (unfoldings, point, endpoints) = undecided_pair(&mut arena);
+    // `d` unfolds on the right, and `b` meets `b` by its name.
+    let second = Vec::from([
+        ConversionDecision::Unfold { constant: () },
+        ConversionDecision::ReduceRight { redex: () },
+        ConversionDecision::ConstShortcut { constant: () },
+    ]);
+    let mut relate = |dialogues: &EndpointDialogues| {
+        super::reflexive_endpoints(
+            &mut arena,
+            &unfoldings,
+            crate::admitted::Taking::Deriving,
+            point,
+            endpoints,
+            dialogues,
+        )
+    };
+    assert_eq!(
+        relate(&EndpointDialogues {
+            left: Vec::from([ConversionDecision::Evaluate]),
+            right: second.clone(),
+        }),
+        Ok(()),
+        "the second certificate relates the right pair, and `Evaluate` relates the left pair"
+    );
+    assert!(
+        matches!(
+            relate(&EndpointDialogues {
+                left: second,
+                right: Vec::from([ConversionDecision::Evaluate]),
+            }),
+            Err(KernelError::Identity(IdentityError::EndpointsDiffer {
+                side: EndpointSide::Left,
+                ..
+            }))
+        ),
+        "the dialogue of the right pair does not relate the left pair"
+    );
+}
+
 /// Admit `here(point)` at `Path[.A = Bool](point, ⟨not true⟩)`, its right side
 /// carrying the admitted result `Admitted`.
 ///

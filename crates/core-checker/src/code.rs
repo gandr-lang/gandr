@@ -591,7 +591,9 @@ impl Evaluation
 /// endpoint, recorded with returned endpoints held at the definitions they
 /// call ([`gandr_core_nbe::Endpoints::Hold`]), so every δ-step an endpoint
 /// needs, under a binder or not, is one of its decisions. An endpoint that is
-/// the point's own node or syntax relates by the empty dialogue.
+/// the point's own node or syntax relates by the empty dialogue. An endpoint
+/// the tier met carries the one decision `Evaluate` and the pair the machine
+/// reads if the kernel's own evaluation leaves that pair undecided.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Reflexivity
 {
@@ -599,6 +601,89 @@ pub struct Reflexivity
     left: Vec<ConversionDecision<TraceNode>>,
     /// The derivation from the point to the right endpoint, in order.
     right: Vec<ConversionDecision<TraceNode>>,
+    /// The pair the tier met at each endpoint, left then right.
+    met: [Option<MetPair>; 2],
+}
+
+/// A reflexivity's pair that the tier met: the point, the endpoint and the
+/// binders whose calls return. The checker records `Evaluate` for the pair and
+/// runs no machine. The readmission runs the machine on the pair only when the
+/// kernel's own evaluation leaves it undecided.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct MetPair
+{
+    /// The reflexivity's point.
+    point: ValueId,
+    /// The endpoint the tier met the point at.
+    endpoint: ValueId,
+    /// The intuitionistic binders whose calls return, by index, as the
+    /// endpoint conversion reads them ([`crate::divergence::returning`]); none
+    /// for a closed pair.
+    returning: Vec<DeBruijnIndex>,
+}
+
+impl MetPair
+{
+    /// The pair of `point` and `endpoint`, read under the binders `returning`
+    /// names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn new(
+        point: ValueId,
+        endpoint: ValueId,
+        returning: Vec<DeBruijnIndex>,
+    ) -> Self
+    {
+        Self {
+            point,
+            endpoint,
+            returning,
+        }
+    }
+
+    /// The reflexivity's point.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn point(&self) -> ValueId
+    {
+        self.point
+    }
+
+    /// The machine's dialogue from the point to the endpoint under
+    /// `definitions`, the second certificate of the pair.
+    ///
+    /// # Specification
+    /// - requires: the point and the endpoint live in `core`.
+    /// - ensures: the decisions [`CodeDefinitions::relation`] records when it
+    ///   converts the pair under the binders the pair names; nothing when it
+    ///   refutes the pair, declines it or fails.
+    /// - provides: the dialogue the readmission sends for a pair the kernel
+    ///   reports undecided, as the checker sends it for a pair the tier does
+    ///   not meet.
+    /// - panics: none.
+    /// - executable: none — the dialogue is the machine's run on terms it
+    ///   evaluates; the witness observes it through the readmission.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CodeDefinitions::relation`].
+    /// - witness: `bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+    pub(crate) fn certified(
+        &self,
+        definitions: &CodeDefinitions,
+        core: &CoreArena,
+    ) -> Option<Vec<ConversionDecision<TraceNode>>>
+    {
+        match definitions.relation(core, self.point, self.endpoint, &self.returning) {
+            Ok((MachineVerdict::Convertible, decisions)) => Some(decisions),
+            Ok((MachineVerdict::NotConvertible | MachineVerdict::Declined(_), _)) | Err(_) => None,
+        }
+    }
 }
 
 impl Reflexivity
@@ -615,7 +700,77 @@ impl Reflexivity
         right: Vec<ConversionDecision<TraceNode>>,
     ) -> Self
     {
-        Self { left, right }
+        Self {
+            left,
+            right,
+            met: [None, None],
+        }
+    }
+
+    /// The reading with the pair the tier met at each endpoint, left then
+    /// right.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn meeting(
+        self,
+        met: [Option<MetPair>; 2],
+    ) -> Self
+    {
+        Self { met, ..self }
+    }
+
+    /// The pair the tier met at the endpoint on `side`, if it met one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn met(
+        &self,
+        side: gandr_kernel_core::EndpointSide,
+    ) -> Option<&MetPair>
+    {
+        let [ref left, ref right] = self.met;
+        match side {
+            gandr_kernel_core::EndpointSide::Left => left.as_ref(),
+            gandr_kernel_core::EndpointSide::Right => right.as_ref(),
+        }
+    }
+
+    /// The reading with `decisions`, the second certificate, in place of the
+    /// derivation on `side`; the reading keeps no met pair on `side`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn answering(
+        &self,
+        side: gandr_kernel_core::EndpointSide,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        let mut answered = self.clone();
+        let Self {
+            ref mut left,
+            ref mut right,
+            ref mut met,
+        } = answered;
+        let [ref mut met_left, ref mut met_right] = *met;
+        match side {
+            gandr_kernel_core::EndpointSide::Left => {
+                *left = decisions;
+                *met_left = None;
+            },
+            gandr_kernel_core::EndpointSide::Right => {
+                *right = decisions;
+                *met_right = None;
+            },
+        }
+        answered
     }
 
     /// The derivation from the point to the left endpoint.

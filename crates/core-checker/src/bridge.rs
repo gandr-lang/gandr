@@ -3197,7 +3197,10 @@ enum Erased
 ///   around the kernel's admission of the offer: [`timed::Absent::Unoffered`]
 ///   when the offer never reached [`Environment::add_decl`]. A native signature
 ///   or a free model the kernel rejects is the declaration's
-///   [`Outcome::Rejected`], its offer never made.
+///   [`Outcome::Rejected`], its offer never made. A pair the kernel reports
+///   undecided ([`gandr_kernel_core::IdentityError::EndpointsUndecided`]) is
+///   answered by its second certificate ([`answered`]), and the offer is made
+///   again. When no reflexivity answers the report, the rejection stands.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -3253,53 +3256,166 @@ where
     Vouch: Fn(Certificate) -> Certificate,
     Watch: Stopwatch,
 {
-    let staged = loop {
-        let next = ConstantIndex::from(environment.entries().len());
-        let base = ConstantIndex::from(usize::from(next).saturating_add(1));
-        let own = [(constant, next)];
-        let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
-            Offer::Data(_) | Offer::Codata(_) => &own,
-            Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+    // The reflexivities whose second certificates answered the pairs the
+    // kernel reported undecided; none until it reports one.
+    let mut answers: Option<BTreeMap<ValueId, Reflexivity>> = None;
+    loop {
+        let source = answers.as_ref().map_or(source, |reflexivities| Source {
+            reflexivities,
+            ..source
+        });
+        let staged = loop {
+            let next = ConstantIndex::from(environment.entries().len());
+            let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+            let own = [(constant, next)];
+            let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+                Offer::Data(_) | Offer::Codata(_) => &own,
+                Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+            };
+            match stage(
+                environment,
+                arena,
+                (source, &*positions),
+                offer,
+                vouch,
+                (crossing, base, held(source, constant)),
+            ) {
+                Ok(staged) => break staged,
+                Err(Unstaged::Unseeded(seed)) => {
+                    if let Err(outcome) =
+                        seeded(environment, arena, source, positions, &seed, vouch)
+                    {
+                        return (outcome, Vec::new(), UNOFFERED);
+                    }
+                },
+                Err(Unstaged::Refused(outcome, replayed)) => {
+                    if let Maybe::Absent(_) =
+                        assumed_for(environment, arena, source, positions, &outcome, vouch)
+                    {
+                        return (outcome, replayed, UNOFFERED);
+                    }
+                },
+            }
         };
-        match stage(
-            environment,
-            arena,
-            (source, &*positions),
-            offer,
-            vouch,
-            (crossing, base, held(source, constant)),
-        ) {
-            Ok(staged) => break staged,
-            Err(Unstaged::Unseeded(seed)) => {
-                if let Err(outcome) = seeded(environment, arena, source, positions, &seed, vouch) {
-                    return (outcome, Vec::new(), UNOFFERED);
-                }
-            },
-            Err(Unstaged::Refused(outcome, replayed)) => {
-                if let Maybe::Absent(_) =
-                    assumed_for(environment, arena, source, positions, &outcome, vouch)
+        let staged_as = staged.declaration.declaration().clone();
+        let started = stopwatch.start();
+        let admitted = admit(environment, staged.declaration);
+        let took = stopwatch.stop(started);
+        let admitted = match admitted {
+            Ok(admitted) => admitted,
+            Err(error) => {
+                // A pair the kernel's own evaluation leaves undecided is
+                // answered by the machine's dialogue for that pair alone, and
+                // the offer is made again.
+                let next = ConstantIndex::from(environment.entries().len());
+                let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+                let own = [(constant, next)];
+                let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+                    Offer::Data(_) | Offer::Codata(_) => &own,
+                    Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+                };
+                if let KernelError::Identity(gandr_kernel_core::IdentityError::EndpointsUndecided {
+                    point,
+                    side,
+                    ..
+                }) = error
+                    && let Some(fresh) = answered(
+                        arena,
+                        (source, &*positions),
+                        (offer, crossing, base),
+                        (point, side),
+                    )
                 {
-                    return (outcome, replayed, UNOFFERED);
+                    answers = Some(fresh);
+                    continue;
                 }
+                return (Outcome::Rejected(error), staged.replayed, took);
             },
-        }
+        };
+        let outcome = settle(
+            environment,
+            source,
+            positions,
+            (constant, offer, staged.image),
+            (staged_as, admitted),
+        );
+        return (outcome, staged.replayed, took);
+    }
+}
+
+/// The reflexivities of `source`, with each pair the kernel reported
+/// undecided answered by its second certificate: the machine's dialogue for
+/// that pair alone.
+///
+/// A candidate is a reflexivity whose pair on `side` the tier met. Its point is
+/// erased on its own into a scratch arena, and it answers the report when the
+/// point's content digest is `point`. A candidate the machine does not convert
+/// stays as the judgement recorded it.
+///
+/// # Specification
+/// - requires: `positions` holds the definitions crossed before the offer, as
+///   the judgement held them; `crossing` and `base` are the ones the offer
+///   staged under.
+/// - ensures: `source`'s reflexivities with each candidate whose point's digest
+///   is `point` and whose pair the machine converts carrying the machine's
+///   dialogue on `side`, and with no met pair on `side`; nothing when no
+///   candidate answers.
+/// - provides: the second certificate the readmission sends for a pair the
+///   kernel reports undecided. Each answer takes one pair the tier met, so the
+///   offers of one declaration end.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reflexivity whose pair the kernel's evaluation runs
+///   past its budget crosses with the machine's dialogue for that pair, and its
+///   other pair keeps `Evaluate`.
+/// - witness: `bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|answers| answers.len() == source.reflexivities.len()
+    && answers.iter().any(|(at, answer)| answer.met(side).is_none()
+        && source.reflexivities.get(at).is_some_and(|recorded| recorded.met(side).is_some()))))]
+fn answered(
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &Positions),
+    (offer, crossing, base): (Offer<'_>, &[(ConstantIndex, ConstantIndex)], ConstantIndex),
+    (point, side): (ContentDigest, gandr_kernel_core::EndpointSide),
+) -> Option<BTreeMap<ValueId, Reflexivity>>
+{
+    let restated = match offer {
+        Offer::Definition { restated, .. } => restated,
+        Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
     };
-    let staged_as = staged.declaration.declaration().clone();
-    let started = stopwatch.start();
-    let admitted = admit(environment, staged.declaration);
-    let took = stopwatch.stop(started);
-    let admitted = match admitted {
-        Ok(admitted) => admitted,
-        Err(error) => return (Outcome::Rejected(error), staged.replayed, took),
-    };
-    let outcome = settle(
-        environment,
-        source,
-        positions,
-        (constant, offer, staged.image),
-        (staged_as, admitted),
-    );
-    (outcome, staged.replayed, took)
+    let mut scratch = TermArena::new();
+    let matching: Vec<ValueId> = source
+        .reflexivities
+        .iter()
+        .filter_map(|(&at, reflexivity)| {
+            let met = reflexivity.met(side)?;
+            let image = Erasure::new(arena, source, positions, base)
+                .crossing_block(crossing)
+                .restating(restated)
+                .value(&mut scratch, met.point())
+                .ok()?;
+            (content_digest(&scratch, AnyNode::Value(image)) == point).then_some(at)
+        })
+        .collect();
+    let mut answers = source.reflexivities.clone();
+    let mut answered = false;
+    for at in matching {
+        let Some(reflexivity) = answers.get(&at)
+        else {
+            continue;
+        };
+        let Some(decisions) = reflexivity
+            .met(side)
+            .and_then(|met| met.certified(&positions.definitions, arena))
+        else {
+            continue;
+        };
+        let answer = reflexivity.answering(side, decisions);
+        let _recorded = answers.insert(at, answer);
+        answered = true;
+    }
+    answered.then_some(answers)
 }
 
 /// Offer one staged declaration to the kernel through
@@ -3760,7 +3876,9 @@ fn settle(
 ///   records an admission when the kernel admits the block, and otherwise every
 ///   member sharing the refusal or rejection of the member that failed, the
 ///   environment as it was but for the assumptions, the native signatures and
-///   the free models admitted as [`cross`] admits them.
+///   the free models admitted as [`cross`] admits them. A pair the kernel
+///   reports undecided is answered as [`cross`] answers it, and the block is
+///   offered again.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -3783,101 +3901,147 @@ fn cross_block<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let staged = 'block: loop {
-        let next = usize::from(environment.entries().len());
-        let crossing = members
+    // As in `cross`: the reflexivities whose second certificates answered the
+    // pairs the kernel reported undecided; none until it reports one.
+    let mut answers: Option<BTreeMap<ValueId, Reflexivity>> = None;
+    loop {
+        let source = answers.as_ref().map_or(source, |reflexivities| Source {
+            reflexivities,
+            ..source
+        });
+        let staged = 'block: loop {
+            let next = usize::from(environment.entries().len());
+            let crossing = members
+                .iter()
+                .enumerate()
+                .map(|(offset, &(constant, _))| {
+                    (constant, ConstantIndex::from(next.saturating_add(offset)))
+                })
+                .collect::<Vec<_>>();
+            let base = ConstantIndex::from(next.saturating_add(members.len()));
+            let mut staged: Vec<Staged> = Vec::with_capacity(members.len());
+            for &(constant, offer) in members {
+                match stage(
+                    environment,
+                    arena,
+                    (source, &*positions),
+                    offer,
+                    vouch,
+                    (&crossing, base, held(source, constant)),
+                ) {
+                    Ok(member) => staged.push(member),
+                    Err(unstaged) => {
+                        // The block crosses whole or not at all: what staged is
+                        // abandoned, latest first, and every member shares the
+                        // refusal, unless a native signature, a free model or an
+                        // assumption it waited on is admitted and the block staged
+                        // again past it.
+                        for member in staged.into_iter().rev() {
+                            environment.abandon(member.declaration);
+                        }
+                        let (outcome, replayed) = match unstaged {
+                            Unstaged::Unseeded(seed) => {
+                                match seeded(environment, arena, source, positions, &seed, vouch) {
+                                    Ok(()) => continue 'block,
+                                    Err(outcome) => (outcome, Vec::new()),
+                                }
+                            },
+                            Unstaged::Refused(outcome, replayed) => {
+                                if let Maybe::Present(_) = assumed_for(
+                                    environment,
+                                    arena,
+                                    source,
+                                    positions,
+                                    &outcome,
+                                    vouch,
+                                ) {
+                                    continue 'block;
+                                }
+                                (outcome, replayed)
+                            },
+                        };
+                        return members
+                            .iter()
+                            .map(|&(member, _)| {
+                                if member == constant {
+                                    (outcome.clone(), replayed.clone())
+                                }
+                                else {
+                                    (outcome.clone(), Vec::new())
+                                }
+                            })
+                            .collect();
+                    },
+                }
+            }
+            break staged;
+        };
+        let exported = staged
             .iter()
-            .enumerate()
-            .map(|(offset, &(constant, _))| {
-                (constant, ConstantIndex::from(next.saturating_add(offset)))
-            })
+            .map(|member| member.declaration.declaration().clone())
             .collect::<Vec<_>>();
-        let base = ConstantIndex::from(next.saturating_add(members.len()));
-        let mut staged: Vec<Staged> = Vec::with_capacity(members.len());
-        for &(constant, offer) in members {
-            match stage(
-                environment,
-                arena,
-                (source, &*positions),
-                offer,
-                vouch,
-                (&crossing, base, held(source, constant)),
-            ) {
-                Ok(member) => staged.push(member),
-                Err(unstaged) => {
-                    // The block crosses whole or not at all: what staged is
-                    // abandoned, latest first, and every member shares the
-                    // refusal, unless a native signature, a free model or an
-                    // assumption it waited on is admitted and the block staged
-                    // again past it.
-                    for member in staged.into_iter().rev() {
-                        environment.abandon(member.declaration);
-                    }
-                    let (outcome, replayed) = match unstaged {
-                        Unstaged::Unseeded(seed) => {
-                            match seeded(environment, arena, source, positions, &seed, vouch) {
-                                Ok(()) => continue 'block,
-                                Err(outcome) => (outcome, Vec::new()),
-                            }
-                        },
-                        Unstaged::Refused(outcome, replayed) => {
-                            if let Maybe::Present(_) =
-                                assumed_for(environment, arena, source, positions, &outcome, vouch)
-                            {
-                                continue 'block;
-                            }
+        let mut images = Vec::with_capacity(staged.len());
+        let mut declarations = Vec::with_capacity(staged.len());
+        for member in staged {
+            images.push((member.image, member.replayed));
+            declarations.push(member.declaration);
+        }
+        match environment.add_block(declarations) {
+            Ok(admitted) => {
+                return members
+                    .iter()
+                    .zip(exported)
+                    .zip(admitted)
+                    .zip(images)
+                    .map(
+                        |(((&(constant, offer), staged_as), admitted), (image, replayed))| {
+                            let outcome = settle(
+                                environment,
+                                source,
+                                positions,
+                                (constant, offer, image),
+                                (staged_as, admitted),
+                            );
                             (outcome, replayed)
                         },
-                    };
-                    return members
-                        .iter()
-                        .map(|&(member, _)| {
-                            if member == constant {
-                                (outcome.clone(), replayed.clone())
-                            }
-                            else {
-                                (outcome.clone(), Vec::new())
-                            }
-                        })
-                        .collect();
-                },
-            }
+                    )
+                    .collect();
+            },
+            Err(error) => {
+                // A member's pair the kernel leaves undecided is answered by its
+                // second certificate, erased as that member staged.
+                let next = usize::from(environment.entries().len());
+                let crossing = members
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, &(constant, _))| {
+                        (constant, ConstantIndex::from(next.saturating_add(offset)))
+                    })
+                    .collect::<Vec<_>>();
+                let base = ConstantIndex::from(next.saturating_add(members.len()));
+                if let KernelError::Identity(gandr_kernel_core::IdentityError::EndpointsUndecided {
+                    point,
+                    side,
+                    ..
+                }) = error
+                    && let Some(fresh) = members.iter().find_map(|&(_, offer)| {
+                        answered(
+                            arena,
+                            (source, &*positions),
+                            (offer, &crossing, base),
+                            (point, side),
+                        )
+                    })
+                {
+                    answers = Some(fresh);
+                    continue;
+                }
+                return images
+                    .into_iter()
+                    .map(|(_, replayed)| (Outcome::Rejected(error.clone()), replayed))
+                    .collect();
+            },
         }
-        break staged;
-    };
-    let exported = staged
-        .iter()
-        .map(|member| member.declaration.declaration().clone())
-        .collect::<Vec<_>>();
-    let mut images = Vec::with_capacity(staged.len());
-    let mut declarations = Vec::with_capacity(staged.len());
-    for member in staged {
-        images.push((member.image, member.replayed));
-        declarations.push(member.declaration);
-    }
-    match environment.add_block(declarations) {
-        Ok(admitted) => members
-            .iter()
-            .zip(exported)
-            .zip(admitted)
-            .zip(images)
-            .map(
-                |(((&(constant, offer), staged_as), admitted), (image, replayed))| {
-                    let outcome = settle(
-                        environment,
-                        source,
-                        positions,
-                        (constant, offer, image),
-                        (staged_as, admitted),
-                    );
-                    (outcome, replayed)
-                },
-            )
-            .collect(),
-        Err(error) => images
-            .into_iter()
-            .map(|(_, replayed)| (Outcome::Rejected(error.clone()), replayed))
-            .collect(),
     }
 }
 
