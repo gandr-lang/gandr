@@ -330,14 +330,32 @@ fn cong_along_the_loop_is_the_arm_s_image()
     );
 }
 
-#[test]
-fn cong_along_the_2_cell_is_the_arm_s_image()
+/// The 2-sphere's terms the cell witnesses build on, in the checker's arena.
+struct Sphere
 {
-    // The 2-sphere: the sort, the words of its cell at the point's
-    // reflexivity, the cell's name, the identity by cases and the case with
-    // no arm at the cell.
-    let (sort, words, cell, identity, squash) = (0_usize, 1_usize, 2_usize, 3_usize, 4_usize);
-    let mut core = CoreArena::new();
+    /// `S2`.
+    carrier: gandr_core_term::ValueTypeId,
+    /// `Base2`.
+    point: ValueId,
+    /// The empty word of the cell's words.
+    empty: ValueId,
+    /// The word of the cell's letter.
+    letter: ValueId,
+    /// The word of its inverse.
+    inverse: ValueId,
+    /// The constant `surf`.
+    named: ValueId,
+}
+
+/// The 2-sphere: the sort, the words of its cell at the point's reflexivity,
+/// the cell's name, the identity by cases and the case with no arm at the
+/// cell, with the chain that presents and defines them.
+///
+/// # Specification
+/// trivial.
+fn two_sphere(core: &mut CoreArena) -> (Sphere, LoweredChain)
+{
+    let (sort, words, cell) = (0_usize, 1_usize, 2_usize);
     let carrier = core.value_type_data(ConstantIndex::from(sort), Vec::new());
     let own = core.value_type_data(ConstantIndex::from(words), Vec::new());
     let point = core.value_constructor(
@@ -358,6 +376,12 @@ fn cong_along_the_2_cell_is_the_arm_s_image()
         ConstructorTag::from(1_usize),
         vec![empty],
     );
+    let inverse = core.value_constructor(
+        ConstantIndex::from(words),
+        own,
+        ConstructorTag::from(2_usize),
+        vec![empty],
+    );
     let named = core.value_constant(ConstantIndex::from(cell));
     let kept = core.comp_type_returner(carrier);
     let by_cases = |core: &mut CoreArena, arms: Vec<ComputationId>| {
@@ -373,8 +397,8 @@ fn cong_along_the_2_cell_is_the_arm_s_image()
     };
     let at_point = core.computation_return(point);
     let at_cell = core.computation_return(named);
-    let identity_body = by_cases(&mut core, vec![at_point, at_cell]);
-    let squash_body = by_cases(&mut core, vec![at_point]);
+    let identity_body = by_cases(core, vec![at_point, at_cell]);
+    let squash_body = by_cases(core, vec![at_point]);
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
@@ -394,8 +418,8 @@ fn cong_along_the_2_cell_is_the_arm_s_image()
     chain.admit_data(ConstantIndex::from(sort), ConstructorCount::from(1_usize));
     for (constant, global, body) in [
         (cell, 0_u32, letter),
-        (identity, 1_u32, identity_body),
-        (squash, 2_u32, squash_body),
+        (SPHERE_IDENTITY, 1_u32, identity_body),
+        (SPHERE_SQUASH, 2_u32, squash_body),
     ] {
         let _height = chain
             .define(
@@ -407,19 +431,40 @@ fn cong_along_the_2_cell_is_the_arm_s_image()
             )
             .expect("the definition admits");
     }
+    let sphere = Sphere {
+        carrier,
+        point,
+        empty,
+        letter,
+        inverse,
+        named,
+    };
+    (sphere, chain)
+}
+
+/// The 2-sphere's identity by cases.
+const SPHERE_IDENTITY: usize = 3;
+/// The 2-sphere's case with no arm at the cell.
+const SPHERE_SQUASH: usize = 4;
+
+#[test]
+fn cong_along_the_2_cell_is_the_arm_s_image()
+{
+    let mut core = CoreArena::new();
+    let (sphere, chain) = two_sphere(&mut core);
     // `Path.ap f surf` as the lowering writes it: the cell one path type above
     // the map's domain, so `Path.ap (Path.ap f)` in place.
-    let reflexivity = core.value_here(point);
-    let levels = [(point, point), (reflexivity, reflexivity)];
+    let reflexivity = core.value_here(sphere.point);
+    let levels = [(sphere.point, sphere.point), (reflexivity, reflexivity)];
     let image = |core: &mut CoreArena, map: usize| {
         let map = core.value_constant(ConstantIndex::from(map));
-        gandr_core_term::identity::cong_above(core, (map, carrier), &levels, named)
+        gandr_core_term::identity::cong_above(core, (map, sphere.carrier), &levels, sphere.named)
             .expect("two levels build")
     };
-    let mapped = image(&mut core, identity);
-    let flattened = image(&mut core, squash);
-    let looped = core.computation_return(letter);
-    let stayed = core.computation_return(empty);
+    let mapped = image(&mut core, SPHERE_IDENTITY);
+    let flattened = image(&mut core, SPHERE_SQUASH);
+    let looped = core.computation_return(sphere.letter);
+    let stayed = core.computation_return(sphere.empty);
     assert_eq!(
         decided(&core, &chain, (mapped, looped)),
         Some(MachineVerdict::Convertible),
@@ -434,6 +479,61 @@ fn cong_along_the_2_cell_is_the_arm_s_image()
         decided(&core, &chain, (flattened, stayed)),
         Some(MachineVerdict::Convertible),
         "a case with no arm at the 2-cell sends it to the empty word"
+    );
+}
+
+/// #6458: the family a dependent case owes at the 2-cell carries its answer
+/// along its binder, and the transport along the cell reads that endpoint.
+#[test]
+fn transport_along_a_cell_conjugates_its_carried_endpoint_6458()
+{
+    let mut core = CoreArena::new();
+    let (sphere, chain) = two_sphere(&mut core);
+    let answer = core.value_here(sphere.point);
+    let lifted = core.value_here(answer);
+    let fibre = core.value_type_path(sphere.carrier, sphere.point, sphere.point);
+    // The family at the cell for the motive `x. Path[.A = S2](⟨f x⟩, x)`:
+    // `q. Path[.A = Path(Base2, Base2)](⟨tr(A, q, b)⟩, b)`, moving `here(b)`
+    // along the cell, `b` the answer at the point.
+    let at_cell = |core: &mut CoreArena, map: usize, carried: ValueId| {
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let map = core.value_constant(ConstantIndex::from(map));
+        let forced = core.computation_force(map);
+        let applied = core.computation_application(forced, bound);
+        let through = core.value_returned(applied);
+        let motive = core.value_type_path(sphere.carrier, through, bound);
+        let along = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let transported = core.computation_path_transport(motive, along, carried);
+        let left = core.value_returned(transported);
+        let family = core.value_type_path(fibre, left, carried);
+        core.computation_path_transport(family, sphere.letter, lifted)
+    };
+    let respected = at_cell(&mut core, SPHERE_IDENTITY, answer);
+    let squashed = at_cell(&mut core, SPHERE_SQUASH, answer);
+    let whiskered = at_cell(&mut core, SPHERE_IDENTITY, sphere.letter);
+    let stayed = core.computation_return(sphere.empty);
+    let looped = core.computation_return(sphere.letter);
+    let backward = core.computation_return(sphere.inverse);
+    assert_eq!(
+        decided(&core, &chain, (respected, stayed)),
+        Some(MachineVerdict::Convertible),
+        "under the identity the carried endpoint maps the cell to its inverse, then the cell"
+    );
+    assert_eq!(
+        decided(&core, &chain, (respected, looped)),
+        Some(MachineVerdict::NotConvertible),
+        "and not to the cell"
+    );
+    assert_eq!(
+        decided(&core, &chain, (squashed, backward)),
+        Some(MachineVerdict::Convertible),
+        "a map with no arm at the cell leaves the moving endpoint's image, so reflexivity moves \
+         to the cell's inverse"
+    );
+    assert_ne!(
+        decided(&core, &chain, (whiskered, stayed)),
+        Some(MachineVerdict::Convertible),
+        "an answer that holds a letter whiskers the images, and the transport stays held"
     );
 }
 

@@ -3959,7 +3959,7 @@ fn run(
                     && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::PathTransport(held)]) if held == motive)
                 || machine.values.len() == entry_values && machine.tasks.len() == entry_tasks
                     && machine.comps.len() == entry_comps.saturating_add(1),
-            Task::Body { body: crate::closure::CompBody::Conjugated { .. } | crate::closure::CompBody::Mapping(_) | crate::closure::CompBody::Selecting(_), .. } => machine.values.len() == entry_values
+            Task::Body { body: crate::closure::CompBody::Conjugated { .. } | crate::closure::CompBody::Carrying { .. } | crate::closure::CompBody::Mapping(_) | crate::closure::CompBody::Selecting(_), .. } => machine.values.len() == entry_values
                 && (machine.comps.len() == entry_comps.saturating_add(1) || machine.tasks.len() > entry_tasks),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && entry_values.checked_sub(1) == Some(machine.values.len())
@@ -4417,6 +4417,11 @@ fn step(
                     (motive, along, value),
                     (stage, bound),
                 ),
+                crate::closure::CompBody::Carrying {
+                    family,
+                    along,
+                    stage,
+                } => words::carrying(core, domain, machine, (family, along), (stage, bound)),
                 crate::closure::CompBody::Mapping(state) => {
                     words::mapped(core, domain, machine, state, bound)
                 },
