@@ -4842,9 +4842,13 @@ pub(crate) fn name_definition(
     let placed_declared = table.place(arena, AnyNode::ValueType(declared));
     let placed_body = table.place(arena, AnyNode::Value(body));
     let digest = table.stream().digest();
+    // The environment keeps the definitions of each digest, so the search
+    // reads only the candidates and no other entry.
     let rank = entries
+        .digested(digest)
         .iter()
         .rev()
+        .filter_map(|&position| entries.get(usize::from(position)))
         .find_map(|entry| match entry.key_name() {
             ConstantName::Definition {
                 declared: earlier_declared,

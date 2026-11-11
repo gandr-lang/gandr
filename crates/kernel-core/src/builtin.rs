@@ -99,14 +99,8 @@ pub fn admit(
     if !fits {
         return Err(KernelError::BuiltinMisplaced(role));
     }
-    if let Some(holder) = entries
-        .iter()
-        .position(|entry| entry.declaration().role() == Maybe::Present(role))
-    {
-        return Err(KernelError::BuiltinRepeated {
-            role,
-            holder: ConstantIndex::from(holder),
-        });
+    if let Some(holder) = entries.holder(role) {
+        return Err(KernelError::BuiltinRepeated { role, holder });
     }
     let position = ConstantIndex::from(usize::from(entries.len()));
     let canonical = match *declaration.content() {
@@ -436,13 +430,7 @@ fn answers(
     (holder, defined): (ConstantIndex, ValueId),
 ) -> Result<(), Departure>
 {
-    let held = |wanted: Builtin| {
-        entries
-            .iter()
-            .position(|entry| entry.declaration().role() == Maybe::Present(wanted))
-            .map(ConstantIndex::from)
-            .ok_or(Departure::Reads(wanted))
-    };
+    let held = |wanted: Builtin| entries.holder(wanted).ok_or(Departure::Reads(wanted));
     let signature = held(Builtin::IrSignature)?;
     let pairs = held(Builtin::IrPair)?;
     let fields = match role {
@@ -603,21 +591,9 @@ fn answers(
         };
         [iota, step(1, false), step(2, true)]
     };
-    let mut bodies: Vec<Unfoldable> = entries
-        .iter()
-        .map(|entry| match *entry.content() {
-            DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-            DeclarationContent::Data { .. }
-            | DeclarationContent::Codata { .. }
-            | DeclarationContent::Axiom { .. }
-            | DeclarationContent::LiteralIdentity { .. }
-            | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
-        })
-        .collect();
-    bodies.push(Unfoldable::Body(defined));
-    let unfoldings = Unfoldings::new(bodies)
-        .presenting(crate::presented::Presentations::of(entries))
-        .identifying(entries);
+    let unfoldings = Unfoldings::admitted(entries)
+        .extended(alloc::vec![Unfoldable::Body(defined)])
+        .presenting(entries.presentations().clone());
     for (tag, (left, right)) in equations.into_iter().enumerate() {
         let verdict = crate::replay::convert_unfolding(
             arena,

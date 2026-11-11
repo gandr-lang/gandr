@@ -946,6 +946,18 @@ pub enum KernelError
         /// The first place where the holder departs.
         departure: gandr_kernel_term::Departure,
     },
+    /// A declaration's check read an entry outside its support: an entry its
+    /// content does not reach through its references and theirs.
+    ///
+    /// The kernel checks a declaration against only the entries its content
+    /// reaches, and refuses a read outside them rather than assume the
+    /// weakening. So a missing edge in the support is this refusal, never
+    /// another verdict.
+    OutsideSupport
+    {
+        /// The first position the check read outside its support.
+        position: ConstantIndex,
+    },
 }
 
 impl From<LevelError> for KernelError
@@ -1186,6 +1198,9 @@ impl core::fmt::Display for KernelError
             },
             Self::BuiltinNotCanonical { .. } => {
                 f.write_str("the built-in role's holder departs from the role's canonical form")
+            },
+            Self::OutsideSupport { .. } => {
+                f.write_str("the check read an entry its declaration's content does not reach")
             },
         }
     }
@@ -1489,6 +1504,9 @@ mod tests
             KernelError::BuiltinNotCanonical {
                 role: gandr_kernel_term::Builtin::IrPair,
                 departure: gandr_kernel_term::Departure::Constructors,
+            },
+            KernelError::OutsideSupport {
+                position: ConstantIndex::from(0_usize),
             },
             KernelError::AbsentRecordField {
                 label: FieldLabel::from(String::from("a")),

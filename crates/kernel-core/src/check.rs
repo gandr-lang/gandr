@@ -325,7 +325,6 @@ use crate::levels::LevelContext;
 use crate::replay::EndpointReading;
 use crate::replay::ReplayBudget;
 use crate::replay::StuckEndpoints;
-use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
 use crate::replay::read_comp_decode;
 use crate::replay::read_decode;
@@ -594,7 +593,7 @@ fn read_returned(
     if structural == Convertibility::Distinct && judgement.related.is_empty() {
         return Ok(EndpointReading::Apart);
     }
-    let unfoldings = entry_unfoldings(arena, judgement);
+    let unfoldings = entry_unfoldings(judgement);
     if structural == Convertibility::Convertible
         && read_endpoints(
             arena,
@@ -618,9 +617,10 @@ fn read_returned(
 ///
 /// # Specification
 /// - ensures: one unfolding per entry of `judgement`, in order — the body of a
-///   definition, [`Unfoldable::Opaque`] for a datatype, a codata type, an axiom
-///   or an abstract type — presenting the judgement's presentations,
-///   identifying its entries' lawful atoms and ruling its ruled definitions.
+///   definition, [`Unfoldable::Opaque`](crate::replay::Unfoldable::Opaque) for
+///   a datatype, a codata type, an axiom or an abstract type — presenting the
+///   judgement's presentations, identifying its entries' lawful atoms and
+///   ruling its ruled definitions.
 /// - executable: none — the unfoldings expose no per-constant listing to
 ///   compare with the entries.
 ///
@@ -631,14 +631,11 @@ fn read_returned(
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
 /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
-fn entry_unfoldings(
-    arena: &TermArena,
-    judgement: Judgement<'_>,
-) -> Unfoldings
+fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 {
-    Unfoldings::from_entries(judgement.entries)
+    Unfoldings::admitted(judgement.entries)
         .presenting(judgement.presentations.clone())
-        .ruling(arena, judgement.entries)
+        .ruling(judgement.entries)
 }
 
 /// Admit `declared` as the one type a literal identity test at `test`'s base
@@ -729,7 +726,9 @@ fn defined_value(
 ) -> ValueId
 {
     let mut read = value;
-    for _ in judgement.entries.iter() {
+    // A chain of defined constants visits each entry at most once, so the
+    // entries' count bounds it without a walk over them.
+    for _ in 0 .. usize::from(judgement.entries.len()) {
         let Some(&Value::Constant(constant)) = arena.value(read)
         else {
             break;
@@ -798,7 +797,7 @@ fn read_returned_decode(
     if !matches!(arena.value(code), Some(Value::Returned(_))) {
         return ty;
     }
-    let unfoldings = entry_unfoldings(arena, judgement);
+    let unfoldings = entry_unfoldings(judgement);
     read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
 }
 
@@ -841,7 +840,7 @@ fn read_returned_comp_decode(
     if !matches!(arena.value(code), Some(Value::Returned(_))) {
         return ty;
     }
-    let unfoldings = entry_unfoldings(arena, judgement);
+    let unfoldings = entry_unfoldings(judgement);
     read_comp_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
 }
 
@@ -3498,11 +3497,12 @@ fn resolve_constant(
 /// - requires: the judgement's entries are the environment's admission log, in
 ///   admission order, every body minted into `arena`, the arena the replay runs
 ///   in, and its presentations are those of the entries.
-/// - ensures: [`Unfoldable::Body`] at each definition's position and
-///   [`Unfoldable::Opaque`] at every data declaration, axiom and abstract type,
-///   one entry per admitted declaration, presenting the judgement's
-///   presentations, identifying its entries' lawful atoms and ruling its ruled
-///   definitions.
+/// - ensures: [`Unfoldable::Body`](crate::replay::Unfoldable::Body) at each
+///   definition's position and
+///   [`Unfoldable::Opaque`](crate::replay::Unfoldable::Opaque) at every data
+///   declaration, axiom and abstract type, one entry per admitted declaration,
+///   presenting the judgement's presentations, identifying its entries' lawful
+///   atoms and ruling its ruled definitions.
 /// - provides: the unfoldings a persisted higher evaluation and a universe
 ///   path's round trips replay under, so a function either relates may name
 ///   what was admitted before it; and the bodies a respect obligation's cong
@@ -3516,24 +3516,12 @@ fn resolve_constant(
 ///   universe path's translator.
 /// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
 /// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
-#[spec(ensures: |ret| judgement.entries.iter().enumerate().all(|(position, entry)| {
-    ret.unfolding(ConstantIndex::from(position)) == match *entry.content() {
-        | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-        | DeclarationContent::Data { .. }
-        | DeclarationContent::Codata { .. }
-        | DeclarationContent::Axiom { .. }
-        | DeclarationContent::LiteralIdentity { .. }
-        | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
-    }
-}) && ret.presentations() == judgement.presentations)]
-fn admitted_unfoldings(
-    arena: &TermArena,
-    judgement: Judgement<'_>,
-) -> Unfoldings
+#[spec(ensures: |ret| ret.presentations() == judgement.presentations)]
+fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 {
-    Unfoldings::from_entries(judgement.entries)
+    Unfoldings::admitted(judgement.entries)
         .presenting(judgement.presentations.clone())
-        .ruling(arena, judgement.entries)
+        .ruling(judgement.entries)
 }
 
 /// The checker machine that [`run`] drives: from an initial goal and context
@@ -4308,7 +4296,7 @@ where
                     else {
                         return Err(KernelError::ArenaFault);
                     };
-                    let unfoldings = entry_unfoldings(arena, judgement);
+                    let unfoldings = entry_unfoldings(judgement);
                     let Some(decoded) =
                         read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
                     else {
@@ -4570,7 +4558,7 @@ where
                         let dialogues = alloc::sync::Arc::clone(dialogues);
                         owed_components.clear();
                         owed_components.extend_from_slice(components);
-                        let unfoldings = admitted_unfoldings(arena, judgement);
+                        let unfoldings = admitted_unfoldings(judgement);
                         let mut remaining = crate::element_identity::evaluation_obligations(
                             arena,
                             (
@@ -4602,7 +4590,7 @@ where
                         let steps = alloc::sync::Arc::clone(steps);
                         owed_values.clear();
                         owed_values.extend_from_slice(children);
-                        let unfoldings = admitted_unfoldings(arena, judgement);
+                        let unfoldings = admitted_unfoldings(judgement);
                         let mut remaining = crate::element_identity::quantified_obligations(
                             arena,
                             (
@@ -5455,7 +5443,7 @@ where
                     }
                 },
                 Frame::Respect(case, reading) => {
-                    let unfoldings = admitted_unfoldings(arena, judgement);
+                    let unfoldings = admitted_unfoldings(judgement);
                     respect::respected(
                         arena,
                         (judgement.entries, &unfoldings),
@@ -5470,7 +5458,7 @@ where
                     if matches!(M::ACTIVITY, MemoActivity::Active) {
                         session.read(arena.computation_support(case), &context);
                     }
-                    let unfoldings = admitted_unfoldings(arena, judgement);
+                    let unfoldings = admitted_unfoldings(judgement);
                     loops::respected(arena, &unfoldings, context.as_slice(), (case, datatype))?;
                 },
                 // A dependent split forms its motive under the scrutinee's
@@ -5717,7 +5705,7 @@ where
                     // A translator may name what the environment admitted
                     // before it, so both round trips unfold its definitions.
                     let evidence = alloc::sync::Arc::clone(evidence);
-                    let unfoldings = admitted_unfoldings(arena, judgement);
+                    let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
                     let source = crate::path_universe::coverage::round_trip(
                         arena,
@@ -5807,7 +5795,7 @@ where
                     right,
                     dialogues,
                 } => {
-                    let unfoldings = admitted_unfoldings(arena, judgement);
+                    let unfoldings = admitted_unfoldings(judgement);
                     crate::element_identity::reflexive_endpoints(
                         arena,
                         &unfoldings,
@@ -6081,7 +6069,7 @@ where
                         | Value::QuoteComputation(_)
                         | Value::StaticApplication(..) => return Err(KernelError::ArenaFault),
                     };
-                    let unfoldings = admitted_unfoldings(arena, judgement);
+                    let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
                     let result = crate::flow_universe::forward(
                         arena,
@@ -7350,8 +7338,7 @@ pub(crate) fn form_declared(
     let mut memo: DefaultMemo = DefaultMemo::new();
     session.begin_admission();
     session.name_constants(judgement.entries);
-    let presentations = crate::presented::Presentations::of(judgement.entries);
-    let judgement = judgement.presenting(&presentations);
+    let judgement = judgement.presenting(judgement.entries.presentations());
     // As a lone declaration's, the declared type forms through the seal rule.
     let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
     let mut owed: Vec<CodeObligation> = Vec::new();
@@ -7486,11 +7473,10 @@ where
     // A relating definition's conversions read the pairs it relates, a lawful
     // one's folds rest on its laws, and every conversion rewrites the
     // presented types admitted before it.
-    let presentations = crate::presented::Presentations::of(judgement.entries);
     let judgement = judgement
         .relating(declaration.related())
         .lawful(declaration.laws())
-        .presenting(&presentations);
+        .presenting(judgement.entries.presentations());
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every occurrence of a family of the block
     // the stage order cannot place below its constructor, by name, first,

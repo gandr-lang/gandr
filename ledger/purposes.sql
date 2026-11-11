@@ -1105,7 +1105,7 @@ INSERT INTO purpose VALUES('kernel-core','env::AdmittedDeclaration','struct','On
 INSERT INTO purpose VALUES('kernel-core','env::ArtifactRefusal','struct','Why an artifact did not replay: the first declaration the kernel rejected, and the rejection.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::AxiomReport','struct','The transitive audit of a declaration: the axioms and unchecked admissions it rests on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::CheckedId','struct','An unforgeable receipt that a declaration was admitted, naming its position.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core','env::Entries','type_alias','An environment''s admitted declarations, in admission order, indexed by admission position: those Environment::freeze froze are shared with every clone of the environment made after.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','env::Entries','struct','An environment''s admitted declarations, in admission order, indexed by admission position, and the tables a check reads beside them: a check reads an entry only through its support.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Environment','struct','The append-only kernel environment: one arena, and the admitted declarations in admission order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::OutstandingContent','enum','Whether an environment holds staged, unresolved content above some mark.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::OutstandingCount','struct','How many staged, unresolved marks sit above the one a refusal is about.',NULL,'fits','sound',NULL);

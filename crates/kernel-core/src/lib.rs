@@ -3,8 +3,9 @@
 //!
 //! The crate holds judgements. The representation, the sharing format and the
 //! decode budgets belong to the term crate below it; the level algebra to the
-//! strata crate; the memo's storage to the check-memo seam crate. What lives
-//! here is what re-derives an obligation.
+//! strata crate; the memo's storage to the check-memo seam crate; the decision
+//! vocabulary to the conversion-trace crate. What lives here is what re-derives
+//! an obligation.
 //!
 //! A patched type follows Doré's boundary problems. Each face fixes fields of
 //! a record type, and each two faces agree on their meet. The kernel replays
@@ -714,6 +715,7 @@ pub mod stage_order;
 pub mod support;
 mod theory_rules;
 pub mod verdict;
+mod weakening;
 mod witness;
 mod words;
 
