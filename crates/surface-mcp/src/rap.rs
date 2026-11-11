@@ -3386,6 +3386,19 @@ mod tests
         .expect("the store and the table open");
         let address = toolset.address().expect("the toolset listens");
         hub(&later, toolset);
+        // The hub starts the toolset on a thread of its own, so an edit can
+        // run its tasks before the toolset watches the activity for the
+        // resumed row. The row then never hears them. The toolset answers a
+        // request only after it watches, so the edit waits for one answer.
+        let manifest = exchange(address, &Message {
+            head: alloc::format!("GET /.well-known/rap-toolset HTTP/1.1\r\nhost: {address}"),
+            body: Vec::new(),
+        });
+        assert!(
+            manifest.head.starts_with("HTTP/1.1 200 "),
+            "{}",
+            manifest.head
+        );
         let mut editor = Editor::new(&later);
         editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
         let second = admitted(&callback);
