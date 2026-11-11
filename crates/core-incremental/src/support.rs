@@ -225,6 +225,26 @@ impl SupportedNode
             opacity: Opacity::Opaque,
         }
     }
+
+    /// This node with the hole it names renamed by `name`; a node that names
+    /// no hole stays as it is.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn hole_renamed<Name>(
+        mut self,
+        name: Name,
+    ) -> Self
+    where
+        Name: FnOnce(gandr_core_term::hole::HoleId) -> gandr_core_term::hole::HoleId,
+    {
+        if let ContentNode::Hole(ref mut hole) | ContentNode::ComputationHole(ref mut hole) =
+            self.former
+        {
+            *hole = name(*hole);
+        }
+        self
+    }
 }
 
 /// A set of references, ascending and duplicate-free, shared between a node
