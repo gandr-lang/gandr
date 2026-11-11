@@ -14,11 +14,19 @@
 //! # Trees are read out of the arena, free of ids
 //!
 //! A [`Tree`] is one core term as a table of the incremental checker's
-//! [`ContentNode`]s, numbered breadth-first from the root, with each constant
-//! read as the [`Reference`] its admission position resolves to. Two
-//! structurally equal terms are equal trees whatever ids their arenas gave
-//! them, which is what lets two revisions, lowered into two arenas, be
-//! compared at all.
+//! [`ContentNode`]s, numbered from the root in the order a breadth-first walk
+//! first reaches them, with each constant read as the [`Reference`] its
+//! admission position resolves to. The read keeps the arena's sharing: an
+//! arena node that two parents name is one entry, so the read is linear in the
+//! arena nodes, not in the term written out. A let spine whose levels each read
+//! the level below twice is one entry per level, not `2^d` (#6470).
+//!
+//! Each entry carries a content name, the digest of its former, its payload
+//! and its children's names. Two trees are equal exactly when their roots'
+//! names agree, whatever ids their arenas gave the nodes and however they
+//! share them, which is what lets two revisions, lowered into two arenas, be
+//! compared at all. The numbering is only the index of an entry, and no
+//! comparison reads it.
 //!
 //! # Paths
 //!
@@ -34,15 +42,16 @@
 //! revision: the `diff` of their `Snapshot`s. A snapshot retains each item's
 //! `DeclarationTree`: value signature and body roots, or a complete native data
 //! signature. Each root reads out of the arena as a `Tree` of the incremental
-//! checker's `ContentNode`s, numbered breadth-first, each constant read as the
-//! `Reference` it resolves to, so two revisions lowered into two arenas compare
-//! node by node. Items align by reference — key and occurrence — keeping the
+//! checker's `ContentNode`s, each constant read as the `Reference` it resolves
+//! to, so two revisions lowered into two arenas compare by content names.
+//! Items align by reference — key and occurrence — keeping the
 //! largest set whose order both revisions share; each kept pair's bodies are
-//! walked together, a changed literal, variable or constant becoming one
-//! in-place action and any other change one `Replace` of the old subtree.
-//! `apply` of a diff to the old items reproduces the new ones exactly:
-//! soundness is total, localization is partial. A path names an item and the
-//! child slots from its body's root; an action anchored in the old revision
+//! walked together, a pair with one content name ending the walk there, a
+//! changed literal, variable or constant becoming one in-place action and any
+//! other change one `Replace` of the old subtree. `apply` of a diff to the old
+//! items reproduces the new ones exactly, but for a collision of two content
+//! names: soundness is total, localization is partial. A path names an item and
+//! the child slots from its body's root; an action anchored in the old revision
 //! carries the old ordinal, an insertion the new one.
 //!
 //! A snapshot holds each item's image behind a shared pointer. The leading
@@ -143,6 +152,7 @@
 //!   its node across an edit while its stratum, pasting and cell count hold.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::mem;
@@ -331,31 +341,78 @@ impl CorePath
     }
 }
 
-/// One core term read out of its arena: content nodes numbered breadth-first
-/// from the root, the root first, each child an index into the same table.
+/// One core term read out of its arena: content nodes and their names.
+///
+/// The nodes are numbered from the root in the order a breadth-first walk
+/// first reaches them, the root first, each child an index into the same
+/// table.
 ///
 /// # Specification
 /// - requires: nothing beyond the documented producer and consumer contracts.
-/// - ensures: A body or signature is represented root-first with canonical
-///   breadth-first child indices; each occurrence has its own node.
+/// - ensures: A body or signature is represented root-first, each node numbered
+///   when the walk first reaches it; a node the term reaches from two parents
+///   is one entry, which both parents name. Each node carries the content name
+///   of the term beneath it, and two trees are equal exactly when their roots'
+///   names agree.
 /// - executable: none — The aggregate has no callable boundary; read, subtree
-///   and graft check canonical numbering, and `diff/apply` witnesses check the
-///   represented term.
+///   and graft check the discovery numbering, and `diff/apply` witnesses check
+///   the represented term.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the cited independently constructed revision images,
 ///   paths and edit transitions distinguish wrong identities, ordering or
-///   source interpretation. The predicates live on the operations that possess
-///   the necessary context.
+///   source interpretation; a let spine whose levels each read the level below
+///   twice separates one entry for each shared node from one for each
+///   occurrence.
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
-#[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+#[derive(Clone, Debug)]
 pub struct Tree
 {
     /// The nodes, the root first.
     nodes: Vec<ContentNode>,
+    /// The content name of each node, by table index.
+    names: Vec<ContentName>,
+}
+
+impl PartialEq for Tree
+{
+    /// Whether the two trees hold one term: whether their roots' content names
+    /// agree, however each table shares its nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.names.first() == other.names.first()
+    }
+}
+
+impl Eq for Tree
+{
+}
+
+impl core::hash::Hash for Tree
+{
+    /// Feed the root's content name to `state`, which equal trees share.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<State>(
+        &self,
+        state: &mut State,
+    ) where
+        State: core::hash::Hasher,
+    {
+        self.names.first().hash(state);
+    }
 }
 
 impl Tree
@@ -426,20 +483,23 @@ impl Tree
         Maybe::Present(at)
     }
 
-    /// The subtree rooted at `root`, renumbered breadth-first from it.
+    /// The subtree rooted at `root`, renumbered from it in discovery order.
     ///
     /// # Specification
     /// - requires: the reachable child graph is finite and every present child
     ///   names a node.
-    /// - ensures: copies the subtree rooted at `root`, preserving formers and
-    ///   payloads while renumbering every child breadth-first; an absent root
-    ///   gives an empty tree.
+    /// - ensures: copies the subtree rooted at `root`, preserving formers,
+    ///   payloads, the sharing of its nodes and their content names, while it
+    ///   renumbers each node in the order a breadth-first walk first reaches
+    ///   it; an absent root gives an empty tree.
     /// - panics: none.
+    /// - intension: copies each node of the subtree once, however many parents
+    ///   name it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor change at a nested node and every
     ///   multi-child body former, replayed to the independently lowered target
-    ///   snapshot. Root/payload preservation and canonical child numbering are
+    ///   snapshot. Root/payload preservation and discovery numbering are
     ///   executable; full descendant correspondence is observed by replay.
     /// - witness: `tests::edit::apply_of_diff_reproduces_new`
     /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
@@ -451,21 +511,8 @@ impl Tree
             .nodes
             .first()
             .is_some_and(|node| agreement(original, node) == Agreement::Same)
-            && (ret.nodes.is_empty()
-                || {
-                    let mut expected = 1_usize;
-                    ret
-                        .nodes
-                        .iter()
-                        .all(|node| {
-                            children(node)
-                                .all(|child| {
-                                    let correct = usize::from(child) == expected;
-                                    expected = expected.saturating_add(1_usize);
-                                    correct
-                                })
-                        }) && expected == ret.nodes.len()
-                })
+            && numbering(&ret.nodes) == Numbering::Discovered
+            && ret.names.first() == self.names.get(usize::from(root))
     }
     None => ret.nodes.is_empty(),
 },
@@ -476,21 +523,255 @@ impl Tree
     ) -> Self
     {
         let mut nodes = Vec::new();
+        let mut names = Vec::new();
         let mut queue = VecDeque::from([root]);
-        let mut numbered = 1_usize;
+        let mut numbered = BTreeMap::from([(root, NodeIndex::from(0_usize))]);
         while let Some(index) = queue.pop_front() {
-            let Some(node) = self.nodes.get(usize::from(index))
+            let (Some(node), Some(&name)) = (
+                self.nodes.get(usize::from(index)),
+                self.names.get(usize::from(index)),
+            )
             else {
                 continue;
             };
             nodes.push(map_children(node, &mut |child| {
-                queue.push_back(child);
-                let renumbered = NodeIndex::from(numbered);
-                numbered = numbered.saturating_add(1_usize);
-                renumbered
+                let fresh = NodeIndex::from(numbered.len());
+                *numbered.entry(child).or_insert_with(|| {
+                    queue.push_back(child);
+                    fresh
+                })
             }));
+            names.push(name);
         }
-        Self { nodes }
+        Self { nodes, names }
+    }
+
+    /// The tree of `nodes`, each node named by its content.
+    ///
+    /// # Specification
+    /// - requires: `nodes` is a finite acyclic table, the root first.
+    /// - ensures: the tree of `nodes`, each with the name [`names_of`] gives
+    ///   it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`names_of`].
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    #[spec(ensures: |ret| ret.names.len() == ret.nodes.len())]
+    fn named(nodes: Vec<ContentNode>) -> Self
+    {
+        let names = names_of(&nodes, &topological(&nodes));
+        Self { nodes, names }
+    }
+}
+
+/// The content name of a node: a digest of its former, its payload and the
+/// names of its children in slot order.
+///
+/// The name reads no table index, so two nodes of two tables have one name
+/// exactly when the terms beneath them are equal, but for a collision of the
+/// name's sixteen bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ContentName([u8; 16]);
+
+/// A [`core::hash::Hasher`] that feeds each word it is given to a BLAKE3
+/// digest, so that a node's derived hash names its content.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct Naming(blake3::Hasher);
+
+impl core::hash::Hasher for Naming
+{
+    /// The first eight bytes of the digest so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn finish(&self) -> u64
+    {
+        let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = *self.0.finalize().as_bytes();
+        u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
+    }
+
+    /// Feed `bytes` to the digest.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn write(
+        &mut self,
+        bytes: &[u8],
+    )
+    {
+        let _fed = self.0.update(bytes);
+    }
+}
+
+/// The content name of each node of `nodes`, by table index, named in
+/// `order`.
+///
+/// # Specification
+/// - requires: `nodes` is a finite acyclic table, and `order` is
+///   [`topological`] of it.
+/// - ensures: one name for each node: the digest of the node with each child
+///   index set to zero, then of its children's names in slot order. Two nodes
+///   whose terms are equal have one name, whichever table holds them and
+///   however it shares their nodes.
+/// - panics: none.
+/// - intension: names each node once, children first.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two revisions of one term read out of two arenas, a graft
+///   and a subtree compare equal through their names; a changed leaf changes
+///   the name of each node above it, which the diff witnesses observe.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::self_diff_is_empty_and_apply_is_identity`
+/// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+#[spec(ensures: |ret| ret.len() == nodes.len())]
+fn names_of(
+    nodes: &[ContentNode],
+    order: &[NodeIndex],
+) -> Vec<ContentName>
+{
+    use core::hash::Hash as _;
+
+    let mut names = vec![ContentName::default(); nodes.len()];
+    for &at in order {
+        let at = usize::from(at);
+        let Some(node) = nodes.get(at)
+        else {
+            continue;
+        };
+        let mut naming = Naming(blake3::Hasher::new());
+        map_children(node, &mut |_| NodeIndex::from(0_usize)).hash(&mut naming);
+        for child in children(node) {
+            if let Some(&ContentName(name)) = names.get(usize::from(child)) {
+                core::hash::Hasher::write(&mut naming, &name);
+            }
+        }
+        let [
+            n0,
+            n1,
+            n2,
+            n3,
+            n4,
+            n5,
+            n6,
+            n7,
+            n8,
+            n9,
+            n10,
+            n11,
+            n12,
+            n13,
+            n14,
+            n15,
+            ..,
+        ] = *naming.0.finalize().as_bytes();
+        if let Some(slot) = names.get_mut(at) {
+            *slot = ContentName([
+                n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15,
+            ]);
+        }
+    }
+    names
+}
+
+/// The table indices of `nodes`, each node after every node beneath it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each index of `nodes` once; in an acyclic table each node comes
+///   after each of its children.
+/// - panics: none.
+/// - intension: visits each node and each child edge once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shared child numbered after one of its parents, which a
+///   reverse pass over the indices would settle too late; the hull and the
+///   names of a let spine observe the order.
+/// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+/// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+#[spec(ensures: |ret| ret.len() == nodes.len())]
+fn topological(nodes: &[ContentNode]) -> Vec<NodeIndex>
+{
+    // Each index is unseen, open on the stack, or settled.
+    let mut settled = vec![false; nodes.len()];
+    let mut opened = vec![false; nodes.len()];
+    let mut order = Vec::with_capacity(nodes.len());
+    let mut stack = Vec::new();
+    for start in 0 .. nodes.len() {
+        stack.push((start, false));
+        while let Some((at, expanded)) = stack.pop() {
+            if expanded {
+                if let Some(slot) = settled.get_mut(at)
+                    && !*slot
+                {
+                    *slot = true;
+                    order.push(NodeIndex::from(at));
+                }
+                continue;
+            }
+            match opened.get_mut(at) {
+                Some(slot) if !*slot => *slot = true,
+                _ => continue,
+            }
+            stack.push((at, true));
+            if let Some(node) = nodes.get(at) {
+                stack.extend(
+                    children(node)
+                        .map(usize::from)
+                        .filter(|&child| opened.get(child) == Some(&false))
+                        .map(|child| (child, false)),
+                );
+            }
+        }
+    }
+    order
+}
+
+/// How a table is numbered.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Numbering
+{
+    /// Walked in order, each child is a node already numbered or the next
+    /// one: the order a breadth-first walk first reaches the nodes in.
+    Discovered,
+    /// A child skips ahead of the next number.
+    Other,
+}
+
+/// How `nodes` is numbered.
+///
+/// # Specification
+/// trivial.
+fn numbering(nodes: &[ContentNode]) -> Numbering
+{
+    let mut expected = 1_usize;
+    let ordered = nodes.iter().all(|node| {
+        children(node).all(|child| {
+            let child = usize::from(child);
+            if child == expected {
+                expected = expected.saturating_add(1_usize);
+                true
+            }
+            else {
+                child < expected
+            }
+        })
+    });
+    if ordered && (nodes.is_empty() || expected == nodes.len()) {
+        Numbering::Discovered
+    }
+    else {
+        Numbering::Other
     }
 }
 
@@ -718,16 +999,18 @@ impl Snapshot
     /// - provides: the id-free image [`diff`] compares and [`Self::localize`]
     ///   descends.
     /// - panics: none.
-    /// - economy: an arena node shared by two parents is read once per parent,
-    ///   so a tree is as large as the term written out; the lowering shares no
-    ///   body nodes.
+    /// - intension: reads each arena node an item reaches once, however many
+    ///   parents name it, so the work is linear in the arena nodes of the items
+    ///   read, not in the size of the term written out.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every multi-child body former in a hand-built arena,
     ///   source-localized nested terms, holes and missing origins. Exact leaf
     ///   paths and spans distinguish child permutations and lost origins;
     ///   predicates additionally check item identities, body/signature
-    ///   presence, canonical numbering and sorted body extents.
+    ///   presence, discovery numbering and sorted body extents. A let spine
+    ///   twice as deep reads at most twice the nodes.
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
     /// - witness: `tests::edit::apply_of_diff_reproduces_new`
     /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
     /// - witness: `tests::edit::constructor_change_is_one_replace`
@@ -745,13 +1028,7 @@ impl Snapshot
             .all(|((item, spans), (original, reference))| {
                 item.reference == *reference
                     && {
-                        let ordered = |tree:&Tree| {
-                            let mut expected = 1_usize;
-                            tree.nodes.is_empty() || (tree.nodes.iter().all(|node| children(node).all(|child| {
-                                let correct = usize::from(child) == expected;
-                                expected = expected.saturating_add(1);correct
-                            })) && expected == tree.nodes.len())
-                        };
+                        let ordered = |tree: &Tree| numbering(&tree.nodes) == Numbering::Discovered;
                         { let (matched_left_value, matched_right_value) = (&item.declaration,original.declaration().content());
 if let DeclarationTree::Value {ref signature,ref body} = *matched_left_value && let gandr_core_checker::DeclarationContent::Value {signature:ref source_signature,body:ref source_body} = *matched_right_value { {
                                 ({ let (matched_left_value, matched_right_value) = (signature,source_signature);
@@ -1367,7 +1644,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         };
         // Level by level, left to right, over the nodes enclosing the range:
         // a strictly smaller span displaces the best, so a tie keeps the
-        // shallower node, and at one depth the leftmost.
+        // shallower node, and at one depth the leftmost. A node two parents
+        // name is examined where the walk first reaches it, which is its
+        // shallowest and leftmost place, so its later places add nothing.
         let mut frames = vec![Frame {
             nodes: NodeIndex::from(0_usize),
             parent: None,
@@ -1376,6 +1655,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         let mut best: (ByteLength, FrameIndex) = (root_span.length(), FrameIndex(0_usize));
         let mut frontier = vec![FrameIndex(0_usize)];
         let mut visited = 1_usize;
+        let mut reached = BTreeSet::from([NodeIndex::from(0_usize)]);
         while !frontier.is_empty() {
             let mut next = Vec::new();
             for &at in &frontier {
@@ -1386,6 +1666,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                     continue;
                 };
                 for (slot, child) in children(node).enumerate() {
+                    if !reached.insert(child) {
+                        continue;
+                    }
                     visited = visited.saturating_add(1_usize);
                     let Some(&Maybe::Present(span)) = spans.get(usize::from(child))
                     else {
@@ -2111,7 +2394,8 @@ enum Graft<'script>
 /// # Specification
 /// - requires: nothing beyond the documented producer and consumer contracts.
 /// - ensures: Queued nodes are read from either the original tree or the
-///   particular grafted subtree that owns their index.
+///   particular grafted subtree that owns their index, named by its edit's
+///   position; a source is also the key a shared node is copied once by.
 /// - executable: none — An original-node variant lacks its original tree;
 ///   interpretation is checked at graft, not at this inert queue element.
 ///
@@ -2123,26 +2407,50 @@ enum Graft<'script>
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
-#[derive(Clone, Copy, Debug)]
-enum Source<'script>
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Source
 {
     /// A node of the tree being rebuilt.
     Old(NodeIndex),
-    /// A node of a grafted subtree.
-    Grafted(&'script Tree, NodeIndex),
+    /// A node of the subtree that the edit at this position grafts.
+    Grafted(usize, NodeIndex),
 }
 
-/// `tree` with each of `edits` installed at its path, renumbered
-/// breadth-first.
+/// One step of the edited paths: the edit installed where the step ends, and
+/// the step each child slot continues to.
 ///
 /// # Specification
-/// - requires: the tree and grafted subtrees have canonical breadth-first
-///   numbering and finite child graphs; edits are the non-overlapping old paths
-///   a diff emits.
-/// - ensures: installs each addressed leaf or subtree, retains unaffected nodes
-///   and renumbers the result breadth-first; an unresolved path changes
-///   nothing.
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The places form a trie over the edits' slots, the root first.
+/// - executable: none — a place lacks the edits and the tree; graft reads them
+///   together.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`graft`].
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+#[derive(Clone, Debug, Default)]
+struct Place
+{
+    /// The position of the edit installed here, when one is.
+    edit: Option<usize>,
+    /// The place each child slot leads to.
+    slots: BTreeMap<ChildSlot, usize>,
+}
+
+/// `tree` with each of `edits` installed at its path, renumbered in discovery
+/// order.
+///
+/// # Specification
+/// - requires: the tree and grafted subtrees have discovery numbering and
+///   finite acyclic child graphs; edits are the non-overlapping old paths a
+///   diff emits.
+/// - ensures: installs each addressed leaf or subtree at its path alone, and
+///   retains every other node, shared as `tree` shares it; renumbers the result
+///   in discovery order; an unresolved path changes nothing.
 /// - panics: none.
+/// - intension: a node on no edited path is copied once, however many parents
+///   name it; a node on an edited path is copied for that path.
 ///
 /// # Adequacy
 /// - hypothesis: L2 over generated diff/replay pairs and L3 over leaf
@@ -2155,21 +2463,7 @@ enum Source<'script>
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 #[spec(
     ensures: |ret| {
-    (ret.nodes.is_empty()
-        || {
-            let mut expected = 1_usize;
-            ret
-                .nodes
-                .iter()
-                .all(|node| {
-                    children(node)
-                        .all(|child| {
-                            let correct = usize::from(child) == expected;
-                            expected = expected.saturating_add(1_usize);
-                            correct
-                        })
-                }) && expected == ret.nodes.len()
-        })
+    numbering(&ret.nodes) == Numbering::Discovered
         && match edits.iter().rev().find(|edit| edit.0.slots.is_empty()) {
             Some(&(_, Graft::Subtree(subtree))) => ret == *subtree,
             Some(&(_, Graft::Leaf(ref leaf))) => {
@@ -2195,48 +2489,81 @@ fn graft(
     edits: &[(&CorePath, Graft<'_>)],
 ) -> Tree
 {
-    let mut at_node: BTreeMap<NodeIndex, &Graft<'_>> = BTreeMap::new();
-    for &(path, ref edit) in edits {
-        if let Maybe::Present(index) = tree.resolve(&path.slots) {
-            at_node.insert(index, edit);
+    // The edited paths as a trie over their slots: a node on a path is
+    // rebuilt for that path alone, and every other node is shared.
+    let mut places = vec![Place::default()];
+    for (at, &(path, _)) in edits.iter().enumerate() {
+        let mut place = 0_usize;
+        for &slot in &path.slots {
+            let fresh = places.len();
+            let Some(found) = places.get_mut(place)
+            else {
+                break;
+            };
+            place = *found.slots.entry(slot).or_insert(fresh);
+            if place == fresh {
+                places.push(Place::default());
+            }
+        }
+        if let Some(found) = places.get_mut(place) {
+            found.edit = Some(at);
         }
     }
     let mut nodes = Vec::with_capacity(tree.nodes.len());
-    let mut queue = VecDeque::from([Source::Old(NodeIndex::from(0_usize))]);
+    let mut queue = VecDeque::from([(Source::Old(NodeIndex::from(0_usize)), Some(0_usize))]);
+    let mut shared: BTreeMap<Source, NodeIndex> = BTreeMap::new();
     let mut numbered = 1_usize;
-    while let Some(source) = queue.pop_front() {
-        let source = match source {
-            Source::Old(index) => match at_node.get(&index) {
-                Some(&&Graft::Subtree(subtree)) => {
-                    Source::Grafted(subtree, NodeIndex::from(0_usize))
-                },
-                Some(&&Graft::Leaf(ref leaf)) => {
-                    nodes.push(leaf.clone());
-                    continue;
-                },
-                None => source,
+    while let Some((source, place)) = queue.pop_front() {
+        let edit = place
+            .and_then(|place| places.get(place))
+            .and_then(|place| place.edit)
+            .and_then(|at| edits.get(at).map(|&(_, ref edit)| (at, edit)));
+        let (source, place) = match (source, edit) {
+            (Source::Old(_), Some((at, &Graft::Subtree(_)))) => {
+                (Source::Grafted(at, NodeIndex::from(0_usize)), None)
             },
-            Source::Grafted(..) => source,
+            (Source::Old(_), Some((_, &Graft::Leaf(ref leaf)))) => {
+                nodes.push(leaf.clone());
+                continue;
+            },
+            _ => (source, place),
         };
         let node = match source {
             Source::Old(index) => tree.nodes.get(usize::from(index)),
-            Source::Grafted(subtree, index) => subtree.nodes.get(usize::from(index)),
+            Source::Grafted(at, index) => match edits.get(at) {
+                Some(&(_, Graft::Subtree(subtree))) => subtree.nodes.get(usize::from(index)),
+                Some(&(_, Graft::Leaf(_))) | None => None,
+            },
         };
         let Some(node) = node
         else {
             continue;
         };
+        let steps = place
+            .and_then(|place| places.get(place))
+            .map(|place| &place.slots);
+        let mut slot = 0_usize;
         nodes.push(map_children(node, &mut |child| {
-            queue.push_back(match source {
+            let from = match source {
                 Source::Old(_) => Source::Old(child),
-                Source::Grafted(subtree, _) => Source::Grafted(subtree, child),
-            });
-            let renumbered = NodeIndex::from(numbered);
-            numbered = numbered.saturating_add(1_usize);
-            renumbered
+                Source::Grafted(at, _) => Source::Grafted(at, child),
+            };
+            let next = steps.and_then(|steps| steps.get(&ChildSlot(slot)).copied());
+            slot = slot.saturating_add(1_usize);
+            let fresh = NodeIndex::from(numbered);
+            if next.is_some() {
+                queue.push_back((from, next));
+                numbered = numbered.saturating_add(1_usize);
+                return fresh;
+            }
+            *shared.entry(from).or_insert_with(|| {
+                queue.push_back((from, None));
+                numbered = numbered.saturating_add(1_usize);
+                fresh
+            })
         }));
     }
-    Tree { nodes }
+    Tree::named(nodes)
 }
 
 /// The kept pairs of old and new ordinals: the largest set of items present
@@ -2436,12 +2763,15 @@ fn path_of<Nodes>(
 /// ordinal `item`, in pre-order.
 ///
 /// # Specification
-/// - requires: both trees are finite canonical images of bodies; existing
-///   actions belong to earlier items.
-/// - ensures: appends only old-body paths for `item`, in preorder; equal
-///   formers descend, unequal leaves become leaf actions and other differences
-///   become subtree replacements. Equal trees append nothing.
+/// - requires: both trees are finite acyclic images of bodies, each node named
+///   by its content; existing actions belong to earlier items.
+/// - ensures: appends only old-body paths for `item`, in preorder; a pair of
+///   nodes with one content name appends nothing, equal formers descend,
+///   unequal leaves become leaf actions and other differences become subtree
+///   replacements. Equal trees append nothing.
 /// - panics: none.
+/// - intension: reads the pairs on a path from the root to a change, once for
+///   each such path; a pair with one content name ends its path.
 ///
 /// # Adequacy
 /// - hypothesis: L2 over generated replay pairs and L3 over exact leaf and
@@ -2487,7 +2817,15 @@ fn diff_trees(
     actions: &mut Vec<Action>,
 )
 {
+    // Two nodes with one content name hold one term: the walk passes over them
+    // and so reads only the nodes on a path to a change.
+    let differs = |(before, after): (NodeIndex, NodeIndex)| {
+        old.names.get(usize::from(before)) != new.names.get(usize::from(after))
+    };
     let root = NodeIndex::from(0_usize);
+    if !differs((root, root)) {
+        return;
+    }
     let mut frames = vec![Frame {
         nodes: (root, root),
         parent: None,
@@ -2513,11 +2851,13 @@ fn diff_trees(
             let first = frames.len();
             let (old_children, new_children) = (children(before), children(after));
             for (slot, nodes) in old_children.zip(new_children).enumerate() {
-                frames.push(Frame {
-                    nodes,
-                    parent: Some(at),
-                    slot: ChildSlot(slot),
-                });
+                if differs(nodes) {
+                    frames.push(Frame {
+                        nodes,
+                        parent: Some(at),
+                        slot: ChildSlot(slot),
+                    });
+                }
             }
             pending.extend((first .. frames.len()).rev().map(FrameIndex));
             continue;
@@ -3027,7 +3367,7 @@ fn children(node: &ContentNode) -> impl DoubleEndedIterator<Item = NodeIndex> + 
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Root
 {
     /// A value.
@@ -3043,12 +3383,15 @@ enum Root
 /// The tree rooted at `root` in `program`'s arena, and each node's span.
 ///
 /// # Specification
-/// - requires: the reachable arena graph is finite, and origins refer to the
-///   same arena.
-/// - ensures: returns the root-first breadth-first content image with one span
-///   entry per node; missing entries retain their arena sort, and recorded
+/// - requires: the reachable arena graph is finite and acyclic, and origins
+///   refer to the same arena.
+/// - ensures: returns the root-first content image in discovery order, one node
+///   for each arena node reached, with one span entry per node and each node's
+///   content name; missing entries retain their arena sort, and recorded
 ///   extents enclose every recorded descendant.
 /// - panics: none.
+/// - intension: reads each arena node it reaches once, however many parents
+///   name it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — multi-child body terms, nested source extents and absent
@@ -3067,22 +3410,8 @@ enum Root
 #[spec(
     ensures: |ret| {
     ret.0.nodes.len() == ret.1.len() && !ret.0.nodes.is_empty()
-        && (ret.0.nodes.is_empty()
-            || {
-                let mut expected = 1_usize;
-                ret
-                    .0
-                    .nodes
-                    .iter()
-                    .all(|node| {
-                        children(node)
-                            .all(|child| {
-                                let correct = usize::from(child) == expected;
-                                expected = expected.saturating_add(1_usize);
-                                correct
-                            })
-                    }) && expected == ret.0.nodes.len()
-            })
+        && ret.0.names.len() == ret.0.nodes.len()
+        && numbering(&ret.0.nodes) == Numbering::Discovered
         && ret
             .0
             .nodes
@@ -3112,13 +3441,14 @@ fn read(
     let mut nodes = Vec::new();
     let mut spans = Vec::new();
     let mut queue = VecDeque::from([root]);
-    let mut numbered = 1_usize;
+    let mut numbered = BTreeMap::from([(root, NodeIndex::from(0_usize))]);
     while let Some(at) = queue.pop_front() {
         let mut child = |next: Root| {
-            queue.push_back(next);
-            let index = NodeIndex::from(numbered);
-            numbered = numbered.saturating_add(1_usize);
-            index
+            let fresh = NodeIndex::from(numbered.len());
+            *numbered.entry(next).or_insert_with(|| {
+                queue.push_back(next);
+                fresh
+            })
         };
         let (node, origin) = match at {
             Root::Value(id) => (read_value(program, id, &mut child), origins.value(id)),
@@ -3141,8 +3471,14 @@ fn read(
             Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unrecorded),
         });
     }
-    let tree = Tree { nodes };
-    hull(&tree, &mut spans);
+    // One order, each node after the nodes beneath it, serves the names and
+    // the extents alike.
+    let order = topological(&nodes);
+    let tree = Tree {
+        names: names_of(&nodes, &order),
+        nodes,
+    };
+    hull(&tree, &mut spans, &order);
     (tree, spans)
 }
 
@@ -4278,8 +4614,8 @@ where
 /// origin and its children's extents.
 ///
 /// # Specification
-/// - requires: the tree is numbered breadth-first and the span table has one
-///   entry per node.
+/// - requires: the tree is acyclic, `order` is [`topological`] of its nodes,
+///   and the span table has one entry per node.
 /// - ensures: widens each recorded extent to the hull of itself and every
 ///   recorded descendant; an unknown parent inherits recorded descendants,
 ///   while a wholly unrecorded subtree remains unrecorded.
@@ -4301,22 +4637,7 @@ where
     )
 )]
 #[spec(
-    requires: spans.len() == tree.nodes.len()
-    && (tree.nodes.is_empty()
-        || {
-            let mut expected = 1_usize;
-            tree
-                .nodes
-                .iter()
-                .all(|node| {
-                    children(node)
-                        .all(|child| {
-                            let correct = usize::from(child) == expected;
-                            expected = expected.saturating_add(1_usize);
-                            correct
-                        })
-                }) && expected == tree.nodes.len()
-        }),
+    requires: spans.len() == tree.nodes.len() && order.len() == tree.nodes.len(),
     captures: recorded = spans
     .iter()
     .filter(|span| matches!(span, Maybe::Present(_)))
@@ -4345,11 +4666,17 @@ where
 fn hull(
     tree: &Tree,
     spans: &mut [Maybe<ByteSpan, spanned::Absent>],
+    order: &[NodeIndex],
 )
 {
-    // Breadth-first numbering puts every child after its parent, so one pass
-    // from the last node back settles each child before its parent.
-    for (index, node) in tree.nodes.iter().enumerate().rev() {
+    // Each node comes after every node beneath it in `order`, so one pass
+    // settles each child before any of its parents.
+    for &index in order {
+        let index = usize::from(index);
+        let Some(node) = tree.nodes.get(index)
+        else {
+            continue;
+        };
         let mut covered = match spans.get(index) {
             Some(&Maybe::Present(span)) => Some(span),
             Some(&Maybe::Absent(_)) | None => None,
@@ -5508,8 +5835,10 @@ mod tests
                         evidence: Arc::clone(&evidence),
                     },
                     ContentNode::PathUniverse(NodeIndex::from(4_usize), NodeIndex::from(5_usize)),
-                    ContentNode::PathRefl(NodeIndex::from(6_usize)),
-                    ContentNode::PathRefl(NodeIndex::from(7_usize)),
+                    // The reflexivities name the quotes the universe names:
+                    // one entry for each arena node.
+                    ContentNode::PathRefl(NodeIndex::from(4_usize)),
+                    ContentNode::PathRefl(NodeIndex::from(5_usize)),
                 ]
                 .as_slice()
             )
@@ -5561,12 +5890,13 @@ mod tests
             let mut new = old.clone();
             let item = Arc::make_mut(new.items.first_mut().expect("one item"));
             let super::DeclarationTree::Value {
-                body: Maybe::Present(Tree { ref mut nodes }),
+                body: Maybe::Present(ref mut tree),
                 ..
             } = item.declaration
             else {
                 panic!("the equivalence body");
             };
+            let mut nodes = core::mem::take(&mut tree.nodes);
             let root = nodes.first_mut().expect("the equivalence root");
             let ContentNode::PathEquiv {
                 ref mut evidence, ..
@@ -5575,6 +5905,7 @@ mod tests
                 panic!("the equivalence former");
             };
             *evidence = Arc::new(replacement);
+            *tree = Tree::named(nodes);
             let script = diff(&old, &new);
             assert!(matches!(script.actions(), [Action::Replace { path, .. }]
                 if path == &CorePath::new(ItemOrdinal::from(0_usize), Vec::new())));
@@ -5642,17 +5973,15 @@ mod tests
         use super::ContentNode;
         use super::NodeIndex;
         use super::spanned;
-        let tree = super::Tree {
-            nodes: vec![
-                ContentNode::Case {
-                    scrutinee: NodeIndex::from(1_usize),
-                    branches: vec![NodeIndex::from(2_usize), NodeIndex::from(3_usize)],
-                },
-                ContentNode::Tuple(Vec::new()),
-                ContentNode::Tuple(Vec::new()),
-                ContentNode::Tuple(Vec::new()),
-            ],
-        };
+        let tree = super::Tree::named(vec![
+            ContentNode::Case {
+                scrutinee: NodeIndex::from(1_usize),
+                branches: vec![NodeIndex::from(2_usize), NodeIndex::from(3_usize)],
+            },
+            ContentNode::Tuple(Vec::new()),
+            ContentNode::Tuple(Vec::new()),
+            ContentNode::Tuple(Vec::new()),
+        ]);
         let left = ByteSpan::new(
             super::ByteOffset::from(17_usize),
             super::ByteOffset::from(20_usize),
@@ -5670,7 +5999,7 @@ mod tests
             unknown,
             Maybe::Present(right),
         ];
-        super::hull(&tree, &mut spans);
+        super::hull(&tree, &mut spans, &super::topological(&tree.nodes));
         assert_eq!(spans, vec![
             Maybe::Present(
                 ByteSpan::new(
@@ -5760,6 +6089,92 @@ mod tests
             writeln!(text, "def d{index} = {index} ;").expect("a string takes every write");
         }
         text
+    }
+
+    /// A pair spine of `depth` levels, in the two spellings of
+    /// `corpus/model/records/iterated-pair.gandr`: each type level names the
+    /// level below twice, and the let spine reads each bound level twice.
+    ///
+    /// # Specification
+    /// - requires: the fixture size fits memory.
+    /// - ensures: one type alias for each level from 0 to `depth`, then one
+    ///   declaration whose signature names the top level and whose body binds
+    ///   each level in turn.
+    /// - panics: none; writing to a String cannot refuse formatting.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — depths 12 and 24, whose images the regression
+    ///   compares.
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    #[spec(
+        ensures: |ret| ret.matches("pub type T").count() == depth.0.saturating_add(1_usize)
+            && ret.matches("  let s").count() == depth.0.saturating_add(1_usize),
+    )]
+    fn pair_spine(depth: Depth) -> String
+    {
+        let mut text = String::from("pub type T0 = Unit;\n");
+        for level in 1 ..= depth.0 {
+            let below = level.saturating_sub(1_usize);
+            writeln!(text, "pub type T{level} = *{{l : T{below}, r : T{below}}};")
+                .expect("a string takes every write");
+        }
+        writeln!(text, "def pair() -> T{} =", depth.0).expect("a string takes every write");
+        text.push_str("  let s0 = pure *{};\n");
+        for level in 1 ..= depth.0 {
+            let below = level.saturating_sub(1_usize);
+            writeln!(
+                text,
+                "  let s{level} = pure *{{l = s{below}, r = s{below}}};"
+            )
+            .expect("a string takes every write");
+        }
+        writeln!(text, "  s{}", depth.0).expect("a string takes every write");
+        text
+    }
+
+    /// How many entries a snapshot's image holds.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Entries(usize);
+
+    /// The entries of the pair's signature and body in the snapshot of a pair
+    /// spine `depth` levels deep.
+    ///
+    /// # Specification
+    /// - requires: the fixture lowers to a module.
+    /// - ensures: the entry count of the last item's signature and body images,
+    ///   at least one for each level of the signature.
+    /// - panics: if the fixture does not lower.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`pair_spine`].
+    /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+    #[spec(ensures: |ret| ret.0 > depth.0)]
+    fn pair_image(depth: Depth) -> Entries
+    {
+        let text = pair_spine(depth);
+        let snapshot = snapshot_of(SourceText::from(text.as_str()));
+        let pair = snapshot
+            .items
+            .last()
+            .expect("the spine declares the pair last");
+        let signature = pair.signature().map_or(0_usize, |tree| tree.nodes.len());
+        let body = pair.body().map_or(0_usize, |tree| tree.nodes.len());
+        Entries(signature.saturating_add(body))
+    }
+
+    #[test]
+    fn a_let_spine_reads_each_shared_node_once_6470()
+    {
+        // An image with one entry for each arena node grows linearly in the
+        // depth, so the doubled depth at most doubles it. An image with one
+        // entry for each occurrence grows as 2^depth: 2^12 times more entries.
+        let (Entries(half), Entries(whole)) =
+            (pair_image(Depth(12_usize)), pair_image(Depth(24_usize)));
+        assert!(
+            whole <= half.saturating_mul(2_usize),
+            "the spine 24 levels deep reads {whole} nodes, against {half} at 12 levels"
+        );
     }
 
     #[test]
