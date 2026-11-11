@@ -1874,6 +1874,71 @@ mod tests
         );
     }
 
+    /// #6621: a type of words over a sort reaches each entry after it whose
+    /// support holds the sort, directly or through an entry before it. It
+    /// reaches no entry before it, and the sort keeps its own verdict.
+    #[test]
+    fn a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621()
+    {
+        /// Admit a definition of the sort's type whose body is `body`, or an
+        /// axiom of it when `body` is nothing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn element(
+            environment: &mut Environment,
+            body: Option<ConstantIndex>,
+        ) -> ConstantIndex
+        {
+            let mut staging = environment.stage();
+            let declared = staging
+                .arena()
+                .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+            let staged = match body {
+                Some(named) => {
+                    let body = staging.arena().value_constant(named);
+                    staging.def(LevelSignature::monomorphic(), declared, body)
+                },
+                None => staging.axiom(LevelSignature::monomorphic(), declared),
+            };
+            environment
+                .add_decl(staged)
+                .map(crate::env::CheckedId::position)
+                .expect("an element of the sort admits")
+        }
+
+        let mut environment = point();
+        let sort = ConstantIndex::from(0_usize);
+        let before = element(&mut environment, None);
+        let words = words(&mut environment, Presentation::words(looped(sort)))
+            .expect("the words of the loop at `base` admit");
+        let after = element(&mut environment, None);
+        let through = element(&mut environment, Some(before));
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = staging.arena().value_unit();
+        let unrelated = staging.def(LevelSignature::monomorphic(), declared, body);
+        let _unrelated = environment
+            .add_decl(unrelated)
+            .expect("a unit definition admits");
+        let entries = environment.entries();
+        assert_eq!(
+            &*entries.reach([words]),
+            &[words, after, through],
+            "an entry after the words holds them through the sort, and one before them does not"
+        );
+        assert_eq!(
+            &*entries.reach([before]),
+            &[before, through],
+            "the entry that names an edited one is in the reach"
+        );
+        assert_eq!(
+            &*entries.reach([sort]),
+            &[sort, before, words, after, through],
+            "each entry that names the sort is in its reach, and the unrelated one is not"
+        );
+    }
+
     #[test]
     fn a_side_spells_only_its_own_sort_s_tags()
     {

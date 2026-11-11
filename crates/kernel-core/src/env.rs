@@ -1449,6 +1449,9 @@ struct EntryLog
     /// The positions of the plain definitions named by their content, by the
     /// digest of their declared type and body, ascending.
     definitions: BTreeMap<ContentDigest, Vec<ConstantIndex>>,
+    /// The entries that name each position: the reverse of each entry's
+    /// direct references.
+    dependents: crate::dependents::Dependents,
 }
 
 /// No admitted declaration.
@@ -1697,6 +1700,53 @@ impl Entries
             .map_or(&[], Vec::as_slice)
     }
 
+    /// The reach of an edit to the entries at `edited`: each of them, with
+    /// each entry whose support holds an entry of the reach, ascending.
+    ///
+    /// An entry outside the reach keeps its whole verdict input: the entries
+    /// that its support holds are outside the reach too. So a readmission
+    /// offers the kernel the reach of an edit, and nothing else.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: ascending, each once, and each below [`Self::len`]; each
+    ///   edited position below it, and each entry whose support holds an entry
+    ///   of the result through its direct references, its mutual block or a
+    ///   type of words admitted before it over a sort that it holds.
+    /// - provides: the entries whose verdict an edit can change.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the reach of each edit of a generated environment
+    ///   equals the entries whose support holds an edited entry, after refused
+    ///   blocks roll back, and a type of words reaches an entry after it
+    ///   through its sort and no entry before it.
+    /// - witness: `env::tests::the_reach_holds_each_entry_whose_support_holds_an_edited_one`
+    /// - witness: `presented::tests::a_type_of_words_reaches_the_entries_after_it_through_its_sort_6621`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)) && ret.iter().all(|&position| usize::from(position) < usize::from(self.len())))]
+    #[inline]
+    #[must_use]
+    pub fn reach<Edited>(
+        &self,
+        edited: Edited,
+    ) -> Box<[ConstantIndex]>
+    where
+        Edited: IntoIterator<Item = ConstantIndex>,
+    {
+        let Some(log) = self.log.as_deref()
+        else {
+            return Box::default();
+        };
+        let words = |position: ConstantIndex| {
+            let entry = log.family.get(usize::from(position))?;
+            let sort = entry.declaration.presentation().cells()?.sort();
+            let over = log.presentations.over(sort);
+            over.binary_search(&position).is_ok().then_some(sort)
+        };
+        crate::dependents::reach(&log.dependents, words, log.family.len(), edited)
+    }
+
     /// These entries and the support of the check that runs, for a reading
     /// the check makes.
     ///
@@ -1729,7 +1779,8 @@ impl Entries
     ///   its content in `arena`.
     /// - ensures: one more entry; the presentations hold its presented type and
     ///   the type of words it is over its sort, the ruled index its fixpoint,
-    ///   the role index its role, and the digest index its content name.
+    ///   the role index its role, the digest index its content name, and the
+    ///   reverse index a row for each of its direct references.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1774,6 +1825,7 @@ impl Entries
         if let ConstantName::Definition { digest, .. } = entry.key_name {
             log.definitions.entry(digest).or_default().push(position);
         }
+        log.dependents.admit(position, &entry.references);
         log.family.push(entry);
     }
 
@@ -1802,6 +1854,11 @@ impl Entries
         }
         let first = ConstantIndex::from(length);
         let log = self.log_mut();
+        let dropped = usize::from(log.family.len()).saturating_sub(usize::from(length));
+        for entry in log.family.iter().rev().take(dropped) {
+            log.dependents.forget(&entry.references);
+        }
+        log.dependents.truncate(first);
         log.family.truncate(length);
         log.presentations.forget_from(first);
         log.ruled.retain(|_, &mut position| position < first);
@@ -4505,6 +4562,7 @@ pub(crate) fn projected_atoms(
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -4525,6 +4583,7 @@ mod tests
     use gandr_kernel_term::TermArena;
 
     use super::CheckedId;
+    use super::Entries;
     use super::Environment;
     use super::ExpansionCensus;
     use super::OutstandingCount;
@@ -6200,6 +6259,85 @@ mod tests
                         data.push(position);
                     }
                 }
+            }
+        }
+
+        /// #6621: the reach of an edit, read backward through the reverse
+        /// index, equals the entries whose support holds an edited entry,
+        /// found forward. The refused declarations and blocks roll back their
+        /// rows before the later admissions take them.
+        #[test]
+        fn the_reach_holds_each_entry_whose_support_holds_an_edited_one(
+            admissions in proptest::collection::vec(generated(), 1 .. 16),
+            edited in proptest::collection::vec(0_usize .. 24, 0 .. 4),
+        ) {
+            let mut environment = Environment::new();
+            let mut data: Vec<ConstantIndex> = Vec::new();
+            for admission in &admissions {
+                let verdict = admit_generated(&mut environment, admission, &data);
+                let members = match *admission {
+                    Generated::Lone(ref member) => core::slice::from_ref(member),
+                    Generated::Block(ref members) => members.as_slice(),
+                };
+                for (member, position) in members.iter().zip(verdict.unwrap_or_default()) {
+                    if matches!(*member, Member::Data(..)) {
+                        data.push(position);
+                    }
+                }
+            }
+            let edited: Vec<ConstantIndex> = edited.into_iter().map(ConstantIndex::from).collect();
+            let entries = environment.entries();
+            let found = forward_reach(entries, &edited);
+            proptest::prop_assert_eq!(&*entries.reach(edited.iter().copied()), found.as_slice());
+        }
+    }
+
+    /// The edited entries below the count of `entries`, with each entry whose
+    /// support holds one of them, found forward and ascending. An entry's
+    /// support is the closure of its direct references, with each type of
+    /// words admitted before it over each position that the closure holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forward_reach(
+        entries: &Entries,
+        edited: &[ConstantIndex],
+    ) -> Vec<ConstantIndex>
+    {
+        let length = usize::from(entries.len());
+        let mut reached: BTreeSet<ConstantIndex> = edited
+            .iter()
+            .copied()
+            .filter(|&position| usize::from(position) < length)
+            .collect();
+        let mut support = BTreeSet::new();
+        let mut pending: Vec<ConstantIndex> = Vec::new();
+        loop {
+            let before = reached.len();
+            for (at, entry) in entries.iter().enumerate() {
+                let consumer = ConstantIndex::from(at);
+                if reached.contains(&consumer) {
+                    continue;
+                }
+                support.clear();
+                pending.clear();
+                pending.extend_from_slice(&entry.references);
+                while let Some(position) = pending.pop() {
+                    if !support.insert(position) {
+                        continue;
+                    }
+                    if let Some(held) = entries.get(usize::from(position)) {
+                        pending.extend(held.references.iter().copied());
+                    }
+                    let over = entries.presentations().over(position);
+                    pending.extend(over.iter().copied().filter(|&words| words < consumer));
+                }
+                if !support.is_disjoint(&reached) {
+                    let _fresh = reached.insert(consumer);
+                }
+            }
+            if reached.len() == before {
+                return reached.into_iter().collect();
             }
         }
     }
