@@ -2163,6 +2163,22 @@ enum HereWords
     Many,
 }
 
+/// The words whose point a written term spells, with the point's written
+/// nodes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SpelledWords
+{
+    /// The words' position among the collected words.
+    words: usize,
+    /// The slot the words take.
+    slot: SlotIndex,
+    /// The point's written nodes, in pre-order.
+    written: Vec<Placed>,
+}
+
 /// One pattern matrix the compiler has yet to reduce, and the tree node it
 /// fills.
 ///
@@ -5041,6 +5057,65 @@ impl<'source> Lowerer<'_, 'source>
         }))
     }
 
+    /// The first words whose point `base` spells, wrapped in `wraps`
+    /// reflexivities, with the slot the words take and the point's written
+    /// nodes.
+    ///
+    /// # Specification
+    /// - requires: `base` stands inside `wraps` `Path.here` calls, and it is
+    ///   none itself.
+    /// - ensures: the position of the first collected words whose wrapping is
+    ///   `wraps` and whose point `base` spells as a closed term over their
+    ///   family's constructors, as the words' declaring source names them;
+    ///   their slot; the point's written nodes in pre-order. None when no words
+    ///   are at `base`.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::looped_point`] and [`Self::stated_words`].
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::native::tests::a_here_pattern_reads_the_words_its_stated_type_names_6805`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.as_ref().is_none_or(|spelled| spelled.words < self.collected.words.len() && !spelled.written.is_empty())))]
+    fn spelled_words(
+        &self,
+        base: Placed,
+        wraps: gandr_kernel_term::Reflexivities,
+    ) -> Result<Option<SpelledWords>, LoweringRefusal<'source>>
+    {
+        for (index, words) in self.collected.words.iter().enumerate() {
+            if words.reflexivities != wraps {
+                continue;
+            }
+            let family = Generators::Written(words.family);
+            let Some(declared) = self.collected.slots.get(usize::from(words.slot))
+            else {
+                continue;
+            };
+            let source = self.collected.unit.source_at(declared.named.span.start());
+            let tag_of = |name: SourceFragment<'source>| {
+                self.collected
+                    .constructors_in(source, SurfaceName::from(name))
+                    .find(|constructor| constructor.form == family)
+                    .map(|constructor| (constructor.tag, constructor.arity))
+            };
+            if let Maybe::Present(term) = closed_term(self.pbg, self.tree, base, &tag_of)?
+                && term.nodes == words.point
+            {
+                return Ok(Some(SpelledWords {
+                    words: index,
+                    slot: words.slot,
+                    written: term.written,
+                }));
+            }
+        }
+
+        Ok(None)
+    }
+
     /// The empty word `Path.here(point)` is, when `point` spells the point a
     /// family's loops are at, inside as many `Path.here` calls as the loops'
     /// point is wrapped in.
@@ -5076,33 +5151,13 @@ impl<'source> Lowerer<'_, 'source>
         point: Placed,
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
-        let mut found = None;
         let (base, calls) = reflexivities_around(self.pbg, self.tree, point)?;
         let wraps = gandr_kernel_term::Reflexivities::from(calls.len());
-        for (index, words) in self.collected.words.iter().enumerate() {
-            if words.reflexivities != wraps {
-                continue;
-            }
-            let family = Generators::Written(words.family);
-            let Some(declared) = self.collected.slots.get(usize::from(words.slot))
-            else {
-                continue;
-            };
-            let source = self.collected.unit.source_at(declared.named.span.start());
-            let tag_of = |name: SourceFragment<'source>| {
-                self.collected
-                    .constructors_in(source, SurfaceName::from(name))
-                    .find(|constructor| constructor.form == family)
-                    .map(|constructor| (constructor.tag, constructor.arity))
-            };
-            if let Maybe::Present(term) = closed_term(self.pbg, self.tree, base, &tag_of)?
-                && term.nodes == words.point
-            {
-                found = Some((index, words.slot, term.written));
-                break;
-            }
-        }
-        let Some((index, family, written)) = found
+        let Some(SpelledWords {
+            words: index,
+            slot: family,
+            written,
+        }) = self.spelled_words(base, wraps)?
         else {
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
@@ -6941,7 +6996,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The types of words whose empty word a bare `here` pattern at `at`
-    /// names: each one that has a loop in the pattern's scope.
+    /// names where its stated type names none: each one that has a loop in
+    /// the pattern's scope.
     ///
     /// A source reads only what it declares and what it imports, so the
     /// words that an earlier source of the program mints never count.
@@ -7014,6 +7070,68 @@ impl<'source> Lowerer<'_, 'source>
             self.collected.reach(span);
         }
         Ok(found)
+    }
+
+    /// The words whose empty word a bare `here` pattern names by the type
+    /// `stated` that its position states: the words at the path type's
+    /// endpoints.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Generators::Words`] at the position of the words that both
+    ///   endpoints of the path type `stated` writes spell as their point, each
+    ///   inside as many `Path.here` calls as the words' wrapping, read as
+    ///   [`Self::spelled_words`] reads a point; none when no type is stated,
+    ///   when it is no path type, or when the two endpoints spell no point of
+    ///   one type of words.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk spends the
+    ///   fuel; [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case over the loop words of one of two circles
+    ///   reads `here` at that circle's words; a case over the words at the
+    ///   3-cell beside the words of the 2-sphere reads it at the 3-cell's.
+    /// - witness: `lower::native::tests::a_here_pattern_reads_the_words_its_stated_type_names_6805`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|form| matches!(form, Generators::Words(words) if words < self.collected.words.len()))))]
+    fn stated_words(
+        &mut self,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> Result<Option<Generators>, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(stated) = stated
+        else {
+            return Ok(None);
+        };
+        let Maybe::Present(typed) = self.unwrapped(stated)?
+        else {
+            return Ok(None);
+        };
+        let (Former::PathType, &[.., left, right]) = (typed.former, typed.operands.as_slice())
+        else {
+            return Ok(None);
+        };
+        let point = |endpoint: NodeIndex| -> Result<Option<usize>, LoweringRefusal<'source>> {
+            let Some(node) = self.tree.node(endpoint)
+            else {
+                return Ok(None);
+            };
+            let (base, calls) =
+                reflexivities_around(self.pbg, self.tree, Placed::of(endpoint, node))?;
+            let wraps = gandr_kernel_term::Reflexivities::from(calls.len());
+            Ok(self
+                .spelled_words(base, wraps)?
+                .map(|spelled| spelled.words))
+        };
+        let (Some(at_left), Some(at_right)) = (point(left)?, point(right)?)
+        else {
+            return Ok(None);
+        };
+
+        Ok((at_left == at_right).then_some(Generators::Words(at_left)))
     }
 
     /// Where the loop at `target` stands to the scope of the pattern at `at`:
@@ -7236,12 +7354,16 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `root` is an alternative of an arm of the match at `site`.
     /// - ensures: the root's position in `patterns`; every part after the
-    ///   pattern holding it; each name bound once, numbered in source order.
+    ///   pattern holding it; each name bound once, numbered in source order; a
+    ///   bare `here` as the empty word of the words that `stated` names, as
+    ///   [`Self::stated_words`] reads them, else of the only words in scope.
     /// - fails: a pattern the fragment does not read, by its own name; a
     ///   constructor no earlier family declares, as unresolved; a constructor
     ///   applied to other than its arity; a sum pattern whose position states
     ///   no sum, as unannotated; a variable bound twice; a repair;
-    ///   [`LoweringRefusal::WithoutK`] for `here`, reflexivity as a pattern.
+    ///   [`LoweringRefusal::WithoutK`] for `here` where no words are,
+    ///   reflexivity as a pattern; `here` as unannotated where the stated type
+    ///   names no words and several are in scope.
     /// - panics: none.
     ///
     /// # Errors
@@ -7391,15 +7513,21 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
-                return match self.here_words(at)? {
-                    HereWords::None => Err(LoweringRefusal::WithoutK { span: at.span }),
-                    HereWords::One(words) => Ok(Matcher::Constructor {
-                        form: Generators::Words(words),
-                        tag: 0,
-                        fields: allocated(patterns, work, &[]),
-                    }),
-                    HereWords::Many => Err(here.out(FragmentBoundary::Unannotated)),
+                // The type the scrutinee's position states names the words;
+                // the words in scope name them only where it names none.
+                let form = match self.stated_words(queued.stated)? {
+                    Some(form) => form,
+                    None => match self.here_words(at)? {
+                        HereWords::None => return Err(LoweringRefusal::WithoutK { span: at.span }),
+                        HereWords::One(words) => Generators::Words(words),
+                        HereWords::Many => return Err(here.out(FragmentBoundary::Unannotated)),
+                    },
                 };
+                return Ok(Matcher::Constructor {
+                    form,
+                    tag: 0,
+                    fields: allocated(patterns, work, &[]),
+                });
             }
             // A loop's name in a pattern names the loop, never a variable; a
             // loop is matched only as an arm's whole pattern.
