@@ -201,6 +201,8 @@ mod lowerings;
 mod session;
 #[cfg(feature = "instrument")]
 mod timings;
+#[cfg(feature = "instrument")]
+mod trace;
 mod typed;
 
 pub use crate::account::Account;
@@ -302,5 +304,31 @@ pub use crate::timings::Timings;
 pub use crate::timings::WINDOW;
 #[cfg(feature = "instrument")]
 pub use crate::timings::untimed;
+#[cfg(feature = "instrument")]
+pub use crate::trace::Depth;
+#[cfg(feature = "instrument")]
+pub use crate::trace::Derivation;
+#[cfg(feature = "instrument")]
+pub use crate::trace::DerivationNode;
+#[cfg(feature = "instrument")]
+pub use crate::trace::DerivationTree;
+#[cfg(feature = "instrument")]
+pub use crate::trace::MemoMark;
+#[cfg(feature = "instrument")]
+pub use crate::trace::Rule;
+#[cfg(feature = "instrument")]
+pub use crate::trace::SLOTS;
+#[cfg(feature = "instrument")]
+pub use crate::trace::Trace;
+#[cfg(feature = "instrument")]
+pub use crate::trace::TraceColumn;
+#[cfg(feature = "instrument")]
+pub use crate::trace::Visited;
+#[cfg(feature = "instrument")]
+pub use crate::trace::Warrant;
+#[cfg(feature = "instrument")]
+pub use crate::trace::underived;
+#[cfg(feature = "instrument")]
+pub use crate::trace::unprinted;
 pub use crate::typed::spelled;
 pub use crate::typed::type_of;

@@ -49,6 +49,8 @@ mod specification;
 #[cfg(test)]
 mod timings;
 #[cfg(test)]
+mod trace;
+#[cfg(test)]
 mod trial;
 #[cfg(test)]
 mod written;

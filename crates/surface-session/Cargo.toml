@@ -32,6 +32,8 @@ path = "tests/lib.rs"
 # declaration's produced verdict to decide what it evaluates, and commits the
 # kernel artifact as records into a block store, reading it back through the
 # kernel's decoder; the printer spells a checkpoint's type for every face.
+# The trace layer names a revision's constants as the diagnostics spell them,
+# so a face prints a traced goal on demand.
 # The session molds forms and judges candidates through the fork crate's
 # trait, on the pool the driver hands it.
 # The pinned anodized facade supplies core-only specification helpers;
@@ -48,6 +50,7 @@ gandr-kernel-term.workspace = true
 gandr-storage-artifact.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics = { workspace = true, optional = true }
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
@@ -78,6 +81,7 @@ default = []
 # report of each item, which come with it too. The timings layer reads the
 # dispatcher's allocation meter, which comes with it too.
 instrument = [
+  "dep:gandr-surface-diagnostics",
   "gandr-core-checker/instrument",
   "gandr-core-fork/instrument",
   "gandr-core-incremental/instrument",

@@ -309,8 +309,14 @@ use gandr_core_checker::bridge::Readmitted;
 #[cfg(feature = "instrument")]
 use gandr_core_checker::bridge::Spent;
 use gandr_core_checker::bridge::crossed;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::StepBuffer;
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::untraced;
 use gandr_core_fork::Fork;
 use gandr_core_fork::Serial;
+#[cfg(feature = "instrument")]
+use gandr_core_incremental::Adoption;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointAddress;
 use gandr_core_incremental::CheckpointObserver;
@@ -578,8 +584,10 @@ where
         }
     }
 
-    /// Sample `item` when the sink times and the pass judged it, then count
-    /// its memo consults, its arena nodes, and whether the pass judged it.
+    /// Sample `item` when the sink times and the pass judged it. Count its
+    /// memo consults, its arena nodes, and whether the pass judged it, when
+    /// the sink counts. Fold its steps into its tree when the sink traces and
+    /// the pass judged it.
     ///
     /// # Specification
     /// trivial.
@@ -603,6 +611,39 @@ where
                     item.adoption,
                 ),
             );
+        }
+        if let (Maybe::Present(column), Maybe::Present(steps), Adoption::Judged) =
+            (self.sink.trace(), item.steps, item.adoption)
+        {
+            column.fold(item.constant, steps);
+        }
+    }
+
+    /// The buffer of the sink's trace column, when the sink traces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn lend(&mut self) -> Maybe<StepBuffer, untraced::Absent>
+    {
+        match self.sink.trace() {
+            Maybe::Present(column) => Maybe::Present(column.lend()),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// Give `buffer` back to the sink's trace column.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restore(
+        &mut self,
+        buffer: StepBuffer,
+    )
+    {
+        if let Maybe::Present(column) = self.sink.trace() {
+            column.restore(buffer);
         }
     }
 }
@@ -3137,6 +3178,16 @@ impl<Store, Blocks> Session<Store, Blocks>
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
         let deprecations = deprecations_of(&module, &arena, own);
+        // A traced tree prints its goals on demand by the names of the
+        // revision's constants.
+        #[cfg(feature = "instrument")]
+        let names = match sink.trace() {
+            Maybe::Present(_) => Maybe::Present(gandr_surface_diagnostics::constant_names(
+                &module,
+                module.unit().last(),
+            )),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
         // The closure's declarations — those written before the revision's own
         // source — lead the judged ones, a declaration the lowering refused
         // being judged nowhere.
@@ -3216,10 +3267,19 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Quiet
             };
             // The pass takes each changed item's verdict from the judgement,
-            // which decided it once already.
+            // which decided it once already. At the trace layer the pass
+            // decides each item again, so the machine writes the item's steps
+            // into the buffer that the pass lends. #6645 reads the judgement's
+            // own steps.
+            #[cfg(feature = "instrument")]
+            let traced = matches!(observer.sink.trace(), Maybe::Present(_));
+            #[cfg(not(feature = "instrument"))]
+            let traced = false;
             let judgement = match self.verdicts {
-                Verdicts::Taken => Some(Judgement::new(admission.arena(), admission.verdicts())),
-                Verdicts::Decided => None,
+                Verdicts::Taken if !traced => {
+                    Some(Judgement::new(admission.arena(), admission.verdicts()))
+                },
+                Verdicts::Taken | Verdicts::Decided => None,
             };
             let submitted = match led {
                 Some(led) => self.incremental.submit_after_retiring(
@@ -3301,6 +3361,11 @@ impl<Store, Blocks> Session<Store, Blocks>
             match sink.counts() {
                 Maybe::Present(column) => self.account.counted(Maybe::Present(&*column)),
                 Maybe::Absent(reason) => self.account.counted(Maybe::Absent(reason)),
+            }
+            #[cfg(feature = "instrument")]
+            if let (Maybe::Present(column), Maybe::Present(names)) = (sink.trace(), names) {
+                self.account
+                    .traced(column, &crate::trace::Printed::new(items, names));
             }
         }
         #[cfg(feature = "instrument")]
@@ -3849,7 +3914,8 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// tree first, beside the key of the closure's lowering when the tree is
     /// laid after the lowering the process holds: typed after the closure's
     /// judgement under the session's root when the process holds the closure's
-    /// lowering and the closure lowers to its end, else typed whole.
+    /// lowering and the closure lowers to its end, else typed whole. A reader
+    /// keeps what it reads off the closure's part once, under that key.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).

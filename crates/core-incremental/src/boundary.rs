@@ -46,6 +46,11 @@ copy_wrapper!(
     usize
 );
 copy_wrapper!(
+    /// The index of a source in its program's order of sources.
+    SourceOrdinal,
+    usize
+);
+copy_wrapper!(
     /// How many items of the same key precede an item in its program.
     Occurrence,
     usize

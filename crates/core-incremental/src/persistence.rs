@@ -385,6 +385,35 @@ pub trait CheckpointObserver
     )
     {
     }
+
+    /// The buffer that the pass's runs write their steps into, or why the
+    /// observer lends none. The pass clears the buffer before each item,
+    /// tells [`Self::passed`] the item's steps, and gives the buffer back
+    /// through [`Self::restore`] on each way out of the pass.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn lend(
+        &mut self
+    ) -> Maybe<gandr_core_checker::trace::StepBuffer, gandr_core_checker::trace::untraced::Absent>
+    {
+        Maybe::Absent(gandr_core_checker::trace::untraced::Absent::Unlent)
+    }
+
+    /// The pass gives back `buffer`, which [`Self::lend`] lent it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn restore(
+        &mut self,
+        _buffer: gandr_core_checker::trace::StepBuffer,
+    )
+    {
+    }
 }
 
 /// Whether a checkpoint store keeps the sets it is handed.
