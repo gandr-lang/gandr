@@ -2970,7 +2970,8 @@ echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases re
 # `.config/queue/entries.bash`, #6839), since a green group lands every entry
 # below it. With no body, as in the gate, it runs the cases of `deletes.jq`
 # (`.config/deletes/cases.json`), of the record run's settings
-# (`.config/deletes/policy-cases.bash`) and of the queue's walk
+# (`.config/deletes/policy-cases.bash`), of the reading of each changed test
+# (`.config/deletes/tests-cases.bash`) and of the queue's walk
 # (`.config/queue/cases.bash`).
 ["check:deletes"]
 description = "A body accounts for each item, test, ledger row and file its change takes out, with the architect's sign-off for each deletion; with no body, the rule's cases"
@@ -2987,6 +2988,7 @@ set -euo pipefail
 if [[ -z ${usage_body:-} ]]; then
   .config/cases/run.bash deletes .config/deletes/cases.json --program .config/deletes/deletes.jq --mode r -L .config/claims
   .config/deletes/policy-cases.bash
+  .config/deletes/tests-cases.bash
   .config/queue/cases.bash
   echo "deletes check OK: $(jq length .config/deletes/cases.json) cases read as recorded"
   exit 0
