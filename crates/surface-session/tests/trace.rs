@@ -179,6 +179,55 @@ fn each_judged_declaration_keeps_the_tree_its_judgement_visited()
     );
 }
 
+/// A body that sums 50 variables holds goals that nest `let` blocks up to 49
+/// deep: the checker's second run over the body's elaboration. The layout of
+/// such a goal resolves forced contexts, which the resolver memoizes under
+/// their mode (#6747). Without that memo, 19 of the goals pass the resolver's
+/// ceiling of 4,000,000 frontier entries and print nothing. The expected text
+/// is the print of the shallowest of the 19 before the memo, with every
+/// ceiling lifted: the layout that the cost order chooses when no ceiling
+/// refuses it.
+#[test]
+fn a_deep_goal_prints_as_it_does_with_no_ceiling_6747()
+{
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/trace/unformatted/a-deep-goal-prints-as-it-does-with-no-ceiling-6747.gandr");
+    let text =
+        include_str!("trace/unformatted/a-deep-goal-prints-as-it-does-with-no-ceiling-6747.gandr");
+    let mut traced = session(SourceRoot::Strict);
+    recheck(&mut traced, (&path, Text(text)), Trace::default);
+    let page = PageWidth::from(80_u32);
+    let (constant, ..) = traced
+        .account()
+        .rows()
+        .next()
+        .expect("the source declares `big`");
+    let Maybe::Present(derivation) = traced.account().derivation_at(constant)
+    else {
+        panic!("`big` holds a tree");
+    };
+    let goals = derivation.goals();
+    let printed: Vec<String> = derivation
+        .nodes()
+        .iter()
+        .filter_map(|node| match goals.goal(node, page) {
+            Maybe::Present(goal) => Some(format!("{goal}")),
+            Maybe::Absent(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        printed.len(),
+        derivation.nodes().len(),
+        "every goal of the tree prints"
+    );
+    let unbounded =
+        include_str!("trace/expected/a-deep-goal-prints-as-it-does-with-no-ceiling-6747.txt");
+    assert!(
+        printed.iter().any(|goal| goal == unbounded),
+        "a deep goal prints as it does with no ceiling"
+    );
+}
+
 /// The goals of a corpus source's trees, printed at a page of 80 columns,
 /// spell each binder as the source writes it and each variable by the name of
 /// its binder. `identity(x)` and `first(x, y)` lower to lambdas, whose goals
