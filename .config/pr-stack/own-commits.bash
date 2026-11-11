@@ -12,7 +12,9 @@
 #   the lower's earlier head as the server would when `held` is true.
 # A case's `artifacts`, when given, is the table of generated artifacts the
 # restack reads before its push (#6144, `REPLAY_ARTIFACTS`): a row whose check
-# fails refuses the restack with nothing pushed.
+# fails refuses the restack with nothing pushed. A check that fails with a
+# status outside the row's `stale` is its own error, and the refusal says the
+# replay cannot read the artifacts (#6786).
 # The restack's result is one line compared with the case's `output`:
 # `moved: <the subjects main..upper holds>`, or `refused: <the refusal up to
 # its first semicolon>` and `, moved` should the refused restack have moved
@@ -89,7 +91,7 @@ for (( i = 0; i < count; i++ )); do
   if restack "$stack" > "$dir/out" 2>&1; then
     actual="moved: $(git log --format=%s origin/main..origin/upper | paste -sd ',' - | sed 's/,/, /g')"
   else
-    actual="refused: $(grep -o -E '(conflicts in|[^ ]+ does not contain) [^;]*|leaves generated artifacts stale' "$dir/out" | head -n 1 || true)"
+    actual="refused: $(grep -o -E '(conflicts in|[^ ]+ does not contain) [^;]*|leaves generated artifacts stale|cannot read its generated artifacts' "$dir/out" | head -n 1 || true)"
     [[ $(git rev-parse origin/upper) == "$upper_head" ]] || actual+=", moved"
   fi
   cd - > /dev/null

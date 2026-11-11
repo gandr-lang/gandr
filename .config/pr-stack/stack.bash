@@ -810,14 +810,21 @@ chain_replay() {
 # target directory. With `github`, on a runner, which builds no crate within
 # the hosted budget, `stale.bash --due` reads the due rows alone. A due row
 # holds the branch, and a seat's `pr:land` replays it with the checks
-# (#6159). Fails, naming each stale or due artifact on stderr.
+# (#6159). Fails, naming each stale or due artifact on stderr. A check that
+# fails on its own (`stale.bash` exits 2, #6786) reads nothing, so the replay
+# cannot read the artifacts, and the message says so, not that they are stale.
 replay_reads() {
-  local dir=$1 old=$2 new=$3 tip=$4 signer=$5 head=$6 script target out rows
+  local dir=$1 old=$2 new=$3 tip=$4 signer=$5 head=$6 script target out rows status=0
   script=$pr_stack_dir/../replay/stale.bash
   if [[ $signer == git ]]; then
     target=$(git rev-parse --show-toplevel)/target
-    out=$(cd "$dir" && CARGO_TARGET_DIR=$target "$script" "$old" "$new" "$tip" 2>&1) && return 0
-    echo "the replay of $head leaves generated artifacts stale, as below; nothing is pushed" >&2
+    out=$(cd "$dir" && CARGO_TARGET_DIR=$target "$script" "$old" "$new" "$tip" 2>&1) || status=$?
+    (( status != 0 )) || return 0
+    if (( status == 1 )); then
+      echo "the replay of $head leaves generated artifacts stale, as below; nothing is pushed" >&2
+    else
+      echo "the replay of $head cannot read its generated artifacts, since a check fails on its own, as below; nothing is pushed" >&2
+    fi
     printf '%s\n' "$out" >&2
     return 1
   fi
