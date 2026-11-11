@@ -2,11 +2,12 @@
 # task with an `--install` and a `--remove`: `stall:watch` and
 # `toolchain:follow`.
 #
-# `service_unit <install|remove> <name> <task> <description>` installs or
-# removes `service.jq`'s unit or agent: a `systemd --user` unit
+# `service_unit <install|remove> <name> <task> <description> [background]`
+# installs or removes `service.jq`'s unit or agent: a `systemd --user` unit
 # `gandr-<name>.service` under `$XDG_CONFIG_HOME/systemd/user/` on Linux, a
 # `launchd` agent `gandr.<name>.plist` under `~/Library/LaunchAgents/` on
-# macOS. The service runs from this checkout at the commit it holds, so
+# macOS. With `background`, the service runs at the host's lowest priority
+# (#6638). The service runs from this checkout at the commit it holds, so
 # `--install` again restarts it at that tree's head. It runs under the
 # installing shell's `PATH` and, where that shell sets them, the variables of
 # `service_carried`, so git in the service reads the configuration the shell's
@@ -53,7 +54,8 @@ service_bootstrap() {
 }
 
 service_unit() {
-  local action=$1 name=$2 task=$3 description=$4 os file dir mise_bin environment target previous
+  local action=$1 name=$2 task=$3 description=$4 background=false os file dir mise_bin environment target previous
+  [[ ${5:-} != background ]] || background=true
   case "$(uname -s)" in
     Linux) os=linux file="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/gandr-$name.service" ;;
     Darwin) os=macos file="$HOME/Library/LaunchAgents/gandr.$name.plist" target="gui/$(id -u)/gandr.$name" ;;
@@ -79,8 +81,8 @@ service_unit() {
     [[ -z ${!variable:-} ]] || jq -n --arg key "$variable" --arg value "${!variable}" '{($key): $value}'
   done | jq -s 'add // {}')
   jq -rn --arg os "$os" --arg dir "$dir" --arg mise "$mise_bin" --arg path "$PATH" --argjson environment "$environment" \
-    --arg name "$name" --arg task "$task" --arg description "$description" \
-    '{os: $os, dir: $dir, mise: $mise, path: $path, environment: $environment, name: $name, task: $task, description: $description}' \
+    --arg name "$name" --arg task "$task" --arg description "$description" --argjson background "$background" \
+    '{os: $os, dir: $dir, mise: $mise, path: $path, environment: $environment, name: $name, task: $task, description: $description, background: $background}' \
     | jq -r -f "$service_dir/service.jq" > "$file"
   if [[ "$os" == linux ]]; then
     systemctl --user daemon-reload
