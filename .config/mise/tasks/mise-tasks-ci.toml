@@ -538,14 +538,16 @@ run = [
 ]
 
 # The documentation lane's builds, with the arguments `check:doc` gives
-# them: the private-item rustdoc and the pruning binary itself.
+# them: the private-item rustdoc with the default features and with every
+# feature on, and the pruning binary itself.
 ["ci:prune-docs"]
 description = "Prune the documentation state to the units this run's builds used"
 env.RUSTDOCFLAGS = "-D warnings"
 run = [
+  ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items --message-format json > target/debug/units-doc-default.jsonl",
   ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/debug/units-doc.jsonl",
   ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
-  "target/debug/build-state prune --profile-dir target/debug target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
+  "target/debug/build-state prune --profile-dir target/debug target/debug/units-doc-default.jsonl target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
 ]
 
 # The examples lane's builds, with the arguments `check:doctests` gives

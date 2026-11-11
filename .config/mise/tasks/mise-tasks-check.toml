@@ -1040,10 +1040,25 @@ exit "$status"
 # intra-doc link — the vocabulary tables are rustdoc the types link into — is a
 # gate failure, not a warning. The clippy wall's `missing_docs_in_private_items`
 # supplies the missing-docs half; this gate supplies the rustdoc-lint half.
+# The gate documents twice: with the default features, as `evidence:rustdoc`
+# and each reader of the default build do, and with every feature on. A link
+# to an item behind a feature resolves in one pass alone, so the other pass
+# refuses it (#6508).
 ["check:doc"]
-description = "Private-item rustdoc with every rustdoc lint denied"
+description = "Private-item rustdoc with every rustdoc lint denied, with the default features and with every feature on"
 env.RUSTDOCFLAGS = "-D warnings"
-run = ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --all-features --locked --no-deps --document-private-items"
+run = [
+  ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --locked --no-deps --document-private-items",
+  ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --all-features --locked --no-deps --document-private-items",
+]
+
+# `check:doc` refuses a link that resolves under one set of features alone
+# (#6508): `.config/doc/features-cases.bash` documents a scratch crate through
+# the gate, with the linked item under no `cfg`, behind a feature, and removed
+# by a feature.
+["check:doc-features"]
+description = "check:doc passes a link that resolves under each set of features and refuses one that resolves under one set alone"
+run = ".config/doc/features-cases.bash"
 
 # Nextest runs no documentation example, so a stale example compiled nowhere
 # until this gate (#707).
