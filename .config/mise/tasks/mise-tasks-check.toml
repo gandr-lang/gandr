@@ -2282,7 +2282,9 @@ run = ".config/landing/rebase-cases.bash"
 # each reading runs the checkout's `watch.bash`, and the service's checkout
 # stands after a sweep of a lane's checkout and takes the new head.
 # `.config/integration/gap-cases.bash` (#6675): the state holds a reading's
-# gap before its gate runs.
+# gap before its gate runs. `.config/integration/repaired-cases.bash`
+# (#6679): a red check that a newer head of landing holds green runs no
+# search, and a red there or an unmoved head runs it.
 ["check:integration"]
 description = "The integration cycle's step, known-red list, brake and runner, and the head watcher's search, owner and gap, give each recorded case its output"
 tools.jq = "1.8.1"
@@ -2293,6 +2295,7 @@ set -euo pipefail
 .config/integration/token-cases.bash
 .config/integration/reload-cases.bash
 .config/integration/gap-cases.bash
+.config/integration/repaired-cases.bash
 echo "integration check OK: $(jq length .config/integration/cases.json) cases read as recorded"
 '''
 

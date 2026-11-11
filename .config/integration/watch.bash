@@ -200,6 +200,25 @@ watch_search() {
   done
 }
 
+# Whether a newer head of `landing` repairs the red check `$2` of head `$1`
+# (#6679). The watcher fetches, and when `landing` stands past `$1`, it runs
+# the check on the newest head. A pass there prints that head and exits 0,
+# and the search does not run: its culprit names a red that `landing` no
+# longer holds. A red check there, an unmoved head or a failed fetch exits 1,
+# and the search runs as before.
+watch_repaired() {
+  local head=$1 check=$2 newest log status=0
+  watch_fetch || return 1
+  newest=$(git -C "$watch_tree" rev-parse refs/watch/landing) || return 1
+  [[ $newest != "$head" ]] || return 1
+  git -C "$watch_tree" merge-base --is-ancestor "$head" "$newest" || return 1
+  log=$(mktemp)
+  watch_run "$newest" "$check" "$log" || status=$?
+  rm -f "$log"
+  (( status == 0 )) || return 1
+  printf '%s\n' "$newest"
+}
+
 # Gives the red check `$4` of head `$2` an owner: the search names the
 # culprit, `owner.jq` the defect and the page; the watcher files the defect
 # or comments on the open one, claims it for the lane and pages the lane.
@@ -239,7 +258,7 @@ watch_own() {
 # One reading: the gap, then the gate on the newest head when it moved.
 # Prints the new state.
 watch_once() {
-  local repo=$1 memory gap head green log status check
+  local repo=$1 memory gap head green log status check newest
   local -a failed
   memory=$(watch_memory)
   watch_fetch || { echo "landing:watch: the fetch failed; reading again" >&2; printf '%s\n' "$memory"; return 0; }
@@ -274,6 +293,10 @@ watch_once() {
     return 0
   fi
   for check in "${failed[@]}"; do
+    if newest=$(watch_repaired "$head" "$check"); then
+      echo "landing:watch: \`$check\` red on ${head::9} is green on ${newest::9}; no search" >&2
+      continue
+    fi
     watch_own "$repo" "$head" "$green" "$check" "$log" || :
   done
   jq -c --arg head "$head" '.checked = $head' <<< "$memory"
