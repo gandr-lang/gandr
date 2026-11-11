@@ -387,6 +387,8 @@ mod calls;
 #[cfg(feature = "client")]
 pub mod client;
 mod complete;
+#[cfg(feature = "instrument")]
+mod derivation;
 #[cfg(unix)]
 mod disk;
 mod doc;

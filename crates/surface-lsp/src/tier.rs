@@ -76,6 +76,8 @@ use quenchant_shape::shape::Maybe;
 use serde::Serialize;
 
 use crate::goto::ranged;
+#[cfg(feature = "instrument")]
+use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::CodeLens;
 use crate::protocol::Command;
@@ -170,6 +172,21 @@ pub struct Tiered
     /// judgement, for its verdict and its compile tier, while `tier` is where
     /// the kernel stands now; none when it has no content key.
     row: Maybe<(ContentKey, AccountRow), unrowed::Absent>,
+}
+
+/// The declaration at a cursor that [`Tiers::at`] finds.
+#[cfg(feature = "instrument")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Cursored<'tiers>
+{
+    /// Its admission position in the document's report.
+    pub constant: ConstantIndex,
+    /// Its name, as the text spells it.
+    pub name: &'tiers str,
+    /// The key that its account card carries.
+    pub key: AccountKey,
+    /// Its range in the document's text.
+    pub range: Range,
 }
 
 /// The kernel tiers of an open document's declarations, in admission order:
@@ -570,6 +587,61 @@ impl Tiers
                 })
             })
             .collect()
+    }
+
+    /// The declaration with a content key whose range holds `position`: its
+    /// admission position, its name, the key that its account card carries,
+    /// and its range.
+    ///
+    /// # Specification
+    /// - requires: nothing; any position is admissible input.
+    /// - ensures: `None` when no declaration with a key holds `position`;
+    ///   otherwise the first one that does, its key spelled as [`Self::cards`]
+    ///   spells it.
+    /// - provides: the declaration whose derivation a face shows at a cursor.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one step for each declaration before it, and one lookup of
+    ///   each key; #6729 finds it by a binary search.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an attached view of the trace layer hears the card of
+    ///   the declaration at the editor's cursor under the key of its account
+    ///   card.
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor`
+    #[cfg(feature = "instrument")]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|at|
+        at.range.start <= position && position <= at.range.end))]
+    #[must_use]
+    pub fn at(
+        &self,
+        position: Position,
+    ) -> Option<Cursored<'_>>
+    {
+        let mut repeats: BTreeMap<ContentKey, usize> = BTreeMap::new();
+        let (tiered, key, repeat) = self
+            .each
+            .iter()
+            .filter_map(|tiered| match tiered.row {
+                Maybe::Present((key, _)) => {
+                    let seen = repeats.entry(key).or_default();
+                    let repeat = *seen;
+                    *seen = seen.saturating_add(1);
+                    Some((tiered, key, repeat))
+                },
+                Maybe::Absent(_) => None,
+            })
+            .find(|&(tiered, ..)| tiered.range.start <= position && position <= tiered.range.end)?;
+        let spelled = match repeat {
+            0 => alloc::format!("{key}"),
+            repeat => alloc::format!("{key}#{repeat}"),
+        };
+        Some(Cursored {
+            constant: tiered.constant,
+            name: &tiered.name,
+            key: AccountKey::from(spelled),
+            range: tiered.range,
+        })
     }
 }
 

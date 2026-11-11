@@ -2204,7 +2204,9 @@ fn carded(frame: &RenderFrame) -> Option<(&DocId, &ReportView)>
             | FrameBody::Accounts { .. }
             | FrameBody::AccountPatch { .. }
             | FrameBody::Stack { .. }
+            | FrameBody::Derivation { .. }
             | FrameBody::Activity { .. }
+            | FrameBody::Trace { .. }
             | FrameBody::Detach),
         ) => None,
     }

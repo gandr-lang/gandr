@@ -1,7 +1,7 @@
 //! The side view: a render-bus client that follows the document the hub
-//! checked last and shows its cards, its account and the context stack at its
-//! cursor, beside an editor that shows the text, and the activity pane of the
-//! hub's pool below them.
+//! checked last and shows its cards, its account, the context stack at its
+//! cursor and the derivation of the declaration there, beside an editor that
+//! shows the text, and the activity pane of the hub's pool below them.
 //!
 //! The view builds the frame of the document it follows
 //! ([`Following::frame`]): one record that names the document, its version
@@ -9,16 +9,20 @@
 //! record per card and per hole. So a card that comes or goes moves no row of
 //! the account. The stack pane follows: one record per spine at the cursor,
 //! the innermost first, its type with the parameter of the cursor's slot
-//! underlined. The activity pane comes last: one record per core of the pool,
-//! then the totals record. [`rendering`] lays the frame out as the
-//! visual language's rendering data, which every rule of
+//! underlined. A view of the trace layer then shows the derivation pane: one
+//! record per judgement node that the pane shows at the cursor, each goal set
+//! in by its depth, the node in focus and its ancestors open and every other
+//! node folded to one line. A key shows the whole goal of the node in focus
+//! on the lines below it. The activity pane comes last: one record per core
+//! of the pool, then the totals record. [`rendering`] lays the frame out as
+//! the visual language's rendering data, which every rule of
 //! `gandr_surface_render_remote::RULES` checks. A painter then puts the cells
 //! on the terminal or on a pipe and adds nothing: a column is as wide as its
 //! widest cell, one space parts two columns, and a hue takes the theme's
 //! colour for its warrant. The terminal keeps the activity pane at the foot of
 //! the screen, so a long report never pushes it out of view. A pipe prints the
 //! document alone, because a pipe only appends and a live pane changes in
-//! place: the stack pane moves with the cursor.
+//! place: the stack pane and the derivation pane move with the cursor.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -42,6 +46,7 @@ use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::Cell;
 use gandr_surface_render_remote::Count;
 use gandr_surface_render_remote::Datum;
+use gandr_surface_render_remote::DerivationCard;
 use gandr_surface_render_remote::DiagnosticCode;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::DocumentUri;
@@ -54,6 +59,7 @@ use gandr_surface_render_remote::Head;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::Load;
 use gandr_surface_render_remote::MarkKind;
+use gandr_surface_render_remote::NodeAt;
 use gandr_surface_render_remote::Numeral;
 use gandr_surface_render_remote::Pane;
 use gandr_surface_render_remote::Place;
@@ -94,9 +100,32 @@ use crate::theme::hue_of_warrant;
 /// record that the side view draws as names beside their data.
 const DOCUMENT: &str = "uri";
 
-/// What the side view knows: the last report, the account and the stack card
-/// of each document it heard, which one the hub checked last, and the last
-/// activity of the hub's pool.
+/// The columns of a derivation pane that a goal and its type do not take:
+/// the warrant, the direction, the rule, the cover, the memo, the nodes, the
+/// wall and the spaces between the nine columns.
+const FIXED: u64 = 35;
+
+/// The columns that a rule's short name takes in a derivation pane.
+const RULE: Count = Count(8);
+
+/// The instrument layers that a side view subscribes to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Layers
+{
+    /// None: the view shows no derivation pane, and the hub traces nothing
+    /// for it.
+    Silent,
+    /// The trace layer: the view shows the derivation pane at the editor's
+    /// cursor.
+    Trace,
+}
+
+/// What the side view knows of the documents it heard and of the hub's pool.
+///
+/// It holds the last report, the account, the stack card and the derivation
+/// card of each document, which one the hub checked last, the last activity of
+/// the pool, and whether the derivation pane shows the whole goal of the node
+/// in focus.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Following
 {
@@ -108,10 +137,15 @@ pub struct Following
     /// The last stack card heard for each document, with the version it was
     /// read at.
     stacks: BTreeMap<DocumentUri, (DocId, StackCard)>,
+    /// The last derivation card heard for each document, with the version it
+    /// was read at.
+    derivations: BTreeMap<DocumentUri, (DocId, DerivationCard)>,
     /// The document whose report arrived last.
     latest: Option<DocumentUri>,
     /// The activity of the hub's pool that arrived last.
     activity: Option<PoolActivity>,
+    /// Whether the derivation pane shows the whole goal of the node in focus.
+    opened: bool,
 }
 
 /// What hearing a frame leaves the view to do.
@@ -139,10 +173,11 @@ impl Following
     ///   then current at the report's version, because the bus sends a change
     ///   of the account before its report. A whole account replaces the cards
     ///   held for its document, and a patch applies to them, and neither
-    ///   changes the document followed. A stack card replaces the one held for
-    ///   its document and changes nothing else. An activity frame replaces the
-    ///   activity held. A detach answers [`Heard::Detached`] and changes
-    ///   nothing; a greeting and a resync change nothing.
+    ///   changes the document followed. A stack card or a derivation card
+    ///   replaces the one held for its document and changes nothing else. An
+    ///   activity frame replaces the activity held. A detach answers
+    ///   [`Heard::Detached`] and changes nothing; a greeting, a resync and a
+    ///   trace frame change nothing.
     /// - provides: the view's one update step.
     /// - fails: never.
     /// - panics: none.
@@ -153,12 +188,13 @@ impl Following
     ///   its new version; a detach is reported. A whole account and a patch
     ///   leave the cards that the patch names, a later report leaves them
     ///   current, and an account older than the report shows in the pending
-    ///   hue. A stack card shows the stack pane. An activity frame shows the
-    ///   pool's pane.
+    ///   hue. A stack card shows the stack pane, and a derivation card the
+    ///   derivation pane. An activity frame shows the pool's pane.
     /// - witness: `follow::tests::the_view_follows_the_document_checked_last`
     /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
     /// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
     /// - witness: `follow::tests::the_view_shows_the_stack_at_the_cursor`
+    /// - witness: `follow::tests::the_view_shows_the_derivation_at_the_cursor`
     #[spec(ensures: |ret| matches!(ret, Heard::Continue | Heard::Detached))]
     #[inline]
     pub fn hear(
@@ -206,6 +242,13 @@ impl Following
                 );
                 Heard::Continue
             },
+            (&FrameScope::Document(ref document), &FrameBody::Derivation { ref card }) => {
+                drop(
+                    self.derivations
+                        .insert(document.uri.clone(), (document.clone(), card.clone())),
+                );
+                Heard::Continue
+            },
             (_, &FrameBody::Activity { ref activity }) => {
                 self.activity = Some(activity.clone());
                 Heard::Continue
@@ -218,7 +261,9 @@ impl Following
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
-                | FrameBody::Stack { .. }),
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. }
+                | FrameBody::Trace { .. }),
             ) => Heard::Continue,
         }
     }
@@ -254,7 +299,9 @@ impl Following
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
                 | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. }
                 | FrameBody::Activity { .. }
+                | FrameBody::Trace { .. }
                 | FrameBody::Detach),
             ) => false,
         };
@@ -317,13 +364,21 @@ impl Following
     ///   card follows, at the card's version, the innermost first: its `head`,
     ///   its `type` with the run its slot's parameter writes marked, its `slot`
     ///   as the slot's one-based ordinal over the arity, and the `expected`
-    ///   type, each absent when the card holds none. The activity of the pool
-    ///   comes last, at the frame's revision: a record per core with its
-    ///   `world`, its `core`, its `occupancy`, its task `now`, its `busy` time
-    ///   and the `lengths` of its tasks, then the totals record with the count
-    ///   of the `cores`, their `occupancy`, their `busy` time and their
-    ///   `lengths`. An absent world, an idle core and a window with no ended
-    ///   task leave their fields absent.
+    ///   type, each absent when the card holds none. A record per node that the
+    ///   document's derivation card shows at the stack card's offset follows,
+    ///   at the card's version, in the tree's order: its `warrant`, its
+    ///   `direction`, its `goal` set in by its depth and its `type`, each on
+    ///   one line and cut with an ellipsis to the room that the card's columns
+    ///   leave, its `rule` cut to eight columns, its `cover`, its `memo` mark,
+    ///   its `nodes` and its `wall` time. While the view is opened, the record
+    ///   of the node in focus holds one more `goal` for each line of its whole
+    ///   goal, a level deeper. With no stack card, each root shows folded. The
+    ///   activity of the pool comes last, at the frame's revision: a record per
+    ///   core with its `world`, its `core`, its `occupancy`, its task `now`,
+    ///   its `busy` time and the `lengths` of its tasks, then the totals record
+    ///   with the count of the `cores`, their `occupancy`, their `busy` time
+    ///   and their `lengths`. An absent world, an idle core and a window with
+    ///   no ended task leave their fields absent.
     /// - provides: the one model that the terminal renders, and that a pipe
     ///   renders without the activity.
     /// - fails: never.
@@ -340,6 +395,7 @@ impl Following
     /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
     /// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
     /// - witness: `follow::tests::the_view_shows_the_stack_at_the_cursor`
+    /// - witness: `follow::tests::the_view_shows_the_derivation_at_the_cursor`
     #[spec(ensures: |ret| ret.records.is_empty() == (self.latest.is_none() && self.activity.is_none()))]
     #[must_use]
     #[inline]
@@ -355,6 +411,22 @@ impl Following
                 Revision(i64::from(i32::from(stacked.version))),
             ));
         }
+        if let Some(&(ref derived, ref card)) = self
+            .latest
+            .as_ref()
+            .and_then(|uri| self.derivations.get(uri))
+            && self.reports.contains_key(&derived.uri)
+        {
+            let focus = self
+                .stacks
+                .get(&derived.uri)
+                .and_then(|&(_, ref stack)| card.focus(stack.offset));
+            frame.records.extend(derivation_records(
+                card,
+                (focus, focus.filter(|_| self.opened)),
+                Revision(i64::from(i32::from(derived.version))),
+            ));
+        }
         if let Some(ref activity) = self.activity {
             frame
                 .records
@@ -362,6 +434,139 @@ impl Following
         }
         frame
     }
+
+    /// Show the whole goal of the node in focus on the lines below it, or
+    /// stop showing it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn open(&mut self)
+    {
+        self.opened = !self.opened;
+    }
+}
+
+/// The records of the derivation pane of `card` with `focus` in focus,
+/// computed for `revision`: one per row that the pane shows, and the whole goal
+/// of the row `whole` in further fields.
+///
+/// # Specification
+/// trivial.
+fn derivation_records(
+    card: &DerivationCard,
+    (focus, whole): (Option<NodeAt>, Option<NodeAt>),
+    revision: Revision,
+) -> Vec<Record>
+{
+    let entry = |name: &'static str, datum: Datum| Field {
+        name: FieldName::from(name),
+        datum,
+        revision,
+    };
+    let room = Count(
+        card.columns
+            .0
+            .saturating_sub(FIXED)
+            .checked_div(2)
+            .unwrap_or_default(),
+    );
+    card.shown(focus)
+        .into_iter()
+        .filter_map(|at| card.rows.get(at.0).map(|row| (at, row)))
+        .map(|(at, row)| {
+            let goal = row
+                .goal
+                .as_deref()
+                .map_or(Datum::Absent, |goal| Datum::Nested {
+                    text: elided(
+                        goal.split_whitespace(),
+                        Count(room.0.saturating_sub(row.depth.0.saturating_mul(2))),
+                    ),
+                    depth: row.depth,
+                });
+            let mut fields = Vec::from([
+                entry("warrant", Datum::Warrant(row.warrant)),
+                entry("direction", Datum::Glyph(row.direction.glyph())),
+                entry("goal", goal),
+                entry(
+                    "type",
+                    row.ty.as_deref().map_or(Datum::Absent, |ty| {
+                        Datum::Text(elided(ty.split_whitespace(), room))
+                    }),
+                ),
+                entry(
+                    "rule",
+                    Datum::Text(elided(row.rule.split_whitespace(), RULE)),
+                ),
+                entry("cover", Datum::Count(row.cover)),
+                entry(
+                    "memo",
+                    row.memo
+                        .map_or(Datum::Absent, |memo| Datum::Glyph(memo.glyph())),
+                ),
+                entry("nodes", Datum::Count(row.nodes)),
+                entry("wall", Datum::Duration {
+                    time: Duration::from_nanos(row.wall.0),
+                    window: None,
+                }),
+            ]);
+            if whole == Some(at)
+                && let Some(ref goal) = row.goal
+            {
+                fields.extend(
+                    goal.lines()
+                        .filter(|line| !line.trim().is_empty())
+                        .map(|line| {
+                            let set = line
+                                .len()
+                                .saturating_sub(line.trim_start().len())
+                                .checked_div(2)
+                                .unwrap_or_default();
+                            entry("goal", Datum::Nested {
+                                text: String::from(line.trim()),
+                                depth: Count(
+                                    row.depth
+                                        .0
+                                        .saturating_add(1)
+                                        .saturating_add(u64::try_from(set).unwrap_or(u64::MAX)),
+                                ),
+                            })
+                        }),
+                );
+            }
+            Record { fields }
+        })
+        .collect()
+}
+
+/// The text of `words` on one line, one space between two words, and cut to
+/// `room` columns with an ellipsis at the end when it is longer.
+///
+/// # Specification
+/// trivial.
+fn elided(
+    words: core::str::SplitWhitespace<'_>,
+    room: Count,
+) -> String
+{
+    let mut line = String::new();
+    for (at, word) in words.enumerate() {
+        if at > 0 {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    let room = usize::try_from(room.0).unwrap_or(usize::MAX).max(2);
+    if line.chars().count() > room {
+        let cut = line
+            .char_indices()
+            .nth(room.saturating_sub(1))
+            .map_or(line.len(), |(at, _)| at);
+        line.truncate(cut);
+        line.push('…');
+    }
+    line
 }
 
 /// The records of the stack pane of `card`, computed for `revision`: one per
@@ -849,6 +1054,8 @@ fn tabled(
             | Datum::Marked { .. }
             | Datum::Bytes(_)
             | Datum::Warrant(_)
+            | Datum::Glyph(_)
+            | Datum::Nested { .. }
             | Datum::Comparison { .. } => None,
         };
         if let Some((top, unit)) = top {
@@ -990,6 +1197,14 @@ fn drawn(
             Half::Tail => timed(p99).unwrap_or(placed),
             Half::Whole => placed,
         },
+        Datum::Nested { ref text, depth } => Cell {
+            attributes: Vec::from([Attribute::Indent(depth)]),
+            ..Cell::text(place, text.clone())
+        },
+        Datum::Glyph(glyph) => Cell {
+            glyph: Some(glyph),
+            ..placed
+        },
         Datum::Absent | Datum::Bytes(_) | Datum::Comparison { .. } => placed,
     };
     let inked = !cell.text.is_empty() || cell.glyph.is_some();
@@ -1006,7 +1221,8 @@ fn drawn(
 /// any, then its rows; each cell padded to its column's width, beside the cell
 /// whose attributes name its style. A head shows its field's name and its
 /// unit, and a head that repeats the head before it, the second column of a
-/// latency, shows nothing. A cell shows its glyph and its text.
+/// latency, shows nothing. A cell shows its glyph and its text, set in by two
+/// columns for each level of the depth that its indent states.
 ///
 /// # Specification
 /// trivial.
@@ -1019,18 +1235,37 @@ pub fn laid(panes: &[Pane]) -> Vec<Vec<Painted<'_>>>
             .saturating_add(usize::from(parted))
             .saturating_add(measured(second))
     };
-    let padded = |first: &str, second: &str, width: usize, align: Align| {
-        let gap = width.saturating_sub(joined(first, second));
+    let inset = |held: &Cell| {
+        held.attributes
+            .iter()
+            .find_map(|attribute| {
+                if let Attribute::Indent(depth) = *attribute {
+                    Some(
+                        usize::try_from(depth.0)
+                            .unwrap_or(usize::MAX)
+                            .saturating_mul(2),
+                    )
+                }
+                else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    };
+    let padded = |(first, second): (&str, &str), width: usize, align: Align, set: usize| {
+        let gap = width.saturating_sub(joined(first, second).saturating_add(set));
         let mut padded = String::with_capacity(
             first
                 .len()
                 .saturating_add(second.len())
                 .saturating_add(gap)
+                .saturating_add(set)
                 .saturating_add(1),
         );
         if align == Align::Right {
             padded.extend(core::iter::repeat_n(' ', gap));
         }
+        padded.extend(core::iter::repeat_n(' ', set));
         padded.push_str(first);
         if !first.is_empty() && !second.is_empty() {
             padded.push(' ');
@@ -1075,7 +1310,10 @@ pub fn laid(panes: &[Pane]) -> Vec<Vec<Painted<'_>>>
             .chain(pane.rows.iter().flat_map(|row| {
                 row.cells
                     .iter()
-                    .map(|held| joined(held.glyph.map_or("", <&str>::from), &held.text))
+                    .map(|held| {
+                        joined(held.glyph.map_or("", <&str>::from), &held.text)
+                            .saturating_add(inset(held))
+                    })
                     .enumerate()
             }));
         for (column, width) in drawn {
@@ -1092,7 +1330,7 @@ pub fn laid(panes: &[Pane]) -> Vec<Vec<Painted<'_>>>
                 (0 .. pane.heads.len())
                     .map(|column| {
                         let (name, unit, align) = head(&pane.heads, column);
-                        (padded(name, unit, width(column), align), None)
+                        (padded((name, unit), width(column), align, 0), None)
                     })
                     .collect(),
             );
@@ -1104,10 +1342,10 @@ pub fn laid(panes: &[Pane]) -> Vec<Vec<Painted<'_>>>
                 .map(|(column, held)| {
                     (
                         padded(
-                            held.glyph.map_or("", <&str>::from),
-                            &held.text,
+                            (held.glyph.map_or("", <&str>::from), &held.text),
                             width(column),
                             held.align,
+                            inset(held),
                         ),
                         Some(held),
                     )
@@ -1141,7 +1379,8 @@ fn painted(cell: &Cell) -> Style
             | Attribute::Background(_)
             | Attribute::Border
             | Attribute::Blink
-            | Attribute::Underline(_) => style,
+            | Attribute::Underline(_)
+            | Attribute::Indent(_) => style,
         })
 }
 
@@ -1179,7 +1418,8 @@ pub fn underlined<'text>(painted: &'text Painted<'_>) -> Underlined<'text>
                 | Attribute::Opacity
                 | Attribute::Background(_)
                 | Attribute::Border
-                | Attribute::Blink => None,
+                | Attribute::Blink
+                | Attribute::Indent(_) => None,
             })
     });
     let indent = text
@@ -1345,8 +1585,10 @@ fn lines(laid: Vec<Vec<Painted<'_>>>) -> Vec<Line<'static>>
 /// - requires: nothing.
 /// - ensures: the view is drawn before every wait. A frame goes through
 ///   [`Following::hear`]; a detach, the end of the hub's stream, a quit, an
-///   interrupt or `q` complete the view; a failed input ends it faulted; every
-///   other input redraws. A channel with no sender left completes the view.
+///   interrupt or `q` complete the view; a failed input ends it faulted; the
+///   enter key shows or hides the whole goal of the derivation pane's node in
+///   focus ([`Following::open`]); every other input redraws. A channel with no
+///   sender left completes the view.
 /// - provides: the side view's event loop, the same on the terminal and under a
 ///   test's scripted bus.
 /// - fails: the backend's error when a frame cannot be drawn.
@@ -1385,9 +1627,8 @@ where
                 return Ok(Ended::Completed);
             },
             Ok(Seen::Input(Input::Failed(fault))) => return Ok(Ended::Faulted(fault)),
-            Ok(Seen::Input(
-                Input::Redraw | Input::Key(Key::Char(_) | Key::Backspace | Key::Enter),
-            )) => {},
+            Ok(Seen::Input(Input::Redraw | Input::Key(Key::Char(_) | Key::Backspace))) => {},
+            Ok(Seen::Input(Input::Key(Key::Enter))) => following.open(),
         }
     }
 }
@@ -1424,10 +1665,12 @@ fn frames<Reading>(
 /// # Specification
 /// - requires: standard input and output are a terminal; `reading` and
 ///   `writing` are the two ends of a connection whose attach was sent.
-/// - ensures: the terminal is put in raw mode on the alternate screen, the view
-///   runs as [`drive_following`] states over the bus's frames and the
-///   terminal's keys, and the terminal is restored on every ending.
-/// - provides: `gandr view` on a terminal.
+/// - ensures: the terminal is put in raw mode on the alternate screen; at
+///   [`Layers::Trace`] the hub is sent a trace frame stating the terminal's
+///   columns. The view then runs as [`drive_following`] states over the bus's
+///   frames and the terminal's keys, and the terminal is restored on every
+///   ending.
+/// - provides: `gandr view` on a terminal, and `gandr view --trace`.
 /// - fails: the terminal's error when it cannot be claimed, drawn on or
 ///   restored.
 /// - panics: none.
@@ -1454,6 +1697,7 @@ fn frames<Reading>(
 pub fn follow<Reading, Writing>(
     reading: Reading,
     writing: &mut Writing,
+    layers: Layers,
 ) -> io::Result<Ended>
 where
     Reading: BufRead + Send + 'static,
@@ -1462,7 +1706,13 @@ where
     let (seen, inbox) = channel();
     let keys = seen.clone();
     drop(thread::spawn(move || frames(reading, &seen)));
-    let ended = match ratatui::try_init() {
+    let ended = match ratatui::try_init().and_then(|terminal| {
+        if layers == Layers::Trace {
+            let columns = terminal.size()?.width;
+            subscribe(writing, Count(u64::from(columns)))?;
+        }
+        Ok(terminal)
+    }) {
         Ok(mut terminal) => {
             // The keyboard is read on its own thread, started once the
             // terminal is raw so crossterm's reader sees each key as it is
@@ -1488,6 +1738,24 @@ where
         (Ok(ended), Ok(())) => Ok(ended),
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
     }
+}
+
+/// Subscribe to the trace layer on `writing`, the view's panes `columns`
+/// wide.
+///
+/// # Specification
+/// trivial.
+fn subscribe<Writing>(
+    writing: &mut Writing,
+    columns: Count,
+) -> io::Result<()>
+where
+    Writing: Write,
+{
+    let mut line = serde_json::to_string(&RenderFrame::trace(columns)).map_err(io::Error::other)?;
+    line.push('\n');
+    writing.write_all(line.as_bytes())?;
+    writing.flush()
 }
 
 /// Send the hub a detach on `writing`.
@@ -1587,8 +1855,11 @@ mod tests
     use gandr_surface_render_remote::CoreActivity;
     use gandr_surface_render_remote::Count;
     use gandr_surface_render_remote::Datum;
+    use gandr_surface_render_remote::DerivationCard;
+    use gandr_surface_render_remote::DerivationRow;
     use gandr_surface_render_remote::DiagCard;
     use gandr_surface_render_remote::DiagnosticCode;
+    use gandr_surface_render_remote::Direction;
     use gandr_surface_render_remote::DocId;
     use gandr_surface_render_remote::DocVersion;
     use gandr_surface_render_remote::DocumentUri;
@@ -1597,6 +1868,7 @@ mod tests
     use gandr_surface_render_remote::Load;
     use gandr_surface_render_remote::MarkKind;
     use gandr_surface_render_remote::MarkSpan;
+    use gandr_surface_render_remote::Memo;
     use gandr_surface_render_remote::PoolActivity;
     use gandr_surface_render_remote::RenderFrame;
     use gandr_surface_render_remote::ReportView;
@@ -1620,6 +1892,7 @@ mod tests
     use super::drive_following;
     use super::follow_plain;
     use super::frames;
+    use super::laid;
     use super::printed;
     use super::rendering;
     use crate::app::Key;
@@ -2092,6 +2365,152 @@ mod tests
             marks(&following)
         );
         assert_eq!(breaches(&following, &current), []);
+    }
+
+    #[test]
+    fn the_view_shows_the_derivation_at_the_cursor()
+    {
+        let uri = DocumentUri::from(String::from("file:///a.gandr"));
+        let at = |version: i32| document(&uri, DocVersion::from(version));
+        let row =
+            |depth: u64, nodes: u64, goal: &str, (start, end): (usize, usize)| DerivationRow {
+                depth: Count(depth),
+                warrant: Warrant::Checked,
+                direction: Direction::Checking,
+                goal: Some(String::from(goal)),
+                ty: Some(String::from("Integer")),
+                rule: String::from("Variable"),
+                cover: Count(1),
+                memo: Some(Memo::Miss),
+                nodes: Count(nodes),
+                wall: Count(2_500),
+                span: ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)).ok(),
+            };
+        // The type's formation holds the whole declaration; the body's tree
+        // holds `a +\n  b` at 47 .. 52 and `b` at 53 .. 57, whose child folds.
+        let card = DerivationCard {
+            key: AccountKey::from(String::from("4f2a")),
+            declaration: String::from("f"),
+            columns: Count(80),
+            rows: Vec::from([
+                DerivationRow {
+                    direction: Direction::Synthesis,
+                    ty: Some(String::from("(a : Integer, b : Integer) -> -F Integer")),
+                    rule: String::from("Formation"),
+                    memo: Some(Memo::Hit),
+                    ..row(0, 1, "Integer", (0, 60))
+                },
+                row(0, 5, "\\a b => return a + b", (10, 58)),
+                row(1, 4, "return a + b", (40, 58)),
+                row(
+                    2,
+                    1,
+                    include_str!("follow/unformatted/two-line-goal.gandr").trim_end(),
+                    (47, 52),
+                ),
+                row(2, 2, "b", (53, 57)),
+                row(3, 1, "b", (55, 56)),
+            ]),
+        };
+        let stack = |offset: usize| {
+            RenderFrame::stack(at(1_i32), StackCard {
+                offset: ByteOffset::from(offset),
+                rows: Vec::new(),
+            })
+        };
+        let goals = |following: &Following| -> Vec<(u64, String)> {
+            following
+                .frame()
+                .records
+                .iter()
+                .flat_map(|record| &record.fields)
+                .filter_map(|field| {
+                    if let Datum::Nested { ref text, depth } = field.datum {
+                        Some((depth.0, text.clone()))
+                    }
+                    else {
+                        None
+                    }
+                })
+                .collect()
+        };
+        let owned = |pairs: &[(u64, &str)]| -> Vec<(u64, String)> {
+            pairs
+                .iter()
+                .map(|&(depth, text)| (depth, String::from(text)))
+                .collect()
+        };
+        let mut following = Following::default();
+        let _heard = following.hear(&RenderFrame::frame(at(1_i32), ReportView::default()));
+        let before = following.clone();
+        assert_eq!(
+            following.hear(&RenderFrame::derivation(at(1_i32), card)),
+            Heard::Continue
+        );
+        assert_eq!(
+            goals(&following),
+            owned(&[(0, "Integer"), (0, "\\a b => return a + b")]),
+            "with no cursor each root is one line"
+        );
+        let _heard = following.hear(&stack(49));
+        assert_eq!(
+            goals(&following),
+            owned(&[
+                (0, "Integer"),
+                (0, "\\a b => return a + b"),
+                (1, "return a + b"),
+                (2, "a + b"),
+                (2, "b"),
+            ]),
+            "the path to the cursor is open, its goal on one line, and the sibling's child folds"
+        );
+        let types: Vec<String> = following
+            .frame()
+            .records
+            .iter()
+            .flat_map(|record| &record.fields)
+            .filter(|field| field.name == super::FieldName::from("type"))
+            .filter_map(|field| {
+                if let Datum::Text(ref text) = field.datum {
+                    Some(text.clone())
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            types.first().map(String::as_str),
+            Some("(a : Integer, b : Int…"),
+            "a type longer than half the room left is cut with an ellipsis"
+        );
+        let set = laid(&rendering(&following.frame()).panes)
+            .into_iter()
+            .flatten()
+            .map(|(text, _)| text)
+            .find(|text| text.trim() == "a + b");
+        assert!(
+            set.is_some_and(|text| text.starts_with("    a + b")),
+            "a goal two levels deep is set in four columns"
+        );
+        assert_eq!(
+            breaches(&following, &before),
+            [],
+            "the derivation pane keeps every rule of the visual language"
+        );
+        following.open();
+        assert_eq!(
+            goals(&following).get(3 ..),
+            Some(owned(&[(2, "a + b"), (3, "a +"), (4, "b"), (2, "b")]).as_slice()),
+            "the opened focus shows each line of its whole goal a level deeper"
+        );
+        following.open();
+        let _heard = following.hear(&stack(30));
+        assert_eq!(
+            goals(&following).len(),
+            3,
+            "a cursor in the body's root and in none of its children focuses the root"
+        );
     }
 
     #[test]

@@ -3192,12 +3192,13 @@ impl<Store, Blocks> Session<Store, Blocks>
         let documentation = documentation_of(&module, own);
         let deprecations = deprecations_of(&module, &arena, own);
         // A traced tree prints its goals on demand by the names of the
-        // revision's constants.
+        // revision's constants, and places its nodes by the revision's origins,
+        // read here because the judgement takes the module.
         #[cfg(feature = "instrument")]
         let names = match sink.trace() {
-            Maybe::Present(_) => Maybe::Present(gandr_surface_diagnostics::constant_names(
-                &module,
-                module.unit().last(),
+            Maybe::Present(_) => Maybe::Present((
+                gandr_surface_diagnostics::constant_names(&module, module.unit().last()),
+                crate::trace::Places::of(&module),
             )),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
@@ -3376,7 +3377,9 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Maybe::Absent(reason) => self.account.counted(Maybe::Absent(reason)),
             }
             #[cfg(feature = "instrument")]
-            if let (Maybe::Present(column), Maybe::Present(names)) = (sink.trace(), names) {
+            if let (Maybe::Present(column), Maybe::Present((names, places))) = (sink.trace(), names)
+            {
+                column.place(&places);
                 self.account
                     .traced(column, &crate::trace::Printed::new(items, names));
             }

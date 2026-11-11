@@ -206,6 +206,9 @@ mod timings;
 mod trace;
 mod typed;
 
+#[cfg(feature = "instrument")]
+pub use gandr_core_checker::trace::untraced;
+
 pub use crate::account::Account;
 pub use crate::account::AccountRow;
 pub use crate::account::CheckerVerdict;
@@ -331,7 +334,11 @@ pub use crate::trace::Visited;
 #[cfg(feature = "instrument")]
 pub use crate::trace::Warrant;
 #[cfg(feature = "instrument")]
+pub use crate::trace::Written;
+#[cfg(feature = "instrument")]
 pub use crate::trace::underived;
+#[cfg(feature = "instrument")]
+pub use crate::trace::unplaced;
 #[cfg(feature = "instrument")]
 pub use crate::trace::unprinted;
 pub use crate::typed::spelled;

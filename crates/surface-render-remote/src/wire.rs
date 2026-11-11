@@ -19,20 +19,21 @@
 //! # Session shape
 //!
 //! The message set is the projection of one binary session,
-//! `?Attach . !Hello . μX. (!Frame . X & !Stack . X & !Activity . X & ?Resync
-//! . X & ?Detach . end)`, so a typed endpoint can carry the same frames as its
-//! messages.
+//! `?Attach . !Hello . μX. (!Frame . X & !Stack . X & !Derivation . X &
+//! !Activity . X & ?Trace . X & ?Resync . X & ?Detach . end)`, so a typed
+//! endpoint can carry the same frames as its messages.
 //!
 //! # The frame
 //!
-//! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame`, `Stack` and
-//! `Resync` are document-scoped: they carry the document's URI and the
-//! editor's version of it, the version the report describes, and a renderer
-//! paints a report only
+//! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame`, `Stack`,
+//! `Derivation` and `Resync` are document-scoped: they carry the document's
+//! URI and the editor's version of it, the version the report describes, and
+//! a renderer paints a report only
 //! while that version matches the buffer it shows, asking for a resync
 //! otherwise, so a stale report is dropped rather than painted. `Hello`, the
 //! documents a server tracks, `Activity`, the pool's activity at one tick,
-//! and `Detach` are connection-scoped. The constructors are the only way to
+//! `Trace`, the client's subscription to the trace layer, and `Detach` are
+//! connection-scoped. The constructors are the only way to
 //! build a frame, so the scope always suits the body.
 //!
 //! The wire image is `{"schema_version", "doc_uri", "doc_version", "body"}`,
@@ -57,11 +58,13 @@ use anodized::spec;
 use crate::account::AccountCard;
 use crate::account::AccountEdit;
 use crate::activity::PoolActivity;
+use crate::derivation::DerivationCard;
 use crate::present::DiagCard;
 use crate::present::GoalCard;
 use crate::present::HlSpan;
 use crate::present::MarkSpan;
 use crate::stack::StackCard;
+use crate::visual::Count;
 
 /// A render-bus wire schema version.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -293,12 +296,29 @@ pub enum FrameBody
         /// The card.
         card: StackCard,
     },
+    /// The judgement nodes of the declaration at the cursor of the document
+    /// version, whole: its goals laid out at the columns that the client's
+    /// [`Self::Trace`] stated. Document-scoped.
+    Derivation
+    {
+        /// The card.
+        card: DerivationCard,
+    },
     /// Server to client, for each tick of the hub's work ledger that changes
     /// it: the activity of the hub's pool. Connection-scoped.
     Activity
     {
         /// The activity.
         activity: PoolActivity,
+    },
+    /// Client to server: the client shows the trace layer, its panes this
+    /// many columns wide. The server traces each judgement while the client
+    /// is attached and sends the [`Self::Derivation`] at the cursor.
+    /// Connection-scoped.
+    Trace
+    {
+        /// The columns of the client's panes.
+        columns: Count,
     },
     /// Either direction: close the stream. Connection-scoped.
     Detach,
@@ -308,10 +328,11 @@ pub enum FrameBody
 ///
 /// # Specification
 /// - ensures: a [`FrameBody::Frame`], [`FrameBody::Resync`],
-///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`] or
-///   [`FrameBody::Stack`] is document-scoped and a [`FrameBody::Hello`],
-///   [`FrameBody::Activity`] or [`FrameBody::Detach`] is connection-scoped, in
-///   every frame built by the eight constructors or decoded.
+///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`], [`FrameBody::Stack`]
+///   or [`FrameBody::Derivation`] is document-scoped and a
+///   [`FrameBody::Hello`], [`FrameBody::Activity`], [`FrameBody::Trace`] or
+///   [`FrameBody::Detach`] is connection-scoped, in every frame built by the
+///   ten constructors or decoded.
 /// - provides: under the `serde` feature, the wire image `{"schema_version",
 ///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
 ///   connection-scoped frame; the decode refuses another schema version, keys
@@ -515,6 +536,39 @@ impl RenderFrame
         }
     }
 
+    /// The judgement nodes of the declaration at the cursor of `document`:
+    /// `card`, whole.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Derivation`] carrying `card` unchanged.
+    /// - provides: the card the derivation pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a card of two nodes, one placed and typed and one
+    ///   with neither, survives a round trip through JSON, and the decode
+    ///   refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Derivation { .. }),
+    ))]
+    pub const fn derivation(
+        document: DocId,
+        card: DerivationCard,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Derivation { card },
+        }
+    }
+
     /// The activity of the hub's pool at one tick.
     ///
     /// # Specification
@@ -540,6 +594,35 @@ impl RenderFrame
         Self {
             scope: FrameScope::Connection,
             body: FrameBody::Activity { activity },
+        }
+    }
+
+    /// The client's subscription to the trace layer, its panes `columns`
+    /// wide.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a connection-scoped [`FrameBody::Trace`] carrying `columns`
+    ///   unchanged.
+    /// - provides: the message that turns the trace layer on for a client.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the subscription survives a round trip through JSON
+    ///   with no routing keys, and the decode refuses it routed.
+    /// - witness: `wire::tests::the_activity_body_is_connection_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Trace { .. }),
+    ))]
+    pub const fn trace(columns: Count) -> Self
+    {
+        Self {
+            scope: FrameScope::Connection,
+            body: FrameBody::Trace { columns },
         }
     }
 
@@ -682,6 +765,8 @@ enum ConnectionBody
     Hello,
     /// [`FrameBody::Activity`].
     Activity,
+    /// [`FrameBody::Trace`].
+    Trace,
     /// [`FrameBody::Detach`].
     Detach,
 }
@@ -701,6 +786,8 @@ enum DocumentBody
     AccountPatch,
     /// [`FrameBody::Stack`].
     Stack,
+    /// [`FrameBody::Derivation`].
+    Derivation,
 }
 
 /// Why a decoded image is not a frame.
@@ -769,6 +856,7 @@ impl fmt::Display for FrameDecodeError
                 let name = match body {
                     ConnectionBody::Hello => "hello",
                     ConnectionBody::Activity => "activity",
+                    ConnectionBody::Trace => "trace",
                     ConnectionBody::Detach => "detach",
                 };
                 write!(
@@ -783,6 +871,7 @@ impl fmt::Display for FrameDecodeError
                     DocumentBody::Accounts => "accounts",
                     DocumentBody::AccountPatch => "account_patch",
                     DocumentBody::Stack => "stack",
+                    DocumentBody::Derivation => "derivation",
                 };
                 write!(f, "{name} render frames require document routing keys")
             },
@@ -829,17 +918,22 @@ impl RenderFrame
             kind = core::mem::discriminant(&wire.body),
             connection = matches!(
                 wire.body,
-                FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach
+                FrameBody::Hello { .. }
+                    | FrameBody::Activity { .. }
+                    | FrameBody::Trace { .. }
+                    | FrameBody::Detach
             ),
             routed = match wire.body {
                 FrameBody::Hello { .. } => Some(ConnectionBody::Hello),
                 FrameBody::Activity { .. } => Some(ConnectionBody::Activity),
+                FrameBody::Trace { .. } => Some(ConnectionBody::Trace),
                 FrameBody::Detach => Some(ConnectionBody::Detach),
                 FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
-                | FrameBody::Stack { .. } => None,
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. } => None,
             },
             unrouted = match wire.body {
                 FrameBody::Frame { .. } => Some(DocumentBody::Frame),
@@ -847,7 +941,11 @@ impl RenderFrame
                 FrameBody::Accounts { .. } => Some(DocumentBody::Accounts),
                 FrameBody::AccountPatch { .. } => Some(DocumentBody::AccountPatch),
                 FrameBody::Stack { .. } => Some(DocumentBody::Stack),
-                FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach => None,
+                FrameBody::Derivation { .. } => Some(DocumentBody::Derivation),
+                FrameBody::Hello { .. }
+                | FrameBody::Activity { .. }
+                | FrameBody::Trace { .. }
+                | FrameBody::Detach => None,
             },
         ],
         ensures: |ref ret| match *ret {
@@ -884,7 +982,10 @@ impl RenderFrame
         };
         let unrouted = match (&wire.body, &scope) {
             (
-                &(FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach),
+                &(FrameBody::Hello { .. }
+                | FrameBody::Activity { .. }
+                | FrameBody::Trace { .. }
+                | FrameBody::Detach),
                 &FrameScope::Connection,
             )
             | (
@@ -892,7 +993,8 @@ impl RenderFrame
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
-                | FrameBody::Stack { .. }),
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. }),
                 &FrameScope::Document(_),
             ) => None,
             (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
@@ -903,6 +1005,11 @@ impl RenderFrame
             (&FrameBody::Activity { .. }, &FrameScope::Document(_)) => {
                 return Err(FrameDecodeError::ConnectionScopedRouted {
                     body: ConnectionBody::Activity,
+                });
+            },
+            (&FrameBody::Trace { .. }, &FrameScope::Document(_)) => {
+                return Err(FrameDecodeError::ConnectionScopedRouted {
+                    body: ConnectionBody::Trace,
                 });
             },
             (&FrameBody::Detach, &FrameScope::Document(_)) => {
@@ -917,6 +1024,9 @@ impl RenderFrame
                 Some(DocumentBody::AccountPatch)
             },
             (&FrameBody::Stack { .. }, &FrameScope::Connection) => Some(DocumentBody::Stack),
+            (&FrameBody::Derivation { .. }, &FrameScope::Connection) => {
+                Some(DocumentBody::Derivation)
+            },
         };
         if let Some(body) = unrouted {
             return Err(FrameDecodeError::DocumentScopedUnrouted { body });
@@ -962,13 +1072,17 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
         (&frame.scope, &frame.body),
         (
             &FrameScope::Connection,
-            &(FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach),
+            &(FrameBody::Hello { .. }
+                | FrameBody::Activity { .. }
+                | FrameBody::Trace { .. }
+                | FrameBody::Detach),
         )
             | (&FrameScope::Document(_), &(FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
-                | FrameBody::Stack { .. })),
+                | FrameBody::Stack { .. }
+                | FrameBody::Derivation { .. })),
     )))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1004,6 +1118,10 @@ mod tests
     use crate::activity::Load;
     use crate::activity::PoolActivity;
     use crate::activity::TaskKind;
+    use crate::derivation::DerivationCard;
+    use crate::derivation::DerivationRow;
+    use crate::derivation::Direction;
+    use crate::derivation::Memo;
     use crate::present::ByteOffset;
     use crate::present::ByteRange;
     use crate::present::GoalCard;
@@ -1014,6 +1132,7 @@ mod tests
     use crate::visual::Count;
     use crate::visual::SampleUnit;
     use crate::visual::Samples;
+    use crate::visual::Warrant;
 
     /// An editor version, written as a count.
     #[repr(transparent)]
@@ -1322,6 +1441,48 @@ mod tests
                 }),
                 super::DocumentBody::Stack,
             ),
+            (
+                RenderFrame::derivation(document(Version(4)), DerivationCard {
+                    key: AccountKey::from(alloc::string::String::from("k")),
+                    declaration: alloc::string::String::from("x"),
+                    columns: Count(80),
+                    rows: vec![
+                        DerivationRow {
+                            depth: Count(0),
+                            warrant: Warrant::Replayed,
+                            direction: Direction::Checking,
+                            goal: Some(alloc::string::String::from("\\n => n")),
+                            ty: Some(alloc::string::String::from("(n : Nat) -> -F Nat")),
+                            rule: alloc::string::String::from("Lambda"),
+                            cover: Count(0),
+                            memo: Some(Memo::Miss),
+                            nodes: Count(2),
+                            wall: Count(1_500),
+                            span: Some(
+                                ByteRange::new(
+                                    ByteOffset::from(8_usize),
+                                    ByteOffset::from(15_usize),
+                                )
+                                .expect("an ordered range"),
+                            ),
+                        },
+                        DerivationRow {
+                            depth: Count(1),
+                            warrant: Warrant::Refused,
+                            direction: Direction::Synthesis,
+                            goal: None,
+                            ty: None,
+                            rule: alloc::string::String::from("Variable"),
+                            cover: Count(1),
+                            memo: None,
+                            nodes: Count(1),
+                            wall: Count(200),
+                            span: None,
+                        },
+                    ],
+                }),
+                super::DocumentBody::Derivation,
+            ),
         ];
         for (frame, body) in frames {
             let decoded: RenderFrame =
@@ -1387,6 +1548,20 @@ mod tests
             RenderFrame::from_wire(wire),
             Err(super::FrameDecodeError::ConnectionScopedRouted {
                 body: super::ConnectionBody::Activity
+            })
+        );
+        let trace = RenderFrame::trace(Count(96));
+        let decoded: RenderFrame =
+            serde_json::from_value(image(&trace)).expect("a trace frame decodes");
+        assert_eq!(decoded, trace, "the subscription survives the round trip");
+        let mut routed = image(&trace);
+        routed["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        routed["doc_version"] = serde_json::Value::from(2_i32);
+        let wire = serde_json::from_value(routed).expect("well-typed wire fields");
+        assert_eq!(
+            RenderFrame::from_wire(wire),
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Trace
             })
         );
     }

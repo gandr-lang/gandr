@@ -48,6 +48,7 @@ struct Scene
 ///   one column's width fails the comparison with the lines that moved.
 /// - witness: `tests::captures::the_warrants_scene_renders_as_its_captures`
 /// - witness: `tests::captures::the_schedule_scene_renders_as_its_capture`
+/// - witness: `tests::captures::the_derivation_scene_renders_as_its_captures`
 fn captured(scene: Scene)
 {
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -140,5 +141,18 @@ fn the_stack_scene_renders_as_its_captures()
     captured(Scene {
         stem: "stack",
         leads: &["head"],
+    });
+}
+
+/// The derivation scene: the derivation pane of a traced hub at the editor's
+/// cursor, at a literal argument of a nested call, after the cursor moves to
+/// the outer call's argument in the same declaration, and after it moves into
+/// the body of another declaration.
+#[test]
+fn the_derivation_scene_renders_as_its_captures()
+{
+    captured(Scene {
+        stem: "derivation",
+        leads: &["warrant"],
     });
 }

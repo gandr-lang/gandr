@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="938" height="280" viewBox="0 0 938 280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" xml:space="preserve">
+<style>
+svg { color: #1f2328; --gandr-warrant-pending: #6e7781; --gandr-warrant-checked: #1f2328; --gandr-warrant-replayed: #1a7f37; --gandr-warrant-refused: #cf222e; --gandr-warrant-withheld: #9a6700; }
+@media (prefers-color-scheme: dark) { svg { color: #e6edf3; --gandr-warrant-pending: #8b949e; --gandr-warrant-checked: #e6edf3; --gandr-warrant-replayed: #3fb950; --gandr-warrant-refused: #f85149; --gandr-warrant-withheld: #d29922; } }
+text { fill: currentColor; }
+.gandr-warrant-pending { fill: #6e7781; }
+.gandr-warrant-checked { fill: #1f2328; }
+.gandr-warrant-replayed { fill: #1a7f37; }
+.gandr-warrant-refused { fill: #cf222e; }
+.gandr-warrant-withheld { fill: #9a6700; }
+@supports (fill: var(--gandr-warrant-checked)) {
+.gandr-warrant-pending { fill: var(--gandr-warrant-pending); }
+.gandr-warrant-checked { fill: var(--gandr-warrant-checked); }
+.gandr-warrant-replayed { fill: var(--gandr-warrant-replayed); }
+.gandr-warrant-refused { fill: var(--gandr-warrant-refused); }
+.gandr-warrant-withheld { fill: var(--gandr-warrant-withheld); }
+}
+</style>
+<text y="25"><tspan x="10">warrant</tspan><tspan x="82">direction</tspan><tspan x="172">goal</tspan><tspan x="334">type</tspan><tspan x="631">rule</tspan><tspan x="712">cover</tspan><tspan x="766">memo</tspan><tspan x="811">nodes</tspan><tspan x="865">wall µs</tspan></text>
+<text y="45"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇒</tspan><tspan x="172">() -&gt; Integer</tspan><tspan x="631">form</tspan><tspan x="748">0</tspan><tspan x="766">·</tspan><tspan x="847">3</tspan><tspan x="892">2.29</tspan></text>
+<text y="65"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇐</tspan><tspan x="172">&lt;thunk&gt;</tspan><tspan x="334">() -&gt; Integer</tspan><tspan x="631">Thunk</tspan><tspan x="748">0</tspan><tspan x="766">·</tspan><tspan x="838">17</tspan><tspan x="892">44.9</tspan></text>
+<text y="85"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇐</tspan><tspan x="172">&lt;thunk&gt;</tspan><tspan x="334">() -&gt; Integer</tspan><tspan x="631">Thunk</tspan><tspan x="748">0</tspan><tspan x="766">·</tspan><tspan x="838">19</tspan><tspan x="892">49.5</tspan></text>
+<text y="105"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇐</tspan><tspan x="190">f 1 (g 2 3)</tspan><tspan x="334">-F Integer</tspan><tspan x="631">Bind</tspan><tspan x="748">0</tspan><tspan x="838">18</tspan><tspan x="892">47.8</tspan></text>
+<text y="125"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇒</tspan><tspan x="208">g 2 3</tspan><tspan x="334">-F Integer</tspan><tspan x="631">Applica…</tspan><tspan x="748">0</tspan><tspan x="847">8</tspan><tspan x="892">20.4</tspan></text>
+<text y="145"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇐</tspan><tspan x="208">f 1 ?</tspan><tspan x="334">-F Integer</tspan><tspan x="631">Applica…</tspan><tspan x="748">0</tspan><tspan x="847">9</tspan><tspan x="892">24.0</tspan></text>
+<text y="165"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇒</tspan><tspan x="226">f 1 ?</tspan><tspan x="334">-F Integer</tspan><tspan x="631">Applica…</tspan><tspan x="748">0</tspan><tspan x="847">8</tspan><tspan x="892">21.0</tspan></text>
+<text y="185"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇒</tspan><tspan x="244">f 1</tspan><tspan x="334">Integer -&gt; -F Integer</tspan><tspan x="631">Applica…</tspan><tspan x="748">0</tspan><tspan x="847">5</tspan><tspan x="892">10.7</tspan></text>
+<text y="205"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇒</tspan><tspan x="262">force f</tspan><tspan x="334">Integer -&gt; Integer -&gt; -F Integer</tspan><tspan x="631">Force</tspan><tspan x="748">0</tspan><tspan x="847">2</tspan><tspan x="892">3.04</tspan></text>
+<text y="225"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇐</tspan><tspan x="262">1</tspan><tspan x="334">Integer</tspan><tspan x="631">Literal</tspan><tspan x="748">0</tspan><tspan x="766">·</tspan><tspan x="847">2</tspan><tspan x="892">4.66</tspan></text>
+<text y="245"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇒</tspan><tspan x="280">1</tspan><tspan x="334">Integer</tspan><tspan x="631">Literal</tspan><tspan x="748">0</tspan><tspan x="766">·</tspan><tspan x="847">1</tspan><tspan x="883">0.291</tspan></text>
+<text y="265"><tspan x="10" class="gandr-warrant-replayed">✓✓</tspan><tspan x="82">⇐</tspan><tspan x="244">?</tspan><tspan x="334">Integer</tspan><tspan x="631">Variable</tspan><tspan x="748">1</tspan><tspan x="766">·</tspan><tspan x="847">2</tspan><tspan x="892">6.37</tspan></text>
+</svg>

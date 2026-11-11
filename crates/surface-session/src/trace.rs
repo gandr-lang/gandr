@@ -13,7 +13,9 @@
 //! order the machine met the goals, each at its depth. A node keeps the
 //! goal's node and its type by their arena ids, the memo's mark, the cover,
 //! the count of the nodes under it and itself, and the wall from its start to
-//! its finish. An item that the pass adopts runs no judgement, and its key
+//! its finish. Before the account takes the trees, the column reads where the
+//! lowering wrote each node, counted from the first byte of its declaration.
+//! An item that the pass adopts runs no judgement, and its key
 //! keeps the tree it holds from before. The account keeps each tree beside
 //! the program of the revision that judged it and the names of its
 //! constants, so a face prints a goal and its type on demand at the width it
@@ -38,7 +40,9 @@
 //! so. A goal under binders is printed with the names of the constants and
 //! with no names for the binders. A goal that the memo answered keeps no type
 //! that its rule handed, because the machine hands the memo's answer and not
-//! a rule's.
+//! a rule's. An adopted item keeps the places of its tree: an edit inside its
+//! declaration that keeps its content, such as a comment, moves its text and
+//! not its nodes until a judgement folds the item again.
 //!
 //! # References
 //!
@@ -68,12 +72,15 @@ use gandr_core_fork::activity::Slots;
 use gandr_core_incremental::Program;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_dispatcher::KernelTier;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::OriginTable;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Style;
+use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
 use crate::account::KernelState;
@@ -109,6 +116,19 @@ quenchant_shape::reason_enum! {
             Untyped,
             /// The printer refused the layout.
             Unpresentable,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a node holds no place in the text of its declaration.
+    pub mod unplaced {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The lowering kept no origin for the node, or none inside the
+            /// text of its declaration.
+            Unoriginated,
         }
     }
 }
@@ -165,6 +185,45 @@ impl From<Visited> for u32
     fn from(visited: Visited) -> Self
     {
         visited.0
+    }
+}
+
+/// The bytes that a node's goal is written at, counted from the first byte of
+/// its declaration: so an edit before the declaration moves no node.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Written
+{
+    /// The first byte, from the declaration's first byte.
+    start: u32,
+    /// The byte after the last, from the declaration's first byte.
+    end: u32,
+}
+
+impl Written
+{
+    /// The first byte, from the declaration's first byte.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn start(self) -> ByteOffset
+    {
+        ByteOffset::from(usize::try_from(self.start).unwrap_or(usize::MAX))
+    }
+
+    /// The byte after the last, from the declaration's first byte.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn end(self) -> ByteOffset
+    {
+        ByteOffset::from(usize::try_from(self.end).unwrap_or(usize::MAX))
     }
 }
 
@@ -229,6 +288,8 @@ pub struct DerivationNode
     finished: Nanos,
     /// Whether a rule refused inside the goal.
     refused: bool,
+    /// Where the goal's node is written in its declaration.
+    written: Maybe<Written, unplaced::Absent>,
 }
 
 impl DerivationNode
@@ -299,6 +360,17 @@ impl DerivationNode
     pub const fn visited(&self) -> Visited
     {
         self.visited
+    }
+
+    /// Where the goal's node is written, counted from the first byte of its
+    /// declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn written(&self) -> Maybe<Written, unplaced::Absent>
+    {
+        self.written
     }
 
     /// The wall of the goal, from its start to its finish.
@@ -446,6 +518,35 @@ impl TraceColumn
     -> Vec<(ConstantIndex, Maybe<DerivationTree, underived::Absent>)>
     {
         core::mem::take(&mut self.folded)
+    }
+
+    /// Read where each node of each tree that the column folded is written,
+    /// from `places`, those of the revision whose items the passes judged:
+    /// counted from the first byte of the node's declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn place(
+        &mut self,
+        places: &Places,
+    )
+    {
+        for &mut (constant, ref mut tree) in &mut self.folded {
+            let (&mut Maybe::Present(ref mut tree), Some(&(_, start))) = (
+                tree,
+                places
+                    .starts
+                    .binary_search_by_key(&constant, |&(at, _)| at)
+                    .ok()
+                    .and_then(|found| places.starts.get(found)),
+            )
+            else {
+                continue;
+            };
+            for node in &mut tree.nodes {
+                node.written = placed(&places.origins, node.node, start);
+            }
+        }
     }
 
     /// Fold `buffer`, the steps of the item at `constant`, into the item's
@@ -607,6 +708,76 @@ const fn started(
         started: clock,
         finished: clock,
         refused: false,
+        written: Maybe::Absent(unplaced::Absent::Unoriginated),
+    }
+}
+
+/// Where `node` is written by `origins`, counted from `start`, the first byte
+/// of its declaration.
+///
+/// # Specification
+/// trivial.
+fn placed(
+    origins: &OriginTable,
+    node: CoreNode,
+    start: ByteOffset,
+) -> Maybe<Written, unplaced::Absent>
+{
+    let origin = match node {
+        CoreNode::Term(TermNode::Value(id)) => origins.value(id),
+        CoreNode::Term(TermNode::Computation(id)) => origins.computation(id),
+        CoreNode::Type(TypeNode::Value(id)) => origins.value_type(id),
+        CoreNode::Type(TypeNode::Computation(id)) => origins.comp_type(id),
+    };
+    let Maybe::Present(origin) = origin
+    else {
+        return Maybe::Absent(unplaced::Absent::Unoriginated);
+    };
+    let span = origin.span();
+    let from = usize::from(start);
+    let offset = |at: ByteOffset| {
+        let at = usize::from(at).checked_sub(from)?;
+        u32::try_from(at).ok()
+    };
+    match (offset(span.start()), offset(span.end())) {
+        (Some(start), Some(end)) => Maybe::Present(Written { start, end }),
+        (None, _) | (_, None) => Maybe::Absent(unplaced::Absent::Unoriginated),
+    }
+}
+
+/// Where one revision's lowering wrote its nodes, and where each of its
+/// declarations starts: what a column reads to place the nodes of the trees
+/// that it folds, kept apart because the judgement takes the module.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub struct Places
+{
+    /// The origin of each node that the revision's lowering minted.
+    origins: OriginTable,
+    /// The first byte of each declaration, ascending by its constant.
+    starts: Vec<(ConstantIndex, ByteOffset)>,
+}
+
+impl Places
+{
+    /// The places of the revision that `module` lowers.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of(module: &LoweredModule<'_>) -> Self
+    {
+        let mut starts: Vec<(ConstantIndex, ByteOffset)> = module
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.constant(), declaration.span().start()))
+            .collect();
+        starts.sort_unstable_by_key(|&(constant, _)| constant);
+        Self {
+            origins: module.origins().clone(),
+            starts,
+        }
     }
 }
 
