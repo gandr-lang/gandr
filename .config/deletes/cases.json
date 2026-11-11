@@ -139,6 +139,7 @@
           "author": "agent-shade",
           "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
           "changed": ["crates/vd/tests/directed.rs"]
         }
       ],
@@ -171,6 +172,7 @@
           "author": "silvanshade",
           "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
           "changed": ["crates/vd/tests/directed.rs"]
         }
       ],
@@ -203,12 +205,87 @@
           "author": "agent-shade",
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
           "changed": ["crates/vd/src/hom.rs"]
         }
       ],
       "architects": { "agent-shade": "(architect" }
     },
-    "output": "the architect's sign-off of `v::hom::DirectedHom::new` names no commit that the head keeps for its files; the architect signs again on the new head"
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the patch of `crates/vd/src/hom.rs` moves; the architect reads that and signs again"
+  },
+  {
+    "name": "#6852: the patch holds, and a reader that joins at the base and a changed record of the item turn the sign-off stale, named",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
+          "changed": [],
+          "joined": { "v::hom::DirectedHom::new": ["ledger/purposes.sql"] },
+          "reshaped": ["v::hom::DirectedHom::new"]
+        }
+      ],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: `ledger/purposes.sql` joins the readers of the item at the base; the record of the item at the base changes; the architect reads that and signs again"
+  },
+  {
+    "name": "#6852: a signed commit that no fetch reaches, or that shares no commit with the base, never holds, and the refusal names the cause",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n|`v::hom::DirectedHom::old`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n",
+      "title": "",
+      "mode": "rows",
+      "left": [],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": {
+        "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"],
+        "v::hom::DirectedHom::old": ["crates/vd/src/hom.rs"]
+      },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": null,
+          "fork": null,
+          "changed": null,
+          "joined": {},
+          "reshaped": []
+        },
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::old` at 4d75302a6: signed.",
+          "sha": "4d75302a6bbbb",
+          "fork": null,
+          "changed": null,
+          "joined": {},
+          "reshaped": []
+        }
+      ],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the commit that it names is not in this clone, and no fetch reaches it; the architect reads that and signs again\nthe architect's sign-off of `v::hom::DirectedHom::old` is stale: no commit of this clone joins the signed commit and the base, so neither half binds; the architect reads that and signs again"
   },
   {
     "name": "#6817: a comment that says signed with no architect heading signs nothing",
@@ -227,6 +304,7 @@
           "author": "agent-shade",
           "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
           "changed": []
         }
       ],
@@ -259,6 +337,7 @@
           "author": "agent-shade",
           "body": "## Deletion sign-off (architect)\n\n`gandr_vd::hom::DirectedHom` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
           "changed": []
         }
       ],

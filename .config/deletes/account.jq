@@ -47,11 +47,25 @@ def signer($c; $architects):
 
 # Whether the comment `$c` signs the row item `$item` for the files `$files`:
 # an architect's comment that names the item and a commit, says `signed`,
-# and sees no later change of those files.
+# and sees no later move of either half (#6852). The change's half is the
+# patch of each of those files. The item's half is the set of its readers and
+# its record at the base.
 def signs($c; $item; $files; $architects):
   signer($c; $architects)
   and ($c.body | test("\\bsigned\\b"))
   and ($c.body | contains($item))
-  and $c.sha != null and $c.changed != null
-  and ([$files[] | IN($c.changed[])] | any | not);
+  and $c.sha != null and $c.fork != null and $c.changed != null
+  and ([$files[] | IN($c.changed[])] | any | not)
+  and ((($c.joined // {})[$item] // []) | length == 0)
+  and ((($c.reshaped // []) | index($item)) == null);
+
+# What turned the sign-off `$c` of `$item` stale, one phrase for each move.
+def moves($c; $item; $files):
+  if $c.sha == null then "the commit that it names is not in this clone, and no fetch reaches it"
+  elif $c.fork == null then "no commit of this clone joins the signed commit and the base, so neither half binds"
+  else
+    ([$files[] | select(IN($c.changed[]))] | map("the patch of `\(.)` moves")[]),
+    ((($c.joined // {})[$item] // []) | map("`\(.)` joins the readers of the item at the base")[]),
+    (if (($c.reshaped // []) | index($item)) != null then "the record of the item at the base changes" else empty end)
+  end;
 

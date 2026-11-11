@@ -25,8 +25,11 @@
 #   files       for each `deleted` row's item, the files of the change that
 #               name it at the base
 #   signoffs    each comment of the issues the body works that says `signed`:
-#               {author, body, sha, changed}; `changed` holds the files that
-#               change from `sha` to the head, or null when `sha` is no commit
+#               {author, body, sha, fork, changed, joined, reshaped};
+#               `changed` holds the files whose patch moves since `sha`, or
+#               null when `sha` is no commit; `joined` maps each item to the
+#               files that join its readers at the base since `fork`, and
+#               `reshaped` lists the items whose record at the base changes
 #   architects  for each login whose comments sign, the heading text that its
 #               comment must hold, or "" when it needs none
 #
@@ -91,11 +94,12 @@ include "account";
                     | ($item | startswith($lib + "::"))
                       or any($in.left[] | select(covers($item; .)); (.file // "") | startswith("crates/" + $dir + "/")))
                 | "no other crate names `\(.dir)`, so its items wait for their consumer: the row of `\($item)` is refused, and the dead-weight row reads `find the consumer`"),
-              # The architect's sign-off at a head that the change keeps.
+              # The architect's sign-off, with both halves still in place.
               (($in.files[$item] // []) as $files
                | select([$in.signoffs[]? as $c | signs($c; $item; $files; $in.architects)] | any | not)
-               | if [$in.signoffs[]? | select(signer(.; $in.architects) and (.body | contains($item)) and (.body | test("\\bsigned\\b")))] | length > 0 then
-                   "the architect's sign-off of `\($item)` names no commit that the head keeps for its files; the architect signs again on the new head"
+               | [$in.signoffs[]? | select(signer(.; $in.architects) and (.body | contains($item)) and (.body | test("\\bsigned\\b")))] as $own
+               | if ($own | length) > 0 then
+                   "the architect's sign-off of `\($item)` is stale: \([moves($own[-1]; $item; $files)] | join("; ")); the architect reads that and signs again"
                  else
                    "the `deleted` row of `\($item)` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
                  end)

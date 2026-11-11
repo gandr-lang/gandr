@@ -53,6 +53,7 @@ cleanup() {
 trap cleanup EXIT
 source "$root/.config/gh/repo.bash"
 source "$here/digests.bash"
+source "$here/moved.bash"
 repo=$(repo_name)
 SECONDS=0
 
@@ -84,7 +85,8 @@ files=$(while IFS= read -r item; do
 done < "$scratch/deleted" | jq -s -c 'add // {}')
 
 # The architect's sign-offs: each comment that says `signed` on an issue the
-# body works, with the commit it names and the files changed since.
+# body works, with the commit it names, the base that commit forks from, and
+# the files whose own patch moved since (`moved.bash`, #6852).
 mapfile -t issues < <(jq -Rrs -L "$root/.config/claims" 'include "targets"; targets(working) | unique[]' "$body")
 signoffs=$(for issue in "${issues[@]}"; do
   gh api --paginate "repos/$repo/issues/$issue/comments?per_page=100" \
@@ -98,10 +100,21 @@ done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
       break
     fi
   done
+  # The fork of the signed commit with the base. The merge queue's clone is
+  # shallow, and a signed commit fetched at depth 1 shares no commit with it,
+  # so the check deepens both by 500 commits once. A sign-off with no fork
+  # binds neither half, and the rule reads it as stale with that cause.
+  fork=
   if [[ -n $sha ]]; then
-    git diff --no-renames --name-only "$sha" "$head" | jq -R . | jq -s -c --argjson c "$comment" --arg sha "$sha" '$c + {sha: $sha, changed: .}'
+    fork=$(git merge-base "$sha" "$base" 2> /dev/null) \
+      || { git fetch --quiet --deepen=500 origin "$sha" "$base" 2> /dev/null; fork=$(git merge-base "$sha" "$base" 2> /dev/null); } \
+      || fork=
+  fi
+  if [[ -n $fork ]]; then
+    moved "$fork" "$sha" "$base" "$head" | jq -R . | jq -s -c --argjson c "$comment" --arg sha "$sha" --arg fork "$fork" \
+      '$c + {sha: $sha, fork: $fork, changed: ., joined: {}, reshaped: []}'
   else
-    jq -c '. + {sha: null, changed: null}' <<< "$comment"
+    jq -c --arg sha "$sha" '. + {sha: (if $sha == "" then null else $sha end), fork: null, changed: null, joined: {}, reshaped: []}' <<< "$comment"
   fi
 done | jq -s -c .)
 
@@ -250,6 +263,31 @@ if [[ $mode == full ]]; then
     done
   done | jq -R . | jq -s -c 'unique')
 fi
+
+# The item's half of each sign-off (#6852): the files that join the readers
+# of each deleted item below the signed commit, and the items whose record
+# at the base changes below it. The record read needs the base's records, so
+# the merge queue's rows-only run binds the readers alone.
+signoffs=$(jq -c '.[]' <<< "$signoffs" | while IFS= read -r c; do
+  fork=$(jq -r '.fork // empty' <<< "$c")
+  if [[ -z $fork || $fork == "$(git rev-parse "$base")" ]]; then printf '%s\n' "$c"; continue; fi
+  joins='{}' reshapes='[]'
+  while IFS= read -r item; do
+    [[ -n $item ]] || continue
+    jq -e --arg item "$item" '.body | contains($item)' <<< "$c" > /dev/null || continue
+    name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
+    joins=$(joined "$fork" "$base" "$name" | jq -R . | jq -s -c --argjson j "$joins" --arg item "$item" '$j + {($item): .}')
+    [[ -f $scratch/items-base.json ]] || continue
+    while IFS=$'\t' read -r file start end; do
+      if reshaped "$fork" "$base" "$file" "$start" "$end"; then
+        reshapes=$(jq -c --arg item "$item" '. + [$item] | unique' <<< "$reshapes")
+        break
+      fi
+    done < <(jq -r -L "$root/.config/claims" -L "$here" --arg item "$item" \
+      'include "account"; .[] | select(.file != null and covers($item; {id, names: [.id]})) | [.file, .start, .end] | @tsv' "$scratch/items-base.json")
+  done < "$scratch/deleted"
+  jq -c --argjson j "$joins" --argjson r "$reshapes" '. + {joined: $j, reshaped: $r}' <<< "$c"
+done | jq -s -c .)
 
 # The readings go to jq as files: the held set names each file of the corpus,
 # past the kernel's limit for one argument.
