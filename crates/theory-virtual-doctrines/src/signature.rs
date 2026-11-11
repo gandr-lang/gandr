@@ -61,16 +61,6 @@ impl SignatureRef
     {
         Self(Tree::leaf(SignatureKind::Single(id)))
     }
-    /// The terminal signature.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn unit() -> Self
-    {
-        Self(Tree::leaf(SignatureKind::Product(0_usize.into())))
-    }
     /// Build a finite product in factor order.
     ///
     /// # Specification
