@@ -12,17 +12,19 @@
 //! underlined. A view of the trace layer then shows the derivation pane: one
 //! record per judgement node that the pane shows at the cursor, each goal set
 //! in by its depth, the node in focus and its ancestors open and every other
-//! node folded to one line. A key shows the whole goal of the node in focus
-//! on the lines below it. The activity pane comes last: one record per core
-//! of the pool, then the totals record. [`rendering`] lays the frame out as
-//! the visual language's rendering data, which every rule of
-//! `gandr_surface_render_remote::RULES` checks. A painter then puts the cells
-//! on the terminal or on a pipe and adds nothing: a column is as wide as its
-//! widest cell, one space parts two columns, and a hue takes the theme's
-//! colour for its warrant. The terminal keeps the activity pane at the foot of
-//! the screen, so a long report never pushes it out of view. A pipe prints the
-//! document alone, because a pipe only appends and a live pane changes in
-//! place: the stack pane and the derivation pane move with the cursor.
+//! node folded to one line. A key opens the node in focus: the view asks the
+//! hub for its whole goal, which the card does not hold, and shows it on the
+//! lines below the node once the hub answers. The activity pane comes last:
+//! one record per core of the pool, then the totals record. [`rendering`]
+//! lays the frame out as the visual language's rendering data, which every
+//! rule of `gandr_surface_render_remote::RULES` checks. A painter then puts
+//! the cells on the terminal or on a pipe and adds nothing: a column is as
+//! wide as its widest cell, one space parts two columns, and a hue takes the
+//! theme's colour for its warrant. The terminal keeps the activity pane at the
+//! foot of the screen, so a long report never pushes it out of view. A pipe
+//! prints the document alone, because a pipe only appends and a live pane
+//! changes in place: the stack pane and the derivation pane move with the
+//! cursor.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -40,6 +42,7 @@ use std::thread;
 
 use anodized::spec;
 use gandr_surface_render_remote::AccountCard;
+use gandr_surface_render_remote::AccountKey;
 use gandr_surface_render_remote::Align;
 use gandr_surface_render_remote::Attribute;
 use gandr_surface_render_remote::ByteOffset;
@@ -69,6 +72,7 @@ use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_render_remote::Rendering;
 use gandr_surface_render_remote::ReportView;
 use gandr_surface_render_remote::Revision;
+use gandr_surface_render_remote::Room;
 use gandr_surface_render_remote::Row;
 use gandr_surface_render_remote::SampleUnit;
 use gandr_surface_render_remote::SourceText;
@@ -78,6 +82,7 @@ use gandr_surface_render_remote::Unit;
 use gandr_surface_render_remote::WARRANTS;
 use gandr_surface_render_remote::Warrant;
 use gandr_surface_render_remote::apply_account_edits;
+use gandr_surface_render_remote::elided;
 use gandr_surface_repl::Ended;
 use gandr_surface_repl::Fault;
 use ratatui::Terminal;
@@ -100,11 +105,6 @@ use crate::theme::hue_of_warrant;
 /// record that the side view draws as names beside their data.
 const DOCUMENT: &str = "uri";
 
-/// The columns of a derivation pane that a goal and its type do not take:
-/// the warrant, the direction, the rule, the cover, the memo, the nodes, the
-/// wall and the spaces between the nine columns.
-const FIXED: u64 = 35;
-
 /// The columns that a rule's short name takes in a derivation pane.
 const RULE: Count = Count(8);
 
@@ -120,12 +120,26 @@ pub enum Layers
     Trace,
 }
 
+/// One node of a document's derivation card: the document, the card's key and
+/// the node's place.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Opening
+{
+    /// The document.
+    uri: DocumentUri,
+    /// The key of the card.
+    key: AccountKey,
+    /// The node.
+    at: NodeAt,
+}
+
 /// What the side view knows of the documents it heard and of the hub's pool.
 ///
 /// It holds the last report, the account, the stack card and the derivation
 /// card of each document, which one the hub checked last, the last activity of
-/// the pool, and whether the derivation pane shows the whole goal of the node
-/// in focus.
+/// the pool, whether the derivation pane shows the whole goal of the node in
+/// focus, the node whose whole goal it asked for last, and the whole goal that
+/// the hub answered last.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Following
 {
@@ -146,6 +160,10 @@ pub struct Following
     activity: Option<PoolActivity>,
     /// Whether the derivation pane shows the whole goal of the node in focus.
     opened: bool,
+    /// The node whose whole goal the view asked the hub for last.
+    asked: Option<Opening>,
+    /// The whole goal that the hub answered last, with its node.
+    whole: Option<(Opening, String)>,
 }
 
 /// What hearing a frame leaves the view to do.
@@ -173,11 +191,14 @@ impl Following
     ///   then current at the report's version, because the bus sends a change
     ///   of the account before its report. A whole account replaces the cards
     ///   held for its document, and a patch applies to them, and neither
-    ///   changes the document followed. A stack card or a derivation card
-    ///   replaces the one held for its document and changes nothing else. An
-    ///   activity frame replaces the activity held. A detach answers
-    ///   [`Heard::Detached`] and changes nothing; a greeting, a resync and a
-    ///   trace frame change nothing.
+    ///   changes the document followed. A stack card replaces the one held for
+    ///   its document and changes nothing else. A derivation card replaces the
+    ///   one held for its document and forgets the node asked for and the whole
+    ///   goal held for that document, whose tree it may change. An answer to an
+    ///   open frame holds its whole goal for its node, or holds none when it
+    ///   carries none. An activity frame replaces the activity held. A detach
+    ///   answers [`Heard::Detached`] and changes nothing; a greeting, a resync,
+    ///   an open frame and a trace frame change nothing.
     /// - provides: the view's one update step.
     /// - fails: never.
     /// - panics: none.
@@ -247,6 +268,40 @@ impl Following
                     self.derivations
                         .insert(document.uri.clone(), (document.clone(), card.clone())),
                 );
+                if self
+                    .asked
+                    .as_ref()
+                    .is_some_and(|asked| asked.uri == document.uri)
+                {
+                    self.asked = None;
+                }
+                if self
+                    .whole
+                    .as_ref()
+                    .is_some_and(|&(ref held, _)| held.uri == document.uri)
+                {
+                    self.whole = None;
+                }
+                Heard::Continue
+            },
+            (
+                &FrameScope::Document(ref document),
+                &FrameBody::Opened {
+                    ref key,
+                    at,
+                    ref goal,
+                },
+            ) => {
+                self.whole = goal.as_ref().map(|goal| {
+                    (
+                        Opening {
+                            uri: document.uri.clone(),
+                            key: key.clone(),
+                            at,
+                        },
+                        goal.clone(),
+                    )
+                });
                 Heard::Continue
             },
             (_, &FrameBody::Activity { ref activity }) => {
@@ -263,6 +318,8 @@ impl Following
                 | FrameBody::AccountPatch { .. }
                 | FrameBody::Stack { .. }
                 | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. }
                 | FrameBody::Trace { .. }),
             ) => Heard::Continue,
         }
@@ -300,6 +357,8 @@ impl Following
                 | FrameBody::AccountPatch { .. }
                 | FrameBody::Stack { .. }
                 | FrameBody::Derivation { .. }
+                | FrameBody::Open { .. }
+                | FrameBody::Opened { .. }
                 | FrameBody::Activity { .. }
                 | FrameBody::Trace { .. }
                 | FrameBody::Detach),
@@ -370,15 +429,16 @@ impl Following
     ///   `direction`, its `goal` set in by its depth and its `type`, each on
     ///   one line and cut with an ellipsis to the room that the card's columns
     ///   leave, its `rule` cut to eight columns, its `cover`, its `memo` mark,
-    ///   its `nodes` and its `wall` time. While the view is opened, the record
-    ///   of the node in focus holds one more `goal` for each line of its whole
-    ///   goal, a level deeper. With no stack card, each root shows folded. The
-    ///   activity of the pool comes last, at the frame's revision: a record per
-    ///   core with its `world`, its `core`, its `occupancy`, its task `now`,
-    ///   its `busy` time and the `lengths` of its tasks, then the totals record
-    ///   with the count of the `cores`, their `occupancy`, their `busy` time
-    ///   and their `lengths`. An absent world, an idle core and a window with
-    ///   no ended task leave their fields absent.
+    ///   its `nodes` and its `wall` time. While the view is opened and holds
+    ///   the hub's answer for the node in focus, the record of that node holds
+    ///   one more `goal` for each line of its whole goal, a level deeper. With
+    ///   no stack card, each root shows folded. The activity of the pool comes
+    ///   last, at the frame's revision: a record per core with its `world`, its
+    ///   `core`, its `occupancy`, its task `now`, its `busy` time and the
+    ///   `lengths` of its tasks, then the totals record with the count of the
+    ///   `cores`, their `occupancy`, their `busy` time and their `lengths`. An
+    ///   absent world, an idle core and a window with no ended task leave their
+    ///   fields absent.
     /// - provides: the one model that the terminal renders, and that a pipe
     ///   renders without the activity.
     /// - fails: never.
@@ -411,19 +471,20 @@ impl Following
                 Revision(i64::from(i32::from(stacked.version))),
             ));
         }
-        if let Some(&(ref derived, ref card)) = self
-            .latest
-            .as_ref()
-            .and_then(|uri| self.derivations.get(uri))
-            && self.reports.contains_key(&derived.uri)
-        {
-            let focus = self
-                .stacks
-                .get(&derived.uri)
-                .and_then(|&(_, ref stack)| card.focus(stack.offset));
+        if let Some((derived, card, focus)) = self.focused() {
+            let whole = self
+                .whole
+                .as_ref()
+                .filter(|&&(ref held, _)| {
+                    self.opened
+                        && held.uri == derived.uri
+                        && held.key == card.key
+                        && Some(held.at) == focus
+                })
+                .map(|&(_, ref goal)| goal.lines());
             frame.records.extend(derivation_records(
                 card,
-                (focus, focus.filter(|_| self.opened)),
+                (focus, whole),
                 Revision(i64::from(i32::from(derived.version))),
             ));
         }
@@ -435,8 +496,30 @@ impl Following
         frame
     }
 
+    /// The derivation card of the document followed, with the version it was
+    /// read at, and its node in focus at the cursor of the document's stack
+    /// card: none before a report of the document or a card.
+    ///
+    /// # Specification
+    /// trivial.
+    fn focused(&self) -> Option<(&DocId, &DerivationCard, Option<NodeAt>)>
+    {
+        let &(ref derived, ref card) = self
+            .latest
+            .as_ref()
+            .and_then(|uri| self.derivations.get(uri))?;
+        self.reports.contains_key(&derived.uri).then(|| {
+            let focus = self
+                .stacks
+                .get(&derived.uri)
+                .and_then(|&(_, ref stack)| card.focus(stack.offset));
+            (derived, card, focus)
+        })
+    }
+
     /// Show the whole goal of the node in focus on the lines below it, or
-    /// stop showing it.
+    /// stop showing it; [`Following::ask`] then names the frame that asks the
+    /// hub for it.
     ///
     /// # Specification
     /// trivial.
@@ -445,17 +528,59 @@ impl Following
     {
         self.opened = !self.opened;
     }
+
+    /// The frame that asks the hub for the whole goal of the node in focus,
+    /// once for each node: none while the view is not opened, has no node in
+    /// focus, or asked for that node already.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: while opened with a node in focus that the view did not ask
+    ///   for last, an `open` frame scoped to the derivation card's document and
+    ///   version, naming the card's key and the node; the node is then the one
+    ///   asked for. Otherwise `None`, and nothing changes. A derivation card
+    ///   for the document forgets the node asked for, so the view asks again
+    ///   for the node of a new tree.
+    /// - provides: the one ask a pane makes for a whole goal.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opened view asks once for its node in focus, shows
+    ///   the answer's lines below the node, and asks again after a new card.
+    /// - witness: `follow::tests::the_view_shows_the_derivation_at_the_cursor`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|frame| self.opened
+        && matches!(*frame.body(), FrameBody::Open { .. })))]
+    #[inline]
+    pub fn ask(&mut self) -> Option<RenderFrame>
+    {
+        if !self.opened {
+            return None;
+        }
+        let (derived, card, focus) = self.focused()?;
+        let opening = Opening {
+            uri: derived.uri.clone(),
+            key: card.key.clone(),
+            at: focus?,
+        };
+        if self.asked.as_ref() == Some(&opening) {
+            return None;
+        }
+        let frame = RenderFrame::open(derived.clone(), opening.key.clone(), opening.at);
+        self.asked = Some(opening);
+        Some(frame)
+    }
 }
 
 /// The records of the derivation pane of `card` with `focus` in focus,
-/// computed for `revision`: one per row that the pane shows, and the whole goal
-/// of the row `whole` in further fields.
+/// computed for `revision`: one per row that the pane shows, and `whole`, the
+/// lines of the whole goal of the focus, in further fields of its record.
 ///
 /// # Specification
 /// trivial.
 fn derivation_records(
     card: &DerivationCard,
-    (focus, whole): (Option<NodeAt>, Option<NodeAt>),
+    (focus, whole): (Option<NodeAt>, Option<core::str::Lines<'_>>),
     revision: Revision,
 ) -> Vec<Record>
 {
@@ -464,25 +589,18 @@ fn derivation_records(
         datum,
         revision,
     };
-    let room = Count(
-        card.columns
-            .0
-            .saturating_sub(FIXED)
-            .checked_div(2)
-            .unwrap_or_default(),
-    );
     card.shown(focus)
         .into_iter()
         .filter_map(|at| card.rows.get(at.0).map(|row| (at, row)))
         .map(|(at, row)| {
+            // The hub cut each line to this room at the card's columns, so the
+            // cut leaves a line it sent as it is.
+            let room = Room::at(card.columns, row.depth);
             let goal = row
                 .goal
                 .as_deref()
                 .map_or(Datum::Absent, |goal| Datum::Nested {
-                    text: elided(
-                        goal.split_whitespace(),
-                        Count(room.0.saturating_sub(row.depth.0.saturating_mul(2))),
-                    ),
+                    text: elided(goal.split_whitespace(), room.goal),
                     depth: row.depth,
                 });
             let mut fields = Vec::from([
@@ -492,7 +610,7 @@ fn derivation_records(
                 entry(
                     "type",
                     row.ty.as_deref().map_or(Datum::Absent, |ty| {
-                        Datum::Text(elided(ty.split_whitespace(), room))
+                        Datum::Text(elided(ty.split_whitespace(), room.ty))
                     }),
                 ),
                 entry(
@@ -511,62 +629,29 @@ fn derivation_records(
                     window: None,
                 }),
             ]);
-            if whole == Some(at)
-                && let Some(ref goal) = row.goal
+            if focus == Some(at)
+                && let Some(lines) = whole.clone()
             {
-                fields.extend(
-                    goal.lines()
-                        .filter(|line| !line.trim().is_empty())
-                        .map(|line| {
-                            let set = line
-                                .len()
-                                .saturating_sub(line.trim_start().len())
-                                .checked_div(2)
-                                .unwrap_or_default();
-                            entry("goal", Datum::Nested {
-                                text: String::from(line.trim()),
-                                depth: Count(
-                                    row.depth
-                                        .0
-                                        .saturating_add(1)
-                                        .saturating_add(u64::try_from(set).unwrap_or(u64::MAX)),
-                                ),
-                            })
-                        }),
-                );
+                fields.extend(lines.filter(|line| !line.trim().is_empty()).map(|line| {
+                    let set = line
+                        .len()
+                        .saturating_sub(line.trim_start().len())
+                        .checked_div(2)
+                        .unwrap_or_default();
+                    entry("goal", Datum::Nested {
+                        text: String::from(line.trim()),
+                        depth: Count(
+                            row.depth
+                                .0
+                                .saturating_add(1)
+                                .saturating_add(u64::try_from(set).unwrap_or(u64::MAX)),
+                        ),
+                    })
+                }));
             }
             Record { fields }
         })
         .collect()
-}
-
-/// The text of `words` on one line, one space between two words, and cut to
-/// `room` columns with an ellipsis at the end when it is longer.
-///
-/// # Specification
-/// trivial.
-fn elided(
-    words: core::str::SplitWhitespace<'_>,
-    room: Count,
-) -> String
-{
-    let mut line = String::new();
-    for (at, word) in words.enumerate() {
-        if at > 0 {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    let room = usize::try_from(room.0).unwrap_or(usize::MAX).max(2);
-    if line.chars().count() > room {
-        let cut = line
-            .char_indices()
-            .nth(room.saturating_sub(1))
-            .map_or(line.len(), |(at, _)| at);
-        line.truncate(cut);
-        line.push('…');
-    }
-    line
 }
 
 /// The records of the stack pane of `card`, computed for `revision`: one per
@@ -1579,7 +1664,8 @@ fn lines(laid: Vec<Vec<Painted<'_>>>) -> Vec<Line<'static>>
 }
 
 /// Run the side view over `terminal`, acting on what `seen` delivers, until
-/// the hub closes the bus or the user leaves.
+/// the hub closes the bus or the user leaves, and send the hub its asks on
+/// `writing`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1587,8 +1673,9 @@ fn lines(laid: Vec<Vec<Painted<'_>>>) -> Vec<Line<'static>>
 ///   [`Following::hear`]; a detach, the end of the hub's stream, a quit, an
 ///   interrupt or `q` complete the view; a failed input ends it faulted; the
 ///   enter key shows or hides the whole goal of the derivation pane's node in
-///   focus ([`Following::open`]); every other input redraws. A channel with no
-///   sender left completes the view.
+///   focus ([`Following::open`]); every other input redraws. After each frame
+///   and each key, the ask that [`Following::ask`] names goes to `writing`. A
+///   channel with no sender left completes the view.
 /// - provides: the side view's event loop, the same on the terminal and under a
 ///   test's scripted bus.
 /// - fails: the backend's error when a frame cannot be drawn.
@@ -1601,15 +1688,18 @@ fn lines(laid: Vec<Vec<Painted<'_>>>) -> Vec<Line<'static>>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a scripted bus of a greeting, a report and a quit paints
-///   the report and completes; a detach completes.
+///   the report and completes; a detach completes. A card, the enter key and
+///   the hub's answer send one open frame and paint the whole goal.
 /// - witness: `follow::tests::the_view_paints_what_the_bus_sends`
 #[inline]
-pub fn drive_following<Screen>(
+pub fn drive_following<Screen, Writing>(
     terminal: &mut Terminal<Screen>,
     seen: &Receiver<Seen>,
+    writing: &mut Writing,
 ) -> Result<Ended, Screen::Error>
 where
     Screen: Backend,
+    Writing: Write,
 {
     let mut following = Following::default();
     loop {
@@ -1629,6 +1719,11 @@ where
             Ok(Seen::Input(Input::Failed(fault))) => return Ok(Ended::Faulted(fault)),
             Ok(Seen::Input(Input::Redraw | Input::Key(Key::Char(_) | Key::Backspace))) => {},
             Ok(Seen::Input(Input::Key(Key::Enter))) => following.open(),
+        }
+        if let Some(ask) = following.ask() {
+            // A write fails only when the hub is gone, and then the frame
+            // reader sends the end of the stream.
+            drop(send(writing, &ask));
         }
     }
 }
@@ -1709,7 +1804,7 @@ where
     let ended = match ratatui::try_init().and_then(|terminal| {
         if layers == Layers::Trace {
             let columns = terminal.size()?.width;
-            subscribe(writing, Count(u64::from(columns)))?;
+            send(writing, &RenderFrame::trace(Count(u64::from(columns))))?;
         }
         Ok(terminal)
     }) {
@@ -1728,45 +1823,30 @@ where
                     }
                 }
             }));
-            drive_following(&mut terminal, &inbox)
+            drive_following(&mut terminal, &inbox, writing)
         },
         Err(error) => Err(error),
     };
     let restored = ratatui::try_restore();
-    drop(detach(writing));
+    drop(send(writing, &RenderFrame::detach()));
     match (ended, restored) {
         (Ok(ended), Ok(())) => Ok(ended),
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
     }
 }
 
-/// Subscribe to the trace layer on `writing`, the view's panes `columns`
-/// wide.
+/// Send the hub `frame` on `writing`, one line.
 ///
 /// # Specification
 /// trivial.
-fn subscribe<Writing>(
+fn send<Writing>(
     writing: &mut Writing,
-    columns: Count,
+    frame: &RenderFrame,
 ) -> io::Result<()>
 where
     Writing: Write,
 {
-    let mut line = serde_json::to_string(&RenderFrame::trace(columns)).map_err(io::Error::other)?;
-    line.push('\n');
-    writing.write_all(line.as_bytes())?;
-    writing.flush()
-}
-
-/// Send the hub a detach on `writing`.
-///
-/// # Specification
-/// trivial.
-fn detach<Writing>(writing: &mut Writing) -> io::Result<()>
-where
-    Writing: Write,
-{
-    let mut line = serde_json::to_string(&RenderFrame::detach()).map_err(io::Error::other)?;
+    let mut line = serde_json::to_string(frame).map_err(io::Error::other)?;
     line.push('\n');
     writing.write_all(line.as_bytes())?;
     writing.flush()
@@ -1869,6 +1949,7 @@ mod tests
     use gandr_surface_render_remote::MarkKind;
     use gandr_surface_render_remote::MarkSpan;
     use gandr_surface_render_remote::Memo;
+    use gandr_surface_render_remote::NodeAt;
     use gandr_surface_render_remote::PoolActivity;
     use gandr_surface_render_remote::RenderFrame;
     use gandr_surface_render_remote::ReportView;
@@ -1888,13 +1969,13 @@ mod tests
     use super::Following;
     use super::Heard;
     use super::Seen;
-    use super::detach;
     use super::drive_following;
     use super::follow_plain;
     use super::frames;
     use super::laid;
     use super::printed;
     use super::rendering;
+    use super::send;
     use crate::app::Key;
     use crate::run::Input;
 
@@ -2388,6 +2469,9 @@ mod tests
             };
         // The type's formation holds the whole declaration; the body's tree
         // holds `a +\n  b` at 47 .. 52 and `b` at 53 .. 57, whose child folds.
+        // Each row holds its goal on one line; the hub answers the whole goal
+        // of a node that the view opens.
+        let whole = String::from(include_str!("follow/unformatted/two-line-goal.gandr").trim_end());
         let card = DerivationCard {
             key: AccountKey::from(String::from("4f2a")),
             declaration: String::from("f"),
@@ -2402,12 +2486,7 @@ mod tests
                 },
                 row(0, 5, "\\a b => return a + b", (10, 58)),
                 row(1, 4, "return a + b", (40, 58)),
-                row(
-                    2,
-                    1,
-                    include_str!("follow/unformatted/two-line-goal.gandr").trim_end(),
-                    (47, 52),
-                ),
+                row(2, 1, "a + b", (47, 52)),
                 row(2, 2, "b", (53, 57)),
                 row(3, 1, "b", (55, 56)),
             ]),
@@ -2444,7 +2523,7 @@ mod tests
         let _heard = following.hear(&RenderFrame::frame(at(1_i32), ReportView::default()));
         let before = following.clone();
         assert_eq!(
-            following.hear(&RenderFrame::derivation(at(1_i32), card)),
+            following.hear(&RenderFrame::derivation(at(1_i32), card.clone())),
             Heard::Continue
         );
         assert_eq!(
@@ -2498,11 +2577,38 @@ mod tests
             [],
             "the derivation pane keeps every rule of the visual language"
         );
+        assert_eq!(
+            following.ask(),
+            None,
+            "a view that is not opened asks for nothing"
+        );
         following.open();
+        let asked = RenderFrame::open(at(1_i32), card.key.clone(), NodeAt(3));
+        assert_eq!(
+            following.ask(),
+            Some(asked.clone()),
+            "the opened view asks the hub for the whole goal of its focus"
+        );
+        assert_eq!(following.ask(), None, "the view asks once for each node");
         assert_eq!(
             goals(&following).get(3 ..),
-            Some(owned(&[(2, "a + b"), (3, "a +"), (4, "b"), (2, "b")]).as_slice()),
+            Some(owned(&[(2, "a + b"), (2, "b")]).as_slice()),
+            "until the hub answers, the opened focus shows its one line"
+        );
+        let answer = RenderFrame::opened(at(1_i32), card.key.clone(), NodeAt(3), Some(whole));
+        let _heard = following.hear(&answer);
+        let deeper = owned(&[(2, "a + b"), (3, "a +"), (4, "b"), (2, "b")]);
+        assert_eq!(
+            goals(&following).get(3 ..),
+            Some(deeper.as_slice()),
             "the opened focus shows each line of its whole goal a level deeper"
+        );
+        let answered = following.clone();
+        let _heard = following.hear(&RenderFrame::derivation(at(1_i32), card.clone()));
+        assert_eq!(
+            (goals(&following).len(), following.ask()),
+            (5, Some(asked.clone())),
+            "a new card forgets the whole goal of the old tree, and the view asks again"
         );
         following.open();
         let _heard = following.hear(&stack(30));
@@ -2510,6 +2616,48 @@ mod tests
             goals(&following).len(),
             3,
             "a cursor in the body's root and in none of its children focuses the root"
+        );
+        // The loop sends the ask that the enter key makes and paints the
+        // hub's answer.
+        let (seen, inbox) = channel();
+        for event in [
+            Seen::Frame(RenderFrame::frame(at(1_i32), ReportView::default())),
+            Seen::Frame(RenderFrame::derivation(at(1_i32), card)),
+            Seen::Frame(stack(49)),
+            Seen::Input(Input::Key(Key::Enter)),
+            Seen::Frame(answer),
+            Seen::Input(Input::Key(Key::Char('q'))),
+        ] {
+            seen.send(event).expect("the loop listens");
+        }
+        let mut terminal =
+            Terminal::new(TestBackend::new(120_u16, 16_u16)).expect("a test backend");
+        let mut written = Vec::new();
+        assert!(matches!(
+            drive_following(&mut terminal, &inbox, &mut written),
+            Ok(Ended::Completed)
+        ));
+        let sent: Vec<RenderFrame> = String::from_utf8(written)
+            .expect("the asks are text")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("each line is a frame"))
+            .collect();
+        assert_eq!(sent, [asked], "the loop sends one ask for the opened focus");
+        let buffer = terminal.backend().buffer();
+        let screen: Vec<String> = (buffer.area.top() .. buffer.area.bottom())
+            .map(|y| {
+                let mut line: String = (buffer.area.left() .. buffer.area.right())
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect();
+                line.truncate(line.trim_end().len());
+                line
+            })
+            .collect();
+        let painted = lines(&answered);
+        assert_eq!(
+            screen.get(.. painted.len()),
+            Some(painted.as_slice()),
+            "the terminal paints the whole goal that the hub answered"
         );
     }
 
@@ -2626,7 +2774,7 @@ mod tests
             .expect("the loop listens");
         let mut terminal = Terminal::new(TestBackend::new(80_u16, 8_u16)).expect("a test backend");
         assert!(matches!(
-            drive_following(&mut terminal, &inbox),
+            drive_following(&mut terminal, &inbox, &mut io::sink()),
             Ok(Ended::Completed)
         ));
         let buffer = terminal.backend().buffer();
@@ -2684,7 +2832,7 @@ mod tests
         }
         let mut terminal = Terminal::new(TestBackend::new(64_u16, 10_u16)).expect("a test backend");
         assert!(matches!(
-            drive_following(&mut terminal, &inbox),
+            drive_following(&mut terminal, &inbox, &mut io::sink()),
             Ok(Ended::Completed)
         ));
         let buffer = terminal.backend().buffer();
@@ -2818,7 +2966,7 @@ mod tests
         seen.send(Seen::Frame(RenderFrame::detach()))
             .expect("the loop listens");
         assert!(matches!(
-            drive_following(&mut terminal, &inbox),
+            drive_following(&mut terminal, &inbox, &mut io::sink()),
             Ok(Ended::Completed)
         ));
         let (seen, inbox) = channel();
@@ -2827,7 +2975,7 @@ mod tests
         )))))
         .expect("the loop listens");
         assert!(matches!(
-            drive_following(&mut terminal, &inbox),
+            drive_following(&mut terminal, &inbox, &mut io::sink()),
             Ok(Ended::Faulted(Fault::Input(ref error))) if error.to_string() == "the keyboard is gone"
         ));
     }
@@ -2857,7 +3005,7 @@ mod tests
     fn the_view_leaves_the_hub_with_one_detach_line()
     {
         let mut written = Vec::new();
-        detach(&mut written).expect("a vector takes the line");
+        send(&mut written, &RenderFrame::detach()).expect("a vector takes the line");
         let line = String::from_utf8(written).expect("the line is text");
         let frame: RenderFrame = serde_json::from_str(line.strip_suffix('\n').expect("one line"))
             .expect("the line is a frame");

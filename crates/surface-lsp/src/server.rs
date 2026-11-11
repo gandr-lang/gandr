@@ -102,11 +102,15 @@ use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::AccountCard;
 #[cfg(feature = "instrument")]
+use gandr_surface_render_remote::AccountKey;
+#[cfg(feature = "instrument")]
 use gandr_surface_render_remote::Count;
 #[cfg(feature = "instrument")]
 use gandr_surface_render_remote::DerivationCard;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
+#[cfg(feature = "instrument")]
+use gandr_surface_render_remote::NodeAt;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::Instrument;
@@ -583,9 +587,9 @@ impl Document
     }
 
     /// The derivation card of the declaration with a content key whose range
-    /// holds `position`, each goal and type laid out at `columns`: none when
-    /// no such declaration holds it or the session's account holds no tree
-    /// for it.
+    /// holds `position`, each goal and type on one line, cut to the room that
+    /// a pane `columns` wide gives it: none when no such declaration holds it
+    /// or the session's account holds no tree for it.
     ///
     /// # Specification
     /// trivial.
@@ -607,6 +611,61 @@ impl Document
                 start,
                 columns,
             )),
+            Maybe::Absent(_) => None,
+        }
+    }
+
+    /// The whole goal of the node at `at` of the declaration with a content
+    /// key whose range holds `position`, laid out at `columns`: none when no
+    /// such declaration holds it, its key is not `key`, the session's account
+    /// holds no tree for it, the tree holds no node at `at`, or the printer
+    /// refused the goal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn whole(
+        &self,
+        position: Position,
+        (key, at): (&AccountKey, NodeAt),
+        columns: Count,
+    ) -> Option<String>
+    {
+        let cursored = self
+            .tiers
+            .at(position)
+            .filter(|cursored| cursored.key == *key)?;
+        let lent = self.session();
+        match lent
+            .as_ref()
+            .ok()?
+            .account()
+            .derivation_at(cursored.constant)
+        {
+            Maybe::Present(derivation) => crate::derivation::whole(&derivation, at, columns),
+            Maybe::Absent(_) => None,
+        }
+    }
+
+    /// The hover's derivation section at `position`, byte `offset` of the
+    /// text: none when no declaration with a content key holds it, the
+    /// session's account holds no tree for it, or no node holds the offset.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn section(
+        &self,
+        position: Position,
+        offset: gandr_surface_render_remote::ByteOffset,
+    ) -> Option<String>
+    {
+        let at = self.tiers.at(position)?;
+        let index = LineIndex::new(<&str>::from(self.text.source()).into());
+        let start = at.range.start.byte(&index);
+        let lent = self.session();
+        match lent.as_ref().ok()?.account().derivation_at(at.constant) {
+            Maybe::Present(derivation) => crate::derivation::section(&derivation, start, offset),
             Maybe::Absent(_) => None,
         }
     }
@@ -2285,6 +2344,48 @@ impl Workspace
                 version: document.version.into(),
             },
             document.derived(position, columns)?,
+        ))
+    }
+
+    /// The render bus's answer to a client that opens the node at `at` of the
+    /// derivation card keyed `key` of the document at `uri`: its whole goal,
+    /// laid out at `columns`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` for a document no connection holds or one with no
+    ///   cursor; otherwise a frame scoped to the document at its latest copy's
+    ///   version, carrying `key`, `at` and the goal, which is absent when the
+    ///   declaration at the cursor is not keyed `key`, holds no tree or no node
+    ///   at `at`, or the printer refused the goal.
+    /// - provides: what the render-bus face answers to an `open` frame.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view of the trace layer that opens the node at the
+    ///   cursor hears its whole goal laid out at its columns.
+    /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+    #[cfg(feature = "instrument")]
+    #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
+    #[inline]
+    #[must_use]
+    pub fn opened(
+        &self,
+        uri: &DocumentUri,
+        (key, at): (&AccountKey, NodeAt),
+        columns: Count,
+    ) -> Option<RenderFrame>
+    {
+        let position = *self.cursors.borrow().get(uri)?;
+        let document = &self.documents.get(uri)?.document;
+        Some(RenderFrame::opened(
+            DocId {
+                uri: uri.into(),
+                version: document.version.into(),
+            },
+            key.clone(),
+            at,
+            document.whole(position, (key, at), columns),
         ))
     }
 
@@ -7259,10 +7360,7 @@ impl Workspace
                 let offset = gandr_surface_render_remote::ByteOffset::from(usize::from(
                     position.byte(&index),
                 ));
-                if let Some(section) = document
-                    .derived(position, crate::derivation::HOVERED)
-                    .and_then(|card| crate::derivation::section(&card, offset))
-                {
+                if let Some(section) = document.section(position, offset) {
                     shown.contents.value.push_str("\n\n---\n\n");
                     shown.contents.value.push_str(&section);
                 }
