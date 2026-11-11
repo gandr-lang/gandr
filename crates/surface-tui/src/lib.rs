@@ -164,6 +164,7 @@
 extern crate alloc;
 
 mod app;
+mod capture;
 mod follow;
 mod run;
 mod theme;
@@ -172,6 +173,7 @@ mod view;
 pub use crate::app::App;
 pub use crate::app::Handled;
 pub use crate::app::Key;
+pub use crate::capture::svg;
 pub use crate::follow::Following;
 pub use crate::follow::Heard;
 pub use crate::follow::Seen;
