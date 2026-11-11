@@ -125,7 +125,6 @@ INSERT INTO purpose VALUES('core-checker','fill::realise','function','Builds a f
 INSERT INTO purpose VALUES('core-checker','flow::Statement','struct','A session statement the judgement decided: the relation, the two quotes, the classifier the bridge erases it at, the engine''s evidence and the payload pairs its paths are owed for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedCompType','struct','A computation type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::FormedValueType','struct','A value type known formed because it is a sub-node of a formed type or a rewrite of one.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','formation::classify_comp_type','function','The classifier of the formed computation type formed: the computation universe at its natural level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::classify_value_type','function','The classifier of the formed value type formed: the value universe at its natural level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::form_comp_type','function','Forms the computation type comp_type in the context''s binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','formation::form_value_type','function','Forms the value type value_type in the context''s binders.',NULL,'fits','sound',NULL);

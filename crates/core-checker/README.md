@@ -28,7 +28,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `ConversionCount`: the declared projection of the conversion boundary, returned by every face.
 - `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take.
 - `type_value`, `type_module`, `Typing`, `Formed`, `Typings` and `Formations`: the typed run, keeping the type of every term it judged, refused ones too, and the level of each type it formed or `Formations` names.
-- `classify_value_type`, `classify_comp_type` and `level_of`: the unique classifier of each formed type.
+- `classify_value_type` and `level_of`: the classifier of each formed type.
 - `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
