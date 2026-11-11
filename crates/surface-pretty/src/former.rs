@@ -406,6 +406,40 @@ impl From<Arity> for usize
     }
 }
 
+/// How many binders deeper than its action the map of `Path.ap` stands.
+///
+/// The derived transport's motive holds the map one binder deeper at the map's
+/// domain, and one more for each path type the action climbs above the domain.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Lift(usize);
+
+impl From<usize> for Lift
+{
+    /// The lift of `count` binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<Lift> for usize
+{
+    /// The number of binders.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(lift: Lift) -> Self
+    {
+        lift.0
+    }
+}
+
 /// The position of one component of a product, a sum, a tuple or a record,
 /// counting from zero; a record's fields count in label order.
 #[repr(transparent)]
@@ -704,9 +738,10 @@ pub enum Former<'source, Node>
     /// the transport the inverse derives.
     Back(Node),
     /// A map's action on a path, `Path.ap(f, p)`, over the map as the derived
-    /// transport's motive holds it, one binder deeper, and the path: the
-    /// sugared reading of the transport the action derives.
-    Cong(Node, Node),
+    /// transport's motive holds it, as many binders deeper as the lift
+    /// counts, and the path: the sugared reading of the transport the action
+    /// derives.
+    Cong(Node, Node, Lift),
     /// The product of two universe flows, `Flow.product(p, q)`.
     FlowProduct(Node, Node),
     /// A forward flow `Flow.into(f)` over its translator.

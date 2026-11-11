@@ -4044,14 +4044,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the ascending sweep has classified every node.
     /// - ensures: through transparent plans, [`Typed::Point`] for
-    ///   `Path.here(x)` whose point [`Self::point_binder`] reads;
-    ///   [`Self::typed`]'s answer otherwise.
+    ///   `Path.here(x)`, or reflexivities around it, whose innermost point
+    ///   [`Self::point_binder`] reads; [`Self::typed`]'s answer otherwise.
     /// - fails: as [`Self::typed`].
     /// - panics: none.
     ///
     /// # Termination
-    /// Every turn steps to the operand of a transparent node, strictly deeper
-    /// in a finite tree.
+    /// Every turn steps to the operand of a transparent node or of a
+    /// reflexivity, strictly deeper in a finite tree.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a reflexivity first in `then`, at a point of no path
@@ -4064,10 +4064,18 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Typed, synthesised::Absent>
     {
         let mut at = path;
-        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
-            at = inner;
+        let mut innermost = None;
+        loop {
+            match self.plans.get(at) {
+                Some(&Plan::Transparent(inner)) => at = inner,
+                Some(&Plan::Here(point)) => {
+                    innermost = Some(point);
+                    at = point;
+                },
+                _ => break,
+            }
         }
-        if let Some(&Plan::Here(point)) = self.plans.get(at)
+        if let Some(point) = innermost
             && let Some((declared, binder, in_type)) = self.point_binder(point)
         {
             return Maybe::Present(Typed::Point {
@@ -4126,6 +4134,47 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(_) => *self.binders_over_points.get(&binder)?,
         };
         Some((declared, binder, in_type))
+    }
+
+    /// The family of `point` when `point` is a constructor of a family with no
+    /// parameters and no words: `Path.here(point)` stands at `Path[.A = D](
+    /// point, point)`, `D` that family.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified every node.
+    /// - ensures: through transparent plans, the family of a constructor whose
+    ///   classifier the lowering inserts, a family that is no type of words;
+    ///   none for any other form.
+    /// - fails: none for any other form.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the operand of a transparent node, strictly deeper
+    /// in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path.ap f (Path.here c)` in a type, `c` a point of a
+    ///   sphere, lowers at `Path[.A = B](f c, f c)`.
+    /// - witness: `lower::identity::tests::an_action_on_a_constructor_s_reflexivity_reads_its_family_6492`
+    #[spec(ensures: |ret| ret.is_none_or(|family| matches!(self.words_at(family), Maybe::Absent(_))))]
+    fn closed_point(
+        &self,
+        point: NodeIndex,
+    ) -> Option<ConstantIndex>
+    {
+        let mut at = point;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        match self.plans.get(at) {
+            Some(&Plan::Constructor(constructed))
+                if constructed.classifier == super::native::Classifier::Inserted
+                    && matches!(self.words_at(constructed.family), Maybe::Absent(_)) =>
+            {
+                Some(constructed.family)
+            },
+            _ => None,
+        }
     }
 
     /// What a call of the declaration at `constant` reads its result off: a
@@ -4399,9 +4448,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: through parentheses, the node itself when it is a loop, a
     ///   word of a loop's words, an answered derived operation, one in `read`,
     ///   a reflexivity `Path.here(x)` whose point is a binder of a written type
-    ///   that lowers, or whose point `x` is read so, or a parameter, a call or
-    ///   a named declaration [`Self::typed`] reads in a declaration that
-    ///   lowers.
+    ///   that lowers or a constructor of a family with no parameters
+    ///   ([`Self::closed_point`]), or whose point `x` is read so, or a
+    ///   parameter, a call or a named declaration [`Self::typed`] reads in a
+    ///   declaration that lowers.
     /// - fails: [`synthesised::Absent::Unread`] for any other path;
     ///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -4444,16 +4494,19 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
+                        || (reflexivity.is_some() && self.closed_point(at).is_some())
                 },
                 // `Path.here(x)` at a binder of any written type stands at `Path[.A = A](
-                // x, x)`, `A` that type (#3834). At any other point, one
-                // reflexivity is read through to the path the point is.
-                Some(&Plan::Here(point)) if reflexivity.is_none() => {
+                // x, x)`, `A` that type (#3834). At any other point, each
+                // reflexivity is read through to the point inside it.
+                Some(&Plan::Here(point)) => {
                     if let Some((declared, ..)) = self.point_binder(point) {
                         !self.collected.refused(declared).0
                     }
                     else {
-                        reflexivity = Some(at);
+                        if reflexivity.is_none() {
+                            reflexivity = Some(at);
+                        }
                         at = point;
                         continue;
                     }
@@ -5603,20 +5656,31 @@ impl<'source> Lowerer<'_, 'source>
     ///   stands at `Path[.A = F](x, x)`, `F` its family and `x` the point the
     ///   words spell, minted as [`Self::words_point`] mints them, a reflexivity
     ///   `Path.here(x)` at `Path[.A = A](x, x)` when its point is a binder
-    ///   whose written type `A` carries to where the operation stands, and
-    ///   otherwise at `Path[.A = Path[.A = A](a, b)](p, p)` when its point `p`
-    ///   stands at `Path[.A = A]( a, b)`, and a derived operation's returned
-    ///   transport at the path type recorded against it.
+    ///   whose written type `A` carries to where the operation stands, at
+    ///   `Path[.A = D](c, c)` when its point is a constructor `c` of a family
+    ///   `D` with no parameters ([`Self::closed_point`]), and otherwise at
+    ///   `Path[.A = Path[.A = A](a, b)](p, p)` when its point `p` stands at
+    ///   `Path[.A = A]( a, b)`; a reflexivity around a reflexivity reads its
+    ///   innermost point so and each reflexivity around that point at the paths
+    ///   from the point to itself; and a derived operation's returned transport
+    ///   at the path type recorded against it.
     /// - fails: [`synthesised::Absent::Unread`] for any other value, and for a
     ///   path or a type that did not lower.
     /// - panics: none.
     ///
+    /// # Termination
+    /// Every turn of the walk steps to the operand of a transparent node or of
+    /// a reflexivity, strictly deeper in a finite tree; the wrap runs once
+    /// per reflexivity the walk read.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a loop, the empty word, an operation over a word, a
-    ///   parameter and a call; a reflexivity at a point of no path type.
+    ///   parameter and a call; a reflexivity at a point of no path type, and at
+    ///   a reflexivity of a sphere's point.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_reflexivity_composes_at_a_point_of_any_type_3834`
+    /// - witness: `lower::identity::tests::an_action_on_a_constructor_s_reflexivity_reads_its_family_6492`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(read) => sink.arena.value_type(read.carrier).is_some(),
         | Maybe::Absent(_) => true,
@@ -5638,8 +5702,22 @@ impl<'source> Lowerer<'_, 'source>
             return self.operand_identity(path, typed, frame, sink);
         };
         let unread = Maybe::Absent(synthesised::Absent::Unread);
+        // The points of the reflexivities, the outermost first:
+        // `Path.here(Path.here(c))` reads `Path.here(c)`, then `c`.
+        let mut points = Vec::from([point]);
+        let mut innermost = point;
+        loop {
+            match self.plans.get(innermost) {
+                Some(&Plan::Transparent(inner)) => innermost = inner,
+                Some(&Plan::Here(inner)) => {
+                    points.push(inner);
+                    innermost = inner;
+                },
+                _ => break,
+            }
+        }
         // A point at a binder of any written type `A` stands at `A` (#3834).
-        let carrier = match typed {
+        let mut carrier = match typed {
             Some(Typed::Point {
                 declared,
                 binder,
@@ -5649,18 +5727,35 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
             Some(Typed::Parameter { .. } | Typed::Called(_)) | None => {
-                let typed = match self.typed(point) {
-                    Maybe::Present(typed) => Some(typed),
-                    Maybe::Absent(_) => None,
-                };
-                let Maybe::Present(inner) = self.operand_identity(point, typed, frame, sink)
+                // A constructor of a family with no parameters stands at that
+                // family.
+                if let Some(family) = self.closed_point(innermost) {
+                    sink.arena.value_type_data(family, Vec::new())
+                }
                 else {
-                    return unread;
-                };
-                sink.arena
-                    .value_type_path(inner.carrier, inner.left, inner.right)
+                    let typed = match self.typed(innermost) {
+                        Maybe::Present(typed) => Some(typed),
+                        Maybe::Absent(_) => None,
+                    };
+                    let Maybe::Present(inner) =
+                        self.operand_identity(innermost, typed, frame, sink)
+                    else {
+                        return unread;
+                    };
+                    sink.arena
+                        .value_type_path(inner.carrier, inner.left, inner.right)
+                }
             },
         };
+        // Each reflexivity around a point stands at the paths from the point
+        // to itself.
+        for &below in points.iter().skip(1).rev() {
+            let Maybe::Present(value) = self.value_at(below)
+            else {
+                return unread;
+            };
+            carrier = sink.arena.value_type_path(carrier, value, value);
+        }
         let Maybe::Present(value) = self.value_at(point)
         else {
             return unread;
