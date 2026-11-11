@@ -1,21 +1,27 @@
 //! The side view: a render-bus client that follows the document the hub
 //! checked last and shows its cards and its account, beside an editor that
-//! shows the text.
+//! shows the text, and the activity pane of the hub's pool below them.
 //!
 //! The view builds the frame of the document it follows
 //! ([`Following::frame`]): one record that names the document, its version
 //! and its counts, then one record per card and per hole, then one record per
-//! declaration of the account. [`rendering`] lays the frame out as the visual
-//! language's rendering data, which every rule of
+//! declaration of the account. The activity pane follows: one record per core
+//! of the pool, then the totals record. [`rendering`] lays the frame out as the
+//! visual language's rendering data, which every rule of
 //! `gandr_surface_render_remote::RULES` checks. A painter then puts the cells
 //! on the terminal or on a pipe and adds nothing: a column is as wide as its
 //! widest cell, one space parts two columns, and a hue takes the theme's
-//! colour for its warrant.
+//! colour for its warrant. The terminal keeps the activity pane at the foot of
+//! the screen, so a long report never pushes it out of view. A pipe prints the
+//! document alone, because a pipe only appends and a live pane changes in
+//! place.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
+use core::time::Duration;
 use std::io;
 use std::io::BufRead;
 use std::io::Write;
@@ -42,10 +48,12 @@ use gandr_surface_render_remote::FrameBody;
 use gandr_surface_render_remote::FrameScope;
 use gandr_surface_render_remote::Head;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_render_remote::Load;
 use gandr_surface_render_remote::MarkKind;
 use gandr_surface_render_remote::Numeral;
 use gandr_surface_render_remote::Pane;
 use gandr_surface_render_remote::Place;
+use gandr_surface_render_remote::PoolActivity;
 use gandr_surface_render_remote::Record;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_render_remote::Rendering;
@@ -63,6 +71,8 @@ use gandr_surface_repl::Ended;
 use gandr_surface_repl::Fault;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
+use ratatui::layout::Constraint;
+use ratatui::layout::Layout;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
@@ -75,8 +85,13 @@ use crate::run::InputSource as _;
 use crate::run::Keyboard;
 use crate::theme::hue_of_warrant;
 
+/// The name of the field that names the document: the first field of the
+/// record that the side view draws as names beside their data.
+const DOCUMENT: &str = "uri";
+
 /// What the side view knows: the last report and the account of each
-/// document it heard, and which one the hub checked last.
+/// document it heard, which one the hub checked last, and the last activity
+/// of the hub's pool.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Following
 {
@@ -87,6 +102,8 @@ pub struct Following
     accounts: BTreeMap<DocumentUri, (DocId, Vec<AccountCard>)>,
     /// The document whose report arrived last.
     latest: Option<DocumentUri>,
+    /// The activity of the hub's pool that arrived last.
+    activity: Option<PoolActivity>,
 }
 
 /// What hearing a frame leaves the view to do.
@@ -108,14 +125,14 @@ impl Following
     /// Take in `frame`, one the hub sent.
     ///
     /// # Specification
-    /// - requires: nothing; any frame is admissible input.
     /// - ensures: a report replaces the one held for its document and makes
     ///   that document the one followed. The account held for the document is
     ///   then current at the report's version, because the bus sends a change
     ///   of the account before its report. A whole account replaces the cards
     ///   held for its document, and a patch applies to them, and neither
-    ///   changes the document followed. A detach answers [`Heard::Detached`]
-    ///   and changes nothing; a greeting and a resync change nothing.
+    ///   changes the document followed. An activity frame replaces the activity
+    ///   held. A detach answers [`Heard::Detached`] and changes nothing; a
+    ///   greeting and a resync change nothing.
     /// - provides: the view's one update step.
     /// - fails: never.
     /// - panics: none.
@@ -126,9 +143,10 @@ impl Following
     ///   its new version; a detach is reported. A whole account and a patch
     ///   leave the cards that the patch names, a later report leaves them
     ///   current, and an account older than the report shows in the pending
-    ///   hue.
+    ///   hue. An activity frame shows the pool's pane.
     /// - witness: `follow::tests::the_view_follows_the_document_checked_last`
     /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
+    /// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
     #[spec(ensures: |ret| matches!(ret, Heard::Continue | Heard::Detached))]
     #[inline]
     pub fn hear(
@@ -169,6 +187,10 @@ impl Following
                 apply_account_edits(cards, edits.clone());
                 Heard::Continue
             },
+            (_, &FrameBody::Activity { ref activity }) => {
+                self.activity = Some(activity.clone());
+                Heard::Continue
+            },
             (_, &FrameBody::Detach) => Heard::Detached,
             (
                 _,
@@ -183,7 +205,8 @@ impl Following
 
     /// The view a pipe prints again once it heard `frame`: after a report,
     /// and after an account frame of the document followed at the version of
-    /// its report, which only an admission sends.
+    /// its report, which only an admission sends. A pipe prints the document
+    /// alone.
     ///
     /// # Specification
     /// trivial.
@@ -210,48 +233,19 @@ impl Following
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
                 | FrameBody::AccountPatch { .. }
+                | FrameBody::Activity { .. }
                 | FrameBody::Detach),
             ) => false,
         };
-        shown.then(|| rendering(&self.frame()))
+        shown.then(|| rendering(&self.followed()))
     }
 
-    /// The frame of the document followed: what the view shows, as named
-    /// fields in the order it shows them.
+    /// The frame of the document followed alone, with no activity: the empty
+    /// frame before any report.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the empty frame before any report. Otherwise a frame at the
-    ///   document's version. Its first record holds the document's `uri`, its
-    ///   `version`, and the counts of its `diagnostics` and its `holes`. A
-    ///   record per card follows: its one-based `span` (absent for a card
-    ///   placed nowhere), its `code` (absent when the code is not the
-    ///   registry's own), one `message` per line of its message, and one
-    ///   `chain` per step of its derivation. A record per hole follows: its
-    ///   `span`, an absent `code` and its `message`. A record per account card
-    ///   follows last, at the account's version: its `declaration`, its
-    ///   `kernel` warrant and its `tier` (both absent when the kernel was
-    ///   offered nothing), its `verdict`, and its `compile` tier, its counts
-    ///   and its `timing` when the card holds them. Each text is trimmed, and
-    ///   an empty line or step is left out. A span is a row and a column, both
-    ///   one-based. Rows end where the language server's rows end, and the
-    ///   column counts characters.
-    /// - provides: the one model that the terminal and a pipe both render.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a report with a placed card, an unplaced card with a
-    ///   registry code and a hole builds exact records, and the rendering of
-    ///   those records breaks no rule; the empty view builds the empty frame.
-    ///   An account of three declarations builds one record each, a stale one
-    ///   in the pending hue.
-    /// - witness: `follow::tests::a_report_lays_out_its_cards_and_holes`
-    /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
-    #[spec(ensures: |ret| ret.records.is_empty() == self.latest.is_none())]
-    #[must_use]
-    #[inline]
-    pub fn frame(&self) -> Frame
+    /// trivial.
+    fn followed(&self) -> Frame
     {
         self.latest
             .as_ref()
@@ -260,6 +254,148 @@ impl Following
                 framed(document, report, account)
             })
     }
+
+    /// The panes of the rendering of [`Following::frame`], parted into those of
+    /// the document and those of the activity at their end: the pane of the
+    /// cores and the pane of the totals.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parted<'panes>(
+        &self,
+        panes: &'panes [Pane],
+    ) -> (&'panes [Pane], &'panes [Pane])
+    {
+        let activity = self.activity.as_ref().map_or(0, |activity| {
+            usize::from(!activity.cores.is_empty()).saturating_add(1)
+        });
+        panes.split_at(panes.len().saturating_sub(activity))
+    }
+
+    /// The frame of the document followed and of the pool: what the view
+    /// shows, as named fields in the order it shows them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the empty frame before any report and any activity. A report
+    ///   gives a frame at the document's version. Its first record holds the
+    ///   document's `uri`, its `version`, and the counts of its `diagnostics`
+    ///   and its `holes`. A record per card follows: its one-based `span`
+    ///   (absent for a card placed nowhere), its `code` (absent when the code
+    ///   is not the registry's own), one `message` per line of its message, and
+    ///   one `chain` per step of its derivation. A record per hole follows: its
+    ///   `span`, an absent `code` and its `message`. A record per account card
+    ///   follows, at the account's version: its `declaration`, its `kernel`
+    ///   warrant and its `tier` (both absent when the kernel was offered
+    ///   nothing), its `verdict`, and its `compile` tier, its counts and its
+    ///   `timing` when the card holds them. Each text is trimmed, and an empty
+    ///   line or step is left out. A span is a row and a column, both
+    ///   one-based. Rows end where the language server's rows end, and the
+    ///   column counts characters. The activity of the pool comes last, at the
+    ///   frame's revision: a record per core with its `world`, its `core`, its
+    ///   `occupancy`, its task `now`, its `busy` time and the `lengths` of its
+    ///   tasks, then the totals record with the count of the `cores`, their
+    ///   `occupancy`, their `busy` time and their `lengths`. An absent world,
+    ///   an idle core and a window with no ended task leave their fields
+    ///   absent.
+    /// - provides: the one model that the terminal renders, and that a pipe
+    ///   renders without the activity.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a report with a placed card, an unplaced card with a
+    ///   registry code and a hole builds exact records, and the rendering of
+    ///   those records breaks no rule; the empty view builds the empty frame.
+    ///   An account of three declarations builds one record each, a stale one
+    ///   in the pending hue. The activity of two cores and the totals build one
+    ///   record each, after the document's records.
+    /// - witness: `follow::tests::a_report_lays_out_its_cards_and_holes`
+    /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
+    /// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
+    #[spec(ensures: |ret| ret.records.is_empty() == (self.latest.is_none() && self.activity.is_none()))]
+    #[must_use]
+    #[inline]
+    pub fn frame(&self) -> Frame
+    {
+        let mut frame = self.followed();
+        if let Some(ref activity) = self.activity {
+            frame
+                .records
+                .extend(activity_records(activity, frame.revision));
+        }
+        frame
+    }
+}
+
+/// The records of the activity pane of `activity`, computed for `revision`:
+/// one per core, then the totals.
+///
+/// # Specification
+/// trivial.
+fn activity_records(
+    activity: &PoolActivity,
+    revision: Revision,
+) -> Vec<Record>
+{
+    let field = |name: &'static str, datum: Datum| Field {
+        name: FieldName::from(name),
+        datum,
+        revision,
+    };
+    let window = Duration::from_nanos(activity.window.0);
+    let load = |load: &Load| {
+        [
+            field("occupancy", Datum::Samples(load.occupancy.clone())),
+            field("busy", Datum::Duration {
+                time: Duration::from_nanos(load.busy.0),
+                window: Some(window),
+            }),
+            field(
+                "lengths",
+                load.lengths
+                    .map_or(Datum::Absent, |lengths| Datum::Latency {
+                        p50: Duration::from_nanos(lengths.p50.0),
+                        p99: Duration::from_nanos(lengths.p99.0),
+                        window,
+                    }),
+            ),
+        ]
+    };
+    let mut records = Vec::with_capacity(activity.cores.len().saturating_add(1));
+    for core in &activity.cores {
+        let [occupancy, busy, lengths] = load(&core.load);
+        records.push(Record {
+            fields: Vec::from([
+                field("world", core.world.map_or(Datum::Absent, Datum::Count)),
+                field("core", Datum::Count(core.core)),
+                occupancy,
+                field(
+                    "now",
+                    core.now.map_or(Datum::Absent, |now| {
+                        Datum::Text(String::from(<&str>::from(now)))
+                    }),
+                ),
+                busy,
+                lengths,
+            ]),
+        });
+    }
+    let [occupancy, busy, lengths] = load(&activity.totals);
+    records.push(Record {
+        fields: Vec::from([
+            field(
+                "cores",
+                Datum::Count(Count(
+                    u64::try_from(activity.cores.len()).unwrap_or(u64::MAX),
+                )),
+            ),
+            occupancy,
+            busy,
+            lengths,
+        ]),
+    });
+    records
 }
 
 /// The frame of `report`, the report of `document`, with the records of
@@ -311,7 +447,7 @@ fn framed(
     records.push(Record {
         fields: Vec::from([
             field(
-                "uri",
+                DOCUMENT,
                 Datum::Text(spelled(format_args!("{}", document.uri))),
             ),
             field(
@@ -443,17 +579,21 @@ fn spelled(arguments: fmt::Arguments<'_>) -> String
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: nothing for the empty frame. Otherwise a pane of one row, which
-///   draws each field of the first record as its name beside its datum. Then a
-///   pane for each run of the later records whose first fields share one name,
-///   under one head per field name that the run uses, in the order the run
-///   first uses it. Each record takes a row, and a further row while one name
-///   holds more fields; each field sits in its name's column. A text sits at
-///   the left and a count is a numeral at the right. A warrant is its glyph in
-///   its hue, and a ring of samples is its sparkline under the column's scale.
-///   A field computed for a revision older than the frame's takes the pending
-///   hue. Any other datum draws nothing, and the view's frame holds none. A row
-///   that draws nothing is left out.
+/// - ensures: nothing for the empty frame. Otherwise a pane for each run of
+///   records whose first fields share one name, in the frame's order. The
+///   record that names the document, whose first field is its `uri`, takes a
+///   pane of one row, which draws each field as its name beside its datum. Each
+///   other run takes a pane under one head per field name that the run uses, in
+///   the order the run first uses it, and two heads for a name that holds a
+///   latency. Each record takes a row, and a further row while one name holds
+///   more fields; each field sits in its name's column. A text sits at the left
+///   and a count is a numeral at the right. A warrant is its glyph in its hue,
+///   and a ring of samples is its sparkline under the column's scale. A time is
+///   a numeral, and a latency is two numerals, its p50 and its p99, in the
+///   column's unit: microseconds below one millisecond and milliseconds from
+///   it. A field computed for a revision older than the frame's takes the
+///   pending hue. Any other datum draws nothing, and the view's frame holds
+///   none. A row that draws nothing is left out.
 /// - provides: the one rendering that the terminal and a pipe both paint.
 /// - fails: never.
 /// - panics: none.
@@ -461,49 +601,94 @@ fn spelled(arguments: fmt::Arguments<'_>) -> String
 /// # Adequacy
 /// - hypothesis: L3 — the rendering of a report with a placed card, an unplaced
 ///   card and a hole paints exact lines and breaks no rule of the visual
-///   language, and so does the rendering of an account of three declarations;
-///   the driver's witness checks each frame a running hub sends for a corpus
-///   source.
+///   language, and so does the rendering of an account of three declarations
+///   and of the activity of two cores; the driver's witness checks each frame a
+///   running hub sends for a corpus source.
 /// - witness: `follow::tests::a_report_lays_out_its_cards_and_holes`
 /// - witness: `follow::tests::the_view_shows_one_row_per_declaration_of_the_account`
+/// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
 #[spec(ensures: |ret| ret.panes.is_empty() == frame.records.is_empty()
     && ret.panes.len() <= frame.records.len())]
 #[must_use]
 #[inline]
 pub fn rendering(frame: &Frame) -> Rendering
 {
-    let Some((first, rest)) = frame.records.split_first()
-    else {
-        return Rendering::default();
-    };
-    let mut labelled = Vec::with_capacity(first.fields.len().saturating_mul(2));
-    for (index, field) in first.fields.iter().enumerate() {
-        let place = Place {
-            record: 0,
-            field: index,
-        };
-        labelled.push(Cell::label(place, field.name));
-        labelled.push(drawn(place, field, None, frame.revision));
-    }
-    let mut panes = Vec::from([Pane {
-        heads: Vec::new(),
-        rows: Vec::from([Row { cells: labelled }]),
-    }]);
     let leading = |record: &Record| record.fields.first().map(|field| field.name);
+    let mut panes = Vec::new();
     let mut first = Place {
-        record: 1,
+        record: 0,
         field: 0,
     };
-    for run in rest.chunk_by(|earlier, later| leading(earlier) == leading(later)) {
-        panes.push(tabled(run, first, frame.revision));
-        first.record = first.record.saturating_add(run.len());
+    for run in frame
+        .records
+        .chunk_by(|earlier, later| leading(earlier) == leading(later))
+    {
+        if run.first().and_then(leading) == Some(FieldName::from(DOCUMENT)) {
+            for record in run {
+                panes.push(labelled(record, first, frame.revision));
+                first.record = first.record.saturating_add(1);
+            }
+        }
+        else {
+            panes.push(tabled(run, first, frame.revision));
+            first.record = first.record.saturating_add(run.len());
+        }
     }
     Rendering { panes }
 }
 
+/// The pane of `record`, which has the place `first` in the frame: one row,
+/// each field drawn as its name beside its datum.
+///
+/// # Specification
+/// trivial.
+fn labelled(
+    record: &Record,
+    first: Place,
+    revision: Revision,
+) -> Pane
+{
+    let mut cells = Vec::with_capacity(record.fields.len().saturating_mul(2));
+    for (index, field) in record.fields.iter().enumerate() {
+        let place = Place {
+            record: first.record,
+            field: index,
+        };
+        cells.push(Cell::label(place, field.name));
+        cells.push(drawn(place, field, None, Half::Whole, revision));
+    }
+    Pane {
+        heads: Vec::new(),
+        rows: Vec::from([Row { cells }]),
+    }
+}
+
+/// Which part of its field a column draws: the whole datum, or the p50 or the
+/// p99 of a latency.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Half
+{
+    /// The whole datum.
+    Whole,
+    /// The median of a latency.
+    Median,
+    /// The 99th percentile of a latency.
+    Tail,
+}
+
+/// `time` in nanoseconds, as a count.
+///
+/// # Specification
+/// trivial.
+fn nanos(time: Duration) -> Count
+{
+    Count(u64::try_from(time.as_nanos()).unwrap_or(u64::MAX))
+}
+
 /// The pane of `records`, the first of which has the place `first` in the
-/// frame: one head per field name, and one row per record and per further
-/// field of one name, as [`rendering`] states.
+/// frame: one head per field name, two for a name that holds a latency, and
+/// one row per record and per further field of one name, as [`rendering`]
+/// states.
 ///
 /// # Specification
 /// trivial.
@@ -513,48 +698,85 @@ fn tabled(
     revision: Revision,
 ) -> Pane
 {
+    // The names whose fields hold a latency: each takes two columns, the
+    // median and the 99th percentile.
+    let paired: BTreeSet<FieldName> = records
+        .iter()
+        .flat_map(|record| &record.fields)
+        .filter(|field| matches!(field.datum, Datum::Latency { .. }))
+        .map(|field| field.name)
+        .collect();
+    let parts = |name: &FieldName| -> &'static [Half] {
+        if paired.contains(name) {
+            &[Half::Median, Half::Tail]
+        }
+        else {
+            &[Half::Whole]
+        }
+    };
     let mut heads: Vec<Head> = Vec::new();
+    let mut halves: Vec<Half> = Vec::new();
     let mut columns_of: BTreeMap<FieldName, usize> = BTreeMap::new();
-    // The largest sample of each column of rings, and what its samples count.
-    let mut rings: Vec<Option<(Count, SampleUnit)>> = Vec::new();
+    // The scale of each column, and what it counts: the largest ceiling,
+    // window, sample or time of the column.
+    let mut tops: Vec<Option<(Count, SampleUnit)>> = Vec::new();
     for field in records.iter().flat_map(|record| &record.fields) {
+        let width = parts(&field.name).len();
         let column = *columns_of.entry(field.name).or_insert_with(|| {
-            heads.push(Head {
-                name: field.name,
-                unit: None,
-            });
-            rings.push(None);
-            heads.len().saturating_sub(1)
+            for &half in parts(&field.name) {
+                heads.push(Head {
+                    name: field.name,
+                    unit: None,
+                });
+                halves.push(half);
+                tops.push(None);
+            }
+            heads.len().saturating_sub(width)
         });
-        match field.datum {
+        let top = match field.datum {
             Datum::Count(_) => {
                 if let Some(head) = heads.get_mut(column) {
                     head.unit = head.unit.or(Some(Unit::Count));
                 }
+                None
             },
-            Datum::Samples(ref ring) => {
-                let top = ring.values().iter().copied().max().unwrap_or_default();
-                if let Some(held) = rings.get_mut(column) {
-                    *held =
-                        Some(held.map_or((top, ring.unit()), |(was, unit)| (was.max(top), unit)));
-                }
+            Datum::Samples(ref ring) => Some((
+                ring.values()
+                    .iter()
+                    .copied()
+                    .chain(ring.ceiling())
+                    .max()
+                    .unwrap_or_default(),
+                ring.unit(),
+            )),
+            Datum::Duration { time, window } => Some((
+                nanos(window.map_or(time, |window| window.max(time))),
+                SampleUnit::Nanoseconds,
+            )),
+            Datum::Latency { p99, window, .. } => {
+                Some((nanos(window.max(p99)), SampleUnit::Nanoseconds))
             },
             Datum::Absent
             | Datum::Text(_)
-            | Datum::Duration(_)
             | Datum::Bytes(_)
-            | Datum::Latency { .. }
             | Datum::Ratio { .. }
             | Datum::Warrant(_)
-            | Datum::Comparison { .. } => {},
+            | Datum::Comparison { .. } => None,
+        };
+        if let Some((top, unit)) = top {
+            for held in tops.iter_mut().skip(column).take(width) {
+                *held = Some(held.map_or((top, unit), |(was, unit)| (was.max(top), unit)));
+            }
         }
     }
-    // A column of rings draws in one unit under one scale: a count, or a time
-    // in microseconds below one millisecond and in milliseconds from it.
-    let scales: Vec<Option<(Count, Unit)>> = rings
+    // A column of rings or times draws in one unit under one scale: a count,
+    // or a time in microseconds below one millisecond and in milliseconds
+    // from it. A ceiling or a window fixes the scale of a live column, so a
+    // row that moves leaves the cells of the other rows as they were.
+    let scales: Vec<Option<(Count, Unit)>> = tops
         .iter()
-        .map(|ring| {
-            ring.map(|(top, unit)| {
+        .map(|top| {
+            top.map(|(top, unit)| {
                 let drawn = match unit {
                     SampleUnit::Count => Unit::Count,
                     SampleUnit::Nanoseconds if top < Count(1_000_000) => Unit::Microseconds,
@@ -575,11 +797,14 @@ fn tabled(
     for (offset, record) in records.iter().enumerate() {
         columns.iter_mut().for_each(Vec::clear);
         for (index, field) in record.fields.iter().enumerate() {
-            if let Some(column) = columns_of
-                .get(&field.name)
-                .and_then(|&column| columns.get_mut(column))
-            {
-                column.push(index);
+            if let Some(&column) = columns_of.get(&field.name) {
+                for held in columns
+                    .iter_mut()
+                    .skip(column)
+                    .take(parts(&field.name).len())
+                {
+                    held.push(index);
+                }
             }
         }
         let depth = columns.iter().map(Vec::len).max().unwrap_or_default();
@@ -587,7 +812,8 @@ fn tabled(
             let cells: Vec<Cell> = columns
                 .iter()
                 .zip(&scales)
-                .map(|(column, &scale)| {
+                .zip(&halves)
+                .map(|((column, &scale), &half)| {
                     column
                         .get(line)
                         .and_then(|&index| {
@@ -598,7 +824,7 @@ fn tabled(
                             record
                                 .fields
                                 .get(index)
-                                .map(|field| drawn(place, field, scale, revision))
+                                .map(|field| drawn(place, field, scale, half, revision))
                         })
                         .unwrap_or_else(Cell::blank)
                 })
@@ -616,9 +842,11 @@ fn tabled(
 
 /// The cell of `field`, the field at `place`, in a frame at `revision`: a
 /// text at the left, a count as a numeral, a warrant as its glyph in its hue,
-/// and a ring as its sparkline under `scale`, the column's largest sample and
-/// its unit. A field older than `revision` takes the pending hue alone; any
-/// other datum draws nothing.
+/// a ring as its sparkline under `scale`, the column's largest ceiling or
+/// sample and its unit, and a time as a numeral in that unit. A latency draws
+/// the part that `half` names, and the second column of a latency draws
+/// nothing of another datum. A field older than `revision` takes the pending
+/// hue alone; any other datum draws nothing.
 ///
 /// # Specification
 /// trivial.
@@ -626,12 +854,19 @@ fn drawn(
     place: Place,
     field: &Field,
     scale: Option<(Count, Unit)>,
+    half: Half,
     revision: Revision,
 ) -> Cell
 {
     let placed = Cell {
         place: Some(place),
         ..Cell::blank()
+    };
+    if half == Half::Tail && !matches!(field.datum, Datum::Latency { .. }) {
+        return placed;
+    }
+    let timed = |time: Duration| {
+        scale.map(|(_, unit)| Cell::numeral(place, Numeral::of(nanos(time), unit)))
     };
     let mut cell = match field.datum {
         Datum::Text(ref text) => Cell::text(place, text.clone()),
@@ -653,12 +888,13 @@ fn drawn(
                 None => placed,
             }
         },
-        Datum::Absent
-        | Datum::Duration(_)
-        | Datum::Bytes(_)
-        | Datum::Latency { .. }
-        | Datum::Ratio { .. }
-        | Datum::Comparison { .. } => placed,
+        Datum::Duration { time, .. } => timed(time).unwrap_or(placed),
+        Datum::Latency { p50, p99, .. } => match half {
+            Half::Median => timed(p50).unwrap_or(placed),
+            Half::Tail => timed(p99).unwrap_or(placed),
+            Half::Whole => placed,
+        },
+        Datum::Absent | Datum::Bytes(_) | Datum::Ratio { .. } | Datum::Comparison { .. } => placed,
     };
     let inked = !cell.text.is_empty() || cell.glyph.is_some();
     if field.revision < revision && inked {
@@ -670,14 +906,15 @@ fn drawn(
     cell
 }
 
-/// The lines a painter puts down for `rendering`: each pane's heads when it
-/// has any, then its rows; each cell padded to its column's width, with the
-/// style its attributes name. A head shows its field's name and its unit, and
-/// a cell shows its glyph and its text.
+/// The lines a painter puts down for `panes`: each pane's heads when it has
+/// any, then its rows; each cell padded to its column's width, with the style
+/// its attributes name. A head shows its field's name and its unit, and a head
+/// that repeats the head before it, the second column of a latency, shows
+/// nothing. A cell shows its glyph and its text.
 ///
 /// # Specification
 /// trivial.
-fn laid(rendering: &Rendering) -> Vec<Vec<Painted>>
+fn laid(panes: &[Pane]) -> Vec<Vec<Painted>>
 {
     let measured = |text: &str| Span::raw(text).width();
     let joined = |first: &str, second: &str| {
@@ -708,28 +945,34 @@ fn laid(rendering: &Rendering) -> Vec<Vec<Painted>>
         }
         padded
     };
-    let head = |head: &Head| {
-        let align = if head.unit.is_some() {
+    let head = |heads: &[Head], column: usize| {
+        let Some(held) = heads.get(column)
+        else {
+            return ("", "", Align::Left);
+        };
+        let repeated = column.checked_sub(1).and_then(|before| heads.get(before)) == Some(held);
+        if repeated {
+            return ("", "", Align::Left);
+        }
+        let align = if held.unit.is_some() {
             Align::Right
         }
         else {
             Align::Left
         };
         (
-            <&str>::from(head.name),
-            head.unit.map_or("", <&str>::from),
+            <&str>::from(held.name),
+            held.unit.map_or("", <&str>::from),
             align,
         )
     };
     let mut lines = Vec::new();
     let mut widths: Vec<usize> = Vec::new();
-    for pane in &rendering.panes {
+    for pane in panes {
         widths.clear();
-        let drawn = pane
-            .heads
-            .iter()
-            .map(|held| {
-                let (name, unit, _) = head(held);
+        let drawn = (0 .. pane.heads.len())
+            .map(|column| {
+                let (name, unit, _) = head(&pane.heads, column);
                 joined(name, unit)
             })
             .enumerate()
@@ -750,11 +993,9 @@ fn laid(rendering: &Rendering) -> Vec<Vec<Painted>>
         let width = |column: usize| widths.get(column).copied().unwrap_or_default();
         if !pane.heads.is_empty() {
             lines.push(
-                pane.heads
-                    .iter()
-                    .enumerate()
-                    .map(|(column, held)| {
-                        let (name, unit, align) = head(held);
+                (0 .. pane.heads.len())
+                    .map(|column| {
+                        let (name, unit, align) = head(&pane.heads, column);
                         (padded(name, unit, width(column), align), Style::new())
                     })
                     .collect(),
@@ -813,7 +1054,7 @@ fn painted(cell: &Cell) -> Style
 /// trivial.
 fn printed(rendering: &Rendering) -> Vec<String>
 {
-    laid(rendering)
+    laid(&rendering.panes)
         .into_iter()
         .map(|line| {
             let mut text = String::new();
@@ -870,13 +1111,16 @@ pub enum Seen
     Closed,
 }
 
-/// Draw `following` onto `screen`: the rendering of its frame, line by line.
+/// Draw `following` onto `screen`: the rendering of its frame, line by line,
+/// the activity pane at the foot.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the first lines of [`rendering`] of [`Following::frame`] that fit
-///   are painted from the top, each cell in the style its attributes name, as a
-///   pipe prints them; nothing else is painted.
+/// - ensures: the lines of the activity panes of [`rendering`] of
+///   [`Following::frame`] are painted at the foot of the screen, as many as
+///   fit, and the first lines of the panes before them that fit above them are
+///   painted from the top. Each cell is in the style its attributes name, as a
+///   pipe prints it; nothing else is painted.
 /// - provides: the side view's one paint.
 /// - fails: never.
 /// - panics: none.
@@ -887,16 +1131,35 @@ pub enum Seen
 /// # Adequacy
 /// - hypothesis: L3 — a scripted bus paints nothing before a report, then the
 ///   report's lines exactly as a pipe prints them, observed through backend
-///   cells.
+///   cells; the activity of two cores sits at the foot under a report.
 /// - witness: `follow::tests::the_view_paints_what_the_bus_sends`
+/// - witness: `follow::tests::the_view_shows_the_activity_of_the_pool`
 #[inline]
 pub fn draw_following(
     screen: &mut ratatui::Frame<'_>,
     following: &Following,
 )
 {
-    let lines: Vec<Line<'_>> = laid(&rendering(&following.frame()))
-        .into_iter()
+    let drawn = rendering(&following.frame());
+    let (document, activity) = following.parted(&drawn.panes);
+    let foot = lines(laid(activity));
+    let area = screen.area();
+    let height = u16::try_from(foot.len())
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    let [top, bottom] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(height)]).areas(area);
+    screen.render_widget(Paragraph::new(lines(laid(document))), top);
+    screen.render_widget(Paragraph::new(foot), bottom);
+}
+
+/// The terminal lines of `laid`: the cells of a line parted by one space.
+///
+/// # Specification
+/// trivial.
+fn lines(laid: Vec<Vec<Painted>>) -> Vec<Line<'static>>
+{
+    laid.into_iter()
         .map(|line| {
             let mut spans = Vec::with_capacity(line.len().saturating_mul(2));
             for (column, (text, style)) in line.into_iter().enumerate() {
@@ -907,8 +1170,7 @@ pub fn draw_following(
             }
             Line::from(spans)
         })
-        .collect();
-    screen.render_widget(Paragraph::new(lines), screen.area());
+        .collect()
 }
 
 /// Run the side view over `terminal`, acting on what `seen` delivers, until
@@ -1157,6 +1419,7 @@ mod tests
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_render_remote::ByteRange;
     use gandr_surface_render_remote::CheckerVerdict;
+    use gandr_surface_render_remote::CoreActivity;
     use gandr_surface_render_remote::Count;
     use gandr_surface_render_remote::Datum;
     use gandr_surface_render_remote::DiagCard;
@@ -1165,13 +1428,17 @@ mod tests
     use gandr_surface_render_remote::DocVersion;
     use gandr_surface_render_remote::DocumentUri;
     use gandr_surface_render_remote::KernelMark;
+    use gandr_surface_render_remote::Lengths;
+    use gandr_surface_render_remote::Load;
     use gandr_surface_render_remote::MarkKind;
     use gandr_surface_render_remote::MarkSpan;
+    use gandr_surface_render_remote::PoolActivity;
     use gandr_surface_render_remote::RenderFrame;
     use gandr_surface_render_remote::ReportView;
     use gandr_surface_render_remote::SampleUnit;
     use gandr_surface_render_remote::Samples;
     use gandr_surface_render_remote::Shown;
+    use gandr_surface_render_remote::TaskKind;
     use gandr_surface_render_remote::Warrant;
     use gandr_surface_render_remote::conform;
     use gandr_surface_repl::Ended;
@@ -1561,6 +1828,157 @@ mod tests
             inked(&following)
         );
         assert_eq!(breaches(&following, &current), []);
+    }
+
+    #[test]
+    fn the_view_shows_the_activity_of_the_pool()
+    {
+        // A ring of the hub's pane: its last two cells after 30 idle ones,
+        // under the ceiling of one tick for each core it sums.
+        let ring = |last: u64, cores: u64| {
+            let mut values = [Count(0); 32];
+            if let Some(newest) = values.last_mut() {
+                *newest = Count(last);
+            }
+            Samples::bounded(
+                SampleUnit::Nanoseconds,
+                values,
+                Count(16_666_667_u64.saturating_mul(cores)),
+            )
+        };
+        let lengths = Lengths {
+            p50: Count(200_000),
+            p99: Count(400_000),
+        };
+        let busy = |last: u64, lengths: Option<Lengths>| Load {
+            occupancy: ring(last, 1),
+            busy: Count(last),
+            lengths,
+        };
+        let activity = PoolActivity {
+            window: Count(2_000_000_000),
+            cores: Vec::from([
+                CoreActivity {
+                    world: Some(Count(0)),
+                    core: Count(0),
+                    now: Some(TaskKind::Fork),
+                    load: busy(600_000, Some(lengths)),
+                },
+                CoreActivity {
+                    world: None,
+                    core: Count(1),
+                    now: None,
+                    load: busy(0, None),
+                },
+            ]),
+            totals: Load {
+                occupancy: ring(600_000, 2),
+                busy: Count(600_000),
+                lengths: Some(lengths),
+            },
+        };
+        let mut following = Following::default();
+        let idle = following.clone();
+        assert_eq!(
+            following.hear(&RenderFrame::activity(activity.clone())),
+            Heard::Continue
+        );
+        let low = "▁".repeat(32);
+        let pane = [
+            format!("world core {:>38} now  busy ms lengths ms", "occupancy ms"),
+            format!("    0    0 {low} 0.600 fork   0.600      0.200 0.400"),
+            format!("         1     {low} 0            0"),
+            format!("cores {:>38} busy ms lengths ms", "occupancy ms"),
+            format!("    2 {low} 0.600   0.600      0.200 0.400"),
+        ];
+        assert_eq!(lines(&following), pane, "the pane alone, before any report");
+        assert_eq!(breaches(&following, &idle), [], "the pane keeps every rule");
+        let started = following.clone();
+        let mut moved = activity.clone();
+        if let Some(second) = moved.cores.get_mut(1) {
+            *second = CoreActivity {
+                world: Some(Count(0)),
+                core: Count(1),
+                now: Some(TaskKind::Fork),
+                load: busy(16_666_667, None),
+            };
+        }
+        moved.totals = Load {
+            occupancy: ring(17_266_667, 2),
+            busy: Count(17_266_667),
+            lengths: Some(lengths),
+        };
+        let _heard = following.hear(&RenderFrame::activity(moved));
+        assert_eq!(
+            breaches(&following, &started),
+            [],
+            "a core that fills its tick leaves the scale and the units of the other rows as they were"
+        );
+        let _heard = following.hear(&RenderFrame::activity(activity.clone()));
+        let before = following.clone();
+        let uri = DocumentUri::from(String::from("file:///a.gandr"));
+        let report = RenderFrame::frame(
+            document(&uri, DocVersion::from(1_i32)),
+            ReportView::default(),
+        );
+        let _heard = following.hear(&report);
+        let header = String::from("uri file:///a.gandr version 1 diagnostics 0 holes 0");
+        assert_eq!(
+            lines(&following),
+            core::iter::once(header.clone())
+                .chain(pane.iter().cloned())
+                .collect::<Vec<_>>(),
+            "the pane follows the document"
+        );
+        assert_eq!(
+            breaches(&following, &before),
+            [],
+            "the report leaves the pane in place"
+        );
+        let (seen, inbox) = channel();
+        for frame in [report.clone(), RenderFrame::activity(activity.clone())] {
+            seen.send(Seen::Frame(frame)).expect("the loop listens");
+        }
+        seen.send(Seen::Input(Input::Key(Key::Char('q'))))
+            .expect("the loop listens");
+        let mut terminal = Terminal::new(TestBackend::new(80_u16, 8_u16)).expect("a test backend");
+        assert!(matches!(
+            drive_following(&mut terminal, &inbox),
+            Ok(Ended::Completed)
+        ));
+        let buffer = terminal.backend().buffer();
+        let screen: Vec<String> = (buffer.area.top() .. buffer.area.bottom())
+            .map(|y| {
+                let mut line: String = (buffer.area.left() .. buffer.area.right())
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect();
+                line.truncate(line.trim_end().len());
+                line
+            })
+            .collect();
+        assert_eq!(
+            screen,
+            [header.clone(), String::new(), String::new()]
+                .into_iter()
+                .chain(pane.iter().cloned())
+                .collect::<Vec<_>>(),
+            "the report sits at the top and the pane at the foot"
+        );
+        let mut bus = String::new();
+        for frame in [RenderFrame::activity(activity), report] {
+            bus.push_str(&serde_json::to_string(&frame).expect("a frame encodes"));
+            bus.push('\n');
+        }
+        let mut output = Vec::new();
+        assert!(matches!(
+            follow_plain(bus.as_bytes(), &mut output),
+            Ok(Ended::Completed)
+        ));
+        assert_eq!(
+            String::from_utf8(output).expect("the view prints text"),
+            format!("{header}\n\n"),
+            "a pipe prints the document alone"
+        );
     }
 
     #[test]

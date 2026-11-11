@@ -50,6 +50,7 @@ use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
+use core::num::NonZeroU64;
 use core::time::Duration;
 
 use anodized::spec;
@@ -518,13 +519,15 @@ pub enum SampleUnit
 }
 
 /// The ring of a sparkline field: at most [`SAMPLES`] values of one unit, the
-/// oldest first.
+/// oldest first, and the most that one value can hold when the producer knows
+/// it.
 ///
 /// # Specification
 /// - ensures: the ring holds at most [`SAMPLES`] values, whether built by
-///   [`Samples::new`] or decoded.
-/// - provides: the wire image `{"unit": u, "values": [v, …]}` under the `serde`
-///   feature, whose decode refuses a longer ring with [`TooManySamples`].
+///   [`Samples::new`] or [`Samples::bounded`] or decoded.
+/// - provides: the wire image `{"unit": u, "values": [v, …], "ceiling": c}`
+///   under the `serde` feature, with no `ceiling` for a ring that has none,
+///   whose decode refuses a longer ring with [`TooManySamples`].
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Samples
@@ -533,6 +536,11 @@ pub struct Samples
     unit: SampleUnit,
     /// The values, the oldest first.
     values: Vec<Count>,
+    /// The most that one value can hold: the scale of a live sparkline, which
+    /// stays as the values move. A ceiling is never zero, so it costs the ring
+    /// one word.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    ceiling: Option<NonZeroU64>,
 }
 
 impl Samples
@@ -570,7 +578,44 @@ impl Samples
                 offered: values.len(),
             });
         }
-        Ok(Self { unit, values })
+        Ok(Self {
+            unit,
+            values,
+            ceiling: None,
+        })
+    }
+
+    /// The full ring of `values` in `unit`, the oldest first, none of which
+    /// can hold more than `ceiling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the ring holds exactly `values` in `unit`, under `ceiling`. A
+    ///   zero ceiling bounds no value, so the ring keeps none.
+    /// - provides: a ring whose length its type states, so it never fails, and
+    ///   whose scale stays as its values move.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bounded ring holds the 32 values that
+    ///   [`Samples::new`] admits, and its ceiling survives a round trip.
+    /// - witness: `visual::tests::a_ring_holds_at_most_thirty_two_samples`
+    #[spec(ensures: |ref ret| ret.values.len() == SAMPLES && ret.unit == unit
+        && ret.ceiling() == Some(ceiling).filter(|&Count(most)| most != 0))]
+    #[inline]
+    #[must_use]
+    pub fn bounded(
+        unit: SampleUnit,
+        values: [Count; SAMPLES],
+        ceiling: Count,
+    ) -> Self
+    {
+        Self {
+            unit,
+            values: Vec::from(values),
+            ceiling: NonZeroU64::new(ceiling.0),
+        }
     }
 
     /// What each value counts.
@@ -594,10 +639,24 @@ impl Samples
     {
         &self.values
     }
+
+    /// The most that one value can hold, when the producer states it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn ceiling(&self) -> Option<Count>
+    {
+        match self.ceiling {
+            Some(most) => Some(Count(most.get())),
+            None => None,
+        }
+    }
 }
 
-/// The decode image of a [`Samples`] ring: its unit and its values before the
-/// length check.
+/// The decode image of a [`Samples`] ring: its unit, its values and its
+/// ceiling before the length check.
 #[cfg(feature = "serde")]
 #[derive(serde::Deserialize)]
 struct SamplesWire
@@ -606,6 +665,9 @@ struct SamplesWire
     unit: SampleUnit,
     /// The decoded values.
     values: Vec<Count>,
+    /// The decoded ceiling, absent for a ring that has none.
+    #[serde(default)]
+    ceiling: Option<Count>,
 }
 
 #[cfg(feature = "serde")]
@@ -615,7 +677,8 @@ impl<'input> serde::Deserialize<'input> for Samples
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the ring holds exactly the decoded values.
+    /// - ensures: on success the ring holds exactly the decoded values and
+    ///   ceiling.
     /// - fails: the deserializer's error for a malformed image, and a custom
     ///   error carrying the [`TooManySamples`] message for a longer ring.
     /// - panics: none.
@@ -634,7 +697,12 @@ impl<'input> serde::Deserialize<'input> for Samples
     {
         let wire = SamplesWire::deserialize(deserializer)?;
 
-        Self::new(wire.unit, wire.values).map_err(serde::de::Error::custom)
+        Self::new(wire.unit, wire.values)
+            .map(|ring| Self {
+                ceiling: wire.ceiling.and_then(|Count(most)| NonZeroU64::new(most)),
+                ..ring
+            })
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -915,8 +983,15 @@ pub enum Datum
     Text(String),
     /// A count.
     Count(Count),
-    /// A time.
-    Duration(Duration),
+    /// A time, and the window that bounds it when the producer states one: a
+    /// live column keeps the unit of its window as its times move.
+    Duration
+    {
+        /// The time.
+        time: Duration,
+        /// The span of time that bounds it.
+        window: Option<Duration>,
+    },
     /// A size in bytes.
     Bytes(Count),
     /// A latency: its median and its 99th percentile over a window.
@@ -1253,7 +1328,7 @@ fn quantity(datum: &Datum) -> Option<()>
 {
     match *datum {
         Datum::Count(_)
-        | Datum::Duration(_)
+        | Datum::Duration { .. }
         | Datum::Bytes(_)
         | Datum::Latency { .. }
         | Datum::Ratio { .. }

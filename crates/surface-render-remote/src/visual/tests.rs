@@ -224,7 +224,7 @@ fn example(note: Datum) -> (Frame, Rendering)
             Datum::Text(text) => text,
             Datum::Absent
             | Datum::Count(_)
-            | Datum::Duration(_)
+            | Datum::Duration { .. }
             | Datum::Bytes(_)
             | Datum::Latency { .. }
             | Datum::Ratio { .. }
@@ -622,7 +622,31 @@ fn a_ring_draws_thirty_two_cells_and_its_last_value()
 fn a_ring_holds_at_most_thirty_two_samples()
 {
     let values = |count: u64| (0 .. count).map(Count).collect::<Vec<Count>>();
-    assert!(Samples::new(SampleUnit::Count, values(32)).is_ok());
+    let ring = Samples::new(SampleUnit::Count, values(32)).expect("32 values fit a ring");
+    assert_eq!(ring.ceiling(), None, "a ring states no ceiling of its own");
+    let full = <[Count; SAMPLES]>::try_from(values(32)).expect("32 values fill a ring");
+    let bounded = Samples::bounded(SampleUnit::Count, full, Count(40));
+    assert_eq!(
+        (bounded.values(), bounded.ceiling()),
+        (ring.values(), Some(Count(40))),
+        "a bounded ring holds its 32 values under its ceiling"
+    );
+    assert_eq!(
+        Samples::bounded(SampleUnit::Count, full, Count(0)).ceiling(),
+        None,
+        "a zero ceiling bounds no value"
+    );
+    let decoded: Samples =
+        serde_json::from_value(serde_json::to_value(&bounded).expect("a ring encodes"))
+            .expect("a bounded ring decodes");
+    assert_eq!(decoded, bounded, "the ceiling survives the round trip");
+    assert!(
+        serde_json::to_value(&ring)
+            .expect("a ring encodes")
+            .get("ceiling")
+            .is_none(),
+        "a ring with no ceiling takes no bytes for it"
+    );
     assert_eq!(
         Samples::new(SampleUnit::Count, values(33)),
         Err(TooManySamples { offered: 33 })

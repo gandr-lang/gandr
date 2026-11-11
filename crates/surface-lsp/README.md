@@ -31,7 +31,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes judged without submitting any, ranked best first, each with the diagnostics its text would publish; every copy and its session unchanged.
 - `Workspace::propose`, `Proposal` and `ProposalRefusal`: a model's fill of a range kept beside the document once it checks, refused when stale or failing, and withdrawn by the next synchronisation; kept fills served as ghost text, code lenses, code actions and hover notes.
 - `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket, with its greeting, its reports, a resync and a detach as [`bus`](src/bus.rs) states.
-- With the `instrument` feature, `Activities` and `Tick`: the hub's fold of the activity ring, which runs while a watcher follows it.
+- With the `instrument` feature, `Activities`, `Cadence` and `Tick`: the hub's fold of the activity ring while a watcher follows it, at its cadence, and the pool's pane on the render bus.
 - Incremental synchronisation: each content change applied in order and the document judged again in its session on the worker pool, molding only the forms the change touched; one log line per publication.
 - Notebook synchronisation: a Jupyter `.ipynb` of `gandr` cells judged as one document, each cell published its own diagnostics ([`notebook`](src/notebook.rs)).
 - `Server::admit`, `Server::admitted`, `Admissions` and `Awaiting`: the judgement each synchronisation leaves due, run on the worker pool and published once delivered, then the kernel admission it left, run once its diagnostics are published.

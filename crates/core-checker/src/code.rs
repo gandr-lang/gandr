@@ -117,7 +117,6 @@ use gandr_core_nbe::Problem;
 use gandr_core_nbe::ReadbackMode;
 use gandr_core_nbe::Recursion;
 use gandr_core_nbe::ResharingMemo;
-use gandr_core_nbe::StepBudget;
 use gandr_core_nbe::TermFace;
 use gandr_core_nbe::TraceNode;
 use gandr_core_nbe::Unfolding;
@@ -1552,11 +1551,9 @@ impl CodeDefinitions
     /// - provides: the conversion two terms meet where no derivation is kept:
     ///   function extensionality's pointwise results and a type comparison's
     ///   term pairs.
-    /// - fails: [`CheckRefusal::Undecided`] at `left` when a side does not
-    ///   evaluate, for its budget or for another fault, or when the machine
-    ///   faults; [`CheckRefusal::DanglingNode`] for a node `core` does not
-    ///   hold. A spent side stays undecided here, because each caller reads a
-    ///   decline as apart.
+    /// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
+    ///   evaluate or the machine faults; [`CheckRefusal::DanglingNode`] for a
+    ///   node `core` does not hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -1580,11 +1577,8 @@ impl CodeDefinitions
         let undecided = CheckRefusal::Undecided { at: left };
         let definitions = self.nbe_definitions();
         let mut domain = DomainArena::new();
-        let Maybe::Present((problem, _returning)) =
-            rigid_problem(core, &mut domain, definitions, left, right, &[])?
-        else {
-            return Err(undecided);
-        };
+        let (problem, _returning) =
+            rigid_problem(core, &mut domain, definitions, left, right, &[])?;
         decide::<NullSink, ResharingMemo>(
             core,
             &mut domain,
@@ -1612,14 +1606,14 @@ impl CodeDefinitions
     ///   [`gandr_core_nbe::Endpoints::Hold`] and with the variables at
     ///   `returning`, by index, read as variables whose calls return;
     ///   [`converted::Absent::Apart`] when the machine refutes or declines the
-    ///   pair, and when a side spends its budget before it evaluates.
+    ///   pair.
     /// - provides: the endpoint condition of reflexivity's rule and the
     ///   dialogue the kernel replays for it. Holding returned endpoints puts
     ///   every δ-step an endpoint needs in the trace as an `Unfold`, where
     ///   evaluation would otherwise take it silently.
     /// - fails: [`CheckRefusal::Undecided`] at `point` when either side does
-    ///   not evaluate for a fault other than its budget, or the machine faults;
-    ///   [`CheckRefusal::DanglingNode`] for a node `core` does not hold.
+    ///   not evaluate or the machine faults; [`CheckRefusal::DanglingNode`] for
+    ///   a node `core` does not hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -1663,9 +1657,7 @@ impl CodeDefinitions
     /// # Specification
     /// - requires: as [`Self::relate_terms`].
     /// - ensures: the verdict the machine reached, with the decisions its
-    ///   recording sink kept; a decline keeps its reason. A side that spends
-    ///   its budget before it evaluates is a decline for the budget,
-    ///   [`DeclineReason::Budget`], with no decisions.
+    ///   recording sink kept; a decline keeps its reason.
     /// - provides: [`Self::relate_terms`]'s answer; the reason a returned
     ///   step's dialogue was declined, which [`Self::certify`] reads; and the
     ///   decline over a hole a reflexivity's endpoints and a type conversion's
@@ -1681,11 +1673,9 @@ impl CodeDefinitions
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::relate_terms`], and a decode whose run
     ///   returns a quote holding a call on the quote's own binder declined for
-    ///   its undecided codes; a side that runs past the budget is declined for
-    ///   the budget.
+    ///   its undecided codes.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
-    /// - witness: `code::tests::a_side_past_the_budget_is_a_decline_for_the_budget_6478`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
     pub(crate) fn relation(
@@ -1699,11 +1689,8 @@ impl CodeDefinitions
         let undecided = CheckRefusal::Undecided { at: point };
         let definitions = self.nbe_definitions().reading_endpoints(Endpoints::Hold);
         let mut domain = DomainArena::new();
-        let Maybe::Present((problem, levels)) =
-            rigid_problem(core, &mut domain, definitions, point, endpoint, returning)?
-        else {
-            return Ok((MachineVerdict::Declined(DeclineReason::Budget), Vec::new()));
-        };
+        let (problem, levels) =
+            rigid_problem(core, &mut domain, definitions, point, endpoint, returning)?;
         let definitions = definitions.returning(&levels);
         let mut log = TraceLog::new();
         let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
@@ -2258,18 +2245,13 @@ impl Stalled
 ///   the two values stand under the same binders.
 /// - ensures: the problem between both evaluations, under as many binders as
 ///   the environment binds, and, ascending, the level each index in `returning`
-///   the environment binds stands at; [`converted::Absent::Undecided`] when a
-///   side spends the machine's step budget, [`StepBudget::DEFAULT`], before it
-///   reaches its weak head.
+///   the environment binds stands at.
 /// - provides: the shared preamble of [`CodeDefinitions::convert_terms`] and
 ///   [`CodeDefinitions::relate_terms`], which differ only in the reading of a
-///   returned endpoint, in the variables known to return and in the sink. Each
-///   side evaluates under the budget the machine then decides the pair under,
-///   so the evaluation stops no earlier than the decision.
+///   returned endpoint, in the variables known to return and in the sink.
 /// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
-///   evaluate for a fault other than its budget; [`CheckRefusal::DanglingNode`]
-///   for a node `core` does not hold; [`CheckRefusal::MachineInvariant`] for a
-///   reach past the address space.
+///   evaluate; [`CheckRefusal::DanglingNode`] for a node `core` does not hold;
+///   [`CheckRefusal::MachineInvariant`] for a reach past the address space.
 /// - panics: none.
 ///
 /// # Errors
@@ -2282,10 +2264,8 @@ impl Stalled
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a definition applied to a variable converts with the body
-///   it unfolds to, which needs the rigid environment; a side that runs past
-///   the budget is no fault.
+///   it unfolds to, which needs the rigid environment.
 /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
-/// - witness: `code::tests::a_side_past_the_budget_is_a_decline_for_the_budget_6478`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == left)
     || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
 fn rigid_problem(
@@ -2295,7 +2275,7 @@ fn rigid_problem(
     left: ValueId,
     right: ValueId,
     returning: &[DeBruijnIndex],
-) -> Result<Maybe<(Problem, Vec<BinderLevel>), converted::Absent>, CheckRefusal>
+) -> Result<(Problem, Vec<BinderLevel>), CheckRefusal>
 {
     let undecided = CheckRefusal::Undecided { at: left };
     let mut environment = Environment::new();
@@ -2318,28 +2298,14 @@ fn rigid_problem(
             .map_err(|_fault| undecided)?;
         environment.extend(Zone::Intuitionistic, bound);
     }
-    let fuel = u32::try_from(u64::from(StepBudget::DEFAULT))
-        .map_or_else(|_wide| Fuel::from(u32::MAX), Fuel::from);
-    let mut evaluate = |term: ValueId| match eval_value_within(
-        core,
-        domain,
-        definitions,
-        fuel,
-        term,
-        environment.clone(),
-    ) {
-        Ok((value, _remaining)) => Ok(Maybe::Present(value)),
-        Err(EvalFault::OutOfFuel) => Ok(Maybe::Absent(converted::Absent::Undecided)),
-        Err(_fault) => Err(undecided),
+    let fuel = Fuel::from(CODE_FUEL);
+    let mut evaluate = |term: ValueId| {
+        eval_value_within(core, domain, definitions, fuel, term, environment.clone())
+            .map(|(value, _remaining)| value)
+            .map_err(|_fault| undecided)
     };
-    let one = match evaluate(left)? {
-        Maybe::Present(one) => one,
-        Maybe::Absent(spent) => return Ok(Maybe::Absent(spent)),
-    };
-    let other = match evaluate(right)? {
-        Maybe::Present(other) => other,
-        Maybe::Absent(spent) => return Ok(Maybe::Absent(spent)),
-    };
+    let one = evaluate(left)?;
+    let other = evaluate(right)?;
     let mut levels: Vec<BinderLevel> = returning
         .iter()
         .filter_map(|&index| {
@@ -2349,10 +2315,10 @@ fn rigid_problem(
         })
         .collect();
     levels.sort_unstable();
-    Ok(Maybe::Present((
+    Ok((
         Problem::values(one, other).under(BinderLevel::from(open)),
         levels,
-    )))
+    ))
 }
 
 /// Decide whether two computations standing under the same binders convert
