@@ -939,6 +939,14 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
             (Oblig::MissingTile, ","),
         ],
     ),
+    // A codata block holds no face: the grammar molds no `face` among its
+    // observations, and the checker refuses the form (`MalformedForm`, #6604).
+    // #6504 owes the face of a codata declaration, and its landing removes
+    // this row.
+    ("fixture/pathological/desc/record-faces.gandr", &[
+        (Oblig::MissingTile, "face"),
+        (Oblig::MissingTile, "="),
+    ]),
 ];
 
 /// The zero-obligation gate over the language's corpus: the candidate
