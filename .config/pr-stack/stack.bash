@@ -353,28 +353,44 @@ measured_from() {
   printf '%s\n' "$base"
 }
 
-# Refuse a branch with no recorded stack base that carries commits
-# `origin/$trunk` holds by patch (#5990). The landing rebase rewrites the
-# trunk: a branch cut from the old tip keeps the old commits under their old
-# hashes, and its merge base falls back to an old commit of `main`. So
-# `evidence:base` would read every old commit as the branch's own change.
-# The fork the refusal names is the newest commit the rebase noted under
-# `refs/notes/rebased`, the old tip, or else the newest commit the trunk
-# holds by patch. Prints the refusal and returns 1, or prints nothing.
-rewritten_base() {
-  local held fork commit
-  [[ -z $(stack_base) ]] || return 0
+# The fork of the own commits of `$1`, a fetched ref, on a trunk that the
+# landing rebase rewrote since `$1` was cut from it (#5990, #6399). A head on
+# the old lineage carries commits that `origin/$trunk` holds by patch under
+# other hashes, which `git cherry` marks `-`. A head that is only behind the
+# trunk carries none. The fork is the newest commit past `origin/$trunk` that
+# the rebase noted under `refs/notes/rebased`, the old tip, or else the newest
+# commit that the trunk holds by patch. Prints the fork and the count of the
+# held commits, separated by a tab, or nothing for a head that is only behind.
+rewritten_fork() {
+  local cherry held fork='' commit
   git fetch --quiet origin "$trunk"
-  held=$(git cherry "origin/$trunk" HEAD | grep -c '^-' || true)
+  cherry=$(git cherry "origin/$trunk" "$1")
+  held=$(grep -c '^-' <<< "$cherry" || true)
   (( held > 0 )) || return 0
   git fetch --quiet origin '+refs/notes/rebased:refs/notes/rebased' 2> /dev/null || true
-  for commit in $(git rev-list HEAD --not "origin/$trunk"); do
+  for commit in $(git rev-list "$1" --not "origin/$trunk"); do
     if git notes --ref=rebased show "$commit" > /dev/null 2>&1; then
       fork=$commit
       break
     fi
   done
-  [[ -n ${fork:-} ]] || fork=$(git cherry "origin/$trunk" HEAD | awk '$1 == "-" { last = $2 } END { print last }')
+  [[ -n $fork ]] || fork=$(awk '$1 == "-" { last = $2 } END { print last }' <<< "$cherry")
+  printf '%s\t%s\n' "$fork" "$held"
+}
+
+# Refuse a branch with no recorded stack base that carries commits
+# `origin/$trunk` holds by patch (#5990). The landing rebase rewrites the
+# trunk: a branch cut from the old tip keeps the old commits under their old
+# hashes, and its merge base falls back to an old commit of `main`. So
+# `evidence:base` would read every old commit as the branch's own change.
+# The refusal names the fork that `rewritten_fork` reads. Prints the refusal
+# and returns 1, or prints nothing.
+rewritten_base() {
+  local lineage fork held
+  [[ -z $(stack_base) ]] || return 0
+  lineage=$(rewritten_fork HEAD)
+  [[ -n $lineage ]] || return 0
+  IFS=$'\t' read -r fork held <<< "$lineage"
   printf '%s carries %s commit(s) that origin/%s holds by patch, and its worktree records no stack base: a rewrite of %s left them under its own commits, so every one would read as its change. Replay its own commits with `git rebase --onto origin/%s %s`, then run the task again\n' \
     "$(git branch --show-current)" "$held" "$trunk" "$trunk" "$trunk" "${fork:0:12}"
   return 1
@@ -1340,6 +1356,41 @@ cut_closed() {
   echo "#${numbers[0]} cut past #$number, closed unmerged: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$chain") replayed onto $base without its commits" >&2
 }
 
+# Replay the stack `$1` (bottom to top, `{number, head}`), whose bottom
+# stands on an old lineage of the trunk (#6399), onto `origin/$trunk` before
+# anything of it is queued. The landing rebase and the integration cycle
+# rewrite `landing`, and the merge queue refuses a head that still carries the
+# old commits. `$2` is the fork that `rewritten_fork` reads for the bottom,
+# and `$3` the count of the commits it holds by patch. Each member's own
+# commits replay as `chain_replay` replays them: the bottom's from the fork,
+# each upper's from the old tip below it. The replay runs on the `github`
+# signer, as `cut_closed` runs it, so a runner without a signing key replays
+# the same way. The new heads start their checks, and the stack lands from
+# them once they pass. Returns 3 after the replay, with one line on stderr.
+# Returns 2 at a conflict or a refused replay, naming the member and the
+# command that replays it by hand. The members below the stop stay replayed.
+replay_lineage() {
+  local stack=$1 fork=$2 held=$3 dir status=0 heads=() numbers=()
+  mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
+  mapfile -t numbers < <(jq -r '.[].number' <<< "$stack")
+  git fetch --quiet origin "${heads[@]}" || { echo "the fetch of the stack over #${numbers[0]} failed" >&2; return 2; }
+  dir=$(mktemp -d)
+  git worktree add --quiet --detach "$dir" "origin/${heads[0]}" || { rm -rf "$dir"; echo "the scratch worktree for the replay of #${numbers[0]} failed" >&2; return 2; }
+  if ! chain_replay "$dir" "origin/$trunk" "$fork" github "${heads[@]}"; then
+    if [[ -n $chain_files ]] && (( chain_stop == 0 )); then
+      echo "the replay of #${numbers[0]} off an old lineage of $trunk conflicts ($chain_files): replay it by hand with \`git rebase --onto origin/$trunk ${fork:0:12}\`, push, then land again" >&2
+    elif [[ -n $chain_files ]]; then
+      echo "the replay of #${numbers[chain_stop]} onto ${heads[chain_stop-1]} conflicts ($chain_files): rebase it onto ${heads[chain_stop-1]} by hand, push, then land again" >&2
+    fi
+    status=2
+  fi
+  git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
+  git worktree prune
+  (( status == 0 )) || return "$status"
+  echo "#${numbers[0]} stood on an old lineage of $trunk, with $held commit(s) that $trunk holds under other hashes: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack") replayed onto $trunk, and the stack lands once the new heads' checks pass" >&2
+  return 3
+}
+
 # Bring the stack bottom `$1`, standing off the trunk as `bottom.jq` reads it
 # (#4168), back to a base that lands; `$2` is its chain, bottom to top. A base
 # that a pull request closed unmerged heads, or headed before its branch was
@@ -1489,9 +1540,12 @@ cut_reason() {
 # (`rests.jq`, #3253): nothing of it is queued. Before the queue is read, a
 # bottom standing off the trunk (`bottom.jq`, #4168) is brought back to it
 # (`retarget_bottom`): retargeted, or cut past a member closed unmerged below
-# it (#5695). Otherwise it is refused with 2 naming its base.
+# it (#5695). Otherwise it is refused with 2 naming its base. A stack with
+# nothing queued whose bottom stands on an old lineage of the trunk
+# (`rewritten_fork`, #6399) is replayed onto the trunk and queued nothing
+# (`replay_lineage`): 3 after the replay, 2 at a conflict.
 land_prefix() {
-  local server queued carried required cap room number state states=() decision verdict upto stop status=0 rests off
+  local server queued carried required cap room number state states=() decision verdict upto stop status=0 rests off lineage
   rests=$(open_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/rests.jq")
   if [[ "$rests" != null ]]; then
     case $(jq -r .hold <<< "$rests") in
@@ -1508,6 +1562,14 @@ land_prefix() {
     server=$(server_stack "$1")
   fi
   queued=$(queued_of "$server")
+  if [[ "$queued" == '[]' ]]; then
+    git fetch --quiet origin "$(jq -r '.[0].head' <<< "$server")"
+    lineage=$(rewritten_fork "origin/$(jq -r '.[0].head' <<< "$server")")
+    if [[ -n $lineage ]]; then
+      replay_lineage "$server" "${lineage%%$'\t'*}" "${lineage#*$'\t'}" || status=$?
+      return "$status"
+    fi
+  fi
   carried=$(carried_queued "$server")
   required=$(required_contexts)
   cap=$(queue_unit_cap)
