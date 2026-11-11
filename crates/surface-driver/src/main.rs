@@ -1429,9 +1429,18 @@ enum Occupancy
     Unprinted,
 }
 
+/// The rings of the hub's pool that a walk marks each job on, while the hub
+/// folds them for the toolset's watchers.
+#[cfg(feature = "instrument")]
+type Rings<'rings> = Option<&'rings gandr_core_fork::activity::Activity>;
+
+/// No ring: a build with no `instrument` feature marks nothing.
+#[cfg(not(feature = "instrument"))]
+type Rings<'rings> = core::marker::PhantomData<&'rings ()>;
+
 /// What a walk is run as: its verb, the lints it reports, the packages whose
-/// locks and manifests a `check` reconciles, and the store their locks and
-/// exports commit to.
+/// locks and manifests a `check` reconciles, the store their locks and
+/// exports commit to, and the hub's rings when the hub's toolset runs it.
 #[derive(Debug)]
 struct Pass<'packages>
 {
@@ -1445,6 +1454,8 @@ struct Pass<'packages>
     workspaces: &'packages [Gathered],
     /// The store the packages are locked into, when any was reached.
     store: Option<&'packages mut Store>,
+    /// The rings that each job of the walk marks, when the hub folds them.
+    rings: Rings<'packages>,
 }
 
 /// A package a `check` reached, and what locking its dependencies came to
@@ -2980,7 +2991,11 @@ fn hub(
             // or opens the store of calls that the first one holds.
             let announcement = gandr_surface_mcp::Announcement::beside(&socket);
             announcement.vacant()?;
-            self::toolset(address, policy).map(|toolset| (toolset, announcement))
+            self::toolset(address, policy).map(|toolset| {
+                let verbs: alloc::sync::Arc<dyn gandr_surface_mcp::Verbs> =
+                    alloc::sync::Arc::new(HubVerbs { spelling });
+                (toolset.walking(verbs), announcement)
+            })
         })
         .transpose()
     {
@@ -3095,6 +3110,142 @@ fn toolset(
         &subscriptions.join(&workspace).with_extension("json"),
         policy,
     )
+}
+
+/// The verbs that the hub's toolset walks with: `gandr check` and `gandr
+/// test`, as the command line runs them, at the user's verbosity and in
+/// `spelling`.
+#[cfg(unix)]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct HubVerbs
+{
+    /// The spelling every type and value is written in.
+    spelling: Spelling,
+}
+
+#[cfg(unix)]
+impl HubVerbs
+{
+    /// Walk `paths` under `verb` on the hub's `pool` as `gandr check` and
+    /// `gandr test` walk them, each job marked on `rings` when they are given:
+    /// a check gated, with no lint beyond the attributes, granted every
+    /// operation, its packages locked into the store that opens for them.
+    /// Paths that no package admits, and a store that does not open, are one
+    /// fault line.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The first write error, which stops the walk.
+    fn walked(
+        self,
+        (verb, paths): (Verb, Vec<PathBuf>),
+        (pool, rings): (&Pool, Rings<'_>),
+        (printed, faulted): (&mut dyn std::io::Write, &mut dyn std::io::Write),
+    ) -> std::io::Result<()>
+    {
+        let (paths, reached, gathered) = match packaged(paths, Path::new(".")) {
+            Ok(packaged) => packaged,
+            Err(unpackaged) => return writeln!(faulted, "gandr: {unpackaged}"),
+        };
+        let invocation = match verb {
+            Verb::Check(goals) => Invocation::Check {
+                goals,
+                lints: enabled(&[]),
+                grant: HostGrant::UNBOUNDED,
+                paths,
+                width: Width::PerformanceCores,
+            },
+            Verb::Test => Invocation::Test {
+                paths,
+                width: Width::PerformanceCores,
+            },
+        };
+        // A test reaches no package, as `gandr test` reaches none.
+        let (packages, workspaces) = match verb {
+            Verb::Check(_) => (reached, gathered),
+            Verb::Test => (Vec::new(), Vec::new()),
+        };
+        let mut store = if packages.is_empty() {
+            None
+        }
+        else {
+            match opened() {
+                Ok(store) => Some(store),
+                Err(_exit) => {
+                    return writeln!(faulted, "gandr: the store of packages did not open");
+                },
+            }
+        };
+        let Outcome::Run {
+            verb, lints, walk, ..
+        } = gandr_surface_dispatcher::dispatch(invocation)
+        else {
+            return writeln!(faulted, "gandr: the verb did not walk");
+        };
+        run(
+            Pass {
+                verb,
+                lints,
+                packages: &packages,
+                workspaces: &workspaces,
+                store: store.as_mut(),
+                rings,
+            },
+            walk,
+            pool,
+            Printing {
+                verbosity: Verbosity::User,
+                spelling: self.spelling,
+                measuring: Measuring::Unmeasured,
+                listing: Listing::Unlisted,
+                #[cfg(feature = "instrument")]
+                occupancy: Occupancy::Unprinted,
+            },
+            printed,
+            faulted,
+        )
+        .map(|_exit| ())
+    }
+}
+
+#[cfg(unix)]
+impl gandr_surface_mcp::Verbs for HubVerbs
+{
+    /// Walk `paths` under `verb` on the hub's `pool`, as [`HubVerbs::walked`]
+    /// walks them with no ring.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walk(
+        &self,
+        verb: Verb,
+        paths: Vec<PathBuf>,
+        pool: &Pool,
+        streams: (&mut dyn std::io::Write, &mut dyn std::io::Write),
+    ) -> std::io::Result<()>
+    {
+        self.walked((verb, paths), (pool, Rings::default()), streams)
+    }
+
+    /// Walk `paths` under `verb` on the hub's `pool`, as [`HubVerbs::walked`]
+    /// walks them, each job marked on `rings`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn walk_recording(
+        &self,
+        verb: Verb,
+        paths: Vec<PathBuf>,
+        (pool, rings): (&Pool, &gandr_core_fork::activity::Activity),
+        streams: (&mut dyn std::io::Write, &mut dyn std::io::Write),
+    ) -> std::io::Result<()>
+    {
+        self.walked((verb, paths), (pool, Some(rings)), streams)
+    }
 }
 
 /// Run the read-evaluate loop on the standard streams, its session on
@@ -3597,6 +3748,7 @@ fn render(
                 packages: reached.0,
                 workspaces: reached.1,
                 store,
+                rings: Rings::default(),
             },
             walk,
             &Pool::new(width),
@@ -4046,6 +4198,7 @@ fn run(
         packages,
         workspaces,
         mut store,
+        rings,
     } = pass;
     // Each package is locked before the walk, so every import of a
     // coordinate reads the lock from the walk's first source. The pass holds a
@@ -4157,15 +4310,21 @@ fn run(
         ControlFlow::Continue(())
     };
     #[cfg(feature = "instrument")]
-    let (visited, occupied) = match occupancy {
-        Occupancy::Printed => {
+    let (visited, occupied) = match (occupancy, rings) {
+        (Occupancy::Printed, _) => {
             let (visited, occupied) = occupancy::visited(walk, pool, visitor);
             (visited, Some(occupied))
         },
-        Occupancy::Unprinted => (walk.visit(pool, visitor), None),
+        (Occupancy::Unprinted, Some(rings)) => {
+            (occupancy::recorded(walk, (pool, rings), visitor), None)
+        },
+        (Occupancy::Unprinted, None) => (walk.visit(pool, visitor), None),
     };
     #[cfg(not(feature = "instrument"))]
-    let visited = walk.visit(pool, visitor);
+    let visited = {
+        let core::marker::PhantomData = rings;
+        walk.visit(pool, visitor)
+    };
     let report = match visited {
         ControlFlow::Continue(report) => report,
         ControlFlow::Break(error) => return Err(error),

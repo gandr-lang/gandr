@@ -21,7 +21,8 @@ publish.workspace = true
 # through the renderer seam's serde image, and the lines `gandr view` prints
 # for a report through the terminal face.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled. With the `instrument` feature, the toolset
+# logic/BigInt stays disabled. The jobs read the dispatcher's generations,
+# whose absence is a named shape. With the `instrument` feature, the toolset
 # reads the events of the fork crate's activity ring.
 [dependencies]
 anodized.workspace = true
@@ -31,16 +32,14 @@ gandr-surface-lsp.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
 gandr-surface-tui.workspace = true
 httparse.workspace = true
-quenchant-shape = { workspace = true, optional = true }
+quenchant-shape.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["std"] }
 
-# The hub tests read frames through the language server's framing, whose
-# absence is a named shape. The tests of `subscribe_activity` read the
-# activity ring, so the crate's own targets turn its `instrument` feature on.
+# The tests of `subscribe_activity` read the activity ring, so the crate's own
+# targets turn its `instrument` feature on.
 [dev-dependencies]
 gandr-surface-mcp = { workspace = true, features = ["instrument"] }
-quenchant-shape.workspace = true
 
 [features]
 default = []
@@ -49,7 +48,6 @@ default = []
 # not offer it, and no ring and no fold is compiled.
 instrument = [
   "dep:gandr-core-fork",
-  "dep:quenchant-shape",
   "gandr-core-fork/instrument",
   "gandr-surface-lsp/instrument",
 ]

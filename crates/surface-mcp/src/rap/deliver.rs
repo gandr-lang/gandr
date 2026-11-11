@@ -113,6 +113,9 @@ pub enum Row
     Call(String, String),
     /// A subscription: its `group_id` and its `tool_call_id`.
     Subscription(String, String),
+    /// The view of a running job: the `group_id` and the `id` of its call.
+    #[cfg(feature = "instrument")]
+    View(String, String),
 }
 
 impl fmt::Display for Row
@@ -132,6 +135,10 @@ impl fmt::Display for Row
             Self::Subscription(ref group_id, ref tool_call_id) => {
                 write!(f, "the subscription {tool_call_id} of {group_id}")
             },
+            #[cfg(feature = "instrument")]
+            Self::View(ref group_id, ref id) => {
+                write!(f, "the view of the call {id} of {group_id}")
+            },
         }
     }
 }
@@ -145,7 +152,7 @@ pub struct Post
     pub token: Option<Arc<str>>,
     /// The `Idempotency-Key` header: `<tool_call_id>@<version>` for an event
     /// of a document, `<tool_call_id>@<run>.<sequence>` for an event of the
-    /// activity, and the `id` for a result.
+    /// activity and for a view update of a job, and the `id` for a result.
     pub key: String,
     /// The version of the state, when the state has one.
     pub version: Option<i32>,

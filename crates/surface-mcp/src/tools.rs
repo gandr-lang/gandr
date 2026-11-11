@@ -292,6 +292,44 @@ fn empty_schema() -> Value
     json!({ "type": "object", "properties": {} })
 }
 
+/// The schema of `check` and `test`: the paths that the verb walks.
+///
+/// # Specification
+/// trivial.
+fn paths_schema() -> Value
+{
+    json!({
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1,
+                "description": "Each path to walk: a package's directory, a directory of sources or a \
+                                source, relative to the hub's working directory",
+            },
+        },
+        "required": ["paths"],
+    })
+}
+
+/// The schema of `run`: a document's URI and the name of the declaration to
+/// run.
+///
+/// # Specification
+/// trivial.
+fn run_schema() -> Value
+{
+    json!({
+        "type": "object",
+        "properties": {
+            "uri": { "type": "string", "description": "The document's URI, as the editor opened it" },
+            "entry": { "type": "string", "description": "The declaration to run, which takes no argument" },
+        },
+        "required": ["uri", "entry"],
+    })
+}
+
 /// The position that `arguments` names, as the language server reads one.
 ///
 /// # Specification
@@ -330,6 +368,29 @@ pub enum Scope
     Activity,
 }
 
+/// What a long operation runs: a verb over paths, the kernel's admission of
+/// the revision of a document, or a declaration of a document.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Job
+{
+    /// `gandr check` of each path.
+    Check(Vec<PathBuf>),
+    /// `gandr test` of each path.
+    Test(Vec<PathBuf>),
+    /// The kernel's admission of the revision of a document that the hub
+    /// holds.
+    Replay(DocumentUri),
+    /// The run of the declaration `entry` of a document that the hub holds, as
+    /// the run lens of the document runs it.
+    Run
+    {
+        /// The document.
+        document: DocumentUri,
+        /// The name of the declaration.
+        entry: String,
+    },
+}
+
 /// What answers an operation over the hub.
 #[derive(Clone, Copy)]
 enum Answer
@@ -344,6 +405,10 @@ enum Answer
     /// document that the hub does not hold now. The Reactive Agent Protocol
     /// toolset opens it, and the Model Context Protocol face does not offer it.
     Subscription(fn(&Value) -> Result<Scope, ToolRefusal>),
+    /// A long operation: the job that the call runs. The Reactive Agent
+    /// Protocol toolset runs it and answers by a callback when it ends, and the
+    /// Model Context Protocol face does not offer it.
+    Job(fn(&Value) -> Result<Job, ToolRefusal>),
 }
 
 /// One operation of the hub, as each face offers it.
@@ -365,9 +430,22 @@ struct Operation
 /// Every operation of the hub, in ascending name order. The Model Context
 /// Protocol's `tools/list` and the Reactive Agent Protocol's manifest each
 /// encode this table, and both faces call through it. Thus a row added here
-/// reaches both faces, except a subscription, which the toolset alone serves.
-/// The hub's build with the `instrument` feature adds `subscribe_activity`.
-static OPERATIONS: [Operation; if cfg!(feature = "instrument") { 12 } else { 11 }] = [
+/// reaches both faces, except a subscription and a long operation, which the
+/// toolset alone serves. The hub's build with the `instrument` feature adds
+/// `subscribe_activity`.
+static OPERATIONS: [Operation; if cfg!(feature = "instrument") { 16 } else { 15 }] = [
+    Operation {
+        name: "check",
+        title: "Check",
+        description: "Check each path as `gandr check` does: a package's directory, a directory of \
+                      sources or a source. The result arrives when the check ends. Its text is the \
+                      verdict line, and its display holds each diagnostic snippet and the report. \
+                      While the check runs, each tick of the hub's work ledger arrives as a view \
+                      update of the type `activity`. A newer revision of a document that the hub \
+                      holds under a path retires the check.",
+        schema: paths_schema,
+        answer: Answer::Job(|arguments| Ok(Job::Check(paths(arguments)?))),
+    },
     Operation {
         name: "diagnostics",
         title: "Diagnostics",
@@ -460,6 +538,34 @@ static OPERATIONS: [Operation; if cfg!(feature = "instrument") { 12 } else { 11 
         answer: Answer::Document(proposed),
     },
     Operation {
+        name: "replay",
+        title: "Replay",
+        description: "The kernel's admission of the revision of an open document that the hub holds \
+                      now. The result arrives when the admission ends. Its text counts the \
+                      declarations by the kernel's warrant, and its display holds the kernel's title \
+                      of each declaration. A newer revision of the document retires the replay.",
+        schema: document_schema,
+        answer: Answer::Job(|arguments| Ok(Job::Replay(named(arguments)?))),
+    },
+    Operation {
+        name: "run",
+        title: "Run",
+        description: "Run the declaration `entry` of an open document, as its run lens runs it: a \
+                      declaration that takes no argument. The result arrives when the run ends. Its \
+                      text and its display are the line that `gandr run` prints.",
+        schema: run_schema,
+        answer: Answer::Job(|arguments| {
+            let entry = arguments
+                .get("entry")
+                .and_then(Value::as_str)
+                .ok_or_else(|| ToolRefusal(String::from("`entry` must name a declaration")))?;
+            Ok(Job::Run {
+                document: named(arguments)?,
+                entry: String::from(entry),
+            })
+        }),
+    },
+    Operation {
         name: "subscribe_account",
         title: "Follow a declaration's account",
         description: "Follow the account card of the declaration of a document that has the name \
@@ -501,6 +607,18 @@ static OPERATIONS: [Operation; if cfg!(feature = "instrument") { 12 } else { 11 
         answer: Answer::Subscription(|arguments| Ok(Scope::Diagnostics(named(arguments)?))),
     },
     Operation {
+        name: "test",
+        title: "Test",
+        description: "Test each path as `gandr test` does: each fixture settles and each pending \
+                      source is refused. The result arrives when the test ends. Its text is the \
+                      verdict line, and its display holds each line that the test prints. While the \
+                      test runs, each tick of the hub's work ledger arrives as a view update of the \
+                      type `activity`. A newer revision of a document that the hub holds under a \
+                      path retires the test.",
+        schema: paths_schema,
+        answer: Answer::Job(|arguments| Ok(Job::Test(paths(arguments)?))),
+    },
+    Operation {
         name: "trial",
         title: "Try candidate fills",
         description: "Judge candidate edits of an open document without changing it, best first: each \
@@ -532,13 +650,14 @@ static OPERATIONS: [Operation; if cfg!(feature = "instrument") { 12 } else { 11 
 
 /// Every tool that the Model Context Protocol face offers, in name order, as
 /// its `tools/list` encodes the table: its name, title, description and input
-/// schema. A subscription is not offered, because the face has no callback for
-/// its events.
+/// schema. A subscription and a long operation are not offered, because the
+/// face has no callback for their events or their results.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tools are listed in strictly ascending name order, each with
-///   a description and an object input schema, and no subscription is listed.
+///   a description and an object input schema, and no subscription and no long
+///   operation is listed.
 /// - provides: `tools/list`, deterministic so a client caches it.
 /// - panics: none.
 ///
@@ -554,7 +673,7 @@ pub fn list() -> Vec<Value>
 {
     OPERATIONS
         .iter()
-        .filter(|operation| !matches!(operation.answer, Answer::Subscription(_)))
+        .filter(|operation| matches!(operation.answer, Answer::Hub(_) | Answer::Document(_)))
         .map(|operation| {
             json!({
                 "name": operation.name,
@@ -573,7 +692,7 @@ pub fn list() -> Vec<Value>
 /// - requires: nothing.
 /// - ensures: every row of the table is offered in name order, each with the
 ///   name, the description and the input schema that [`list`] gives it, and no
-///   title. The subscriptions are offered too.
+///   title. The subscriptions and the long operations are offered too.
 /// - provides: the tools of the manifest at `/.well-known/rap-toolset`.
 /// - panics: none.
 ///
@@ -605,17 +724,18 @@ pub fn offered() -> Vec<Value>
 /// - requires: nothing; any name and arguments are admitted.
 /// - ensures: a document tool answers for a document the hub holds, naming its
 ///   URI and the version answered at; a features ledger tool answers from the
-///   ledger under its root; a name no tool has, a subscription, a document the
-///   hub does not hold, arguments the tool cannot read, and a ledger that
-///   cannot be read or answer are refused.
+///   ledger under its root; a name no tool has, a subscription, a long
+///   operation, a document the hub does not hold, arguments the tool cannot
+///   read, and a ledger that cannot be read or answer are refused.
 /// - provides: `tools/call`, and the invocations of the Reactive Agent
-///   Protocol's toolset that open no subscription.
+///   Protocol's toolset that open no subscription and run no job.
 /// - fails: as above, with the reason in the refusal.
 /// - panics: none.
 ///
 /// # Errors
-/// [`ToolRefusal`] for an unknown tool, a subscription, unreadable arguments,
-/// a document the hub does not hold, or a features ledger fault.
+/// [`ToolRefusal`] for an unknown tool, a subscription, a long operation,
+/// unreadable arguments, a document the hub does not hold, or a features
+/// ledger fault.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every tool is called through the wire on a held document,
@@ -652,7 +772,65 @@ pub fn call(
         Answer::Subscription(_) => Err(ToolRefusal(alloc::format!(
             "`{name}` opens a subscription, which the Reactive Agent Protocol toolset serves"
         ))),
+        Answer::Job(_) => Err(ToolRefusal(alloc::format!(
+            "`{name}` is a long operation, which answers by a callback that the Reactive Agent \
+             Protocol toolset serves"
+        ))),
     }
+}
+
+/// The job that the long operation `name` runs with `arguments`, or `None`
+/// when `name` names no long operation.
+///
+/// # Specification
+/// - requires: nothing; any name and arguments are admitted.
+/// - ensures: `None` for a name that names no long operation of the table.
+///   Otherwise the job of the row, or the refusal of arguments that the row
+///   cannot read. The document of a replay or a run need not be open in the
+///   hub, and a path need not exist.
+/// - provides: what the toolset starts a job on.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — through a running hub, `check` and `test` walk their
+///   paths, `replay` answers the admission of a revision, and `run` answers the
+///   line of a declaration's run.
+/// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
+/// - witness: `rap::tests::a_newer_revision_retires_a_check_and_a_cancel_ends_a_job`
+#[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| matches!(named, "check" | "replay" | "run" | "test")))]
+#[inline]
+pub fn job(
+    name: &Value,
+    arguments: &Value,
+) -> Option<Result<Job, ToolRefusal>>
+{
+    let name = name.as_str()?;
+    let operation = OPERATIONS
+        .binary_search_by(|operation| operation.name.cmp(name))
+        .ok()
+        .and_then(|row| OPERATIONS.get(row))?;
+    match operation.answer {
+        Answer::Job(job) => Some(job(arguments)),
+        Answer::Hub(_) | Answer::Document(_) | Answer::Subscription(_) => None,
+    }
+}
+
+/// The paths that `arguments` names: one string or more.
+///
+/// # Specification
+/// trivial.
+fn paths(arguments: &Value) -> Result<Vec<PathBuf>, ToolRefusal>
+{
+    let refused = || ToolRefusal(String::from("`paths` must name one path or more"));
+    let paths = arguments
+        .get("paths")
+        .and_then(Value::as_array)
+        .filter(|paths| !paths.is_empty())
+        .ok_or_else(refused)?;
+    paths
+        .iter()
+        .map(|path| path.as_str().map(PathBuf::from).ok_or_else(refused))
+        .collect()
 }
 
 /// The scope that the subscription `name` opens with `arguments`, or `None`
@@ -689,7 +867,7 @@ pub fn subscription(
         .and_then(|row| OPERATIONS.get(row))?;
     match operation.answer {
         Answer::Subscription(scope) => Some(scope(arguments)),
-        Answer::Hub(_) | Answer::Document(_) => None,
+        Answer::Hub(_) | Answer::Document(_) | Answer::Job(_) => None,
     }
 }
 
@@ -987,6 +1165,71 @@ fn tried(
             })
         })
         .collect())
+}
+
+/// The line of a run of the declaration `entry` of `document`, as the run
+/// lens of the document runs it: the first declaration of the outline in
+/// depth-first order that has the name.
+///
+/// # Specification
+/// - requires: nothing; any document and name are admitted.
+/// - ensures: the line that the run command of the language server answers for
+///   the position of the name, which is the line that the run lens shows. A
+///   document that the hub does not hold, a name that no declaration has, and a
+///   declaration that does not run are refused.
+/// - provides: the `run` job of the toolset.
+/// - fails: as above, with the reason in the refusal.
+/// - panics: none.
+/// - executable: none — the line is what the run computes, and only the run
+///   computes it.
+///
+/// # Errors
+/// [`ToolRefusal`] for a document that the hub does not hold, an unknown name,
+/// or a declaration that does not run.
+///
+/// # Adequacy
+/// - hypothesis: L3 — through a running hub, a value runs to its line, and a
+///   name that no declaration has is refused.
+/// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
+#[inline]
+pub fn ran(
+    workspace: &Workspace,
+    (document, entry): (&DocumentUri, &String),
+) -> Result<String, ToolRefusal>
+{
+    let symbols = ask(
+        workspace,
+        &json!({ "method": "textDocument/documentSymbol", "params": { "textDocument": { "uri": document } } }),
+    )?;
+    let mut unvisited: Vec<&Value> = symbols
+        .as_array()
+        .map(|top| top.iter().rev().collect())
+        .unwrap_or_default();
+    let mut position = None;
+    while let Some(symbol) = unvisited.pop() {
+        if symbol.get("name").and_then(Value::as_str) == Some(entry.as_str()) {
+            position = symbol.pointer("/selectionRange/start");
+            break;
+        }
+        if let Some(children) = symbol.get("children").and_then(Value::as_array) {
+            unvisited.extend(children.iter().rev());
+        }
+    }
+    let position = position.ok_or_else(|| {
+        ToolRefusal(alloc::format!(
+            "no declaration of {document} is named `{entry}`"
+        ))
+    })?;
+    let ran = ask(
+        workspace,
+        &json!({
+            "method": "workspace/executeCommand",
+            "params": { "command": "gandr.run", "arguments": [document, position] },
+        }),
+    )?;
+    ran.as_str()
+        .map(String::from)
+        .ok_or_else(|| ToolRefusal(String::from("the run answered no line")))
 }
 
 /// The result the language server gives `call`, a method and its

@@ -259,12 +259,14 @@ impl Activities
         self.0.watched.follow(&folding.watchers);
     }
 
-    /// The rings that a job writes, while the hub has a watcher.
+    /// The rings that a job writes, while the hub has a watcher. A walk that
+    /// the toolset runs on the hub's pool records on them too.
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     #[must_use]
-    pub(crate) fn rings(&self) -> Option<Arc<Activity>>
+    pub fn rings(&self) -> Option<Arc<Activity>>
     {
         if !self.0.watched.0.load(Ordering::Acquire) {
             return None;

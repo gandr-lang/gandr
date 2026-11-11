@@ -3153,6 +3153,7 @@ INSERT INTO purpose VALUES('surface-mcp','rap::Announcement','struct','Names the
 INSERT INTO purpose VALUES('surface-mcp','rap::Toolset','struct','Serves the Reactive Agent Protocol''s manifest and invoke endpoint beside the hub''s socket, so an agent runtime calls the hub''s tools and hears each answer by a callback.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','rap::deliver::Policy','struct','States when the toolset tries a failed callback again and how often, so a runtime that fails for a time still receives each result and each new state.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','rap::deliver::Retries','struct','Counts the attempts of a delivery after the first.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','rap::jobs::Verbs','trait','Walks the paths of a `check` or a `test` job on the hub''s pool as the command line walks them, so the toolset answers a long operation with the lines that the verb prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-mcp','tools::ToolRefusal','struct','Names why a tool call produced no result, so the refusal''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::Closing','struct','One way to close an open form: the steps from its frontier to a tile that ends the form, in source order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::ClosingLimit','struct','How many closings closings keeps.',NULL,'fits','sound',NULL);

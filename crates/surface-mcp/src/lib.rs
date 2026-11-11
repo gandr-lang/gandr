@@ -175,4 +175,6 @@ pub use crate::rap::Policy;
 pub use crate::rap::Retries;
 #[cfg(unix)]
 pub use crate::rap::Toolset;
+#[cfg(unix)]
+pub use crate::rap::Verbs;
 pub use crate::tools::ToolRefusal;

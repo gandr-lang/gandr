@@ -233,6 +233,37 @@ pub fn rows(rows: &[Row]) -> Occupancy
     Occupancy(serde_json::to_string(&Rows(rows)).unwrap_or_else(|_| String::from("null")))
 }
 
+/// The activity card of one tick, as a view update of a running job carries
+/// it, and the sequence number of its last event: the run, the events of the
+/// tick and the row of each core. A runtime keeps the latest card of each
+/// view, so a card carries its own tick alone. A tick with no event owes no
+/// card, and an encode error, which a buffer in memory does not give, owes
+/// none either.
+///
+/// # Specification
+/// trivial.
+pub fn card(
+    run: Run,
+    events: &[Event],
+    rows: &Occupancy,
+) -> Option<(Sequence, String)>
+{
+    let last = events.last()?.sequence;
+    let mut text: Vec<u8> = Vec::with_capacity(
+        events
+            .len()
+            .saturating_mul(EVENT_TEXT)
+            .saturating_add(rows.0.len())
+            .saturating_add(STATE_TEXT),
+    );
+    write!(text, "{{\"run\":{},\"events\":", run.0).ok()?;
+    serde_json::to_writer(&mut text, &Ticked(events)).ok()?;
+    text.extend_from_slice(b",\"rows\":");
+    text.extend_from_slice(rows.0.as_bytes());
+    text.push(b'}');
+    Some((last, String::from_utf8(text).ok()?))
+}
+
 /// The pending events of a row, as the text of a state holds them.
 #[repr(transparent)]
 struct Pending<'ledger>(&'ledger VecDeque<Event>);
@@ -240,6 +271,27 @@ struct Pending<'ledger>(&'ledger VecDeque<Event>);
 impl Serialize for Pending<'_>
 {
     /// Each event, oldest first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn serialize<Out>(
+        &self,
+        serializer: Out,
+    ) -> Result<Out::Ok, Out::Error>
+    where
+        Out: Serializer,
+    {
+        serializer.collect_seq(self.0.iter().map(Encoded::of))
+    }
+}
+
+/// The events of one tick, as the card of a view update holds them.
+#[repr(transparent)]
+struct Ticked<'tick>(&'tick [Event]);
+
+impl Serialize for Ticked<'_>
+{
+    /// Each event, in the order of its sequence number.
     ///
     /// # Specification
     /// trivial.
