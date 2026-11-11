@@ -1011,21 +1011,25 @@ impl ModuleReport
     ///   [`unmarked::Absent::Unheld`] when it meets none.
     /// - fails: never; a dangling node holds nothing.
     /// - panics: none.
-    /// - intension: an explicit worklist, each datatype, codata type and
-    ///   defined constant entered once.
+    /// - intension: an explicit worklist that reads each value type,
+    ///   computation type and code once, so a shared node costs one read
+    ///   however many paths reach it; each datatype, codata type and defined
+    ///   constant is entered once.
     ///
     /// # Termination
     /// - reason: the `while let` loop over an explicit worklist, not recursion.
-    /// - measure: each node is replaced by its children in the acyclic arena,
-    ///   and a declaration's fields, observations or definition are pushed
-    ///   once.
+    /// - measure: the nodes not yet read: each node is read once, and a
+    ///   declaration's fields, observations or definition are pushed once.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unmarked atom standing alone, in a pair, in a list
     ///   and in a function's answer is met, and so is an atom no abstract type
     ///   formed at; a marked atom and a type naming no atom hold none. An atom
-    ///   in a datatype's field or a codata observation is not generated.
+    ///   beside a pair thirty levels deep, whose two fields are one node at
+    ///   each level, is met in one read of each level. An atom in a datatype's
+    ///   field or a codata observation is not generated.
     /// - witness: `module::tests::an_unmarked_atom_is_met_wherever_a_type_holds_it_3375`
+    /// - witness: `module::tests::an_unmarked_atom_beside_a_shared_pair_thirty_deep_is_met_5796`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(atom) => self.abstract_types.get(&atom).is_none_or(|declared| declared.mobility() == Mobility::Immobile),
         Maybe::Absent(_) => true,
@@ -1038,7 +1042,7 @@ impl ModuleReport
     ) -> Maybe<ConstantIndex, unmarked::Absent>
     {
         /// A node still to read.
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
         enum Node
         {
             /// A value type.
@@ -1050,7 +1054,11 @@ impl ModuleReport
         }
         let mut pending = Vec::from([Node::Value(ty)]);
         let mut entered: BTreeSet<ConstantIndex> = BTreeSet::new();
+        let mut read: BTreeSet<Node> = BTreeSet::new();
         while let Some(node) = pending.pop() {
+            if !read.insert(node) {
+                continue;
+            }
             match node {
                 Node::Value(id) => match arena.value_type(id) {
                     Some(&ValueType::Abstract(atom)) => {

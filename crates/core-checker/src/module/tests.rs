@@ -4089,6 +4089,38 @@ fn an_unmarked_atom_is_met_wherever_a_type_holds_it_3375()
     }
 }
 
+/// An unmarked atom stands beside a pair thirty levels deep, whose two fields
+/// at each level are one node. The walk reads the pair before the atom, so a
+/// walk that reads each path to a node reads 2^30 leaves first. The walk reads
+/// each node once and meets the atom (#5796).
+#[test]
+fn an_unmarked_atom_beside_a_shared_pair_thirty_deep_is_met_5796()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unmarked = ConstantIndex::from(0_usize);
+    let secret = arena.value_type_abstract(unmarked);
+    let shared = (0_u8 .. 30).fold(integer, |level, _| {
+        arena.value_type_product(&[level, level])
+    });
+    let beside = arena.value_type_product(&[secret, shared]);
+    let module = [sealed(
+        At(0),
+        small,
+        integer,
+        0_usize.into(),
+        0_usize.into(),
+    )];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let checked = check_module(&mut context, &module);
+    assert_eq!(
+        checked.unmarked_atom(&arena, beside),
+        Maybe::Present(unmarked),
+        "the atom beside the shared pair is met after one read of each level"
+    );
+}
+
 #[test]
 fn an_atom_naming_no_abstract_type_is_refused()
 {
