@@ -1,0 +1,2 @@
+def rec map(a : Type, b : Type, f : a -> b, : List a) -> List b =
+  xs

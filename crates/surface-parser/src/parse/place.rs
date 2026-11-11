@@ -421,7 +421,8 @@ pub(super) fn placed<'source>(
             .filter(|gap| !minted_places(&gap.tree).is_subset(&minted_places(&found.tree)))
             .or(Some(found)),
         None => super::gap::gapped(pbg, &parsed, None)
-            .or_else(|| earlier(pbg, &parsed, Pass::Last).map(|(found, _)| found)),
+            .or_else(|| earlier(pbg, &parsed, Pass::Last).map(|(found, _)| found))
+            .or_else(|| fronted(pbg, &parsed)),
     };
     // An opener left out wins only where it owes fewer obligations than the
     // melder's reading and than the search that places a closer or a
@@ -430,6 +431,130 @@ pub(super) fn placed<'source>(
         found.obligations.len().min(parsed.obligations.len())
     }));
     opened(pbg, &parsed, bound).or(searched).unwrap_or(parsed)
+}
+
+/// `parsed` with the tile a separator takes next minted after it, where the
+/// melder reads the form after the separator as a misread operand.
+///
+/// A parameter's name left out after a `,`, as `xs` in `f : a -> b, : List
+/// a) -> List b =` before a layout body, leaves no hole after the `,`. The
+/// melder reads `: List a)` as an ascription whose `(` is left out, which
+/// takes the parameter list's `)`, and the `b` of the result type as the
+/// parameter's name. Its repair stands over the `:`, the first tile of the
+/// form after the `,`, and no tile is left out at the `:`. So each such
+/// repair is tried over the tile written just before that form, as the first
+/// search tries a repair over a `,` that a hole follows.
+///
+/// # Specification
+/// - requires: `parsed` is a parse under `pbg`.
+/// - ensures: of the [`Oblig::MissingTile`] repairs in source order, each
+///   [`fronting`] names a target for, the first [`COPIES`] of these targets:
+///   the first parse [`settled`] gives over one of them that owes fewer
+///   obligations than `parsed`; `None` when there is none.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parameter's name left out after a `,`, before a
+///   juxtaposed type and a layout body, is minted after the `,`, and the parse
+///   owes that name alone, as the call form owes it. Without this search, the
+///   parse owes the `:` and the `b` of the result type.
+/// - witness: `parse::place::tests::a_name_left_out_before_a_misread_binder_is_minted_after_its_separator_6100`
+fn fronted<'source>(
+    pbg: &Pbg,
+    parsed: &ParseResult<'source>,
+) -> Option<ParseResult<'source>>
+{
+    let tree = &parsed.tree;
+    let mut repairs: Vec<ObligationInstance> = parsed
+        .obligations
+        .iter()
+        .copied()
+        .filter(|obligation| obligation.class == Oblig::MissingTile)
+        .collect();
+    repairs.sort_unstable_by_key(|obligation| (obligation.span.start(), obligation.span.end()));
+    repairs
+        .into_iter()
+        .filter_map(|repair| fronting(tree, repair))
+        .filter_map(|separator| Target::of(pbg, tree, separator))
+        .take(COPIES)
+        .find_map(|target| {
+            settled(pbg, tree, &target, Reach::Form)
+                .filter(|placed| placed.obligations.len() < parsed.obligations.len())
+        })
+}
+
+/// The repair over the tile written just before the outermost form that
+/// starts at `repair`'s tile, in the form that holds it.
+///
+/// # Specification
+/// - requires: `repair` is an obligation of `tree`'s parse.
+/// - ensures: in the first form, a root first and then the top-level forms
+///   covering `repair` and their descendants, with a child form that starts
+///   where `repair` starts and covers it: a [`Oblig::MissingTile`] over that
+///   form's child tile that ends last at or before the child form's start, when
+///   that child is a tile; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`fronted`].
+/// - witness: `parse::place::tests::a_name_left_out_before_a_misread_binder_is_minted_after_its_separator_6100`
+fn fronting(
+    tree: &SyntaxTree<'_>,
+    repair: ObligationInstance,
+) -> Option<ObligationInstance>
+{
+    let start = repair.span.start();
+    let forms = tree.forms();
+    let first = forms.partition_point(|&form| {
+        tree.node(form)
+            .is_some_and(|node| node.span().end() < start)
+    });
+    let holders = forms
+        .get(first ..)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .take_while(|&form| {
+            tree.node(form)
+                .is_some_and(|node| node.span().start() <= repair.span.end())
+        })
+        .filter(|&form| {
+            tree.node(form).is_some_and(|node| {
+                node.span().start() <= start && repair.span.end() <= node.span().end()
+            })
+        })
+        .flat_map(|form| {
+            core::iter::once(form).chain(tree.descendants(form).into_iter().flatten())
+        });
+    tree.roots()
+        .iter()
+        .copied()
+        .chain(holders)
+        .find_map(|parent| {
+            let children = || {
+                tree.children(parent)
+                    .filter_map(|child| tree.node(child))
+                    .filter(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+            };
+            let form = children().find(|node| {
+                matches!(node.label(), NodeLabel::Meld(_))
+                    && node.span().start() == start
+                    && repair.span.end() <= node.span().end()
+            })?;
+            let before = children()
+                .filter(|node| {
+                    node.span().end() <= form.span().start() && node.span().start() < start
+                })
+                .max_by_key(|node| (node.span().end(), node.span().start()))?;
+            matches!(before.label(), NodeLabel::Tile(_)).then_some(ObligationInstance {
+                class: Oblig::MissingTile,
+                span: before.span(),
+            })
+        })
 }
 
 /// The places where `tree` mints a closer or a tile: a ghost closer with its
@@ -2503,6 +2628,42 @@ mod tests
             "one repair stands, and the gap's four others do not: {:?}",
             parsed.obligations()
         );
+    }
+
+    /// #6100: a parameter's name left out after a `,`, before a juxtaposed
+    /// type and a layout body, leaves no hole after the `,`. The melder reads
+    /// `: List a)` as an ascription whose `(` is left out and the `b` of the
+    /// result type as the parameter's name. The name is minted after the `,`,
+    /// and the parse owes it alone, as the call form `List(a)` owes it.
+    #[test]
+    fn a_name_left_out_before_a_misread_binder_is_minted_after_its_separator_6100()
+    {
+        let pbg = built_in().unwrap();
+        let layout = include_str!(
+            "place/unformatted/a-name-left-out-before-a-misread-binder-is-minted-after-its-separator-6100-layout.gandr"
+        );
+        let recursive = include_str!(
+            "place/unformatted/a-name-left-out-before-a-misread-binder-is-minted-after-its-separator-6100-rec.gandr"
+        );
+        for source in [layout, recursive] {
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            assert_eq!(
+                reconstruct(parsed.tree()),
+                source,
+                "the tree reconstructs the source"
+            );
+            let comma = source.find(", :").unwrap();
+            assert!(
+                matches!(
+                    parsed.obligations(),
+                    [repair] if repair.class == Oblig::MissingTile
+                        && usize::from(repair.span.start()) == comma
+                        && usize::from(repair.span.end()) == comma.saturating_add(1)
+                ),
+                "{source:?} owes the name after the `,` alone: {:?}",
+                parsed.obligations()
+            );
+        }
     }
 
     /// #6028: a `(` left out before a juxtaposed operand leaves its
