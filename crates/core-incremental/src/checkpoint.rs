@@ -163,6 +163,7 @@ use gandr_core_checker::Supported;
 use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::check_declaration_supported;
+use gandr_core_checker::elaboration::Suspension;
 use gandr_core_checker::form_value_type;
 use gandr_core_checker::kept;
 use gandr_core_checker::signature_table;
@@ -218,6 +219,9 @@ use crate::region::Layout;
 use crate::region::Opened;
 use crate::region::Program;
 use crate::region::Reference;
+use crate::report::ReportContent;
+use crate::report::SeatedReport;
+use crate::report::reported;
 use crate::session::Unobserved;
 use crate::typing::Projection;
 use crate::typing::Typing;
@@ -518,6 +522,9 @@ struct CheckpointParts
     failure: Maybe<Arc<FailureContent>, failed::Absent>,
     /// The table parts of an item its judgement entered elaborated.
     entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
+    /// What the judgement reported of the item: its elaboration and its
+    /// suspension.
+    report: Maybe<Arc<ReportContent>, reported::Absent>,
 }
 
 impl ItemCheckpoint
@@ -569,6 +576,7 @@ impl ItemCheckpoint
                 entered,
                 failure: Maybe::Absent(failed::Absent::Unkept),
                 entry: Maybe::Absent(elaborated::Absent::AsWritten),
+                report: Maybe::Absent(reported::Absent::Unreported),
             }),
         }
     }
@@ -718,6 +726,86 @@ impl ItemCheckpoint
         match self.parts.entry {
             Maybe::Present(ref entry) => Maybe::Present(entry),
             Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// This checkpoint, keeping `report` as what the judgement reported of its
+    /// item, or the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_report(
+        mut self,
+        report: Maybe<ReportContent, reported::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).report = match report {
+            Maybe::Present(report) => Maybe::Present(Arc::new(report)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// What the judgement reported of the item, or why the checkpoint keeps
+    /// none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn report(&self) -> Maybe<&ReportContent, reported::Absent>
+    {
+        match self.parts.report {
+            Maybe::Present(ref report) => Maybe::Present(report),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// What the judgement reported of this item, seated in `arena`: the item
+    /// at `ordinal` of the edited `program`, walked in `arena`, places each
+    /// node of the item, and the judged body that the entry keeps, minted
+    /// there, places each node of it.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the edited program's lowered nodes at the ids
+    ///   `program`'s own arena holds them; the item at `ordinal` has the
+    ///   content this checkpoint keeps.
+    /// - ensures: on success, the elaboration and the suspension whose
+    ///   projection through the edited item is this checkpoint's report.
+    /// - fails: [`seating::Absent::Unseatable`] for a checkpoint that keeps no
+    ///   report; otherwise as the seat of the entry or of the report fails.
+    /// - panics: none.
+    /// - executable: none — a predicate would project the seated parts again,
+    ///   which [`SeatedReport::content`] does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ReportContent`].
+    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    #[inline]
+    pub fn reported(
+        &self,
+        arena: &mut CoreArena,
+        (program, ordinal): (&Program, ItemOrdinal),
+    ) -> Maybe<SeatedReport, seating::Absent>
+    {
+        let Maybe::Present(ref report) = self.parts.report
+        else {
+            return Maybe::Absent(seating::Absent::Unseatable);
+        };
+        let layout = program.layout();
+        let (body, places) = match self.parts.entry {
+            Maybe::Present(ref entry) => match entry.seat(arena, layout) {
+                Maybe::Present((seated, places)) => (seated.body(), places),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Maybe::Absent(_) => (Maybe::Absent(crate::entry::written::Absent::Written), None),
+        };
+        let walk = encode_item(arena, layout, ordinal).sites.walk();
+        match report.seat((arena, layout), (&walk, places.as_ref())) {
+            Ok((elaboration, suspension)) => {
+                Maybe::Present(SeatedReport::of((elaboration, suspension), body))
+            },
+            Err(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -2430,6 +2518,8 @@ struct Outcome
     failure: Maybe<Arc<FailureContent>, failed::Absent>,
     /// The table parts of an item entered elaborated.
     entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
+    /// What the judgement reported of the item.
+    report: Report,
     /// Whether it was adopted.
     adoption: Adoption,
 }
@@ -2606,6 +2696,10 @@ pub struct Judgement<'judged>
     supported: &'judged BTreeMap<ConstantIndex, Supported>,
     /// The failure each refused declaration's run kept, by position.
     failures: &'judged BTreeMap<ConstantIndex, Failure>,
+    /// What elaborating each body with a nested computation did, by position.
+    elaborations: &'judged BTreeMap<ConstantIndex, gandr_core_checker::NestedElaboration>,
+    /// What each suspended declaration waits on, by position.
+    suspensions: &'judged BTreeMap<ConstantIndex, Suspension>,
 }
 
 /// What taking one item's verdict reads.
@@ -2647,6 +2741,8 @@ impl<'judged> Judgement<'judged>
             arena,
             supported: report.supported(),
             failures: report.failures(),
+            elaborations: report.nested_elaborations(),
+            suspensions: report.suspensions(),
         }
     }
 
@@ -2690,7 +2786,7 @@ impl<'judged> Judgement<'judged>
         &self,
         context: &mut CheckingContext<'_>,
         taking: &Taking<'_>,
-    ) -> Maybe<(Vec<Answered>, Typing, Answer, Failed), taken::Absent>
+    ) -> Maybe<(Vec<Answered>, Typing, Answer, Reported), taken::Absent>
     {
         let declaration = taking.declaration;
         if taking.item.content.opacity() == Opacity::Opaque {
@@ -2762,6 +2858,16 @@ impl<'judged> Judgement<'judged>
             ),
             (&taking.item.content, &support),
         );
+        let constant = declaration.constant();
+        let report = ReportContent::of(
+            (self.arena, taking.layout),
+            (&taking.item.sites, None),
+            (
+                self.elaborations.get(&constant),
+                self.suspensions.get(&constant),
+            ),
+        )
+        .map(Arc::new);
         // An unsigned item's synthesised type is minted into the edited arena
         // from its content, as an adopted one's is.
         let minted = match (&typing, written) {
@@ -2788,7 +2894,7 @@ impl<'judged> Judgement<'judged>
         else {
             return Maybe::Absent(taken::Absent::Unseated);
         };
-        Maybe::Present((support, typing, answer, failure))
+        Maybe::Present((support, typing, answer, (failure, report)))
     }
 }
 
@@ -3061,6 +3167,7 @@ where
                 entered: outcome.entered,
                 failure: outcome.failure,
                 entry: outcome.entry,
+                report: outcome.report,
             }),
         });
     }
@@ -3281,6 +3388,10 @@ where
     // The failure each refused member's run kept, by position: a block refused
     // whole gives each member its culprit's failure, as the judgement does.
     let mut culprits: BTreeMap<ConstantIndex, Failure> = BTreeMap::new();
+    // What each suspended item the pass passed waits on, by position, seated
+    // in the pass's arena: a later suspension joins the equations of each one
+    // that it reads, as the judgement's does.
+    let mut waiting: BTreeMap<ConstantIndex, Suspension> = BTreeMap::new();
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once; the judgement's arena has a memo of its own.
     let types = crate::content::TypeMemo::default();
@@ -3344,16 +3455,24 @@ where
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
-                let (failure, entry) = match candidates.get(index) {
+                let (failure, entry, report) = match candidates.get(index) {
                     Some(&Maybe::Present(ref candidate)) => (
                         candidate.checkpoint.parts.failure.clone(),
                         candidate.checkpoint.parts.entry.clone(),
+                        candidate.checkpoint.parts.report.clone(),
                     ),
                     Some(&Maybe::Absent(_)) | None => (
                         Maybe::Absent(failed::Absent::Unkept),
                         Maybe::Absent(elaborated::Absent::AsWritten),
+                        Maybe::Absent(reported::Absent::Unreported),
                     ),
                 };
+                wait_on(
+                    &mut waiting,
+                    (&mut context, layout),
+                    (item, declaration.constant()),
+                    &report,
+                );
                 (
                     Outcome {
                         footprint,
@@ -3362,6 +3481,7 @@ where
                         entered: Entered::AsWritten,
                         failure,
                         entry,
+                        report,
                         adoption: Adoption::Adopted,
                     },
                     answer,
@@ -3390,13 +3510,19 @@ where
                     (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
                     (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
                 };
-                let (support, typing, answer, (entered, entry), failure) = match taken {
-                    Maybe::Present((support, typing, answer, failure)) => {
+                let (support, typing, answer, (entered, entry), (failure, report)) = match taken {
+                    Maybe::Present((support, typing, answer, (failure, report))) => {
                         bump(&mut census.taken);
                         #[cfg(feature = "instrument")]
                         if let Some(judgement) = judgement {
                             consulted = judgement.consulted(declaration.constant());
                         }
+                        wait_on(
+                            &mut waiting,
+                            (&mut context, layout),
+                            (item, declaration.constant()),
+                            &report,
+                        );
                         (
                             support,
                             typing,
@@ -3405,12 +3531,17 @@ where
                                 Entered::AsWritten,
                                 Maybe::Absent(elaborated::Absent::AsWritten),
                             ),
-                            failure,
+                            (failure, report),
                         )
                     },
                     Maybe::Absent(_) => {
-                        let (decision, supported) =
-                            decided(&mut context, item, declaration, layout, &types);
+                        let (decision, supported) = decided(
+                            &mut context,
+                            item,
+                            declaration,
+                            (layout, &types),
+                            &mut waiting,
+                        );
                         if membership == Membership::Member {
                             if let Maybe::Present(failure) = supported.failure() {
                                 let _earlier =
@@ -3429,6 +3560,7 @@ where
                         entered,
                         failure,
                         entry,
+                        report,
                         adoption: Adoption::Judged,
                     },
                     answer,
@@ -3490,12 +3622,15 @@ where
 /// answer through the edited program, beside the run they project.
 ///
 /// # Specification
+/// - requires: `waiting` holds the suspension of each earlier suspended item of
+///   the pass, seated in `context`'s arena.
 /// - ensures: the verdict [`check_declaration_supported`] gives, projected,
 ///   with its support and the item's own entered answer, the answer the table
 ///   then gives of the item, the form the table holds it in beside the parts it
-///   holds in another form than the item writes them, and the failure of a
-///   refused item; beside them, the run itself, whose verdict and failure a
-///   block's refusal replaces.
+///   holds in another form than the item writes them, the failure of a refused
+///   item and what the judgement reported of it; beside them, the run itself,
+///   whose verdict and failure a block's refusal replaces. A suspended item's
+///   suspension joins `waiting`.
 /// - panics: none.
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
@@ -3507,8 +3642,8 @@ fn decided(
     context: &mut CheckingContext<'_>,
     item: &Encoded,
     declaration: &gandr_core_checker::Declaration,
-    layout: &Layout,
-    types: &crate::content::TypeMemo,
+    (layout, types): (&Layout, &crate::content::TypeMemo),
+    waiting: &mut BTreeMap<ConstantIndex, Suspension>,
 ) -> (Decided, Supported)
 {
     let supported = check_declaration_supported(context, declaration);
@@ -3545,7 +3680,7 @@ fn decided(
         gandr_core_checker::DeclarationContent::Abstract(_)
         | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
     };
-    let entry = EntryContent::of(
+    let (entry, body) = match EntryContent::of(
         context,
         (layout, types),
         declaration,
@@ -3554,11 +3689,35 @@ fn decided(
             supported.entered(),
             item.content.opacity(),
         ),
-    )
-    .map(Arc::new);
+    ) {
+        Maybe::Present((entry, body)) => (Maybe::Present(Arc::new(entry)), body),
+        Maybe::Absent(reason) => (Maybe::Absent(reason), None),
+    };
+    let suspension = supported.suspension(context, waiting);
+    let report = match item.content.opacity() {
+        Opacity::Opaque => Maybe::Absent(reported::Absent::Opaque),
+        Opacity::Transparent => ReportContent::of(
+            (arena, layout),
+            (&item.sites, body.as_ref()),
+            (
+                match supported.elaboration() {
+                    Maybe::Present(elaboration) => Some(elaboration),
+                    Maybe::Absent(_) => None,
+                },
+                match suspension {
+                    Maybe::Present(ref suspension) => Some(suspension),
+                    Maybe::Absent(_) => None,
+                },
+            ),
+        )
+        .map(Arc::new),
+    };
+    if let Maybe::Present(suspension) = suspension {
+        let _earlier = waiting.insert(declaration.constant(), suspension);
+    }
     let entered = supported.entered();
     (
-        (support, typing, answer, (entered, entry), failure),
+        (support, typing, answer, (entered, entry), (failure, report)),
         supported,
     )
 }
@@ -3570,9 +3729,53 @@ type Failed = Maybe<Arc<FailureContent>, failed::Absent>;
 /// none.
 type Entry = Maybe<Arc<EntryContent>, elaborated::Absent>;
 
+/// What the judgement reported of an item, or why a checkpoint keeps none.
+type Report = Maybe<Arc<ReportContent>, reported::Absent>;
+
+/// What a checkpoint keeps of a judgement beside its verdict: the failure of
+/// a refused item and the report.
+type Reported = (Failed, Report);
+
 /// What a pass that decides an item gives its checkpoint: the answers that
-/// the item consulted, its typing, its answer, its entry and its failure.
-type Decided = (Vec<Answered>, Typing, Answer, (Entered, Entry), Failed);
+/// the item consulted, its typing, its answer, its entry and its report.
+type Decided = (Vec<Answered>, Typing, Answer, (Entered, Entry), Reported);
+
+/// Keep in `waiting` the suspension that `report` keeps of `item`, the
+/// declaration at `constant`, seated in `context`'s arena through `layout`.
+///
+/// # Specification
+/// - requires: `item` is the item's encoding in `context`'s arena.
+/// - ensures: the suspension seated and kept at `constant` when the report
+///   keeps one and its seat succeeds; `waiting` unchanged otherwise. Nothing is
+///   minted for a report that keeps no suspension.
+/// - panics: none.
+/// - executable: none — the clause restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a suspension that the resume adopts joins the equations
+///   of a reader that the resume judges, as a check from scratch does.
+/// - witness: `report::tests::an_adopted_suspension_is_seated_for_the_reader_that_the_resume_judges`
+fn wait_on(
+    waiting: &mut BTreeMap<ConstantIndex, Suspension>,
+    (context, layout): (&mut CheckingContext<'_>, &Layout),
+    (item, constant): (&Encoded, ConstantIndex),
+    report: &Report,
+)
+{
+    let Maybe::Present(ref report) = *report
+    else {
+        return;
+    };
+    if let Maybe::Absent(_) = report.suspension() {
+        return;
+    }
+    let walk = item.sites.walk();
+    if let Ok(Maybe::Present(suspension)) =
+        report.seat_suspension((context.arena_mut(), layout), &walk)
+    {
+        let _earlier = waiting.insert(constant, suspension);
+    }
+}
 
 /// The failure content of `verdict` read through `projection`, beside the
 /// `failure` its run kept, a node outside the item placed under a root of

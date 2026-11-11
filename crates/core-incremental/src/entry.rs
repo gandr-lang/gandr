@@ -40,7 +40,9 @@ use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
 use crate::content::ArenaNode;
+use crate::content::Minted;
 use crate::content::Opacity;
+use crate::content::Placer;
 use crate::content::TypeContent;
 use crate::content::TypeMemo;
 use crate::content::seating;
@@ -118,7 +120,8 @@ impl EntryContent
 {
     /// The table parts of `declaration`, which the judgement in `context`
     /// decided with `verdict` and entered as `entered`, each node read through
-    /// `layout` and each type through `types`.
+    /// `layout` and each type through `types`, beside the place of each node
+    /// of the judged body in the body's table when the entry keeps the body.
     ///
     /// # Specification
     /// - requires: `context` has just judged `declaration`, and no later
@@ -126,7 +129,8 @@ impl EntryContent
     /// - ensures: `elaborated::Absent::AsWritten` for an item entered as
     ///   written, `elaborated::Absent::Opaque` for an opaque one; otherwise
     ///   each part that the table holds in another form than the item writes
-    ///   it, as content.
+    ///   it, as content, and the places of the body's table when it keeps the
+    ///   body.
     /// - panics: none.
     /// - executable: none — a predicate would read the table again through the
     ///   reads this call makes.
@@ -139,7 +143,7 @@ impl EntryContent
         (layout, types): (&Layout, &TypeMemo),
         declaration: &Declaration,
         (verdict, entered, opacity): (Verdict, Entered, Opacity),
-    ) -> Maybe<Self, elaborated::Absent>
+    ) -> Maybe<(Self, Option<Placer>), elaborated::Absent>
     {
         match (entered, opacity) {
             (Entered::AsWritten, Opacity::Transparent | Opacity::Opaque) => {
@@ -169,11 +173,12 @@ impl EntryContent
         };
         let arena = context.arena();
         let constant = declaration.constant();
-        let body = if body == Maybe::Present(judged) {
-            Maybe::Absent(written::Absent::Written)
+        let (body, placer) = if body == Maybe::Present(judged) {
+            (Maybe::Absent(written::Absent::Written), None)
         }
         else {
-            Maybe::Present(TypeContent::of(arena, layout, ArenaNode::Value(judged)))
+            let (content, placer) = TypeContent::placed(arena, layout, ArenaNode::Value(judged));
+            (Maybe::Present(content), Some(placer))
         };
         let declared = match (signature, context.signature(constant)) {
             (Maybe::Present(written), Maybe::Present(formed)) if formed.id() != written => {
@@ -195,12 +200,15 @@ impl EntryContent
             .map_or(Maybe::Absent(written::Absent::Written), |&position| {
                 Maybe::Present(position)
             });
-        Maybe::Present(Self {
-            body,
-            declared,
-            stage,
-            following,
-        })
+        Maybe::Present((
+            Self {
+                body,
+                declared,
+                stage,
+                following,
+            },
+            placer,
+        ))
     }
 
     /// The entry of these parts, as the decoder reassembles it.
@@ -278,13 +286,15 @@ impl EntryContent
     }
 
     /// Mint the body and the declared type into `arena`, their references
-    /// placed through `layout`.
+    /// placed through `layout`, beside the node minted at each place of the
+    /// body's table.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success, each kept part minted as [`TypeContent::mint`]
     ///   mints it, the body a value and the declared type a value type, and
-    ///   each part not kept absent for the reason the entry keeps.
+    ///   each part not kept absent for the reason the entry keeps; the body's
+    ///   places minted when the entry keeps the body.
     /// - fails: as [`TypeContent::mint`], and [`seating::Absent::IllSorted`]
     ///   for a body that is no value or a declared type that is no value type.
     /// - panics: none.
@@ -298,17 +308,20 @@ impl EntryContent
         &self,
         arena: &mut CoreArena,
         layout: &Layout,
-    ) -> Maybe<SeatedEntry, seating::Absent>
+    ) -> Maybe<(SeatedEntry, Option<Minted>), seating::Absent>
     {
-        let body = match self.body {
-            Maybe::Present(ref content) => match content.mint(arena, layout) {
-                Maybe::Present(ArenaNode::Value(id)) => Maybe::Present(id),
-                Maybe::Present(
+        let (body, places) = match self.body {
+            Maybe::Present(ref content) => match content.mint_placed(arena, layout) {
+                Maybe::Present((ArenaNode::Value(id), places)) => {
+                    (Maybe::Present(id), Some(places))
+                },
+                Maybe::Present((
                     ArenaNode::Computation(_) | ArenaNode::ValueType(_) | ArenaNode::CompType(_),
-                ) => return Maybe::Absent(seating::Absent::IllSorted),
+                    _,
+                )) => return Maybe::Absent(seating::Absent::IllSorted),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
-            Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Absent(reason) => (Maybe::Absent(reason), None),
         };
         let declared = match self.declared {
             Maybe::Present(ref content) => match content.mint_value_type(arena, layout) {
@@ -317,7 +330,7 @@ impl EntryContent
             },
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
-        Maybe::Present(SeatedEntry { body, declared })
+        Maybe::Present((SeatedEntry { body, declared }, places))
     }
 
     /// Mint the body and the declared type into `program`'s arena under its
@@ -339,7 +352,7 @@ impl EntryContent
     ) -> Maybe<SeatedEntry, seating::Absent>
     {
         let (arena, layout) = program.parts_mut();
-        self.seat(arena, layout)
+        self.seat(arena, layout).map(|(seated, _)| seated)
     }
 }
 

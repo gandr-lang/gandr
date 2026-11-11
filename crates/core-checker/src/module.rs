@@ -1456,7 +1456,7 @@ quenchant_shape::reason_enum! {
 
 quenchant_shape::reason_enum! {
     /// Why a declaration's judgement carries no elaboration.
-    mod elaborated {
+    pub mod elaborated {
         /// The reason no elaboration is carried.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
@@ -1465,6 +1465,25 @@ quenchant_shape::reason_enum! {
             Unnested,
             /// The first run refused the body, so nothing was elaborated.
             Unaccepted,
+            /// A module run keeps the elaboration in its report
+            /// ([`crate::ModuleReport::nested_elaborations`]), not beside its
+            /// support.
+            Reported,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement keeps no suspension.
+    pub mod waits {
+        /// The reason no suspension is kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The verdict is not suspended.
+            Unsuspended,
+            /// A module run keeps the suspension in its report
+            /// ([`crate::ModuleReport::suspensions`]), not beside its support.
+            Reported,
         }
     }
 }
@@ -2828,11 +2847,18 @@ pub fn check_declaration_supported(
     context.start_support();
     let decision = decide(context, declaration, Run::Judged);
     let entered = entered(context, declaration, decision.verdict);
+    let residue = match decision.verdict {
+        Verdict::Suspended(_) => Maybe::Present(decision.residue),
+        Verdict::Data
+        | Verdict::Checked { .. }
+        | Verdict::Synthesised { .. }
+        | Verdict::Owed(_)
+        | Verdict::Refused(_) => Maybe::Absent(waits::Absent::Unsuspended),
+    };
     Supported::new(
-        decision.verdict,
-        context.finish_support(),
-        entered,
+        (decision.verdict, context.finish_support(), entered),
         decision.failure,
+        (decision.elaboration, residue),
     )
 }
 
@@ -3152,10 +3178,12 @@ impl ModuleRun
                     let support = context.finish_support();
                     let entered = entered(context, declaration, decision.verdict);
                     let kept = Supported::new(
-                        decision.verdict,
-                        support,
-                        entered,
+                        (decision.verdict, support, entered),
                         Maybe::Absent(kept::Absent::Reported),
+                        (
+                            Maybe::Absent(elaborated::Absent::Reported),
+                            Maybe::Absent(waits::Absent::Reported),
+                        ),
                     );
                     // The counts layer charges these consults to the item a
                     // pass takes the verdict for.

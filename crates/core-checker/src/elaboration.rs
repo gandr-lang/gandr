@@ -324,6 +324,37 @@ impl Suspension
         }
     }
 
+    /// The suspension that these parts give, as a seat builds it again in
+    /// another arena.
+    ///
+    /// # Specification
+    /// - requires: `declared` is minted from the content of the formed type
+    ///   that a suspension kept, so it is a rewrite of a formed type; the
+    ///   equations are sorted and unique.
+    /// - ensures: the suspension of these parts.
+    /// - panics: none.
+    /// - executable: none — the requirement names where the type came from,
+    ///   which no predicate reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parts of a suspension that a supported judgement
+    ///   keeps seat that suspension again.
+    /// - witness: `elaboration::tests::a_supported_judgement_keeps_the_suspension_that_the_module_run_reports`
+    #[inline]
+    #[must_use]
+    pub fn seated(
+        (declared, equations): (gandr_core_term::ValueTypeId, Vec<Equation>),
+        (blockers, dependencies): (BTreeSet<ConstantIndex>, BTreeSet<ConstantIndex>),
+    ) -> Self
+    {
+        Self {
+            declared: FormedValueType::derived(declared),
+            equations,
+            blockers,
+            dependencies,
+        }
+    }
+
     /// The type the waiting declaration supplies.
     ///
     /// # Specification

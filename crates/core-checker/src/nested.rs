@@ -153,6 +153,29 @@ pub struct NestedElaboration
 
 impl NestedElaboration
 {
+    /// The elaboration that these tables give, as a seat builds it again in
+    /// another arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn seated(
+        (decisions, carried): (BTreeMap<ValueId, Nesting>, Vec<Carried>),
+        (binds, crossings): (
+            Vec<(ValueId, ComputationId)>,
+            BTreeMap<ValueId, gandr_core_term::Crossing>,
+        ),
+    ) -> Self
+    {
+        Self {
+            decisions,
+            carried,
+            binds,
+            crossings,
+        }
+    }
+
     /// Each nested computation and written run of the declaration's body, by
     /// node, as the judgement decided it.
     ///

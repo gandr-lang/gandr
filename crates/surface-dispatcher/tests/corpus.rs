@@ -2216,6 +2216,285 @@ mod sweeps
         );
     }
 
+    /// The reports' sample: sixty-four sources, ranked by their BLAKE3 digest
+    /// under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them. The
+    /// nightly profile seats the night's slice, and the `sweeps` profile every
+    /// source.
+    const REPORTED: Sample = Sample {
+        name: SampleName("the_report_parts_of_an_item_mint_back_to_themselves"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to seat every source's reports.
+    const REPORTED_NIGHTS: Nights = Nights(7);
+
+    /// Each item whose judgement elaborated a nested computation of its body,
+    /// or suspended its verdict, of each source the sweep visits, keeps that
+    /// report in its checkpoint. The report, seated in the program and
+    /// projected again, is the report kept, and it reads back from the set's
+    /// bytes as kept. An opaque item keeps no report.
+    #[test]
+    fn the_report_parts_of_an_item_mint_back_to_themselves()
+    {
+        reports_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn the_report_parts_of_an_item_mint_back_to_themselves_changed()
+    {
+        reports_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits, checked, has the report of each item seat
+    /// back to the report kept, read back from the set's bytes as kept.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reports_alike(sweep: &Sweep)
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_checker::Unretired;
+        use gandr_core_incremental::BackendArtifact;
+        use gandr_core_incremental::IncrementalSession;
+        use gandr_core_incremental::ItemOrdinal;
+        use gandr_core_incremental::Judgement;
+        use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::decode_checkpoints;
+        use gandr_core_incremental::encode_checkpoints;
+        use gandr_core_incremental::reported;
+        use gandr_core_incremental::seating;
+        use gandr_surface_dispatcher::Checking;
+        use gandr_surface_dispatcher::Recording;
+        use gandr_surface_dispatcher::Supporting;
+        use gandr_surface_dispatcher::Unshadowed;
+        use gandr_surface_dispatcher::classify;
+        use gandr_surface_dispatcher::item_program;
+        use gandr_surface_dispatcher::judge_member_after_retiring;
+        use gandr_surface_dispatcher::lay_out_shadowed;
+        use gandr_surface_dispatcher::lower_unit_source;
+        use gandr_surface_syntax::ByteOffset;
+
+        /// What the witness counts over the sources that it visits.
+        ///
+        /// # Specification
+        /// trivial.
+        #[derive(Default)]
+        struct ReportTally
+        {
+            /// The items that the whole judgement elaborates.
+            nested: usize,
+            /// The items that the whole judgement suspends.
+            suspended: usize,
+            /// The reports kept.
+            kept: usize,
+            /// The opaque items, which keep no report.
+            opaque: usize,
+            /// The sources whose sets are read back from bytes.
+            persisted: usize,
+            /// The seated reports, by each part that they hold.
+            seated: BTreeMap<&'static str, usize>,
+            /// The reported items that keep no report.
+            unkept: Vec<(PathBuf, gandr_core_incremental::Reference)>,
+            /// The reports that do not seat, by reason.
+            unseated: BTreeMap<seating::Absent, usize>,
+            /// The reports that differ from the report kept, and where.
+            differing: Vec<(PathBuf, gandr_core_incremental::Reference, &'static str)>,
+        }
+
+        /// Judge the source at `path` whole, seat each report from its
+        /// checkpoint, and count in `tally` how each seat reads.
+        ///
+        /// # Specification
+        /// trivial.
+        fn report_source(
+            grammar: &Pbg,
+            path: &Path,
+            tally: &mut ReportTally,
+        )
+        {
+            let own = std::fs::read_to_string(path).expect("a corpus source reads");
+            let root = classify(path);
+            let laid = lay_out_shadowed(
+                grammar,
+                path,
+                root,
+                SourceText::from(own.as_str()),
+                &Unshadowed,
+            );
+            let text = SourceText::from(laid.text.as_str());
+            let lower = || {
+                let lowering =
+                    lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
+                        .ok()?;
+                match lowering.into_lowered() {
+                    Lowered::Module { module, arena } => Some((module, arena)),
+                    Lowered::Refused(_) => None,
+                }
+            };
+            let Some((module, arena)) = lower()
+            else {
+                return;
+            };
+            let (settled, admission) = judge_member_after_retiring(
+                root.corpus_root(),
+                (module, text),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                ByteOffset::from(0_usize),
+                (&Unretired, Recording::Unrecorded, Supporting::Kept),
+            )
+            .whole()
+            .into_parts();
+            let (Ok(_), Some((module, arena))) = (settled, lower())
+            else {
+                return;
+            };
+            let mut program = item_program(&module, arena).expect("a lowered module lays out");
+            let mut session = IncrementalSession::new(
+                MemoryCheckpointStore::default(),
+                BackendArtifact::from(b"core-checker".as_slice()),
+                CheckBudget::DEFAULT,
+            );
+            // A set the store does not persist, as a codata item's, still
+            // leaves the resume the pass made.
+            let _submitted = session.submit_retiring(
+                &mut program,
+                &mut Quiet,
+                &Unretired,
+                Some(Judgement::new(admission.arena(), admission.verdicts())),
+            );
+            let Maybe::Present(resume) = session.last()
+            else {
+                panic!("a submitted session whose order builds holds a resume");
+            };
+            let read = encode_checkpoints(resume.checkpoints()).ok().map(|bytes| {
+                tally.persisted = tally.persisted.saturating_add(1);
+                decode_checkpoints(&bytes).expect("written checkpoints read back")
+            });
+            // The judgement's arena holds the program's lowered nodes at the
+            // ids the program holds them, and mints of its own after them.
+            let mut arena = admission.arena().clone();
+            for (ordinal, item) in resume.checkpoints().items().iter().enumerate() {
+                let reference = item.content().reference().clone();
+                let constant = program
+                    .items()
+                    .get(ordinal)
+                    .map(|own| own.declaration().constant())
+                    .expect("a checkpoint's item stands in its program");
+                let judged = (
+                    admission
+                        .verdicts()
+                        .nested_elaborations()
+                        .contains_key(&constant),
+                    admission.verdicts().suspensions().contains_key(&constant),
+                );
+                tally.nested = tally.nested.saturating_add(usize::from(judged.0));
+                tally.suspended = tally.suspended.saturating_add(usize::from(judged.1));
+                let report = match item.report() {
+                    Maybe::Present(report) => report,
+                    Maybe::Absent(reported::Absent::Opaque) => {
+                        tally.opaque = tally.opaque.saturating_add(1);
+                        continue;
+                    },
+                    Maybe::Absent(reported::Absent::Unreported) => {
+                        if judged.0 || judged.1 {
+                            tally.unkept.push((path.to_path_buf(), reference));
+                        }
+                        continue;
+                    },
+                };
+                tally.kept = tally.kept.saturating_add(1);
+                if let Some(ref read) = read
+                    && read.items().get(ordinal).map(|back| back.report())
+                        != Some(Maybe::Present(report))
+                {
+                    tally
+                        .differing
+                        .push((path.to_path_buf(), reference.clone(), "read back"));
+                }
+                let ordinal = ItemOrdinal::from(ordinal);
+                let seat = match item.reported(&mut arena, (&program, ordinal)) {
+                    Maybe::Present(seat) => seat,
+                    Maybe::Absent(reason) => {
+                        let count = tally.unseated.entry(reason).or_default();
+                        *count = count.saturating_add(1);
+                        continue;
+                    },
+                };
+                for (part, held) in [
+                    (
+                        "elaboration",
+                        matches!(seat.elaboration(), Maybe::Present(_)),
+                    ),
+                    ("suspension", matches!(seat.suspension(), Maybe::Present(_))),
+                ] {
+                    if held {
+                        let count = tally.seated.entry(part).or_default();
+                        *count = count.saturating_add(1);
+                    }
+                }
+                let again = seat.content(&arena, (&program, ordinal));
+                if !matches!(again, Maybe::Present(ref again) if again == report) {
+                    tally
+                        .differing
+                        .push((path.to_path_buf(), reference, "seated"));
+                }
+            }
+        }
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(
+            REPORTED,
+            REPORTED_NIGHTS,
+            &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+        );
+        assert!(
+            visited.len() >= sweep.drawn(REPORTED).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let mut tally = ReportTally::default();
+        for source in visited {
+            report_source(&grammar, source.path.as_path(), &mut tally);
+        }
+        let ReportTally {
+            nested,
+            suspended,
+            kept,
+            opaque,
+            persisted,
+            seated,
+            unkept,
+            unseated,
+            differing,
+        } = tally;
+        eprintln!(
+            "{nested} items the whole judgement elaborated, {suspended} it suspended; {kept} \
+             reports kept, {opaque} opaque items unreported, {} reported items unkept: {:?}; \
+             seated: {seated:?}; unseated, by reason: {unseated:?}; sets read back from bytes in \
+             {persisted} sources",
+            unkept.len(),
+            unkept.iter().take(16).collect::<Vec<_>>()
+        );
+        assert!(
+            differing.is_empty(),
+            "over {kept} reports, each seats and reads back as kept: {} differ, first {:?}",
+            differing.len(),
+            differing.iter().take(16).collect::<Vec<_>>()
+        );
+        assert!(
+            unseated.keys().all(|&reason| matches!(
+                reason,
+                seating::Absent::Unresolved | seating::Absent::Unplaced
+            )),
+            "a report is refused only for an unresolved node or an unplaced reference: \
+             {unseated:?}"
+        );
+    }
+
     /// The refusals' sample: sixty-four sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class, and, in the
     /// companion, every source the change adds or modifies beside them. The
