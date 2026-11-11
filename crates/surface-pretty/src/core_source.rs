@@ -3271,16 +3271,20 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: for a held data case the constructor table records a family
-    ///   for, the family's constructor at `index` as a pattern names it; none
-    ///   otherwise.
-    /// - provides: a data case's patterns.
+    ///   for, the family's constructor at `index` as a pattern names it; for a
+    ///   held data case the table does not record, whose scrutinee is a
+    ///   constructor, the same of the constructor's family; none otherwise.
+    /// - provides: a data case's patterns, a case the checker builds at a
+    ///   constructor among them.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Source::constructor`].
+    /// - hypothesis: L3 — as [`Source::constructor`], and a case the table does
+    ///   not record names its arm by its constructor's family.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_case_over_words_writes_each_arm_as_the_surface_does_815`
+    /// - witness: `core_source::tests::a_case_over_a_constructor_names_its_arm_by_the_constructor_s_family_6548`
     #[spec(ensures: |ret| ret.is_none() || matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
     #[inline]
     fn constructor(
@@ -3293,7 +3297,17 @@ impl Source for CoreSource<'_>
         else {
             return None;
         };
-        let family = *self.constructors.cases.get(&id)?;
+        let family = self.constructors.cases.get(&id).copied().or_else(|| {
+            let &Computation::DataCase { scrutinee, .. } = self.arena.computation(id)?
+            else {
+                return None;
+            };
+            let &Value::Constructor { family, .. } = self.arena.value(scrutinee)?
+            else {
+                return None;
+            };
+            self.family(family)
+        })?;
         let (name, arity) = self.constructors.arm(family, index)?;
         Some((name, arity, self.constructors.placement(family, arity)))
     }
@@ -4306,6 +4320,43 @@ mod tests
             (classifier(of_applied), classifier(of_plain)),
             (Some(Some(CoreNode::ValueType(computed))), Some(None)),
             "a computed type classifies a constructor whose family takes arguments, and no other"
+        );
+    }
+
+    /// #6548: a data case that the constructor table does not record, built
+    /// over a constructor as the checker builds a case's answer at a point,
+    /// names its arm by the constructor's family. A case over a variable that
+    /// the table does not record names none.
+    #[test]
+    fn a_case_over_a_constructor_names_its_arm_by_the_constructor_s_family_6548()
+    {
+        let mut arena = CoreArena::new();
+        let family = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let point = arena.value_constructor(ConstantIndex::from(0_usize), family, tag, Vec::new());
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let motive = arena.comp_type_returner(family);
+        let answer = arena.computation_return(point);
+        let arities = Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]);
+        let at_point =
+            arena.computation_data_case(point, motive, Vec::from([answer]), arities.clone());
+        let at_variable =
+            arena.computation_data_case(variable, motive, Vec::from([answer]), arities);
+        let mut constructors = Constructors::default();
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(0_usize)), [(
+            Name::from("Origin"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&arena, &[]).naming(&constructors);
+        let arm = |case| {
+            source
+                .constructor(CoreNode::Computation(case), Component::from(0_usize))
+                .map(|(name, ..)| String::from(name.as_ref()))
+        };
+        assert_eq!(
+            (arm(at_point), arm(at_variable)),
+            (Some(String::from("Origin")), None),
+            "a case over a constructor names its arm by the constructor's family, and one over a variable names none"
         );
     }
 }

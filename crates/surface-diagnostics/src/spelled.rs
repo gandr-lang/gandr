@@ -107,10 +107,11 @@ use gandr_surface_pretty::FamilyKey;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::ModelSlot;
 use gandr_surface_pretty::Name;
+use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
-use gandr_surface_pretty::present_computation_line;
+use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_type_line;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -311,7 +312,12 @@ impl TypeSpellings
     ///   the telescope, a failure's first naming of a node winning; a type the
     ///   printer cannot spell, or whose line is wider than a page of
     ///   [`SPELLING_WIDTH`] columns, is left unkeyed, and is never laid out;
-    ///   nothing else is keyed.
+    ///   each side of a produced
+    ///   [`gandr_core_checker::CheckRefusal::LoopNotRespected`] is keyed by its
+    ///   node and spelled through [`present_computation`] at that page, under
+    ///   the hypotheses and regions of its declaration's first failure, the
+    ///   case's context, laid out on more lines where it is wider; nothing else
+    ///   is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -444,7 +450,7 @@ impl TypeSpellings
 /// # Specification
 /// - requires: as [`TypeSpellings::of`].
 /// - ensures: as [`TypeSpellings::of`], of the refusals among `declarations`
-///   and of `failures`, in their order; every spelling kept is one line.
+///   and of `failures`, in their order; every type spelling kept is one line.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -457,7 +463,6 @@ impl TypeSpellings
     spelled
         .types
         .values()
-        .chain(spelled.loops.values())
         .all(|presentation| !presentation.as_ref().contains('\n'))))]
 fn spell<'failure>(
     (arena, module): (&CoreArena, &LoweredModule<'_>),
@@ -491,6 +496,9 @@ fn spell<'failure>(
     // Each compared type a failure reads through the solver's solutions:
     // keyed as written, spelled as solved.
     let mut solved: BTreeMap<TypeNode, TypeNode> = BTreeMap::new();
+    // Each refused declaration's first failure, as the scope its loop
+    // refusal's sides stand in: the case's context at the refusal.
+    let mut failed: BTreeMap<ConstantIndex, Scoped> = BTreeMap::new();
     let unit = module.unit();
     let holders: BTreeMap<ConstantIndex, SourceIndex> = module
         .declarations()
@@ -581,6 +589,11 @@ fn spell<'failure>(
         }
         let full = names.len();
         let enclosed = around.len();
+        let _first = failed.entry(constant).or_insert(Scoped {
+            scope,
+            depth: full,
+            regions: enclosed,
+        });
         let compared = failure.refusal().compared();
         let pursued = match failure.pursuit().expected() {
             Maybe::Present(node) => Some(node),
@@ -648,18 +661,25 @@ fn spell<'failure>(
                 Maybe::Absent(_) => None,
             }),
     );
-    let named_loops: Vec<(ComputationId, SourceIndex)> = declarations
+    let named_loops: Vec<(ComputationId, Scoped, SourceIndex)> = declarations
         .iter()
         .filter_map(|declaration| match declaration.produced().refusal() {
             Maybe::Present(Refusal::Checking(CheckRefusal::LoopNotRespected {
                 left,
                 right,
                 ..
-            })) => Some(([left, right], reader_of(declaration.constant()))),
+            })) => Some((
+                [left, right],
+                failed
+                    .get(&declaration.constant())
+                    .copied()
+                    .unwrap_or(Scoped::CLOSED),
+                reader_of(declaration.constant()),
+            )),
             Maybe::Present(Refusal::Checking(_) | Refusal::Lowering(_) | Refusal::Corpus(_))
             | Maybe::Absent(_) => None,
         })
-        .flat_map(|(sides, reader)| sides.map(|side| (side, reader)))
+        .flat_map(|(sides, scoped, reader)| sides.map(|side| (side, scoped, reader)))
         .collect();
     if named.is_empty() && named_loops.is_empty() {
         return TypeSpellings::default();
@@ -669,7 +689,7 @@ fn spell<'failure>(
     let mut readers: Vec<SourceIndex> = named
         .iter()
         .map(|&(_, _, reader)| reader)
-        .chain(named_loops.iter().map(|&(_, reader)| reader))
+        .chain(named_loops.iter().map(|&(_, _, reader)| reader))
         .collect();
     readers.sort_unstable();
     readers.dedup();
@@ -776,7 +796,16 @@ fn spell<'failure>(
             }
         }
     }
-    for (node, reader) in named_loops {
+    for (
+        node,
+        Scoped {
+            scope,
+            depth,
+            regions: within,
+        },
+        reader,
+    ) in named_loops
+    {
         if !seen_loops.insert(node) {
             continue;
         }
@@ -787,6 +816,15 @@ fn spell<'failure>(
         else {
             continue;
         };
+        let context = contexts
+            .get(scope)
+            .and_then(|context| context.get(.. depth))
+            .unwrap_or_default();
+        let around = enclosing
+            .get(scope)
+            .and_then(|around| around.get(.. within))
+            .unwrap_or_default();
+        let bound = bindings.get(scope).map(Vec::as_slice).unwrap_or_default();
         for (spelling, spelled) in [
             (Spelling::Unicode, &mut unicode_loops),
             (Spelling::Ascii, &mut ascii_loops),
@@ -795,12 +833,12 @@ fn spell<'failure>(
                 form: Form::Sugared,
                 spelling,
             };
-            if let Ok(presentation) =
-                present_computation_line(source, CoreNode::Computation(node), style)
-                && !presentation.as_ref().contains('\n')
-                && u32::try_from(presentation.as_ref().chars().count())
-                    .is_ok_and(|width| width <= SPELLING_WIDTH)
-            {
+            if let Ok(presentation) = present_computation(
+                &source.within(context).scoped(around).bounding(bound),
+                CoreNode::Computation(node),
+                PageWidth::from(SPELLING_WIDTH),
+                style,
+            ) {
                 let _fresh = spelled.insert(node, presentation);
             }
         }
@@ -834,7 +872,8 @@ impl Spellings
             .map_or(Maybe::Absent(spelling::Absent::Unspelled), Maybe::Present)
     }
 
-    /// The printed loop computation `node`.
+    /// The printed side `node` of a loop refusal: on one line where it fits a
+    /// page of [`SPELLING_WIDTH`] columns, laid out on that page otherwise.
     ///
     /// # Specification
     /// trivial.

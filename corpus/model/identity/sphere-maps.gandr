@@ -21,7 +21,9 @@
 /// cell of a dependent case is checked at the motive's own type, so it does
 /// not check.
 ///
-/// - see: #6458 — `selfrefl2`, `throughName2`, `selfrefl3`, `flattenRefl`
+/// - see: #6458 — `selfrefl2`, `throughName2`, `selfrefl3`
+/// - see: corpus/pathological/identity/sphere-maps.gandr — a map with no arm
+///   at the cell, which the case refuses
 /// - see: #6477 — `apEmptyCell`
 /// - see: #6531 — the answer at the point that holds a letter
 /// - see: corpus/model/identity/sphere.gandr
@@ -126,10 +128,3 @@ def throughName2(b : S2) -> Path[.A = S2](sphereId b, b) =
 def selfrefl3(x : S3) -> Path[.A = S3](x, x) =
   match x where
     | Base3 => Path.here Base3
-
-/// A map with no arm at the cell moves the answer along the cell to the
-/// cell's inverse. The case owes an arm there.
-@[refuses("LoopNotRespected")]
-def flattenRefl(x : S2) -> Path[.A = S2](flatten x, x) =
-  match x where
-    | Base2 => Path.here Base2
