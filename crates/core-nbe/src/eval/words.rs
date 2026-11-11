@@ -2802,12 +2802,18 @@ pub(super) fn arm_entered(
 /// Append a letter's image, bound by a [`CompBody::Mapping`] continuation,
 /// and map on.
 ///
+/// An image that is no word, a cell of the universe a case into `Type`
+/// answers, is the endpoint's whole image when it is the one letter's image
+/// along one call of one route: no word is spliced to it.
+///
 /// # Specification
 /// - requires: `image` is the loop arm's answer for the letter `state` was
 ///   mapping.
 /// - ensures: as [`map`], the image, inverted for an inverse letter, after the
 ///   image so far: its inverse goes before `state.mapped`, so the step copies
-///   that image alone.
+///   that image alone. An image [`head`] reads as no word is returned as the
+///   endpoint's image when the letter is forward, the first and the last of the
+///   word, and its call the last of the only route.
 /// - fails: [`EvalFault::TransportedNonPath`] for an image that does not
 ///   splice; as [`map`] otherwise.
 /// - panics: none.
@@ -2817,8 +2823,10 @@ pub(super) fn arm_entered(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the flip's arm answer is appended as the loop's image;
-///   dropping it returns the empty word.
+///   dropping it returns the empty word. `Path.ap` of the Hopf family on the
+///   2-sphere's cell is the arm `ua(selfloop)`, and not reflexivity.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+/// - witness: `eval::words::tests::cong_into_the_universe_at_the_2_cell_is_the_arm_6530`
 #[spec(
     captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || machine.comps.len() > entry_comps || machine.tasks.len() > entry_tasks,
@@ -2845,6 +2853,23 @@ pub(super) fn mapped(
         });
         return Ok(());
     }
+    if head(core, domain, machine, image)? == Head::Other {
+        let (routes, ..) = endpoint_routes(core, domain, state)?;
+        let next = Call::from(usize::from(state.call).saturating_add(1));
+        let whole = state.orientation == Orientation::Forward
+            && usize::from(state.route) == 0
+            && routes.leaves.len() == 1
+            && routes.link(state.route, next).is_none()
+            && head(core, domain, machine, state.rest)? == Head::Empty
+            && head(core, domain, machine, state.mapped)? == Head::Empty;
+        if !whole {
+            return Err(stuck);
+        }
+        machine
+            .comps
+            .push(domain.comp_return(image, CompTermFace::Reduced));
+        return Ok(());
+    }
     // `mapped` holds the image so far inverted, so the inverse of this
     // letter's image goes before it.
     let piece = match state.orientation {
@@ -2863,7 +2888,8 @@ pub(super) fn mapped(
 /// - requires: `image` is the image the stage names; `along` the word
 ///   transported along, one letter or a closed word that moves whole.
 /// - ensures: the spliced path returned, or the right endpoint's image pushed
-///   under a continuation at [`Conjugating::Right`].
+///   under a continuation at [`Conjugating::Right`]. Reflexivity between an
+///   empty left image and a right image no word holds returns that image.
 /// - fails: [`EvalFault::TransportedNonPath`] for pieces that do not splice; as
 ///   [`endpoint_image`] otherwise.
 /// - panics: none.
@@ -2873,8 +2899,10 @@ pub(super) fn mapped(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — cong along the loop splices reflexivity between the fixed
-///   endpoint's empty image and the flip's image of the loop.
+///   endpoint's empty image and the flip's image of the loop. Cong of a case
+///   into the universe along the 2-cell returns its arm, a cell no word holds.
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+/// - witness: `eval::words::tests::cong_into_the_universe_at_the_2_cell_is_the_arm_6530`
 #[spec(
     captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || machine.comps.len() > entry_comps || machine.tasks.len() > entry_tasks,
@@ -2923,7 +2951,17 @@ pub(super) fn conjugated(
             }
         },
     };
-    let moved = spliced(core, domain, machine, (left, value, right))?.ok_or(stuck)?;
+    // Reflexivity between an empty left image and a right image is that
+    // image, whether a word holds it or it is a cell of the universe.
+    let moved = if head(core, domain, machine, left)? == Head::Empty
+        && matches!(domain.value(value), Some(&DomainValue::Here { .. }))
+        && head(core, domain, machine, right)? == Head::Other
+    {
+        right
+    }
+    else {
+        spliced(core, domain, machine, (left, value, right))?.ok_or(stuck)?
+    };
     machine
         .comps
         .push(domain.comp_return(moved, CompTermFace::Reduced));

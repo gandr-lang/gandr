@@ -655,20 +655,152 @@ pub(crate) fn univalence_record(
     Ok(arena.value_type_sigma(forward, inverses))
 }
 
-/// The identity `ua(e)` synthesises from the type `classifier` its record
-/// synthesised, with the record type the record then checks against.
+/// The cell `ua(h)` at `path_type` is admitted on one dimension above the
+/// record: the homotopy `U ((y : A) → F Path[.A = A](y, y))` of the identity
+/// of the type `a` denotes, with the identity `Path[.A = Path[.A = Type](a,
+/// a)](here(a), here(a))` the cell stands at.
 ///
 /// # Specification
-/// - requires: nothing; `classifier` is the type the record synthesised.
+/// - requires: nothing; formation of `path_type` is the caller's.
+/// - ensures: for `path_type` an identity whose domain is an identity at the
+///   level-zero value universe between `a` and some code, the homotopy over the
+///   type `a` denotes and the identity at reflexivity of `a`, in that order.
+/// - provides: the checking reading of `ua` at dimension two, which admits a
+///   homotopy written as a lambda.
+/// - fails: [`PathError::ExpectedPath`] naming `path_type` when it is no such
+///   identity; [`PathError::Arena`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a homotopy of the identity of the circle is admitted one
+///   dimension up, and a map to paths that ends elsewhere is refused.
+/// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
+#[spec(ensures: |ret| match ret {
+    Ok((homotopy, path)) => matches!(arena.value_type(homotopy), Some(&ValueType::Thunk(_))) && matches!(arena.value_type(path), Some(&ValueType::Path { .. })),
+    Err(PathError::ExpectedPath(named)) => named == path_type,
+    Err(_) => true,
+})]
+pub(crate) fn univalence_cell(
+    arena: &mut TermArena,
+    path_type: ValueTypeId,
+) -> Result<(ValueTypeId, ValueTypeId), PathError>
+{
+    let code = cell_code(arena, path_type)?;
+    let carrier = denoted(arena, code)?;
+    let homotopy = self_homotopy(arena, carrier);
+    Ok((homotopy, cell_path(arena, code)))
+}
+
+/// The code `a` of an identity whose domain is an identity at the level-zero
+/// value universe from `a`: where a cell of `ua` stands.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the left code of the domain's identity when `path_type` is an
+///   identity over an identity at the level-zero value universe.
+/// - fails: [`PathError::ExpectedPath`] naming `path_type` otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`univalence_cell`].
+/// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
+#[spec(ensures: |ret| match ret {
+    Ok(code) => arena.value(code).is_some(),
+    Err(PathError::ExpectedPath(named)) => named == path_type,
+    Err(_) => false,
+})]
+pub(crate) fn cell_code(
+    arena: &TermArena,
+    path_type: ValueTypeId,
+) -> Result<ValueId, PathError>
+{
+    let refused = PathError::ExpectedPath(path_type);
+    let Some(&ValueType::Path { domain, .. }) = arena.value_type(path_type)
+    else {
+        return Err(refused);
+    };
+    identity_codes(arena, domain)
+        .map(|(code, _)| code)
+        .map_err(|_| refused)
+}
+
+/// What a map of the identity cell of `ua` returns at its bound point.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Returns
+{
+    /// The point itself: `λ. return #0`.
+    Point,
+    /// Reflexivity at the point: `λ. return here(#0)`.
+    Reflexivity,
+}
+
+/// Whether `map` is a thunk of the abstraction that returns what `returns`
+/// names at its bound point: a map or a law of the identity cell `ua` reads
+/// as reflexivity.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `true` exactly when `map` is a thunk of `λ. return v`, `v` the
+///   bound point `#0` or `here(#0)` as `returns` names.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `ua` of the identity record over the booleans replays as
+///   reflexivity, and `ua` of the record of negation does not.
+/// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
+#[spec(ensures: |ret| !ret || matches!(arena.value(map), Some(&Value::Thunk(_))))]
+pub(crate) fn identity_map(
+    arena: &TermArena,
+    map: ValueId,
+    returns: Returns,
+) -> bool
+{
+    let Some(&Value::Thunk(lambda)) = arena.value(map)
+    else {
+        return false;
+    };
+    let Some(&gandr_kernel_term::Computation::Lambda(body)) = arena.computation(lambda)
+    else {
+        return false;
+    };
+    let Some(&gandr_kernel_term::Computation::Return(returned)) = arena.computation(body)
+    else {
+        return false;
+    };
+    let point = match (returns, arena.value(returned)) {
+        (Returns::Point, _) => returned,
+        (Returns::Reflexivity, Some(&Value::Here { point, .. })) => point,
+        (Returns::Reflexivity, _) => return false,
+    };
+    matches!(arena.value(point), Some(&Value::Variable(index)) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32))
+}
+
+/// The identity `ua(e)` synthesises from the type `classifier` its cell
+/// synthesised, with the type the cell then checks against.
+///
+/// # Specification
+/// - requires: nothing; `classifier` is the type the cell synthesised.
 /// - ensures: for `classifier` a dependent pair whose first factor is the thunk
 ///   `U (A → F B)` of a non-dependent arrow, the identity `Path[.A = Type](a,
 ///   b)` at the level-zero value universe between the codes of `A` and `B` —
 ///   `c` for `El c`, the quote of any other type — and the record type
-///   [`univalence_record`] states at it, in that order.
-/// - provides: the synthesising reading of `ua(e)`: the record's own type names
-///   the two codes, so the node carries nothing else.
+///   [`univalence_record`] states at it, in that order; for `classifier` the
+///   homotopy `U ((y : A) → F Path[.A = A](y, y))`, the identity `Path[.A =
+///   Path[.A = Type](a, a)](here(a), here(a))` over the code `a` of `A` and the
+///   homotopy rebuilt over `A`, in that order.
+/// - provides: the synthesising reading of `ua(e)` at each dimension: the
+///   cell's own type names the code, so the node carries nothing else.
 /// - fails: [`PathError::ExpectedEquivalence`] naming `classifier` when it is
-///   no such pair.
+///   neither.
 /// - panics: none.
 ///
 /// # Errors
@@ -678,10 +810,12 @@ pub(crate) fn univalence_record(
 /// - hypothesis: L3 — a record of `Path[.A = Circle](base, base) ≃ Int` names
 ///   both codes as quotes and a record over two bound codes names the
 ///   variables; reading the codes off the wrong side of the map, or quoting a
-///   decode, synthesises an identity the checker's does not convert with.
+///   decode, synthesises an identity the checker's does not convert with. The
+///   circle's `selfloop` names the circle's code one dimension up.
 /// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
+/// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
 #[spec(ensures: |ret| match ret {
-    Ok((path_type, record)) => matches!(arena.value_type(path_type), Some(&ValueType::Path { .. })) && matches!(arena.value_type(record), Some(&ValueType::Sigma { .. })),
+    Ok((path_type, cell)) => matches!(arena.value_type(path_type), Some(&ValueType::Path { .. })) && matches!(arena.value_type(cell), Some(&(ValueType::Sigma { .. } | ValueType::Thunk(_)))),
     Err(PathError::ExpectedEquivalence(named)) => named == classifier,
     Err(_) => true,
 })]
@@ -691,6 +825,11 @@ pub(crate) fn univalence_reading(
 ) -> Result<(ValueTypeId, ValueTypeId), PathError>
 {
     let refused = PathError::ExpectedEquivalence(classifier);
+    if let Some(carrier) = homotopy_carrier(arena, classifier) {
+        let code = code_of(arena, carrier);
+        let homotopy = self_homotopy(arena, carrier);
+        return Ok((cell_path(arena, code), homotopy));
+    }
     let Some(&ValueType::Sigma { first, .. }) = arena.value_type(classifier)
     else {
         return Err(refused);
@@ -716,6 +855,91 @@ pub(crate) fn univalence_reading(
     let path_type = arena.value_type_path(universe, source, target);
     let record = univalence_record(arena, path_type)?;
     Ok((path_type, record))
+}
+
+/// The carrier `A` of `classifier` when it is the homotopy `U ((y : A) → F
+/// Path[.A = A](y, y))` of the identity.
+///
+/// # Specification
+/// - requires: `classifier` is a well-formed type, so the path's carrier is the
+///   type of the bound point.
+/// - ensures: `Some(A)` exactly when `classifier` is the thunk of a dependent
+///   arrow over `A` returning a path from its bound point to itself.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`univalence_reading`].
+/// - witness: `path_universe::tests::a_homotopy_is_the_cell_of_ua_at_dimension_two_6530`
+#[spec(ensures: |ret| ret.is_none_or(|carrier| arena.value_type(carrier).is_some()))]
+fn homotopy_carrier(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+) -> Option<ValueTypeId>
+{
+    let bound = gandr_kernel_term::DeBruijnIndex::from(0_u32);
+    let &ValueType::Thunk(map) = arena.value_type(classifier)?
+    else {
+        return None;
+    };
+    let &gandr_kernel_term::CompType::Pi { domain, codomain } = arena.comp_type(map)?
+    else {
+        return None;
+    };
+    let &gandr_kernel_term::CompType::Returner(path) = arena.comp_type(codomain)?
+    else {
+        return None;
+    };
+    let &ValueType::Path { left, right, .. } = arena.value_type(path)?
+    else {
+        return None;
+    };
+    let at_point =
+        |end| matches!(arena.value(end), Some(&Value::Variable(index)) if index == bound);
+    (at_point(left) && at_point(right)).then_some(domain)
+}
+
+/// The homotopy `U ((y : A) → F Path[.A = A](y, y))` of the identity of
+/// `carrier`, the carrier shifted past the bound point.
+///
+/// # Specification
+/// trivial.
+fn self_homotopy(
+    arena: &mut TermArena,
+    carrier: ValueTypeId,
+) -> ValueTypeId
+{
+    let over = crate::rewrite::shift_value_type(
+        arena,
+        &mut crate::encoding::ContentTable::new(),
+        &mut gandr_kernel_check_memo::NullMemo,
+        carrier,
+        crate::rewrite::BinderDepth::default(),
+        crate::rewrite::BinderDepth::from(1_u32),
+    );
+    let point = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+    let path = arena.value_type_path(over, point, point);
+    let returned = arena.comp_type_returner(path);
+    let dependent = arena.comp_type_pi(carrier, returned);
+    arena.value_type_thunk(dependent)
+}
+
+/// The identity `Path[.A = Path[.A = Type](a, a)](here(a), here(a))` a cell
+/// of `ua` at the code `a` stands at.
+///
+/// # Specification
+/// trivial.
+fn cell_path(
+    arena: &mut TermArena,
+    code: ValueId,
+) -> ValueTypeId
+{
+    let universe = arena.value_type_universe(
+        gandr_kernel_term::GroundSort::Value,
+        gandr_kernel_strata::Level::zero(),
+    );
+    let identity = arena.value_type_path(universe, code, code);
+    let here = arena.value_here(code);
+    arena.value_type_path(identity, here, here)
 }
 
 /// The code of the value type `carrier`: `c` for `El c`, the quote of any

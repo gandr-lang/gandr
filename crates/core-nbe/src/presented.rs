@@ -492,6 +492,59 @@ fn reflexivity_word(
     Ok(NormalForm::Kept)
 }
 
+/// A univalence facing a reflexivity, its held cell read as what the cell
+/// returns, so the identity cell meets reflexivity by its syntax
+/// ([`crate::identity::identity_cell`]).
+///
+/// # Specification
+/// - requires: `value` lives in `domain`.
+/// - ensures: for `value` a univalence whose cell is a held endpoint that
+///   returns, [`NormalForm::Rewritten`] with the univalence of what the cell
+///   returns beside the same forward map; [`NormalForm::Exhausted`] with `fuel`
+///   at zero when the run spends it; [`NormalForm::Kept`] otherwise.
+/// - provides: the read the conversion takes before it plans `ua` of a cell
+///   against reflexivity; the kernel's replay reads the cell the same way.
+/// - fails: [`ConversionFault::Evaluation`] for a run the evaluator refuses
+///   otherwise than on fuel.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `ua(idEquiv(Circle))` reads its cell as the identity
+///   equivalence and converts with reflexivity at the circle; unread, the cell
+///   is a held call and the two stay apart.
+/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
+#[spec(captures: before = u64::from(*fuel), ensures: |ret| u64::from(*fuel) <= before
+    && match ret {
+        Ok(NormalForm::Rewritten(normal)) => matches!(domain.value(normal), Some(&DomainValue::Univalence { .. })),
+        Ok(NormalForm::Exhausted) => u64::from(*fuel) == 0,
+        Ok(NormalForm::Kept) | Err(_) => true,
+    })]
+pub fn univalence_cell(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    value: DomainValueId,
+    fuel: &mut RewriteFuel,
+) -> Result<NormalForm, ConversionFault>
+{
+    let Some(&DomainValue::Univalence {
+        record,
+        forward,
+        face,
+    }) = domain.value(value)
+    else {
+        return Ok(NormalForm::Kept);
+    };
+    Ok(match read_held(core, domain, definitions, record, fuel)? {
+        Held::Read(read) => NormalForm::Rewritten(domain.value_univalence(read, forward, face)),
+        Held::Kept => NormalForm::Kept,
+        Held::Exhausted => NormalForm::Exhausted,
+    })
+}
+
 /// The normal form of `value` under the rules of the presented type heading
 /// it.
 ///

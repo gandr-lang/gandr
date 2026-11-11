@@ -2475,7 +2475,8 @@ fn payload(
 /// - ensures: as [`plan`], over the value formers; two reflexivities that
 ///   neither share nor separate decompose to their points, and two univalences
 ///   to their records, the forward map each carries being derived from its
-///   record.
+///   record. A univalence against a reflexivity settles convertible exactly
+///   when its cell is the identity cell ([`crate::identity::identity_cell`]).
 /// - provides: the value half of the table.
 /// - fails: as [`plan`].
 /// - panics: none.
@@ -2501,6 +2502,7 @@ fn payload(
 /// - witness: `rules::tests::a_record_with_more_labels_than_fields_is_refused_by_the_plan_on_either_side`
 /// - witness: `rules::tests::two_path_products_of_one_path_share_a_convertible_plan`
 /// - witness: `rules::tests::two_literals_held_apart_with_one_payload_are_convertible`
+/// - witness: `identity::tests::ua_of_the_identity_equivalence_is_reflexivity_6530`
 #[spec(ensures: |ret| (match early_values(domain, left, right) {
     Ok(Early::Identical) => ret == Ok(Plan::Shared(Settled::Convertible)),
     Ok(Early::Apart) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
@@ -2924,6 +2926,20 @@ fn plan_values(
             former @ (DomainValue::Tuple { .. } | DomainValue::Record { .. }),
         ) if matches!(left_head, Neutrality::Neutral(_, Head::Rigid)) => {
             projected(domain, former, neutral, ConversionSide::Left)?
+        },
+        // `ua` of the identity cell is the empty word of the universe's
+        // paths, which reflexivity is; `ua` of any other cell is apart from
+        // reflexivity.
+        (DomainValue::Univalence { record: cell, .. }, DomainValue::Here { .. })
+        | (DomainValue::Here { .. }, DomainValue::Univalence { record: cell, .. }) => {
+            if crate::identity::identity_cell(core, domain, cell)
+                .map_err(ConversionFault::Domain)?
+            {
+                Plan::Leaf(Settled::Convertible)
+            }
+            else {
+                Plan::Leaf(Settled::NotConvertible)
+            }
         },
         (
             DomainValue::PathCertificate { .. }

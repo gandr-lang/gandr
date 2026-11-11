@@ -1,0 +1,79 @@
+/// This source states the Hopf family over the 2-sphere: a case into the
+/// universe whose arm at the 2-cell is `ua` of a homotopy.
+///
+/// `ua` takes an n-cell of `P ≃ P` at each dimension. At dimension two, the
+/// cell is a homotopy of the identity of `P`. Such a map sends each point to a
+/// path from the point to itself. The checker reads the cell by its type.
+/// `ua` of the identity equivalence converts to reflexivity at the type.
+/// Transport of a point `y` along `ua h` is `h y`, in the checker and in the
+/// kernel.
+///
+/// `Path.ap` of the Hopf family on the 2-cell reduces to its arm,
+/// `ua selfloop`. Transport of `Base` along that cell is `loop`.
+///
+/// Limits: the image of a cell into the universe is the whole image of one
+/// letter along one call. A word of more letters, or an inverse letter, does
+/// not reduce.
+///
+/// - see: #6530 — the universe family at a cell
+/// - see: #6458 — `Path.ap` of a case on a cell
+/// - see: #6477 — `ua` of the identity equivalence is the empty word
+/// - see: #6282 — transport along a longer word in a family into the universe
+/// - see: corpus/model/identity/sphere-maps.gandr
+/// - see: corpus/model/identity/univalence.gandr
+
+// The 2-sphere.
+import "./sphere.gandr";
+// The circle and `selfloop`.
+import "./circle-base.gandr";
+// `ua`.
+import "./univalence.gandr";
+
+/// The identity equivalence of a type.
+def idEquiv(p : Type) -> p ≃ p =
+  *{
+    fun (x) { x },
+    *{*{fun (x) { x }, fun (x) { Path.here x }}, *{fun (x) { x }, fun (x) { Path.here x }}}
+  }
+
+/// `ua` of the identity equivalence converts to reflexivity at the circle.
+def uaIdIsHere : Path[.A = Path[.A = Type](Circle, Circle)](
+  ua (idEquiv Circle),
+  Path.here Circle
+) = Path.here (Path.here Circle);
+
+/// The Hopf family: the circle at the point, and `ua selfloop` at the 2-cell.
+def hopf(x : S2) -> Type =
+  match x where
+    | Base2 => return Circle
+    | surf => ua selfloop
+
+/// The 2-cell of the universe at the circle: the loop at each point.
+def loopCell : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle) =
+  ua selfloop
+
+/// The transport of a point along a 2-cell of the universe at the circle.
+def walkCell(
+  y : Circle,
+  c : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle)
+) -> Path[.A = Circle](y, y) =
+  Path.ap (fun (r) { Path.walk (fun (X) { X }) r y }) c
+
+/// Along `loopCell`, the transport of a point is `selfloop` at the point.
+def cellBeta(y : Circle) -> Path[.A = Path[.A = Circle](y, y)](walkCell y loopCell, selfloop y) =
+  Path.here (selfloop y)
+
+/// `Path.ap` of the Hopf family on the 2-cell is its arm there.
+def hopfCellIsArm : Path[.A = Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle)](
+  Path.ap hopf surf,
+  loopCell
+) = Path.here loopCell;
+
+/// The transport of `Base` along the 2-cell in the Hopf family is the loop.
+def hopfLoop : Path[.A = Path[.A = Circle](Base, Base)](walkCell Base (Path.ap hopf surf), loop) =
+  Path.here loop;
+
+/// A map that sends each point to the loop is no homotopy of the identity.
+@[refuses("TypeMismatch")]
+def notACell : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle) =
+  ua (fun (y : Circle) { loop });

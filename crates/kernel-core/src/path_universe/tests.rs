@@ -1831,6 +1831,90 @@ fn univalence_is_admitted_on_its_record()
     );
 }
 
+/// #6530: at dimension two `ua` takes a homotopy of the identity, read by
+/// the type of its cell; a map to paths that ends elsewhere is refused. `ua`
+/// of the identity record replays as reflexivity, and `ua` of negation does
+/// not.
+#[test]
+fn a_homotopy_is_the_cell_of_ua_at_dimension_two_6530()
+{
+    let cells = |arena: &mut TermArena, ty: ValueTypeId| {
+        let loops = identity_at(arena, ty);
+        let code = arena.value_quote(ty);
+        let here = arena.value_here(code);
+        arena.value_type_path(loops, here, here)
+    };
+    let mut environment = Environment::new();
+    let checked = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let homotopy = reflexive_law(arena);
+        (cells(arena, boolean.ty), arena.value_univalence(homotopy))
+    });
+    assert!(
+        checked.is_ok(),
+        "reflexivity at each point is a cell of the universe: {checked:?}"
+    );
+
+    // Reflexivity at `true` alone is no path from each point to itself.
+    let refused = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let here = arena.value_here(boolean.truth);
+        let returned = arena.computation_return(here);
+        let lambda = arena.computation_lambda(returned);
+        let constant = arena.value_thunk(lambda);
+        (cells(arena, boolean.ty), arena.value_univalence(constant))
+    });
+    assert!(
+        matches!(refused, Err(KernelError::Identity(_))),
+        "a map to paths that ends elsewhere is no cell: {refused:?}"
+    );
+
+    // `here(here(⌜Bool⌝)) : Path(ua(e), here(⌜Bool⌝))`: the identity record
+    // replays as reflexivity, and negation, an equivalence too, does not.
+    let flat = |environment: &mut Environment, negated: bool| {
+        offer(environment, |arena| {
+            let boolean = boolean(arena);
+            let loops = identity_at(arena, boolean.ty);
+            let map = if negated {
+                boolean.not
+            }
+            else {
+                identity_map(arena)
+            };
+            let equivalence = record(arena, [map, map, map]);
+            let along = arena.value_univalence(equivalence);
+            let code = arena.value_quote(boolean.ty);
+            let here = arena.value_here(code);
+            (
+                arena.value_type_path(loops, along, here),
+                arena.value_here(here),
+            )
+        })
+    };
+    let identity = flat(&mut environment, false);
+    assert!(
+        identity.is_ok(),
+        "`ua` of the identity record is reflexivity: {identity:?}"
+    );
+    let negation = flat(&mut environment, true);
+    assert!(
+        negation.is_err(),
+        "`ua` of negation is not reflexivity: {negation:?}"
+    );
+
+    // A path between two reflexivities at a type that is no universe reads
+    // no homotopy.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let at_boolean = arena.value_type_path(boolean.ty, boolean.truth, boolean.truth);
+    let here = arena.value_here(boolean.truth);
+    let squares = arena.value_type_path(at_boolean, here, here);
+    assert_eq!(
+        super::univalence_reading(&mut arena, squares),
+        Err(PathError::ExpectedEquivalence(squares))
+    );
+}
+
 /// #1064: an element transport follows a native path written in place, whose
 /// type is `Path_U(a, b)`, as it follows one declared at `Path[.A = U₀](a, b)`:
 /// the two are readings of one classifier at the level-zero value universe. The

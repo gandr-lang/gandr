@@ -16,6 +16,15 @@
 //! by computation, so the codes may be variables, path types or anything else
 //! the universe holds.
 //!
+//! `ua` has one rule at each dimension: it takes a cell of `A ≃ A` and gives
+//! a cell of `Type` at the code of `A`. Checked against `Path[.A =
+//! Path[.A = Type](a, a)](here(a), here(a))`, `ua(h)` reads `h` as the 2-cell:
+//! a path in `A ≃ A` from the identity to itself. The checker reads that cell
+//! as a homotopy by its type, so `h` checks against `(y : A) => Path[.A =
+//! A](y, y)` ([`gandr_core_term::identity::self_homotopy`]). The path type it
+//! then synthesises meets the expected type at the bridge, so an endpoint
+//! other than reflexivity at `a` is refused there.
+//!
 //! The core node carries, beside the record, the forward map `thunk (λx. f ←
 //! e.0; force f x)` the lowering derives from it
 //! ([`gandr_core_term::identity::univalence_forward`]), so the normaliser
@@ -38,6 +47,13 @@
 //!   one, the record names both types through its forward map's type, as
 //!   `equiv`'s forward translator does. Reversal: none while both readings
 //!   agree on the record type.
+//! - **The homotopy as the cell, read by its type.** At dimension two the cell
+//!   is a path between two equivalences, and the checker reads the homotopy of
+//!   their maps as that cell. The alternative, a second name such as
+//!   `Path.uaCell`, gives the universe two formers for one rule, and it was
+//!   declined. Reversal: a method at a cell that a homotopy does not spell, a
+//!   path of equivalences whose inverses differ by a path that is not trivial;
+//!   then the checker reads that record path by its type too.
 
 use anodized::spec;
 use gandr_core_term::CertificateEquality;
@@ -78,14 +94,15 @@ pub struct Premises
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Reading
 {
-    /// The type is an identity at `Type`: the record checks against `record`,
-    /// the bi-invertible record type, and the univalence has the identity
-    /// `path` written afresh from the type's codes.
-    Record
+    /// The type is an identity at `Type`, or one dimension up at reflexivity of
+    /// `Type`: the cell checks against `cell`, the bi-invertible record or the
+    /// homotopy of the identity, and the univalence has the identity `path`
+    /// written afresh from the type's codes.
+    Cell
     {
-        /// The record type.
-        record: ValueTypeId,
-        /// The identity at `Type` between the two codes.
+        /// The type the cell checks against.
+        cell: ValueTypeId,
+        /// The identity the univalence synthesises.
         path: ValueTypeId,
     },
     /// Any other type: the univalence is synthesised and compared with it.
@@ -190,19 +207,50 @@ fn derived(
     Ok(())
 }
 
-/// How `ua(e)` checks against `expected`: its record against the
-/// bi-invertible record type when `expected` is an identity at `Type`, by
+/// Whether `carrier` is, at its weak head, the level-zero value universe.
+///
+/// # Specification
+/// - requires: `carrier` is a value type of the context's arena.
+/// - ensures: `true` exactly when the weak head of `carrier` is `Type`.
+/// - fails: a weak-head or view refusal as those raise it.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`checked`].
+/// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
+#[spec(ensures: |ret| ret.is_ok() || ret.is_err())]
+fn at_type(
+    context: &mut CheckingContext<'_>,
+    carrier: ValueTypeId,
+) -> Result<bool, CheckRefusal>
+{
+    let head = context.whnf_value_type(carrier)?;
+    Ok(matches!(
+        value_type_view(context.arena(), head)?,
+        ValueTypeView::Universe { sort: GroundSort::Value, level } if *level == Level::zero()
+    ))
+}
+
+/// How `ua(e)` checks against `expected`: its cell against the bi-invertible
+/// record type when `expected` is an identity at `Type`, against the homotopy
+/// of the identity when `expected` is an identity one dimension up, by
 /// synthesis otherwise.
 ///
 /// # Specification
 /// - requires: `forward` is the map the node carries for `record`; both and
 ///   `expected` stand under the judgement's binders.
 /// - ensures: for `expected` an identity `Path[.A = Type](a, b)` at the
-///   level-zero value universe, [`Reading::Record`] at the bi-invertible record
+///   level-zero value universe, [`Reading::Cell`] at the bi-invertible record
 ///   type over the types `a` and `b` denote and at `Path[.A = Type](a, b)`
-///   written afresh; [`Reading::Synthesised`] for any other type.
-/// - provides: the checking reading of the `ua` rule, which admits a record
-///   literal.
+///   written afresh; for `expected` an identity over `Path[.A = Type](a, b)`,
+///   [`Reading::Cell`] at the homotopy of the identity of the type `a` denotes
+///   and at `Path[.A = Path[.A = Type](a, a)](here(a), here(a))`;
+///   [`Reading::Synthesised`] for any other type.
+/// - provides: the checking reading of the `ua` rule at each dimension, which
+///   admits a record literal and a homotopy.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a carried map other than the
 ///   one the record derives; a weak-head or view refusal as those raise it.
 /// - panics: none.
@@ -214,9 +262,12 @@ fn derived(
 /// - hypothesis: L3 — a record literal whose section fails is refused against
 ///   `Path[.A = Type](⌜Bool⌝, ⌜Bool⌝)` and one whose laws hold checks; reading
 ///   the record type off the wrong endpoint admits it or refuses it elsewhere.
+///   A homotopy of the identity of the circle checks one dimension up, and a
+///   map to paths that ends elsewhere is refused there.
 /// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
+/// - witness: `univalence::tests::a_homotopy_of_the_identity_is_the_cell_of_ua_at_dimension_two_6530`
 #[spec(ensures: |ret| match ret {
-    | Ok(Reading::Record { record, path }) => context.arena().value_type(record).is_some() && context.arena().value_type(path).is_some(),
+    | Ok(Reading::Cell { cell, path }) => context.arena().value_type(cell).is_some() && context.arena().value_type(path).is_some(),
     | Ok(Reading::Synthesised) | Err(_) => true,
 })]
 pub fn checked(
@@ -234,25 +285,43 @@ pub fn checked(
     else {
         return Ok(Reading::Synthesised);
     };
+    if at_type(context, carrier)? {
+        derived(context, (record, forward))?;
+        let from = denoted(context, left)?;
+        let to = denoted(context, right)?;
+        let arena = context.arena_mut();
+        let cell = gandr_core_term::identity::bi_invertible(arena, from, to);
+        let universe = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(GroundSort::Value),
+            Level::zero(),
+        );
+        let path = arena.value_type_path(universe, left, right);
+        return Ok(Reading::Cell { cell, path });
+    }
     let carrier = context.whnf_value_type(carrier)?;
-    let at_type = matches!(
-        value_type_view(context.arena(), carrier)?,
-        ValueTypeView::Universe { sort: GroundSort::Value, level } if *level == Level::zero()
-    );
-    if !at_type {
+    let ValueTypeView::Path {
+        carrier: below,
+        left: code,
+        ..
+    } = value_type_view(context.arena(), carrier)?
+    else {
+        return Ok(Reading::Synthesised);
+    };
+    if !at_type(context, below)? {
         return Ok(Reading::Synthesised);
     }
     derived(context, (record, forward))?;
-    let from = denoted(context, left)?;
-    let to = denoted(context, right)?;
+    let from = denoted(context, code)?;
     let arena = context.arena_mut();
-    let record = gandr_core_term::identity::bi_invertible(arena, from, to);
+    let cell = gandr_core_term::identity::self_homotopy(arena, from);
     let universe = arena.value_type_universe(
         gandr_core_term::Sort::Ground(GroundSort::Value),
         Level::zero(),
     );
-    let path = arena.value_type_path(universe, left, right);
-    Ok(Reading::Record { record, path })
+    let identity = arena.value_type_path(universe, code, code);
+    let here = arena.value_here(code);
+    let path = arena.value_type_path(identity, here, here);
+    Ok(Reading::Cell { cell, path })
 }
 
 /// The premises of `ua(e)` at `at`, read off the type `classifier` its record
