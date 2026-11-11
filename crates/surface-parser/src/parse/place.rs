@@ -81,6 +81,7 @@ use alloc::vec::Vec;
 use core::cell::Cell;
 
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RESERVED_WORDS;
 use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
@@ -122,7 +123,6 @@ use crate::meld::Expected;
 use crate::meld::Splice;
 use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
-use crate::mold::KEYWORDS;
 use crate::mold::Molding;
 use crate::mold::lookahead_reach;
 use crate::oblig::Oblig;
@@ -766,7 +766,7 @@ fn heads(
             .take_while(|&&(left, _right)| left == mold)
             .any(|&(_left, right)| pbg.mold(right).is_ok_and(|next| next.label == lead))
     };
-    let mut keywords: Vec<(MoldId, SourceText<'static>)> = KEYWORDS
+    let mut keywords: Vec<(MoldId, SourceText<'static>)> = RESERVED_WORDS
         .iter()
         .filter_map(|&keyword| {
             pbg.candidates(TileLabel(keyword))

@@ -227,6 +227,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FormFault::MissingOperand => "an operand is missing here",
             FormFault::Repaired(Repair::Grout(GroutShape::Infix)) => "an operator is missing here",
             FormFault::Repaired(Repair::Keyword(_)) => "a keyword where a term belongs",
+            FormFault::Repaired(Repair::ReservedName(_)) => "a reserved word where a name belongs",
             FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
             FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
             FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",
@@ -684,6 +685,7 @@ mod tests
                 written: TileName::SEMICOLON,
                 offer: Offer::Unspelled,
             }),
+            Repair::ReservedName(TileName::SEMICOLON),
         ]
         .into_iter()
         .map(|repair| {
@@ -699,7 +701,7 @@ mod tests
         labels.dedup();
         assert_eq!(
             labels.len(),
-            11_usize,
+            12_usize,
             "each repair names what the source left out"
         );
     }
@@ -792,6 +794,9 @@ mod tests
                     "an operator is missing here"
                 },
                 FormFault::Repaired(Repair::Keyword(_)) => "a keyword where a term belongs",
+                FormFault::Repaired(Repair::ReservedName(_)) => {
+                    "a reserved word where a name belongs"
+                },
                 FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)) => "missing `)`",
                 FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)) => "missing `]`",
                 FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)) => "missing `}`",

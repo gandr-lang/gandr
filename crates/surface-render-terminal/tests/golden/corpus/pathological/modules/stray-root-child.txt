@@ -16,14 +16,14 @@ error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's to
    ├ note: `1` is refused with OutOfFragment.TopLevel, as its expectation states
    ╰ help: write the expression in a declaration
 
-error[MalformedForm]: `mu` is a keyword and cannot stand here in this def value
+error[MalformedForm]: `mu` is a reserved word and cannot stand as a name in this def value
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:22:5
    │
 22 │ def mu = 1 ;
-   │     ━━ a keyword where a term belongs
+   │     ━━ a reserved word where a name belongs
    │
-   ├ note: `def` is refused with MalformedForm, as its expectation states
-   ╰ help: write a term in place of `mu`
+   ├ note: `mu` is refused with MalformedForm, as its expectation states
+   ╰ help: choose another name in place of `mu`
 
 error[MalformedForm]: a term is missing in this source file
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:29:1
