@@ -1,0 +1,114 @@
+test: rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770
+package: gandr-surface-mcp
+command: mise run debug:test gandr-surface-mcp rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770 --break tools::prepared
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-mcp/a2fc03375800ec59/out/gandr_surface_mcp-a2fc03375800ec59"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-mcp/a2fc03375800ec59/out/gandr_surface_mcp-a2fc03375800ec59' (arm64).
+(lldb) settings set -- target.run-args  "rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex tools::prepared
+Breakpoint 1: 9 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_mcp-a2fc03375800ec59`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000103fc8f28
+(lldb) run
+
+running 1 test
+test rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+error: gandr_surface_mcp-a2fc03375800ec59.gandr_surface_mcp.504b98f4e5dfaec-cgu.10.rcgu.o 0x40000a0000042d09: DW_TAG_member 'ends' refers to type 0x0000000000086151 which was unable to be parsed
+error: gandr_surface_mcp-a2fc03375800ec59.gandr_surface_mcp.504b98f4e5dfaec-cgu.10.rcgu.o 0x40000a0000042d15: DW_TAG_member 'next' refers to type 0x0000000000086151 which was unable to be parsed
+Process 12461 launched: 'target/debug-trace/debug/build/gandr-surface-mcp/a2fc03375800ec59/out/gandr_surface_mcp-a2fc03375800ec59' (arm64)
+Process 12461 stopped
+* thread #2, name = 'rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledg', stop reason = breakpoint 1.1
+       frame #0: 0x00000001002f03ec gandr_surface_mcp-a2fc03375800ec59`gandr_surface_mcp::tools::prepared(workspace={documents:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, paths:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, editors:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accountants:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, stackers:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, tracers:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, cursors:borrow=0, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, watched:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, saved:None, handed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, pool:strong=8, weak=0, activity:{0:strong=1, weak=0}}, (null)=({__0:"file:///tmp/pinned/held.gandr"}, "spin")) at tools.rs:1201:6
+   1198	#[inline]
+   1199	pub fn prepared(
+   1200	    workspace: &Workspace,
+-> 1201	    (document, entry): (&DocumentUri, &String),
+    	     ^
+   1202	) -> Result<Prepared, ToolRefusal>
+   1203	{
+   1204	    let symbols = ask(
+(lldb) bt 24
+* thread #2, name = 'rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledg', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001002f03ec gandr_surface_mcp-a2fc03375800ec59`gandr_surface_mcp::tools::prepared(workspace={documents:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, paths:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, editors:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accountants:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, stackers:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, tracers:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, cursors:borrow=0, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, watched:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, saved:None, handed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, pool:strong=8, weak=0, activity:{0:strong=1, weak=0}}, (null)=({__0:"file:///tmp/pinned/held.gandr"}, "spin")) at tools.rs:1201:6
+     frame #1: 0x0000000100368d50 gandr_surface_mcp-a2fc03375800ec59`<gandr_surface_mcp::rap::jobs::Jobs>::start::<core::io::util::Sink>(self={generations:{pool:strong=8, weak=0, current:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, next:{0:0}, running:0, sender:{inner:{flavor:List({…})}}, receiver:{inner:{flavor:List({…})}}, wake:{0:Some(strong=1, weak=0)}}, pool:strong=8, weak=0, running:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, awaited:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, documents:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, pending={group_id:"thread-1", id:"run-1", call_id:None, callback_url:"http://127.0.0.1:9/results", token:None, operation:"run", started:0}, job=Run{document:{0:"file:///tmp/pinned/held.gandr"}, entry:"spin"}, held={workspace:strong=3, weak=0, verbs:None, store:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{file:{inner:{…}}, open:0, line:{0:size=0}}}}, subscriptions:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{rows:{root:None, length:0, alloc:{…}, _marker:{…}}, diagnostics:{root:None, length:0, alloc:{…}, _marker:{…}}, accounts:{root:None, length:0, alloc:{…}, _marker:{…}}, activity:{map:{…}}, views:{root:None, length:0, alloc:{…}, _marker:{…}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}}}, deliveries:{table:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{lanes:{…}, due:{…}, parked:{…}, tickets:0, closed:false, dropped:0}}}, ready:{inner:{cvar:{ptr:{…}}, mutex:{v:{…}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}, log:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{}}}}) at jobs.rs:315:32
+     frame #2: 0x0000000100372d74 gandr_surface_mcp-a2fc03375800ec59`gandr_surface_mcp::rap::jobs::run::<core::io::util::Sink>(commands={inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}, finished={inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}, held={workspace:strong=3, weak=0, verbs:None, store:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{file:{inner:{…}}, open:0, line:{0:size=0}}}}, subscriptions:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{rows:{root:None, length:0, alloc:{…}, _marker:{…}}, diagnostics:{root:None, length:0, alloc:{…}, _marker:{…}}, accounts:{root:None, length:0, alloc:{…}, _marker:{…}}, activity:{map:{…}}, views:{root:None, length:0, alloc:{…}, _marker:{…}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}}}, deliveries:{table:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{lanes:{…}, due:{…}, parked:{…}, tickets:0, closed:false, dropped:0}}}, ready:{inner:{cvar:{ptr:{…}}, mutex:{v:{…}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}, log:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{}}}}) at jobs.rs:285:50
+     frame #3: 0x000000010019ba0c gandr_surface_mcp-a2fc03375800ec59`gandr_surface_mcp::rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770 at rap.rs:4438:9
+     frame #4: 0x00000001001685c8 gandr_surface_mcp-a2fc03375800ec59`gandr_surface_mcp::rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770::{closure#0}((null)={}) at rap.rs:4362:79
+     frame #5: 0x0000000100151f20 gandr_surface_mcp-a2fc03375800ec59`<gandr_surface_mcp::rap::tests::a_run_that_starts_after_an_edit_past_its_acknowledgement_retires_6770::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #6: 0x000000010040d758 gandr_surface_mcp-a2fc03375800ec59`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #7: 0x000000010040d750 gandr_surface_mcp-a2fc03375800ec59`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #8: 0x0000000100418c74 gandr_surface_mcp-a2fc03375800ec59`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #9: 0x0000000100418c68 gandr_surface_mcp-a2fc03375800ec59`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #10: 0x0000000100418c68 gandr_surface_mcp-a2fc03375800ec59`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #11: 0x0000000100418c64 gandr_surface_mcp-a2fc03375800ec59`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #12: 0x0000000100418c64 gandr_surface_mcp-a2fc03375800ec59`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #13: 0x0000000100418c64 gandr_surface_mcp-a2fc03375800ec59`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #14: 0x0000000100418c58 gandr_surface_mcp-a2fc03375800ec59`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #15: 0x0000000100413668 gandr_surface_mcp-a2fc03375800ec59`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #16: 0x0000000100413604 gandr_surface_mcp-a2fc03375800ec59`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #17: 0x000000010041b138 gandr_surface_mcp-a2fc03375800ec59`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #18: 0x000000010041b128 gandr_surface_mcp-a2fc03375800ec59`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #19: 0x000000010041b128 gandr_surface_mcp-a2fc03375800ec59`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #20: 0x000000010041b124 gandr_surface_mcp-a2fc03375800ec59`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #21: 0x000000010041b124 gandr_surface_mcp-a2fc03375800ec59`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #22: 0x000000010041b124 gandr_surface_mcp-a2fc03375800ec59`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #23: 0x000000010041b114 gandr_surface_mcp-a2fc03375800ec59`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+(lldb) frame variable --depth 3
+(gandr_surface_lsp::server::Workspace *) workspace = 0x000000010dfa8bb0 {documents:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, paths:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, editors:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accountants:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, stackers:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, tracers:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, cursors:borrow=0, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, watched:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, saved:None, handed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, pool:strong=8, weak=0, activity:{0:strong=1, weak=0}}
+((&gandr_surface_lsp::protocol::DocumentUri, &alloc::string::String))  = ({__0:"file:///tmp/pinned/held.gandr"}, "spin")
+(lldb) up
+frame #1: 0x0000000100368d50 gandr_surface_mcp-a2fc03375800ec59`<gandr_surface_mcp::rap::jobs::Jobs>::start::<core::io::util::Sink>(self={generations:{pool:strong=8, weak=0, current:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, next:{0:0}, running:0, sender:{inner:{flavor:List({…})}}, receiver:{inner:{flavor:List({…})}}, wake:{0:Some(strong=1, weak=0)}}, pool:strong=8, weak=0, running:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, awaited:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, documents:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}, pending={group_id:"thread-1", id:"run-1", call_id:None, callback_url:"http://127.0.0.1:9/results", token:None, operation:"run", started:0}, job=Run{document:{0:"file:///tmp/pinned/held.gandr"}, entry:"spin"}, held={workspace:strong=3, weak=0, verbs:None, store:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{file:{inner:{…}}, open:0, line:{0:size=0}}}}, subscriptions:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{rows:{root:None, length:0, alloc:{…}, _marker:{…}}, diagnostics:{root:None, length:0, alloc:{…}, _marker:{…}}, accounts:{root:None, length:0, alloc:{…}, _marker:{…}}, activity:{map:{…}}, views:{root:None, length:0, alloc:{…}, _marker:{…}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}}}, deliveries:{table:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{lanes:{…}, due:{…}, parked:{…}, tickets:0, closed:false, dropped:0}}}, ready:{inner:{cvar:{ptr:{…}}, mutex:{v:{…}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}, log:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{}}}}) at jobs.rs:315:32
+   312 	            Job::Test(paths) => self.walk(row, pending, (Verb::Test, paths), held),
+   313 	            Job::Replay(document) => self.replay(row, pending, document, held),
+   314 	            Job::Run { document, entry } => {
+-> 315 	                let prepared = tools::prepared(&lock(held.workspace), (&document, &entry));
+    	                               ^
+   316 	                let prepared = match prepared {
+   317 	                    Ok(prepared) => prepared,
+   318 	                    Err(refusal) => {
+(lldb) frame variable --depth 3
+(gandr_surface_mcp::rap::jobs::Jobs *) self = 0x0000000170004f70 {generations:{pool:strong=8, weak=0, current:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, next:{0:0}, running:0, sender:{inner:{flavor:List({…})}}, receiver:{inner:{flavor:List({…})}}, wake:{0:Some(strong=1, weak=0)}}, pool:strong=8, weak=0, running:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, awaited:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, documents:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(gandr_surface_mcp::rap::Pending) pending = {group_id:"thread-1", id:"run-1", call_id:None, callback_url:"http://127.0.0.1:9/results", token:None, operation:"run", started:0}
+(gandr_surface_mcp::tools::Job) job = Run{document:{0:"file:///tmp/pinned/held.gandr"}, entry:"spin"} {
+  document = {0:"file:///tmp/pinned/held.gandr"}
+  entry = "spin" {
+    [0] = 's'
+    [1] = 'p'
+    [2] = 'i'
+    [3] = 'n'
+  }
+}
+(gandr_surface_mcp::rap::Held<core::io::util::Sink> *) held = 0x0000000170005e40 {workspace:strong=3, weak=0, verbs:None, store:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{file:{inner:{…}}, open:0, line:{0:size=0}}}}, subscriptions:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{rows:{root:None, length:0, alloc:{…}, _marker:{…}}, diagnostics:{root:None, length:0, alloc:{…}, _marker:{…}}, accounts:{root:None, length:0, alloc:{…}, _marker:{…}}, activity:{map:{…}}, views:{root:None, length:0, alloc:{…}, _marker:{…}}, generation:{0:0}, watch:None, run:{0:0}, occupancy:{0:"[]"}}}}, deliveries:{table:{inner:{pal:{ptr:{…}}}, poison:{failed:{v:{…}}}, data:{value:{lanes:{…}, due:{…}, parked:{…}, tickets:0, closed:false, dropped:0}}}, ready:{inner:{cvar:{ptr:{…}}, mutex:{v:{…}}}}, policy:{first:{secs:0, nanos:{0:250000000}}, longest:{secs:30, nanos:{0:0}}, retries:{0:8}}}, log:{inner:{pal:{ptr:{v:{…}}}}, poison:{failed:{v:{value:{…}}}}, data:{value:{}}}}
+(gandr_surface_mcp::rap::deliver::Row) row = Call("thread-1", "run-1") {
+  0 = "thread-1" {
+    [0] = 't'
+    [1] = 'h'
+    [2] = 'r'
+    [3] = 'e'
+    [4] = 'a'
+    [5] = 'd'
+    [6] = '-'
+    [7] = '1'
+  }
+  1 = "run-1" {
+    [0] = 'r'
+    [1] = 'u'
+    [2] = 'n'
+    [3] = '-'
+    [4] = '1'
+  }
+}
+(gandr_surface_lsp::protocol::DocumentUri) document = {0:"file:///tmp/pinned/held.gandr"}
+(alloc::string::String) entry = "spin" {
+  [0] = 's'
+  [1] = 'p'
+  [2] = 'i'
+  [3] = 'n'
+}

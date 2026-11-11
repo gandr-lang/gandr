@@ -19,13 +19,16 @@
 //!
 //! A newer revision of a document that the hub holds retires each `check` and
 //! each `test` whose paths hold the document, and each `replay` and `run` of
-//! the document. A document that closes retires them too. The retired call
-//! answers at once, and its text names the document and its version now. The
-//! result of its job is never delivered. A `POST` to `/cancel_tool_call` with
-//! the `id` of a job, or to `/close_thread` with its `group_id`, ends the job
-//! in the same way, and its text says `cancelled`. A walk stops at its next
-//! write of a line. A run goes on to the end of its own budget, and its result
-//! is dropped.
+//! the document. A document that closes retires them too. The acknowledgement
+//! of a call pins the version of each document that its job reads, and a job
+//! whose document moved past its pin retires at its start. So an edit after
+//! the acknowledgement retires the job, in whichever order its start and the
+//! change reach the thread of the jobs. The retired call answers at once, and
+//! its text names the document and its version now. The result of its job is
+//! never delivered. A `POST` to `/cancel_tool_call` with the `id` of a job, or
+//! to `/close_thread` with its `group_id`, ends the job in the same way, and
+//! its text says `cancelled`. A walk stops at its next write of a line. A run
+//! goes on to the end of its own budget, and its result is dropped.
 //!
 //! # Progress
 //!
@@ -143,8 +146,9 @@ pub trait Verbs: Send + Sync
 /// What the thread of the jobs hears.
 pub(super) enum Command
 {
-    /// Start the job of the call `Pending`.
-    Start(Pending, Job),
+    /// Start the job of the call `Pending`, which reads the documents at the
+    /// versions that `Pinned` names.
+    Start(Pending, Job, Pinned),
     /// The hub published the document again, or forgot it.
     Changed(DocumentUri),
     /// An admission of the document ended.
@@ -219,6 +223,59 @@ impl Outcome
     }
 }
 
+/// The version of each document that a job reads, as the hub held it when
+/// the toolset acknowledged the job's call.
+///
+/// A runtime that edits a document after the acknowledgement expects the edit
+/// to retire the job. The job reads the hub's documents only when it starts,
+/// and the edit can reach the hub before that start. So the job compares what
+/// it reads with this pin, under the lock of that read, and a difference
+/// retires it.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub(super) struct Pinned(BTreeMap<DocumentUri, DocumentVersion>);
+
+impl Pinned
+{
+    /// The version of each document that `job` reads in `workspace` now.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn of(
+        job: &Job,
+        workspace: &Workspace,
+    ) -> Self
+    {
+        Self(match *job {
+            Job::Check(ref paths) | Job::Test(ref paths) => held_under(workspace, &roots(paths)),
+            Job::Replay(ref document) | Job::Run { ref document, .. } => {
+                version_of(workspace, document)
+                    .map(|version| BTreeMap::from([(document.clone(), version)]))
+                    .unwrap_or_default()
+            },
+        })
+    }
+
+    /// The text that retires a job which reads each document at the version
+    /// that `read` gives: the retirement of the first pinned document whose
+    /// version moved, or none when no version moved.
+    ///
+    /// # Specification
+    /// trivial.
+    fn moved<Read>(
+        &self,
+        read: Read,
+    ) -> Option<String>
+    where
+        Read: Fn(&DocumentUri) -> Option<DocumentVersion>,
+    {
+        self.0.iter().find_map(|(document, &version)| {
+            let now = read(document);
+            (now != Some(version)).then(|| retirement(document, now))
+        })
+    }
+}
+
 /// A job on the pool: its call, and the version of each document that it
 /// reads.
 struct Running
@@ -282,7 +339,7 @@ pub(super) fn run<Log>(
     };
     for command in commands {
         match command {
-            Command::Start(pending, job) => jobs.start(pending, job, held),
+            Command::Start(pending, job, pinned) => jobs.start(pending, (job, pinned), held),
             Command::Changed(document) => jobs.changed(&document, held),
             Command::Settled(document) => jobs.settled(&document, held),
             Command::End(ending) => jobs.end(&ending, held),
@@ -294,33 +351,49 @@ pub(super) fn run<Log>(
 
 impl Jobs
 {
-    /// Start `job`, the job of the call `pending`.
+    /// Start `job`, the job of the call `pending`, or retire it when a
+    /// document that it reads moved past the version of `pinned`.
     ///
     /// # Specification
     /// trivial.
     fn start<Log>(
         &mut self,
         pending: Pending,
-        job: Job,
+        (job, pinned): (Job, Pinned),
         held: &Held<'_, Log>,
     ) where
         Log: Write,
     {
         let row = Row::Call(pending.group_id.clone(), pending.id.clone());
         match job {
-            Job::Check(paths) => self.walk(row, pending, (Verb::Check(Goals::Gated), paths), held),
-            Job::Test(paths) => self.walk(row, pending, (Verb::Test, paths), held),
-            Job::Replay(document) => self.replay(row, pending, document, held),
+            Job::Check(paths) => {
+                self.walk(
+                    row,
+                    pending,
+                    (Verb::Check(Goals::Gated), paths),
+                    &pinned,
+                    held,
+                );
+            },
+            Job::Test(paths) => self.walk(row, pending, (Verb::Test, paths), &pinned, held),
+            Job::Replay(document) => self.replay(row, pending, (document, &pinned), held),
             Job::Run { document, entry } => {
-                let prepared = tools::prepared(&lock(held.workspace), (&document, &entry));
+                let workspace = lock(held.workspace);
+                let prepared = pinned
+                    .moved(|read| version_of(&workspace, read))
+                    .map_or_else(
+                        || {
+                            tools::prepared(&workspace, (&document, &entry)).map_err(|refusal| {
+                                Outcome::bare(alloc::format!("Error: {refusal}"))
+                            })
+                        },
+                        |retired| Err(Outcome::bare(retired)),
+                    );
+                drop(workspace);
                 let prepared = match prepared {
                     Ok(prepared) => prepared,
-                    Err(refusal) => {
-                        answer(
-                            &pending,
-                            Outcome::bare(alloc::format!("Error: {refusal}")),
-                            held,
-                        );
+                    Err(outcome) => {
+                        answer(&pending, outcome, held);
                         return;
                     },
                 };
@@ -340,7 +413,8 @@ impl Jobs
     }
 
     /// Walk `paths` under `verb` on the pool for the call `pending`, the row
-    /// `row`, and follow each document that the hub holds under a path.
+    /// `row`, and follow each document that the hub holds under a path; retire
+    /// the call when a document of `pinned` moved.
     ///
     /// # Specification
     /// trivial.
@@ -349,6 +423,7 @@ impl Jobs
         row: Row,
         pending: Pending,
         (verb, paths): (Verb, Vec<PathBuf>),
+        pinned: &Pinned,
         held: &Held<'_, Log>,
     ) where
         Log: Write,
@@ -362,15 +437,11 @@ impl Jobs
             );
             return;
         };
-        let roots: BTreeSet<PathBuf> = paths
-            .iter()
-            .map(|path| std::path::absolute(path).unwrap_or_else(|_| path.clone()))
-            .collect();
-        let documents: BTreeMap<DocumentUri, DocumentVersion> = lock(held.workspace)
-            .held()
-            .filter(|&(uri, _version)| root_of(&uri.path(), &roots).is_some())
-            .map(|(uri, version)| (uri.clone(), version))
-            .collect();
+        let documents = held_under(&lock(held.workspace), &roots(&paths));
+        if let Some(retired) = pinned.moved(|read| documents.get(read).copied()) {
+            answer(&pending, Outcome::bare(retired), held);
+            return;
+        }
         self.follow(&row, documents.keys());
         #[cfg(feature = "instrument")]
         view(&pending, held);
@@ -392,7 +463,8 @@ impl Jobs
 
     /// Answer the call `pending`, the row `row`, with the admission of the
     /// revision of `document` that the hub holds now: at once when it ended,
-    /// and when it ends otherwise.
+    /// and when it ends otherwise. Retire the call when a document of
+    /// `pinned` moved.
     ///
     /// # Specification
     /// trivial.
@@ -400,12 +472,17 @@ impl Jobs
         &mut self,
         row: Row,
         pending: Pending,
-        document: DocumentUri,
+        (document, pinned): (DocumentUri, &Pinned),
         held: &Held<'_, Log>,
     ) where
         Log: Write,
     {
         let workspace = lock(held.workspace);
+        if let Some(retired) = pinned.moved(|read| version_of(&workspace, read)) {
+            drop(workspace);
+            answer(&pending, Outcome::bare(retired), held);
+            return;
+        }
         let Some(version) = version_of(&workspace, &document)
         else {
             drop(workspace);
@@ -598,6 +675,35 @@ fn root_of<'roots>(
 ) -> Option<&'roots PathBuf>
 {
     path.ancestors().find_map(|ancestor| roots.get(ancestor))
+}
+
+/// The absolute form of each of `paths`: the roots that a walk reads under.
+///
+/// # Specification
+/// trivial.
+fn roots(paths: &[PathBuf]) -> BTreeSet<PathBuf>
+{
+    paths
+        .iter()
+        .map(|path| std::path::absolute(path).unwrap_or_else(|_| path.clone()))
+        .collect()
+}
+
+/// Each document that `workspace` holds under one of `roots`, at the version
+/// that it holds.
+///
+/// # Specification
+/// trivial.
+fn held_under(
+    workspace: &Workspace,
+    roots: &BTreeSet<PathBuf>,
+) -> BTreeMap<DocumentUri, DocumentVersion>
+{
+    workspace
+        .held()
+        .filter(|&(uri, _version)| root_of(&uri.path(), roots).is_some())
+        .map(|(uri, version)| (uri.clone(), version))
+        .collect()
 }
 
 /// The version of `document` that `workspace` holds, when it holds the
