@@ -403,6 +403,7 @@ impl Sweep
     ///   to a sampled run or ignored by a full one, or a night count ignored,
     ///   changes a count.
     /// - witness: `tests::a_rotating_sweep_covers_the_corpus_over_its_nights`
+    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == if self.portion == Portion::Fixed { candidates.iter().filter(|candidate| self.rotation.holds(sample.name, nights, candidate) == Held::Tonight).count() } else { 0 })]
     #[inline]
     #[must_use]
     pub fn visit_rotating(
@@ -413,51 +414,13 @@ impl Sweep
     ) -> Vec<Source>
     {
         match (self.portion, self.coverage) {
-            (Portion::Fixed, Coverage::Full) => match self.rotation {
-                Rotation::Night(night) if nights.0 > 0 => {
-                    // The probe of #6704: the candidates in the order of their
-                    // salted digest, cut into `nights` runs of equal bytes.
-                    let mut ranked: Vec<(u64, u64, &Source)> = candidates
-                        .iter()
-                        .map(|candidate| {
-                            let mut hasher = blake3::Hasher::new();
-                            let _domain = hasher.update(b"rotation\0");
-                            let _salt = hasher.update(sample.name.0.as_bytes());
-                            let _separator = hasher.update(&[0]);
-                            let _source = hasher.update(candidate.name.as_ref().as_bytes());
-                            let word = hasher
-                                .finalize()
-                                .as_bytes()
-                                .first_chunk::<8>()
-                                .map_or(0, |bytes| u64::from_le_bytes(*bytes));
-                            let length = std::fs::metadata(&candidate.path)
-                                .map_or(1, |metadata| metadata.len().max(1));
-                            (word, length, candidate)
-                        })
-                        .collect();
-                    ranked.sort_by_key(|&(word, ..)| word);
-                    let total: u128 = ranked
-                        .iter()
-                        .map(|&(_, length, _)| u128::from(length))
-                        .sum();
-                    let slice = u128::from(night.0 % nights.0);
-                    let mut before = 0_u128;
-                    let mut held = Vec::new();
-                    for (_, length, candidate) in ranked {
-                        let middle = before + u128::from(length) / 2;
-                        if middle * u128::from(nights.0) / total.max(1) == slice {
-                            held.push(candidate.name.clone());
-                        }
-                        before += u128::from(length);
-                    }
-                    candidates
-                        .iter()
-                        .filter(|candidate| held.contains(&candidate.name))
-                        .cloned()
-                        .collect()
-                },
-                Rotation::Whole | Rotation::Night(_) => candidates.to_vec(),
-            },
+            (Portion::Fixed, Coverage::Full) => candidates
+                .iter()
+                .filter(|candidate| {
+                    self.rotation.holds(sample.name, nights, candidate) == Held::Tonight
+                })
+                .cloned()
+                .collect(),
             (Portion::Fixed, Coverage::Sampled) | (Portion::Changed, _) => {
                 self.visit(sample, candidates)
             },
