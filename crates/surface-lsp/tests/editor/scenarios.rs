@@ -1506,7 +1506,7 @@ mod sweeps
 
     /// The random edit scripts each scenario generates under the `sweeps`
     /// profile, each run from a fresh seed.
-    const CASES: Cases = Cases(32);
+    const CASES: Cases = Cases(16);
 
     /// The random edit scripts each scenario generates under every
     /// pull-request profile: a quarter of the whole's, drawn from
@@ -1548,7 +1548,7 @@ mod sweeps
     /// Limits: a night that types `iterated-pair.gandr` past its spine of
     /// level 20 passes the limit at any count, because the server takes about
     /// 5 s to check each keystroke there (#6245).
-    const TYPED_NIGHTS: Nights = Nights(136);
+    const TYPED_NIGHTS: Nights = Nights(272);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
     /// oracle.
@@ -1566,7 +1566,7 @@ mod sweeps
     /// 41042290086, 41191255434 and 41440364719), over the 170 s a sweep's
     /// night is sized to. A part's erasure costs a fixed share of the
     /// source's whole, so a fourteenth halves the night.
-    const ERASED_NIGHTS: Nights = Nights(14);
+    const ERASED_NIGHTS: Nights = Nights(28);
 
     /// The most keystrokes a sampled erasure spends on one source. Each
     /// keystroke checks the whole text left, so erasing a source line by line

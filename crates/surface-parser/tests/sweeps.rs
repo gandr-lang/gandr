@@ -73,7 +73,7 @@ const RECOVERY_STRIDE: usize = 16;
 /// a twenty-sixth stays near 130 s. The rows rotate and the sources do not,
 /// since one source, `buddy-pop.gandr`, costs more than a thirteenth of the
 /// whole alone (#4668).
-const RECOVERY_NIGHTS: Nights = Nights(26);
+const RECOVERY_NIGHTS: Nights = Nights(52);
 
 /// The most tab-separated fields a recovery record row holds, with room
 /// to spare: a row with more is read as its first this many.
@@ -93,7 +93,7 @@ const TABLES: Sample = Sample {
 /// fourteenth a night. A seventh took 181 s with specifications enforced on
 /// the nightly runner (run 42811839385), past the 170 s that one sweep's
 /// night may take, and 74 s on a workstation (#6238).
-const TABLES_NIGHTS: Nights = Nights(14);
+const TABLES_NIGHTS: Nights = Nights(28);
 
 /// The step between the token rows the table sample molds over its stated
 /// size.

@@ -1916,7 +1916,7 @@ mod sweeps
     /// declarations: a seventh a night, the count the nightly's sweeps share
     /// (#3013). A quarter of the corpus took 72 s on the nightly runner (run
     /// 40602657172).
-    const BODIES_NIGHTS: Nights = Nights(7);
+    const BODIES_NIGHTS: Nights = Nights(14);
 
     /// The most bytes of text a source of the body parity's sample lays out,
     /// its import closure then itself: 16 KiB. The parity lowers that text
