@@ -1,0 +1,39 @@
+def sym(a : Integer, b : Integer, p : Path a b) -> Path b a {
+  Path.inverse p
+}
+
+def sym_call(a : Integer, b : Integer, p : Path(a, b)) -> Path(b, a) {
+  Path.inverse p
+}
+
+def ap(g : Integer -> Integer, a : Integer, p : Path a a) -> Path (g a) (g a) {
+  Path.ap g p
+}
+
+def ap_call(g : Integer -> Integer, a : Integer, p : Path(a, a)) -> Path(g(a), g(a)) {
+  Path.ap g p
+}
+
+def tw(a : Integer, p : Path a a) -> Path a a -> Path a a {
+  return fun (q) { q }
+}
+
+def tw_call(a : Integer, p : Path(a, a)) -> Path(a, a) -> Path(a, a) {
+  return fun (q) { q }
+}
+
+def mot(a : Integer) -> Integer -> Type {
+  fun (d) { Path d a }
+}
+
+def mot_call(a : Integer) -> Integer -> Type {
+  fun (d) { Path(d, a) }
+}
+
+def carried(a : Integer, b : Integer, p : Path[.A = Integer] a b) -> Path[.A = Integer] b a {
+  Path.inverse p
+}
+
+def bridge(a : Integer, p : Bridge a a) -> Bridge a a {
+  p
+}

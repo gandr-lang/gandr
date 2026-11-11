@@ -412,6 +412,7 @@ use gandr_theory_levitation::THEORY_CONSTRUCTORS;
 use quenchant_shape::shape::Maybe;
 
 use super::Code;
+use super::FamilyHead;
 use super::FormName;
 use super::Former;
 use super::Function;
@@ -5477,11 +5478,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_data_family_applied_where_a_value_is_read_is_quoted_2512`
     #[spec(
         ensures: |ret| match ret {
-            | Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
+            | Ok(Maybe::Present(FamilyHead::Declared(Resolved::Declaration {
+                constant,
+                ..
+            }))) => {
                 matches!(self.data_family(constant), Maybe::Present(_))
                     || matches!(self.codata_family(constant), Maybe::Present(_))
             },
-            | Ok(Maybe::Present(Resolved::Binder(_))) => false,
+            | Ok(Maybe::Present(FamilyHead::Builtin(name))) => self.builtin_family(name),
+            | Ok(Maybe::Present(FamilyHead::Declared(Resolved::Binder(_)))) => false,
             | Ok(Maybe::Absent(_)) | Err(_) => true,
         },
     )]
@@ -5489,7 +5494,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         head: Placed,
-    ) -> Result<Maybe<Resolved, family::Absent>, LoweringRefusal<'source>>
+    ) -> Result<Maybe<FamilyHead<'source>, family::Absent>, LoweringRefusal<'source>>
     {
         let undeclared = Maybe::Absent(family::Absent::Undeclared);
         let Some(node) = self.tree.node(head.node)
@@ -5508,18 +5513,22 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(undeclared);
         }
         let named = Site { at: head, ..site };
-        let Maybe::Present(resolved) = self.resolve_name(named, site.reading.frame(), name)?
-        else {
-            return Ok(undeclared);
-        };
-        let Resolved::Declaration { constant, .. } = resolved
-        else {
-            return Ok(undeclared);
-        };
-        if matches!(self.data_family(constant), Maybe::Present(_))
-            || matches!(self.codata_family(constant), Maybe::Present(_))
-        {
-            return Ok(Maybe::Present(resolved));
+        match self.resolve_name(named, site.reading.frame(), name)? {
+            Maybe::Present(resolved) => {
+                let Resolved::Declaration { constant, .. } = resolved
+                else {
+                    return Ok(undeclared);
+                };
+                if matches!(self.data_family(constant), Maybe::Present(_))
+                    || matches!(self.codata_family(constant), Maybe::Present(_))
+                {
+                    return Ok(Maybe::Present(FamilyHead::Declared(resolved)));
+                }
+            },
+            Maybe::Absent(_) if self.builtin_family(name) => {
+                return Ok(Maybe::Present(FamilyHead::Builtin(name)));
+            },
+            Maybe::Absent(_) => {},
         }
 
         Ok(undeclared)

@@ -2530,6 +2530,12 @@ enum Resolved
         declared: Maybe<NodeIndex, binder_type::Absent>,
     },
 }
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum FamilyHead<'source>
+{
+    Builtin(SurfaceName<'source>),
+    Declared(Resolved),
+}
 
 quenchant_shape::reason_enum! {
     /// Why a path's head reads no aliased import.
@@ -13614,22 +13620,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Reading::Value(_) = site.reading
             && let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(name) = self.former_head(site, head)?
-        {
-            let _head = cursor.operands();
-            let start = self.operands.entries().len();
-            arguments(site, &mut cursor, &mut self.operands)?;
-            let written = Stretch {
-                start,
-                end: self.operands.entries().len(),
-            };
-            return self.applied_head(site, head, name, written, &[]);
-        }
-        if let Reading::Value(_) = site.reading
-            && let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(family) = self.family_head(site, head)?
         {
-            self.resolved(head.span, family);
             let _head = cursor.operands();
             let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
@@ -13637,7 +13629,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start,
                 end: self.operands.entries().len(),
             };
-            return self.static_application(site, family, applied);
+            return match family {
+                FamilyHead::Builtin(name) => self.applied_head(site, head, name, applied, &[]),
+                FamilyHead::Declared(resolved) => {
+                    self.resolved(head.span, resolved);
+                    self.static_application(site, resolved, applied)
+                },
+            };
         }
         if self.exercise(site, &cursor)? == arity::Planned(true) {
             return Ok(());
@@ -16715,6 +16713,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
             })
     }
 
+    fn builtin_family(
+        &self,
+        name: SurfaceName<'source>,
+    ) -> bool
+    {
+        [
+            TileName::PATH.as_ref(),
+            TileName::BRIDGE.as_ref(),
+            identity::FLOW,
+            STACK,
+            identity::ISO,
+            MODEL,
+            TERMS,
+        ]
+        .contains(&name.as_ref())
+            || matches!(self.former(name), Maybe::Present(_))
+    }
+
     /// The type former `head`, the head of a call written at `site`, spells.
     ///
     /// # Specification
@@ -16768,18 +16784,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(unformed);
         };
         let name = self.name_at(head);
-        let spelled = [
-            TileName::PATH.as_ref(),
-            TileName::BRIDGE.as_ref(),
-            identity::FLOW,
-            STACK,
-            identity::ISO,
-            MODEL,
-            TERMS,
-        ]
-        .contains(&name.as_ref())
-            || matches!(self.former(name), Maybe::Present(_));
-        if !spelled {
+        if !self.builtin_family(name) {
             return Ok(unformed);
         }
         if let Maybe::Present(_constructor) = self.constructor_named(site, name) {
@@ -30764,6 +30769,80 @@ mod tests
             "`-F Maybe A` inside an expression lowers: {:?}",
             outcome("opt")
         );
+    }
+    #[test]
+    fn a_path_application_spine_lowers_as_its_call_form_6121()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(include_str!(
+                "lower/fixtures/a-path-application-spine-lowers-as-its-call-form-6121-module.gandr"
+            )),
+            &mut arena,
+        );
+        let completed = |name: &str| {
+            let outcome = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == name)
+                .map(LoweredDeclaration::outcome);
+            match outcome {
+                Some(DeclarationOutcome::Completed {
+                    declared_type,
+                    body,
+                }) => (declared_type, body),
+                other => panic!("`{name}` lowers its type and its body: {other:?}"),
+            }
+        };
+        for (juxtaposed, called, reason) in [
+            ("sym", "sym_call", "a parameter's path type"),
+            ("ap", "ap_call", "a result's applied endpoints"),
+            ("tw", "tw_call", "an arrow of path types"),
+            ("mot", "mot_call", "a motive's path type"),
+        ] {
+            let (juxtaposed_type, juxtaposed_body) = completed(juxtaposed);
+            let (called_type, called_body) = completed(called);
+            assert_eq!(
+                gandr_core_term::equal_type_syntax(&arena, juxtaposed_type, called_type),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason} lowers to its call form's type"
+            );
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, juxtaposed_body, called_body),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason} lowers to its call form's body"
+            );
+        }
+        let _carried = completed("carried");
+        let _bridge = completed("bridge");
+    }
+    #[test]
+    fn a_value_named_path_shadows_the_builtin_family_6121()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def shadow(Path : Integer -> Integer) -> Integer { become Path 1 }"),
+            &mut arena,
+        );
+        assert!(
+            matches!(
+                outcomes(&module).first(),
+                Some(DeclarationOutcome::Completed { .. })
+            ),
+            "a value named `Path` stays a value: {:?}",
+            outcomes(&module).first()
+        );
+    }
+
+    #[test]
+    fn a_free_name_that_is_no_builtin_family_stays_unresolved_6121()
+    {
+        assert!(matches!(
+            refusal(SourceText::from(
+                "def unknown(a : Integer) -> Integer -> Type { fun (d) { Unknown d a } }"
+            )),
+            LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("Unknown")
+        ));
     }
 
     #[test]
