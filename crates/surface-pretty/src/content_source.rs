@@ -100,8 +100,10 @@ impl<'nodes> ContentSource<'nodes>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the item key's text when the reference names an item whose key is
-///   UTF-8; none for an unoccupied position and for a key that is not text.
+/// - ensures: the text of the item key's name
+///   ([`gandr_core_incremental::ItemKey::name`]) when the reference names an
+///   item and that name is UTF-8; none for an unoccupied position and for a
+///   name that is not text.
 /// - provides: the constant, abstract-type and family readings.
 /// - fails: never.
 /// - panics: none.
@@ -113,12 +115,14 @@ impl<'nodes> ContentSource<'nodes>
 /// - witness: `content_source::tests::fidelity_tracks_unsupported_nodes_not_user_punctuation`
 #[spec(ensures: |ret| match *reference {
     Reference::Unoccupied => ret.is_none(),
-    Reference::Item { ref key, .. } => ret == core::str::from_utf8(key.as_ref()).ok().map(Name::from),
+    Reference::Item { ref key, .. } => ret == core::str::from_utf8(<&[u8]>::from(key.name())).ok().map(Name::from),
 })]
 fn key(reference: &Reference) -> Option<Name<'_>>
 {
     match *reference {
-        Reference::Item { ref key, .. } => core::str::from_utf8(key.as_ref()).ok().map(Name::from),
+        Reference::Item { ref key, .. } => core::str::from_utf8(<&[u8]>::from(key.name()))
+            .ok()
+            .map(Name::from),
         Reference::Unoccupied => None,
     }
 }

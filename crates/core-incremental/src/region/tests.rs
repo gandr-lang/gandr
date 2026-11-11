@@ -13,6 +13,7 @@ use super::ItemKey;
 use super::Program;
 use super::ProgramError;
 use super::Reference;
+use super::SourceTag;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::Occurrence;
 
@@ -188,4 +189,67 @@ fn the_first_position_violation_wins()
             previous: ConstantIndex::from(4_usize),
         }),
     );
+}
+
+/// #6522: a tagged key keeps its name, so a reader that spells an item by its
+/// key reads the name as written. Two sources' items of one name take two
+/// keys, and one source's tag is the same each time it is taken. An untagged
+/// key reads whole, and never as a tagged one: no UTF-8 name opens with the
+/// tag's first byte. In one program, the two items of one name in two sources
+/// each take the first occurrence of their own key.
+#[test]
+fn a_tagged_key_keeps_its_name_and_tells_its_source_6522()
+{
+    let first = ItemKey::from((SourceTag::from("src/first.gandr"), "pick"));
+    let second = ItemKey::from((SourceTag::from("src/second.gandr"), "pick"));
+    assert_eq!(
+        first.name().as_ref(),
+        b"pick",
+        "the tagged key keeps its name"
+    );
+    assert_ne!(first, second, "two sources tell one name apart");
+    assert_eq!(
+        first,
+        ItemKey::from((SourceTag::from("src/first.gandr"), "pick")),
+        "one source's tag is the same each time"
+    );
+    let untagged = ItemKey::from("pick");
+    assert_eq!(
+        untagged.name().as_ref(),
+        b"pick",
+        "an untagged key reads whole"
+    );
+    assert_ne!(untagged, first, "an untagged key is no tagged one");
+    assert_eq!(
+        ItemKey::from("").name().as_ref(),
+        b"",
+        "an empty key names nothing"
+    );
+
+    let tagged = |key: ItemKey, position: usize| {
+        Item::new(
+            key,
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Absent(body::Absent::Hole),
+                OriginToken::from(position),
+            ),
+        )
+    };
+    let program = Program::new(CoreArena::new(), vec![
+        tagged(first.clone(), 0),
+        tagged(second.clone(), 1),
+    ])
+    .expect("two items ascend");
+    assert_eq!(program.references(), [
+        Reference::Item {
+            key: first,
+            occurrence: Occurrence::from(0_usize),
+        },
+        Reference::Item {
+            key: second,
+            occurrence: Occurrence::from(0_usize),
+        },
+    ]);
 }

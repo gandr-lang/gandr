@@ -1802,7 +1802,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 20, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 21, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1812,14 +1812,14 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 19;
+    *wrong_version.get_mut(7).expect("version byte") = 20;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
     );
     let mut program = CheckpointBytes::default();
     write_program::<_, crate::content::ItemContent>(&mut program, &[]).expect("empty program");
-    assert_eq!(program.as_ref(), b"GPROG\0\0\x0b\0\0\0\0\0\0\0\0");
+    assert_eq!(program.as_ref(), b"GPROG\0\0\x0c\0\0\0\0\0\0\0\0");
     assert_eq!(
         decode_checkpoints(Bytes(program.as_ref())),
         Err(CodecError::Corrupt)
@@ -2700,15 +2700,17 @@ fn a_modelled_value_root_round_trips_and_its_candidates_are_content_739()
 fn a_type_of_words_round_trips_its_cells()
 {
     use gandr_core_term::RuleNode;
-    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::FreeCell;
     use gandr_kernel_term::FreeCells;
 
+    use crate::content::CellsRoots;
+    use crate::content::PresentationRoots;
+
     let point = |tag: usize| -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(tag))].into()
     };
-    let checkpoints = |presentation: gandr_core_term::Presentation| {
+    let checkpoints = |presentation: PresentationRoots| {
         let content = crate::fixture::item_content(
             Reference::Unoccupied,
             &crate::content::DeclarationRoots::Data(crate::content::DataRoots {
@@ -2737,30 +2739,50 @@ fn a_type_of_words_round_trips_its_cells()
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
-    let cells = |tag: usize| {
-        FreeCells::new(ConstantIndex::from(3_usize), vec![FreeCell::new(
-            point(tag),
-            point(tag),
-        )])
+    let sort = |key: &str| Reference::Item {
+        key: ItemKey::from(key),
+        occurrence: Occurrence::from(0_usize),
     };
-    let words = checkpoints(gandr_core_term::Presentation::words(cells(0)));
-    let bytes = encode_checkpoints(&words).expect("a type of words encodes");
+    let words = |tag: usize, sort: Reference| {
+        let cells = vec![FreeCell::new(point(tag), point(tag))];
+        PresentationRoots {
+            rules: FreeCells::new(
+                gandr_kernel_term::ConstantIndex::from(0_usize),
+                cells.clone(),
+            )
+            .cancellations(),
+            cells: Maybe::Present(CellsRoots {
+                sort,
+                reflexivities: gandr_kernel_term::Reflexivities::from(0_usize),
+                cells,
+            }),
+        }
+    };
+    let looped = checkpoints(words(0, sort("Circle")));
+    let bytes = encode_checkpoints(&looped).expect("a type of words encodes");
     assert_eq!(
         decode_checkpoints(Bytes(bytes.as_ref())),
-        Ok(words),
+        Ok(looped),
         "and decodes to itself, its cells beside its rules"
     );
-    let elsewhere =
-        encode_checkpoints(&checkpoints(gandr_core_term::Presentation::words(cells(1))))
-            .expect("words at another point encode");
+    let elsewhere = encode_checkpoints(&checkpoints(words(1, sort("Circle"))))
+        .expect("words at another point encode");
     assert_ne!(
         bytes.as_ref(),
         elsewhere.as_ref(),
         "the point the cells loop at is content"
     );
-    let bare = encode_checkpoints(&checkpoints(gandr_core_term::Presentation::new(
-        cells(0).cancellations(),
-    )))
+    let resorted = encode_checkpoints(&checkpoints(words(0, sort("Sphere"))))
+        .expect("words over another sort encode");
+    assert_ne!(
+        bytes.as_ref(),
+        resorted.as_ref(),
+        "the sort the cells' endpoints are terms of is content, by its reference"
+    );
+    let bare = encode_checkpoints(&checkpoints(PresentationRoots {
+        cells: Maybe::Absent(crate::content::words::Absent::Unworded),
+        ..words(0, sort("Circle"))
+    }))
     .expect("the same rules with no cell encode");
     assert_ne!(
         bytes.as_ref(),
@@ -2792,7 +2814,7 @@ fn an_indexed_family_round_trips_its_indices()
                 constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)]],
                 results,
                 kind: NodeIndex::from(0_usize),
-                presentation: gandr_core_term::Presentation::new(Vec::new()),
+                presentation: crate::content::PresentationRoots::free(),
             }),
             &[
                 ContentNode::Product(Vec::new()),
@@ -3506,7 +3528,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
             results: Vec::new(),
             constructors: vec![vec![index(2_usize)]],
             kind: index(4_usize),
-            presentation: gandr_core_term::Presentation::new(Vec::new()),
+            presentation: crate::content::PresentationRoots::free(),
         },
         &[
             ContentNode::Base(BaseType::String),

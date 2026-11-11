@@ -243,7 +243,8 @@ pub enum ImportTarget
 }
 
 /// One source of a unit: where its text starts, what its imports resolved
-/// to, and the `std` module it is, when it is one.
+/// to, the `std` module it is, when it is one, and the name its caller gives
+/// it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnitSource
 {
@@ -257,6 +258,23 @@ pub struct UnitSource
     /// `std.io`: the module whose host interfaces it names without importing
     /// it (#4523).
     home: Option<Arc<str>>,
+    /// The name the caller gives the source: its standard library module or
+    /// its path within its package, never a path of the host. It tells the
+    /// source's items from another source's items of the same name, in every
+    /// unit that lays the source (#6522).
+    name: Option<Arc<str>>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a source has no name.
+    pub mod unnamed {
+        /// The reason no name is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The caller laid the source with no name.
+            Unnamed,
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -291,6 +309,7 @@ impl UnitSource
             start,
             imports,
             home: None,
+            name: None,
         }
     }
 
@@ -307,6 +326,23 @@ impl UnitSource
     {
         Self {
             home: Some(Arc::from(module.as_ref())),
+            ..self
+        }
+    }
+
+    /// The source, named `name` by its caller ([`Self::name`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn named(
+        self,
+        name: SurfaceName<'_>,
+    ) -> Self
+    {
+        Self {
+            name: Some(Arc::from(name.as_ref())),
             ..self
         }
     }
@@ -344,6 +380,20 @@ impl UnitSource
             .as_deref()
             .map_or(Maybe::Absent(unhomed::Absent::Elsewhere), |module| {
                 Maybe::Present(SurfaceName::from(module))
+            })
+    }
+
+    /// The name the caller gives the source, laid by [`Self::named`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn name(&self) -> Maybe<SurfaceName<'_>, unnamed::Absent>
+    {
+        self.name
+            .as_deref()
+            .map_or(Maybe::Absent(unnamed::Absent::Unnamed), |name| {
+                Maybe::Present(SurfaceName::from(name))
             })
     }
 }

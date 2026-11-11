@@ -1225,9 +1225,9 @@ impl Laid
         laid.push_str(text.as_ref());
         Self {
             text: laid,
-            unit: Unit::preluded(Vec::from([homed(
+            unit: Unit::preluded(Vec::from([sourced(
                 UnitSource::new(base, Vec::new()),
-                lock::standard_module(path),
+                &named_path(path),
             )]))
             .unwrap_or_default(),
             base,
@@ -1239,19 +1239,44 @@ impl Laid
     }
 }
 
-/// `source`, laid as the standard library's module `home` when it is one: the
-/// module whose host interfaces it names without importing it (#4523).
+/// `source`, read from the file at `path`: named by the standard library's
+/// module it is, and homed as that module (#4523), or else named by its path
+/// within its package ([`within_package`]). No name is a path of the host, so
+/// an item's key is the same wherever its package stands (#6522).
 ///
 /// # Specification
 /// trivial.
-fn homed(
+fn sourced(
     source: UnitSource,
-    home: Option<String>,
+    path: &Path,
 ) -> UnitSource
 {
-    match home {
-        Some(module) => source.homed(SurfaceName::from(module.as_str())),
-        None => source,
+    match lock::standard_module(path) {
+        Some(module) => {
+            let module = SurfaceName::from(module.as_str());
+            source.named(module).homed(module)
+        },
+        None => source.named(SurfaceName::from(
+            within_package(path).to_string_lossy().as_ref(),
+        )),
+    }
+}
+
+/// The path of the file at the canonical `path` below the root of the
+/// package [`Package::discover`] finds from it. A source in no package is the
+/// root module of its own, as an import resolves it, so its path within its
+/// package is its file's name.
+///
+/// # Specification
+/// trivial.
+fn within_package(path: &Path) -> PathBuf
+{
+    let own = || path.file_name().map_or_else(PathBuf::new, PathBuf::from);
+    match Package::discover(path) {
+        Maybe::Present(package) => path
+            .strip_prefix(package.root())
+            .map_or_else(|_outside| own(), Path::to_path_buf),
+        Maybe::Absent(_) => own(),
     }
 }
 
@@ -2058,10 +2083,7 @@ impl Graph
                 root: read.root,
                 written,
             });
-            sources.push(homed(
-                UnitSource::new(start, targets),
-                lock::standard_module(&read.path),
-            ));
+            sources.push(sourced(UnitSource::new(start, targets), &read.path));
         }
         let reading = self.reading;
         Unit::preluded(sources).map_or(Maybe::Absent(laid::Absent::Alone), |unit| {
@@ -2100,30 +2122,40 @@ impl Graph
         let mut text = String::from(prelude::TEXT);
         text.push('\n');
         let start = ByteOffset::from(text.len());
-        let (imports, origin, root, home) = self.read.get_mut(position.0).map_or_else(
-            || (Vec::new(), Vec::new(), CorpusRoot::Strict, None),
+        let (source, origin, root) = self.read.get_mut(position.0).map_or_else(
+            || {
+                (
+                    UnitSource::new(start, Vec::new()),
+                    Vec::new(),
+                    CorpusRoot::Strict,
+                )
+            },
             |read| {
                 text.push_str(&read.text);
                 read.text = String::new();
                 (
-                    read.edges
-                        .iter()
-                        .map(|_| ImportTarget::Unresolved)
-                        .collect(),
+                    sourced(
+                        UnitSource::new(
+                            start,
+                            read.edges
+                                .iter()
+                                .map(|_| ImportTarget::Unresolved)
+                                .collect(),
+                        ),
+                        &read.path,
+                    ),
                     Vec::from([MemberSource {
                         path: read.path.clone(),
                         root: read.root,
                         written: core::mem::take(&mut read.written),
                     }]),
                     read.root.corpus_root(),
-                    lock::standard_module(&read.path),
                 )
             },
         );
         let end = ByteOffset::from(text.len());
         Component {
-            unit: Unit::preluded(Vec::from([homed(UnitSource::new(start, imports), home)]))
-                .unwrap_or_default(),
+            unit: Unit::preluded(Vec::from([source])).unwrap_or_default(),
             members: Vec::from([Member { start, end, root }]),
             text,
             sources: origin,

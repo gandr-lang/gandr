@@ -3247,7 +3247,7 @@ fn footprint_spelled(footprint: &Footprint) -> RunSpelling
         else {
             return RunSpelling::from(String::from(UNRESOLVED_REFERENCE));
         };
-        let Ok(name) = core::str::from_utf8(key.as_ref())
+        let Ok(name) = core::str::from_utf8(<&[u8]>::from(key.name()))
         else {
             return RunSpelling::from(String::from(UNRESOLVED_REFERENCE));
         };

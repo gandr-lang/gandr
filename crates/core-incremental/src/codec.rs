@@ -148,12 +148,13 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x14` keeps, beside each typing, whether the table held the item as it is
-/// written.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x14";
+/// `0x15` names each hole by its place among the holes of its table, and the
+/// sort of a type of words' cells by its reference.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x15";
 
-/// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0b";
+/// The magic and version a program's address is computed over. Version
+/// `0x0c` reads its items' content as checkpoint version `0x15` writes it.
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0c";
 
 /// The decoder's cap on a level atom's offset.
 ///
@@ -241,9 +242,7 @@ impl fmt::Display for UnsupportedPersistence
                 };
                 write!(f, "an unresolved {sort} id is process-local")
             },
-            Self::Located => {
-                f.write_str("a located program's judgements read homes no record keeps")
-            },
+            Self::Located => f.write_str("a located item's judgements read homes no record keeps"),
             Self::Codata => f.write_str("a codata signature has no content form"),
         }
     }
@@ -3764,7 +3763,7 @@ fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
 ///   order; a rule side writes its node count, then per node a tag and either a
 ///   constructor ordinal or a variable word; the trailing tag is `0` when the
 ///   signature carries no cells and no index, `1` followed by the sort's
-///   position, the cell count and each cell's two endpoints as rule sides when
+///   reference, the cell count and each cell's two endpoints as rule sides when
 ///   it carries cells, and `2` followed by the index roots and one row of
 ///   stated-index roots per constructor when it is indexed.
 /// - fails: an unrepresentable count or index.
@@ -3789,30 +3788,30 @@ where
         write_indices(writer, fields)?;
     }
     write_index(writer, roots.kind)?;
-    let rules = roots.presentation.rules();
+    let rules = &roots.presentation.rules;
     writer.count(Count(rules.len()))?;
     for rule in rules {
         write_rule_side(writer, rule.left())?;
         write_rule_side(writer, rule.right())?;
     }
-    match (roots.presentation.cells(), roots.indices.is_empty()) {
-        (None, true) => writer.tag(Tag(0)),
-        (Some(cells), _) => {
+    match (&roots.presentation.cells, roots.indices.is_empty()) {
+        (&Maybe::Absent(_), true) => writer.tag(Tag(0)),
+        (&Maybe::Present(ref cells), _) => {
             // Words over cells above dimension one take a tag of their own,
             // so the words over loops keep their bytes.
-            let above = usize::from(cells.reflexivities()).checked_sub(1);
+            let above = usize::from(cells.reflexivities).checked_sub(1);
             writer.tag(Tag(if above.is_some() { 3 } else { 1 }));
-            writer.count(Count(usize::from(cells.sort())))?;
+            write_reference(writer, &cells.sort)?;
             if let Some(above) = above {
                 writer.count(Count(above))?;
             }
-            writer.count(Count(cells.cells().len()))?;
-            for cell in cells.cells() {
+            writer.count(Count(cells.cells.len()))?;
+            for cell in &cells.cells {
                 write_rule_side(writer, cell.source())?;
                 write_rule_side(writer, cell.target())?;
             }
         },
-        (None, false) => {
+        (&Maybe::Absent(_), false) => {
             writer.tag(Tag(2));
             write_indices(writer, &roots.indices)?;
             writer.count(Count(roots.results.len()))?;
@@ -3892,11 +3891,14 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
         let right = read_rule_side(reader)?;
         rules.push(gandr_core_term::PresentedRule::new(left, right));
     }
-    let presentation = gandr_core_term::Presentation::new(rules);
-    let (presentation, indices, results) = match reader.tag()?.0 {
-        0 => (presentation, Vec::new(), Vec::new()),
+    let (cells, indices, results) = match reader.tag()?.0 {
+        0 => (
+            Maybe::Absent(crate::content::words::Absent::Unworded),
+            Vec::new(),
+            Vec::new(),
+        ),
         tag @ (1 | 3) => {
-            let sort = gandr_kernel_term::ConstantIndex::from(reader.count()?.0);
+            let sort = read_reference(reader)?;
             let reflexivities = if tag == 3 {
                 reader.count()?.0.saturating_add(1)
             }
@@ -3911,10 +3913,11 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
                 cells.push(gandr_kernel_term::FreeCell::new(source, target));
             }
             (
-                presentation.carrying(
-                    gandr_kernel_term::FreeCells::new(sort, cells)
-                        .wrapped(gandr_kernel_term::Reflexivities::from(reflexivities)),
-                ),
+                Maybe::Present(crate::content::CellsRoots {
+                    sort,
+                    reflexivities: gandr_kernel_term::Reflexivities::from(reflexivities),
+                    cells,
+                }),
                 Vec::new(),
                 Vec::new(),
             )
@@ -3926,7 +3929,11 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
             for _ in 0 .. count.0 {
                 results.push(read_indices(reader)?);
             }
-            (presentation, indices, results)
+            (
+                Maybe::Absent(crate::content::words::Absent::Unworded),
+                indices,
+                results,
+            )
         },
         _ => return Err(CodecError::Corrupt),
     };
@@ -3936,7 +3943,7 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
         constructors,
         results,
         kind,
-        presentation,
+        presentation: crate::content::PresentationRoots { rules, cells },
     })
 }
 

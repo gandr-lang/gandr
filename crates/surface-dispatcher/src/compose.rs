@@ -221,6 +221,8 @@ use gandr_core_checker::worlds::Entry;
 use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
+use gandr_core_incremental::Locus;
+use gandr_core_incremental::SourceTag;
 use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
 use gandr_core_term::Computation;
@@ -4976,11 +4978,20 @@ pub fn adapt(
 /// items the incremental checker resumes over and a package's address is
 /// digested from.
 ///
+/// Each item's checkpoint is a function of its own source and of the sources
+/// that source reaches (#6522). So an item's key holds the tag of its
+/// source's name ([`item_key`]), and its reference counts its occurrence
+/// within that source. A source is named by its standard library module or
+/// by its path within its package, never by a path of the host, so a key is
+/// the same wherever the package stands. An item is located when its own
+/// source, or a source that its own source reaches, declares a world or
+/// states an entry ([`located_sources`]).
+///
 /// # Specification
 /// - requires: `module` was lowered into `arena`.
 /// - ensures: one item per declaration the lowering did not refuse, in
-///   admission order, keyed by the declaration's name as written and carrying
-///   exactly the declaration [`adapt`] gives the checker for it.
+///   admission order, keyed by [`item_key`] and carrying exactly the
+///   declaration [`adapt`] gives the checker for it.
 /// - provides: the program the incremental checker resumes over, which holds
 ///   the declarations the batch judgement checks and no other, and whose items'
 ///   content keys a package's address digests.
@@ -4999,6 +5010,7 @@ pub fn adapt(
 ///   reordering, misnaming and losing signature/body/origin data. Arena
 ///   provenance is a caller premise, not inferred from local identifiers.
 /// - witness: `tests::package::each_unrefused_declaration_is_one_item_keyed_by_its_name`
+/// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref result) => {
@@ -5023,7 +5035,7 @@ pub fn adapt(
                 )
                 .all(|(item, lowered)| {
                     let declaration = item.declaration();
-                    item.key().as_ref() == lowered.name().as_ref().as_bytes()
+                    item.key() == &item_key(module.unit(), lowered)
                         && declaration.constant() == lowered.constant()
                         && usize::from(declaration.origin())
                             == usize::from(lowered.origin())
@@ -5070,19 +5082,140 @@ pub fn item_program(
     arena: CoreArena,
 ) -> Result<gandr_core_incremental::Program, gandr_core_incremental::ProgramError>
 {
-    let keys = module
+    let unit = module.unit();
+    // Each source's tag, digested once for all the items it declares.
+    let tags: Vec<Option<SourceTag>> = unit
+        .sources()
+        .iter()
+        .map(|source| match source.name() {
+            Maybe::Present(name) => Some(SourceTag::from(name.as_ref())),
+            Maybe::Absent(_) => None,
+        })
+        .collect();
+    let kept: Vec<&LoweredDeclaration<'_>> = module
         .declarations()
         .iter()
         .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
-        .map(|lowered| gandr_core_incremental::ItemKey::from(lowered.name().as_ref()));
-    let items = keys
-        .zip(adapt(module, &arena))
-        .map(|(key, declaration)| gandr_core_incremental::Item::new(key, declaration))
+        .collect();
+    let declarations = adapt(module, &arena);
+    let located = located_sources(
+        unit,
+        kept.iter()
+            .map(|lowered| lowered.introduced().source())
+            .zip(&declarations),
+    );
+    let items = kept
+        .into_iter()
+        .zip(declarations)
+        .map(|(lowered, declaration)| {
+            let source = usize::from(lowered.introduced().source());
+            let surface = lowered.name();
+            let name: &str = surface.as_ref();
+            let key = tags.get(source).copied().flatten().map_or_else(
+                || gandr_core_incremental::ItemKey::from(name),
+                |tag| gandr_core_incremental::ItemKey::from((tag, name)),
+            );
+            let item = gandr_core_incremental::Item::new(key, declaration);
+            if located.get(source) == Some(&Locus::Located) {
+                item.located()
+            }
+            else {
+                item
+            }
+        })
         .collect();
     let mut program = gandr_core_incremental::Program::new(arena, items)?;
     program.decide_endpoints_on(crate::tier::Emitted::boxed, crate::tier::admitting());
     program.keep_strata_in(crate::strata::stratum_store());
     Ok(program)
+}
+
+/// The key of the item `lowered` declares in `unit`: the tag of its source's
+/// name, then its name ([`gandr_core_incremental::ItemKey`]), or its name alone
+/// for an unnamed source. A source's tag tells its items from another
+/// source's items of the same name, so an item's reference counts its
+/// occurrence within its own source, whatever other sources the unit lays
+/// (#6522).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the name alone for an unnamed source; else the key that the tag
+///   of the source's name and the name give.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`item_program`].
+/// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
+#[spec(ensures: |ret| <[u8]>::len(ret.name().as_ref()) == str::len(lowered.name().as_ref()))]
+#[must_use]
+fn item_key(
+    unit: &Unit,
+    lowered: &LoweredDeclaration<'_>,
+) -> gandr_core_incremental::ItemKey
+{
+    let surface = lowered.name();
+    let name: &str = surface.as_ref();
+    match unit
+        .sources()
+        .get(usize::from(lowered.introduced().source()))
+        .map(gandr_surface_lowering::UnitSource::name)
+    {
+        Some(Maybe::Present(source)) => {
+            gandr_core_incremental::ItemKey::from((SourceTag::from(source.as_ref()), name))
+        },
+        Some(Maybe::Absent(_)) | None => gandr_core_incremental::ItemKey::from(name),
+    }
+}
+
+/// The locus of each source of `unit`: the source is located when it, or a
+/// source that it reaches, declares a world or states an entry among
+/// `declarations`, each beside its source. A source reaches the sources its
+/// path imports resolve to and the prelude.
+///
+/// # Specification
+/// - requires: imports point backward, as [`Unit::new`] checks.
+/// - ensures: one locus per source of `unit`; a source is located exactly when
+///   a declaration of it is a world or states an entry, or a source it reaches
+///   is located.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus closures that declare a world beside a source
+///   that does not reach it.
+/// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
+#[spec(ensures: |ret| ret.len() == unit.sources().len())]
+fn located_sources<'declaration>(
+    unit: &Unit,
+    declarations: impl Iterator<
+        Item = (
+            gandr_surface_lowering::SourceIndex,
+            &'declaration Declaration,
+        ),
+    >,
+) -> Vec<Locus>
+{
+    let mut located = vec![Locus::Unlocated; unit.sources().len()];
+    for (source, declaration) in declarations {
+        let locates = matches!(
+            *declaration.content(),
+            gandr_core_checker::DeclarationContent::World(_)
+        ) || matches!(declaration.entry(), Maybe::Present(_));
+        if locates && let Some(locus) = located.get_mut(usize::from(source)) {
+            *locus = Locus::Located;
+        }
+    }
+    let prelude = unit.prelude().map(usize::from);
+    for (position, source) in unit.sources().iter().enumerate() {
+        let reached = prelude.is_some_and(|prelude| located.get(prelude) == Some(&Locus::Located))
+            || source.imports().iter().any(|target| {
+                matches!(*target, ImportTarget::Source(index)
+                    if located.get(usize::from(index)) == Some(&Locus::Located))
+            });
+        if reached && let Some(locus) = located.get_mut(position) {
+            *locus = Locus::Located;
+        }
+    }
+    located
 }
 
 /// The checker's abstract type for the sealing the lowering recorded: its

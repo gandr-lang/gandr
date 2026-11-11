@@ -4223,7 +4223,7 @@ where
             )
             .unwrap_or_else(|never| match never {}),
         ),
-        // A located program is judged whole, never edited by node: its world
+        // A located item is judged each time, never edited by node: its world
         // forms, as incremental content lists them, stand by their sort.
         Some(&Computation::World(_)) | None => ContentNode::Unresolved(Sort::Computation),
     }

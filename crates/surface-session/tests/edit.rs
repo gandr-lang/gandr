@@ -91,7 +91,7 @@ const EDITED: &str = include_str!("fixtures/incremental-edited.gandr");
         .all(|item| {
             matches!(
                 * item.reference(), Reference::Item { ref key, .. } if
-                core::str::from_utf8(key.as_ref()).is_ok()
+                core::str::from_utf8(key.name().as_ref()).is_ok()
             )
         })
 },

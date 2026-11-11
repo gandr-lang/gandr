@@ -22,6 +22,8 @@ mod distances;
 #[cfg(test)]
 mod entries;
 #[cfg(test)]
+mod locality;
+#[cfg(test)]
 mod measure;
 #[cfg(test)]
 mod package;
