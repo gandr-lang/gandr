@@ -2433,6 +2433,238 @@ fn a_loop_arm_checks_at_the_path_over_its_loop()
     );
 }
 
+/// The one-point sort, the words of one 2-cell at its point's reflexivity,
+/// and `surf`, the word of its one letter at `Path[.A = Path[.A = S](Base,
+/// Base)](here(Base), here(Base))`, admitted in that order at the positions
+/// [`one_loop`] admits its own.
+///
+/// # Specification
+/// trivial.
+fn one_two_cell() -> Environment
+{
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let staged = staging.data(LevelSignature::monomorphic(), vec![], vec![vec![]], kind);
+    let _sort = environment
+        .add_decl(staged)
+        .expect("the one-point sort admits");
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let base =
+        || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
+    let cells = FreeCells::new(ConstantIndex::from(SORT), vec![FreeCell::new(
+        base(),
+        base(),
+    )])
+    .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
+    let staged = staging
+        .data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![], vec![own], vec![own]],
+            kind,
+        )
+        .presented(Presentation::words(cells));
+    let _words = environment
+        .add_decl(staged)
+        .expect("the 2-cell's words admit");
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let point = build(arena, Built::Point);
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let loops = arena.value_type_path(carrier, point, point);
+    let reflexivity = arena.value_here(point);
+    let path = arena.value_type_path(loops, reflexivity, reflexivity);
+    let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let empty = build(arena, Built::Empty);
+    let letter = arena.value_constructor(
+        ConstantIndex::from(WORDS),
+        words,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let staged = staging.def(LevelSignature::monomorphic(), path, letter);
+    let _surf = environment
+        .add_decl(staged)
+        .expect("the 2-cell's word checks at its path");
+    environment
+}
+
+/// A word of the 2-cell's words: the path a `Path.ap` moves along, or the
+/// image it is stated to reduce to.
+#[derive(Clone, Copy, Debug)]
+enum Imaged
+{
+    /// The 2-cell, `surf`, a definition names.
+    Cell,
+    /// The empty word of the 2-cell's words.
+    Flat,
+    /// The 2-cell's one letter before the empty word, written in place.
+    Spelled,
+}
+
+/// Stage `here(image)` at `Path[.A = B₂](⟨Path.ap map along⟩, image)`, the
+/// `Path.ap` written in place as the lowering writes it on a cell one path
+/// type above the map's domain, and admit it.
+///
+/// # Specification
+/// trivial.
+fn ap_on_the_two_cell(
+    environment: &mut Environment,
+    map: ConstantIndex,
+    (along, image): (Imaged, Imaged),
+) -> Result<ConstantIndex, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let word = |arena: &mut TermArena, imaged: Imaged| match imaged {
+        Imaged::Cell => build(arena, Built::Named),
+        Imaged::Flat => build(arena, Built::Empty),
+        Imaged::Spelled => {
+            let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+            let empty = build(arena, Built::Empty);
+            arena.value_constructor(
+                ConstantIndex::from(WORDS),
+                words,
+                ConstructorTag::from(1_usize),
+                vec![empty],
+            )
+        },
+    };
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let point = build(arena, Built::Point);
+    let reflexivity = arena.value_here(point);
+    let cell = word(arena, along);
+    let map = arena.value_constant(map);
+    let call = |arena: &mut TermArena, argument: ValueId| {
+        let forced = arena.computation_force(map);
+        let applied = arena.computation_application(forced, argument);
+        arena.value_returned(applied)
+    };
+    // `Path.ap map` on paths at the point: `tr(w. Path[.A = S](⟨map Base⟩,
+    // ⟨map w⟩), q, here(⟨map Base⟩))`. Every term but the binders is closed.
+    let imaged = call(arena, point);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let through = call(arena, moving);
+    let layer = arena.value_type_path(carrier, imaged, through);
+    let stays = arena.value_here(imaged);
+    let start = arena.computation_path_transport(layer, reflexivity, stays);
+    let start = arena.value_returned(start);
+    let inner = arena.computation_path_transport(layer, moving, stays);
+    let inner = arena.value_returned(inner);
+    let below = arena.value_type_path(carrier, imaged, imaged);
+    let motive = arena.value_type_path(below, start, inner);
+    let lifted = arena.value_here(start);
+    let root = arena.computation_path_transport(motive, cell, lifted);
+    let root = arena.value_returned(root);
+    // The type as the source writes it, `Path[.A = Path[.A = S](Base, Base)](
+    // here(Base), here(Base))`, which the kernel reads as the cell's words.
+    let loops = arena.value_type_path(carrier, point, point);
+    let cells = arena.value_type_path(loops, reflexivity, reflexivity);
+    let image = word(arena, image);
+    let declared = arena.value_type_path(cells, root, image);
+    // The image is the left endpoint the kernel evaluates, as the checker's
+    // dialogue says; the right endpoint is the point itself.
+    let body = arena.value_here_relating(
+        image,
+        alloc::sync::Arc::new(gandr_kernel_term::EndpointDialogues {
+            left: vec![ConversionDecision::Evaluate],
+            right: Vec::new(),
+        }),
+    );
+    let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+    environment
+        .add_decl(staged)
+        .map(gandr_kernel_core::CheckedId::position)
+}
+
+#[test]
+fn a_map_s_image_of_a_2_cell_in_place_is_its_arm()
+{
+    let mut environment = one_two_cell();
+    let identity = case_over(&mut environment, Family::Kept, Built::Point, &[
+        Built::Named,
+    ])
+    .expect("a non-dependent arm at the 2-cell chooses its image");
+    let squash = case_over(&mut environment, Family::Kept, Built::Point, &[])
+        .expect("a non-dependent case with no arm at the 2-cell sends it to reflexivity");
+    let _mapped = ap_on_the_two_cell(&mut environment, identity, (Imaged::Cell, Imaged::Cell))
+        .unwrap_or_else(|refused| {
+            panic!(
+                "`Path.ap` of the identity on the 2-cell is the identity's arm, the 2-cell: \
+                 {refused:?}"
+            )
+        });
+    let _flattened = ap_on_the_two_cell(&mut environment, squash, (Imaged::Cell, Imaged::Flat))
+        .unwrap_or_else(|refused| {
+            panic!("`Path.ap` of a case with no arm at the 2-cell is the empty word: {refused:?}")
+        });
+    for (map, image, what) in [
+        (
+            identity,
+            Imaged::Flat,
+            "the identity's image of the 2-cell is not the empty word",
+        ),
+        (
+            squash,
+            Imaged::Cell,
+            "the squash's image of the 2-cell is not the 2-cell",
+        ),
+    ] {
+        assert!(
+            matches!(
+                ap_on_the_two_cell(&mut environment, map, (Imaged::Cell, image)),
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer {
+                        side: gandr_kernel_core::EndpointSide::Left,
+                        ..
+                    }
+                ))
+            ),
+            "{what}"
+        );
+    }
+}
+
+/// A word written in place of the 2-cell's words, no definition naming it,
+/// is followed one path type above the sort: `Path.ap` of a map along it
+/// starts at the map's action on the point's reflexivity, and the identity's
+/// image of it is the word.
+#[test]
+fn a_map_s_image_of_a_written_2_cell_word_is_that_word()
+{
+    let mut environment = one_two_cell();
+    let identity = case_over(&mut environment, Family::Kept, Built::Point, &[
+        Built::Named,
+    ])
+    .expect("a non-dependent arm at the 2-cell chooses its image");
+    let _spelled = ap_on_the_two_cell(
+        &mut environment,
+        identity,
+        (Imaged::Spelled, Imaged::Spelled),
+    )
+    .unwrap_or_else(|refused| {
+        panic!("`Path.ap` of the identity on a written word is that word: {refused:?}")
+    });
+    assert!(
+        matches!(
+            ap_on_the_two_cell(&mut environment, identity, (Imaged::Spelled, Imaged::Flat)),
+            Err(KernelError::Identity(
+                gandr_kernel_core::IdentityError::EndpointsDiffer {
+                    side: gandr_kernel_core::EndpointSide::Left,
+                    ..
+                }
+            ))
+        ),
+        "the identity's image of a written word is not the empty word"
+    );
+}
+
 #[test]
 fn a_loop_obligation_reads_a_map_of_two_arguments()
 {

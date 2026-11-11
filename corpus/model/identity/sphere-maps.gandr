@@ -1,0 +1,101 @@
+/// This source states maps out of the spheres by cases, and `Path.ap` of them
+/// on the spheres' cells.
+///
+/// A case over a sphere takes an arm at the point and an arm at the cell.
+/// The arm at the cell is a cell of the answer at the reflexivity of the arm
+/// at the point.
+/// `Path.ap f surf` acts on the 2-cell as the action of `Path.ap f` on paths.
+/// It takes one layer per reflexivity between the cell's type and the map's
+/// domain.
+/// It reduces to the case's arm at the cell, by the rule at dimension one.
+///
+/// The checker converts each image to the arm, and the kernel replays each
+/// reduction.
+///
+/// Limits: the checker refuses a dependent case at a higher cell. Transport
+/// along the cell does not yet act on an answer carried along the bound path.
+///
+/// - see: #6458 — the dependent form at a higher cell
+/// - see: corpus/model/identity/sphere.gandr
+/// - see: corpus/model/identity/circle-maps.gandr
+
+// The 2-sphere and the 3-sphere.
+import "./sphere.gandr";
+
+/// The identity of the 2-sphere by cases: the cell goes to itself.
+def sphereId(x : S2) -> S2 =
+  match x where
+    | Base2 => Base2
+    | surf => surf
+
+/// The identity of the 3-sphere by cases.
+def sphereId3(x : S3) -> S3 =
+  match x where
+    | Base3 => Base3
+    | surf3 => surf3
+
+/// A case with no arm at the cell sends the cell to reflexivity.
+def flatten(x : S2) -> S2 =
+  match x where
+    | Base2 => Base2
+
+/// `Path.ap` of the identity on the 2-cell is the 2-cell.
+def apSurf : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap sphereId surf,
+  surf
+) = Path.here surf;
+
+/// `Path.ap` of the identity on the 3-cell is the 3-cell.
+def apSurf3 : Path[.A = Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](
+  Path.here Base3,
+  Path.here Base3
+)](
+  Path.here (Path.here Base3),
+  Path.here (Path.here Base3)
+)](
+  Path.ap sphereId3 surf3,
+  surf3
+) = Path.here surf3;
+
+/// `Path.ap` of a case with no arm at the cell is reflexivity.
+def apFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap flatten surf,
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// `Path.ap` of the identity on the 2-cell stands at the type its endpoints
+/// give.
+def mapped : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) = Path.ap
+  sphereId
+  surf;
+
+/// `Path.ap` of a map acts on every 2-cell, a bound one too.
+def mapCell(
+  c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
+) -> Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) =
+  Path.ap sphereId c
+
+/// The identity does not send the 2-cell to reflexivity.
+@[refuses("EndpointMismatch")]
+def apSurfFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap sphereId surf,
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// A dependent case at the 2-cell owes transport along the cell. That
+/// transport does not yet compute.
+///
+/// - see: #6458
+@[refuses("LoopNotRespected")]
+def selfrefl2(x : S2) -> Path[.A = S2](x, x) =
+  match x where
+    | Base2 => Path.here Base2

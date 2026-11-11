@@ -41,10 +41,10 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
 - `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit each tail written without `return` or `become` takes.
-- `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: each run inferred where a value is read ([`lower::runs`](src/lower/runs.rs)).
-- `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`.
-- `lower_unit`, `Unit`, `SourceIndex`, `ImportTarget` and the `Import*` types: sources lowered into one arena ([`unit`](src/unit.rs)); `ClosureLowering`, `alone`, `resume_onto` and `Onto`: a closure lowered once ([`lower::closure`](src/lower/closure.rs)).
-- `LoweredStructure`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names; [`module`](src/module.rs) names the types they are read through.
+- `InferredRun`, `LoweredModule::inferred_runs` and the types [`lower::runs`](src/lower/runs.rs) names: each run inferred where a value is read.
+- `namespace`: the trie, the scope, the events, their handlers and `Recognition` ([`namespace`](src/namespace.rs)).
+- `lower_unit` and the types [`unit`](src/unit.rs) names: sources lowered into one arena; `ClosureLowering` and the calls [`lower::closure`](src/lower/closure.rs) names: a closure lowered once.
+- `LoweredStructure` and `LoweredModule::structures`: modules flattened to named members, their stratum items and their structured names, read through the types [`module`](src/module.rs) names.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>`, its abstract types and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived, checked and packed, type members with parameters, and a `path`'s functions and round trips.
@@ -134,6 +134,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
 - `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell.
 
 ## License
 

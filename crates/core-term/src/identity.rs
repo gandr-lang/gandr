@@ -65,6 +65,19 @@
 //!   every such ride, so a flow has no inverse by the rule that lets it ride at
 //!   all. The alternative, refusing `back` in the lowering when its answer is a
 //!   flow, names no rule. Reversal: none while a flow runs one way.
+//! - **`cong` above the domain is `cong` of `cong`.** A path whose type wraps
+//!   the map's domain in `k` path types moves by [`cong_above`]: `k + 1`
+//!   transports, each the action of the one below on its paths. The
+//!   alternative, a former for the action at a dimension, adds a node that the
+//!   evaluators read only as these transports. Reversal: a path type between
+//!   distinct points above the domain, whose levels the tower does not spell.
+//!
+//! # References
+//!
+//! - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: § 2.2, the
+//!   action of a map out of a sphere on its cell.
+
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
@@ -631,6 +644,217 @@ pub fn cong_lifted(
     let motive = arena.value_type_path(lifted_codomain, lifted_start, image);
     let base = arena.value_here(start);
     arena.computation_path_transport(motive, path, base)
+}
+
+/// One path type of a tower over a map's domain: its two endpoints, each a
+/// point of the path type one level below.
+pub type Level = (ValueId, ValueId);
+
+/// How `Path.ap` of a map acts at one level of a tower, under some count of
+/// binders: the map itself at the domain, or a transport above it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Act
+{
+    /// `force f z` for the map `f`.
+    Map(ValueId),
+    /// `tr(motive, z, here(start))`.
+    Move(ValueTypeId, ValueId),
+}
+
+impl Act
+{
+    /// The action at `point`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at(
+        self,
+        arena: &mut CoreArena,
+        point: ValueId,
+    ) -> ComputationId
+    {
+        match self {
+            Self::Map(function) => {
+                let forced = arena.computation_force(function);
+                arena.computation_application(forced, point)
+            },
+            Self::Move(motive, start) => {
+                let base = arena.value_here(start);
+                arena.computation_path_transport(motive, point, base)
+            },
+        }
+    }
+}
+
+/// The action and the type of `Path.ap` of a map at the outermost level of
+/// `levels`, read where the result stands.
+///
+/// Level `k` at `d` binders reads level `k − 1` at `d` binders for its start
+/// `s = ⟨apₖ₋₁ f(a)⟩` and its end, and at `d + 1` binders for its motive
+/// `y. Path[.A = Bₖ₋₁↑](s↑, ⟨apₖ₋₁ f↑(y)⟩)`. Level `k` is read at no more
+/// than `n − k + 1` binders for `n` levels, so the table is built once, level
+/// by level, and each term is minted once.
+///
+/// # Specification
+/// - requires: as [`cong_above`].
+/// - ensures: `Some((act, ty))`, with `act` the map for no level and the
+///   transport of the outermost level otherwise, and `ty` its type; `None`
+///   never, as each read stays in the range the level before it built.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: each `for` runs over a finite range of levels or binder counts.
+/// - measure: the levels left, then the binder counts left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cong_above`].
+/// - witness: `identity::tests::cong_above_a_level_transports_along_the_point`
+#[spec(ensures: |ret| ret.is_some())]
+fn outermost(
+    arena: &mut CoreArena,
+    (function, codomain): (ValueId, ValueTypeId),
+    levels: &[Level],
+) -> Option<(Act, ValueTypeId)>
+{
+    let lifted = |arena: &mut CoreArena, value: ValueId, depth: usize| {
+        let by = Binders::from(u32::try_from(depth).unwrap_or(u32::MAX));
+        shift_value(arena, value, by).settle(arena)
+    };
+    let count = levels.len();
+    // The domain: the map and its codomain at each binder count, and its image
+    // of the binder under one binder or more, at index `depth − 1`. Each level
+    // fills the spare buffers, which then change places with these.
+    let width = count.saturating_add(1);
+    let (mut acts, mut carriers, mut images) = (
+        Vec::with_capacity(width),
+        Vec::with_capacity(width),
+        Vec::with_capacity(count),
+    );
+    let (mut starts, mut types, mut moves, mut moved) = (
+        Vec::with_capacity(width),
+        Vec::with_capacity(width),
+        Vec::with_capacity(count),
+        Vec::with_capacity(count),
+    );
+    for depth in 0 ..= count {
+        let map = lifted(arena, function, depth);
+        let by = Binders::from(u32::try_from(depth).unwrap_or(u32::MAX));
+        carriers.push(shift_value_type(arena, codomain, by).settle(arena));
+        acts.push(Act::Map(map));
+        if depth > 0 {
+            let endpoint = moving(arena);
+            let image = Act::Map(map).at(arena, endpoint);
+            images.push(arena.value_returned(image));
+        }
+    }
+    for (level, &(from, to)) in levels.iter().enumerate() {
+        // Level `level + 1` is read at no more than `reach` binders.
+        let reach = count.saturating_sub(level);
+        starts.clear();
+        types.clear();
+        for depth in 0 ..= reach {
+            let act = *acts.get(depth)?;
+            let below = *carriers.get(depth)?;
+            let (from, to) = (lifted(arena, from, depth), lifted(arena, to, depth));
+            let start = act.at(arena, from);
+            let start = arena.value_returned(start);
+            let end = act.at(arena, to);
+            let end = arena.value_returned(end);
+            starts.push(start);
+            types.push(arena.value_type_path(below, start, end));
+        }
+        moves.clear();
+        for depth in 0 .. reach {
+            let next = depth.saturating_add(1);
+            let motive = arena.value_type_path(
+                *carriers.get(next)?,
+                *starts.get(next)?,
+                *images.get(depth)?,
+            );
+            moves.push(Act::Move(motive, *starts.get(depth)?));
+        }
+        moved.clear();
+        for &act in moves.iter().skip(1) {
+            let endpoint = moving(arena);
+            let image = act.at(arena, endpoint);
+            moved.push(arena.value_returned(image));
+        }
+        core::mem::swap(&mut acts, &mut moves);
+        core::mem::swap(&mut carriers, &mut types);
+        core::mem::swap(&mut images, &mut moved);
+    }
+    Some((*acts.first()?, *carriers.first()?))
+}
+
+/// `Path.ap` of a map at `point`, as many path types above the map's domain
+/// as `levels` holds.
+///
+/// For no level the map is applied: `ap₀ f(z) = f z`. Each level above it is
+/// a transport of the level below: `apₖ f(z) = tr(y. Path[.A = Bₖ₋₁↑](s↑,
+/// ⟨apₖ₋₁ f↑(y)⟩), z, here(s))`, with `s = ⟨apₖ₋₁ f(a)⟩` for the level `(a, b)`
+/// that `z` stands at. A cell above dimension one is a path between paths, so
+/// `Path.ap f` acts on it as `Path.ap (Path.ap f)`.
+///
+/// # Specification
+/// - requires: `function` is a map from the innermost level's carrier to
+///   `codomain`; `levels` holds the tower innermost first, each level's
+///   endpoints read in the context the result stands in, and `point` stands at
+///   the outermost level.
+/// - ensures: `force function point` for no level; otherwise the transport
+///   above, whose path is `point` and whose motive's carrier is
+///   [`cong_codomain`] of the levels below, lifted one binder.
+/// - provides: `Path.ap` of a map on a cell above dimension one.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's identity acts on its 2-cell through one
+///   level, and the transport's path is the 2-cell.
+/// - witness: `identity::tests::cong_above_a_level_transports_along_the_point`
+#[spec(ensures: |ret| ret.is_some_and(|built| levels.is_empty() != matches!(arena.computation(built), Some(&crate::syntax::Computation::PathTransport { path, .. }) if path == point)))]
+#[inline]
+#[must_use]
+pub fn cong_above(
+    arena: &mut CoreArena,
+    mapped: (ValueId, ValueTypeId),
+    levels: &[Level],
+    point: ValueId,
+) -> Option<ComputationId>
+{
+    let (act, _) = outermost(arena, mapped, levels)?;
+    Some(act.at(arena, point))
+}
+
+/// The type [`cong_above`] maps a point of the outermost level into.
+///
+/// For no level it is the codomain. For the outermost level `(a, b)` it is
+/// `Path[.A = Bₖ₋₁](⟨apₖ₋₁ f(a)⟩, ⟨apₖ₋₁ f(b)⟩)`.
+///
+/// # Specification
+/// - requires: as [`cong_above`].
+/// - ensures: `codomain` for no level; a path type over the levels below
+///   otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's identity maps the 2-cell into the paths
+///   between the images of the point's reflexivity.
+/// - witness: `identity::tests::cong_above_a_level_transports_along_the_point`
+#[spec(ensures: |ret| ret.is_some_and(|built| levels.is_empty() == (built == mapped.1)))]
+#[inline]
+#[must_use]
+pub fn cong_codomain(
+    arena: &mut CoreArena,
+    mapped: (ValueId, ValueTypeId),
+    levels: &[Level],
+) -> Option<ValueTypeId>
+{
+    outermost(arena, mapped, levels).map(|(_, ty)| ty)
 }
 
 /// The answer of a case over `branches` at `point`, `b`: the value the

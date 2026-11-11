@@ -273,6 +273,17 @@
 //! spelling is an alias the mold normalises, so the printer never chooses.
 //! `A ⇝ B` has no record: under directed univalence the structure of a hom
 //! between types is the function itself (op. cit., Definition 1.2).
+//!
+//! `Path.ap f p` on a path whose type wraps the domain of `f` in `k` path
+//! types lowers to `k + 1` layers of `Path.ap`, the action of `f` on the paths
+//! below ([`gandr_core_term::identity::cong_above`]), so `Path.ap f surf` with
+//! `f : S2 → T` acts on the 2-cell as `Path.ap (Path.ap f)`.
+//!
+//! # References
+//!
+//! - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: § 2.2, the
+//!   spheres as presentations with one cell per dimension, and the action of a
+//!   map out of a sphere on its cell.
 
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -3261,9 +3272,12 @@ impl<'source> Lowerer<'_, 'source>
         }
         // A composite past level one reads each cell at its own path type, so
         // the types its cells are read at are minted first, answered or not.
+        // A `Path.ap` reads its map's domain and its path's type to count the
+        // levels between them, answered or not.
         let level_two = matches!(derivation, Derivation::Compose { composite, .. }
             if composite.pasting.level() != gandr_core_term::compose::Level::ONE);
-        if level_two || matches!(stance, Stance::Synthesised(..)) {
+        let mapped = matches!(derivation, Derivation::Cong { .. });
+        if level_two || mapped || matches!(stance, Stance::Synthesised(..)) {
             self.synthesised.push(site);
         }
         // The operation is the path its transport returns: pure, so where a
@@ -3672,8 +3686,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   walk admitted with its own type read. An admitted operation reads its
     ///   own type when every path it reads does, `then`'s second included, and
     ///   every cell of a level-two composite. The record keeps every site, the
-    ///   innermost first, an answered level-two composite's among them, for the
-    ///   mint sweep to read `cong`'s codomain and each level-two cell's type.
+    ///   innermost first, an answered level-two composite's and an answered
+    ///   `cong`'s among them, for the mint sweep to read `cong`'s codomain,
+    ///   domain and path type, and each level-two cell's type.
     /// - provides: the classification-time guarantee that a synthesised
     ///   operation mints its motive.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
@@ -3838,31 +3853,35 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The types the synthesised operations and the level-two composites read
-    /// off other declarations and binders — each `cong`'s codomain, and the
-    /// written type of each parameter and the written result of each call a
-    /// path operand is — for the mint sweep to mint before any operation over
-    /// them.
+    /// The types the synthesised operations, the level-two composites and the
+    /// `cong`s read off other declarations and binders — each `cong`'s
+    /// codomain and domain, and the written type of each parameter and the
+    /// written result of each call a path operand is — for the mint sweep to
+    /// mint before any operation over them.
     ///
     /// # Specification
     /// - ensures: for every recorded site still planned as a synthesised
     ///   operation, its codomain when it is a `cong` and the node each of its
-    ///   [`Typings`] reads its path's type at; for every level-two composite,
-    ///   answered or synthesised, the node [`Self::operand_typed`] reads each
-    ///   of its cells' types at. Each once, in source order: a type a
-    ///   synthesised operation inside another such type reads — an earlier
-    ///   declaration's result, or a parameter written before it — is minted
-    ///   before the type that holds it.
+    ///   [`Typings`] reads its path's type at; for every `cong`, answered or
+    ///   synthesised, its map's domain ([`Self::mapped_domain`]), and for an
+    ///   answered one the node [`Self::typed`] reads its path's type at; for
+    ///   every level-two composite, answered or synthesised, the node
+    ///   [`Self::operand_typed`] reads each of its cells' types at. Each once,
+    ///   in source order: a type a synthesised operation inside another such
+    ///   type reads — an earlier declaration's result, or a parameter written
+    ///   before it — is minted before the type that holds it.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `cong` in a type finds its function's result
-    ///   minted, an operation over a parameter or a call its type, and an
-    ///   answered whisker its 2-cell's and its 1-cell's.
+    ///   minted, an operation over a parameter or a call its type, an answered
+    ///   whisker its 2-cell's and its 1-cell's, and an answered `cong` on a
+    ///   2-cell parameter its map's domain and the parameter's type.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_level_two_pasting_reads_its_columns`
+    /// - witness: `lower::identity::tests::cong_on_a_cell_above_the_map_s_domain_takes_its_levels`
     #[spec(ensures: |ret| ret.is_sorted_by_key(|&node| (self.tree.node(node).map(|held| held.span().start()), node)))]
     pub(super) fn synthesised_types(&self) -> Vec<NodeIndex>
     {
@@ -3881,6 +3900,19 @@ impl<'source> Lowerer<'_, 'source>
                     if let Maybe::Present(typed) = self.operand_typed(cell) {
                         types.push(typed.node());
                     }
+                }
+            }
+            // A `Path.ap` above its map's domain reads the domain's written
+            // type to count the levels between them; an answered one reads
+            // its path's written type as well, which no typing records.
+            if let Derivation::Cong { function, path } = derivation {
+                if let Some(domain) = self.mapped_domain(function) {
+                    types.push(domain);
+                }
+                if let Stance::Answered(_) = stance
+                    && let Maybe::Present(typed) = self.typed(path)
+                {
+                    types.push(typed.node());
                 }
             }
             let Stance::Synthesised(synthesis, typings) = stance
@@ -4780,12 +4812,56 @@ impl<'source> Lowerer<'_, 'source>
                 );
                 sink.arena.computation_return(composite)
             },
-            (Answered::Path, Derivation::Cong { function, .. }, _) => {
+            (Answered::Path, Derivation::Cong { function, path }, _) => {
+                // A path above the map's domain moves by the map's action on
+                // the paths below it, one level per path type between them,
+                // the path's own type the outermost.
+                // An answered operation reads its operand's own written type:
+                // the answer spells the image's type, not the path's.
+                let typed = match derived.stance {
+                    Stance::Synthesised(_, typings) => typings.transported,
+                    Stance::Answered(_) => match self.typed(path) {
+                        Maybe::Present(typed) => Some(typed),
+                        Maybe::Absent(_) => None,
+                    },
+                };
+                let lambda = self.lambda_body(function, first, sink);
+                let mut levels = Vec::new();
+                if lambda.is_none()
+                    && let Maybe::Present(read) = self.identity_of(path, typed, derived.frame, sink)
+                {
+                    levels = self.cong_levels(function, read.carrier, sink);
+                    if !levels.is_empty() {
+                        levels.push((read.left, read.right));
+                    }
+                }
+                if !levels.is_empty() {
+                    // The map's codomain: the answer's carrier with a path
+                    // type taken off per level below the path's own.
+                    let mut codomain = carrier;
+                    for _ in 1 .. levels.len() {
+                        if let Some(&ValueType::Path { carrier: below, .. }) =
+                            sink.arena.value_type(codomain)
+                        {
+                            codomain = below;
+                        }
+                    }
+                    let Some(root) = gandr_core_term::identity::cong_above(
+                        sink.arena,
+                        (first, codomain),
+                        &levels,
+                        second,
+                    )
+                    else {
+                        return Maybe::Absent(lowered::Absent::Unminted);
+                    };
+                    root
+                }
                 // A lambda's body stands under its one binder, as the motive's
                 // right endpoint stands under the motive's, so the motive
                 // reads the body itself: `tr(y. Path[.A = B↑](start↑, ⟨e⟩), p,
                 // here(start))`, and no lambda stands in a type (#3773).
-                if let Some(body) = self.lambda_body(function, first, sink) {
+                else if let Some(body) = lambda {
                     let lifted_codomain =
                         gandr_core_term::shift_value_type(sink.arena, carrier, Binders::ONE)
                             .settle(sink.arena);
@@ -4940,6 +5016,112 @@ impl<'source> Lowerer<'_, 'source>
             return None;
         };
         Some(body)
+    }
+
+    /// The written type of the first parameter of the declaration a `Path.ap`
+    /// names as its map: the domain the map's path types stand over.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified every node.
+    /// - ensures: through transparent plans, a constant whose declaration is a
+    ///   function with a first parameter of a written type gives that type's
+    ///   node; `None` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: each turn of the `while let` steps into a transparent plan's
+    ///   operand, strictly deeper in a finite tree.
+    /// - measure: the transparent plans left above the name.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sphere's identity gives `S2`, and its type is
+    ///   minted before `Path.ap` reads it.
+    /// - witness: `lower::identity::tests::cong_on_a_cell_above_the_map_s_domain_takes_its_levels`
+    #[spec(ensures: |ret| ret.is_none_or(|domain| self.tree.node(domain).is_some()))]
+    fn mapped_domain(
+        &self,
+        function: NodeIndex,
+    ) -> Option<NodeIndex>
+    {
+        let mut at = function;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        let Some(&Plan::Constant(constant)) = self.plans.get(at)
+        else {
+            return None;
+        };
+        let parameters = self.function_of(constant)?.parameters;
+        match self.parameters.read(parameters).first()?.declared {
+            Maybe::Present(declared) => Some(declared),
+            Maybe::Absent(_) => None,
+        }
+    }
+
+    /// The path types a `Path.ap` path's carrier stands above the domain of
+    /// its map, innermost first: one level per path type the carrier wraps
+    /// around the domain.
+    ///
+    /// `Path.ap f surf` with `f : S2 → T` acts on the 2-cell as `Path.ap
+    /// (Path.ap f)`: the carrier of `surf`, `Path[.A = S2](Base2, Base2)`, is
+    /// one path type above `S2`.
+    ///
+    /// # Specification
+    /// - requires: `carrier` is minted in `sink`'s arena.
+    /// - ensures: for a map whose domain [`Self::mapped_domain`] reads and the
+    ///   mint sweep mints, the endpoints `(a, b)` of each path type `Path[.A =
+    ///   C](a, b)` that wraps the domain to give `carrier`, innermost first, as
+    ///   many as the carrier's path types outnumber the domain's; none
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: each `while let` opens one path type per turn.
+    /// - measure: the path types left around the carrier.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sphere's identity on its 2-cell takes one level,
+    ///   and a map on loops takes none.
+    /// - witness: `lower::identity::tests::cong_on_a_cell_above_the_map_s_domain_takes_its_levels`
+    #[spec(ensures: |ret| ret.iter().all(|&(left, right)| sink.arena.value(left).is_some() && sink.arena.value(right).is_some()))]
+    fn cong_levels(
+        &self,
+        function: NodeIndex,
+        carrier: ValueTypeId,
+        sink: &Sink<'_>,
+    ) -> Vec<gandr_core_term::identity::Level>
+    {
+        let depth = |mut ty: ValueTypeId| {
+            let mut count = 0_usize;
+            while let Some(&ValueType::Path { carrier: below, .. }) = sink.arena.value_type(ty) {
+                ty = below;
+                count = count.saturating_add(1);
+            }
+            count
+        };
+        let Some(Maybe::Present(domain)) = self
+            .mapped_domain(function)
+            .map(|declared| self.value_type_at(declared))
+        else {
+            return Vec::new();
+        };
+        let above = depth(carrier).saturating_sub(depth(domain));
+        let mut levels = Vec::with_capacity(above);
+        let mut at = carrier;
+        while levels.len() < above
+            && let Some(&ValueType::Path {
+                carrier: below,
+                left,
+                right,
+            }) = sink.arena.value_type(at)
+        {
+            levels.push((left, right));
+            at = below;
+        }
+        levels.reverse();
+        levels
     }
 
     /// The empty word at `point` when `point` is a looped point: the
@@ -5242,6 +5424,33 @@ impl<'source> Lowerer<'_, 'source>
                     | Synthesis::Stated { .. }
                     | Synthesis::Bound { .. } => None,
                 };
+                // A path above the map's domain is moved by the map's action
+                // on the paths below, one level per path type between them.
+                let levels = match body {
+                    Some(_) => Vec::new(),
+                    None => self.cong_levels(written, read.carrier, sink),
+                };
+                if !levels.is_empty() {
+                    let mapped = (function, carrier);
+                    let (Some(left), Some(right), Some(carrier)) = (
+                        gandr_core_term::identity::cong_above(
+                            sink.arena, mapped, &levels, read.left,
+                        ),
+                        gandr_core_term::identity::cong_above(
+                            sink.arena, mapped, &levels, read.right,
+                        ),
+                        gandr_core_term::identity::cong_codomain(sink.arena, mapped, &levels),
+                    )
+                    else {
+                        return Maybe::Absent(lowered::Absent::Unminted);
+                    };
+                    return Maybe::Present(Stood {
+                        answered: Answered::Path,
+                        carrier,
+                        left: sink.arena.value_returned(left),
+                        right: Maybe::Present(sink.arena.value_returned(right)),
+                    });
+                }
                 let mut image = |point| {
                     let at = if let Some(body) = body {
                         let mut carried = Vec::new();

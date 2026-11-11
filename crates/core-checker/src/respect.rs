@@ -521,9 +521,7 @@ pub fn sethood(
         if !expanded.insert(declaration) {
             continue;
         }
-        if !crate::loops::loops(context, next).is_empty()
-            || crate::loops::higher(context, next).is_some()
-        {
+        if !crate::loops::loops(context, next).is_empty() {
             return Sethood::Unread;
         }
         let Some(signature) = context.consult_data(declaration)

@@ -1,6 +1,13 @@
 //! The kernel bridge: every declaration the judgement accepts, re-derived by
 //! the certified kernel.
 //!
+//! # Entry points
+//!
+//! `readmit` readmits a whole report as a `Readmission`, and `export` gives
+//! its canonical form. `readmit_resuming`, `Crossed` and `export_resuming`
+//! resume a prefix from a record. `Readmitted`, `Outcome`, `ArtifactAudit`,
+//! `Replayed` and `Refusal` give each origin's account and its time.
+//!
 //! # The kernel is the oracle, and the bridge is untrusted
 //!
 //! [`readmit`] erases each accepted declaration of a [`ModuleReport`] into a

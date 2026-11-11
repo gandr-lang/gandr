@@ -67,6 +67,7 @@ use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FreeCells;
+use gandr_kernel_term::Reflexivities;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -86,6 +87,8 @@ use crate::replay::ReplayDecline;
 use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_value;
+use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_computation_at;
 use crate::rewrite::substitute_value_type;
 
@@ -209,14 +212,17 @@ fn letter(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Sides
 {
-    /// The answer at the loop's point carried along the loop:
+    /// The answer at the cell's point carried along the cell:
     /// `transport(A, ℓ, ⟨b⟩)`.
     transported: ComputationId,
     /// The same answer carried along the empty word: `transport(A, ε, ⟨b⟩)`,
     /// which reads an answer a definition names as its word.
     stayed: ComputationId,
-    /// The answer at the loop's point, `b`, as [`answer`] reads it.
+    /// The answer at the cell's point, `b`, as [`answer`] reads it, wrapped
+    /// in reflexivity as many times as the cell's point.
     answered: ValueId,
+    /// The family's fibre at the cell's point, `A[pt]`.
+    fibre: ValueTypeId,
 }
 
 /// The parts of a loop's obligation at a case.
@@ -225,7 +231,9 @@ struct Sides
 /// - requires: `case` is a data case whose motive is `F A`, `A` read under the
 ///   scrutinee's binder.
 /// - ensures: [`Sides`] as its fields state, `b` the [`answer`] at the loop's
-///   point, `ℓ` the loop's one-letter word and `ε` its words' empty word.
+///   point, `ℓ` the loop's one-letter word and `ε` its words' empty word. For a
+///   cell above dimension one, `A`, the point and `b` are first lifted to the
+///   cell's dimension ([`lifted`]).
 /// - fails: as [`point`], and [`KernelError::ArenaFault`] for a case node the
 ///   arena does not hold.
 /// - panics: none.
@@ -236,7 +244,8 @@ struct Sides
 /// # Adequacy
 /// - hypothesis: L3 — the sides of the circle's loop decide reflexivity at
 ///   `Path[.A = Circle](Base, x)` refused and at `Path[.A = Circle](x, x)`
-///   admitted.
+///   admitted; the sphere's 2-cell arm checks at the paths of paths at its
+///   answer's reflexivity.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| matches!(arena.computation(found.transported), Some(&Computation::PathTransport { .. })) && matches!(arena.computation(found.stayed), Some(&Computation::PathTransport { .. }))))]
 fn sides(
@@ -255,18 +264,100 @@ fn sides(
         return Err(KernelError::ArenaFault);
     };
     let branches = branches.clone();
+    let reflexivities = presentations
+        .presented(owed.words)
+        .and_then(crate::presented::PresentedType::cells)
+        .ok_or(KernelError::ArenaFault)?
+        .reflexivities();
     let at = point(arena, presentations, (datatype, owed))?;
     let carried = answer(arena, at, (motive, branches));
+    let binder = binder_use(arena, motive);
+    let (family, at, carried) = lifted(arena, (family, at, carried), (reflexivities, binder));
     let word = letter(arena, owed);
     let words = arena.value_type_data(owed.words, Vec::new());
     let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
     let transported = arena.computation_path_transport(family, word, carried);
     let stayed = arena.computation_path_transport(family, empty, carried);
+    let mut table = ContentTable::default();
+    let fibre = substitute_value_type(arena, &mut table, &mut NullMemo, family, at);
     Ok(Sides {
         transported,
         stayed,
         answered: carried,
+        fibre,
     })
+}
+
+/// The family, the point and the answer a cell's obligation reads at the
+/// cell's dimension.
+///
+/// A loop reads the motive's family `A`, its point `pt` and the answer `b`
+/// there. Each wrapping of a cell's point in reflexivity lifts the three one
+/// dimension up. The family becomes the paths in the fibre below from the
+/// answer carried along the path to the answer, `q. Path[.A = A[pt]](
+/// ⟨transport(A, q, b)⟩, b)`. The point becomes `here(pt)` and the answer
+/// `here(b)`. A motive that ignores its binder carries by the identity, so
+/// its family is `q. Path[.A = A[pt]](b, b)`.
+///
+/// # Specification
+/// - requires: `family` stands under the scrutinee's binder; `at` and
+///   `answered` are closed over the case's context.
+/// - ensures: `(family, at, answered)` for no wrapping; otherwise the lift of
+///   the triple for one wrapping fewer, as above.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the wrappings, not recursion.
+/// - measure: the wrappings left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's 2-cell arm checks at the paths of paths at
+///   its answer's reflexivity, and the circle's loop reads its triple as it
+///   stands.
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+#[spec(captures: before = (family, at, answered), ensures: |ret| reflexivities != Reflexivities::NONE || ret == before)]
+fn lifted(
+    arena: &mut TermArena,
+    (family, at, answered): (ValueTypeId, ValueId, ValueId),
+    (reflexivities, binder): (Reflexivities, BinderUse),
+) -> (ValueTypeId, ValueId, ValueId)
+{
+    let mut table = ContentTable::default();
+    let one = BinderDepth::from(1_u32);
+    let (mut family, mut at, mut answered) = (family, at, answered);
+    for _ in 0 .. usize::from(reflexivities) {
+        let fibre = substitute_value_type(arena, &mut table, &mut NullMemo, family, at);
+        let lifted_fibre = shift_value_type(
+            arena,
+            &mut table,
+            &mut NullMemo,
+            fibre,
+            BinderDepth::NONE,
+            one,
+        );
+        let lifted_answer = shift_value(
+            arena,
+            &mut table,
+            &mut NullMemo,
+            answered,
+            BinderDepth::NONE,
+            one,
+        );
+        let left = if binder == BinderUse::Ignored {
+            lifted_answer
+        }
+        else {
+            let inner = shift_value_type(arena, &mut table, &mut NullMemo, family, one, one);
+            let along = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let carried = arena.computation_path_transport(inner, along, lifted_answer);
+            arena.value_returned(carried)
+        };
+        family = arena.value_type_path(lifted_fibre, left, lifted_answer);
+        at = arena.value_here(at);
+        answered = arena.value_here(answered);
+    }
+    (family, at, answered)
 }
 
 /// The case's answer at a loop's point, `b`: the value the point's branch
@@ -308,7 +399,8 @@ fn answer(
 /// The type a loop arm checks at: the path over the loop from the case's
 /// answer at the point carried along it to that answer,
 /// `F Path[.A = A[pt]](⟨transport(A, ℓ, b)⟩, b)`, and `F Path[.A = A](b, b)`
-/// for a motive that ignores its binder.
+/// for a motive that ignores its binder. A cell above dimension one reads the
+/// three lifted to its dimension ([`lifted`]).
 ///
 /// # Specification
 /// - requires: `case` is a data case over `datatype`, whose motive is `motive`.
@@ -325,7 +417,8 @@ fn answer(
 /// # Adequacy
 /// - hypothesis: L3 — `invLooper`'s arm `loop => back(loop)` checks at `Path[.A
 ///   = Circle](Base, Base)`, and a dependent arm at the wrong endpoints is
-///   refused.
+///   refused; the sphere's arm `surf => surf` checks at the paths of paths at
+///   `here(Base2)`.
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&built| matches!(arena.comp_type(built), Some(&CompType::Returner(_)))))]
 pub(super) fn arm_type(
@@ -343,11 +436,9 @@ pub(super) fn arm_type(
     let Sides {
         transported,
         answered,
+        fibre,
         ..
     } = sides(arena, presentations, (case, datatype), (family, owed))?;
-    let at = point(arena, presentations, (datatype, owed))?;
-    let mut table = ContentTable::default();
-    let fibre = substitute_value_type(arena, &mut table, &mut NullMemo, family, at);
     let left = if constant == BinderUse::Ignored {
         answered
     }

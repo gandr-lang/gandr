@@ -331,6 +331,113 @@ fn cong_along_the_loop_is_the_arm_s_image()
 }
 
 #[test]
+fn cong_along_the_2_cell_is_the_arm_s_image()
+{
+    // The 2-sphere: the sort, the words of its cell at the point's
+    // reflexivity, the cell's name, the identity by cases and the case with
+    // no arm at the cell.
+    let (sort, words, cell, identity, squash) = (0_usize, 1_usize, 2_usize, 3_usize, 4_usize);
+    let mut core = CoreArena::new();
+    let carrier = core.value_type_data(ConstantIndex::from(sort), Vec::new());
+    let own = core.value_type_data(ConstantIndex::from(words), Vec::new());
+    let point = core.value_constructor(
+        ConstantIndex::from(sort),
+        carrier,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let empty = core.value_constructor(
+        ConstantIndex::from(words),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let letter = core.value_constructor(
+        ConstantIndex::from(words),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let named = core.value_constant(ConstantIndex::from(cell));
+    let kept = core.comp_type_returner(carrier);
+    let by_cases = |core: &mut CoreArena, arms: Vec<ComputationId>| {
+        let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = core.computation_data_case(
+            scrutinee,
+            kept,
+            arms,
+            [0_usize].map(FieldCount::from).to_vec(),
+        );
+        let lambda = core.computation_lambda(case);
+        core.value_thunk(lambda)
+    };
+    let at_point = core.computation_return(point);
+    let at_cell = core.computation_return(named);
+    let identity_body = by_cases(&mut core, vec![at_point, at_cell]);
+    let squash_body = by_cases(&mut core, vec![at_point]);
+    let base = || -> alloc::boxed::Box<[RuleNode]> {
+        [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
+    };
+    let cells = FreeCells::new(ConstantIndex::from(sort), vec![FreeCell::new(
+        base(),
+        base(),
+    )])
+    .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
+    let mut chain = LoweredChain::new();
+    chain.present(
+        ConstantIndex::from(words),
+        Presented::new(
+            Presentation::words(cells),
+            [0_usize, 1, 1].map(FieldCount::from).into(),
+        ),
+    );
+    chain.admit_data(ConstantIndex::from(sort), ConstructorCount::from(1_usize));
+    for (constant, global, body) in [
+        (cell, 0_u32, letter),
+        (identity, 1_u32, identity_body),
+        (squash, 2_u32, squash_body),
+    ] {
+        let _height = chain
+            .define(
+                ConstantIndex::from(constant),
+                GlobalIndex::from(global),
+                Transparency::Manifest,
+                &[],
+                body,
+            )
+            .expect("the definition admits");
+    }
+    // `Path.ap f surf` as the lowering writes it: the cell one path type above
+    // the map's domain, so `Path.ap (Path.ap f)` in place.
+    let reflexivity = core.value_here(point);
+    let levels = [(point, point), (reflexivity, reflexivity)];
+    let image = |core: &mut CoreArena, map: usize| {
+        let map = core.value_constant(ConstantIndex::from(map));
+        gandr_core_term::identity::cong_above(core, (map, carrier), &levels, named)
+            .expect("two levels build")
+    };
+    let mapped = image(&mut core, identity);
+    let flattened = image(&mut core, squash);
+    let looped = core.computation_return(letter);
+    let stayed = core.computation_return(empty);
+    assert_eq!(
+        decided(&core, &chain, (mapped, looped)),
+        Some(MachineVerdict::Convertible),
+        "the identity's image of the 2-cell is its arm's answer, the 2-cell"
+    );
+    assert_eq!(
+        decided(&core, &chain, (mapped, stayed)),
+        Some(MachineVerdict::NotConvertible),
+        "and not the empty word"
+    );
+    assert_eq!(
+        decided(&core, &chain, (flattened, stayed)),
+        Some(MachineVerdict::Convertible),
+        "a case with no arm at the 2-cell sends it to the empty word"
+    );
+}
+
+#[test]
 fn cong_along_the_loop_reads_a_map_its_binder_holds_5481()
 {
     let mut core = CoreArena::new();
