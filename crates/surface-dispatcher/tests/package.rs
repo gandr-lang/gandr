@@ -1327,8 +1327,8 @@ fn an_edit_to_an_inert_definition_leaves_the_address_6141()
 ///
 /// # Specification
 /// - requires: `before` and `after` key the same items in the same order.
-/// - ensures: each position's item key, spelled lossily as UTF-8, where the two
-///   content keys differ, in order.
+/// - ensures: each position's item name ([`ItemKey::name`]), spelled lossily as
+///   UTF-8, where the two content keys differ, in order.
 /// - fails: never on the admitted domain.
 /// - panics: when the two key different items at a position.
 /// - executable: none — the cases compare the list it gives.
@@ -1347,7 +1347,7 @@ fn moved(
         .zip(after)
         .filter_map(|(&(ref key, was), &(ref again, now))| {
             assert_eq!(key, again, "the same item at each position");
-            (was != now).then(|| String::from_utf8_lossy(key.as_ref()).into_owned())
+            (was != now).then(|| String::from_utf8_lossy(key.name().as_ref()).into_owned())
         })
         .collect()
 }
@@ -2092,6 +2092,66 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     }
     for scratch in [store.root(), fresh.root()] {
         std::fs::remove_dir_all(scratch).expect("the store is removed");
+    }
+}
+
+/// #6522: one package written at two directories gives each item the same key
+/// and the same content key. A source is named by its path within its
+/// package, never by a path of the host. Two sources of the package that
+/// declare one name still give two keys, and each key reads the name as
+/// written.
+#[test]
+fn a_package_at_two_directories_keys_each_item_alike_6522()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let written = |test: &Path| {
+        let directory = scratch(test, &[
+            Path::new("pack/package.gandr"),
+            Path::new("pack/src/one.gandr"),
+            Path::new("pack/src/two.gandr"),
+        ]);
+        std::fs::write(
+            directory.join("pack/package.gandr"),
+            Library {
+                imports: "",
+                version: "0.1.0",
+                rest: "",
+            }
+            .source(),
+        )
+        .expect("the package source is written");
+        std::fs::write(
+            directory.join("pack/src/one.gandr"),
+            "import \"./two.gandr\" as two;\npub def same = two.same;\n",
+        )
+        .expect("the first source is written");
+        std::fs::write(directory.join("pack/src/two.gandr"), "pub def same = 1;\n")
+            .expect("the second source is written");
+        directory
+    };
+    let here = written(Path::new("keys-here"));
+    let there = written(Path::new("keys-there"));
+    let keys =
+        |directory: &Path| keyed(&grammar, &directory.join("pack/src/one.gandr"), &Unshadowed);
+    let at_here = keys(&here);
+    assert_eq!(
+        at_here,
+        keys(&there),
+        "each item has one key and one content key at both directories"
+    );
+    let same: Vec<&ItemKey> = at_here
+        .iter()
+        .map(|&(ref key, _)| key)
+        .filter(|key| key.name().as_ref() == b"same")
+        .collect();
+    assert_eq!(same.len(), 2, "both sources declare `same`");
+    assert_ne!(
+        same.first(),
+        same.last(),
+        "the two sources' `same` take two keys"
+    );
+    for scratch in [here, there] {
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
     }
 }
 

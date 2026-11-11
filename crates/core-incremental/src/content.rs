@@ -74,6 +74,15 @@
 //! thinning. Value roots retain the signature and body; Data roots retain
 //! the kind, parameter telescope and constructor field types.
 //!
+//! # Numbers local to the item
+//!
+//! An elaborator numbers holes and ascriptions over the whole laid unit, so
+//! one item takes other numbers in another closure. The table names each hole
+//! by its place among the holes it meets, in the hole's own origin, and a
+//! seal site by its component alone. The cells of a type of words name their
+//! sort by its reference, as every constant is named. So an item's content is
+//! a function of its own source and of the sources that source reaches.
+//!
 //! # Native universe-path content
 //!
 //! The content table preserves universe sorts and levels, quotes, static
@@ -90,7 +99,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x14`; programs use `GPROG\0\0\x0b`. Their
+//! Checkpoint sets use `GCKPT\0\0\x15`; programs use `GPROG\0\0\x0c`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -111,7 +120,7 @@
 //! `DeclarationRoots::Data`, `DeclarationRoots::Abstract` or
 //! `DeclarationRoots::World`; data retains the kind, every parameter and every
 //! constructor field, and an abstract type its kind, its representation, the
-//! extent of its seal, the site that mints its atom, the mobility its
+//! extent of its seal, the component its seal names, the mobility its
 //! signature marks and the relation, reflexivity and law of its interface,
 //! each a value root, so an edit to the interface reaches every reader of the
 //! atom. A mobile atom and an interfaced one take their own roots tags, so an
@@ -136,10 +145,10 @@
 //! through the value-changed closure. Adoption forms it again and mints its
 //! atom in the new context.
 //!
-//! A located program — one declaring a world, or stating an entry — is
-//! judged whole each time and never persisted: every item of it is opaque
-//! (see [`Locus`]), and a world form or a world type in any item is listed
-//! by its sort, as a stage is.
+//! A located item — a world, an item stating an entry, or an item whose own
+//! closure declares a world or states an entry — is judged each time and
+//! never persisted: it is opaque (see [`Locus`]), and a world form or a world
+//! type in any item is listed by its sort, as a stage is.
 //!
 //! Support keys distinguish a value-signature query from a data-signature query
 //! at the same reference. A data answer contains the complete nominal schema or
@@ -278,7 +287,9 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::hole::NominationIndex;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
@@ -357,6 +368,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The node is no variable, endpoint use or memory slot use.
             Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a nominal type's presentation holds no free cells.
+    pub mod words {
+        /// The reason no cell is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type is no type of words.
+            Unworded,
         }
     }
 }
@@ -821,7 +844,8 @@ pub enum ContentNode
     StaticLambda(NodeIndex),
     /// A static application of an operator to an argument.
     StaticApplication(NodeIndex, NodeIndex),
-    /// A term hole in value position, by its name.
+    /// A term hole in value position, by its name among the holes of its
+    /// table, in the order the table meets them.
     Hole(HoleId),
     /// A marked value: the mark's index over the value it marks.
     ValueMark
@@ -856,7 +880,8 @@ pub enum ContentNode
         /// The branches, one per summand in order.
         branches: Vec<NodeIndex>,
     },
-    /// A term hole in computation position, by its name.
+    /// A term hole in computation position, by its name among the holes of
+    /// its table, in the order the table meets them.
     ComputationHole(HoleId),
     /// A marked computation: the mark's index over the computation it marks.
     ComputationMark
@@ -2515,30 +2540,33 @@ pub enum Opacity
     Opaque,
 }
 
-/// Whether an item belongs to a located program: one that declares a world,
-/// or an item that states an entry.
+/// Whether an item is located: a world, an item that states an entry, or an
+/// item whose own closure declares a world or states an entry.
 ///
 /// A located judgement reads the world register and the home of every
 /// constant it names, and a home reaches a reader through a term position no
 /// footprint keeps as type support. The cache has no vocabulary for that, so
-/// every item of a located program is opaque: judged each time, never
-/// persisted. **Reversal.** A home recorded in the support a reader consults,
-/// once an editor session over located code measures the recheck.
+/// a located item is opaque: judged each time, never persisted. A world in a
+/// source that the item's own source does not reach makes no item located,
+/// so the item's checkpoint depends on its own closure alone. **Reversal.** A
+/// home recorded in the support a reader consults, once an editor session over
+/// located code measures the recheck.
 ///
 /// # Specification
-/// - executable: none — the tag holds no program; `Program::new` decides it.
+/// - executable: none — the tag holds no program; `Item::locus` decides it.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an item of a program declaring a world is opaque and
-///   refused persistence by name, while the same item alone is transparent.
-/// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
+/// - hypothesis: L3 — an item whose own closure is located is opaque and
+///   refused persistence by name, while the same item beside a world it does
+///   not reach is transparent.
+/// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Locus
 {
-    /// No world is declared and no entry stated.
+    /// No world is declared and no entry stated in the item's own closure.
     #[default]
     Unlocated,
-    /// The program declares a world, or the item states an entry.
+    /// The item's own closure declares a world or states an entry.
     Located,
 }
 
@@ -2557,9 +2585,51 @@ pub struct DataRoots
     pub results: Vec<Vec<NodeIndex>>,
     /// The universe classifying the declared datatype.
     pub kind: NodeIndex,
-    /// The rules rewriting the datatype's constructor terms; none for a free
-    /// type.
-    pub presentation: gandr_core_term::Presentation,
+    /// The rules rewriting the datatype's constructor terms, and the cells of
+    /// a type of words; none for a free type.
+    pub presentation: PresentationRoots,
+}
+
+/// The rules that present a nominal type's terms, and the free cells of a
+/// type of words, as content: each names a constructor by its tag, and the
+/// cells name their sort by its reference, not by its admission position.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PresentationRoots
+{
+    /// The rules, in written order: none for a free type.
+    pub rules: Vec<gandr_core_term::PresentedRule>,
+    /// The free cells the type of words is minted over.
+    pub cells: Maybe<CellsRoots, words::Absent>,
+}
+
+impl PresentationRoots
+{
+    /// The presentation of a free type: no rule and no cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn free() -> Self
+    {
+        Self {
+            rules: Vec::new(),
+            cells: Maybe::Absent(words::Absent::Unworded),
+        }
+    }
+}
+
+/// The free cells a type of words is minted over, its sort named by its
+/// reference.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CellsRoots
+{
+    /// The sort the cells' endpoints are terms of.
+    pub sort: Reference,
+    /// How many times the cells' point is wrapped in its reflexivity.
+    pub reflexivities: gandr_kernel_term::Reflexivities,
+    /// The cells, in written order.
+    pub cells: Vec<gandr_kernel_term::FreeCell>,
 }
 
 impl DataRoots
@@ -2775,7 +2845,9 @@ pub struct AbstractRoots
     pub representation: NodeIndex,
     /// How many declarations after the abstract type its seal reaches.
     pub extent: gandr_kernel_term::SealExtent,
-    /// The site that mints the atom.
+    /// The site that mints the atom, as the item's table names it: the
+    /// component of the ascription the site seals, and the ascription the
+    /// first of the table ([`local_site`]).
     pub site: gandr_core_checker::SealSite,
     /// Whether its signature marks it mobile: sealing checks the mark against
     /// the representation.
@@ -2995,7 +3067,7 @@ impl DataRoots
     #[spec(ensures: |ret| ret.kind == image(self.kind)
         && ret.parameters.len() == self.parameters.len()
         && ret.constructors.len() == self.constructors.len()
-        && ret.presentation == self.presentation)]
+        && ret.presentation.rules.len() == self.presentation.rules.len())]
     pub(crate) fn renumbered<Image>(
         &self,
         image: Image,
@@ -3292,7 +3364,7 @@ pub struct ItemContent
     /// Each root's support in the item's empty scope, in
     /// [`DeclarationRoots::iter`] order: empty for a closed root.
     placements: Vec<Thinning>,
-    /// Whether the item belongs to a located program.
+    /// Whether the item is located.
     locus: Locus,
 }
 
@@ -3384,7 +3456,7 @@ impl ItemContent
         crate::support::expand(&self.nodes, root, placement)
     }
 
-    /// Whether the item belongs to a located program.
+    /// Whether the item is located ([`crate::region::Item::locus`]).
     ///
     /// # Specification
     /// trivial.
@@ -3416,8 +3488,8 @@ impl ItemContent
         }
     }
 
-    /// Whether the item may be adopted and persisted: every node resolved, in
-    /// an unlocated program, and no codata declaration.
+    /// Whether the item may be adopted and persisted: every node resolved, an
+    /// unlocated item, and no codata declaration.
     ///
     /// # Specification
     /// - ensures: [`Opacity::Opaque`] for a located item and for a codata
@@ -3428,7 +3500,7 @@ impl ItemContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`Locus`], and an unresolved id beneath the body
     ///   makes its item opaque.
-    /// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
+    /// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| (ret == Opacity::Opaque
             || (self.locus == Locus::Unlocated && !matches!(self.declaration, DeclarationRoots::Codata)))
@@ -3886,7 +3958,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                     && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
  else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
                     && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
-                    && roots.extent == sealed.extent() && roots.site == sealed.site() && roots.mobility == sealed.mobility()
+                    && roots.extent == sealed.extent() && roots.site == local_site(sealed.site()) && roots.mobility == sealed.mobility()
                     && match (sealed.interface(), roots.interface) {
                         (Maybe::Present(interface), Maybe::Present(actual)) => ret.sites.0.get(&ArenaNode::Value(interface.relation())) == Some(&actual.relation)
                             && ret.sites.0.get(&ArenaNode::Value(interface.reflexivity())) == Some(&actual.reflexivity)
@@ -3895,7 +3967,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                         (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
                     } }
  else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World(_), DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
-} && ret.content.locus == layout.locus(),
+} && ret.content.locus == item.locus(),
         None => ret.content.reference == Reference::Unoccupied
             && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies,ref models} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
             && ret.content.nodes.is_empty(),
@@ -3947,7 +4019,7 @@ pub fn encode_item(
                         representation: encoder
                             .discover(ArenaNode::ValueType(sealed.representation())),
                         extent: sealed.extent(),
-                        site: sealed.site(),
+                        site: local_site(sealed.site()),
                         mobility: sealed.mobility(),
                         interface: sealed.interface().map(|interface| InterfaceRoots {
                             relation: encoder.discover(ArenaNode::Value(interface.relation())),
@@ -4048,10 +4120,36 @@ pub fn encode_item(
             declaration: declaration.renumbered(|raw| tabled.of(raw)),
             placements: tabled.supports(&raw_roots),
             nodes: tabled.nodes,
-            locus: layout.locus(),
+            locus: layout
+                .items
+                .get(usize::from(ordinal))
+                .map_or(Locus::Unlocated, crate::region::Item::locus),
         },
         sites: Sites(sites),
     }
+}
+
+/// The seal site an item's table names for `site`: the same component, of
+/// the first ascription. A producer numbers the ascriptions of the whole
+/// laid unit, so one ascription takes another number in another closure; an
+/// item's table holds one site, so the first ascription names it in each.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `site`'s component, at ascription zero.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one ascription numbered apart in two closures.
+/// - witness: `content::tests::a_seal_site_is_named_by_its_component_6522`
+#[spec(ensures: |ret| ret.component() == site.component()
+    && usize::from(ret.sealing()) == 0_usize)]
+fn local_site(site: gandr_core_checker::SealSite) -> gandr_core_checker::SealSite
+{
+    gandr_core_checker::SealSite::new(
+        gandr_core_checker::SealingSite::from(0_usize),
+        site.component(),
+    )
 }
 
 /// The breadth-first walk that numbers an arena graph by discovery.
@@ -4079,6 +4177,8 @@ struct Encoder<'arena, 'layout>
     queue: VecDeque<ArenaNode>,
     /// The written nodes, in discovery order.
     nodes: Vec<ContentNode>,
+    /// Each hole the written nodes name, beside the name the table gives it.
+    holes: BTreeMap<HoleId, HoleId>,
     /// The children of the node being read, by family. A read empties the
     /// queues and leaves them here, so a read past the first allocates none.
     found: Discovered,
@@ -4101,6 +4201,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             seen: BTreeMap::new(),
             queue: VecDeque::new(),
             nodes: Vec::new(),
+            holes: BTreeMap::new(),
             found: Discovered::new(),
         }
     }
@@ -4189,13 +4290,26 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             })
             .collect();
         let kind = self.discover(ArenaNode::ValueType(signature.kind()));
+        let presented = signature.presentation();
+        let cells = presented
+            .cells()
+            .map_or(Maybe::Absent(words::Absent::Unworded), |cells| {
+                Maybe::Present(CellsRoots {
+                    sort: self.layout.resolve(cells.sort()),
+                    reflexivities: cells.reflexivities(),
+                    cells: cells.cells().to_vec(),
+                })
+            });
         DataRoots {
             parameters,
             indices,
             constructors,
             results,
             kind,
-            presentation: signature.presentation().clone(),
+            presentation: PresentationRoots {
+                rules: presented.rules().to_vec(),
+                cells,
+            },
         }
     }
 
@@ -4224,9 +4338,64 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     fn drain(&mut self)
     {
         while let Some(node) = self.queue.pop_front() {
-            let written = self.read(node);
+            let mut written = self.read(node);
+            if let ContentNode::Hole(ref mut hole) | ContentNode::ComputationHole(ref mut hole) =
+                written
+            {
+                *hole = self.hole(*hole);
+            }
             self.nodes.push(written);
         }
+    }
+
+    /// The name the table gives `hole`: on its first meeting, the name of
+    /// the next place in `hole`'s own origin, and a splice's name keeps its
+    /// tactic; the same name on each later meeting.
+    ///
+    /// An elaborator names a hole by the number of its form among the forms
+    /// of the whole laid unit, so one hole takes another name in another
+    /// closure. The name in the table counts only the holes that the table
+    /// meets before it, so the table is a function of its own nodes. A hole
+    /// name keeps the origin, because the checker solves a nominated hole and
+    /// reports a written one. A place past the names of its origin keeps the
+    /// hole's own name: a splice's origin holds 2^24 places, and the other
+    /// origins hold more.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one name per hole the table meets, distinct holes taking
+    ///   distinct names of their own origins.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two holes met twice each, in two arenas that name
+    ///   them apart, take the same two names in both tables.
+    /// - witness: `content::tests::a_hole_is_named_by_its_place_in_the_table_6522`
+    #[spec(
+        captures: [old = self.holes.get(&hole).copied(), count = self.holes.len()],
+        ensures: |ret| self.holes.get(&hole) == Some(&ret) && ret.origin() == hole.origin()
+            && old.is_none_or(|old| old == ret && self.holes.len() == count),
+    )]
+    fn hole(
+        &mut self,
+        hole: HoleId,
+    ) -> HoleId
+    {
+        let place = u32::try_from(self.holes.len()).unwrap_or(u32::MAX);
+        *self.holes.entry(hole).or_insert_with(|| {
+            let index = NominationIndex::from(place);
+            match hole.origin() {
+                HoleOrigin::Written => {
+                    Some(HoleId::from(place)).filter(|named| named.origin() == HoleOrigin::Written)
+                },
+                HoleOrigin::Nominated => HoleId::nominated(index),
+                HoleOrigin::Wildcard => HoleId::wildcard(index),
+                HoleOrigin::Spliced => hole
+                    .tactic()
+                    .and_then(|tactic| HoleId::spliced(index, tactic)),
+            }
+            .unwrap_or(hole)
+        })
     }
 
     /// The content node of `node`, its children discovered left to right.

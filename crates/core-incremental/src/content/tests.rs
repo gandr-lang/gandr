@@ -883,8 +883,12 @@ fn an_unresolved_id_makes_the_item_opaque()
     assert_eq!(content.opacity(), Opacity::Opaque, "and the item is opaque");
 }
 
+/// #6522: an item is located by its own closure alone. Beside a world in a
+/// source it does not reach, the item is transparent, as it is alone; when
+/// its front end states its closure located, it is opaque and refused
+/// persistence by name. The world itself is located.
 #[test]
-fn an_item_of_a_located_program_is_opaque()
+fn an_item_of_a_located_closure_is_opaque()
 {
     let item = |arena: &mut CoreArena, position: usize| {
         let integer = arena.value_type_base(BaseType::Integer);
@@ -906,29 +910,56 @@ fn an_item_of_a_located_program_is_opaque()
     let alone = vec![item(&mut arena, 0)];
     let alone = Program::new(arena, alone).expect("one item ascends");
     let alone = encode_item(alone.arena(), alone.layout(), ItemOrdinal::from(0_usize)).content;
-    let mut arena = CoreArena::new();
-    let beside = vec![
-        Item::new(
-            ItemKey::from("seat"),
-            Declaration::world(
-                ConstantIndex::from(0_usize),
-                gandr_core_term::effect::EffectRow::EMPTY,
-                OriginToken::from(0_usize),
+    let beside = |located: bool| {
+        let mut arena = CoreArena::new();
+        let plain = item(&mut arena, 1);
+        let items = vec![
+            Item::new(
+                ItemKey::from("seat"),
+                Declaration::world(
+                    ConstantIndex::from(0_usize),
+                    gandr_core_term::effect::EffectRow::EMPTY,
+                    OriginToken::from(0_usize),
+                ),
             ),
-        ),
-        item(&mut arena, 1),
-    ];
-    let beside = Program::new(arena, beside).expect("two items ascend");
-    let located = encode_item(beside.arena(), beside.layout(), ItemOrdinal::from(1_usize)).content;
+            if located { plain.located() } else { plain },
+        ];
+        let program = Program::new(arena, items).expect("two items ascend");
+        [0_usize, 1_usize].map(|ordinal| {
+            encode_item(
+                program.arena(),
+                program.layout(),
+                ItemOrdinal::from(ordinal),
+            )
+            .content
+        })
+    };
+    let [world, unreached] = beside(false);
+    let [_, located] = beside(true);
     assert_eq!(
-        (alone.opacity(), located.opacity()),
-        (Opacity::Transparent, Opacity::Opaque),
-        "the same item is transparent alone and opaque beside a world declaration"
+        (
+            alone.opacity(),
+            unreached.opacity(),
+            located.opacity(),
+            world.opacity()
+        ),
+        (
+            Opacity::Transparent,
+            Opacity::Transparent,
+            Opacity::Opaque,
+            Opacity::Opaque
+        ),
+        "the item is transparent alone and beside a world it does not reach, and opaque in a \
+         located closure; the world is located"
+    );
+    assert_eq!(
+        alone, unreached,
+        "a world the item does not reach leaves its content as it is alone"
     );
     assert_eq!(
         alone.nodes(),
         located.nodes(),
-        "its nodes are the same; the program's locus is what differs"
+        "its nodes are the same; the closure's locus is what differs"
     );
     let mut bytes = crate::codec::CheckpointBytes::default();
     assert_eq!(
@@ -1905,7 +1936,7 @@ fn open_roots_project_under_their_own_supports()
         results: Vec::new(),
         constructors: vec![vec![index(1_usize), index(2_usize)]],
         kind: index(4_usize),
-        presentation: gandr_core_term::Presentation::new(Vec::new()),
+        presentation: super::PresentationRoots::free(),
     };
     let selected = |content: &[gandr_core_term::support::Thinning]| {
         content
@@ -2077,5 +2108,116 @@ fn debruijn_projection_reports_index_overflow()
         content.debruijn(),
         Err(PlacementError::IndexOverflow),
         "a support at the ceiling under a binder overflows rather than saturating"
+    );
+}
+
+/// #6522: a table names each hole by its place among the holes it meets, in
+/// the hole's own origin. Two closures number one form apart, so they name
+/// the item's holes apart; the item still has one content in both. Two
+/// holes of one form stay apart, and each keeps its origin.
+#[test]
+fn a_hole_is_named_by_its_place_in_the_table_6522()
+{
+    use gandr_core_term::hole::HoleForm;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::HoleOrigin;
+    use gandr_core_term::hole::HolePlace;
+
+    let content = |form: u32| {
+        let mut arena = CoreArena::new();
+        let ty = arena.value_type_base(BaseType::Integer);
+        let written =
+            HoleId::written(HoleForm::from(form), HolePlace::from(0_u32)).expect("a written name");
+        let nominated = HoleId::nominated_in(HoleForm::from(form), HolePlace::from(0_u32))
+            .expect("a nominated name");
+        let first = arena.value_hole(written);
+        let second = arena.value_hole(nominated);
+        let again = arena.value_hole(written);
+        let body = arena.value_tuple(&[first, second, again]);
+        let program = single(arena, Maybe::Present(ty), Maybe::Present(body));
+        encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content
+    };
+    let (near, far) = (content(3_u32), content(900_u32));
+    assert_eq!(
+        near, far,
+        "a form numbered apart in two closures gives the item one content"
+    );
+    let holes: Vec<HoleId> = formers(near.nodes())
+        .into_iter()
+        .filter_map(|node| {
+            if let ContentNode::Hole(hole) = node {
+                Some(hole)
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        holes.iter().map(|hole| hole.origin()).collect::<Vec<_>>(),
+        [HoleOrigin::Written, HoleOrigin::Nominated],
+        "the two holes of one form stay two, each in its own origin"
+    );
+}
+
+/// #6522: an item's table names its seal site by the component alone. Two
+/// closures number one ascription apart, so they give the abstract type two
+/// sites of one component; the item still has one content in both, and
+/// another component gives another content.
+#[test]
+fn a_seal_site_is_named_by_its_component_6522()
+{
+    use gandr_core_checker::AbstractType;
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::SealExtent;
+
+    let content = |sealing: usize, component: usize| {
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(GroundSort::Value),
+            Level::zero(),
+        );
+        let representation = arena.value_type_base(BaseType::Integer);
+        let program = Program::new(arena, vec![Item::new(
+            ItemKey::from("T"),
+            Declaration::abstract_type(
+                ConstantIndex::from(0_usize),
+                AbstractType::new(
+                    kind,
+                    representation,
+                    SealExtent::from(1_usize),
+                    SealSite::new(
+                        SealingSite::from(sealing),
+                        ComponentOrdinal::from(component),
+                    ),
+                ),
+                OriginToken::from(0_usize),
+            ),
+        )])
+        .expect("one item ascends");
+        encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content
+    };
+    assert_eq!(
+        content(6, 1),
+        content(7, 1),
+        "an ascription numbered apart in two closures gives the item one content"
+    );
+    assert_ne!(
+        content(6, 1),
+        content(6, 0),
+        "another component of the ascription gives another content"
     );
 }
