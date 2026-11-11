@@ -125,6 +125,7 @@ pub fn card(
 /// - hypothesis: L3 — a view that opens the node at the cursor hears its whole
 ///   goal, and the row's line is that goal on one line.
 /// - witness: `hub::tests::an_attached_view_follows_the_derivation_at_the_editors_cursor_6716`
+#[spec(ensures: |ret| ret.is_none() || at.0 < derivation.nodes().len())]
 #[must_use]
 pub fn whole(
     derivation: &Derivation<'_>,
