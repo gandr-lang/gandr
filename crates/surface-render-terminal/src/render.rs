@@ -197,6 +197,9 @@ pub fn render(
     if let Maybe::Present(ref note) = diagnostic.note {
         group = group.element(Level::NOTE.message(note.as_str()));
     }
+    for note in &diagnostic.notes {
+        group = group.element(Level::NOTE.message(note.as_str()));
+    }
     let tracked = diagnostic.tracked();
     if let Maybe::Present(ref sentence) = tracked {
         group = group.element(Level::NOTE.message(sentence.as_str()));

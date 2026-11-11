@@ -13,6 +13,8 @@ error[LoopNotRespected]: this case might tell a loop apart from staying put: car
    │                               a case its sort's loops do not admit
    │
    ├ note: `contractible` is refused with LoopNotRespected, as its expectation states
+   ├ note: the answer carried along the loop is `Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) (loop ∷ Path.here Base) (Path.here Base)`
+   ├ note: the answer at the loop's point is `Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) (Path.here Base) (Path.here Base)`
    ╰ help: make the case respect each loop of its sort
 
 error[LoopNotRespected]: this case answers at its loop's point by a case over another looped point, and the fibre it answers in is not presented as a set: the square between the two loops is owed, and nothing here supplies it
