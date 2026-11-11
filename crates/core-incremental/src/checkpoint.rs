@@ -203,6 +203,8 @@ use crate::content::Sites;
 use crate::content::TypeContent;
 use crate::content::encode_item;
 use crate::content::seating;
+use crate::entry::EntryContent;
+use crate::entry::elaborated;
 use crate::failure::FailureContent;
 use crate::failure::failed;
 use crate::footprint::Footprint;
@@ -514,6 +516,8 @@ struct CheckpointParts
     entered: Entered,
     /// A refused item's failure as content, which a seat builds again.
     failure: Maybe<Arc<FailureContent>, failed::Absent>,
+    /// The table parts of an item its judgement entered elaborated.
+    entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
 }
 
 impl ItemCheckpoint
@@ -564,6 +568,7 @@ impl ItemCheckpoint
                 typing,
                 entered,
                 failure: Maybe::Absent(failed::Absent::Unkept),
+                entry: Maybe::Absent(elaborated::Absent::AsWritten),
             }),
         }
     }
@@ -680,6 +685,38 @@ impl ItemCheckpoint
     {
         match self.parts.failure {
             Maybe::Present(ref failure) => Maybe::Present(failure),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// This checkpoint, keeping `entry` as the table parts of its item, or
+    /// the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_entry(
+        mut self,
+        entry: Maybe<EntryContent, elaborated::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).entry = match entry {
+            Maybe::Present(entry) => Maybe::Present(Arc::new(entry)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// The table parts of an item its judgement entered elaborated, or why
+    /// the checkpoint keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn entry(&self) -> Maybe<&EntryContent, elaborated::Absent>
+    {
+        match self.parts.entry {
+            Maybe::Present(ref entry) => Maybe::Present(entry),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
@@ -2391,6 +2428,8 @@ struct Outcome
     entered: Entered,
     /// A refused item's failure as content.
     failure: Maybe<Arc<FailureContent>, failed::Absent>,
+    /// The table parts of an item entered elaborated.
+    entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
     /// Whether it was adopted.
     adoption: Adoption,
 }
@@ -3021,6 +3060,7 @@ where
                 typing: outcome.typing,
                 entered: outcome.entered,
                 failure: outcome.failure,
+                entry: outcome.entry,
             }),
         });
     }
@@ -3304,11 +3344,15 @@ where
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
-                let failure = match candidates.get(index) {
-                    Some(&Maybe::Present(ref candidate)) => {
-                        candidate.checkpoint.parts.failure.clone()
-                    },
-                    Some(&Maybe::Absent(_)) | None => Maybe::Absent(failed::Absent::Unkept),
+                let (failure, entry) = match candidates.get(index) {
+                    Some(&Maybe::Present(ref candidate)) => (
+                        candidate.checkpoint.parts.failure.clone(),
+                        candidate.checkpoint.parts.entry.clone(),
+                    ),
+                    Some(&Maybe::Absent(_)) | None => (
+                        Maybe::Absent(failed::Absent::Unkept),
+                        Maybe::Absent(elaborated::Absent::AsWritten),
+                    ),
                 };
                 (
                     Outcome {
@@ -3317,6 +3361,7 @@ where
                         typing,
                         entered: Entered::AsWritten,
                         failure,
+                        entry,
                         adoption: Adoption::Adopted,
                     },
                     answer,
@@ -3345,14 +3390,23 @@ where
                     (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
                     (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
                 };
-                let (support, typing, answer, entered, failure) = match taken {
+                let (support, typing, answer, (entered, entry), failure) = match taken {
                     Maybe::Present((support, typing, answer, failure)) => {
                         bump(&mut census.taken);
                         #[cfg(feature = "instrument")]
                         if let Some(judgement) = judgement {
                             consulted = judgement.consulted(declaration.constant());
                         }
-                        (support, typing, answer, Entered::AsWritten, failure)
+                        (
+                            support,
+                            typing,
+                            answer,
+                            (
+                                Entered::AsWritten,
+                                Maybe::Absent(elaborated::Absent::AsWritten),
+                            ),
+                            failure,
+                        )
                     },
                     Maybe::Absent(_) => {
                         let (decision, supported) =
@@ -3374,6 +3428,7 @@ where
                         typing,
                         entered,
                         failure,
+                        entry,
                         adoption: Adoption::Judged,
                     },
                     answer,
@@ -3435,11 +3490,12 @@ where
 /// answer through the edited program, beside the run they project.
 ///
 /// # Specification
-/// - requires: `context` has admitted exactly the items before this one.
 /// - ensures: the verdict [`check_declaration_supported`] gives, projected,
 ///   with its support and the item's own entered answer, the answer the table
-///   then gives of the item, and the form the table holds it in; beside them,
-///   the run itself, whose verdict and failure a block's refusal replaces.
+///   then gives of the item, the form the table holds it in beside the parts it
+///   holds in another form than the item writes them, and the failure of a
+///   refused item; beside them, the run itself, whose verdict and failure a
+///   block's refusal replaces.
 /// - panics: none.
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
@@ -3453,7 +3509,7 @@ fn decided(
     declaration: &gandr_core_checker::Declaration,
     layout: &Layout,
     types: &crate::content::TypeMemo,
-) -> ((Vec<Answered>, Typing, Answer, Entered, Failed), Supported)
+) -> (Decided, Supported)
 {
     let supported = check_declaration_supported(context, declaration);
     let arena = context.arena();
@@ -3489,12 +3545,34 @@ fn decided(
         gandr_core_checker::DeclarationContent::Abstract(_)
         | gandr_core_checker::DeclarationContent::World(_) => Answer::Untyped,
     };
+    let entry = EntryContent::of(
+        context,
+        (layout, types),
+        declaration,
+        (
+            supported.verdict(),
+            supported.entered(),
+            item.content.opacity(),
+        ),
+    )
+    .map(Arc::new);
     let entered = supported.entered();
-    ((support, typing, answer, entered, failure), supported)
+    (
+        (support, typing, answer, (entered, entry), failure),
+        supported,
+    )
 }
 
 /// A refused item's failure as content, or why a checkpoint keeps none.
 type Failed = Maybe<Arc<FailureContent>, failed::Absent>;
+
+/// The table parts of an item entered elaborated, or why a checkpoint keeps
+/// none.
+type Entry = Maybe<Arc<EntryContent>, elaborated::Absent>;
+
+/// What a pass that decides an item gives its checkpoint: the answers that
+/// the item consulted, its typing, its answer, its entry and its failure.
+type Decided = (Vec<Answered>, Typing, Answer, (Entered, Entry), Failed);
 
 /// The failure content of `verdict` read through `projection`, beside the
 /// `failure` its run kept, a node outside the item placed under a root of

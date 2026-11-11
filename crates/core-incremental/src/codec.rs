@@ -111,10 +111,16 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
+use gandr_kernel_term::PlacedChild;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::Stage;
+use gandr_kernel_term::StageBinder;
+use gandr_kernel_term::StageBound;
 use gandr_kernel_term::StageDepth;
 use gandr_kernel_term::StageId;
+use gandr_kernel_term::StageMark;
+use gandr_kernel_term::StageReach;
+use gandr_kernel_term::StageSignature;
 use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::Standing;
 use gandr_kernel_term::StringLiteral;
@@ -133,6 +139,9 @@ use crate::content::Opacity;
 use crate::content::Sort;
 use crate::content::TypeContent;
 use crate::content::seating;
+use crate::entry::EntryContent;
+use crate::entry::elaborated;
+use crate::entry::written;
 use crate::failure::ComparedContent;
 use crate::failure::EndpointContent;
 use crate::failure::FailureContent;
@@ -161,14 +170,13 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x17` keeps every field of a refusal, and a refused item's failure as
-/// content beside it, beside the located program that `0x16` persists: a
-/// world declaration's row, a stated entry, the world formers, and the
-/// answers the world register and the host's grant give.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x17";
+/// `0x18` keeps the table parts of an item that its judgement entered
+/// elaborated, beside the failure content that `0x17` keeps and the located
+/// program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x18";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` and `0x17`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x18`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1069,6 +1077,69 @@ where
     Ok(())
 }
 
+/// Write a checkpoint's table parts: tag 0 and why it keeps none; else tag 1
+/// and each part in turn. A part opens with tag 0 when the item writes it,
+/// else with tag 1 and the part: the body's table, the declared type's table,
+/// the stage signature and the following position.
+///
+/// # Specification
+/// - ensures: [`read_elaborated`] reads back `entry` from what was written.
+/// - fails: as [`write_listed`], [`write_type`] and [`write_stage_signature`],
+///   and [`CodecError::Unrepresentable`] for a position past 64 bits.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — table parts that keep every part, with a bound stage
+///   binder and a mark below its binder, and parts that keep none, each read
+///   back as written, and each reason that keeps no parts reads back.
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+fn write_elaborated<Out>(
+    writer: &mut Writer<'_, Out>,
+    entry: Maybe<&EntryContent, elaborated::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let entry = match entry {
+        Maybe::Present(entry) => entry,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &ELABORATEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    for part in [entry.body(), entry.declared()] {
+        match part {
+            Maybe::Present(content) => {
+                writer.tag(Tag(1));
+                write_type(writer, content)?;
+            },
+            Maybe::Absent(written::Absent::Written) => writer.tag(Tag(0)),
+        }
+    }
+    match entry.stage() {
+        Maybe::Present(stage) => {
+            writer.tag(Tag(1));
+            write_stage_signature(writer, stage)?;
+        },
+        Maybe::Absent(written::Absent::Written) => writer.tag(Tag(0)),
+    }
+    match entry.following() {
+        Maybe::Present(position) => {
+            let position = u64::try_from(usize::from(position))
+                .map_err(|_wide| CodecError::Unrepresentable)?;
+            writer.tag(Tag(1));
+            writer.word(Word(position));
+        },
+        Maybe::Absent(written::Absent::Written) => writer.tag(Tag(0)),
+    }
+    Ok(())
+}
+
 /// Read a stated entry.
 ///
 /// # Specification
@@ -1091,6 +1162,65 @@ fn read_entry(reader: &mut Reader<'_>) -> Result<crate::content::EntryRoots, Cod
         capabilities.push(read_world(reader)?);
     }
     Ok(crate::content::EntryRoots { home, capabilities })
+}
+
+/// Read a checkpoint's table parts as [`write_elaborated`] writes them.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, a body that is no
+///   value, a declared type that is no value type, or a position past the
+///   platform's width, and as the readers it calls.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_elaborated`].
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+fn read_elaborated(
+    reader: &mut Reader<'_>
+) -> Result<Maybe<EntryContent, elaborated::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &ELABORATEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let mut table = |sort: Sort| -> Result<Maybe<TypeContent, written::Absent>, CodecError> {
+        match reader.tag()?.0 {
+            0 => Ok(Maybe::Absent(written::Absent::Written)),
+            1 => {
+                let content = read_outside(reader)?;
+                match content.nodes().first().map(SupportedNode::sort) {
+                    Some(found) if found == sort => Ok(Maybe::Present(content)),
+                    Some(_) | None => Err(CodecError::Corrupt),
+                }
+            },
+            _ => Err(CodecError::Corrupt),
+        }
+    };
+    let body = table(Sort::Value)?;
+    let declared = table(Sort::ValueType)?;
+    let stage = match reader.tag()?.0 {
+        0 => Maybe::Absent(written::Absent::Written),
+        1 => Maybe::Present(read_stage_signature(reader)?),
+        _ => return Err(CodecError::Corrupt),
+    };
+    let following = match reader.tag()?.0 {
+        0 => Maybe::Absent(written::Absent::Written),
+        1 => {
+            let word = reader.word()?;
+            let position = usize::try_from(word.0).map_err(|_wide| CodecError::Corrupt)?;
+            Maybe::Present(StagedPosition::from(position))
+        },
+        _ => return Err(CodecError::Corrupt),
+    };
+    Ok(Maybe::Present(EntryContent::from_parts(
+        (body, declared),
+        (stage, following),
+    )))
 }
 
 /// Write a level: its constant, then its atoms ascending.
@@ -8832,7 +8962,8 @@ where
     }
     write_typing(writer, checkpoint.typing())?;
     write_entered(writer, checkpoint.entered());
-    write_failed(writer, checkpoint.failure())
+    write_failed(writer, checkpoint.failure())?;
+    write_elaborated(writer, checkpoint.entry())
 }
 
 /// Read one item's checkpoint.
@@ -8906,7 +9037,8 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
     let typing = read_typing(reader)?;
     let entered = read_entered(reader)?;
     let checkpoint = ItemCheckpoint::new(content, footprint, support, typing, entered);
-    Ok(checkpoint.with_failure(read_failed(reader)?))
+    let checkpoint = checkpoint.with_failure(read_failed(reader)?);
+    Ok(checkpoint.with_entry(read_elaborated(reader)?))
 }
 
 /// Write the form the table held an item in: tag 0 as written, tag 1
@@ -9513,6 +9645,120 @@ fn read_outside(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
     Ok(TypeContent::from_parts(nodes, placement))
 }
 
+/// Why a checkpoint keeps no table parts, in stable wire order.
+const ELABORATEDS: [elaborated::Absent; 2] =
+    [elaborated::Absent::AsWritten, elaborated::Absent::Opaque];
+
+/// Write a stage signature: the count of its binders and each bound, tag 0
+/// for an unbounded binder and tag 1 and the earlier binder's ordinal for a
+/// bound one; then the count of its marks and each mark: the count of its
+/// path and each step, its binder's ordinal, and its reach, tag 0 at the
+/// binder and tag 1 and the steps below it.
+///
+/// # Specification
+/// - ensures: [`read_stage_signature`] reads back `stage` from what was
+///   written.
+/// - fails: [`CodecError::Unrepresentable`] for an ordinal past 64 bits, and as
+///   the count writer.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stage signature with an unbounded and a bound binder,
+///   and a mark of two steps below its binder, reads back as written.
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+fn write_stage_signature<Out>(
+    writer: &mut Writer<'_, Out>,
+    stage: &StageSignature,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let ordinal = |index: usize| u64::try_from(index).map_err(|_wide| CodecError::Unrepresentable);
+    writer.count(Count(stage.bounds().len()))?;
+    for &bound in stage.bounds() {
+        match bound {
+            StageBound::Unbounded => writer.tag(Tag(0)),
+            StageBound::Below(binder) => {
+                let binder = ordinal(usize::from(binder))?;
+                writer.tag(Tag(1));
+                writer.word(Word(binder));
+            },
+        }
+    }
+    writer.count(Count(stage.marks().len()))?;
+    for mark in stage.marks() {
+        writer.count(Count(mark.path().len()))?;
+        for &step in mark.path() {
+            writer.word(Word(ordinal(usize::from(step))?));
+        }
+        writer.word(Word(ordinal(usize::from(mark.binder()))?));
+        match mark.reach() {
+            StageReach::At => writer.tag(Tag(0)),
+            StageReach::Below(depth) => {
+                writer.tag(Tag(1));
+                writer.word(Word(u64::from(u32::from(depth))));
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Read a stage signature as [`write_stage_signature`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for an unknown tag, a short input, an
+///   ordinal past the platform's width, or a reach zero or more than 32 bits of
+///   steps below its binder.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_stage_signature`].
+/// - witness: `codec::tests::an_elaborated_entry_round_trips`
+fn read_stage_signature(reader: &mut Reader<'_>) -> Result<StageSignature, CodecError>
+{
+    let ordinal = |reader: &mut Reader<'_>| -> Result<usize, CodecError> {
+        usize::try_from(reader.word()?.0).map_err(|_wide| CodecError::Corrupt)
+    };
+    let count = reader.count()?;
+    let mut bounds = Vec::new();
+    for _ in 0 .. count.0 {
+        bounds.push(match reader.tag()?.0 {
+            0 => StageBound::Unbounded,
+            1 => StageBound::Below(StageBinder::from(ordinal(reader)?)),
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    let count = reader.count()?;
+    let mut marks = Vec::new();
+    for _ in 0 .. count.0 {
+        let steps = reader.count()?;
+        let mut path = Vec::new();
+        for _ in 0 .. steps.0 {
+            path.push(PlacedChild::from(ordinal(reader)?));
+        }
+        let binder = StageBinder::from(ordinal(reader)?);
+        let reach = match reader.tag()?.0 {
+            0 => StageReach::At,
+            1 => {
+                let steps = u32::try_from(reader.word()?.0).map_err(|_wide| CodecError::Corrupt)?;
+                let depth = core::num::NonZeroU32::new(steps).ok_or(CodecError::Corrupt)?;
+                StageReach::Below(StageDepth::from(depth))
+            },
+            _ => return Err(CodecError::Corrupt),
+        };
+        marks.push(StageMark::new(path, binder, reach));
+    }
+    Ok(StageSignature::new(bounds, marks))
+}
+
 /// Check the decoder work bound in every checkpoint plane without copying it.
 ///
 /// # Specification
@@ -9589,6 +9835,17 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 .iter()
                 .try_for_each(|outside| match outside.content {
                     Maybe::Present(ref content) => bounded(content.nodes()),
+                    Maybe::Absent(_) => Ok(()),
+                })?;
+        },
+        Maybe::Absent(_) => {},
+    }
+    match checkpoint.entry() {
+        Maybe::Present(entry) => {
+            [entry.body(), entry.declared()]
+                .into_iter()
+                .try_for_each(|part| match part {
+                    Maybe::Present(content) => bounded(content.nodes()),
                     Maybe::Absent(_) => Ok(()),
                 })
         },

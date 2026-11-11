@@ -171,6 +171,7 @@ mod bundle;
 mod checkpoint;
 mod codec;
 mod content;
+mod entry;
 mod failure;
 #[cfg(test)]
 mod fixture;
@@ -242,6 +243,10 @@ pub use crate::content::map_children;
 pub use crate::content::referencing;
 pub use crate::content::seating;
 pub use crate::content::site;
+pub use crate::entry::EntryContent;
+pub use crate::entry::SeatedEntry;
+pub use crate::entry::elaborated;
+pub use crate::entry::written;
 pub use crate::footprint::Footprint;
 pub use crate::footprint::HoleMark;
 pub use crate::footprint::footprint_of;

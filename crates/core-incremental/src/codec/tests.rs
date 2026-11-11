@@ -1813,7 +1813,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 23, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 24, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1823,7 +1823,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 21;
+    *wrong_version.get_mut(7).expect("version byte") = 22;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
@@ -3862,6 +3862,95 @@ fn a_failure_content_round_trips()
             super::read_failed(&mut reader),
             Ok(Maybe::Absent(reason)),
             "no failure content reads back as none, by its reason"
+        );
+    }
+}
+
+/// The table parts of an elaborated item read back as written: a body and a
+/// declared type as content, a stage signature with a bound binder and a mark
+/// below its binder, and a following position; then an entry whose every part
+/// the item writes, and each reason that keeps no parts.
+#[test]
+fn an_elaborated_entry_round_trips()
+{
+    use gandr_kernel_term::PlacedChild;
+    use gandr_kernel_term::StageBinder;
+    use gandr_kernel_term::StageBound;
+    use gandr_kernel_term::StageDepth;
+    use gandr_kernel_term::StageMark;
+    use gandr_kernel_term::StageReach;
+    use gandr_kernel_term::StageSignature;
+    use gandr_kernel_term::StagedPosition;
+
+    use crate::entry::EntryContent;
+    use crate::entry::elaborated;
+    use crate::entry::written;
+
+    let stage = StageSignature::new(
+        vec![
+            StageBound::Unbounded,
+            StageBound::Below(StageBinder::from(0_usize)),
+        ],
+        vec![StageMark::new(
+            vec![PlacedChild::from(1_usize), PlacedChild::from(0_usize)],
+            StageBinder::from(1_usize),
+            StageReach::Below(StageDepth::from(
+                core::num::NonZeroU32::new(2).expect("two is nonzero"),
+            )),
+        )],
+    );
+    for entry in [
+        EntryContent::from_parts(
+            (
+                Maybe::Present(crate::fixture::type_content(&[ContentNode::Tuple(
+                    Vec::new(),
+                )])),
+                Maybe::Present(crate::fixture::type_content(&[ContentNode::Product(
+                    Vec::new(),
+                )])),
+            ),
+            (
+                Maybe::Present(stage),
+                Maybe::Present(StagedPosition::from(1_usize)),
+            ),
+        ),
+        EntryContent::from_parts(
+            (
+                Maybe::Absent(written::Absent::Written),
+                Maybe::Absent(written::Absent::Written),
+            ),
+            (
+                Maybe::Absent(written::Absent::Written),
+                Maybe::Absent(written::Absent::Written),
+            ),
+        ),
+    ] {
+        let mut bytes = CheckpointBytes::default();
+        super::write_elaborated(&mut Writer { sink: &mut bytes }, Maybe::Present(&entry))
+            .expect("the table parts write");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_elaborated(&mut reader),
+            Ok(Maybe::Present(entry)),
+            "the table parts read back as written"
+        );
+        assert_eq!(reader.finish(), Ok(()), "and nothing is left");
+    }
+    for reason in [elaborated::Absent::AsWritten, elaborated::Absent::Opaque] {
+        let mut bytes = CheckpointBytes::default();
+        super::write_elaborated(&mut Writer { sink: &mut bytes }, Maybe::Absent(reason))
+            .expect("no table parts write");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_elaborated(&mut reader),
+            Ok(Maybe::Absent(reason)),
+            "no table parts read back as none, by their reason"
         );
     }
 }

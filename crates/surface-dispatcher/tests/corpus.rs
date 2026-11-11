@@ -1965,6 +1965,257 @@ mod sweeps
     /// a night, the count the nightly's sweeps share.
     const DECIDED_NIGHTS: Nights = Nights(7);
 
+    /// The table parts' sample: sixty-four sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them. The
+    /// nightly profile mints the night's slice, and the `sweeps` profile every
+    /// source.
+    const ENTERED: Sample = Sample {
+        name: SampleName("the_table_parts_of_an_elaborated_item_mint_back_to_themselves"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to mint every source's table
+    /// parts.
+    const ENTERED_NIGHTS: Nights = Nights(7);
+
+    /// Each item that its judgement entered elaborated, of each source the
+    /// sweep visits, keeps its table parts in its checkpoint. The body and the
+    /// declared type, minted into a fresh arena and encoded again, give the
+    /// tables kept, and every part reads back from the set's bytes as kept.
+    /// The mint refuses a part by name only when its table holds a node that
+    /// content keeps unresolved or names a declaration the program holds no
+    /// item for.
+    #[test]
+    fn the_table_parts_of_an_elaborated_item_mint_back_to_themselves()
+    {
+        parts_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn the_table_parts_of_an_elaborated_item_mint_back_to_themselves_changed()
+    {
+        parts_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits, checked, has the table parts of each item
+    /// entered elaborated mint back to the tables kept and read back from the
+    /// set's bytes as kept. An opaque item keeps no parts, since no pass takes
+    /// its checkpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parts_alike(sweep: &Sweep)
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_checker::Entered;
+        use gandr_core_checker::Unretired;
+        use gandr_core_incremental::ArenaNode;
+        use gandr_core_incremental::BackendArtifact;
+        use gandr_core_incremental::IncrementalSession;
+        use gandr_core_incremental::Judgement;
+        use gandr_core_incremental::MemoryCheckpointStore;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::TypeContent;
+        use gandr_core_incremental::decode_checkpoints;
+        use gandr_core_incremental::elaborated;
+        use gandr_core_incremental::encode_checkpoints;
+        use gandr_core_incremental::seating;
+        use gandr_surface_dispatcher::Checking;
+        use gandr_surface_dispatcher::Recording;
+        use gandr_surface_dispatcher::Supporting;
+        use gandr_surface_dispatcher::Unshadowed;
+        use gandr_surface_dispatcher::classify;
+        use gandr_surface_dispatcher::item_program;
+        use gandr_surface_dispatcher::judge_member_after_retiring;
+        use gandr_surface_dispatcher::lay_out_shadowed;
+        use gandr_surface_dispatcher::lower_unit_source;
+        use gandr_surface_syntax::ByteOffset;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(
+            ENTERED,
+            ENTERED_NIGHTS,
+            &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+        );
+        assert!(
+            visited.len() >= sweep.drawn(ENTERED).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let (mut entered, mut opaque, mut persisted) = (0_usize, 0_usize, 0_usize);
+        let mut whole = 0_usize;
+        let mut apart = Vec::new();
+        let mut kept: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut minted: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut unseated: BTreeMap<seating::Absent, usize> = BTreeMap::new();
+        let mut differing = Vec::new();
+        for source in visited {
+            let path = source.path.as_path();
+            let own = std::fs::read_to_string(path).expect("a corpus source reads");
+            let root = classify(path);
+            let laid = lay_out_shadowed(
+                &grammar,
+                path,
+                root,
+                SourceText::from(own.as_str()),
+                &Unshadowed,
+            );
+            let text = SourceText::from(laid.text.as_str());
+            let lower = || {
+                let lowering =
+                    lower_unit_source(&grammar, text, &laid.unit, &mut LoweringCount::default())
+                        .ok()?;
+                match lowering.into_lowered() {
+                    Lowered::Module { module, arena } => Some((module, arena)),
+                    Lowered::Refused(_) => None,
+                }
+            };
+            let Some((module, arena)) = lower()
+            else {
+                continue;
+            };
+            let (settled, admission) = judge_member_after_retiring(
+                root.corpus_root(),
+                (module, text),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                ByteOffset::from(0_usize),
+                (&Unretired, Recording::Unrecorded, Supporting::Kept),
+            )
+            .whole()
+            .into_parts();
+            let (Ok(_), Some((module, arena))) = (settled, lower())
+            else {
+                continue;
+            };
+            let mut program = item_program(&module, arena).expect("a lowered module lays out");
+            let mut fresh =
+                Program::new(gandr_core_term::CoreArena::new(), program.items().to_vec())
+                    .expect("the items keep their order");
+            let mut session = IncrementalSession::new(
+                MemoryCheckpointStore::default(),
+                BackendArtifact::from(b"core-checker".as_slice()),
+                CheckBudget::DEFAULT,
+            );
+            // A set the store does not persist, as a codata item's, still
+            // leaves the resume the pass made.
+            let _submitted = session.submit_retiring(
+                &mut program,
+                &mut Quiet,
+                &Unretired,
+                Some(Judgement::new(admission.arena(), admission.verdicts())),
+            );
+            let Maybe::Present(resume) = session.last()
+            else {
+                panic!("a submitted session whose order builds holds a resume");
+            };
+            let read = encode_checkpoints(resume.checkpoints()).ok().map(|bytes| {
+                persisted = persisted.saturating_add(1);
+                decode_checkpoints(&bytes).expect("written checkpoints read back")
+            });
+            for (ordinal, item) in resume.checkpoints().items().iter().enumerate() {
+                let reference = item.content().reference().clone();
+                let judged = program
+                    .items()
+                    .get(ordinal)
+                    .and_then(|own| {
+                        admission
+                            .verdicts()
+                            .supported()
+                            .get(&own.declaration().constant())
+                    })
+                    .map(gandr_core_checker::Supported::entered);
+                if judged == Some(Entered::Elaborated) {
+                    whole = whole.saturating_add(1);
+                    if item.entered() == Entered::AsWritten {
+                        apart.push((source.path.clone(), reference.clone()));
+                    }
+                }
+                if item.entered() == Entered::AsWritten {
+                    continue;
+                }
+                entered = entered.saturating_add(1);
+                let entry = match item.entry() {
+                    Maybe::Present(entry) => entry,
+                    Maybe::Absent(elaborated::Absent::Opaque) => {
+                        opaque = opaque.saturating_add(1);
+                        continue;
+                    },
+                    Maybe::Absent(elaborated::Absent::AsWritten) => {
+                        differing.push((source.path.clone(), reference, "no parts kept"));
+                        continue;
+                    },
+                };
+                for (part, held) in [
+                    ("body", matches!(entry.body(), Maybe::Present(_))),
+                    ("declared", matches!(entry.declared(), Maybe::Present(_))),
+                    ("stage", matches!(entry.stage(), Maybe::Present(_))),
+                    ("following", matches!(entry.following(), Maybe::Present(_))),
+                ] {
+                    if held {
+                        let count = kept.entry(part).or_default();
+                        *count = count.saturating_add(1);
+                    }
+                }
+                if let Some(ref read) = read
+                    && read.items().get(ordinal).map(|back| back.entry()) != Some(item.entry())
+                {
+                    differing.push((source.path.clone(), reference.clone(), "read back"));
+                }
+                let seated = match entry.seat_in(&mut fresh) {
+                    Maybe::Present(seated) => seated,
+                    Maybe::Absent(reason) => {
+                        let count = unseated.entry(reason).or_default();
+                        *count = count.saturating_add(1);
+                        continue;
+                    },
+                };
+                let parts = [
+                    ("body", entry.body(), seated.body().map(ArenaNode::Value)),
+                    (
+                        "declared",
+                        entry.declared(),
+                        seated.declared().map(ArenaNode::ValueType),
+                    ),
+                ];
+                for (part, content, node) in parts {
+                    let (Maybe::Present(content), Maybe::Present(node)) = (content, node)
+                    else {
+                        continue;
+                    };
+                    let count = minted.entry(part).or_default();
+                    *count = count.saturating_add(1);
+                    if TypeContent::of_node(&fresh, node) != *content {
+                        differing.push((source.path.clone(), reference.clone(), part));
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "{whole} items the whole judgement entered elaborated, {} of them entered as written \
+             by the pass: {:?}; {entered} items the pass entered elaborated, {opaque} of them \
+             opaque; parts kept: {kept:?}; minted back: {minted:?}; unseated, by reason: \
+             {unseated:?}; sets read back from bytes in {persisted} sources",
+            apart.len(),
+            apart.iter().take(16).collect::<Vec<_>>()
+        );
+        assert!(
+            differing.is_empty(),
+            "over {entered} elaborated items, each part mints and reads back as kept: \
+             {differing:?}"
+        );
+        assert!(
+            unseated.keys().all(|&reason| matches!(
+                reason,
+                seating::Absent::Unresolved | seating::Absent::Unplaced
+            )),
+            "a part is refused only for an unresolved node or an unplaced reference: {unseated:?}"
+        );
+    }
+
     /// The refusals' sample: sixty-four sources, ranked by their BLAKE3 digest
     /// under this name, at least one of each corpus class, and, in the
     /// companion, every source the change adds or modifies beside them. The

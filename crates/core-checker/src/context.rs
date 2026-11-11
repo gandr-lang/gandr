@@ -6094,6 +6094,18 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         )
     }
 
+    /// The position of the parameter whose stage each definition's result
+    /// stands at, by position, for each definition whose result follows one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn followings(&self) -> &BTreeMap<ConstantIndex, gandr_kernel_term::StagedPosition>
+    {
+        &self.following
+    }
+
     /// Take `body`, the definition under way's body, as its own fixpoint's
     /// when the definition is a mutual block's and its body thunks one, with
     /// none open yet: only a block's families name its definitions.
