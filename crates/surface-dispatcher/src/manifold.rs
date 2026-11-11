@@ -49,8 +49,8 @@
 //!
 //! - **The program by path.** A manifold names the program it deploys by its
 //!   source's path, read from the manifold's own directory, and a run or a host
-//!   of another source is refused. A located program's items have no content
-//!   key yet, so no address names the program.
+//!   of another source is refused. A located item has no content key yet, so no
+//!   address names a program that holds one.
 //! - **One process per world.** A placement counting other than one instance is
 //!   refused by name.
 //! - **A site's secret stays with its host.** The file names the secret, never

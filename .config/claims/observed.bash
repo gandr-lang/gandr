@@ -19,7 +19,7 @@ defect=$3
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-git diff --name-only --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-traces/*.txt' \
+git diff --name-only --no-renames --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-traces/*.txt' \
   | while IFS= read -r path; do jq -Rs --arg path "$path" '{path: $path, text: .}' "$path"; done \
   | jq -s . > "$scratch/transcripts.json"
 git diff -U0 --no-renames --no-color "$base" HEAD -- '*.rs' | jq -Rs -f "$here/comments.jq" > "$scratch/comments.json"

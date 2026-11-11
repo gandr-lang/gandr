@@ -58,6 +58,20 @@
 //! type, not by the table it came from, makes the generic former worth its
 //! second spelling.
 //!
+//! # The mint
+//!
+//! [`TypeContent::mint`] mints a table of any sort back into an arena, each
+//! entry after its children, each entry once: so a minted node keeps the
+//! table's sharing, and it reads back as the same table. The table is the
+//! name of the node up to alpha-equivalence and sharing: two terms that
+//! differ only in their bound names or in what their arena shares read one
+//! table. [`ItemContent::rooted`] reads the table under one root of an item.
+//! The mint refuses a table by name: an unresolved node (a stage type, a
+//! world type or a codata application, which content keeps opaque), a
+//! reference that the program holds no item for, or a child of the wrong
+//! sort. A table-typed native thunk keeps no body as content, and the mint
+//! builds its curried body again from its row.
+//!
 //! # An id the arena does not hold
 //!
 //! An id that resolves to nothing is a fact about another arena. It is listed
@@ -73,6 +87,15 @@
 //! every node reachable from its `DeclarationRoots` and each root's
 //! thinning. Value roots retain the signature and body; Data roots retain
 //! the kind, parameter telescope and constructor field types.
+//!
+//! # Numbers local to the item
+//!
+//! An elaborator numbers holes and ascriptions over the whole laid unit, so
+//! one item takes other numbers in another closure. The table names each hole
+//! by its place among the holes it meets, in the hole's own origin, and a
+//! seal site by its component alone. The cells of a type of words name their
+//! sort by its reference, as every constant is named. So an item's content is
+//! a function of its own source and of the sources that source reaches.
 //!
 //! # Native universe-path content
 //!
@@ -90,7 +113,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x14`; programs use `GPROG\0\0\x0b`. Their
+//! Checkpoint sets use `GCKPT\0\0\x15`; programs use `GPROG\0\0\x0c`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -111,7 +134,7 @@
 //! `DeclarationRoots::Data`, `DeclarationRoots::Abstract` or
 //! `DeclarationRoots::World`; data retains the kind, every parameter and every
 //! constructor field, and an abstract type its kind, its representation, the
-//! extent of its seal, the site that mints its atom, the mobility its
+//! extent of its seal, the component its seal names, the mobility its
 //! signature marks and the relation, reflexivity and law of its interface,
 //! each a value root, so an edit to the interface reaches every reader of the
 //! atom. A mobile atom and an interfaced one take their own roots tags, so an
@@ -136,10 +159,10 @@
 //! through the value-changed closure. Adoption forms it again and mints its
 //! atom in the new context.
 //!
-//! A located program — one declaring a world, or stating an entry — is
-//! judged whole each time and never persisted: every item of it is opaque
-//! (see [`Locus`]), and a world form or a world type in any item is listed
-//! by its sort, as a stage is.
+//! A located item — a world, an item stating an entry, or an item whose own
+//! closure declares a world or states an entry — is judged each time and
+//! never persisted: it is opaque (see [`Locus`]), and a world form or a world
+//! type in any item is listed by its sort, as a stage is.
 //!
 //! Support keys distinguish a value-signature query from a data-signature query
 //! at the same reference. A data answer contains the complete nominal schema or
@@ -214,8 +237,8 @@
 //! precede interface type edges, which precede clause bodies; frames contribute
 //! their Apply and Bind children in order. Unknown-operation, coverage,
 //! undelimited-shift and dependent-stack refusals retain their sites and type
-//! payloads. Closed Stack/With type tables can be reminted into another arena;
-//! runtime term graphs are not invented by the type-only reminting path.
+//! payloads. A control table of any sort can be minted into another arena;
+//! the mint copies the content and invents no runtime term graph.
 //!
 //! A capability scope persists as a handler does, under its own tag, so a
 //! scope and a handler over one interface never share an address. An exercise
@@ -243,8 +266,8 @@
 //! A statement keeps its relation, so `bisim(a, b)` and `sim(a, b)` never
 //! share an address; the decided simulation is checker output and is not
 //! content. A recorded run keeps its moves in order, its payloads as value
-//! edges and its labels inline. Flow and run classifiers hold terms and do
-//! not seat, as an element path does not.
+//! edges and its labels inline. Flow and run classifiers hold terms, and
+//! they seat as any other former does.
 //!
 //! **Choice.** Preserve typed interfaces and control syntax as content, not
 //! runtime heap addresses or captured delimiter stacks. Omitting annotations
@@ -278,7 +301,9 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::hole::NominationIndex;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
@@ -301,7 +326,7 @@ use crate::region::Reference;
 use crate::support::SupportedNode;
 
 quenchant_shape::reason_enum! {
-    /// Why a type table could not be minted back into an arena.
+    /// Why a content table could not be minted back into an arena.
     pub mod seating {
         /// The reason no node was minted.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -313,10 +338,11 @@ quenchant_shape::reason_enum! {
             Cyclic,
             /// The table names an item the program does not hold.
             Unplaced,
-            /// The table is not a value type, or a child has the wrong sort.
+            /// The table is not of the sort its seat asks for, or a child
+            /// has the wrong sort.
             IllSorted,
-            /// The type holds a term — the code of an element type — and a
-            /// seat mints types alone.
+            /// The item holds no seat to mint: it states its signature, or
+            /// its typing synthesised no type.
             Unseatable,
             /// The type's de Bruijn projection places an index past the
             /// index space, or an edge past its node's support.
@@ -357,6 +383,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The node is no variable, endpoint use or memory slot use.
             Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a nominal type's presentation holds no free cells.
+    pub mod words {
+        /// The reason no cell is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type is no type of words.
+            Unworded,
         }
     }
 }
@@ -407,6 +445,41 @@ pub enum ArenaNode
     ValueType(ValueTypeId),
     /// A computation-type node.
     CompType(CompTypeId),
+}
+
+impl ArenaNode
+{
+    /// The node's sort.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn sort(self) -> Sort
+    {
+        match self {
+            Self::Value(_) => Sort::Value,
+            Self::Computation(_) => Sort::Computation,
+            Self::ValueType(_) => Sort::ValueType,
+            Self::CompType(_) => Sort::CompType,
+        }
+    }
+
+    /// The node, when `arena` holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held(
+        self,
+        arena: &CoreArena,
+    ) -> Option<Self>
+    {
+        let held = match self {
+            Self::Value(id) => arena.value(id).is_some(),
+            Self::Computation(id) => arena.computation(id).is_some(),
+            Self::ValueType(id) => arena.value_type(id).is_some(),
+            Self::CompType(id) => arena.comp_type(id).is_some(),
+        };
+        held.then_some(self)
+    }
 }
 
 /// One node of a content table: a core former over table indices.
@@ -821,7 +894,8 @@ pub enum ContentNode
     StaticLambda(NodeIndex),
     /// A static application of an operator to an argument.
     StaticApplication(NodeIndex, NodeIndex),
-    /// A term hole in value position, by its name.
+    /// A term hole in value position, by its name among the holes of its
+    /// table, in the order the table meets them.
     Hole(HoleId),
     /// A marked value: the mark's index over the value it marks.
     ValueMark
@@ -856,7 +930,8 @@ pub enum ContentNode
         /// The branches, one per summand in order.
         branches: Vec<NodeIndex>,
     },
-    /// A term hole in computation position, by its name.
+    /// A term hole in computation position, by its name among the holes of
+    /// its table, in the order the table meets them.
     ComputationHole(HoleId),
     /// A marked computation: the mark's index over the computation it marks.
     ComputationMark
@@ -2515,30 +2590,33 @@ pub enum Opacity
     Opaque,
 }
 
-/// Whether an item belongs to a located program: one that declares a world,
-/// or an item that states an entry.
+/// Whether an item is located: a world, an item that states an entry, or an
+/// item whose own closure declares a world or states an entry.
 ///
 /// A located judgement reads the world register and the home of every
 /// constant it names, and a home reaches a reader through a term position no
 /// footprint keeps as type support. The cache has no vocabulary for that, so
-/// every item of a located program is opaque: judged each time, never
-/// persisted. **Reversal.** A home recorded in the support a reader consults,
-/// once an editor session over located code measures the recheck.
+/// a located item is opaque: judged each time, never persisted. A world in a
+/// source that the item's own source does not reach makes no item located,
+/// so the item's checkpoint depends on its own closure alone. **Reversal.** A
+/// home recorded in the support a reader consults, once an editor session over
+/// located code measures the recheck.
 ///
 /// # Specification
-/// - executable: none — the tag holds no program; `Program::new` decides it.
+/// - executable: none — the tag holds no program; `Item::locus` decides it.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an item of a program declaring a world is opaque and
-///   refused persistence by name, while the same item alone is transparent.
-/// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
+/// - hypothesis: L3 — an item whose own closure is located is opaque and
+///   refused persistence by name, while the same item beside a world it does
+///   not reach is transparent.
+/// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Locus
 {
-    /// No world is declared and no entry stated.
+    /// No world is declared and no entry stated in the item's own closure.
     #[default]
     Unlocated,
-    /// The program declares a world, or the item states an entry.
+    /// The item's own closure declares a world or states an entry.
     Located,
 }
 
@@ -2557,9 +2635,51 @@ pub struct DataRoots
     pub results: Vec<Vec<NodeIndex>>,
     /// The universe classifying the declared datatype.
     pub kind: NodeIndex,
-    /// The rules rewriting the datatype's constructor terms; none for a free
-    /// type.
-    pub presentation: gandr_core_term::Presentation,
+    /// The rules rewriting the datatype's constructor terms, and the cells of
+    /// a type of words; none for a free type.
+    pub presentation: PresentationRoots,
+}
+
+/// The rules that present a nominal type's terms, and the free cells of a
+/// type of words, as content: each names a constructor by its tag, and the
+/// cells name their sort by its reference, not by its admission position.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PresentationRoots
+{
+    /// The rules, in written order: none for a free type.
+    pub rules: Vec<gandr_core_term::PresentedRule>,
+    /// The free cells the type of words is minted over.
+    pub cells: Maybe<CellsRoots, words::Absent>,
+}
+
+impl PresentationRoots
+{
+    /// The presentation of a free type: no rule and no cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn free() -> Self
+    {
+        Self {
+            rules: Vec::new(),
+            cells: Maybe::Absent(words::Absent::Unworded),
+        }
+    }
+}
+
+/// The free cells a type of words is minted over, its sort named by its
+/// reference.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CellsRoots
+{
+    /// The sort the cells' endpoints are terms of.
+    pub sort: Reference,
+    /// How many times the cells' point is wrapped in its reflexivity.
+    pub reflexivities: gandr_kernel_term::Reflexivities,
+    /// The cells, in written order.
+    pub cells: Vec<gandr_kernel_term::FreeCell>,
 }
 
 impl DataRoots
@@ -2775,7 +2895,9 @@ pub struct AbstractRoots
     pub representation: NodeIndex,
     /// How many declarations after the abstract type its seal reaches.
     pub extent: gandr_kernel_term::SealExtent,
-    /// The site that mints the atom.
+    /// The site that mints the atom, as the item's table names it: the
+    /// component of the ascription the site seals, and the ascription the
+    /// first of the table ([`local_site`]).
     pub site: gandr_core_checker::SealSite,
     /// Whether its signature marks it mobile: sealing checks the mark against
     /// the representation.
@@ -2837,7 +2959,8 @@ impl DeclarationRoots
     /// - hypothesis: L3 — persistence rejects ill-sorted and reordered native
     ///   roots.
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
     {
         let (values, data, models) = match *(self) {
             Self::Value {
@@ -2995,7 +3118,7 @@ impl DataRoots
     #[spec(ensures: |ret| ret.kind == image(self.kind)
         && ret.parameters.len() == self.parameters.len()
         && ret.constructors.len() == self.constructors.len()
-        && ret.presentation == self.presentation)]
+        && ret.presentation.rules.len() == self.presentation.rules.len())]
     pub(crate) fn renumbered<Image>(
         &self,
         image: Image,
@@ -3118,10 +3241,78 @@ pub fn tabled(
         |old| owned.get_mut(usize::from(old)).and_then(Option::take),
     );
     Tabled {
-        nodes: numbered.nodes,
+        nodes: named_holes(numbered.nodes),
         placed,
         numbers: numbered.numbers,
     }
+}
+
+/// The table `nodes`, each hole named by its place among the holes the table
+/// meets, in table order ([`hole_name`]).
+///
+/// # Specification
+/// trivial.
+fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
+{
+    let mut holes = BTreeMap::new();
+    nodes
+        .into_iter()
+        .map(|node| node.hole_renamed(|hole| hole_name(&mut holes, hole)))
+        .collect()
+}
+
+/// The name a table gives `hole`, `holes` the names it gave the holes it met
+/// before: on its first meeting, the name of the next place in `hole`'s own
+/// origin, and a splice's name keeps its tactic; the same name on each later
+/// meeting.
+///
+/// An elaborator names a hole by the number of its form among the forms of
+/// the whole laid unit, so one hole takes another name in another closure.
+/// The name in the table counts only the holes that the table meets before
+/// it, in table order, so the table is a function of its own nodes, and the
+/// table under one of its roots names its holes as that root's own table
+/// does. A hole name keeps the origin, because the checker solves a
+/// nominated hole and reports a written one. A place past the names of its
+/// origin keeps the hole's own name: a splice's origin holds 2^24 places, and
+/// the other origins hold more.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one name per hole the table meets, distinct holes taking distinct
+///   names of their own origins.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two holes met twice each, in two arenas that name them
+///   apart, take the same two names in both tables; a hole under a root of an
+///   item takes the name that the root's own table gives it.
+/// - witness: `content::tests::a_hole_is_named_by_its_place_in_the_table_6522`
+/// - witness: `content::tests::a_root_names_its_holes_by_their_place_under_it`
+#[spec(
+    captures: [old = holes.get(&hole).copied(), count = holes.len()],
+    ensures: |ret| holes.get(&hole) == Some(&ret) && ret.origin() == hole.origin()
+        && old.is_none_or(|old| old == ret && holes.len() == count),
+)]
+fn hole_name(
+    holes: &mut BTreeMap<HoleId, HoleId>,
+    hole: HoleId,
+) -> HoleId
+{
+    let place = u32::try_from(holes.len()).unwrap_or(u32::MAX);
+    *holes.entry(hole).or_insert_with(|| {
+        let index = NominationIndex::from(place);
+        match hole.origin() {
+            HoleOrigin::Written => {
+                Some(HoleId::from(place)).filter(|named| named.origin() == HoleOrigin::Written)
+            },
+            HoleOrigin::Nominated => HoleId::nominated(index),
+            HoleOrigin::Wildcard => HoleId::wildcard(index),
+            HoleOrigin::Spliced => hole
+                .tactic()
+                .and_then(|tactic| HoleId::spliced(index, tactic)),
+        }
+        .unwrap_or(hole)
+    })
 }
 
 /// A complete nominal signature in arena-independent coordinates.
@@ -3292,7 +3483,7 @@ pub struct ItemContent
     /// Each root's support in the item's empty scope, in
     /// [`DeclarationRoots::iter`] order: empty for a closed root.
     placements: Vec<Thinning>,
-    /// Whether the item belongs to a located program.
+    /// Whether the item is located.
     locus: Locus,
 }
 
@@ -3375,16 +3566,71 @@ impl ItemContent
     ) -> Result<Vec<ContentNode>, PlacementError>
     {
         let empty = Thinning::empty();
-        let placement = self
-            .declaration
+        crate::support::expand(&self.nodes, root, self.placement_of(root).unwrap_or(&empty))
+    }
+
+    /// The support of the first declaration root naming the entry `root`.
+    ///
+    /// # Specification
+    /// - ensures: the placement beside the first root equal to `root`, in
+    ///   [`DeclarationRoots::iter`] order; none when no root names it.
+    /// - panics: none.
+    /// - executable: none — the clause is the search this body runs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each open root projects under its own support, and a
+    ///   signature renumbers under the support of the first root.
+    /// - witness: `content::tests::open_roots_project_under_their_own_supports`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    fn placement_of(
+        &self,
+        root: NodeIndex,
+    ) -> Option<&Thinning>
+    {
+        self.declaration
             .iter()
             .zip(&self.placements)
             .find_map(|((named, _), placement)| (named == root).then_some(placement))
-            .unwrap_or(&empty);
-        crate::support::expand(&self.nodes, root, placement)
     }
 
-    /// Whether the item belongs to a located program.
+    /// The content under the entry `root`, as a table of its own: the name of
+    /// the term or the type at `root`, whatever item holds it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table of every node reachable from `root`, renumbered by
+    ///   discovery from `root` alone, each hole named by its place under
+    ///   `root`, with the support of the first declaration root naming it, else
+    ///   the empty support; so it equals the content [`TypeContent::of_node`]
+    ///   gives the node in its arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an interleaved signature is compared with encoding
+    ///   its root alone, and a term with a lambda and a bind with the content
+    ///   of its mint.
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+    /// - witness: `content::tests::a_root_names_its_holes_by_their_place_under_it`
+    #[spec(ensures: |ret| self.nodes.get(usize::from(root)).is_none_or(|node|
+        ret.nodes.first().map(SupportedNode::sort) == Some(node.sort())))]
+    #[inline]
+    #[must_use]
+    pub fn rooted(
+        &self,
+        root: NodeIndex,
+    ) -> TypeContent
+    {
+        let numbered = crate::support::number(NodeIndex::from(self.nodes.len()), [root], |old| {
+            self.nodes.get(usize::from(old)).cloned()
+        });
+        TypeContent {
+            nodes: named_holes(numbered.nodes),
+            root: self.placement_of(root).cloned().unwrap_or_default(),
+        }
+    }
+
+    /// Whether the item is located ([`crate::region::Item::locus`]).
     ///
     /// # Specification
     /// trivial.
@@ -3416,8 +3662,8 @@ impl ItemContent
         }
     }
 
-    /// Whether the item may be adopted and persisted: every node resolved, in
-    /// an unlocated program, and no codata declaration.
+    /// Whether the item may be adopted and persisted: every node resolved, an
+    /// unlocated item, and no codata declaration.
     ///
     /// # Specification
     /// - ensures: [`Opacity::Opaque`] for a located item and for a codata
@@ -3428,7 +3674,7 @@ impl ItemContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`Locus`], and an unresolved id beneath the body
     ///   makes its item opaque.
-    /// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
+    /// - witness: `content::tests::an_item_of_a_located_closure_is_opaque`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| (ret == Opacity::Opaque
             || (self.locus == Locus::Unlocated && !matches!(self.declaration, DeclarationRoots::Codata)))
@@ -3459,10 +3705,9 @@ impl ItemContent
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the table of every node reachable from the signature root,
-    ///   renumbered by discovery from that root alone, with the root's support,
-    ///   so it equals the content [`TypeContent::of_value_type`] gives the
-    ///   signature in its arena.
+    /// - ensures: the content [`ItemContent::rooted`] gives the signature root,
+    ///   so it equals the content [`TypeContent::of_node`] gives the signature
+    ///   in its arena.
     /// - provides: None for an unsigned value or a nominal declaration.
     /// - panics: none.
     ///
@@ -3482,16 +3727,7 @@ impl ItemContent
             DeclarationRoots::Value {
                 signature: Maybe::Present(root),
                 ..
-            } => {
-                let numbered =
-                    crate::support::number(NodeIndex::from(self.nodes.len()), [root], |old| {
-                        self.nodes.get(usize::from(old)).cloned()
-                    });
-                Some(TypeContent {
-                    nodes: numbered.nodes,
-                    root: self.placements.first().cloned().unwrap_or_default(),
-                })
-            },
+            } => Some(self.rooted(root)),
             DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
                 ..
@@ -3504,9 +3740,9 @@ impl ItemContent
     }
 }
 
-/// A type's canonical content: every node reachable from it, numbered by
-/// discovery, the type itself first, and the type's support in the scope it
-/// stands in.
+/// A node's canonical content, a type's or a term's: every node reachable
+/// from it, numbered by discovery, the node itself first, and the node's
+/// support in the scope it stands in.
 ///
 /// # Specification
 /// - executable: none — a data declaration; [`TypeContent::of`] and the reader
@@ -3615,37 +3851,34 @@ impl TypeContent
         Self { nodes, root }
     }
 
-    /// The content of the value type `ty` of `program`'s arena.
+    /// The content of the node `root` of `program`'s arena.
     ///
     /// # Specification
     /// - requires: nothing — an unresolved id is admissible and listed as
     ///   unresolved.
     /// - ensures: the table the item encoding gives the same node, renumbered
-    ///   from it, so a type compares equal to itself across arenas.
-    /// - provides: the comparison form of types: answers, verdicts and seats
-    ///   are compared by it, never by arena id.
+    ///   from it, so a node compares equal to itself across arenas.
+    /// - provides: the comparison form of types and terms: answers, verdicts
+    ///   and seats are compared by it, never by arena id.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — allocation noise and a shared arrow separate arena
     ///   identity from content; the same signature is encoded through the item
-    ///   path.
+    ///   path; a term with a lambda and a bind reads back from its mint.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[spec(ensures: |ret| match program.arena().value_type(ty) {
-            | Some(_) => ret.nodes.first().is_some_and(|node| {
-                node.sort() == Sort::ValueType && !matches!(*node.former(), ContentNode::Unresolved(_))
-            }),
-            | None => ret.nodes.first().map(SupportedNode::former) == Some(&ContentNode::Unresolved(Sort::ValueType)),
-        })]
+    /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+    #[spec(ensures: |ret| ret.nodes.first().is_some_and(|node| node.sort() == root.sort()
+        && (root.held(program.arena()).is_some() || *node.former() == ContentNode::Unresolved(root.sort()))))]
     #[inline]
     #[must_use]
-    pub fn of_value_type(
+    pub fn of_node(
         program: &Program,
-        ty: ValueTypeId,
+        root: ArenaNode,
     ) -> Self
     {
-        Self::of(program.arena(), program.layout(), ArenaNode::ValueType(ty))
+        Self::of(program.arena(), program.layout(), root)
     }
 
     /// The content of the node `root` of `arena`, constants resolved through
@@ -3719,7 +3952,7 @@ impl TypeContent
         }
     }
 
-    /// Mint the type into `arena`, constants placed through `layout`.
+    /// Mint the content into `arena`, constants placed through `layout`.
     ///
     /// A table whose every node is closed is already its own de Bruijn
     /// table: each node is its former over the empty scope, and the
@@ -3728,52 +3961,103 @@ impl TypeContent
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success a value type of `arena` whose content is this
-    ///   table, each distinct placed node minted once.
+    /// - ensures: on success a node of `arena`, of the root's sort, whose
+    ///   content is this table, each distinct placed node minted once.
     /// - provides: the seat an adopted synthesised type is read from.
     /// - fails: `seating::Absent` naming why: an index the projection cannot
-    ///   place, an unresolved node, a reference the program does not hold, a
-    ///   table that is no value type, or a former holding a term. A
-    ///   term-bearing inferred type is rechecked rather than adopted when it
-    ///   cannot be seated.
+    ///   place, an unresolved node, a reference the program does not hold, or a
+    ///   child of the wrong sort.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a shared arrow is minted back into a noisy arena; one
-    ///   table for each refusal reason bounds error evidence, closed and open
-    ///   alike. The predicate checks successful seat resolution, not a second
-    ///   encoding.
+    /// - hypothesis: L3 — a shared arrow is minted back into a noisy arena, and
+    ///   terms with a lambda and a bind into a fresh one; one table for each
+    ///   refusal reason bounds error evidence, closed and open alike. The
+    ///   predicate checks successful seat resolution, not a second encoding.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+    /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(id) => arena.value_type(id).is_some(),
+        Maybe::Present(node) => node.held(arena).is_some()
+            && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
         Maybe::Absent(_) => true,
     })]
     pub(crate) fn mint(
         &self,
         arena: &mut CoreArena,
         layout: &Layout,
-    ) -> Maybe<ValueTypeId, seating::Absent>
+    ) -> Maybe<ArenaNode, seating::Absent>
     {
-        let minted = if self
+        if self
             .nodes
             .iter()
             .all(|node| node.scope() == gandr_core_term::support::Scope::default())
         {
-            mint_table(&self.nodes, arena, layout)
+            return mint_table(&self.nodes, arena, layout);
         }
+        let Ok(table) = self.debruijn()
         else {
-            let Ok(table) = self.debruijn()
-            else {
-                return Maybe::Absent(seating::Absent::Unplaceable);
-            };
-            mint_table(&table, arena, layout)
+            return Maybe::Absent(seating::Absent::Unplaceable);
         };
-        match minted {
-            Maybe::Present(Minted::ValueType(id)) => Maybe::Present(id),
-            Maybe::Present(Minted::CompType(_)) => Maybe::Absent(seating::Absent::IllSorted),
+        mint_table(&table, arena, layout)
+    }
+
+    /// Mint the content into `arena` as a value type: the seat a synthesised
+    /// type is read from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`TypeContent::mint`], when the root is a value type.
+    /// - fails: as [`TypeContent::mint`], and `IllSorted` for a table of
+    ///   another sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — no-op reuse seats synthesised types; a returner table
+    ///   is refused by sort.
+    /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(id) => arena.value_type(id).is_some(),
+        Maybe::Absent(_) => true,
+    })]
+    pub(crate) fn mint_value_type(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+    ) -> Maybe<ValueTypeId, seating::Absent>
+    {
+        match self.mint(arena, layout) {
+            Maybe::Present(ArenaNode::ValueType(id)) => Maybe::Present(id),
+            Maybe::Present(
+                ArenaNode::Value(_) | ArenaNode::Computation(_) | ArenaNode::CompType(_),
+            ) => Maybe::Absent(seating::Absent::IllSorted),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
+    }
+
+    /// Mint the content into `program`'s arena under its layout.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`TypeContent::mint`] into the program's arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — terms with a lambda and a bind mint into a fresh
+    ///   program and read back as their own content.
+    /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(node) => node.held(program.arena()).is_some(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_in(
+        &self,
+        program: &mut Program,
+    ) -> Maybe<ArenaNode, seating::Absent>
+    {
+        let (arena, layout) = program.parts_mut();
+        self.mint(arena, layout)
     }
 }
 
@@ -3886,7 +4170,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                     && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
  else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
                     && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
-                    && roots.extent == sealed.extent() && roots.site == sealed.site() && roots.mobility == sealed.mobility()
+                    && roots.extent == sealed.extent() && roots.site == local_site(sealed.site()) && roots.mobility == sealed.mobility()
                     && match (sealed.interface(), roots.interface) {
                         (Maybe::Present(interface), Maybe::Present(actual)) => ret.sites.0.get(&ArenaNode::Value(interface.relation())) == Some(&actual.relation)
                             && ret.sites.0.get(&ArenaNode::Value(interface.reflexivity())) == Some(&actual.reflexivity)
@@ -3895,7 +4179,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                         (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
                     } }
  else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World(_), DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
-} && ret.content.locus == layout.locus(),
+} && ret.content.locus == item.locus(),
         None => ret.content.reference == Reference::Unoccupied
             && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies,ref models} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
             && ret.content.nodes.is_empty(),
@@ -3947,7 +4231,7 @@ pub fn encode_item(
                         representation: encoder
                             .discover(ArenaNode::ValueType(sealed.representation())),
                         extent: sealed.extent(),
-                        site: sealed.site(),
+                        site: local_site(sealed.site()),
                         mobility: sealed.mobility(),
                         interface: sealed.interface().map(|interface| InterfaceRoots {
                             relation: encoder.discover(ArenaNode::Value(interface.relation())),
@@ -4048,10 +4332,36 @@ pub fn encode_item(
             declaration: declaration.renumbered(|raw| tabled.of(raw)),
             placements: tabled.supports(&raw_roots),
             nodes: tabled.nodes,
-            locus: layout.locus(),
+            locus: layout
+                .items
+                .get(usize::from(ordinal))
+                .map_or(Locus::Unlocated, crate::region::Item::locus),
         },
         sites: Sites(sites),
     }
+}
+
+/// The seal site an item's table names for `site`: the same component, of
+/// the first ascription. A producer numbers the ascriptions of the whole
+/// laid unit, so one ascription takes another number in another closure; an
+/// item's table holds one site, so the first ascription names it in each.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `site`'s component, at ascription zero.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one ascription numbered apart in two closures.
+/// - witness: `content::tests::a_seal_site_is_named_by_its_component_6522`
+#[spec(ensures: |ret| ret.component() == site.component()
+    && usize::from(ret.sealing()) == 0_usize)]
+fn local_site(site: gandr_core_checker::SealSite) -> gandr_core_checker::SealSite
+{
+    gandr_core_checker::SealSite::new(
+        gandr_core_checker::SealingSite::from(0_usize),
+        site.component(),
+    )
 }
 
 /// The breadth-first walk that numbers an arena graph by discovery.
@@ -4189,13 +4499,26 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             })
             .collect();
         let kind = self.discover(ArenaNode::ValueType(signature.kind()));
+        let presented = signature.presentation();
+        let cells = presented
+            .cells()
+            .map_or(Maybe::Absent(words::Absent::Unworded), |cells| {
+                Maybe::Present(CellsRoots {
+                    sort: self.layout.resolve(cells.sort()),
+                    reflexivities: cells.reflexivities(),
+                    cells: cells.cells().to_vec(),
+                })
+            });
         DataRoots {
             parameters,
             indices,
             constructors,
             results,
             kind,
-            presentation: signature.presentation().clone(),
+            presentation: PresentationRoots {
+                rules: presented.rules().to_vec(),
+                cells,
+            },
         }
     }
 
@@ -6069,26 +6392,6 @@ where
     }
 }
 
-/// A type node minted into an arena.
-///
-/// # Specification
-/// - executable: none — the sort-tagged seat has no arena with which to certify
-///   resolution.
-///
-/// # Adequacy
-/// - hypothesis: L2 — A shared arrow is minted into a noisy arena and
-///   reconstructed by content.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Minted
-{
-    /// A value type.
-    ValueType(ValueTypeId),
-    /// A computation type.
-    CompType(CompTypeId),
-}
-
 /// Where the post-order mint stands at one table entry.
 ///
 /// # Specification
@@ -6108,7 +6411,7 @@ enum MintState
     /// Reached; its children are being minted.
     Open,
     /// Minted.
-    Done(Minted),
+    Done(ArenaNode),
 }
 
 /// One step of the post-order mint.
@@ -6166,7 +6469,7 @@ impl MintEntry for SupportedNode
     }
 }
 
-/// Mint the type table `nodes`, rooted at its first entry, into `arena`.
+/// Mint the table `nodes`, rooted at its first entry, into `arena`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -6184,17 +6487,15 @@ impl MintEntry for SupportedNode
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
 #[spec(ensures: |ret| match ret {
-    Maybe::Present(Minted::ValueType(id)) => arena.value_type(id).is_some()
-        && nodes.first().is_some_and(|node| node.minted_former().sort() == Sort::ValueType),
-    Maybe::Present(Minted::CompType(id)) => arena.comp_type(id).is_some()
-        && nodes.first().is_some_and(|node| node.minted_former().sort() == Sort::CompType),
+    Maybe::Present(minted) => minted.held(arena).is_some()
+        && nodes.first().is_some_and(|node| node.minted_former().sort() == minted.sort()),
     Maybe::Absent(reason) => !nodes.is_empty() || reason == seating::Absent::IllSorted,
 })]
 fn mint_table<Entry>(
     nodes: &[Entry],
     arena: &mut CoreArena,
     layout: &Layout,
-) -> Maybe<Minted, seating::Absent>
+) -> Maybe<ArenaNode, seating::Absent>
 where
     Entry: MintEntry,
 {
@@ -6232,8 +6533,8 @@ where
                     return Maybe::Absent(seating::Absent::IllSorted);
                 };
                 let minted = match mint_node(node.minted_former(), &states, arena, layout) {
-                    Maybe::Present(minted) => minted,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    Ok(minted) => minted,
+                    Err(reason) => return Maybe::Absent(reason),
                 };
                 if let Some(state) = states.get_mut(usize::from(index)) {
                     *state = MintState::Done(minted);
@@ -6249,98 +6550,202 @@ where
     }
 }
 
-/// The value type minted for the entry `index`.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the matching completed seat at `index`, otherwise `IllSorted`.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L2 — the shared-arrow reconstruction exercises completed
-///   seats; malformed child sorts are refused through the enclosing mint. Fresh
-///   and open states are not claimed as direct witness coverage.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-#[spec(ensures: |ret| match states.get(usize::from(index)) {
-    Some(&MintState::Done(Minted::ValueType(id))) => ret == Maybe::Present(id),
-    _ => ret == Maybe::Absent(seating::Absent::IllSorted),
-})]
-fn minted_value_type(
-    states: &[MintState],
-    index: NodeIndex,
-) -> Maybe<ValueTypeId, seating::Absent>
+/// An arena id of one sort, read from a minted node.
+trait Seated: Sized
 {
-    match states.get(usize::from(index)) {
-        Some(&MintState::Done(Minted::ValueType(id))) => Maybe::Present(id),
-        Some(&(MintState::Done(Minted::CompType(_)) | MintState::Fresh | MintState::Open))
-        | None => Maybe::Absent(seating::Absent::IllSorted),
+    /// The id `node` holds, when the node has this sort.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>;
+}
+
+impl Seated for ValueId
+{
+    /// The value `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::Value(id) => Some(id),
+            ArenaNode::Computation(_) | ArenaNode::ValueType(_) | ArenaNode::CompType(_) => None,
+        }
     }
 }
 
-/// The computation type minted for the entry `index`.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the matching completed seat at `index`, otherwise `IllSorted`.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L2 — the shared-arrow reconstruction exercises completed
-///   seats; malformed child sorts are refused through the enclosing mint. Fresh
-///   and open states are not claimed as direct witness coverage.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-#[spec(ensures: |ret| match states.get(usize::from(index)) {
-    Some(&MintState::Done(Minted::CompType(id))) => ret == Maybe::Present(id),
-    _ => ret == Maybe::Absent(seating::Absent::IllSorted),
-})]
-fn minted_comp_type(
-    states: &[MintState],
-    index: NodeIndex,
-) -> Maybe<CompTypeId, seating::Absent>
+impl Seated for ComputationId
 {
-    match states.get(usize::from(index)) {
-        Some(&MintState::Done(Minted::CompType(id))) => Maybe::Present(id),
-        Some(&(MintState::Done(Minted::ValueType(_)) | MintState::Fresh | MintState::Open))
-        | None => Maybe::Absent(seating::Absent::IllSorted),
+    /// The computation `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::Computation(id) => Some(id),
+            ArenaNode::Value(_) | ArenaNode::ValueType(_) | ArenaNode::CompType(_) => None,
+        }
     }
 }
 
-/// Mint one type entry whose children are all minted.
+impl Seated for ValueTypeId
+{
+    /// The value type `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::ValueType(id) => Some(id),
+            ArenaNode::Value(_) | ArenaNode::Computation(_) | ArenaNode::CompType(_) => None,
+        }
+    }
+}
+
+impl Seated for CompTypeId
+{
+    /// The computation type `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::CompType(id) => Some(id),
+            ArenaNode::Value(_) | ArenaNode::Computation(_) | ArenaNode::ValueType(_) => None,
+        }
+    }
+}
+
+/// The node of `Id`'s sort minted for the entry `index`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the completed seat at `index` when it has `Id`'s sort.
+/// - fails: `IllSorted` for an entry that is not minted or has another sort.
+/// - panics: none.
+///
+/// # Errors
+/// `IllSorted`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the shared-arrow reconstruction and terms with a lambda
+///   and a bind exercise completed seats; malformed child sorts are refused
+///   through the enclosing mint. Fresh and open states are not claimed as
+///   direct witness coverage.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+#[spec(ensures: |ret| match states.get(usize::from(index)) {
+    Some(&MintState::Done(node)) => ret == Id::of(node).ok_or(seating::Absent::IllSorted),
+    _ => ret == Err(seating::Absent::IllSorted),
+})]
+fn seat<Id>(
+    states: &[MintState],
+    index: NodeIndex,
+) -> Result<Id, seating::Absent>
+where
+    Id: Seated + PartialEq,
+{
+    match states.get(usize::from(index)) {
+        Some(&MintState::Done(node)) => Id::of(node).ok_or(seating::Absent::IllSorted),
+        Some(&(MintState::Fresh | MintState::Open)) | None => Err(seating::Absent::IllSorted),
+    }
+}
+
+/// The nodes of `Id`'s sort minted for the entries `indices`, in order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one seat for each index, as [`seat`] reads it.
+/// - fails: the first refusal of [`seat`].
+/// - panics: none.
+///
+/// # Errors
+/// `IllSorted`, as [`seat`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — products, sums and tuples mint each part in order.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |ids| ids.len() == indices.len()))]
+fn seats<Id>(
+    states: &[MintState],
+    indices: &[NodeIndex],
+) -> Result<Vec<Id>, seating::Absent>
+where
+    Id: Seated + PartialEq,
+{
+    indices.iter().map(|&index| seat(states, index)).collect()
+}
+
+/// The nodes of `Id`'s sort minted for the fields `fields`, by label.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each label beside the seat of its entry, as [`seat`] reads it.
+/// - fails: the first refusal of [`seat`].
+/// - panics: none.
+///
+/// # Errors
+/// `IllSorted`, as [`seat`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — a record type and a patched type mint each field under
+///   its label.
+/// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.keys().eq(fields.keys())))]
+fn seat_fields<Id>(
+    states: &[MintState],
+    fields: &BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+) -> Result<BTreeMap<gandr_core_term::FieldLabel, Id>, seating::Absent>
+where
+    Id: Seated + PartialEq,
+{
+    fields
+        .iter()
+        .map(|(label, &index)| seat(states, index).map(|id| (label.clone(), id)))
+        .collect()
+}
+
+/// Mint one entry whose children are all minted.
 ///
 /// # Specification
 /// - requires: every child of `node` is `Done` in `states`.
-/// - ensures: the type node of `node`'s former over its children's minted
-///   nodes.
+/// - ensures: the node of `node`'s former over its children's minted nodes, of
+///   `node`'s sort; a closed table-typed native thunk mints its curried body
+///   again from its row.
 /// - fails: `Unresolved` for an unresolved entry, `Unplaced` for a reference
-///   the program does not hold, `IllSorted` for a child of the wrong sort, and
-///   `Unseatable` for a former that holds a term.
+///   the program does not hold, and `IllSorted` for a child of the wrong sort.
 /// - panics: none.
 ///
+/// # Errors
+/// The reasons above.
+///
 /// # Adequacy
-/// - hypothesis: L3 — the shared-arrow graph checks reconstruction; named
-///   refusal tables and wrong-sort children bound failures. The predicate
-///   checks seat resolution, result sort and refusal class, not a duplicate
-///   arena encoding.
+/// - hypothesis: L3 — the shared-arrow graph and terms with a lambda and a bind
+///   check reconstruction; named refusal tables and wrong-sort children bound
+///   failures. The predicate checks seat resolution, result sort and refusal
+///   class, not a duplicate arena encoding.
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
 /// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
-/// - witness: `content::tests::a_data_type_mints_only_unapplied`
+/// - witness: `content::tests::a_data_type_mints_with_its_arguments`
 #[spec(
     requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
     ensures: |ret| match ret {
-        Maybe::Present(Minted::ValueType(id)) => node.sort() == Sort::ValueType && arena.value_type(id).is_some(),
-        Maybe::Present(Minted::CompType(id)) => node.sort() == Sort::CompType && arena.comp_type(id).is_some(),
-        Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
+        Ok(minted) => minted.sort() == node.sort() && minted.held(arena).is_some(),
+        Err(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
-        } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::LinearArrow { .. } | ContentNode::RowTail(_) | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::Patched { .. })
-            || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
-            reason == seating::Absent::Unseatable
         } else {
-            reason == seating::Absent::IllSorted || (matches!(*node, ContentNode::Abstract(_) | ContentNode::Data { .. }) && reason == seating::Absent::Unplaced)
+            reason == seating::Absent::IllSorted
+                || (matches!(*node, ContentNode::Abstract(_) | ContentNode::Data { .. } | ContentNode::Constant(_) | ContentNode::Constructor { .. })
+                    && reason == seating::Absent::Unplaced)
         },
     },
 )]
@@ -6349,320 +6754,576 @@ fn mint_node(
     states: &[MintState],
     arena: &mut CoreArena,
     layout: &Layout,
-) -> Maybe<Minted, seating::Absent>
+) -> Result<ArenaNode, seating::Absent>
 {
-    let ill_sorted = Maybe::Absent(seating::Absent::IllSorted);
-    match *node {
-        ContentNode::RecordType(ref fields) => {
-            let mut minted = BTreeMap::new();
-            for (label, &field) in fields {
-                let Maybe::Present(field) = minted_value_type(states, field)
-                else {
-                    return ill_sorted;
-                };
-                let _previous = minted.insert(label.clone(), field);
-            }
-            Maybe::Present(Minted::ValueType(arena.value_type_record(minted)))
-        },
+    use gandr_core_term::session::ChildOrder;
+
+    let placed = |reference: &Reference| match place(layout, reference) {
+        Maybe::Present(position) => Ok(position),
+        Maybe::Absent(reason) => Err(reason),
+    };
+    Ok(match *node {
         ContentNode::Data {
             ref declaration,
             ref arguments,
+        } => ArenaNode::ValueType(
+            arena.value_type_data(placed(declaration)?, seats(states, arguments)?),
+        ),
+        ContentNode::RecordType(ref fields) => {
+            ArenaNode::ValueType(arena.value_type_record(seat_fields(states, fields)?))
+        },
+        ContentNode::Patched {
+            base,
+            ref fixed,
+            ref meets,
         } => {
-            if !arguments.is_empty() {
-                return Maybe::Absent(seating::Absent::Unseatable);
-            }
-            match place(layout, declaration) {
-                Maybe::Present(position) => Maybe::Present(Minted::ValueType(
-                    arena.value_type_data(position, Vec::new()),
-                )),
-                Maybe::Absent(reason) => Maybe::Absent(reason),
-            }
-        },
-        ContentNode::Stack { input, output } => match (
-            minted_comp_type(states, input),
-            minted_comp_type(states, output),
-        ) {
-            (Maybe::Present(input), Maybe::Present(output)) => {
-                Maybe::Present(Minted::ValueType(arena.value_type_stack(input, output)))
-            },
-            _ => ill_sorted,
-        },
-        ContentNode::WithType(ref components) => {
-            let mut minted = Vec::with_capacity(components.len());
-            for &component in components {
-                let Maybe::Present(component) = minted_comp_type(states, component)
-                else {
-                    return ill_sorted;
-                };
-                minted.push(component);
-            }
-            Maybe::Present(Minted::CompType(arena.comp_type_with(&minted)))
-        },
-        ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
-        ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
-            arena.value_type_universe(sort, level.clone()),
-        )),
-        ContentNode::Abstract(ref reference) => match place(layout, reference) {
-            Maybe::Present(position) => {
-                Maybe::Present(Minted::ValueType(arena.value_type_abstract(position)))
-            },
-            Maybe::Absent(reason) => Maybe::Absent(reason),
-        },
-        ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) => {
-            let mut minted = Vec::with_capacity(parts.len());
-            for &part in parts {
-                let Maybe::Present(part) = minted_value_type(states, part)
-                else {
-                    return ill_sorted;
-                };
-                minted.push(part);
-            }
-            Maybe::Present(Minted::ValueType(
-                if matches!(*node, ContentNode::Product(_)) {
-                    arena.value_type_product(&minted)
-                }
-                else {
-                    arena.value_type_sum(&minted)
-                },
+            let meets = meets
+                .iter()
+                .map(|&(ref label, value)| seat(states, value).map(|value| (label.clone(), value)))
+                .collect::<Result<_, _>>()?;
+            ArenaNode::ValueType(arena.value_type_system(
+                seat(states, base)?,
+                seat_fields(states, fixed)?,
+                meets,
             ))
         },
-        ContentNode::List(element) => match minted_value_type(states, element) {
-            Maybe::Present(element) => {
-                Maybe::Present(Minted::ValueType(arena.value_type_list(element)))
-            },
-            Maybe::Absent(_) => ill_sorted,
+        ContentNode::Stack { input, output } => ArenaNode::ValueType(
+            arena.value_type_stack(seat(states, input)?, seat(states, output)?),
+        ),
+        ContentNode::WithType(ref components) => {
+            ArenaNode::CompType(arena.comp_type_with(&seats::<CompTypeId>(states, components)?))
         },
-        ContentNode::KeptType { value, region } => match minted_value_type(states, value) {
-            Maybe::Present(value) => {
-                Maybe::Present(Minted::ValueType(arena.value_type_kept(value, region)))
-            },
-            Maybe::Absent(_) => ill_sorted,
+        ContentNode::Base(base) => ArenaNode::ValueType(arena.value_type_base(base)),
+        ContentNode::Universe { sort, ref level } => {
+            ArenaNode::ValueType(arena.value_type_universe(sort, level.clone()))
         },
-        ContentNode::StaticPi { domain, codomain } => {
-            match (
-                minted_value_type(states, domain),
-                minted_value_type(states, codomain),
-            ) {
-                (Maybe::Present(domain), Maybe::Present(codomain)) => Maybe::Present(
-                    Minted::ValueType(arena.value_type_static_pi(domain, codomain)),
-                ),
-                _ => ill_sorted,
-            }
+        ContentNode::Abstract(ref reference) => {
+            ArenaNode::ValueType(arena.value_type_abstract(placed(reference)?))
         },
-        ContentNode::Sigma { first, second } => {
-            match (
-                minted_value_type(states, first),
-                minted_value_type(states, second),
-            ) {
-                (Maybe::Present(first), Maybe::Present(second)) => {
-                    Maybe::Present(Minted::ValueType(arena.value_type_sigma(first, second)))
-                },
-                _ => ill_sorted,
-            }
+        ContentNode::Product(ref parts) => {
+            ArenaNode::ValueType(arena.value_type_product(&seats::<ValueTypeId>(states, parts)?))
         },
-        ContentNode::ThunkType(body) => match minted_comp_type(states, body) {
-            Maybe::Present(body) => Maybe::Present(Minted::ValueType(arena.value_type_thunk(body))),
-            Maybe::Absent(_) => ill_sorted,
+        ContentNode::Sum(ref parts) => {
+            ArenaNode::ValueType(arena.value_type_sum(&seats::<ValueTypeId>(states, parts)?))
         },
-        ContentNode::TypeLift { inner, ref target } => match minted_value_type(states, inner) {
-            Maybe::Present(inner) => Maybe::Present(Minted::ValueType(
-                arena.value_type_lift(inner, target.clone()),
-            )),
-            Maybe::Absent(_) => ill_sorted,
+        ContentNode::List(element) => {
+            ArenaNode::ValueType(arena.value_type_list(seat(states, element)?))
         },
-        ContentNode::Returner {
-            result,
-            ref effects,
-        } => {
-            let Maybe::Present(result) = minted_value_type(states, result)
-            else {
-                return ill_sorted;
-            };
-            let effects = effects.try_relocate(|ty| match minted_value_type(states, ty) {
-                Maybe::Present(ty) => Ok(ty),
-                Maybe::Absent(reason) => Err(reason),
-            });
-            match effects {
-                Ok(effects) => Maybe::Present(Minted::CompType(
-                    arena.comp_type_returner_with_effects(result, effects),
-                )),
-                Err(reason) => Maybe::Absent(reason),
-            }
+        ContentNode::KeptType { value, region } => {
+            ArenaNode::ValueType(arena.value_type_kept(seat(states, value)?, region))
         },
-        ContentNode::Returns {
-            ref results,
-            ref effects,
-        } => {
-            let mut minted = Vec::with_capacity(results.len());
-            for &result in results {
-                let Maybe::Present(result) = minted_value_type(states, result)
-                else {
-                    return ill_sorted;
-                };
-                minted.push(result);
-            }
-            let effects = effects.try_relocate(|ty| match minted_value_type(states, ty) {
-                Maybe::Present(ty) => Ok(ty),
-                Maybe::Absent(reason) => Err(reason),
-            });
-            match effects {
-                Ok(effects) => Maybe::Present(Minted::CompType(
-                    arena.comp_type_returns_with_effects(&minted, effects),
-                )),
-                Err(reason) => Maybe::Absent(reason),
-            }
+        ContentNode::StaticPi { domain, codomain } => ArenaNode::ValueType(
+            arena.value_type_static_pi(seat(states, domain)?, seat(states, codomain)?),
+        ),
+        ContentNode::Sigma { first, second } => ArenaNode::ValueType(
+            arena.value_type_sigma(seat(states, first)?, seat(states, second)?),
+        ),
+        ContentNode::ThunkType(body) => {
+            ArenaNode::ValueType(arena.value_type_thunk(seat(states, body)?))
         },
-        ContentNode::SessionType(ref session) => {
-            match session.try_relocate(|ty| match minted_value_type(states, ty) {
-                Maybe::Present(ty) => Ok(ty),
-                Maybe::Absent(reason) => Err(reason),
-            }) {
-                Ok(session) => Maybe::Present(Minted::ValueType(arena.value_type_session(session))),
-                Err(reason) => Maybe::Absent(reason),
-            }
+        ContentNode::TypeLift { inner, ref target } => {
+            ArenaNode::ValueType(arena.value_type_lift(seat(states, inner)?, target.clone()))
         },
+        ContentNode::SessionType(ref session) => ArenaNode::ValueType(
+            arena.value_type_session(session.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?),
+        ),
         ContentNode::Capability {
             ref authority,
             grade,
             region,
-        } => {
-            let authority = authority.try_relocate(|ty| match minted_value_type(states, ty) {
-                Maybe::Present(ty) => Ok(ty),
-                Maybe::Absent(reason) => Err(reason),
-            });
-            match authority {
-                Ok(authority) => Maybe::Present(Minted::ValueType(
-                    arena.value_type_capability(authority, grade, region),
-                )),
-                Err(reason) => Maybe::Absent(reason),
-            }
+        } => ArenaNode::ValueType(arena.value_type_capability(
+            authority.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+            grade,
+            region,
+        )),
+        ContentNode::PathUniverse(source, target) => ArenaNode::ValueType(
+            arena.value_type_path_universe(seat(states, source)?, seat(states, target)?),
+        ),
+        ContentNode::PathType {
+            carrier,
+            left,
+            right,
+        } => ArenaNode::ValueType(arena.value_type_path(
+            seat(states, carrier)?,
+            seat(states, left)?,
+            seat(states, right)?,
+        )),
+        ContentNode::BridgeType {
+            carrier,
+            left,
+            right,
+        } => ArenaNode::ValueType(arena.value_type_bridge(
+            seat(states, carrier)?,
+            seat(states, left)?,
+            seat(states, right)?,
+        )),
+        ContentNode::FlowType {
+            carrier,
+            source,
+            target,
+        } => ArenaNode::ValueType(arena.value_type_flow(
+            seat(states, carrier)?,
+            seat(states, source)?,
+            seat(states, target)?,
+        )),
+        ContentNode::RunType(session) => {
+            ArenaNode::ValueType(arena.value_type_run(seat(states, session)?))
         },
-        ContentNode::Arrow { domain, codomain } => {
-            match (
-                minted_value_type(states, domain),
-                minted_comp_type(states, codomain),
-            ) {
-                (Maybe::Present(domain), Maybe::Present(codomain)) => {
-                    Maybe::Present(Minted::CompType(arena.comp_type_arrow(domain, codomain)))
-                },
-                _ => ill_sorted,
-            }
+        ContentNode::PrefixType(session) => {
+            ArenaNode::ValueType(arena.value_type_prefix(seat(states, session)?))
         },
+        ContentNode::DialogueType(session) => {
+            ArenaNode::ValueType(arena.value_type_dialogue(seat(states, session)?))
+        },
+        ContentNode::WebType => ArenaNode::ValueType(arena.value_type_web()),
+        ContentNode::Element { code, ref target } => {
+            ArenaNode::ValueType(arena.value_type_element(seat(states, code)?, target.clone()))
+        },
+        ContentNode::RowTail(row) => {
+            ArenaNode::ValueType(arena.value_type_row_tail(seat(states, row)?))
+        },
+        ContentNode::UnknownType => ArenaNode::ValueType(arena.value_type_unknown()),
+        ContentNode::BufferType => ArenaNode::ValueType(arena.value_type_buffer()),
+        ContentNode::QubitType => ArenaNode::ValueType(arena.value_type_qubit()),
+        ContentNode::RowKind => ArenaNode::ValueType(arena.value_type_row()),
+        ContentNode::Returner {
+            result,
+            ref effects,
+        } => ArenaNode::CompType(arena.comp_type_returner_with_effects(
+            seat(states, result)?,
+            effects.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+        )),
+        ContentNode::Returns {
+            ref results,
+            ref effects,
+        } => ArenaNode::CompType(arena.comp_type_returns_with_effects(
+            &seats::<ValueTypeId>(states, results)?,
+            effects.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+        )),
+        ContentNode::Arrow { domain, codomain } => ArenaNode::CompType(
+            arena.comp_type_arrow(seat(states, domain)?, seat(states, codomain)?),
+        ),
         ContentNode::Pi { domain, codomain } => {
-            match (
-                minted_value_type(states, domain),
-                minted_comp_type(states, codomain),
-            ) {
-                (Maybe::Present(domain), Maybe::Present(codomain)) => {
-                    Maybe::Present(Minted::CompType(arena.comp_type_pi(domain, codomain)))
-                },
-                _ => ill_sorted,
+            ArenaNode::CompType(arena.comp_type_pi(seat(states, domain)?, seat(states, codomain)?))
+        },
+        ContentNode::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => ArenaNode::CompType(arena.comp_type_linear_arrow(
+            seat(states, domain)?,
+            seat(states, multiplicity)?,
+            seat(states, codomain)?,
+        )),
+        ContentNode::ComputationElement { code, ref target } => {
+            ArenaNode::CompType(arena.comp_type_element(seat(states, code)?, target.clone()))
+        },
+        ContentNode::UnknownComputationType => ArenaNode::CompType(arena.comp_type_unknown()),
+        ContentNode::Constructor {
+            ref family,
+            datatype,
+            tag,
+            ref fields,
+        } => ArenaNode::Value(arena.value_constructor(
+            placed(family)?,
+            seat(states, datatype)?,
+            tag,
+            seats(states, fields)?,
+        )),
+        ContentNode::Record(ref fields) => {
+            ArenaNode::Value(arena.value_record(seat_fields(states, fields)?))
+        },
+        ContentNode::Reify(ref frames) => {
+            use gandr_core_term::control::StackFrame;
+            let frames = frames
+                .iter()
+                .map(|frame| match *frame {
+                    StackFrame::Apply(value) => seat(states, value).map(StackFrame::Apply),
+                    StackFrame::Bind(body) => seat(states, body).map(StackFrame::Bind),
+                    StackFrame::Project(side) => Ok(StackFrame::Project(side)),
+                })
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Value(arena.value_reify(frames))
+        },
+        ContentNode::PrimitiveValue(primitive) => ArenaNode::Value(primitive.thunk(arena)),
+        ContentNode::PathRefl(code) => ArenaNode::Value(arena.value_path_refl(seat(states, code)?)),
+        ContentNode::Here(point) => ArenaNode::Value(arena.value_here(seat(states, point)?)),
+        ContentNode::SessionRelated {
+            relation,
+            source,
+            target,
+            payloads,
+        } => ArenaNode::Value(arena.value_session_related(
+            relation,
+            seat(states, source)?,
+            seat(states, target)?,
+            seat(states, payloads)?,
+        )),
+        ContentNode::Stay(point) => ArenaNode::Value(arena.value_stay(seat(states, point)?)),
+        ContentNode::Then(first, second) => {
+            ArenaNode::Value(arena.value_then(seat(states, first)?, seat(states, second)?))
+        },
+        ContentNode::FlowProduct(first, second) => {
+            ArenaNode::Value(arena.value_flow_product(seat(states, first)?, seat(states, second)?))
+        },
+        ContentNode::Forward(translator) => {
+            ArenaNode::Value(arena.value_forward(seat(states, translator)?))
+        },
+        ContentNode::FunctionFlow(domain, codomain) => ArenaNode::Value(
+            arena.value_function_flow(seat(states, domain)?, seat(states, codomain)?),
+        ),
+        ContentNode::RowValue(ref row) => ArenaNode::Value(
+            arena.value_row(row.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?),
+        ),
+        ContentNode::Recorded(ref moves) => {
+            let moves = moves
+                .iter()
+                .map(|step| step.try_map(|value| seat::<ValueId>(states, value)))
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Value(arena.value_recorded(moves))
+        },
+        ContentNode::Dialogue(ref turns) => {
+            let turns = turns
+                .iter()
+                .map(|turn| {
+                    turn.movement
+                        .try_map(|value| seat::<ValueId>(states, value))
+                        .map(|movement| gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement,
+                        })
+                })
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Value(arena.value_dialogue(turns))
+        },
+        ContentNode::Web(ref pieces) => {
+            ArenaNode::Value(arena.value_web(alloc::sync::Arc::clone(pieces)))
+        },
+        ContentNode::Returned(body) => ArenaNode::Value(arena.value_returned(seat(states, body)?)),
+        ContentNode::Nested(body) => ArenaNode::Value(arena.value_nested(seat(states, body)?)),
+        ContentNode::Run(body) => ArenaNode::Value(arena.value_run(seat(states, body)?)),
+        ContentNode::RecordUpdate(base, overlay) => {
+            ArenaNode::Value(arena.value_record_update(seat(states, base)?, seat(states, overlay)?))
+        },
+        ContentNode::PathProduct(first, second) => {
+            ArenaNode::Value(arena.value_path_product(seat(states, first)?, seat(states, second)?))
+        },
+        ContentNode::Funext(left, right) => {
+            ArenaNode::Value(arena.value_funext(seat(states, left)?, seat(states, right)?))
+        },
+        ContentNode::Equiv(forward, backward) => {
+            ArenaNode::Value(arena.value_equiv(seat(states, forward)?, seat(states, backward)?))
+        },
+        ContentNode::Univalence(equivalence, forward) => ArenaNode::Value(
+            arena.value_univalence(seat(states, equivalence)?, seat(states, forward)?),
+        ),
+        ContentNode::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        } => ArenaNode::Value(arena.value_ua(
+            stratum,
+            alloc::sync::Arc::clone(sides),
+            seat(states, forward)?,
+            seat(states, backward)?,
+        )),
+        ContentNode::Compose {
+            composite,
+            ref cells,
+            realised,
+        } => ArenaNode::Value(arena.value_compose(
+            composite,
+            seats::<ValueId>(states, cells)?.into_boxed_slice(),
+            seat(states, realised)?,
+        )),
+        ContentNode::Fill {
+            composite,
+            generator,
+            ref cells,
+        } => ArenaNode::Value(arena.value_fill(
+            composite,
+            seat(states, generator)?,
+            seats::<ValueId>(states, cells)?.into_boxed_slice(),
+        )),
+        ContentNode::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        } => ArenaNode::Value(arena.value_path_equiv(
+            seat(states, path_type)?,
+            seat(states, forward)?,
+            seat(states, backward)?,
+            alloc::sync::Arc::clone(evidence),
+        )),
+        ContentNode::Variable { zone, index } => {
+            ArenaNode::Value(arena.value_variable(zone, index))
+        },
+        ContentNode::Constant(ref reference) => {
+            ArenaNode::Value(arena.value_constant(placed(reference)?))
+        },
+        ContentNode::ListNil => ArenaNode::Value(arena.value_list_nil()),
+        ContentNode::ListCons(head, tail) => {
+            ArenaNode::Value(arena.value_list_cons(seat(states, head)?, seat(states, tail)?))
+        },
+        ContentNode::Literal(ref literal) => ArenaNode::Value(arena.value_literal(literal.clone())),
+        ContentNode::Tuple(ref components) => {
+            ArenaNode::Value(arena.value_tuple(&seats::<ValueId>(states, components)?))
+        },
+        ContentNode::Injection(summand, body) => {
+            ArenaNode::Value(arena.value_injection(summand, seat(states, body)?))
+        },
+        ContentNode::ValueAscribe { value, ty } => {
+            ArenaNode::Value(arena.value_ascribe(seat(states, value)?, seat(states, ty)?))
+        },
+        ContentNode::Thunk(body) => ArenaNode::Value(arena.value_thunk(seat(states, body)?)),
+        ContentNode::ValueLift { ref target, body } => {
+            ArenaNode::Value(arena.value_lift(target.clone(), seat(states, body)?))
+        },
+        ContentNode::Quote(quoted) => ArenaNode::Value(arena.value_quote(seat(states, quoted)?)),
+        ContentNode::QuoteComputation(quoted) => {
+            ArenaNode::Value(arena.value_quote_computation(seat(states, quoted)?))
+        },
+        ContentNode::StaticLambda(body) => {
+            ArenaNode::Value(arena.value_static_lambda(seat(states, body)?))
+        },
+        ContentNode::StaticApplication(head, argument) => ArenaNode::Value(
+            arena.value_static_application(seat(states, head)?, seat(states, argument)?),
+        ),
+        ContentNode::Hole(hole) => ArenaNode::Value(arena.value_hole(hole)),
+        ContentNode::ValueMark { mark, body } => {
+            ArenaNode::Value(arena.value_mark(mark, seat(states, body)?))
+        },
+        ContentNode::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+            ref arities,
+            equations,
+        } => ArenaNode::Computation(arena.computation_data_case_with_equations(
+            seat(states, scrutinee)?,
+            seat(states, motive)?,
+            (seats(states, branches)?, arities.clone()),
+            equations,
+        )),
+        ContentNode::RecordProjection(record, ref label) => ArenaNode::Computation(
+            arena.computation_record_projection(seat(states, record)?, label.clone()),
+        ),
+        ContentNode::TupleProjection(tuple, component) => ArenaNode::Computation(
+            arena.computation_tuple_projection(seat(states, tuple)?, component),
+        ),
+        ContentNode::Ride {
+            motive,
+            flow,
+            value,
+        } => ArenaNode::Computation(arena.computation_ride(
+            seat(states, motive)?,
+            seat(states, flow)?,
+            seat(states, value)?,
+        )),
+        ContentNode::Session(ref action) => {
+            ArenaNode::Computation(arena.computation_session(action.try_map(
+                ChildOrder::Forward,
+                &mut (),
+                |&mut (), value| seat::<ValueId>(states, value),
+                |&mut (), body| seat::<ComputationId>(states, body),
+                |&mut (), ty| seat::<ValueTypeId>(states, ty),
+            )?))
+        },
+        ContentNode::Memory(ref form) => {
+            ArenaNode::Computation(arena.computation_memory(form.try_map(
+                ChildOrder::Forward,
+                &mut (),
+                |&mut (), value| seat::<ValueId>(states, value),
+                |&mut (), body| seat::<ComputationId>(states, body),
+            )?))
+        },
+        ContentNode::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        } => ArenaNode::Computation(arena.computation_perform(
+            signature.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+            operation.clone(),
+            seat(states, payload)?,
+        )),
+        ContentNode::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        }
+        | ContentNode::Scope {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } => {
+            let signature = signature.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?;
+            let (subject, on_return) = (seat(states, subject)?, seat(states, on_return)?);
+            let clauses = clauses
+                .iter()
+                .map(|clause| {
+                    seat(states, clause.body).map(|body| gandr_core_term::control::EffectClause {
+                        operation: clause.operation.clone(),
+                        body,
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Computation(if matches!(*node, ContentNode::Scope { .. }) {
+                arena.computation_scope(signature, subject, on_return, clauses)
             }
+            else {
+                arena.computation_handle(signature, subject, on_return, clauses)
+            })
         },
-        ContentNode::UnknownType => Maybe::Present(Minted::ValueType(arena.value_type_unknown())),
-        ContentNode::BufferType => Maybe::Present(Minted::ValueType(arena.value_type_buffer())),
-        ContentNode::QubitType => Maybe::Present(Minted::ValueType(arena.value_type_qubit())),
-        ContentNode::RowKind => Maybe::Present(Minted::ValueType(arena.value_type_row())),
-        ContentNode::WebType => Maybe::Present(Minted::ValueType(arena.value_type_web())),
-        ContentNode::UnknownComputationType => {
-            Maybe::Present(Minted::CompType(arena.comp_type_unknown()))
+        ContentNode::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        } => ArenaNode::Computation(arena.computation_exercise(
+            seat(states, capability)?,
+            signature.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+            operation.clone(),
+            seat(states, payload)?,
+        )),
+        ContentNode::Resume(stack, body) => ArenaNode::Computation(
+            arena.computation_resume(seat(states, stack)?, seat(states, body)?),
+        ),
+        ContentNode::Abandon(stack) => {
+            ArenaNode::Computation(arena.computation_abandon(seat(states, stack)?))
         },
-        ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
-        ContentNode::PathUniverse(..)
-        | ContentNode::Patched { .. }
-        | ContentNode::PathType { .. }
-        | ContentNode::BridgeType { .. }
-        | ContentNode::FlowType { .. }
-        | ContentNode::RunType(_)
-        | ContentNode::PrefixType(_)
-        | ContentNode::DialogueType(_)
-        | ContentNode::SessionRelated { .. }
-        | ContentNode::Stay(_)
-        | ContentNode::Then(..)
-        | ContentNode::FlowProduct(..)
-        | ContentNode::Forward(_)
-        | ContentNode::FunctionFlow(..)
-        | ContentNode::Recorded(_)
-        | ContentNode::Dialogue(_)
-        | ContentNode::Web(_)
-        | ContentNode::Decompose(_)
-        | ContentNode::Ride { .. }
-        | ContentNode::Here(_)
-        | ContentNode::Returned(_)
-        | ContentNode::Nested(_)
-        | ContentNode::Run(_)
-        | ContentNode::RecordUpdate(..)
-        | ContentNode::ElementTransport { .. }
-        | ContentNode::TelescopeTransport { .. }
-        | ContentNode::Constructor { .. }
-        | ContentNode::Record(_)
-        | ContentNode::DataCase { .. }
-        | ContentNode::RecordProjection(..)
-        | ContentNode::TupleProjection(..)
-        | ContentNode::Reify(_)
-        | ContentNode::Perform { .. }
-        | ContentNode::Session(_)
-        | ContentNode::Memory(_)
-        | ContentNode::Handle { .. }
-        | ContentNode::Exercise { .. }
-        | ContentNode::Scope { .. }
-        | ContentNode::Resume(..)
-        | ContentNode::Abandon(_)
-        | ContentNode::Split(..)
-        | ContentNode::DependentSplit { .. }
-        | ContentNode::Reset(_)
-        | ContentNode::Shift(_)
-        | ContentNode::With(..)
-        | ContentNode::Ascribe { .. }
-        | ContentNode::ValueAscribe { .. }
-        | ContentNode::Project(..)
-        | ContentNode::PrimitiveValue(_)
-        | ContentNode::Primitive(..)
-        | ContentNode::PathRefl(_)
-        | ContentNode::PathProduct(..)
-        | ContentNode::Funext(..)
-        | ContentNode::Equiv(..)
-        | ContentNode::Univalence(..)
-        | ContentNode::Ua { .. }
-        | ContentNode::Compose { .. }
-        | ContentNode::Fill { .. }
-        | ContentNode::PathEquiv { .. }
-        | ContentNode::Transport(..)
-        | ContentNode::Element { .. }
-        | ContentNode::RowTail(_)
-        | ContentNode::RowValue(_)
-        | ContentNode::ComputationElement { .. }
-        | ContentNode::LinearArrow { .. }
-        | ContentNode::Variable { .. }
-        | ContentNode::Constant(_)
-        | ContentNode::ListNil
-        | ContentNode::ListCons(..)
-        | ContentNode::ListFold { .. }
-        | ContentNode::ListCase { .. }
-        | ContentNode::Literal(_)
-        | ContentNode::Tuple(_)
-        | ContentNode::Injection(..)
-        | ContentNode::Thunk(_)
-        | ContentNode::ValueLift { .. }
-        | ContentNode::Quote(_)
-        | ContentNode::QuoteComputation(_)
-        | ContentNode::StaticLambda(_)
-        | ContentNode::StaticApplication(..)
-        | ContentNode::Lambda(_)
-        | ContentNode::LinearLambda(_)
-        | ContentNode::Application(..)
-        | ContentNode::Return(_)
-        | ContentNode::Bind(..)
-        | ContentNode::ReturnAll(_)
-        | ContentNode::BindAll(..)
-        | ContentNode::Force(_)
-        | ContentNode::Case { .. }
-        | ContentNode::Hole(_)
-        | ContentNode::ValueMark { .. }
-        | ContentNode::ComputationHole(_)
-        | ContentNode::ComputationMark { .. }
-        | ContentNode::Fixpoint { .. } => Maybe::Absent(seating::Absent::Unseatable),
-    }
+        ContentNode::Split(scrutinee, arity, body) => ArenaNode::Computation(
+            arena.computation_split(seat(states, scrutinee)?, arity, seat(states, body)?),
+        ),
+        ContentNode::DependentSplit {
+            scrutinee,
+            arity,
+            motive,
+            body,
+        } => ArenaNode::Computation(arena.computation_dependent_split(
+            seat(states, scrutinee)?,
+            arity,
+            seat(states, motive)?,
+            seat(states, body)?,
+        )),
+        ContentNode::Reset(body) => {
+            ArenaNode::Computation(arena.computation_reset(seat(states, body)?))
+        },
+        ContentNode::Shift(body) => {
+            ArenaNode::Computation(arena.computation_shift(seat(states, body)?))
+        },
+        ContentNode::With(ref components) => ArenaNode::Computation(
+            arena.computation_with(&seats::<ComputationId>(states, components)?),
+        ),
+        ContentNode::Ascribe { body, ty } => ArenaNode::Computation(
+            arena.computation_ascribe(seat(states, body)?, seat(states, ty)?),
+        ),
+        ContentNode::Project(component, subject) => {
+            ArenaNode::Computation(arena.computation_project(component, seat(states, subject)?))
+        },
+        ContentNode::Primitive(primitive, arguments) => {
+            use gandr_core_term::primitive::Arguments;
+            let arguments = match arguments {
+                Arguments::Unary(argument) => Arguments::Unary(seat(states, argument)?),
+                Arguments::Binary([first, second]) => {
+                    Arguments::Binary([seat(states, first)?, seat(states, second)?])
+                },
+            };
+            ArenaNode::Computation(arena.computation_primitive(primitive, arguments))
+        },
+        ContentNode::Transport(path, value) => ArenaNode::Computation(
+            arena.computation_transport(seat(states, path)?, seat(states, value)?),
+        ),
+        ContentNode::ElementTransport {
+            motive,
+            path,
+            value,
+        } => ArenaNode::Computation(arena.computation_path_transport(
+            seat(states, motive)?,
+            seat(states, path)?,
+            seat(states, value)?,
+        )),
+        ContentNode::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => ArenaNode::Computation(arena.computation_telescope_transport(
+            seat(states, motive)?,
+            seat(states, path)?,
+            seat(states, start)?,
+            seat(states, over)?,
+            seat(states, value)?,
+        )),
+        ContentNode::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => ArenaNode::Computation(arena.computation_list_fold(
+            seat(states, element)?,
+            seat(states, result)?,
+            seat(states, list)?,
+            seat(states, on_nil)?,
+            seat(states, on_cons)?,
+        )),
+        ContentNode::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => ArenaNode::Computation(arena.computation_list_case(
+            seat(states, list)?,
+            seat(states, on_nil)?,
+            seat(states, on_cons)?,
+        )),
+        ContentNode::ReturnAll(ref values) => {
+            ArenaNode::Computation(arena.computation_return_all(&seats::<ValueId>(states, values)?))
+        },
+        ContentNode::BindAll(bound, arity, body) => ArenaNode::Computation(
+            arena.computation_bind_all(seat(states, bound)?, arity, seat(states, body)?),
+        ),
+        ContentNode::Lambda(body) => {
+            ArenaNode::Computation(arena.computation_lambda(seat(states, body)?))
+        },
+        ContentNode::LinearLambda(body) => {
+            ArenaNode::Computation(arena.computation_linear_lambda(seat(states, body)?))
+        },
+        ContentNode::Application(head, argument) => ArenaNode::Computation(
+            arena.computation_application(seat(states, head)?, seat(states, argument)?),
+        ),
+        ContentNode::Return(value) => {
+            ArenaNode::Computation(arena.computation_return(seat(states, value)?))
+        },
+        ContentNode::Bind(bound, body) => ArenaNode::Computation(
+            arena.computation_bind(seat(states, bound)?, seat(states, body)?),
+        ),
+        ContentNode::Force(value) => {
+            ArenaNode::Computation(arena.computation_force(seat(states, value)?))
+        },
+        ContentNode::Decompose(dialogue) => {
+            ArenaNode::Computation(arena.computation_decompose(seat(states, dialogue)?))
+        },
+        ContentNode::Case {
+            scrutinee,
+            ref branches,
+        } => ArenaNode::Computation(arena.computation_case(
+            seat(states, scrutinee)?,
+            &seats::<ComputationId>(states, branches)?,
+        )),
+        ContentNode::ComputationHole(hole) => ArenaNode::Computation(arena.computation_hole(hole)),
+        ContentNode::ComputationMark { mark, body } => {
+            ArenaNode::Computation(arena.computation_mark(mark, seat(states, body)?))
+        },
+        ContentNode::Fixpoint { body, evidence } => {
+            ArenaNode::Computation(arena.computation_fixpoint(seat(states, body)?, evidence))
+        },
+        ContentNode::Unresolved(_) => return Err(seating::Absent::Unresolved),
+    })
 }
 
 /// The admission position the item `reference` names takes in `layout`.

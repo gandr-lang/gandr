@@ -1747,14 +1747,8 @@ mod sweeps
     fn resumes_alike(sweep: &Sweep)
     {
         use gandr_core_checker::CheckBudget;
-        use gandr_core_incremental::Program;
         use gandr_core_incremental::check_program;
         use gandr_core_incremental::resume_from;
-        use gandr_surface_dispatcher::Unshadowed;
-        use gandr_surface_dispatcher::classify;
-        use gandr_surface_dispatcher::item_program;
-        use gandr_surface_dispatcher::lay_out_shadowed;
-        use gandr_surface_dispatcher::lower_unit_source;
 
         let grammar = built_in().expect("the built-in grammar builds");
         eprintln!("{}", sweep.rotation());
@@ -1768,28 +1762,7 @@ mod sweeps
             "the sample is drawn: {}",
             visited.len()
         );
-        let program_of = |path: &Path| -> Option<Program> {
-            let own = std::fs::read_to_string(path).expect("a corpus source reads");
-            let laid = lay_out_shadowed(
-                &grammar,
-                path,
-                classify(path),
-                SourceText::from(own.as_str()),
-                &Unshadowed,
-            );
-            let lowering = lower_unit_source(
-                &grammar,
-                SourceText::from(laid.text.as_str()),
-                &laid.unit,
-                &mut LoweringCount::default(),
-            )
-            .ok()?;
-            let Lowered::Module { module, arena } = lowering.into_lowered()
-            else {
-                return None;
-            };
-            item_program(&module, arena).ok()
-        };
+        let program_of = |path: &Path| lowered_program(&grammar, path);
         let mut resumed = 0_usize;
         let mut differing = Vec::new();
         for source in visited {
@@ -1812,6 +1785,159 @@ mod sweeps
             differing.is_empty(),
             "over {resumed} sources, a resume onto the unchanged program gives the fresh set; \
              differing: {differing:?}"
+        );
+    }
+
+    /// The item program the source at `path` lowers to, laid out after its
+    /// import closure; none for a source that lowers to no module.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lowered_program(
+        grammar: &Pbg,
+        path: &Path,
+    ) -> Option<gandr_core_incremental::Program>
+    {
+        use gandr_surface_dispatcher::Unshadowed;
+        use gandr_surface_dispatcher::classify;
+        use gandr_surface_dispatcher::item_program;
+        use gandr_surface_dispatcher::lay_out_shadowed;
+        use gandr_surface_dispatcher::lower_unit_source;
+
+        let own = std::fs::read_to_string(path).expect("a corpus source reads");
+        let laid = lay_out_shadowed(
+            grammar,
+            path,
+            classify(path),
+            SourceText::from(own.as_str()),
+            &Unshadowed,
+        );
+        let lowering = lower_unit_source(
+            grammar,
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            &mut LoweringCount::default(),
+        )
+        .ok()?;
+        let Lowered::Module { module, arena } = lowering.into_lowered()
+        else {
+            return None;
+        };
+        item_program(&module, arena).ok()
+    }
+
+    /// The item tables' sample: sixty-four sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The nightly profile mints the night's slice,
+    /// and the `sweeps` profile every source.
+    const MINTED: Sample = Sample {
+        name: SampleName("every_item_table_mints_back_to_itself"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to mint every source: a seventh
+    /// a night, the count the nightly's sweeps share.
+    const MINTED_NIGHTS: Nights = Nights(7);
+
+    /// Each root of each item table a corpus source checks to, minted into a
+    /// fresh arena and encoded again, gives the table under that root: the
+    /// mint inverts the encoding of each former the corpus holds. The mint
+    /// refuses a root by name only when its table holds a node that content
+    /// keeps unresolved (a stage type, a world type, a codata application)
+    /// or names a declaration the program holds no item for.
+    #[test]
+    fn every_item_table_mints_back_to_itself()
+    {
+        mints_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    #[test]
+    fn every_item_table_mints_back_to_itself_changed()
+    {
+        mints_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits, checked, has each root of each item table
+    /// mint back to the table under it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn mints_alike(sweep: &Sweep)
+    {
+        use gandr_core_checker::CheckBudget;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::Sort;
+        use gandr_core_incremental::TypeContent;
+        use gandr_core_incremental::check_program;
+        use gandr_core_incremental::seating;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(
+            MINTED,
+            MINTED_NIGHTS,
+            &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+        );
+        assert!(
+            visited.len() >= sweep.drawn(MINTED).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        let mut items = 0_usize;
+        let mut minted: BTreeMap<Sort, usize> = BTreeMap::new();
+        let mut refused: BTreeMap<seating::Absent, usize> = BTreeMap::new();
+        let mut differing = Vec::new();
+        for source in visited {
+            let Some(mut checked) = lowered_program(&grammar, &source.path)
+            else {
+                continue;
+            };
+            let mut fresh =
+                Program::new(gandr_core_term::CoreArena::new(), checked.items().to_vec())
+                    .expect("the items keep their order");
+            let resume = check_program(&mut checked, CheckBudget::DEFAULT)
+                .expect("a lowered program checks");
+            for item in resume.checkpoints().items() {
+                items = items.saturating_add(1);
+                let content = item.content();
+                for (root, sort) in content.declaration().iter() {
+                    let table = content.rooted(root);
+                    match table.mint_in(&mut fresh) {
+                        Maybe::Present(node) => {
+                            let count = minted.entry(sort).or_default();
+                            *count = count.saturating_add(1);
+                            if TypeContent::of_node(&fresh, node) != table {
+                                differing.push((
+                                    source.path.clone(),
+                                    content.reference().clone(),
+                                    root,
+                                ));
+                            }
+                        },
+                        Maybe::Absent(reason) => {
+                            let count = refused.entry(reason).or_default();
+                            *count = count.saturating_add(1);
+                        },
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "{items} items; roots minted back, by sort: {minted:?}; refused, by reason: {refused:?}"
+        );
+        assert!(
+            differing.is_empty(),
+            "over {items} items, each minted root reads back as the table under it; differing: \
+             {differing:?}"
+        );
+        assert!(
+            refused.keys().all(|&reason| matches!(
+                reason,
+                seating::Absent::Unresolved | seating::Absent::Unplaced
+            )),
+            "a root is refused only for an unresolved node or an unplaced reference: {refused:?}"
         );
     }
 

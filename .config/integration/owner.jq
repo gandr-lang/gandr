@@ -8,9 +8,9 @@
 # The input holds `check`, the failing check; `head`, the red head;
 # `green`, the last head where the gate passes; `culprit`, the first commit
 # where the check fails; `pr`, its pull request `{number, branch, title}`,
-# or null when GitHub names none; `lines`, the failing lines of the check's
-# log; and `open`, the open defects whose title opens `landing:`, each
-# `{number, title}`.
+# or null when GitHub names none; `log`, the lines of the gate's log, of
+# which `lines.jq` takes the check's own (#6659); and `open`, the open
+# defects whose title opens `landing:`, each `{number, title}`.
 #
 # The output holds `lane`, the culprit's lane, or `triage` when no pull
 # request names it; `title`, the defect's title; `number`, the open
@@ -19,6 +19,7 @@
 # `## Observation`, or the comment on the open one; and `page`, the `FIX`
 # line, `{n}` standing for the number
 # when the watcher files a new defect.
+include "lines";
 def short: .[0:9];
 . as $in
 | ($in.pr // null) as $pr
@@ -38,7 +39,7 @@ def short: .[0:9];
       "The failing lines:",
       "",
       "```text",
-      ($in.lines[]),
+      ($in.log | check_lines($in.check))[],
       "```"
     ]) | join("\n")),
     page: "FIX #\($match.number // "{n}"): `\($in.check)` fails on landing at \($in.head | short), and \($brings) brings it. Repair it on landing, never with a revert."

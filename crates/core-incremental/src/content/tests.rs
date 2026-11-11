@@ -18,6 +18,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use quenchant_shape::shape::Maybe;
 
+use super::ArenaNode;
 use super::ContentNode;
 use super::Opacity;
 use super::Sort;
@@ -237,7 +238,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
             .iter()
             .any(|node| matches!(*node.former(), ContentNode::Unresolved(_)))
     );
-    let content = TypeContent::of_value_type(&source, ty);
+    let content = TypeContent::of_node(&source, ArenaNode::ValueType(ty));
     let mut target = CoreArena::new();
     let _ = target.value_type_base(BaseType::String);
     let mut target = single(
@@ -250,7 +251,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
     else {
         panic!("closed Stack/With codes seat");
     };
-    assert_eq!(TypeContent::of_value_type(&target, minted), content);
+    assert_eq!(TypeContent::of_node(&target, minted), content);
 }
 
 #[test]
@@ -378,7 +379,7 @@ fn capability_graphs_keep_authority_region_and_scope()
             "region, grade, authority and the scope each contribute to identity"
         );
     }
-    let table = TypeContent::of_value_type(&source, ty);
+    let table = TypeContent::of_node(&source, ArenaNode::ValueType(ty));
     let mut target = single(
         CoreArena::new(),
         Maybe::Absent(signature::Absent::Unsigned),
@@ -389,7 +390,7 @@ fn capability_graphs_keep_authority_region_and_scope()
     else {
         panic!("a capability type seats");
     };
-    assert_eq!(TypeContent::of_value_type(&target, minted), table);
+    assert_eq!(TypeContent::of_node(&target, minted), table);
 }
 
 /// The integer literal zero.
@@ -444,7 +445,7 @@ fn a_type_minted_back_has_its_own_content()
         Maybe::Present(ty),
         Maybe::Absent(body::Absent::Hole),
     );
-    let content = TypeContent::of_value_type(&program, ty);
+    let content = TypeContent::of_node(&program, ArenaNode::ValueType(ty));
     assert_eq!(
         content.nodes().len(),
         4_usize,
@@ -468,7 +469,7 @@ fn a_type_minted_back_has_its_own_content()
         panic!("a type table of admitted formers seats: {minted:?}");
     };
     assert_eq!(
-        TypeContent::of_value_type(&minted_into, minted),
+        TypeContent::of_node(&minted_into, minted),
         content,
         "the minted type reads back as the table it came from, sharing and all"
     );
@@ -491,7 +492,7 @@ fn every_dependent_former_mints_back_as_its_own_table()
         Maybe::Present(ty),
         Maybe::Absent(body::Absent::Hole),
     );
-    let content = TypeContent::of_value_type(&program, ty);
+    let content = TypeContent::of_node(&program, ArenaNode::ValueType(ty));
     let mut target = CoreArena::new();
     let _noise = target.value_type_unit();
     let mut minted_into = single(
@@ -507,11 +508,11 @@ fn every_dependent_former_mints_back_as_its_own_table()
     else {
         panic!("a sigma, a static pi and a pi seat: {minted:?}");
     };
-    assert_eq!(TypeContent::of_value_type(&minted_into, minted), content);
+    assert_eq!(TypeContent::of_node(&minted_into, minted), content);
 }
 
 #[test]
-fn a_data_type_mints_only_unapplied()
+fn a_data_type_mints_with_its_arguments()
 {
     let it = || Reference::Item {
         key: ItemKey::from("it"),
@@ -522,16 +523,29 @@ fn a_data_type_mints_only_unapplied()
         Maybe::Absent(signature::Absent::Unsigned),
         Maybe::Absent(body::Absent::Hole),
     );
-    let (arena, layout) = program.parts_mut();
     let bare = crate::fixture::type_content(&[ContentNode::Data {
         declaration: it(),
         arguments: Vec::new(),
     }]);
-    assert!(
-        matches!(bare.mint(arena, layout), Maybe::Present(_)),
-        "a data type of no arguments seats at its declaration"
-    );
     let applied = crate::fixture::type_content(&[
+        ContentNode::Data {
+            declaration: it(),
+            arguments: vec![NodeIndex::from(1_usize)],
+        },
+        ContentNode::Literal(zero()),
+    ]);
+    for (content, holds) in [(&bare, "no argument"), (&applied, "a literal argument")] {
+        let Maybe::Present(minted) = content.mint_in(&mut program)
+        else {
+            panic!("a data type of {holds} seats at its declaration");
+        };
+        assert_eq!(
+            &TypeContent::of_node(&program, minted),
+            content,
+            "a data type of {holds} reads back as its table"
+        );
+    }
+    let unplaced = crate::fixture::type_content(&[
         ContentNode::Data {
             declaration: it(),
             arguments: vec![NodeIndex::from(1_usize)],
@@ -539,9 +553,97 @@ fn a_data_type_mints_only_unapplied()
         ContentNode::Constant(Reference::Unoccupied),
     ]);
     assert_eq!(
-        applied.mint(arena, layout),
-        Maybe::Absent(seating::Absent::Unseatable),
-        "and one applied to an argument does not"
+        unplaced.mint_in(&mut program),
+        Maybe::Absent(seating::Absent::Unplaced),
+        "an argument naming no item of the program is refused by name"
+    );
+}
+
+/// The variable the bind of [`lambda_bind`] returns.
+///
+/// # Specification
+/// - executable: none — a data type; [`lambda_bind`] states what each variant
+///   builds.
+#[derive(Clone, Copy)]
+enum Returned
+{
+    /// The bind's own binder, as the very node the bind returns first.
+    Shared,
+    /// The bind's own binder, as a node built apart.
+    Apart,
+    /// The lambda's binder.
+    Outer,
+}
+
+/// `thunk (λ. bind (return x₀) (return xᵢ))`: `i` is zero unless `returned`
+/// is [`Returned::Outer`], and for [`Returned::Shared`] the two variables are
+/// one arena node.
+///
+/// # Specification
+/// trivial.
+fn lambda_bind(
+    arena: &mut CoreArena,
+    returned: Returned,
+) -> ValueId
+{
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let result = match returned {
+        Returned::Shared => bound,
+        Returned::Apart => arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+        Returned::Outer => arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32)),
+    };
+    let bound = arena.computation_return(bound);
+    let result = arena.computation_return(result);
+    let bind = arena.computation_bind(bound, result);
+    let lambda = arena.computation_lambda(bind);
+    arena.value_thunk(lambda)
+}
+
+#[test]
+fn alpha_equal_terms_mint_to_one_name()
+{
+    let mut arena = CoreArena::new();
+    let shared = lambda_bind(&mut arena, Returned::Shared);
+    let apart = lambda_bind(&mut arena, Returned::Apart);
+    let other = lambda_bind(&mut arena, Returned::Outer);
+    let source = single(
+        arena,
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Present(shared),
+    );
+    let names =
+        [shared, apart, other].map(|term| TypeContent::of_node(&source, ArenaNode::Value(term)));
+    let [ref shared, ref apart, ref other] = names;
+    assert_eq!(shared, apart, "a term shared or built apart has one name");
+    assert_ne!(
+        shared, other,
+        "a bind that returns its own binder and one that returns the lambda's have two names"
+    );
+    let item = encode_item(source.arena(), source.layout(), ItemOrdinal::from(0_usize)).content;
+    let Some((body, Sort::Value)) = item.declaration().iter().next()
+    else {
+        panic!("an unsigned item's one root is its body");
+    };
+    assert_eq!(
+        &item.rooted(body),
+        shared,
+        "the item's table under its body is the body's own name"
+    );
+    let mut target = CoreArena::new();
+    let _noise = target.value_unit();
+    let mut target = Program::new(target, Vec::new()).expect("empty declaration order");
+    let minted = names
+        .each_ref()
+        .map(|name| match name.mint_in(&mut target) {
+            Maybe::Present(node) => node,
+            Maybe::Absent(reason) => panic!("a lambda over a bind mints: {reason:?}"),
+        });
+    assert_eq!(
+        minted.map(|node| TypeContent::of_node(&target, node)),
+        names,
+        "each minted term reads back as its own name"
     );
 }
 
@@ -630,7 +732,7 @@ fn effect_rows_round_trip_without_losing_operation_types()
     let returner = arena.comp_type_returner_with_effects(unit, effects);
     let root = arena.value_type_thunk(returner);
     let source = Program::new(arena, Vec::new()).expect("empty declaration order");
-    let content = TypeContent::of_value_type(&source, root);
+    let content = TypeContent::of_node(&source, ArenaNode::ValueType(root));
     let Some(&ContentNode::Returner {
         result,
         ref effects,
@@ -684,8 +786,8 @@ fn effect_rows_round_trip_without_losing_operation_types()
     else {
         panic!("portable row types seat");
     };
-    assert_ne!(minted, root);
-    assert_eq!(TypeContent::of_value_type(&target, minted), content);
+    assert_ne!(minted, ArenaNode::ValueType(root));
+    assert_eq!(TypeContent::of_node(&target, minted), content);
 }
 
 #[test]
@@ -698,7 +800,7 @@ fn an_unmintable_table_is_refused_by_name()
                 ContentNode::PathUniverse(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
                 ContentNode::Product(Vec::new()),
             ],
-            seating::Absent::Unseatable,
+            seating::Absent::IllSorted,
         ),
         (
             vec![ContentNode::Unresolved(Sort::ValueType)],
@@ -713,23 +815,13 @@ fn an_unmintable_table_is_refused_by_name()
         ),
         (
             vec![
-                ContentNode::Returner {
-                    result: NodeIndex::from(1_usize),
-                    effects: gandr_core_term::effect::EffectRow::EMPTY,
-                },
-                ContentNode::Base(BaseType::Integer),
-            ],
-            seating::Absent::IllSorted,
-        ),
-        (
-            vec![
                 ContentNode::Element {
                     code: NodeIndex::from(1_usize),
                     target: level,
                 },
                 ContentNode::Constant(Reference::Unoccupied),
             ],
-            seating::Absent::Unseatable,
+            seating::Absent::Unplaced,
         ),
         // An open table is projected before it is minted, and refused alike.
         (
@@ -738,12 +830,14 @@ fn an_unmintable_table_is_refused_by_name()
                     code: NodeIndex::from(1_usize),
                     target: Level::zero(),
                 },
+                ContentNode::Tuple(vec![NodeIndex::from(2_usize), NodeIndex::from(3_usize)]),
                 ContentNode::Variable {
                     zone: gandr_core_term::Zone::Intuitionistic,
                     index: gandr_kernel_term::DeBruijnIndex::from(0_u32),
                 },
+                ContentNode::Constant(Reference::Unoccupied),
             ],
-            seating::Absent::Unseatable,
+            seating::Absent::Unplaced,
         ),
     ];
     for (nodes, expected) in cases {
@@ -775,6 +869,25 @@ fn an_unmintable_table_is_refused_by_name()
             Maybe::Absent(seating::Absent::Cyclic)
         ),
         "a de Bruijn table no arena can mint child before parent"
+    );
+    let returner = crate::fixture::type_content(&[
+        ContentNode::Returner {
+            result: NodeIndex::from(1_usize),
+            effects: gandr_core_term::effect::EffectRow::EMPTY,
+        },
+        ContentNode::Base(BaseType::Integer),
+    ]);
+    assert!(
+        matches!(
+            returner.mint(arena, layout),
+            Maybe::Present(ArenaNode::CompType(_))
+        ),
+        "a returner table mints as a computation type"
+    );
+    assert_eq!(
+        returner.mint_value_type(arena, layout),
+        Maybe::Absent(seating::Absent::IllSorted),
+        "and the seat of a synthesised type refuses it by its sort"
     );
     assert_eq!(
         crate::fixture::type_content(&cyclic).mint(arena, layout),
@@ -883,8 +996,12 @@ fn an_unresolved_id_makes_the_item_opaque()
     assert_eq!(content.opacity(), Opacity::Opaque, "and the item is opaque");
 }
 
+/// #6522: an item is located by its own closure alone. Beside a world in a
+/// source it does not reach, the item is transparent, as it is alone; when
+/// its front end states its closure located, it is opaque and refused
+/// persistence by name. The world itself is located.
 #[test]
-fn an_item_of_a_located_program_is_opaque()
+fn an_item_of_a_located_closure_is_opaque()
 {
     let item = |arena: &mut CoreArena, position: usize| {
         let integer = arena.value_type_base(BaseType::Integer);
@@ -906,29 +1023,56 @@ fn an_item_of_a_located_program_is_opaque()
     let alone = vec![item(&mut arena, 0)];
     let alone = Program::new(arena, alone).expect("one item ascends");
     let alone = encode_item(alone.arena(), alone.layout(), ItemOrdinal::from(0_usize)).content;
-    let mut arena = CoreArena::new();
-    let beside = vec![
-        Item::new(
-            ItemKey::from("seat"),
-            Declaration::world(
-                ConstantIndex::from(0_usize),
-                gandr_core_term::effect::EffectRow::EMPTY,
-                OriginToken::from(0_usize),
+    let beside = |located: bool| {
+        let mut arena = CoreArena::new();
+        let plain = item(&mut arena, 1);
+        let items = vec![
+            Item::new(
+                ItemKey::from("seat"),
+                Declaration::world(
+                    ConstantIndex::from(0_usize),
+                    gandr_core_term::effect::EffectRow::EMPTY,
+                    OriginToken::from(0_usize),
+                ),
             ),
-        ),
-        item(&mut arena, 1),
-    ];
-    let beside = Program::new(arena, beside).expect("two items ascend");
-    let located = encode_item(beside.arena(), beside.layout(), ItemOrdinal::from(1_usize)).content;
+            if located { plain.located() } else { plain },
+        ];
+        let program = Program::new(arena, items).expect("two items ascend");
+        [0_usize, 1_usize].map(|ordinal| {
+            encode_item(
+                program.arena(),
+                program.layout(),
+                ItemOrdinal::from(ordinal),
+            )
+            .content
+        })
+    };
+    let [world, unreached] = beside(false);
+    let [_, located] = beside(true);
     assert_eq!(
-        (alone.opacity(), located.opacity()),
-        (Opacity::Transparent, Opacity::Opaque),
-        "the same item is transparent alone and opaque beside a world declaration"
+        (
+            alone.opacity(),
+            unreached.opacity(),
+            located.opacity(),
+            world.opacity()
+        ),
+        (
+            Opacity::Transparent,
+            Opacity::Transparent,
+            Opacity::Opaque,
+            Opacity::Opaque
+        ),
+        "the item is transparent alone and beside a world it does not reach, and opaque in a \
+         located closure; the world is located"
+    );
+    assert_eq!(
+        alone, unreached,
+        "a world the item does not reach leaves its content as it is alone"
     );
     assert_eq!(
         alone.nodes(),
         located.nodes(),
-        "its nodes are the same; the program's locus is what differs"
+        "its nodes are the same; the closure's locus is what differs"
     );
     let mut bytes = crate::codec::CheckpointBytes::default();
     assert_eq!(
@@ -967,13 +1111,13 @@ fn a_signature_renumbers_to_its_own_type_content()
     );
     assert_eq!(
         content.signature_type(),
-        Some(TypeContent::of_value_type(&program, ty)),
+        Some(TypeContent::of_node(&program, ArenaNode::ValueType(ty))),
         "the signature renumbered from its root is the type encoded alone"
     );
     let signature = NodeIndex::from(0_usize);
     assert_eq!(
         content.debruijn(signature),
-        TypeContent::of_value_type(&program, ty).debruijn(),
+        TypeContent::of_node(&program, ArenaNode::ValueType(ty)).debruijn(),
         "and its projection is the type's"
     );
 }
@@ -1104,7 +1248,7 @@ fn abstract_types_relocate_by_key_and_occurrence()
         let (arena, layout) = program.parts_mut();
         content.mint(arena, layout)
     };
-    let Maybe::Present(id) = minted
+    let Maybe::Present(ArenaNode::ValueType(id)) = minted
     else {
         panic!("an existing occurrence must place: {minted:?}");
     };
@@ -1114,7 +1258,10 @@ fn abstract_types_relocate_by_key_and_occurrence()
             42_usize
         )))
     );
-    assert_eq!(TypeContent::of_value_type(&program, id), content);
+    assert_eq!(
+        TypeContent::of_node(&program, ArenaNode::ValueType(id)),
+        content
+    );
     let absent = crate::fixture::type_content(&[ContentNode::Abstract(Reference::Item {
         key: ItemKey::from("repeated"),
         occurrence: Occurrence::from(2_usize),
@@ -1905,7 +2052,7 @@ fn open_roots_project_under_their_own_supports()
         results: Vec::new(),
         constructors: vec![vec![index(1_usize), index(2_usize)]],
         kind: index(4_usize),
-        presentation: gandr_core_term::Presentation::new(Vec::new()),
+        presentation: super::PresentationRoots::free(),
     };
     let selected = |content: &[gandr_core_term::support::Thinning]| {
         content
@@ -2077,5 +2224,151 @@ fn debruijn_projection_reports_index_overflow()
         content.debruijn(),
         Err(PlacementError::IndexOverflow),
         "a support at the ceiling under a binder overflows rather than saturating"
+    );
+}
+
+/// #6522: a table names each hole by its place among the holes it meets, in
+/// the hole's own origin. Two closures number one form apart, so they name
+/// the item's holes apart; the item still has one content in both. Two
+/// holes of one form stay apart, and each keeps its origin.
+#[test]
+fn a_hole_is_named_by_its_place_in_the_table_6522()
+{
+    use gandr_core_term::hole::HoleForm;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::HoleOrigin;
+    use gandr_core_term::hole::HolePlace;
+
+    let content = |form: u32| {
+        let mut arena = CoreArena::new();
+        let ty = arena.value_type_base(BaseType::Integer);
+        let written =
+            HoleId::written(HoleForm::from(form), HolePlace::from(0_u32)).expect("a written name");
+        let nominated = HoleId::nominated_in(HoleForm::from(form), HolePlace::from(0_u32))
+            .expect("a nominated name");
+        let first = arena.value_hole(written);
+        let second = arena.value_hole(nominated);
+        let again = arena.value_hole(written);
+        let body = arena.value_tuple(&[first, second, again]);
+        let program = single(arena, Maybe::Present(ty), Maybe::Present(body));
+        encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content
+    };
+    let (near, far) = (content(3_u32), content(900_u32));
+    assert_eq!(
+        near, far,
+        "a form numbered apart in two closures gives the item one content"
+    );
+    let holes: Vec<HoleId> = formers(near.nodes())
+        .into_iter()
+        .filter_map(|node| {
+            if let ContentNode::Hole(hole) = node {
+                Some(hole)
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        holes.iter().map(|hole| hole.origin()).collect::<Vec<_>>(),
+        [HoleOrigin::Written, HoleOrigin::Nominated],
+        "the two holes of one form stay two, each in its own origin"
+    );
+}
+
+/// The table under one root of an item names its holes by their place under
+/// that root, as the root's own content does, whatever holes the item meets
+/// before it.
+#[test]
+fn a_root_names_its_holes_by_their_place_under_it()
+{
+    use gandr_core_term::hole::HoleForm;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::HolePlace;
+
+    let mut arena = CoreArena::new();
+    let ty = arena.value_type_base(BaseType::Integer);
+    let name =
+        |form: u32| HoleId::written(HoleForm::from(form), HolePlace::from(0_u32)).expect("a name");
+    let before = arena.value_hole(name(0_u32));
+    let under = arena.value_hole(name(1_u32));
+    let inner = arena.value_tuple(&[under]);
+    let body = arena.value_tuple(&[before, inner]);
+    let program = single(arena, Maybe::Present(ty), Maybe::Present(body));
+    let encoded = encode_item(
+        program.arena(),
+        program.layout(),
+        ItemOrdinal::from(0_usize),
+    );
+    let Maybe::Present(index) = encoded.sites.of(ArenaNode::Value(inner))
+    else {
+        panic!("the item reaches the inner tuple");
+    };
+    assert_eq!(
+        encoded.content.rooted(index),
+        TypeContent::of_node(&program, ArenaNode::Value(inner)),
+        "the inner tuple's hole takes the first place under it, as its own content names it"
+    );
+}
+
+/// #6522: an item's table names its seal site by the component alone. Two
+/// closures number one ascription apart, so they give the abstract type two
+/// sites of one component; the item still has one content in both, and
+/// another component gives another content.
+#[test]
+fn a_seal_site_is_named_by_its_component_6522()
+{
+    use gandr_core_checker::AbstractType;
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::SealExtent;
+
+    let content = |sealing: usize, component: usize| {
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(GroundSort::Value),
+            Level::zero(),
+        );
+        let representation = arena.value_type_base(BaseType::Integer);
+        let program = Program::new(arena, vec![Item::new(
+            ItemKey::from("T"),
+            Declaration::abstract_type(
+                ConstantIndex::from(0_usize),
+                AbstractType::new(
+                    kind,
+                    representation,
+                    SealExtent::from(1_usize),
+                    SealSite::new(
+                        SealingSite::from(sealing),
+                        ComponentOrdinal::from(component),
+                    ),
+                ),
+                OriginToken::from(0_usize),
+            ),
+        )])
+        .expect("one item ascends");
+        encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content
+    };
+    assert_eq!(
+        content(6, 1),
+        content(7, 1),
+        "an ascription numbered apart in two closures gives the item one content"
+    );
+    assert_ne!(
+        content(6, 1),
+        content(6, 0),
+        "another component of the ascription gives another content"
     );
 }
