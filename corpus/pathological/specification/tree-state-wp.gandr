@@ -11,9 +11,9 @@ import "../../model/specification/tree-state-wp.gandr";
 
 /// A precondition the increment does not meet: ending at one needs the
 /// successor of the initial state to be one, not the state itself. The
-/// machine does not decide the two types, and the pair is refused as
-/// undecided.
-@[refuses("Undecided")]
+/// successor is a held sum over the state, and neither it nor the state
+/// reduces, so the machine refutes the pair as a mismatch.
+@[refuses("TypeMismatch")]
 def incrMissesOne : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, isOne(*{}, s)) -> wp(m, isOne, s)
