@@ -5849,7 +5849,9 @@ done
 # the fixer once for each head of `main`. The page script and the seats
 # are the stall detector's configuration. `--once` reads once and ends.
 # `--install` runs it as a service beside `stall:watch`, on the triage
-# lane's host, and `--remove` stops and deletes that service.
+# lane's host, and `--remove` stops and deletes that service. The service
+# runs from a clone of its own under the state directory, set to
+# `origin/landing` before each reading (#6653).
 ["landing:watch"]
 description = "Run the landing's gate on each new head of landing and give a red head an owner; --install runs it as a service"
 quiet = true
@@ -5868,8 +5870,14 @@ if [[ ${usage_install:-false} == true ]]; then watch_service install; exit; fi
 source .config/gh/repo.bash
 repo=$(repo_name)
 while :; do
+  # The service sets its own checkout to `origin/landing` before each
+  # reading, and the reading sources `watch.bash` from it again (#6653).
+  # A run from another checkout reads with that checkout's script.
+  if [[ $(git rev-parse --show-toplevel) -ef $watch_home ]]; then
+    watch_home_sync || echo "landing:watch: $watch_home cannot take origin/landing; reading with the commit it holds" >&2
+  fi
   # A reading that prints no state keeps the last one.
-  state=$(watch_once "$repo" | jq -c --argjson read "$(date +%s)" '.read = $read') || state=
+  state=$(watch_reading "$repo" | jq -c --argjson read "$(date +%s)" '.read = $read') || state=
   [[ -z $state ]] || watch_remember "$state"
   [[ ${usage_once:-false} == true ]] && break
   sleep "$watch_interval"
