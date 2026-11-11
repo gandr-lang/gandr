@@ -4622,6 +4622,24 @@ mise run --quiet body:prose "$body"
 "$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
 "$passed" require pr:open HEAD || exit 2
 replayed || exit 2
+# The stack goes on from no draft (#6797): a draft holds every pull request
+# above it. The top was read through the budget's shared cache, and a seat
+# can hold it in the seconds since, so it is read again fresh before the
+# push. Nor does the branch hold a commit of another open pull request past
+# the base it opens on (`foreign_commits`): a landing would squash it under
+# this title.
+if [[ "$top" != null ]]; then
+  gh_budget_stale
+  if [[ $(top_reading "$top_number" | jq -r .draft) == true ]]; then
+    echo "the top #$top_number is a draft since it was read, and a draft holds every pull request above it; run \`pr:open\` again to stack on the top below it" >&2
+    exit 2
+  fi
+fi
+foreign=$(foreign_commits null "$own" "$base" HEAD) || { echo "the commits of $own past $base cannot be read; run \`pr:open\` again" >&2; exit 2; }
+if [[ "$foreign" != '[]' ]]; then
+  echo "past $base the branch holds $(jq -r 'map("\(.commits) commit(s) of #\(.number)") | join(", ")' <<< "$foreign"), which a landing would squash under this title (#6797); rebase it onto the pull request it builds on, then run \`pr:open\` again" >&2
+  exit 2
+fi
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
@@ -4652,12 +4670,26 @@ if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
       "$passed" require pr:open HEAD || exit 2
       replayed || exit 2
       git push --quiet --force-with-lease origin HEAD
-      gh pr edit "$number" -R "$repo" --base "$base" > /dev/null
+      if ! set_base "$number" "$base"; then
+        mise run --quiet pr:hold "$number" "opened beside #$beside on one base, and its base cannot move onto #$top_number: rebase it onto the top, then \`pr:release $number\`"
+        exit 0
+      fi
       echo "#$number opened beside #$beside on one base; it moves onto #$top_number"
     else
       mise run --quiet pr:hold "$number" "opened beside #$beside on one base: rebase it onto the top, then \`pr:release $number\`"
       exit 0
     fi
+  fi
+fi
+# The base agrees with the branch once the pull request stands (#6797):
+# another seat's `pr:land` or cut can move the base in the seconds since the
+# opening, and keep the branch. A base that disagrees holds the pull request.
+if [[ -z "$unblocks" ]]; then
+  number=${url##*/}
+  foreign=$(foreign_commits "$number" "$own" "$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)") || foreign='[]'
+  if [[ "$foreign" != '[]' ]]; then
+    mise run --quiet pr:hold "$number" "its branch holds $(jq -r 'map("\(.commits) commit(s) of #\(.number)") | join(", ")' <<< "$foreign") past its base: set its base to the pull request it builds on, or rebase it, then \`pr:release $number\`"
+    exit 0
   fi
 fi
 # A stack of one means its top merged after its first reading and before
@@ -5110,7 +5142,11 @@ echo "#$number held $who: $reason"
 '''
 
 # The end of a hold (#3253): the draft taken back and the owner's
-# `hold:owner` label taken off, so the next watch lands it once green.
+# `hold:owner` label taken off, so the next watch lands it once green. A
+# pull request whose branch holds a commit of another open pull request past
+# its base is refused, and the refusal names that pull request
+# (`foreign_commits`, #6797): a landing would squash the commit under its
+# title.
 ["pr:release"]
 description = "End a pull request's hold: ready the draft and take off the owner's label"
 usage = '''
@@ -5123,7 +5159,13 @@ number=${usage_number:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
-IFS=$'\t' read -r draft owner < <(gh pr view "$number" -R "$repo" --json isDraft,labels --jq '[.isDraft, any(.labels[]; .name == "hold:owner")] | @tsv')
+source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
+IFS=$'\t' read -r draft owner head base < <(gh pr view "$number" -R "$repo" --json isDraft,labels,headRefName,baseRefName --jq '[.isDraft, any(.labels[]; .name == "hold:owner"), .headRefName, .baseRefName] | @tsv')
+foreign=$(foreign_commits "$number" "$head" "$base") || { echo "the commits of #$number past $base cannot be read; run \`pr:release $number\` again" >&2; exit 2; }
+if [[ "$foreign" != '[]' ]]; then
+  echo "#$number stays held: past $base its branch holds $(jq -r 'map("\(.commits) commit(s) of #\(.number)") | join(", ")' <<< "$foreign"), which a landing would squash under its title (#6797); set its base to the pull request it builds on, or rebase it, then \`pr:release $number\` again" >&2
+  exit 2
+fi
 if [[ "$owner" == true ]]; then gh pr edit "$number" -R "$repo" --remove-label hold:owner > /dev/null; fi
 if [[ "$draft" == true ]]; then gh pr ready "$number" -R "$repo" > /dev/null; fi
 echo "#$number released: its next \`pr:watch\` lands it once green"

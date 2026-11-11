@@ -78,6 +78,9 @@ for (( i = 0; i < count; i++ )); do
   stack_of() { if grep -q '^stack unstack' "$case_dir/gh"; then echo null; else echo 9; fi; }
   queued_of() { echo '[]'; }
   stack_link() { jq -r 'map(.number) | join(" ")' <<< "$1" >> "$case_dir/link"; }
+  # The open pull requests are the chain's members: the closed one is not
+  # open, so `set_base` counts none of its commits (#6797).
+  open_prs() { printf '%s\n' "$chain"; }
   signed_replay() { printf 'replay %s\n' "$1" >> "$case_dir/gh"; git push --quiet --force origin "$3:refs/heads/$1" && echo "$3"; }
   closed_pr() {
     if [[ $1 == closed && $read_closed == true ]]; then

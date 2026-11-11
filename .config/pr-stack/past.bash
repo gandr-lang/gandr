@@ -74,6 +74,9 @@ for (( i = 0; i < count; i++ )); do
   stack_of() { if [[ $kept == takes ]] && grep -q '^stack unstack' "$dir/gh"; then echo null; else echo 9; fi; }
   pr_reading() { jq -n -c --arg base "$(sed -n 's/^pr edit .* --base //p' "$dir/gh" | tail -n 1)" '{baseRefName: $base}'; }
   stack_link() { jq -r 'map(.number) | join(" ")' <<< "$1" > "$dir/link"; }
+  # The open pull requests are the stack's members; `set_base` reads their
+  # branches in the scratch origin (#6797).
+  open_prs() { printf '%s\n' "$stack"; }
   stack='[{"number":2,"head":"red"},{"number":3,"head":"upper"},{"number":4,"head":"top"}]'
   if [[ $red == middle ]]; then stack=$(jq -c '[{"number":1,"head":"lower"}] + .' <<< "$stack"); fi
   unset REPLAY_ARTIFACTS

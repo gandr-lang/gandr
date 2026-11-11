@@ -72,6 +72,7 @@ for (( i = 0; i < count; i++ )); do
   # `cut_bottom`'s own `stack` shadows a variable of that name.
   members_json='[{"number":2,"head":"red"},{"number":3,"head":"upper"},{"number":4,"head":"top"}]'
   server_stack() { printf '%s\n' "$members_json"; }
+  open_prs() { printf '%s\n' "$members_json"; }
   queued_of() { echo '[]'; }
   stack_of() { if grep -q '^stack unstack' "$dir/gh"; then echo null; else echo 9; fi; }
   pr_reading() { jq -n -c --arg base "$(sed -n 's/^pr edit .* --base //p' "$dir/gh" | tail -n 1)" '{baseRefName: $base}'; }
