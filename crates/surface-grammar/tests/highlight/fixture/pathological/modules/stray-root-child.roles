@@ -50,6 +50,7 @@
 657..658 Other ")"
 658..659 Other "]"
 660..663 Keyword "def"
+664..666 FunctionDef "mu"
 667..668 Other "="
 669..670 Number "1"
 671..672 Other ";"

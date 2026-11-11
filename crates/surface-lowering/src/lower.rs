@@ -32789,6 +32789,37 @@ mod tests
         );
     }
 
+    /// #6266: a reserved word that the parser read as a name refuses the form
+    /// that holds it, at the word and by the word.
+    #[test]
+    fn a_reserved_word_as_a_name_is_refused_by_name_6266()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        for (source, word) in [
+            ("def match(x : Integer) -> Integer = x;", "match"),
+            ("def data : Integer = 1;", "data"),
+            ("def f(type : Integer) -> Integer = 1;", "type"),
+        ] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            let LoweringRefusal::MalformedForm { span, fault, .. } = refusal_in(&pbg, &tree)
+            else {
+                panic!("{source}: a reserved word as a name refuses its form");
+            };
+            let start = source.find(word).unwrap_or_default();
+            assert_eq!(
+                span,
+                at(start, start.saturating_add(word.len())),
+                "{source}: the refusal stands at the word itself"
+            );
+            let FormFault::Repaired(Repair::ReservedName(named)) = fault
+            else {
+                panic!("{source}: the name reads as the reserved word: {fault:?}");
+            };
+            assert_eq!(named.as_ref(), word, "{source}: the refusal names the word");
+        }
+    }
+
     #[test]
     fn an_unended_form_names_its_missing_tile_where_it_belongs()
     {

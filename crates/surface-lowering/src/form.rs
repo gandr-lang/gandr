@@ -64,6 +64,7 @@ use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RESERVED_WORDS;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
 use gandr_surface_grammar::SPELLED;
@@ -1523,6 +1524,9 @@ pub enum Repair
     /// Grout over a reserved word of the grammar written where its form takes
     /// a term: the parser could mold the word nowhere there.
     Keyword(StrayKeyword),
+    /// A reserved word of the grammar that the parser read as a name, where
+    /// its form spells a name: the parser owes the word.
+    ReservedName(TileName),
     /// A closing tile of this family that the source never wrote.
     GhostClose(ClosingClass),
     /// The tile that ends a form the source never finished: the reading of
@@ -1621,6 +1625,7 @@ impl fmt::Display for Repair
             Self::Keyword(stray) => {
                 write!(f, "the keyword `{}` where a term belongs", stray.written.0)
             },
+            Self::ReservedName(word) => write!(f, "the reserved word `{}` as a name", word.0),
             Self::GhostClose(ClosingClass::Paren) => f.write_str("a `)` the source never wrote"),
             Self::GhostClose(ClosingClass::Bracket) => f.write_str("a `]` the source never wrote"),
             Self::GhostClose(ClosingClass::Brace) => f.write_str("a `}` the source never wrote"),
@@ -2406,17 +2411,18 @@ pub fn written_children<'tree>(
 ///   order, save a child `statement_block`, whose children read in its place
 ///   with its tiles as own tiles ([`own_children`]); the root reads every
 ///   written child as an operand; layout and documentation are dropped
-///   everywhere, and the first grout or minted close among the children is
-///   reported beside the pieces rather than read as one. When that first repair
-///   is a minted close of a form of several tiles and a form inside it holds a
-///   repair too, the deepest such repair — the first in source order among
-///   equals — is reported instead, naming the form that holds it: the outer
-///   close follows from the inner form's. A minted close or a ghost end, the
-///   form's own or the inner one reported, gives way to the point where its
-///   form first leaves its rule's shape when that point comes before it
-///   ([`earliest`]). Reading layout, documentation or a repair node itself
-///   leaves both fields empty. An application spine `f x y` reads as the pieces
-///   of the call `f(x, y)` it spells, as [`application_spine`] reads it.
+///   everywhere, and the first grout, minted close or reserved word read as a
+///   name ([`reserved_name`]) among the children is reported beside the pieces
+///   rather than read as one; a reserved name still reads as its tile. When
+///   that first repair is a minted close of a form of several tiles and a form
+///   inside it holds a repair too, the deepest such repair — the first in
+///   source order among equals — is reported instead, naming the form that
+///   holds it: the outer close follows from the inner form's. A minted close or
+///   a ghost end, the form's own or the inner one reported, gives way to the
+///   point where its form first leaves its rule's shape when that point comes
+///   before it ([`earliest`]). Reading layout, documentation or a repair node
+///   itself leaves both fields empty. An application spine `f x y` reads as the
+///   pieces of the call `f(x, y)` it spells, as [`application_spine`] reads it.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2500,6 +2506,9 @@ pub fn written_children<'tree>(
                                 },
                                 | NodeLabel::GhostClose { class, .. } => {
                                     Repair::GhostClose(class)
+                                },
+                                | NodeLabel::Tile(mold) => {
+                                    Repair::ReservedName(reserved_name(pbg, tree, child, mold)?)
                                 },
                                 | _ => return None,
                             };
@@ -2599,7 +2608,12 @@ pub fn read_pieces<'source>(
                 }
                 continue;
             },
-            NodeLabel::Tile(mold) => own_tile(pbg, held, holder, mold, placed)?,
+            NodeLabel::Tile(mold) => {
+                if let Some(word) = reserved_name(pbg, tree, child, mold) {
+                    note_repair(read, placed, Repair::ReservedName(word));
+                }
+                own_tile(pbg, held, holder, mold, placed)?
+            },
             NodeLabel::Meld(_) | NodeLabel::Wald => Piece::Operand(placed),
         };
         read.pieces.push(piece);
@@ -2856,7 +2870,9 @@ pub fn stop_of(
         Repair::GhostClose(_) | Repair::Unended(_) => {
             Maybe::Present(earliest(pbg, tree, position, found))
         },
-        Repair::Grout(_) | Repair::Keyword(_) | Repair::Diverged(_) => absent,
+        Repair::Grout(_) | Repair::Keyword(_) | Repair::ReservedName(_) | Repair::Diverged(_) => {
+            absent
+        },
     }
 }
 
@@ -4047,6 +4063,48 @@ fn grouted(
         written: TileName(label.0),
         offer,
     })
+}
+
+/// The reserved word that the tile `node`, of `mold`, spells, when the parser
+/// read the word as a name.
+///
+/// The parser molds no reserved word as a name, save where its form expects a
+/// name and the word continues the form in no other way. There it owes the
+/// word, and the tile it reads is a name's. The lowering refuses the
+/// form that holds it, by the word.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the word of [`RESERVED_WORDS`] that `node`'s bytes spell, exactly
+///   when `mold` is a name's tile, an `identifier` or a `type_variable`; `None`
+///   otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `match` as a definition's name reads as the reserved
+///   word; `matched`, and the contextual word `ext` as a name, read as none.
+/// - witness: `lower::tests::a_reserved_word_as_a_name_is_refused_by_name_6266`
+#[spec(ensures: |ret| ret.is_none_or(|word| RESERVED_WORDS.contains(&word.0) && tree.fragment(node).is_some_and(|text| <&str>::from(text) == word.0)))]
+fn reserved_name(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    node: NodeIndex,
+    mold: MoldId,
+) -> Option<TileName>
+{
+    let named = pbg.mold(mold).is_ok_and(|held| {
+        TileName(held.label) == TileName::IDENTIFIER
+            || TileName(held.label) == TileName::TYPE_VARIABLE
+    });
+    if !named {
+        return None;
+    }
+    let written: &str = tree.fragment(node).map_or("", <&str>::from);
+    RESERVED_WORDS
+        .iter()
+        .find(|&&word| word == written)
+        .map(|&word| TileName(word))
 }
 
 /// Read one child tile against the rule of the form holding it.
@@ -6493,11 +6551,13 @@ mod tests
             offer: super::Offer::Unspelled,
         });
         let unended = Repair::Unended(super::Ending::Tile(TileName("end")));
+        let reserved = Repair::ReservedName(TileName("match"));
         let messages = [
             Repair::Grout(GroutShape::Convex),
             Repair::Grout(GroutShape::Prefix),
             Repair::Grout(GroutShape::Infix),
             stray,
+            reserved,
             Repair::GhostClose(ClosingClass::Paren),
             Repair::GhostClose(ClosingClass::Bracket),
             Repair::GhostClose(ClosingClass::Brace),
@@ -6515,6 +6575,10 @@ mod tests
             Repair::Grout(GroutShape::Prefix).to_string(),
             "a missing operand reads alike on either side"
         );
-        assert!(stray.to_string().contains("`def`") && unended.to_string().contains("`end`"));
+        assert!(
+            stray.to_string().contains("`def`")
+                && unended.to_string().contains("`end`")
+                && reserved.to_string().contains("`match`")
+        );
     }
 }

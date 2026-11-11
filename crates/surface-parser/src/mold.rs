@@ -265,6 +265,7 @@ use gandr_surface_grammar::LabelId;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Observation;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RESERVED_WORDS;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
@@ -944,84 +945,6 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
     SourceFragment::from(<&str>::from(src))
 }
 
-/// The reserved lowercase keywords (the tree-sitter grammar's `KW`, the wired
-/// subset).
-///
-/// A reserved keyword is never an ordinary `identifier` (tree-sitter's `word`
-/// reservation), so a lowercase word matching one molds only to its own
-/// keyword tile — not the wide identifier menu that would let, say, `ret` be
-/// read as a variable.
-///
-/// The fold-in globally reserves the thirteen new
-/// keyword-led forms' leads — `data` / `codata` declarations, `def rec`
-/// (`rec`), `data` / `codata` operation and 2-cell members (`op` / `rule`),
-/// the `for … in` / `while` / `break` / `continue` control forms, the `match …
-/// with …` view, the `import` declaration, and the `module` declaration. A
-/// corpus + fixture sweep found no collision with any existing identifier, so
-/// all reserve globally (the keyword table is provisional; a real collision
-/// would move the offender to a contextual keyword). `loop` met that collision
-/// first: the book's circle names its cell `loop` (`loop : Base <-> Base`),
-/// so `loop` is contextual — its tile molds where `loop { … }` opens an
-/// expression, the identifier everywhere else, and the window after the word
-/// tells the two apart at an expression slot (`{` against anything else).
-/// `codata`
-/// reserves as one whole word — the labeler munches the maximal
-/// `[A-Za-z0-9_]` run, so `codata` never lexes as two words (the
-/// longest-match hazard is a non-issue here). The operator-declaration fixity
-/// classes (`infixl` / `infixr` / `infix` / `prefix` / `postfix`) are
-/// deliberately NOT reserved: they mold as contextual tiles only where the
-/// `op`-led fixity form expects them, so they remain ordinary identifiers
-/// everywhere else.
-/// `run` is reserved as the lead of the inline run and never enters the
-/// ordinary identifier menu. `let`, the binding statement's lead, stays
-/// contextual: a theory names an operation `let`, and the statement's slot is
-/// the only one where its tile stands.
-///
-/// The circuit block form reserves exactly its two **item-position**
-/// leads, `theory` and `oper`: at a fresh top-level slot a lowercase word is
-/// otherwise an expression statement, so an unreserved form-first lead would
-/// tie its own tile against `identifier` at every declaration. Its four other
-/// leads stay **contextual** — the member keyword `sort` (beside the already-
-/// reserved `data` / `rule`) and the body statements `node` / `feed` are
-/// `≐`-successors inside an open `theory` block or circuit body, so a user
-/// program may still bind `sort`, `node`, or `feed` as an ordinary name;
-/// `theory` and `oper` it may not. `sort` in particular could not be reserved
-/// even if wanted: `list.sort` is a live projection in the corpus. Contextual
-/// is not the same as inadmissible-elsewhere, and the circuit grammar module
-/// records the one slot where `sort`'s mold does collide with a type variable.
-///
-/// The capability scope reserves its lead `handle`: it opens an expression,
-/// where an unreserved lead would tie its own tile against `identifier` at
-/// every expression slot. Temporary access reserves its leads `access`,
-/// `resume` and `abort` for the same reason, and `unwind`, the tile after an
-/// access's body, so a name there is never read as the next statement.
-///
-/// A world declaration reserves its lead `world`, an item-position lead as
-/// `theory` is, and the mobility mark its lead `mobile`, which opens a module
-/// signature's field where an unreserved word would tie against the value
-/// field's `identifier`. A flow declaration reserves its lead `flow` for the
-/// same reason as `world`; `via`, which names the flow an import reads its
-/// source through, stays contextual, since no identifier stands after an
-/// import's signature. The extern block's `from`, before the library it
-/// names, stays contextual too, since no identifier stands after the block's
-/// convention: a relation's record names its map back `from`, and a pattern
-/// or a projection reads that field by its label.
-///
-/// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
-/// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
-/// tile against `identifier` there.
-///
-/// `where` is reserved: it ends a declaration's head, whose last slot is a
-/// type, and opens the block of its members.
-pub const KEYWORDS: &[&str] = &[
-    "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
-    "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
-    "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
-    "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
-    "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
-    "pub", "flow", "where",
-];
-
 /// The keywords that open a block's statements: one that no open form
 /// continues ends the statement it stands in, and starts the next.
 pub const STATEMENT_LEADS: &[&str] = &[
@@ -1073,7 +996,7 @@ pub fn candidate_labels<'text>(
             }
             // A reserved keyword is never an identifier; only its keyword tile
             // is a candidate (tree-sitter `word` reservation).
-            if !KEYWORDS.contains(&text) {
+            if !RESERVED_WORDS.contains(&text) {
                 labels.push(CandidateLabel::from("identifier"));
                 labels.push(CandidateLabel::from("type_variable"));
                 // A `hole_name` is a lowercase word too, but it only occurs as
@@ -1394,6 +1317,26 @@ const UPPER_KEYWORDS: &[&str] = &[
 /// tile cannot mold: [`Molder::gather_reserved_fallback`] re-admits them, and
 /// [`next_labels`] counts them among the word's labels.
 const RESERVED_FALLBACK_LABELS: [&str; 2] = ["constructor", "type_identifier"];
+
+/// The labels of a name that a form spells as one of its own tiles, a
+/// definition's or a parameter's. [`Molder::read_reserved_name`] reads a
+/// reserved lowercase word as one of them where the open form expects a name
+/// next and the word continues the form in no other way.
+const NAME_LABELS: [&str; 2] = ["identifier", "type_variable"];
+
+/// How the molder reads the token it pushes next.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// As one of the tiles its spelling labels.
+    Spelled,
+    /// As a name: a reserved word that stands where its form expects a name,
+    /// which the melder owes [`crate::Oblig::ReservedKeyword`] for.
+    ReservedName,
+}
 
 /// The rule whose `(` opens a parenthesized type, the domain list of a
 /// value-function type among its readings.
@@ -2049,6 +1992,8 @@ pub struct Molder<'pbg>
     /// menu where a push could reach a frontier at or above the window's
     /// floor below the nearest.
     exposed: bool,
+    /// How the token the molder gathered last reads, for its push.
+    reading: Reading,
     /// How many decisions the two procedures settled differently.
     disagreements: DisagreementCount,
     /// How the decisions of the streams this molder molded were settled.
@@ -2125,6 +2070,7 @@ impl<'pbg> Molder<'pbg>
             windowed: Vec::new(),
             window_floor: None,
             exposed: false,
+            reading: Reading::Spelled,
             disagreements: DisagreementCount(0),
             census: Census::default(),
         }
@@ -2259,11 +2205,12 @@ impl<'pbg> Molder<'pbg>
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
         let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
         state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
-        self.gather(state, token.lexeme, text, &labels);
+        self.gather(state, token.lexeme, text, &labels, Ahead::Nothing);
         self.settle_statement(state, token.lexeme, text, &labels, Ahead::Nothing);
         state.settle_declaration_boundary(&self.candidates);
+        let reading = self.reading;
         let best = self.choose(state, text, Ahead::Nothing);
-        Self::push_choice(state, best, text);
+        Self::push_choice(state, best, text, reading);
     }
 
     /// Mold and push a whole labeled token stream (the batch driver).
@@ -2473,12 +2420,12 @@ impl<'pbg> Molder<'pbg>
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
                 let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
                 state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
-                self.gather(state, token.lexeme, text, &labels);
                 let ahead = Ahead::Stream {
                     tokens,
                     index: TokenIndex::from(index),
                     source: &source,
                 };
+                self.gather(state, token.lexeme, text, &labels, ahead);
                 self.settle_statement(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
                 self.settle_before_prefixed_head(
@@ -2499,8 +2446,9 @@ impl<'pbg> Molder<'pbg>
                     TileText::from(text),
                 ));
                 if !taken {
+                    let reading = self.reading;
                     let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
-                    Self::push_choice(state, best, text);
+                    Self::push_choice(state, best, text, reading);
                 }
                 if halt == Halt::AtRepair && bool::from(state.weighs_repair()) {
                     return Molding::Halted;
@@ -2673,30 +2621,45 @@ impl<'pbg> Molder<'pbg>
 
     /// Push the molder's choice, or the unmolded path when there is none.
     ///
+    /// A choice the molder gathered as a reserved name, `reading`, owes its
+    /// reserved word: the melder pushes the name and flags the word.
+    ///
     /// # Specification
     /// - ensures: pushes the selected mold; an absent choice preserves text
-    ///   through an unmolded-token obligation.
+    ///   through an unmolded-token obligation; a choice read as a reserved name
+    ///   owes [`crate::Oblig::ReservedKeyword`] over the token's bytes.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a valid atom and an absent candidate expose the
     ///   committed text and unmolded obligation. Treating absence as no-op or
-    ///   using a real fallback mold changes those observations.
+    ///   using a real fallback mold changes those observations. A reserved word
+    ///   in a definition's name slot owes its one obligation, and a push that
+    ///   drops the reading owes none.
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::unmoldable_token_takes_the_unmolded_path`
-    #[spec(ensures: |_| choice.is_some() || state.obligations().last().is_some_and(|obligation| obligation.class == crate::Oblig::UnmoldedTok))]
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
+    #[spec(ensures: |_| match (choice, reading) {
+        (None, _) => state.obligations().last().is_some_and(|obligation| obligation.class == crate::Oblig::UnmoldedTok),
+        (Some(_), Reading::ReservedName) => state.obligations().last().is_some_and(|obligation| obligation.class == crate::Oblig::ReservedKeyword),
+        (Some(_), Reading::Spelled) => true,
+    })]
     fn push_choice(
         state: &mut MeldState<'_>,
         choice: Option<MoldId>,
         text: TokenText<'_>,
+        reading: Reading,
     )
     {
-        match choice {
-            Some(mold) => state.push_text(mold, TileText::from(text)),
+        match (choice, reading) {
+            (Some(mold), Reading::Spelled) => state.push_text(mold, TileText::from(text)),
+            (Some(mold), Reading::ReservedName) => {
+                state.push_reserved_name(mold, TileText::from(text));
+            },
             // No candidate mold: the totally-defined unmolded path. An
             // out-of-range mold id routes `push` to `UnmoldedTok` (grammar-total
             // fallback) while preserving the token text.
-            None => state.push_text(MoldId::from(u32::MAX), TileText::from(text)),
+            (None, _) => state.push_text(MoldId::from(u32::MAX), TileText::from(text)),
         }
     }
 
@@ -2726,7 +2689,7 @@ impl<'pbg> Molder<'pbg>
         let slice = head.text(source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
         let labels = LabelIds::resolve(self.pbg, &candidate_labels(head.lexeme, text));
-        self.gather(state, head.lexeme, text, &labels);
+        self.gather(state, head.lexeme, text, &labels, Ahead::Nothing);
         bool::from(state.bounds_declaration(&self.candidates)).then_some(labels)
     }
 
@@ -2773,7 +2736,12 @@ impl<'pbg> Molder<'pbg>
         if self.bounding_head(state, head, source).is_some() {
             state.settle_top_level_boundary(&self.candidates);
         }
-        self.gather(state, lexeme, text, labels);
+        let ahead = Ahead::Stream {
+            tokens,
+            index,
+            source,
+        };
+        self.gather(state, lexeme, text, labels, ahead);
     }
 
     /// Close the open declaration on the stream before a prefix at the
@@ -2820,28 +2788,35 @@ impl<'pbg> Molder<'pbg>
         else {
             return;
         };
+        let ahead = Ahead::Stream {
+            tokens,
+            index,
+            source,
+        };
         let Some(head_labels) = self.bounding_head(state, head, source)
         else {
-            self.gather(state, lexeme, text, labels);
+            self.gather(state, lexeme, text, labels, ahead);
             return;
         };
         let slice = head.text(source);
         let head_text = TokenText::from(AsRef::<str>::as_ref(&slice));
         let next = TokenIndex::from(usize::from(index).saturating_add(1));
-        self.gather(state, lexeme, text, labels);
+        self.gather(state, lexeme, text, labels, ahead);
         let mark = state.mark();
+        let reading = self.reading;
         let choice = self.choose_stream(state, tokens, index, source);
-        Self::push_choice(state, choice, text);
+        Self::push_choice(state, choice, text, reading);
         let end = self.mold_window(state, tokens, next, source, &mark, WindowBound::Unbounded);
         let standing =
             (end == WindowEnd::Molded).then(|| state.completion_delta(state.delta_since(&mark)));
         state.rollback_to(&mark);
         let mark = state.mark();
-        self.gather(state, head.lexeme, head_text, &head_labels);
+        self.gather(state, head.lexeme, head_text, &head_labels, Ahead::Nothing);
         state.settle_top_level_boundary(&self.candidates);
-        self.gather(state, lexeme, text, labels);
+        self.gather(state, lexeme, text, labels, ahead);
+        let reading = self.reading;
         let choice = self.choose_stream(state, tokens, index, source);
-        Self::push_choice(state, choice, text);
+        Self::push_choice(state, choice, text, reading);
         let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
         let end = self.mold_window(state, tokens, next, source, &mark, bound);
         let closed =
@@ -2852,10 +2827,10 @@ impl<'pbg> Molder<'pbg>
             (_, closed) => closed.is_some(),
         };
         if closes {
-            self.gather(state, head.lexeme, head_text, &head_labels);
+            self.gather(state, head.lexeme, head_text, &head_labels, Ahead::Nothing);
             state.settle_top_level_boundary(&self.candidates);
         }
-        self.gather(state, lexeme, text, labels);
+        self.gather(state, lexeme, text, labels, ahead);
     }
 
     /// Gather the sorted, de-duplicated candidate molds for a token's
@@ -2900,6 +2875,7 @@ impl<'pbg> Molder<'pbg>
         lexeme: Lexeme,
         text: TokenText<'_>,
         labels: &LabelIds,
+        ahead: Ahead<'_, '_>,
     )
     {
         let open = state.open_form_mold();
@@ -2915,6 +2891,7 @@ impl<'pbg> Molder<'pbg>
         }
         self.gather_reserved_fallback(state, lexeme, text, open);
         self.drop_stray_keyword(state, lexeme, text);
+        self.read_reserved_name(state, lexeme, text, ahead);
     }
 
     /// Close the statement a statement keyword stands in, when the keyword
@@ -2989,7 +2966,7 @@ impl<'pbg> Molder<'pbg>
         self.gather_menu(labels, frontier.open, CandidateMenu::Declared);
         let Some(close) = state.statement_close(&self.candidates)
         else {
-            self.gather(state, lexeme, text, labels);
+            self.gather(state, lexeme, text, labels, ahead);
             return;
         };
         let closes = match ahead {
@@ -3021,7 +2998,7 @@ impl<'pbg> Molder<'pbg>
         if closes {
             state.close_statement(close);
         }
-        self.gather(state, lexeme, text, labels);
+        self.gather(state, lexeme, text, labels, ahead);
     }
 
     /// Mark the window being molded exposed when this token's declared menu
@@ -3158,15 +3135,15 @@ impl<'pbg> Molder<'pbg>
     /// admit, and `oper drop : … ;` or `rule drop : … ;` read the rest of the
     /// declaration inside `drop(…)` the same way (#2460): the slot keeps only
     /// an item-position mold of the keyword, as `mobile type Report` writes
-    /// one. With the menu empty the molder takes the unmolded path instead:
-    /// the keyword becomes grout over its own bytes in its slot, and the
-    /// parse's first obligation is the keyword's. In a member the declaration
-    /// stays whole and the keyword is the one obligation; a top-level
-    /// definition whose name is grout also owes its name tile, inside the same
-    /// declaration. Either way the declarations after it keep their own
-    /// tiles. This is the stray mid's recovery one keyword later: a stray mid
-    /// flags its missing head in place rather than reading the source around
-    /// it anew.
+    /// one. With the menu empty, [`Self::read_reserved_name`] reads the word
+    /// as the name the slot spells, where the form spells one: the declaration
+    /// stays whole, and the word is the one obligation. In a slot that
+    /// spells no lowercase name, as a `theory`'s, the molder takes the
+    /// unmolded path instead: the keyword becomes grout over its own bytes,
+    /// and the parse's first obligation is the keyword's. Either way the
+    /// declarations after it keep their own tiles. This is the stray mid's
+    /// recovery one keyword later: a stray mid flags its missing head in place
+    /// rather than reading the source around it anew.
     ///
     /// The rule is held to those shapes, and each guard is measured: over
     /// the drop harness, widening it to any open slot, to a slot after an
@@ -3200,14 +3177,14 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — the keyword `type` in a `theory` member's classifier
     ///   slot owes exactly one obligation, at the keyword, and keeps the member
     ///   and the block whole; the keywords `mu`, `drop`, `dup` and `send` in a
-    ///   definition's, an operation's or a rule's name slot owe their first
-    ///   obligation at the keyword and none in the declaration after it; `Type`
-    ///   and a name that is no keyword owe none, and `mobile type` in a
-    ///   signature keeps its member. The drop harness's records, a differential
+    ///   definition's, an operation's or a rule's name slot owe one obligation,
+    ///   at the keyword, and none in the declaration after it; `Type` and a
+    ///   name that is no keyword owe none, and `mobile type` in a signature
+    ///   keeps its member. The drop harness's records, a differential
     ///   measurement rather than a witness, hold every corpus variant to no
     ///   more obligations than before.
     /// - witness: `tests::acceptance::a_keyword_in_a_classifier_slot_stands_there_unmolded`
-    /// - witness: `tests::acceptance::a_keyword_in_a_name_slot_stands_there_unmolded_722`
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -3224,7 +3201,7 @@ impl<'pbg> Molder<'pbg>
         text: TokenText<'_>,
     )
     {
-        if !matches!(lexeme, Lexeme::LowerWord) || !KEYWORDS.contains(&<&str>::from(text)) {
+        if !matches!(lexeme, Lexeme::LowerWord) || !RESERVED_WORDS.contains(&<&str>::from(text)) {
             return;
         }
         let frontier = state.admissibility_frontier();
@@ -3250,7 +3227,8 @@ impl<'pbg> Molder<'pbg>
         // member's keyword there, rightly.
         let name_slot = frontier.open.is_some_and(|open| {
             pbg.mold(open).is_ok_and(|def| {
-                matches!(def.sort, Sort::Item | Sort::ModuleMember) && KEYWORDS.contains(&def.label)
+                matches!(def.sort, Sort::Item | Sort::ModuleMember)
+                    && RESERVED_WORDS.contains(&def.label)
             })
         }) && bool::from(state.head_is_frontier());
         let stray = (classifier_slot
@@ -3267,6 +3245,194 @@ impl<'pbg> Molder<'pbg>
                 }));
         if stray {
             self.candidates.clear();
+        }
+    }
+
+    /// Read a **reserved lowercase word** as a name where the open form
+    /// expects a name next and no mold of the word continues the form there.
+    ///
+    /// `def match(x : Integer) …`, `oper match : …`, `def f(match : Integer)`
+    /// and `let match = 1` each write a reserved word in the slot a form's
+    /// tile has just opened for a name. No mold of `match` follows that tile,
+    /// so the word's own menu either empties ([`Self::drop_stray_keyword`]) or
+    /// opens the word's own form there, and the rest of the declaration then
+    /// owes a run of missing tiles. Read as the name the form expects, the
+    /// word keeps the declaration whole, and the melder owes the one
+    /// [`crate::Oblig::ReservedKeyword`] that names it.
+    ///
+    /// The rule takes a name only where the open tile is a keyword, as `def`,
+    /// `oper` or `let`, or a declaration's `(`. A declaration's tile that
+    /// spells a name next takes the name tile it spells. An empty pattern slot
+    /// after a keyword that admits no mold of the word, as `let`'s, takes a
+    /// binder ([`Self::push_reserved_binders`]). The next significant token
+    /// must then continue the form past the name, as `(` after `def match`.
+    ///
+    /// Each guard is measured over the drop harness. A reserved word that
+    /// continues the open form keeps its own reading: the next tile, as `rec`
+    /// after `def` or `type` after `mobile`, and a later tile, as `as` after an
+    /// `access` whose name the source left out. An expression's tile takes no
+    /// reserved word as a name, so `!String. end` with its `!` left out keeps
+    /// `end` as the session's end. After a list's `,`, after another binder or
+    /// in a pattern's slot, the word stands where the source left a tile out,
+    /// as the `:` of `seat : end`. Without the keyword guard, 123 rows of the
+    /// drop harness owe more obligations than with it.
+    ///
+    /// # Specification
+    /// - requires: the token's menu, `lexeme` spelled `text`, was gathered into
+    ///   `self.candidates`; `ahead` is the stream after the token, or nothing.
+    /// - ensures: replaces `self.candidates` with name molds and sets the
+    ///   reading to [`Reading::ReservedName`], exactly when `text` is a
+    ///   reserved lowercase keyword, the open form's tile is the slope head, no
+    ///   candidate follows that tile or shares its rule, some name mold stands
+    ///   there, and the next token of `ahead` continues the form past it. A
+    ///   name mold is a mold of [`NAME_LABELS`] that follows a keyword or `(`
+    ///   of a declaration's form, or else a binder after a keyword that
+    ///   [`Self::push_reserved_binders`] gathers. Otherwise it leaves the
+    ///   candidates unchanged and the reading [`Reading::Spelled`].
+    /// - provides: the reserved-name half of the candidate menu.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reserved word in a definition's, an operation's, a
+    ///   rule's and a module's name, in a parameter and in a `let` binder owes
+    ///   one obligation, at the word; `rec` after `def` and `mobile type` keep
+    ///   their forms, and `match` after `=` opens its own. The drop harness's
+    ///   records hold every corpus variant to no more obligations than before.
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(ensures: |_| self.reading == Reading::Spelled || !self.candidates.is_empty())]
+    fn read_reserved_name(
+        &mut self,
+        state: &MeldState<'_>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+        ahead: Ahead<'_, '_>,
+    )
+    {
+        self.reading = Reading::Spelled;
+        if !matches!(lexeme, Lexeme::LowerWord)
+            || !RESERVED_WORDS.contains(&<&str>::from(text))
+            || !bool::from(state.head_is_frontier())
+        {
+            return;
+        }
+        let Some(open) = state.open_form_mold()
+        else {
+            return;
+        };
+        let pbg = self.pbg;
+        // A word that continues the open form keeps its reading: the next
+        // tile, as `rec` after `def`, or a later one, as `as` after `access`
+        // whose name the source left out.
+        let form = |mold: MoldId| pbg.rule_of(mold).map(|rule| rule.name).ok();
+        let opened = form(open);
+        if self.candidates.iter().any(|&mold| {
+            bool::from(pbg.molds_adjacent(open, mold)) || (opened.is_some() && form(mold) == opened)
+        }) {
+            return;
+        }
+        // A declaration spells its own names: an expression's tile, as a
+        // projection's `.`, takes no reserved word as its field.
+        let declares = pbg
+            .mold(open)
+            .is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember));
+        // The name follows a keyword, as `def`, `oper` or `let`, or opens a
+        // parameter list, as `(`. After another tile, as a second binder after
+        // `seat` or an entry after `,`, the word stands where the source left a
+        // tile out, as the `:` of `seat : end`.
+        let label = pbg.mold(open).map_or("", |def| def.label);
+        let keyword = label.bytes().all(|byte| byte.is_ascii_lowercase())
+            && tile_spelling(CandidateLabel::from(label)) == TileSpelling::Literal(label);
+        let names = LabelIds::resolve(pbg, &NAME_LABELS.map(CandidateLabel::from));
+        let spelled = self.candidates.len();
+        if declares && (keyword || label == "(") {
+            self.push_form_successors(names.as_slice(), open);
+        }
+        if keyword && self.candidates.len() == spelled {
+            self.push_reserved_binders(state, names.as_slice());
+        }
+        if self.candidates.len() == spelled {
+            return;
+        }
+        // The token after the word continues the form past a name, as `(`
+        // after `def match` does. A word the source wrote where a tile is
+        // missing, as `pub` after an `oper` whose name it left out, keeps its
+        // own reading.
+        let continues = match ahead {
+            Ahead::Stream {
+                tokens,
+                index,
+                source,
+            } => next_labels(tokens, index, source).is_some_and(|next| {
+                let names = self.candidates.get(spelled ..).unwrap_or_default();
+                LabelIds::resolve(pbg, &next)
+                    .as_slice()
+                    .iter()
+                    .flat_map(|&label| pbg.label_candidates(label))
+                    .any(|&after| {
+                        bool::from(pbg.molds_adjacent(open, after))
+                            || names
+                                .iter()
+                                .any(|&name| bool::from(pbg.molds_adjacent(name, after)))
+                    })
+            }),
+            Ahead::Nothing => false,
+        };
+        if !continues {
+            self.candidates.truncate(spelled);
+            return;
+        }
+        let named = self.candidates.len().saturating_sub(spelled);
+        self.candidates.rotate_left(spelled);
+        self.candidates.truncate(named);
+        self.candidates.sort_unstable();
+        self.candidates.dedup();
+        self.reading = Reading::ReservedName;
+    }
+
+    /// Append the name molds of `names` that stand alone as a pattern where
+    /// the live frontier expects a pattern and no candidate admits there: the
+    /// binder a reserved word stands for, as `let match = 1` writes one.
+    ///
+    /// # Specification
+    /// - requires: `self.candidates` holds the token's gathered menu.
+    /// - ensures: appends each mold of `names` of [`Sort::Pattern`] that the
+    ///   frontier admits, exactly when the frontier expects a pattern and no
+    ///   candidate admits there; otherwise appends nothing.
+    /// - provides: the binder half of [`Self::read_reserved_name`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reserved word as a `let` binder owes one obligation
+    ///   at the word, and `true` as a pattern keeps its literal.
+    /// - witness: `tests::acceptance::a_reserved_word_where_a_name_stands_owes_one_obligation_6266`
+    #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|&mold| self.pbg.mold(mold).is_ok_and(|def| def.sort == Sort::Pattern))))]
+    fn push_reserved_binders(
+        &mut self,
+        state: &MeldState<'_>,
+        names: &[LabelId],
+    )
+    {
+        let frontier = state.admissibility_frontier();
+        if frontier.expected != Sort::Pattern
+            || self
+                .candidates
+                .iter()
+                .any(|&mold| bool::from(state.admits_at(mold, &frontier)))
+        {
+            return;
+        }
+        let pbg = self.pbg;
+        for &label in names {
+            for &mold in pbg.label_fresh_candidates(label) {
+                if pbg.mold(mold).is_ok_and(|def| def.sort == Sort::Pattern)
+                    && bool::from(state.admits_at(mold, &frontier))
+                {
+                    self.candidates.push(mold);
+                }
+            }
         }
     }
 
@@ -4575,7 +4741,12 @@ impl<'pbg> Molder<'pbg>
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
                 let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
                 state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
-                self.gather(state, token.lexeme, text, &labels);
+                let ahead = Ahead::Stream {
+                    tokens,
+                    index: TokenIndex::from(index),
+                    source,
+                };
+                self.gather(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
                 self.close_before_prefixed_head(
                     state,
@@ -4595,13 +4766,9 @@ impl<'pbg> Molder<'pbg>
                     TileText::from(text),
                 ));
                 if !taken {
-                    let ahead = Ahead::Stream {
-                        tokens,
-                        index: TokenIndex::from(index),
-                        source,
-                    };
+                    let reading = self.reading;
                     let choice = self.choose(state, text, ahead);
-                    Self::push_choice(state, choice, text);
+                    Self::push_choice(state, choice, text, reading);
                 }
                 molded = molded.saturating_add(1);
                 self.census.window_token();
