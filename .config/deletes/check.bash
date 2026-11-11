@@ -110,19 +110,23 @@ if [[ $mode == full ]]; then
   touched=$(jq -R . "$scratch/changed" | jq -s -c --argjson packages "$packages" \
     '[.[] | select(startswith("crates/")) | split("/")[1]] | unique as $dirs | [$packages[] | select(.dir | IN($dirs[])) | .name]')
   # The evidence records of the touched packages at a tree: `$1` the tree,
-  # `$2` the directory the records go to.
+  # `$2` the directory the records go to. The run takes the policy's
+  # configuration and denials from the tree's own `check:dylint`
+  # (`policy.bash`), so it builds as the gate's run does (#6838).
   records() {
-    local tree=$1 out=$2 args=()
+    local tree=$1 out=$2 args=() config flags
     mkdir -p "$out"
     mapfile -t names < <(jq -r '.[]' <<< "$touched")
     (( ${#names[@]} )) || return 0
     for name in "${names[@]}"; do args+=(-p "$name"); done
+    config=$("$here/policy.bash" "$tree" "$out")
+    flags=$("$here/policy.bash" --flags "$tree" "$out")
     (cd "$tree" \
       && CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$root/target/deletes" \
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=dylint-link CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=dylint-link \
         CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=dylint-link CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=dylint-link \
         CARGO_ENCODED_RUSTFLAGS=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no' \
-        DYLINT_TOML=$(printf '[quenchant-dylints]\nevidence_directory = "%s"\n' "$out") \
+        DYLINT_TOML=$config DYLINT_RUSTFLAGS=$flags \
         cargo dylint --lib quenchant_dylints -- "${args[@]}" --all-targets --locked --quiet) > "$scratch/dylint.log" 2>&1 \
       || { echo "check:deletes: the records of $tree do not build:" >&2; tail -n 20 "$scratch/dylint.log" >&2; exit 2; }
   }
