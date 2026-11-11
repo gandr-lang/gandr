@@ -1669,6 +1669,35 @@ struct Horizon
     presentations: crate::presented::Presentations,
 }
 
+/// Whether each live entry's place in rank order is its position.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Order
+{
+    /// No entry is retired, and each entry is admitted at a rank above the
+    /// rank of each earlier entry: each position is its own place.
+    #[default]
+    Positional,
+    /// An entry is retired, or admitted below the rank of an earlier entry:
+    /// a place can differ from its position.
+    Ranked,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an environment's export writes each position as itself.
+    pub mod places {
+        /// The reason no entry needs a place.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No entry is retired and the ranks ascend with the positions,
+            /// so each live position is its own place.
+            InOrder,
+        }
+    }
+}
+
 /// The admitted declarations and what a check reads beside them.
 #[derive(Clone, Debug, Default)]
 struct EntryLog
@@ -1692,6 +1721,8 @@ struct EntryLog
     generative: BTreeMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
     /// The position of the entry that holds each rank.
     ranked: BTreeMap<SourceRank, ConstantIndex>,
+    /// Whether each live entry's place in rank order is its position.
+    order: Order,
 }
 
 /// No admitted declaration.
@@ -1964,6 +1995,67 @@ impl Entries
     ) -> Option<ConstantIndex>
     {
         self.log.as_deref()?.ranked.get(&rank).copied()
+    }
+
+    /// The positions of the live entries, in rank order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn in_rank_order(&self) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        self.log
+            .as_deref()
+            .into_iter()
+            .flat_map(|log| log.ranked.values().copied())
+    }
+
+    /// The place of each live position in rank order, which the export of a
+    /// kept environment writes for that position.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: absent as [`places::Absent::InOrder`] while no entry is
+    ///   retired and each entry is admitted at a rank above each earlier
+    ///   entry's rank; then each live position is its own place, and the answer
+    ///   reads no entry. Otherwise each live position's place is its index in
+    ///   [`Self::in_rank_order`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a kept environment over the kernel's generated
+    ///   sources exports the bytes of a fresh admission for each class of edit;
+    ///   an environment with nothing retired builds no places.
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `env::tests::an_inserted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::a_deleted_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::a_moved_admission_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::an_unedited_source_keeps_the_bytes_of_a_fresh_admission_6845`
+    /// - witness: `env::tests::an_export_by_position_after_a_retire_differs_6845`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref places) => self
+            .in_rank_order()
+            .enumerate()
+            .all(|(place, position)| places.place(position) == Some(ConstantIndex::from(place))),
+        Maybe::Absent(places::Absent::InOrder) => self
+            .in_rank_order()
+            .enumerate()
+            .all(|(place, position)| usize::from(position) == place)
+            && self.in_rank_order().count() == usize::from(self.len()),
+    })]
+    pub fn places(&self) -> Maybe<gandr_kernel_term::Places, places::Absent>
+    {
+        match self.log.as_deref() {
+            Some(log) if log.order == Order::Ranked => {
+                Maybe::Present(gandr_kernel_term::Places::new(
+                    log.ranked.values().copied(),
+                    ConstantIndex::from(log.family.len()),
+                ))
+            },
+            Some(_) | None => Maybe::Absent(places::Absent::InOrder),
+        }
     }
 
     /// The rank past every rank a live entry holds.
@@ -2255,6 +2347,13 @@ impl Entries
         if let ConstantName::Definition { digest, .. } = entry.key_name {
             place_definition(&log.family, &mut log.definitions, digest, (position, rank));
         }
+        if log
+            .ranked
+            .last_key_value()
+            .is_some_and(|(&last, _)| last > rank)
+        {
+            log.order = Order::Ranked;
+        }
         let _previous = log.ranked.insert(rank, position);
         log.dependents.admit(position, &entry.references);
         log.family.push(entry);
@@ -2291,6 +2390,7 @@ impl Entries
             return;
         };
         entry.kind = EntryKind::Retired;
+        log.order = Order::Ranked;
         let (rank, key_name) = (entry.rank, entry.key_name);
         if log.ranked.get(&rank) == Some(&position) {
             let _freed = log.ranked.remove(&rank);
@@ -7797,6 +7897,314 @@ mod tests
         );
     }
 
+    /// #6845: an export that writes each position as itself after a retire
+    /// is not the fresh artifact, so the byte witness can fail. The source
+    /// holds `x`, then `a`, then `b` over `a`, and the edit deletes `x`. The
+    /// readmission retires all three. It keeps `a` at the rank 0 and offers
+    /// `b` at the rank 1. `b` names `a` at the position 1, whose place is 0.
+    #[test]
+    fn an_export_by_position_after_a_retire_differs_6845()
+    {
+        let (zero, one) = (LevelConstant::from(0_u64), LevelConstant::from(1_u64));
+        let x = Generated::Lone(Member::Data(one, vec![]));
+        let a = Generated::Lone(Member::Data(zero, vec![]));
+        let b = Generated::Lone(Member::Axiom(Field::Earlier(0)));
+        let mut fresh = keyed();
+        let fresh_a = admit_generated(&mut fresh, &a, &[], None).expect("`a` admits");
+        let _fresh_b = admit_generated(&mut fresh, &b, &fresh_a, None).expect("`b` admits");
+        let mut kept = keyed();
+        let _x = admit_generated(&mut kept, &x, &[], None).expect("`x` admits");
+        let kept_a = admit_generated(&mut kept, &a, &[], None).expect("`a` admits");
+        let _old_b = admit_generated(&mut kept, &b, &kept_a, None).expect("the old `b` admits");
+        let all: Vec<ConstantIndex> = (0 .. 3_usize).map(ConstantIndex::from).collect();
+        assert_eq!(kept.retire(&all), Ok(()), "the three entries retire");
+        assert_eq!(
+            kept.keep((kept_a[0], &[SourceRank::from(0_usize)]))
+                .map(CheckedId::position),
+            Ok(kept_a[0]),
+            "`a` is kept"
+        );
+        let _new_b = admit_generated(&mut kept, &b, &kept_a, Some(SourceRank::from(1_usize)))
+            .expect("the new `b` admits");
+        let expected = exported(&fresh);
+        assert_eq!(
+            exported(&kept),
+            expected,
+            "the export by place writes the fresh artifact"
+        );
+        assert_ne!(
+            gandr_kernel_term::encode(kept.arena(), &in_rank_order(&kept)),
+            expected,
+            "the export by position writes `a` at the position 1"
+        );
+    }
+
+    /// The live entries of `environment` in rank order, each marked as
+    /// checked.
+    ///
+    /// # Specification
+    /// trivial.
+    fn in_rank_order(environment: &Environment) -> Vec<gandr_kernel_term::MarkedDeclaration>
+    {
+        let entries = environment.entries();
+        entries
+            .in_rank_order()
+            .filter_map(|position| entries.get(usize::from(position)))
+            .map(|entry| {
+                gandr_kernel_term::MarkedDeclaration::new(
+                    gandr_kernel_term::AdmissionMark::Checked,
+                    entry.declaration().clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// The bytes that the export of `environment` writes: its live entries
+    /// in rank order, each position written as its place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported(environment: &Environment) -> gandr_kernel_term::EncodedArtifact
+    {
+        let marked = in_rank_order(environment);
+        match environment.entries().places() {
+            Maybe::Present(places) => {
+                gandr_kernel_term::encode_placed(environment.arena(), &marked, &places)
+            },
+            Maybe::Absent(super::places::Absent::InOrder) => {
+                gandr_kernel_term::encode(environment.arena(), &marked)
+            },
+        }
+    }
+
+    /// One edit of a generated source.
+    #[derive(Clone, Debug)]
+    enum Edit
+    {
+        /// Another admission replaces the admission at the index.
+        Replaced(usize, Generated),
+        /// Another admission goes in at the index.
+        Inserted(usize, Generated),
+        /// The admission at the index goes out.
+        Deleted(usize),
+        /// The admission at the first index moves to the second index.
+        Moved(usize, usize),
+        /// No admission changes.
+        Unedited,
+    }
+
+    /// A generated source after an edit, with the admission of the source
+    /// before the edit that each of its admissions is unchanged from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Debug)]
+    struct EditedSource
+    {
+        /// The admissions after the edit.
+        admissions: Vec<Generated>,
+        /// For each of them, the index of the admission before the edit that
+        /// it is unchanged from, or none for an admission the edit writes.
+        origin: Vec<Option<usize>>,
+    }
+
+    /// `source` after `edit`. An index past the source wraps.
+    ///
+    /// # Specification
+    /// trivial.
+    fn edited_by(
+        source: &[Generated],
+        edit: &Edit,
+    ) -> EditedSource
+    {
+        let length = source.len();
+        let wrap = |at: usize| at.checked_rem(length).unwrap_or_default();
+        let mut admissions = source.to_vec();
+        let mut origin: Vec<Option<usize>> = (0 .. length).map(Some).collect();
+        match *edit {
+            Edit::Replaced(at, ref admission) => {
+                if let (Some(slot), Some(from)) =
+                    (admissions.get_mut(wrap(at)), origin.get_mut(wrap(at)))
+                {
+                    *slot = admission.clone();
+                    *from = None;
+                }
+            },
+            Edit::Inserted(at, ref admission) => {
+                let at = at.checked_rem(length.saturating_add(1)).unwrap_or_default();
+                admissions.insert(at, admission.clone());
+                origin.insert(at, None);
+            },
+            Edit::Deleted(at) => {
+                if wrap(at) < length {
+                    let _deleted = admissions.remove(wrap(at));
+                    let _origin = origin.remove(wrap(at));
+                }
+            },
+            Edit::Moved(from, to) => {
+                if wrap(from) < length {
+                    let admission = admissions.remove(wrap(from));
+                    admissions.insert(wrap(to), admission);
+                    let moved = origin.remove(wrap(from));
+                    origin.insert(wrap(to), moved);
+                }
+            },
+            Edit::Unedited => {},
+        }
+        EditedSource { admissions, origin }
+    }
+
+    /// Check that a kept environment reads as a fresh admission of `edited`
+    /// entry by entry, and exports its bytes. The readmission retires each
+    /// entry from the first admission that the edit moves or writes. Then it
+    /// walks the edited source in order. It keeps each admission that the
+    /// edit leaves, over the same data types, and it offers each other
+    /// admission and each one whose keep is refused. A keep is refused only
+    /// for what its check reads, and with no edit no keep is refused.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keeps_as_fresh(
+        source: &[Generated],
+        edited: &EditedSource,
+    ) -> Result<(), proptest::test_runner::TestCaseError>
+    {
+        let EditedSource {
+            ref admissions,
+            ref origin,
+        } = *edited;
+        let mut fresh = keyed();
+        let Admitted {
+            positions: answers,
+            scopes: edited_scopes,
+        } = admit_source(&mut fresh, admissions);
+        let mut kept = keyed();
+        let Admitted {
+            positions: admitted,
+            scopes,
+        } = admit_source(&mut kept, source);
+        let unedited = admissions.len() == source.len()
+            && origin
+                .iter()
+                .enumerate()
+                .all(|(index, &from)| from == Some(index));
+        let first = origin
+            .iter()
+            .enumerate()
+            .position(|(index, &from)| from != Some(index))
+            .unwrap_or(admissions.len());
+        let length = usize::from(kept.entries().len());
+        let from = admitted
+            .iter()
+            .skip(first)
+            .flatten()
+            .find_map(|positions| positions.first().copied())
+            .map_or(length, usize::from);
+        let retired: Vec<ConstantIndex> = (from .. length).map(ConstantIndex::from).collect();
+        let watermark = kept.arena().watermark();
+        proptest::prop_assert_eq!(kept.retire(&retired), Ok(()));
+        proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
+        // Where each admission of the source stands after the edit, so that a
+        // kept scope reads in the edited source.
+        let mut image: Vec<Option<usize>> = vec![None; source.len()];
+        for (index, &from) in origin.iter().enumerate() {
+            if let Some(slot) = from.and_then(|from| image.get_mut(from)) {
+                *slot = Some(index);
+            }
+        }
+        let mut data: Vec<ConstantIndex> = Vec::new();
+        let mut ranks: Vec<SourceRank> = Vec::new();
+        let mut next = 0_usize;
+        for (index, admission) in admissions.iter().enumerate() {
+            let from = origin.get(index).copied().flatten();
+            let held = from.and_then(|from| admitted.get(from).cloned().flatten());
+            let verdict = if index < first {
+                held
+            }
+            else {
+                let unchanged = from.is_some_and(|from| {
+                    let read = scopes.get(from).map(|scope| {
+                        scope.iter().map(|origin| {
+                            image
+                                .get(origin.admission)
+                                .copied()
+                                .flatten()
+                                .map(|admission| Origin {
+                                    admission,
+                                    member: origin.member,
+                                })
+                        })
+                    });
+                    let expected = edited_scopes
+                        .get(index)
+                        .map(|scope| scope.iter().copied().map(Some));
+                    read.zip(expected)
+                        .is_some_and(|(read, expected)| read.eq(expected))
+                });
+                let mut kept_positions = None;
+                if let (true, Some(positions)) = (unchanged, held) {
+                    ranks.clear();
+                    ranks.extend(
+                        (next .. next.saturating_add(positions.len())).map(SourceRank::from),
+                    );
+                    let first = positions
+                        .first()
+                        .copied()
+                        .unwrap_or_else(|| ConstantIndex::from(0_usize));
+                    let watermark = kept.arena().watermark();
+                    match kept.keep((first, &ranks)) {
+                        Ok(_kept) => kept_positions = Some(positions),
+                        Err(refusal) => {
+                            proptest::prop_assert!(
+                                !unedited,
+                                "with no edit, every keep holds: {:?}",
+                                refusal
+                            );
+                            proptest::prop_assert!(
+                                matches!(
+                                    refusal,
+                                    KernelError::Unkept { .. }
+                                        | KernelError::UnboundConstant { .. }
+                                ),
+                                "a keep is refused only for what its check reads: {:?}",
+                                refusal
+                            );
+                        },
+                    }
+                    proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
+                }
+                kept_positions.or_else(|| {
+                    admit_generated(&mut kept, admission, &data, Some(SourceRank::from(next))).ok()
+                })
+            };
+            proptest::prop_assert_eq!(
+                verdict.is_some(),
+                answers.get(index).is_some_and(Option::is_some),
+                "admission {} answers as the fresh admission answers",
+                index
+            );
+            let positions = verdict.unwrap_or_default();
+            next = next.saturating_add(positions.len());
+            for (member, &position) in members(admission).iter().zip(&positions) {
+                if matches!(*member, Member::Data(..)) {
+                    data.push(position);
+                }
+            }
+        }
+        proptest::prop_assert_eq!(read_by_rank(&kept), read_by_rank(&fresh));
+        proptest::prop_assert_eq!(
+            fresh.entries().places(),
+            Maybe::Absent(super::places::Absent::InOrder),
+            "a fresh admission builds no places"
+        );
+        proptest::prop_assert_eq!(
+            exported(&kept),
+            exported(&fresh),
+            "the kept environment exports the bytes of the fresh one"
+        );
+        Ok(())
+    }
+
     proptest::proptest! {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
 
@@ -7859,99 +8267,54 @@ mod tests
             proptest::prop_assert_eq!(&*entries.reach(edited.iter().copied()), found.as_slice());
         }
 
-        /// #6621: a kept environment reads as a fresh admission of the edited
-        /// source, entry by entry. The edit replaces one admission of a
-        /// generated source, or none. The readmission retires each entry from
-        /// the first entry of the edited admission on. Then it walks the
-        /// edited source in order: it keeps each admission that the edit
-        /// leaves, and it offers the edited one and each one whose keep is
-        /// refused. A keep is refused only for what its check reads, and with
-        /// no edit no keep is refused.
+        /// #6621, #6845: a kept environment reads as a fresh admission of the
+        /// edited source, entry by entry, and it exports the same bytes. The
+        /// edit replaces one admission of a generated source.
         #[test]
         fn a_kept_environment_reads_as_a_fresh_admission_6621(
             source in proptest::collection::vec(generated(), 1 .. 10),
             at in 0_usize .. 10,
-            edit in proptest::option::of(generated()),
+            edit in generated(),
         ) {
-            let at = at.checked_rem(source.len()).unwrap_or_default();
-            let mut edited = source.clone();
-            if let (Some(slot), Some(edit)) = (edited.get_mut(at), edit.clone()) {
-                *slot = edit;
-            }
-            let mut fresh = keyed();
-            let Admitted {
-                positions: answers,
-                scopes: edited_scopes,
-            } = admit_source(&mut fresh, &edited);
-            let mut kept = keyed();
-            let Admitted {
-                positions: admitted,
-                scopes,
-            } = admit_source(&mut kept, &source);
-            let length = usize::from(kept.entries().len());
-            let from = admitted
-                .iter()
-                .skip(at)
-                .flatten()
-                .find_map(|positions| positions.first().copied())
-                .map_or(length, usize::from);
-            let retired: Vec<ConstantIndex> = (from .. length).map(ConstantIndex::from).collect();
-            let watermark = kept.arena().watermark();
-            proptest::prop_assert_eq!(kept.retire(&retired), Ok(()));
-            proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
-            let mut data: Vec<ConstantIndex> = Vec::new();
-            let mut ranks: Vec<SourceRank> = Vec::new();
-            let mut next = 0_usize;
-            for (index, admission) in edited.iter().enumerate() {
-                let held = admitted.get(index).cloned().flatten();
-                let verdict = if index < at {
-                    held
-                }
-                else {
-                    let unchanged = (edit.is_none() || index != at)
-                        && source.get(index) == Some(admission)
-                        && scopes.get(index) == edited_scopes.get(index);
-                    let mut kept_positions = None;
-                    if let (true, Some(positions)) = (unchanged, held) {
-                        ranks.clear();
-                        ranks.extend((next .. next.saturating_add(positions.len())).map(SourceRank::from));
-                        let first = positions
-                            .first()
-                            .copied()
-                            .unwrap_or_else(|| ConstantIndex::from(0_usize));
-                        let watermark = kept.arena().watermark();
-                        match kept.keep((first, &ranks)) {
-                            Ok(_kept) => kept_positions = Some(positions),
-                            Err(refusal) => {
-                                proptest::prop_assert!(edit.is_some(), "with no edit, every keep holds: {:?}", refusal);
-                                proptest::prop_assert!(
-                                    matches!(refusal, KernelError::Unkept { .. } | KernelError::UnboundConstant { .. }),
-                                    "a keep is refused only for what its check reads: {:?}",
-                                    refusal
-                                );
-                            },
-                        }
-                        proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
-                    }
-                    kept_positions.or_else(|| {
-                        admit_generated(&mut kept, admission, &data, Some(SourceRank::from(next))).ok()
-                    })
-                };
-                proptest::prop_assert_eq!(
-                    verdict.is_some(),
-                    answers.get(index).is_some_and(Option::is_some),
-                    "admission {} answers as the fresh admission answers",
-                    index
-                );
-                let positions = verdict.unwrap_or_default();
-                next = next.saturating_add(positions.len());
-                for (member, &position) in members(admission).iter().zip(&positions) {
-                    if matches!(*member, Member::Data(..)) {
-                        data.push(position);
-                    }
-                }
-            }
-            proptest::prop_assert_eq!(read_by_rank(&kept), read_by_rank(&fresh));
+            keeps_as_fresh(&source, &edited_by(&source, &Edit::Replaced(at, edit)))?;
+        }
+
+        /// #6845: as for a replaced admission, the edit inserts one.
+        #[test]
+        fn an_inserted_admission_keeps_the_bytes_of_a_fresh_admission_6845(
+            source in proptest::collection::vec(generated(), 1 .. 10),
+            at in 0_usize .. 11,
+            edit in generated(),
+        ) {
+            keeps_as_fresh(&source, &edited_by(&source, &Edit::Inserted(at, edit)))?;
+        }
+
+        /// #6845: as for a replaced admission, the edit deletes one.
+        #[test]
+        fn a_deleted_admission_keeps_the_bytes_of_a_fresh_admission_6845(
+            source in proptest::collection::vec(generated(), 1 .. 10),
+            at in 0_usize .. 10,
+        ) {
+            keeps_as_fresh(&source, &edited_by(&source, &Edit::Deleted(at)))?;
+        }
+
+        /// #6845: as for a replaced admission, the edit moves one.
+        #[test]
+        fn a_moved_admission_keeps_the_bytes_of_a_fresh_admission_6845(
+            source in proptest::collection::vec(generated(), 1 .. 10),
+            from in 0_usize .. 10,
+            to in 0_usize .. 10,
+        ) {
+            keeps_as_fresh(&source, &edited_by(&source, &Edit::Moved(from, to)))?;
+        }
+
+        /// #6845: with no edit, every keep holds, and the kept environment
+        /// exports the bytes of the fresh one.
+        #[test]
+        fn an_unedited_source_keeps_the_bytes_of_a_fresh_admission_6845(
+            source in proptest::collection::vec(generated(), 1 .. 10),
+        ) {
+            keeps_as_fresh(&source, &edited_by(&source, &Edit::Unedited))?;
         }
     }
 

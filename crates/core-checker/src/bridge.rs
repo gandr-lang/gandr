@@ -563,6 +563,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::content_digest;
+use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
 use gandr_kernel_core::verdict::NoVerdicts;
@@ -583,6 +584,7 @@ use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::Places;
 use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealScope;
@@ -592,6 +594,7 @@ use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::encode;
 use gandr_kernel_term::encode_after;
+use gandr_kernel_term::encode_placed;
 use gandr_kernel_term::encode_prefix;
 use quenchant_shape::shape::Maybe;
 
@@ -1641,10 +1644,11 @@ impl Readmission
     /// - requires: `names` is keyed by module position, the positions the
     ///   judged declarations carry; each crossed position indexes `admitted`.
     /// - ensures: the canonical encoding of the environment's arena and the
-    ///   admitted declarations, in kernel admission order, each marked checked
-    ///   and carrying the name `names` holds at its module position, or no name
-    ///   where it holds none. A declaration that did not cross is not in the
-    ///   artifact, and a reference in it reads the kernel position its target
+    ///   live admitted declarations, in rank order, each marked checked and
+    ///   carrying the name `names` holds at its module position, or no name
+    ///   where it holds none. Each position is written as its place in rank
+    ///   order. A declaration that did not cross, or whose entry is retired, is
+    ///   not in the artifact, and a reference in it reads the place its target
     ///   took, never a name.
     /// - provides: the export a reader decodes: a flattened member is named by
     ///   its segments, and is still referred to by position.
@@ -1657,6 +1661,7 @@ impl Readmission
     ///   asserted at each declaration's exact name and the kernel position each
     ///   reference reads; a nominal declaration decoded under its own name.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
     /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1682,8 +1687,12 @@ impl Readmission
         mut names: BTreeMap<ConstantIndex, StructuredName>,
     ) -> EncodedArtifact
     {
-        let marked = self.marked(&mut names, ConstantIndex::from(0_usize));
-        encode(self.environment.arena(), &marked)
+        let places = self.environment.entries().places();
+        let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
+        match places {
+            Maybe::Present(ref places) => encode_placed(self.environment.arena(), &marked, places),
+            Maybe::Absent(places::Absent::InOrder) => encode(self.environment.arena(), &marked),
+        }
     }
 
     /// [`export`](Self::export), encoding only the declarations after the
@@ -1702,7 +1711,9 @@ impl Readmission
     ///   encoding, which ends where its declarations do in the kernel, so the
     ///   record a later export resumes holds its own. Otherwise, when this
     ///   readmission resumed every declaration of `crossed` and `crossed` keeps
-    ///   their encoding, only the declarations after them are encoded.
+    ///   their encoding, only the declarations after them are encoded. An
+    ///   environment whose places differ from its positions resumes no encoding
+    ///   and keeps none: its export is encoded whole.
     /// - provides: an editor's export of a document laid out after its import
     ///   closure, which encodes the closure once.
     /// - fails: never.
@@ -1715,6 +1726,7 @@ impl Readmission
     ///   of its declarations.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::an_export_recording_past_a_kept_encoding_keeps_the_record_s_2102`
+    /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1743,6 +1755,14 @@ impl Readmission
     ) -> EncodedArtifact
     {
         let arena = self.environment.arena();
+        let places = self.environment.entries().places();
+        if let Maybe::Present(ref placed) = places {
+            if let Maybe::Present(ref mut record) = *recorded {
+                record.encoded = None;
+            }
+            let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
+            return encode_placed(arena, &marked, placed);
+        }
         let resumable = match crossed {
             Maybe::Present(crossed) if self.resumed == crossed.readmitted.len() => {
                 crossed.encoded.as_ref()
@@ -1752,14 +1772,18 @@ impl Readmission
         let Maybe::Present(ref mut record) = *recorded
         else {
             return match resumable {
-                Some(prefix) => encode_after(prefix, arena, &self.marked(&mut names, prefix.end())),
+                Some(prefix) => encode_after(
+                    prefix,
+                    arena,
+                    &self.marked(&mut names, prefix.end(), &places),
+                ),
                 None => encode(
                     arena,
-                    &self.marked(&mut names, ConstantIndex::from(0_usize)),
+                    &self.marked(&mut names, ConstantIndex::from(0_usize), &places),
                 ),
             };
         };
-        let marked = self.marked(&mut names, ConstantIndex::from(0_usize));
+        let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
         if let Some((leading, after)) =
             marked.split_at_checked(usize::from(record.positions.exports.len()))
             && let Maybe::Present(prefix) = encode_prefix(arena, leading)
@@ -1777,14 +1801,17 @@ impl Readmission
 
     /// The admitted declarations from kernel position `from` on, each marked
     /// checked and named as `names` names its module position, every name read
-    /// taken out of `names`.
+    /// taken out of `names`: in kernel admission order while `places` is
+    /// absent, and the live ones in rank order otherwise.
     ///
     /// # Specification
-    /// - requires: each crossed position indexes `admitted`.
-    /// - ensures: one declaration per admitted declaration at `from` or later,
-    ///   in kernel admission order, each carrying the name `names` held at its
-    ///   module position, or none; each name read is removed from `names`, and
-    ///   none of a declaration before `from` is read.
+    /// - requires: each crossed position indexes `admitted`; `places` is the
+    ///   environment's own.
+    /// - ensures: while `places` is absent, one declaration per admitted
+    ///   declaration at `from` or later, in kernel admission order; otherwise
+    ///   one per live entry at `from` or later, in rank order. Each carries the
+    ///   name `names` held at its module position, or none; each name read is
+    ///   removed from `names`, and none of a declaration before `from` is read.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1793,11 +1820,16 @@ impl Readmission
     ///   [`export_resuming`](Self::export_resuming).
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
-    #[spec(ensures: |ret| ret.len() == usize::from(self.admitted.len()).saturating_sub(usize::from(from)))]
+    /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
+    #[spec(ensures: |ret| ret.len() == match *places {
+        Maybe::Absent(_) => usize::from(self.admitted.len()).saturating_sub(usize::from(from)),
+        Maybe::Present(_) => self.environment.entries().in_rank_order().filter(|&position| position >= from).count(),
+    })]
     fn marked(
         &self,
         names: &mut BTreeMap<ConstantIndex, StructuredName>,
         from: ConstantIndex,
+        places: &Maybe<Places, places::Absent>,
     ) -> Vec<MarkedDeclaration>
     {
         let mut kernel_names = BTreeMap::new();
@@ -1813,18 +1845,30 @@ impl Readmission
                 );
             }
         }
-        self.admitted
-            .iter()
-            .enumerate()
-            .skip(usize::from(from))
-            .map(|(position, declaration)| {
-                let mut declaration = declaration.clone();
-                if let Some(name) = kernel_names.remove(&ConstantIndex::from(position)) {
-                    declaration = declaration.named(name);
-                }
-                MarkedDeclaration::new(AdmissionMark::Checked, declaration)
-            })
-            .collect()
+        let mut mark = |(position, declaration): (ConstantIndex, &KernelDeclaration)| {
+            let mut declaration = declaration.clone();
+            if let Some(name) = kernel_names.remove(&position) {
+                declaration = declaration.named(name);
+            }
+            MarkedDeclaration::new(AdmissionMark::Checked, declaration)
+        };
+        match *places {
+            Maybe::Absent(places::Absent::InOrder) => self
+                .admitted
+                .iter()
+                .enumerate()
+                .skip(usize::from(from))
+                .map(|(position, declaration)| mark((ConstantIndex::from(position), declaration)))
+                .collect(),
+            Maybe::Present(_) => self
+                .environment
+                .entries()
+                .in_rank_order()
+                .filter(|&position| position >= from)
+                .filter_map(|position| Some((position, self.admitted.get(usize::from(position))?)))
+                .map(mark)
+                .collect(),
+        }
     }
 }
 

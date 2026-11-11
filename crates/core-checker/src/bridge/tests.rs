@@ -965,7 +965,11 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         StructuredName::from(vec![NameSegment::from_text(String::from("Num")).unwrap()]),
     )]);
     let mut renamed = recorded.clone();
-    let marked = first_readmission.marked(&mut named.clone(), ConstantIndex::from(0_usize));
+    let marked = first_readmission.marked(
+        &mut named.clone(),
+        ConstantIndex::from(0_usize),
+        &first_readmission.environment().entries().places(),
+    );
     renamed.encoded = match encode_prefix(
         first_readmission.environment().arena(),
         marked.get(.. 2).expect("the record keeps two declarations"),
@@ -4645,6 +4649,128 @@ fn an_export_names_each_crossed_declaration_at_its_position()
             .collect::<Vec<_>>(),
         [at(0), at(1)],
         "each reference reads the kernel position its target took"
+    );
+}
+
+/// #6845: a readmission that keeps its entries at new ranks exports the
+/// bytes of a fresh readmission of the edited module. The module is
+/// `def x : Type = Integer ; def n : Integer = 0 ; def m : Integer = n ;`,
+/// and the edit deletes `x`. The readmission retires the three entries, and
+/// keeps `n` at the rank 0 and `m` at the rank 1. Its export lists the live
+/// entries in rank order, and writes `n` at its place 0.
+#[test]
+fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
+{
+    let named = |segment: &str| {
+        StructuredName::from(vec![NameSegment::from_text(String::from(segment)).unwrap()])
+    };
+    let module = |arena: &mut CoreArena, deleted: bool| {
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let code = arena.value_quote(integer);
+        let zero = arena.value_literal(integer_literal());
+        let first = usize::from(!deleted);
+        let n = arena.value_constant(ConstantIndex::from(first));
+        let mut declarations = Vec::new();
+        if !deleted {
+            declarations.push(declaration(
+                At(0),
+                Maybe::Present(small),
+                Maybe::Present(code),
+            ));
+        }
+        declarations.push(declaration(
+            At(first),
+            Maybe::Present(integer),
+            Maybe::Present(zero),
+        ));
+        declarations.push(declaration(
+            At(first + 1),
+            Maybe::Present(integer),
+            Maybe::Present(n),
+        ));
+        declarations
+    };
+    let mut kept_arena = CoreArena::new();
+    let source = module(&mut kept_arena, false);
+    // A keep needs keyed entries, so the module is readmitted under a key.
+    let (report, _) = judge_and_readmit(&mut kept_arena, &source);
+    let signer = KernelSigner::from([5_u8; 32]);
+    let mut kept = readmit_retiring(
+        &mut kept_arena,
+        &report,
+        (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked)),
+        &Recall::trusting(
+            TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+            Arc::new(NoVerdicts),
+        ),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole()
+    .0;
+    let mut fresh_arena = CoreArena::new();
+    let edited = module(&mut fresh_arena, true);
+    let (_, fresh) = judge_and_readmit(&mut fresh_arena, &edited);
+    let positions: Vec<ConstantIndex> = kept
+        .readmitted()
+        .iter()
+        .map(|entry| {
+            let Outcome::Defined { admitted, .. } = *entry.outcome()
+            else {
+                panic!("each declaration is admitted: {:?}", entry.outcome());
+            };
+            admitted.position()
+        })
+        .collect();
+    assert_eq!(
+        kept.environment.entries().places(),
+        Maybe::Absent(gandr_kernel_core::places::Absent::InOrder),
+        "a whole readmission builds no places"
+    );
+    assert_eq!(
+        kept.environment.retire(&positions),
+        Ok(()),
+        "the three entries retire"
+    );
+    for (rank, &position) in positions.iter().skip(1).enumerate() {
+        assert_eq!(
+            kept.environment
+                .keep((position, &[gandr_kernel_term::SourceRank::from(rank)]))
+                .map(gandr_kernel_core::CheckedId::position),
+            Ok(position),
+            "the entry at {position:?} is kept at the rank {rank}"
+        );
+    }
+    let kept_names = BTreeMap::from([
+        (ConstantIndex::from(0_usize), named("x")),
+        (ConstantIndex::from(1_usize), named("n")),
+        (ConstantIndex::from(2_usize), named("m")),
+    ]);
+    let fresh_names = BTreeMap::from([
+        (ConstantIndex::from(0_usize), named("n")),
+        (ConstantIndex::from(1_usize), named("m")),
+    ]);
+    let expected = fresh.export(fresh_names);
+    assert_eq!(
+        kept.export(kept_names.clone()),
+        expected,
+        "the kept readmission exports the bytes of the fresh one"
+    );
+    let mut recorded = Maybe::Absent(crossed::Absent::Unasked);
+    assert_eq!(
+        kept.export_resuming(
+            kept_names,
+            Maybe::Absent(crossed::Absent::Unasked),
+            &mut recorded
+        ),
+        expected,
+        "the export that would resume writes the same bytes"
+    );
+    assert_eq!(
+        decode(expected.as_image()).map(|artifact| artifact.declarations().len()),
+        Ok(2),
+        "the retired `x` leaves nothing in the artifact"
     );
 }
 
