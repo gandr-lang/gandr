@@ -420,7 +420,16 @@ enum Side
     Empty,
     /// The empty word of the 2-cell's words.
     EmptyCell,
+    /// `⟨tr(y. Path[.A = S](Base, y), w, ε)⟩`, for `w` the loop's word
+    /// [`MOVED`]: the empty path moved along a word of four letters.
+    Moved,
+    /// The word [`MOVED`] itself.
+    Word,
 }
+
+/// The word the [`Side::Moved`] transport runs along, as tags of the loop's
+/// words: `loop`, `loop`, its inverse, `loop`.
+const MOVED: [usize; 4] = [1, 1, 2, 1];
 
 /// The cells of one loop at `Base`, wrapped `wraps` times.
 ///
@@ -488,6 +497,26 @@ fn core_side(
         },
         Side::Empty => empty(core, WORDS),
         Side::EmptyCell => empty(core, CELLS),
+        Side::Moved | Side::Word => {
+            let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+            let end = empty(core, WORDS);
+            let word = MOVED.iter().rev().fold(end, |rest, &tag| {
+                core.value_constructor(
+                    ConstantIndex::from(WORDS),
+                    own,
+                    ConstructorTag::from(tag),
+                    alloc::vec![rest],
+                )
+            });
+            if matches!(side, Side::Word) {
+                return word;
+            }
+            let base = at(core, 0);
+            let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let family = core.value_type_path(carrier, base, moving);
+            let moved = core.computation_path_transport(family, word, end);
+            core.value_returned(moved)
+        },
     }
 }
 
@@ -607,6 +636,26 @@ fn kernel_side(
         },
         Side::Empty => empty(arena, WORDS),
         Side::EmptyCell => empty(arena, CELLS),
+        Side::Moved | Side::Word => {
+            let own = arena.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+            let end = empty(arena, WORDS);
+            let word = MOVED.iter().rev().fold(end, |rest, &tag| {
+                arena.value_constructor(
+                    ConstantIndex::from(WORDS),
+                    own,
+                    ConstructorTag::from(tag),
+                    alloc::vec![rest],
+                )
+            });
+            if matches!(side, Side::Word) {
+                return word;
+            }
+            let base = at(arena, 0);
+            let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+            let family = arena.value_type_path(carrier, base, moving);
+            let moved = arena.computation_path_transport(family, word, end);
+            arena.value_returned(moved)
+        },
     }
 }
 
@@ -773,6 +822,39 @@ fn a_dialogue_recorded_before_the_reading_replays_unchanged_6477()
             (verdict, replay_nodes(&decisions)),
             (MachineVerdict::Convertible, dialogue),
             "{left:?} against {right:?} records the dialogue it recorded before the reading"
+        );
+    }
+}
+
+#[test]
+fn a_dialogue_an_older_build_records_for_a_moved_word_replays_unchanged()
+{
+    // The dialogue the evaluator on `landing` records for the empty path moved
+    // along `loop ∷ loop ∷ back(loop) ∷ loop` against that word, read off its
+    // trace log: the two sides shared once each is evaluated, so the move
+    // along the word records nothing. The move along the whole word records
+    // nothing either: the kernel replays the older dialogue, and the evaluator
+    // still records it.
+    let shared = ConversionDecision::ComparedShared {
+        left: ReplayNode::Other,
+        right: ReplayNode::Other,
+    };
+    for (left, right) in [
+        (Side::Moved, Side::Word),
+        (Side::Word, Side::Moved),
+        (Side::Moved, Side::Moved),
+    ] {
+        let dialogue = alloc::vec![shared];
+        assert_eq!(
+            replayed_sides(left, right, &dialogue),
+            KernelVerdict::Convertible,
+            "{left:?} against {right:?} replays as the older build recorded it"
+        );
+        let (verdict, decisions) = decided_sides(left, right);
+        assert_eq!(
+            (verdict, replay_nodes(&decisions)),
+            (MachineVerdict::Convertible, dialogue),
+            "{left:?} against {right:?} records the dialogue the older build recorded"
         );
     }
 }
