@@ -42,11 +42,19 @@ flags=$("$here/policy.bash" --flags "$root" /records)
 for crate in 'surface-pretty answer_totality presenters = [' 'surface-pretty answer_totality [quenchant-dylints.productions]' \
   'surface-lsp embedded_source [quenchant-dylints.embedded_source]'; do
   read -r dir lint table <<< "$crate"
-  git -C "$root" grep -q -E "^\s*(expect\()?$lint,?" -- "crates/$dir" \
+  git -C "$root" grep -q -E "^[[:space:]]*(expect\()?$lint,?" -- "crates/$dir" \
     || fail "#6838: crates/$dir expects $lint, so its records need the table" "no expectation of $lint"
   grep -qxF -- "$table" <<< "$config" \
     || fail "#6838: the record run of crates/$dir gives $lint its table $table" "no such line"
 done
+
+# Each grep of these scripts reads POSIX classes alone (#6853). git 2.54 on
+# macOS reads the pattern of `git grep -E` with the regex library of the
+# system, which takes no Perl class: the case above then found no line.
+perl='\\[sdwbSDWB]'
+while IFS= read -r hit; do
+  fail "#6853: a grep of .config/deletes reads POSIX classes alone" "$hit"
+done < <(git -C "$root" grep -n -E "^[^#]*grep .*$perl" -- '.config/deletes/*.bash' || :)
 
 mkdir -p "$work/empty/.config/mise/tasks"
 : > "$work/empty/.config/mise/tasks/mise-tasks-check.toml"
@@ -57,4 +65,4 @@ for mode in '' --flags; do
 done
 
 (( failed == 0 )) || exit 1
-echo "deletes policy OK: the record run reads the tables, the records' directory and the denials of check:dylint, and refuses a tree with none"
+echo "deletes policy OK: the record run reads the tables, the records' directory and the denials of check:dylint, and refuses a tree with none; each grep reads POSIX classes alone"
