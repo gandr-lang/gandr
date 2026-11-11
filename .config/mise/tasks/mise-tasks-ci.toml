@@ -2807,6 +2807,11 @@ if [[ -z $lane ]]; then
   [[ -n $lane ]] || { echo "claim:take: the branch \`$branch\` names no lane; name it with --lane" >&2; exit 2; }
 fi
 [[ $lane =~ ^[a-z][a-z0-9-]*$ ]] || { echo "claim:take: \`$lane\` is no lane" >&2; exit 2; }
+# `claim:release` accepts the same lanes (#6639): a lane the table holds.
+if [[ $(yq -p toml -o json ".lane | has(\"$lane\")" "$root/.config/issues/lanes.toml") != true ]]; then
+  echo "claim:take: no lane \`$lane\` in .config/issues/lanes.toml" >&2
+  exit 2
+fi
 repo=${GH_REPO:-'{owner}/{repo}'}
 read_issue() { gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}'; }
 decision=$(read_issue | jq -c --arg lane "$lane" '{step: "take", lane: $lane, issue: .}' | jq -c -L "$claims" -f "$claims/taken.jq")
