@@ -1048,7 +1048,9 @@ fn encode_minted_atom_table(
 ///   [`tags::KIND_DEF_ROLED`] and closes with the pair, law, rule and cover
 ///   blocks, each count possibly zero, then the role's tag; a datatype holding
 ///   a role and no indices, rules or cells writes [`tags::KIND_DATA_ROLED`] and
-///   closes with the role's tag; a data declaration presenting rules writes
+///   closes with the role's tag; a coinductive datatype with no indices, rules
+///   or cells writes [`tags::KIND_DATA_COINDUCTIVE`] and the datatype fields
+///   alone; a data declaration presenting rules writes
 ///   [`tags::KIND_DATA_PRESENTED`] and closes with the rule count and each
 ///   rule's two sides; a type of words writes [`tags::KIND_DATA_WORDS`] and
 ///   closes with the rule block, its count possibly zero, then the sort's
@@ -1464,10 +1466,12 @@ const fn identity_base_tag(base: crate::IdentityBase) -> WireTag
 /// # Specification
 /// - ensures: a definition holding a role is [`tags::KIND_DEF_ROLED`], whose
 ///   segment writes the pair, law, rule and cover blocks whatever their counts.
-///   A datatype holding a role and no indices, rules or cells is
-///   [`tags::KIND_DATA_ROLED`]. A datatype holder with them writes that richer
-///   kind and no role. No canonical datatype holder has them, and the checker
-///   refuses one that has them, so its role never crosses.
+///   A coinductive datatype with no indices, rules or cells is
+///   [`tags::KIND_DATA_COINDUCTIVE`], and it writes no role. A datatype holding
+///   a role and no indices, rules or cells is [`tags::KIND_DATA_ROLED`]. A
+///   datatype holder or a coinductive datatype with them writes that richer
+///   kind and no role or mark. No canonical holder or coinductive datatype has
+///   them, and the kernel refuses one that has them, so its mark never crosses.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1497,6 +1501,11 @@ fn kind_tag(declaration: &Declaration) -> WireTag
         },
         DeclarationContent::Data { .. } if !declaration.presentation().rules().is_empty() => {
             tags::KIND_DATA_PRESENTED
+        },
+        DeclarationContent::Data { .. }
+            if declaration.fixpoint() == crate::DataFixpoint::Greatest =>
+        {
+            tags::KIND_DATA_COINDUCTIVE
         },
         DeclarationContent::Data { .. } if held => tags::KIND_DATA_ROLED,
         DeclarationContent::Data { .. } => tags::KIND_DATA,
@@ -2326,7 +2335,8 @@ fn encode_entry(
                         }
                     },
                     crate::FixpointEvidence::Partial
-                    | crate::FixpointEvidence::StructuralDescent => {},
+                    | crate::FixpointEvidence::StructuralDescent
+                    | crate::FixpointEvidence::Guarded => {},
                 }
             },
             Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
@@ -2850,6 +2860,7 @@ fn sign_tag(sign: Sign) -> WireTag
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
         crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
         crate::FixpointEvidence::Joint { .. } => tags::FIXPOINT_JOINT,
+        crate::FixpointEvidence::Guarded => tags::FIXPOINT_GUARDED,
     },
 )]
 #[inline]
@@ -2860,6 +2871,7 @@ fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
         crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
         crate::FixpointEvidence::Joint { .. } => tags::FIXPOINT_JOINT,
+        crate::FixpointEvidence::Guarded => tags::FIXPOINT_GUARDED,
     }
 }
 
@@ -3259,6 +3271,13 @@ mod tests
                 )),
                 &[first],
                 &[0x63, 2, 0x81, 1, 3],
+            ),
+            (
+                AnyNode::Computation(
+                    arena.computation_fixpoint(c0, crate::FixpointEvidence::Guarded),
+                ),
+                &[first],
+                &[0x63, 4, 3],
             ),
             (
                 AnyNode::Computation(arena.computation_application(c0, v0)),
@@ -4670,6 +4689,64 @@ mod tests
                 "an unknown role is refused"
             );
         }
+    }
+
+    #[test]
+    fn a_coinductive_datatype_writes_its_own_kind_6647()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let definition = builder.def(LevelSignature::monomorphic(), unit_type, unit);
+        let builder = DeclarationBuilder::new(&mut arena);
+        let inductive = builder.indexed(
+            LevelSignature::monomorphic(),
+            alloc::vec![],
+            (alloc::vec![], alloc::vec![alloc::vec![]], alloc::vec![]),
+            kind,
+        );
+        let encoded = |declaration: &Declaration| {
+            let marked = [MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.clone(),
+            )];
+            super::encode(&arena, &marked).as_image().as_ref().to_vec()
+        };
+        let coinductive = inductive.clone().coinductive();
+        let (least, greatest) = (encoded(&inductive), encoded(&coinductive));
+        // The coinductive datatype writes its own kind where the inductive one
+        // writes its kind, and every other byte is the same.
+        let mut expected = least.clone();
+        if let Some(byte) = expected.get_mut(9) {
+            *byte = u8::from(crate::tags::KIND_DATA_COINDUCTIVE);
+        }
+        assert_eq!(greatest, expected, "the mark is the kind byte alone");
+        assert_ne!(greatest, least, "the two fixpoints have two identities");
+        let decoded = crate::decode::decode(ArtifactImage::from(greatest.as_slice()))
+            .expect("a coinductive datatype decodes");
+        let declaration = decoded.declarations().first().expect("one datatype");
+        assert_eq!(
+            declaration.declaration().fixpoint(),
+            crate::DataFixpoint::Greatest,
+            "the mark decodes"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            greatest.as_slice(),
+            "and re-encodes to the same bytes"
+        );
+        // A definition takes no mark, so its bytes stay.
+        assert_eq!(
+            encoded(&definition.clone().coinductive()),
+            encoded(&definition),
+            "a definition is no datatype"
+        );
     }
 
     #[test]

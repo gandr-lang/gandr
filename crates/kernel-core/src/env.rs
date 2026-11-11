@@ -467,6 +467,41 @@ impl StagedDeclaration
         }
     }
 
+    /// This staged data declaration read as the greatest fixpoint of its
+    /// constructors, its content start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the choke point refuses a coinductive datatype
+    ///   with indices, rules, cells or a role, or inside a mutual block.
+    /// - ensures: the declaration as [`Declaration::coinductive`] leaves it, at
+    ///   the same content start: a data declaration is
+    ///   [`gandr_kernel_term::DataFixpoint::Greatest`], any other declaration
+    ///   is unchanged.
+    /// - provides: how a producer stages a coinductive datatype at the value
+    ///   universe before offering it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the delay type admits as a coinductive datatype, and
+    ///   a guarded fixpoint into it admits where the same fixpoint into the
+    ///   inductive datatype is refused.
+    /// - witness: `tests::guard::a_guarded_fixpoint_stands_only_at_a_coinductive_type`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Data { .. }), self.declaration.fixpoint()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.fixpoint() == if entry.1 { gandr_kernel_term::DataFixpoint::Greatest } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn coinductive(self) -> Self
+    {
+        Self {
+            declaration: self.declaration.coinductive(),
+            ..self
+        }
+    }
+
     /// This staged data declaration carrying `presentation` as the rules
     /// rewriting its constructor terms, its content start and content
     /// unchanged.

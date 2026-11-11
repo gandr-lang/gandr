@@ -7374,7 +7374,8 @@ const CAPTURES: [Capture; 6] = [
 ///
 /// # Specification
 /// - ensures: `Partial` writes tag 0, `StructuralDescent` tag 1, `Staged` tag 2
-///   then its position, and `Joint` tag 3 then its count and positions.
+///   then its position, `Joint` tag 3 then its count and positions, and
+///   `Guarded` tag 4.
 /// - fails: [`CodecError::Unrepresentable`] for a position past 64 bits.
 /// - panics: none.
 ///
@@ -7396,6 +7397,7 @@ where
     match evidence {
         FixpointEvidence::Partial => writer.tag(Tag(0)),
         FixpointEvidence::StructuralDescent => writer.tag(Tag(1)),
+        FixpointEvidence::Guarded => writer.tag(Tag(4)),
         FixpointEvidence::Staged { position } => {
             let position = u64::try_from(usize::from(position))
                 .map_err(|_wide| CodecError::Unrepresentable)?;
@@ -7423,8 +7425,8 @@ where
 ///
 /// # Specification
 /// - ensures: tags 0 and 1 read the partial and structural evidence, tag 2 a
-///   staged claim at the position after it, and tag 3 a joint claim at the
-///   count and positions after it.
+///   staged claim at the position after it, tag 3 a joint claim at the count
+///   and positions after it, and tag 4 the guarded evidence.
 /// - fails: [`CodecError::Corrupt`] for another tag, a short input, a position
 ///   past the platform's width, or a joint claim past its width.
 /// - panics: none.
@@ -7433,7 +7435,7 @@ where
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`write_evidence`], and a tag past 3 is corrupt.
+/// - hypothesis: L3 — as [`write_evidence`], and a tag past 4 is corrupt.
 /// - witness: `codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
 #[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_evidence(reader: &mut Reader<'_>) -> Result<FixpointEvidence, CodecError>
@@ -7466,6 +7468,7 @@ fn read_evidence(reader: &mut Reader<'_>) -> Result<FixpointEvidence, CodecError
                 .map(|positions| FixpointEvidence::Joint { positions })
                 .ok_or(CodecError::Corrupt)
         },
+        4 => Ok(FixpointEvidence::Guarded),
         _ => Err(CodecError::Corrupt),
     }
 }

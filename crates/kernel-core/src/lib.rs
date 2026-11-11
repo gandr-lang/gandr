@@ -575,6 +575,7 @@
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
 //! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |
+//! | Integration tests | `tests/acceptance.rs`: the memo measurements and the poisoned-entry cases. `tests/adversarial_depth.rs`: the depth totality. `tests/sealed_export.rs`: a sealed module's export replayed, and its rewritten copies refused. |
 //!
 //! Scalar captures, byte views and fixed child arrays avoid repeated
 //! conversion, normalization, hashing or graph walks. Captures allocate nothing
@@ -766,6 +767,8 @@ pub use crate::error::CompTypeWitness;
 pub use crate::error::ExpectedComputationShape;
 pub use crate::error::ExpectedValueShape;
 pub use crate::error::FieldCause;
+pub use crate::error::GuardBreak;
+pub use crate::error::GuardNode;
 pub use crate::error::KeepRefusal;
 pub use crate::error::KernelError;
 pub use crate::error::LevelOrderRefutation;

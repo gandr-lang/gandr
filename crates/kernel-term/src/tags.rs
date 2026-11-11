@@ -518,6 +518,9 @@ pub const FIXPOINT_STAGED: WireTag = WireTag(2);
 /// Fixpoint evidence: a joint fixpoint's structural recursion, the count of
 /// its components and each component's position following as varints.
 pub const FIXPOINT_JOINT: WireTag = WireTag(3);
+/// Fixpoint evidence: guarded corecursion into a coinductive type. Each call
+/// of the fixpoint stands under a constructor of that type. No varint follows.
+pub const FIXPOINT_GUARDED: WireTag = WireTag(4);
 
 /// Literal kind: an integer literal.
 pub const LITERAL_INTEGER: WireTag = WireTag(0);
@@ -884,6 +887,17 @@ pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
 /// predating this kind refuses it as an unknown declaration kind rather than
 /// misreading it, which is why the format version holds.
 pub const KIND_DATA_WORDS_HIGHER: WireTag = WireTag(0x14);
+/// Declaration tag: a coinductive datatype at the value universe, the final
+/// coalgebra of its constructors.
+///
+/// The segment holds the [`KIND_DATA`] fields and no more. A coinductive
+/// datatype is indexed by nothing, presents no rules and holds no role. The
+/// kernel admits a guarded fixpoint into it and no structural fold over it. An
+/// inductive datatype writes one of the other datatype kinds, so every other
+/// artifact keeps its bytes, and a reader predating this kind refuses it as an
+/// unknown declaration kind rather than misreading it, which is why the format
+/// version holds.
+pub const KIND_DATA_COINDUCTIVE: WireTag = WireTag(0x15);
 /// Declaration tag: a sealed abstract type whose segment closes with its
 /// element interface.
 ///

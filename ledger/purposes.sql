@@ -1138,6 +1138,8 @@ INSERT INTO purpose VALUES('kernel-core','error::CompTypeWitness','struct','A se
 INSERT INTO purpose VALUES('kernel-core','error::ExpectedComputationShape','enum','The computation-type shape a rule required at the position it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::ExpectedValueShape','enum','The value-type shape a rule required at the position it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::FieldCause','enum','Why the kernel refuses the value of a record''s field or a restriction''s fixed value, beside the field''s label.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','error::GuardBreak','enum','How a guarded fixpoint''s body breaks the guard: a call under no constructor, at a node off the path, inside an argument, or not applied to its arguments.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','error::GuardNode','enum','The node at which a guarded fixpoint''s call leaves the path of the guard.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::KeepRefusal','enum','Why the kernel refused to keep a retired entry live again: the keep names no unit, the unit has no key, or its key changed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::KernelError','enum','Every way the kernel refuses a declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::LevelOrderRefutation','enum','Why a strict universe order lower < upper did not hold, in the oracle''s own evidence vocabulary.',NULL,'fits','sound',NULL);
@@ -1383,6 +1385,7 @@ INSERT INTO purpose VALUES('kernel-term','cover::Step','enum','One step of a cov
 INSERT INTO purpose VALUES('kernel-term','cover::StepId','struct','The id of a step in a Cover.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::AdmissionMark','enum','The producer’s claimed admission mode, not evidence of successful checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::AtomInterface','struct','A sealed atom''s element interface: the relation two of its elements bear, that relation''s reflexivity and, optionally, the law that makes the pair an identity system.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','decl::DataFixpoint','enum','Which fixpoint of its constructors a datatype denotes: the least, whose values are finite, or the greatest, whose values a guarded fixpoint builds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::Declaration','struct','A declaration: a level interface, its content roots, its sealing provenance, and its structured name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::DeclarationBuilder','struct','A borrowing builder for one declaration''s content.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::DeclarationContent','enum','The content of a declaration: its roots into the arena that owns them.',NULL,'fits','sound',NULL);
@@ -1509,6 +1512,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::BASE_STRING','constant','Base-ty
 INSERT INTO purpose VALUES('kernel-term','tags::BASE_U32','constant','Base-type atom: the `u32` width atom.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::BASE_U64','constant','Base-type atom: the `u64` width atom.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::ChildArity','enum','The number of subterm-table child references an entry carries after its inline payload.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_GUARDED','constant','Fixpoint evidence: the guard of corecursion, a fixpoint into a coinductive datatype whose every call stands under one of its constructors.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_JOINT','constant','Fixpoint evidence: a joint claim at a lazy product, its component count and each component''s staged position following as varints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_PARTIAL','constant','Fixpoint evidence: no claim, a partial fixpoint.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_STAGED','constant','Fixpoint evidence: structural recursion on the parameter at a position, the position following as a varint.',NULL,'fits','sound',NULL);
@@ -1521,6 +1525,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::KIND_ABSTRACT_LAWFUL','constant'
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_ABSTRACT_TYPE','constant','Declaration kind: a sealed abstract type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_AXIOM','constant','Declaration kind: a tracked typed hole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA','constant','Declaration tag: a generative datatype with a checked constructor table.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_COINDUCTIVE','constant','Declaration tag: a coinductive datatype, the greatest fixpoint of its constructors, whose segment holds the fields of a datatype alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_INDEXED','constant','Declaration tag: an indexed datatype, whose segment closes with its index classifiers and the index each constructor''s value stands at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_PRESENTED','constant','Declaration tag: a presented datatype, whose segment closes with the rules rewriting its constructor terms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS','constant','Declaration tag: a type of words, a presented datatype whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);

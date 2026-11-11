@@ -860,6 +860,31 @@ pub struct Declaration
     /// The built-in role the declaration holds, which the kernel validates
     /// against the role's canonical form; none for every other declaration.
     role: Maybe<crate::Builtin, crate::builtin_role::Absent>,
+    /// Which fixpoint of its constructors a data declaration denotes: the
+    /// least for an inductive datatype and every other declaration, the
+    /// greatest for a coinductive one.
+    fixpoint: DataFixpoint,
+}
+
+/// Which fixpoint of its constructors a data declaration denotes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the least fixpoint is the initial algebra, which a structural
+///   fold eliminates; the greatest is the final coalgebra, which a case
+///   observes one step at a time and a guarded fixpoint inhabits.
+/// - panics: none.
+/// - executable: none — a mark the kernel reads at admission.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DataFixpoint
+{
+    /// The initial algebra: an inductive datatype, which admits a structural
+    /// fold and no guarded fixpoint.
+    #[default]
+    Least,
+    /// The final coalgebra: a coinductive datatype, which admits a guarded
+    /// fixpoint and no structural fold.
+    Greatest,
 }
 
 impl Declaration
@@ -1039,6 +1064,60 @@ impl Declaration
                 ..self
             },
             DeclarationContent::Codata { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
+    }
+
+    /// Which fixpoint of its constructors the declaration denotes: the
+    /// greatest for a coinductive datatype, the least for every other
+    /// declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn fixpoint(&self) -> DataFixpoint
+    {
+        self.fixpoint
+    }
+
+    /// This data declaration read as the greatest fixpoint of its
+    /// constructors, everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel refuses a coinductive datatype with
+    ///   indices, rules, cells or a role at admission, never takes the mark on
+    ///   trust.
+    /// - ensures: a data declaration comes back as [`DataFixpoint::Greatest`];
+    ///   any other declaration comes back unchanged. Content, levels,
+    ///   provenance, name, presentation and role are untouched either way.
+    /// - provides: the one way a producer stages a coinductive datatype at the
+    ///   value universe, after the finisher that built it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a coinductive datatype keeps its mark through the
+    ///   wire, and a declaration of another judgement keeps none.
+    /// - witness: `encode::tests::a_coinductive_datatype_writes_its_own_kind_6647`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Data { .. }), self.fixpoint, self.name.0.len()),
+        ensures: |ret| ret.fixpoint == if entry.0 { DataFixpoint::Greatest } else { entry.1 }
+            && ret.name.0.len() == entry.2,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn coinductive(self) -> Self
+    {
+        match self.content {
+            DeclarationContent::Data { .. } => Self {
+                fixpoint: DataFixpoint::Greatest,
+                ..self
+            },
+            DeclarationContent::Def { .. }
+            | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::LiteralIdentity { .. }
             | DeclarationContent::AbstractType { .. } => self,
@@ -1818,6 +1897,7 @@ impl<'arena> DeclarationBuilder<'arena>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 
@@ -1877,6 +1957,7 @@ impl<'arena> DeclarationBuilder<'arena>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 
@@ -1933,6 +2014,7 @@ impl<'arena> DeclarationBuilder<'arena>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 
@@ -1980,6 +2062,7 @@ impl<'arena> DeclarationBuilder<'arena>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 
@@ -2044,6 +2127,7 @@ impl<'arena> DeclarationBuilder<'arena>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 }
@@ -2144,6 +2228,7 @@ impl DeclarationBuilder<'_>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 
@@ -2179,6 +2264,7 @@ impl DeclarationBuilder<'_>
             stages: crate::stage_signature::StageSignature::default(),
             covers: Vec::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: DataFixpoint::Least,
         }
     }
 }

@@ -384,6 +384,9 @@ struct DeclMeta
     identity: Option<crate::LiteralIdentity>,
     /// The built-in role a holder carries; none for every other declaration.
     role: Maybe<crate::Builtin, crate::builtin_role::Absent>,
+    /// The greatest fixpoint for a datatype under
+    /// [`tags::KIND_DATA_COINDUCTIVE`]; the least for every other declaration.
+    fixpoint: crate::DataFixpoint,
 }
 
 /// Where the decoder found an artifact's segments, as offsets into the image it
@@ -1922,6 +1925,10 @@ fn build_declarations(
             Maybe::Present(role) => declaration.held(role),
             Maybe::Absent(_) => declaration,
         };
+        let declaration = match meta.fixpoint {
+            crate::DataFixpoint::Greatest => declaration.coinductive(),
+            crate::DataFixpoint::Least => declaration,
+        };
         declarations.push(MarkedDeclaration::new(meta.mark, declaration));
     }
     Ok(declarations)
@@ -2798,6 +2805,12 @@ fn decode_declaration(
         cells,
         identity,
         role,
+        fixpoint: if kind_tag == tags::KIND_DATA_COINDUCTIVE {
+            crate::DataFixpoint::Greatest
+        }
+        else {
+            crate::DataFixpoint::Least
+        },
     })
 }
 
@@ -4397,7 +4410,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 | 19 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 18 | 20 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 | 19 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 17 => ret.as_ref() == Ok(&DeclKind::LiteralIdentity), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 18 | 20 | 21 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -4408,7 +4421,8 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         | tags::KIND_DATA_WORDS
         | tags::KIND_DATA_WORDS_HIGHER
         | tags::KIND_DATA_INDEXED
-        | tags::KIND_DATA_ROLED => Ok(DeclKind::Data),
+        | tags::KIND_DATA_ROLED
+        | tags::KIND_DATA_COINDUCTIVE => Ok(DeclKind::Data),
         tags::KIND_CODATA => Ok(DeclKind::Codata),
         tags::KIND_DEF
         | tags::KIND_DEF_RELATING
@@ -5030,6 +5044,7 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
             Some(3) => reader.position.0 > start.0 && (ret.is_err() || matches!(ret, Ok(crate::FixpointEvidence::Joint { .. }))),
             Some(0) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::Partial),
             Some(1) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::StructuralDescent),
+            Some(4) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::Guarded),
             Some(other) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::FixpointEvidence, tag: WireTag::from(other) }),
             None => reader.position.0 == start.0 && ret.as_ref() == Err(&DecodeError::Truncated),
         } },
@@ -5041,6 +5056,7 @@ fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidenc
     match tag {
         tags::FIXPOINT_PARTIAL => Ok(crate::FixpointEvidence::Partial),
         tags::FIXPOINT_STRUCTURAL_DESCENT => Ok(crate::FixpointEvidence::StructuralDescent),
+        tags::FIXPOINT_GUARDED => Ok(crate::FixpointEvidence::Guarded),
         tags::FIXPOINT_STAGED => Ok(crate::FixpointEvidence::Staged {
             position: crate::StagedPosition::from(usize::from(reader.read_usize()?)),
         }),
@@ -5585,6 +5601,7 @@ mod tests
                     }),
                     2,
                 ),
+                4 => (Ok(crate::FixpointEvidence::Guarded), 1),
                 _ => (Err(unknown(super::TagSite::FixpointEvidence)), 1),
             };
             assert_eq!(super::decode_evidence(&mut reader), evidence);
@@ -5619,7 +5636,7 @@ mod tests
                 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                6 | 8 | 10 | 11 | 18 | 20 => Ok(super::DeclKind::Data),
+                6 | 8 | 10 | 11 | 18 | 20 | 21 => Ok(super::DeclKind::Data),
                 13 => Ok(super::DeclKind::Codata),
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
@@ -6083,6 +6100,7 @@ mod tests
                     cells: None,
                     identity: None,
                     role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+                    fixpoint: crate::DataFixpoint::Least,
                 })
                 .collect();
             super::budget_report(&table, &metas, &mut alloc::vec::Vec::new())
@@ -6181,6 +6199,7 @@ mod tests
             cells: None,
             identity: None,
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+            fixpoint: crate::DataFixpoint::Least,
         };
         let metrics = super::budget_report(&table, &[meta], &mut alloc::vec::Vec::new());
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
@@ -6878,6 +6897,14 @@ mod tests
                 &[7],
             ),
             (
+                &[0x63, 4, 7],
+                crate::term::Computation::Fixpoint {
+                    body: c1,
+                    evidence: crate::FixpointEvidence::Guarded,
+                },
+                &[7],
+            ),
+            (
                 &[0x16, 0, 5],
                 crate::term::Computation::Case {
                     scrutinee: v1,
@@ -7075,6 +7102,7 @@ mod tests
                 cells: None,
                 identity: None,
                 role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+                fixpoint: crate::DataFixpoint::Least,
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -7100,6 +7128,7 @@ mod tests
                 cells: None,
                 identity: None,
                 role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+                fixpoint: crate::DataFixpoint::Least,
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -7128,6 +7157,7 @@ mod tests
                 cells: None,
                 identity: None,
                 role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
+                fixpoint: crate::DataFixpoint::Least,
             },
         ];
         let arena_before = table.arena.clone();

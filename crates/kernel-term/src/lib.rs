@@ -92,7 +92,10 @@
 //! most presented declarations carry cells, one kind with an always-written
 //! count is the smaller format. Words over cells above dimension one take a
 //! kind of their own too ([`KIND_DATA_WORDS_HIGHER`]), with how many times
-//! their point is wrapped in its reflexivity after the sort's position.
+//! their point is wrapped in its reflexivity after the sort's position. A
+//! coinductive datatype, the final coalgebra of its constructors, takes a kind
+//! of its own as well ([`KIND_DATA_COINDUCTIVE`]), with the datatype fields
+//! alone.
 //!
 //! # Specification attributes
 //!
@@ -215,6 +218,7 @@ pub use crate::builtin::RoleWord;
 pub use crate::builtin::builtin_role;
 pub use crate::decl::AdmissionMark;
 pub use crate::decl::AtomInterface;
+pub use crate::decl::DataFixpoint;
 pub use crate::decl::Declaration;
 pub use crate::decl::DeclarationBuilder;
 pub use crate::decl::DeclarationContent;
@@ -321,6 +325,7 @@ pub use crate::tags::BASE_STRING;
 pub use crate::tags::BASE_U32;
 pub use crate::tags::BASE_U64;
 pub use crate::tags::ChildArity;
+pub use crate::tags::FIXPOINT_GUARDED;
 pub use crate::tags::FIXPOINT_JOINT;
 pub use crate::tags::FIXPOINT_PARTIAL;
 pub use crate::tags::FIXPOINT_STAGED;
@@ -333,6 +338,7 @@ pub use crate::tags::KIND_ABSTRACT_LAWFUL;
 pub use crate::tags::KIND_ABSTRACT_TYPE;
 pub use crate::tags::KIND_AXIOM;
 pub use crate::tags::KIND_DATA;
+pub use crate::tags::KIND_DATA_COINDUCTIVE;
 pub use crate::tags::KIND_DATA_INDEXED;
 pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DATA_WORDS;

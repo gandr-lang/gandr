@@ -443,6 +443,7 @@ INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kerne
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-term','cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kernel-core','check::cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kernel-term','cover','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','kernel-core','check::guard','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a156e3-93c7-7e62-9a50-b38b2da60284','surface-lowering','lower::native','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15b47-4304-793b-a542-d12afcf732a6','surface-lowering','lower::method','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);

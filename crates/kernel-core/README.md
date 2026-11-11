@@ -49,7 +49,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 The rustdoc of `Environment` in [`env`](src/env.rs) holds the admission example. The example stages a declaration, admits it, refuses a second one and audits the environment.
 
-`tests/acceptance.rs` carries the memo measurements and the poisoned-entry cases; `tests/adversarial_depth.rs` the depth totality; `tests/sealed_export.rs` a sealed module's export replayed and its rewritten copies refused. Run them with the unit tests, then the enforcing twin:
+[`src/lib.rs`](src/lib.rs) names what each integration test holds. Run them with the unit tests, then the enforcing twin:
 
 ```sh
 cargo nextest run -p gandr-kernel-core
@@ -102,6 +102,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace-certificate design — the replay runs a held operand's steps, which the trace does not record.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, in `words`.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the loop carried past two empty images of a cell, in `words`.
+- `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — anchor: the loops design (§ loops-shapes) — productivity as a guard on observations, in `check::guard`.
 
 ## License
 

@@ -9208,7 +9208,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // selects a component, at that component's position. A
                         // ruled definition's fixpoint unfolds at the partial gate
                         // too. Its admitted rules terminate, and each unfolding
-                        // takes one step of a rule.
+                        // takes one step of a rule. A guarded fixpoint gates on
+                        // no argument: it unfolds where a bind observes its
+                        // result, the scrutinee of a case in call-by-push-value,
+                        // and nowhere else. Its guard keeps every call of it
+                        // under a constructor, so one unfolding answers one
+                        // constructor, which the bind consumes; conversion takes
+                        // one step for each observation and terminates.
                         Some(&Computation::Fixpoint { body, evidence }) => {
                             let (position, projected) = match evidence {
                                 FixpointEvidence::Joint { .. } => {
@@ -9230,6 +9236,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 | FixpointEvidence::Staged { .. } => {
                                     (usize::from(evidence.gate()), 0_usize)
                                 },
+                                // No argument is the gate, so the walk passes
+                                // every application to the frame above them.
+                                FixpointEvidence::Guarded => (usize::MAX, 0_usize),
                             };
                             // The argument at the staged position, read through
                             // the cells: that many applications down the stack,
@@ -9325,7 +9334,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     | FixpointEvidence::Staged { .. }
                                     | FixpointEvidence::Joint { .. },
                                     Gate::Constructor,
-                                ) => {
+                                )
+                                | (FixpointEvidence::Guarded, Gate::Observed) => {
                                     let recursive = focus.with(self.arena.value_thunk(focus.node));
                                     let environment =
                                         cells.push(self.arena, focus.environment, recursive);
@@ -9360,7 +9370,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     | FixpointEvidence::Joint { .. },
                                     Gate::Canonical | Gate::Observed | Gate::Shut,
                                 )
-                                | (FixpointEvidence::Partial, Gate::Shut) => break,
+                                | (FixpointEvidence::Partial, Gate::Shut)
+                                | (
+                                    FixpointEvidence::Guarded,
+                                    Gate::Constructor | Gate::Canonical | Gate::Shut,
+                                ) => break,
                             }
                         },
                         Some(&Computation::Return(value)) => match frames.last().copied() {

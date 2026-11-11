@@ -50,12 +50,13 @@
 //! declaration's own position. Admission, not the reader, decides whether that
 //! occurrence is strictly positive and uniform. The fixpoint carries one
 //! evidence byte, [`FIXPOINT_PARTIAL`], [`FIXPOINT_STRUCTURAL_DESCENT`],
-//! [`FIXPOINT_STAGED`] followed by the staged position as a varint, or
+//! [`FIXPOINT_STAGED`] followed by the staged position as a varint,
 //! [`FIXPOINT_JOINT`] followed by the count of components and each
-//! component's position as varints, then one computation child: its body
-//! under the self binder. Any other evidence byte is refused as an unknown tag
-//! at the evidence site. The byte records a claim kernel admission replays as
-//! the stage typing, the descent byte at position zero; decoding it grants
+//! component's position as varints, or [`FIXPOINT_GUARDED`], then one
+//! computation child: its body under the self binder. Any other evidence byte
+//! is refused as an unknown tag at the evidence site. The byte records a claim
+//! kernel admission replays, a descent as the stage typing, the descent byte
+//! at position zero, and a guard as one walk of the body; decoding it grants
 //! nothing. The encoder's entry goldens and the decoder's former-preservation
 //! witness pin every byte.
 //!
@@ -74,6 +75,7 @@
 //! [`FIXPOINT_STRUCTURAL_DESCENT`]: crate::FIXPOINT_STRUCTURAL_DESCENT
 //! [`FIXPOINT_STAGED`]: crate::FIXPOINT_STAGED
 //! [`FIXPOINT_JOINT`]: crate::FIXPOINT_JOINT
+//! [`FIXPOINT_GUARDED`]: crate::FIXPOINT_GUARDED
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
@@ -838,6 +840,12 @@ pub enum FixpointEvidence
         /// Each component's recursed-on arrow, in component order.
         positions: JointPositions,
     },
+    /// Guarded corecursion into a coinductive type: each call of the fixpoint
+    /// stands under a constructor of that type, and every node on the path to
+    /// it is one the guard admits. Conversion unfolds the fixpoint where a
+    /// bind or a projection observes its result, one step for each
+    /// observation, and the claim decides nothing about termination.
+    Guarded,
 }
 
 impl FixpointEvidence
@@ -848,8 +856,9 @@ impl FixpointEvidence
     /// - requires: nothing.
     /// - ensures: a staged fixpoint's own position, the first argument under
     ///   structural descent, and none for a partial fixpoint, which claims no
-    ///   descent, and for a joint one, whose components each descend on their
-    ///   own position ([`Self::component`]).
+    ///   descent, for a guarded one, which descends on nothing, and for a joint
+    ///   one, whose components each descend on their own position
+    ///   ([`Self::component`]).
     /// - provides: the position a typing replays a descent claim at.
     /// - fails: never.
     /// - panics: none.
@@ -862,14 +871,14 @@ impl FixpointEvidence
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret == match self {
-        Self::Partial | Self::Joint { .. } => None,
+        Self::Partial | Self::Joint { .. } | Self::Guarded => None,
         Self::StructuralDescent => Some(StagedPosition(0)),
         Self::Staged { position } => Some(position),
     })]
     pub fn descent(self) -> Option<StagedPosition>
     {
         match self {
-            Self::Partial | Self::Joint { .. } => None,
+            Self::Partial | Self::Joint { .. } | Self::Guarded => None,
             Self::StructuralDescent => Some(StagedPosition::default()),
             Self::Staged { position } => Some(position),
         }
@@ -895,7 +904,7 @@ impl FixpointEvidence
     #[must_use]
     #[spec(ensures: |ret| ret == match self {
         Self::Joint { positions } => positions.get(component),
-        Self::Partial | Self::StructuralDescent | Self::Staged { .. } => None,
+        Self::Partial | Self::StructuralDescent | Self::Staged { .. } | Self::Guarded => None,
     })]
     pub fn component(
         self,
@@ -904,7 +913,7 @@ impl FixpointEvidence
     {
         match self {
             Self::Joint { positions } => positions.get(component),
-            Self::Partial | Self::StructuralDescent | Self::Staged { .. } => None,
+            Self::Partial | Self::StructuralDescent | Self::Staged { .. } | Self::Guarded => None,
         }
     }
 

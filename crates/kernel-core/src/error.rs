@@ -332,6 +332,85 @@ pub enum NonInferableForm
     HigherEvaluation,
 }
 
+/// Where a guarded fixpoint's body breaks the guard.
+///
+/// The guard walks each path from the body's root to a call of the fixpoint.
+/// Each path passes a constructor of the coinductive type, and each node on it
+/// is one of five: a constructor of that type, the thunk under such a
+/// constructor, an abstraction, a branch of a case whose scrutinee holds no
+/// occurrence, or a `let` whose bound term holds none.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GuardBreak
+{
+    /// A call stands on a path that passes no constructor of the coinductive
+    /// type.
+    Unconstructed,
+    /// A node on the path to a call is none of the five.
+    Node(GuardNode),
+    /// An argument of a call holds the fixpoint.
+    Argument,
+    /// The fixpoint stands bare, or forced at another arity than its own, where
+    /// no call is.
+    Bare,
+}
+
+/// A node on the path to a call of a guarded fixpoint that the guard does not
+/// admit.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GuardNode
+{
+    /// An application of the call past the fixpoint's arity, or of another
+    /// function to an argument that holds the call.
+    Application,
+    /// A case or a split whose scrutinee holds the fixpoint.
+    Case,
+    /// A projection of a lazy product or of a record that holds the fixpoint.
+    Projection,
+    /// A `let` whose bound term holds the fixpoint.
+    Let,
+    /// A constructor of another type than the coinductive one.
+    Constructor,
+    /// A thunk that stands under no constructor of the coinductive type.
+    Thunk,
+    /// Any other former that holds the fixpoint.
+    Other,
+}
+
+impl core::fmt::Display for GuardNode
+{
+    /// Writes the node as a noun phrase for a refusal's message.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one noun phrase for each node.
+    /// - provides: the node's part of the message of
+    ///   [`KernelError::Unguarded`].
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over every node, each inside the refusal that names it;
+    ///   pairwise descriptions distinguish two nodes that write one noun.
+    /// - witness: `error::tests::refusal_descriptions_separate_classes_and_propagate_sink_failure`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Application => "an application",
+            Self::Case => "a case on the fixpoint",
+            Self::Projection => "a projection",
+            Self::Let => "a let that binds the fixpoint",
+            Self::Constructor => "a constructor of another type",
+            Self::Thunk => "a thunk under no constructor",
+            Self::Other => "a former the guard does not name",
+        })
+    }
+}
+
 /// Which polarity the checker machine's produced register was expected to hold.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RegisterFault
@@ -585,6 +664,17 @@ pub enum KernelError
     /// A codata declaration names itself other than at an observation's
     /// result, at its parameter variables in telescope order.
     CodataOccurrence,
+    /// A coinductive datatype is indexed, presents rules or cells, holds a
+    /// role, or stands in a mutual block.
+    CoinductiveNotFree,
+    /// A structural fixpoint descends on a coinductive datatype, which admits
+    /// no fold.
+    FoldOverCoinductive,
+    /// A guarded fixpoint's type does not end, past its arrows, in a returner
+    /// of a coinductive datatype.
+    GuardedNotCoinductive,
+    /// A guarded fixpoint's body breaks the guard where the refusal names.
+    Unguarded(GuardBreak),
     /// A constructor tag is absent from the declaration table.
     UnknownConstructor
     {
@@ -1080,6 +1170,30 @@ impl core::fmt::Display for KernelError
                 "a codata declaration named itself other than at an observation's result, at its \
                  parameters",
             ),
+            Self::CoinductiveNotFree => f.write_str(
+                "a coinductive datatype was indexed, presented rules or cells, held a role or stood \
+                 in a mutual block",
+            ),
+            Self::FoldOverCoinductive => {
+                f.write_str("a structural fixpoint descended on a coinductive datatype")
+            },
+            Self::GuardedNotCoinductive => f.write_str(
+                "a guarded fixpoint's type did not end in a returner of a coinductive datatype",
+            ),
+            Self::Unguarded(GuardBreak::Unconstructed) => f.write_str(
+                "a call of a guarded fixpoint stood on a path through no constructor of its type",
+            ),
+            Self::Unguarded(GuardBreak::Node(node)) => write!(
+                f,
+                "a call of a guarded fixpoint stood under {node}, which the guard does not admit"
+            ),
+            Self::Unguarded(GuardBreak::Argument) => {
+                f.write_str("an argument of a call of a guarded fixpoint held the fixpoint")
+            },
+            Self::Unguarded(GuardBreak::Bare) => f.write_str(
+                "a guarded fixpoint stood bare, or forced at another arity than its own, where no \
+                 call was",
+            ),
             Self::UnknownConstructor { .. } => {
                 f.write_str("a constructor tag was absent from its declaration")
             },
@@ -1320,6 +1434,8 @@ mod tests
     use super::CompTypeMismatch;
     use super::ExpectedComputationShape;
     use super::ExpectedValueShape;
+    use super::GuardBreak;
+    use super::GuardNode;
     use super::KernelError;
     use super::NonInferableForm;
     use super::RegisterFault;
@@ -1509,6 +1625,19 @@ mod tests
             KernelError::CodataKindNotUniverse,
             KernelError::CodataWithoutObservations,
             KernelError::CodataOccurrence,
+            KernelError::CoinductiveNotFree,
+            KernelError::FoldOverCoinductive,
+            KernelError::GuardedNotCoinductive,
+            KernelError::Unguarded(GuardBreak::Unconstructed),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Application)),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Case)),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Projection)),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Let)),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Constructor)),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Thunk)),
+            KernelError::Unguarded(GuardBreak::Node(GuardNode::Other)),
+            KernelError::Unguarded(GuardBreak::Argument),
+            KernelError::Unguarded(GuardBreak::Bare),
             KernelError::UnknownConstructor { tag },
             KernelError::ConstructorArity,
             KernelError::ConstructorFamily {
