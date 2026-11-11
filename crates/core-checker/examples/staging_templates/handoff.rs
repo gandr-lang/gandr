@@ -1238,7 +1238,9 @@ mod tests
                 if !matches!(production, Production::Go(_)) {
                     return None;
                 }
-                let admission = candidate.admission_candidate().unwrap();
+                let admission = candidate
+                    .admission_candidate(&input.arena, &family.members)
+                    .unwrap();
                 Some(Workload {
                     case,
                     index: Natural(index),

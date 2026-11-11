@@ -1,5 +1,6 @@
 //! Gate clauses over staging equations and complete producer certificates.
 
+use alloc::borrow::Cow;
 use alloc::format;
 use alloc::string::String;
 
@@ -8,12 +9,17 @@ use gandr_kernel_core::admission::Refusal;
 use gandr_kernel_term::stage::Index;
 use gandr_kernel_term::stage::Model;
 use gandr_kernel_term::stage::Type;
+use gandr_theory_deep_inference::Closure;
+use gandr_theory_deep_inference::GuardedForm as _;
+use gandr_theory_deep_inference::RowOf;
+use gandr_theory_deep_inference::TemplateReduction;
 
 use super::draft::Drafter;
 use super::draft::Finished;
 use super::draft::Rebasing;
 use super::draft::Walk;
 use super::draft::Widening;
+use super::form::Staging;
 use super::*;
 
 /// Fixture family cardinality.
@@ -720,16 +726,12 @@ fn outer_predecessors_share_one_peak_point_and_replay()
         );
         let substitution = template.peak_substitution(&arena, step.source).unwrap();
         let (projected, projected_step) = template.instantiate(&substitution).unwrap();
-        let mut actual_graph = Graph::default();
-        let actual_roots = actual_graph
-            .import(&arena, &[step.source, step.target])
-            .unwrap();
         let mut projected_graph = Graph::default();
         let projected_roots = projected_graph
             .import(&projected, &[projected_step.source, projected_step.target])
             .unwrap();
-        for (a, b) in actual_roots.into_iter().zip(projected_roots) {
-            actual_graph.compare(a, &projected_graph, b).unwrap();
+        for (root, term) in projected_roots.into_iter().zip([step.source, step.target]) {
+            projected_graph.reads(root, &[], &arena, term).unwrap();
         }
     }
 }
@@ -1059,12 +1061,8 @@ fn serialized_images_reconstruct_the_original_equations()
                     &mut Budget(100_000),
                 )
                 .unwrap();
-                let mut reference = Graph::default();
                 let original_code = original.alloc(Term::Code(expected)).unwrap();
-                let original_roots = reference
-                    .import(&original, &[step.source, step.target, original_code])
-                    .unwrap();
-                let mut observed = reference.member();
+                let mut observed = Graph::default();
                 let decoded_code = decoded.alloc(Term::Code(classifier)).unwrap();
                 let decoded_roots = observed
                     .import(&decoded, &[
@@ -1073,8 +1071,12 @@ fn serialized_images_reconstruct_the_original_equations()
                         decoded_code,
                     ])
                     .unwrap();
-                for (left, right) in original_roots.into_iter().zip(decoded_roots) {
-                    reference.compare(left, &observed, right).unwrap();
+                for (root, term) in
+                    decoded_roots
+                        .into_iter()
+                        .zip([step.source, step.target, original_code])
+                {
+                    observed.reads(root, &[], &original, term).unwrap();
                 }
             }
         }
@@ -1096,7 +1098,7 @@ fn compressed_admission_matches_plain_families()
         else {
             panic!("candidate");
         };
-        let input = candidate.admission_candidate().unwrap();
+        let input = candidate.admission_candidate(&arena, &family).unwrap();
         let schema =
             gandr_kernel_core::admission::Schema::check(input.proposal, &mut Budget(1_000_000))
                 .unwrap();
@@ -1116,6 +1118,72 @@ fn compressed_admission_matches_plain_families()
                     .map_err(gandr_kernel_core::admission::Refusal::from)
             );
         }
+    }
+}
+
+#[test]
+fn a_staging_member_holds_the_instance_of_its_row()
+{
+    let pairs: Vec<_> = (1_usize ..= 8)
+        .map(|n| (Natural(n), Natural(n.saturating_sub(1))))
+        .collect();
+    let fixtures = [
+        cancellations(Members(64), Arms(4)),
+        numeral_successors(Stage::Outer, &pairs, Members(72)),
+    ];
+    for (arena, family) in fixtures {
+        let Analysis::Candidate(candidate) = analyze(&arena, &family).unwrap()
+        else {
+            panic!("candidate");
+        };
+        let bound = Bound::of(
+            &candidate.graph,
+            candidate.sides,
+            candidate.rule,
+            &candidate.entries,
+            &arena,
+        );
+        let rows = TemplateReduction::<Staging<'_>>::read(Cow::Borrowed(&bound), &family)
+            .rows()
+            .unwrap();
+        for (place, (entry, column)) in candidate.entries.iter().zip(&candidate.arms).enumerate() {
+            assert_eq!(column.len(), rows.len());
+            for (arm, row) in column.iter().zip(&rows) {
+                assert_eq!(
+                    row.guards().get(place),
+                    entry.arms.get(arm),
+                    "the reduction reads the row that the analysis generalized"
+                );
+            }
+        }
+        for (step, row) in family.iter().zip(&rows) {
+            assert_eq!(row.guards().len(), candidate.entries.len());
+            let (peak, join) = Staging::instance(&bound, row).unwrap();
+            assert_eq!(
+                Staging::holds(&bound, step, &peak, &join),
+                Ok(Closure::Closes)
+            );
+            assert_eq!(
+                Staging::row(&bound, RowOf::Instance(&peak)).as_ref(),
+                Ok(row)
+            );
+        }
+        let first = family.first().unwrap();
+        let other = family
+            .iter()
+            .find(|step| step.target != first.target)
+            .unwrap();
+        let forged = Step {
+            target: other.target,
+            ..*first
+        };
+        let row = Staging::row(&bound, RowOf::Member(&forged)).unwrap();
+        let (peak, join) = Staging::instance(&bound, &row).unwrap();
+        assert_eq!(
+            Staging::holds(&bound, &forged, &peak, &join),
+            Ok(Closure::Open),
+            "a member whose target its arms do not give holds no instance"
+        );
     }
 }
 
@@ -2115,9 +2183,12 @@ fn product_draft(
         )
         .unwrap();
     let fresh = match analyze(&arena, &family).unwrap() {
-        Analysis::Candidate(candidate) => {
-            Maybe::Present(candidate.admission_candidate().unwrap().proposal)
-        },
+        Analysis::Candidate(candidate) => Maybe::Present(
+            candidate
+                .admission_candidate(&arena, &family)
+                .unwrap()
+                .proposal,
+        ),
         Analysis::Refused { reason, .. } => Maybe::Absent(reason),
     };
     (finished, fresh)
@@ -2500,7 +2571,10 @@ fn drafts_equal_fresh_runs_across_the_edit_traces()
                 };
                 assert_eq!(
                     held.proposal().unwrap(),
-                    fresh.admission_candidate().unwrap().proposal
+                    fresh
+                        .admission_candidate(&arena, &family.members)
+                        .unwrap()
+                        .proposal
                 );
                 let Origin::Drafted(kind) = origin
                 else {
@@ -2621,7 +2695,10 @@ fn a_kernel_refused_draft_falls_back_to_the_producer()
         (
             family.clone(),
             report,
-            fresh.admission_candidate().unwrap().proposal,
+            fresh
+                .admission_candidate(&arena, &family.members)
+                .unwrap()
+                .proposal,
         )
     };
     let (family, first, _) = admit(&mut memo);
@@ -2718,7 +2795,10 @@ fn schema_work_is_bounded_before_producer_inheritance()
             if candidate.prices().memoized.is_err() {
                 continue;
             }
-            let proposal = candidate.admission_candidate().unwrap().proposal;
+            let proposal = candidate
+                .admission_candidate(&arena, &family.members)
+                .unwrap()
+                .proposal;
             let expected =
                 gandr_kernel_core::admission::Schema::check(proposal, &mut Budget(usize::MAX));
             let mut cache = InheritanceCache::new();
@@ -2880,31 +2960,7 @@ fn distinct_members_generalize_as_every_member()
     assert!(repeated >= 4);
 }
 
-/// A member graph starts from its template's classifier vocabulary: every
-/// classifier the template interned reads the same through the member.
-#[test]
-fn a_member_graph_starts_from_its_templates_vocabulary()
-{
-    let mut arena = Arena::default();
-    let nat = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
-    let inner = arena.alloc_type(Type::In(Model(3))).unwrap();
-    let codes = [
-        arena.alloc(Term::Code(nat)).unwrap(),
-        arena.alloc(Term::Code(inner)).unwrap(),
-    ];
-    let mut reference = Graph::default();
-    let roots = reference.import(&arena, &codes).unwrap();
-    let member = reference.member();
-    for root in roots {
-        let Head::Code(ty) = reference.node(root).unwrap().head
-        else {
-            panic!("a code imports as a code");
-        };
-        assert_eq!(member.ty(ty), reference.ty(ty));
-    }
-}
-
-/// Content comparison refuses a pair whose trees differ below an agreeing
+/// Reading in place refuses a pair whose trees differ below an agreeing
 /// root, and accepts a tree against itself.
 #[test]
 fn comparison_refuses_content_that_differs_below_the_root()
@@ -2915,13 +2971,14 @@ fn comparison_refuses_content_that_differs_below_the_root()
         arena.alloc(Term::Quote(body)).unwrap()
     });
     let mut graph = Graph::default();
-    let [one, two] = *graph.import(&arena, &quotes).unwrap()
+    let [one, _] = *graph.import(&arena, &quotes).unwrap()
     else {
         panic!("two roots");
     };
-    assert_eq!(graph.compare(one, &graph, one), Ok(()));
+    let [first, second] = quotes;
+    assert_eq!(graph.reads(one, &[], &arena, first), Ok(()));
     assert_eq!(
-        graph.compare(one, &graph, two),
+        graph.reads(one, &[], &arena, second),
         Err(StageError::InvalidCertificate)
     );
 }

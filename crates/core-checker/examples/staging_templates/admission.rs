@@ -504,7 +504,7 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
             else {
                 return Err(StageError::Unbalanced.into());
             };
-            let admission = candidate.admission_candidate()?;
+            let admission = candidate.admission_candidate(&arena, &members)?;
             let rows = kernel_rows(&admission.rows);
             let proposal = admission.proposal.clone();
             let start = Instant::now();

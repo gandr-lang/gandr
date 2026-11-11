@@ -1,9 +1,10 @@
 //! Producer transport into the additive kernel judgment; no admission
 //! authority.
 //!
-//! `Candidate::admission_candidate` exports only the skeleton, distinct arms
-//! and source-derived rows, as the canonical proposal: arms in guard order,
-//! which is first occurrence in member order, and nodes and classifiers in the
+//! `Candidate::admission_candidate` exports only the skeleton and distinct
+//! arms, as the canonical proposal, and the rows that the template reduction
+//! reads from each member's source in place: arms in guard order, which is
+//! first occurrence in member order, and nodes and classifiers in the
 //! canonical order `Graph::admission_proposal` states. `Template::proposal`
 //! emits the same proposal from a produced or drafted template. The kernel
 //! checks inheritance and transparency itself. Its instance judgment uses
@@ -18,20 +19,26 @@
 //! each point. [`kernel_choices`] writes the kernel's choices for a row at
 //! the kernel call, so the kernel does not depend on the producer's types.
 
+use alloc::borrow::Cow;
+
 use anodized::spec;
 use gandr_kernel_core::admission::Choice;
 use gandr_kernel_core::admission::Guard;
 use gandr_kernel_core::admission::Point;
 use gandr_kernel_core::admission::Proposal;
+use gandr_kernel_term::stage::Arena;
+use gandr_kernel_term::stage::Step;
+use gandr_theory_deep_inference::TemplateReduction;
 use gandr_theory_deep_inference::TemplateRow;
 
 use super::Candidate;
 use super::Entry;
-use super::GuardId;
 use super::Id;
 use super::StageError;
 use super::Template;
 use super::Vec;
+use super::form::Bound;
+use super::form::Staging;
 
 /// A kernel proposal and independent point-ordered rows for harvested members.
 pub struct AdmissionCandidate
@@ -157,18 +164,23 @@ impl Template
 
 impl Candidate
 {
-    /// Translate the analyzed skeleton and source columns into kernel input.
+    /// Translate the analyzed skeleton into kernel input, with the row of each
+    /// member that the template reduction reads from its source in place.
     ///
     /// # Specification
     /// - ensures: every row holds one guard for each entry, in entry order, and
-    ///   the guard selects the member's source arm at that entry; arms are in
-    ///   guard order and the proposal is canonical; retains no producer cache
-    ///   as evidence.
-    /// - fails: a malformed graph or column.
+    ///   the guard selects the arm that the member's source holds at that
+    ///   entry; arms are in guard order and the proposal is canonical; retains
+    ///   no producer cache as evidence.
+    /// - fails: a malformed graph, or a member whose source the candidate does
+    ///   not read.
     /// - panics: none.
+    /// - intension: one in-place reading of each member's source; no import and
+    ///   no copy of a member.
     ///
     /// # Errors
-    /// Returns `StageError::Unbalanced`.
+    /// Returns `StageError::Unbalanced`, or `StageError::InvalidCertificate`
+    /// for a member that the candidate does not read.
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — all harvested rows compare against their original
@@ -179,29 +191,26 @@ impl Candidate
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|candidate|
         candidate.proposal.equation.rule == self.rule
         && candidate.proposal.arms.len() == self.entries.len()
-        && candidate.rows.len() == usize::from(self.cost.members)
+        && candidate.rows.len() == members.len()
         && candidate.rows.iter().all(|row| row.guards().len() == self.entries.len()
             && row.guards().iter().zip(&candidate.proposal.arms).all(|(guard, arms)|
                 usize::from(*guard) < arms.len()))))]
-    pub fn admission_candidate(&self) -> Result<AdmissionCandidate, StageError>
+    pub fn admission_candidate(
+        &self,
+        arena: &Arena,
+        members: &[Step],
+    ) -> Result<AdmissionCandidate, StageError>
     {
-        let mut guards: Vec<Vec<GuardId>> =
-            core::iter::repeat_with(|| Vec::with_capacity(self.entries.len()))
-                .take(usize::from(self.cost.members))
-                .collect();
-        let mut arms = Vec::with_capacity(self.entries.len());
-        for (entry, column) in self.entries.iter().zip(&self.arms) {
-            for (row, arm) in guards.iter_mut().zip(column) {
-                row.push(*entry.arms.get(arm).ok_or(StageError::Unbalanced)?);
-            }
-            arms.push(entry.ordered()?);
-        }
+        let arms = self
+            .entries
+            .iter()
+            .map(Entry::ordered)
+            .collect::<Result<Vec<_>, _>>()?;
         let proposal = self
             .graph
             .admission_proposal(self.sides, self.rule, &arms)?;
-        Ok(AdmissionCandidate {
-            proposal,
-            rows: guards.into_iter().map(TemplateRow::from).collect(),
-        })
+        let bound = Bound::of(&self.graph, self.sides, self.rule, &self.entries, arena);
+        let rows = TemplateReduction::<Staging<'_>>::read(Cow::Owned(bound), members).rows()?;
+        Ok(AdmissionCandidate { proposal, rows })
     }
 }

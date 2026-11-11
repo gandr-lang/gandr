@@ -1525,7 +1525,7 @@ where
             spent,
         });
     }
-    let admission = candidate.admission_candidate()?;
+    let admission = candidate.admission_candidate(arena, members)?;
     let production = candidate.produce(gate, cache, budget)?;
     spent.producing = since(clock, begun);
     slot.controls.producing = Estimate::Measured(spent.producing);

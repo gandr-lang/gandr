@@ -244,68 +244,192 @@ impl Graph
         Ok(skolems)
     }
 
-    /// Start a one-member scratch graph with the same classifier vocabulary.
+    /// Compare a classifier of this graph's vocabulary with an arena
+    /// classifier by structure, in place.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: succeeds exactly when both classifier trees agree.
+    /// - fails: `InvalidCertificate` for unequal structure; `Unbalanced` or the
+    ///   arena's `UnknownType` for an absent coordinate.
+    /// - panics: none.
+    /// - executable: none — the predicate is the structural comparison itself,
+    ///   and a runtime check would repeat it.
+    /// - intension: linear in the classifier; allocates only below an arrow.
+    ///
+    /// # Errors
+    /// Returns `StageError::InvalidCertificate`, `StageError::Unbalanced` or
+    /// `StageError::UnknownType`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a member graph built from a template keeps its
-    ///   classifier vocabulary, so a member classifier compares by content
-    ///   against the template's.
-    /// - witness: `template::tests::a_member_graph_starts_from_its_templates_vocabulary`
-    pub(super) fn member(&self) -> Self
+    /// - hypothesis: L2/L3 — every harvested member admits under the arms that
+    ///   its binder payloads select, and a member whose classifier differs is
+    ///   refused.
+    /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
+    /// - witness: `template::tests::member_selection_and_complete_replay_reject_near_misses`
+    fn same_type(
+        &self,
+        ty: TypeId,
+        arena: &Arena,
+        other: TypeId,
+    ) -> Result<(), StageError>
     {
-        Self {
-            types: self.types.clone(),
-            type_ids: self.type_ids.clone(),
-            ..Self::default()
+        let mut pending = Vec::new();
+        let mut next = Some((ty, other));
+        while let Some((ty, other)) = next.take().or_else(|| pending.pop()) {
+            match (self.ty(ty)?, arena.ty(other)?) {
+                (Type::Arrow(a, b), Type::Arrow(c, d)) => {
+                    pending.push((b, d));
+                    next = Some((a, c));
+                },
+                (Type::Lift(inner), Type::Lift(actual)) => next = Some((inner, actual)),
+                (leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)), actual)
+                    if leaf == actual => {},
+                _ => return Err(StageError::InvalidCertificate),
+            }
+        }
+        Ok(())
+    }
+
+    /// Compare a pattern head with an arena constructor's head, in place.
+    ///
+    /// # Specification
+    /// - ensures: succeeds exactly when the constructors agree, and a
+    ///   classifier payload agrees by structure.
+    /// - fails: `InvalidCertificate` for unequal heads; a classifier lookup's
+    ///   error.
+    /// - panics: none.
+    /// - executable: none — the predicate is the comparison of the two heads
+    ///   itself, and a runtime check would repeat it.
+    ///
+    /// # Errors
+    /// Returns `StageError::InvalidCertificate`, `StageError::Unbalanced` or
+    /// `StageError::UnknownType`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — matching selects exact arms and refuses different
+    ///   numerals even when constructor skeletons agree.
+    /// - witness: `template::tests::peak_choices_are_correlated`
+    /// - witness: `template::tests::member_selection_and_complete_replay_reject_near_misses`
+    pub(super) fn same_head(
+        &self,
+        head: Head,
+        arena: &Arena,
+        term: Term,
+    ) -> Result<(), StageError>
+    {
+        match (head, Head::of(term)) {
+            (Head::Code(ty), Head::Code(other))
+            | (Head::Lambda(ty), Head::Lambda(other))
+            | (Head::Eliminate(ty), Head::Eliminate(other)) => self.same_type(ty, arena, other),
+            (head, other) if head == other => Ok(()),
+            _ => Err(StageError::InvalidCertificate),
         }
     }
 
-    /// Compare content exactly across graphs sharing a classifier vocabulary.
+    /// Compare the subtree at `root`, with `arms` in place at its points, with
+    /// an arena term, in place.
+    ///
+    /// The arm at a point is the one that `arms` holds at the point's place. A
+    /// predecessor of a point reads the arm's outer numeral less one.
     ///
     /// # Specification
-    /// - ensures: succeeds exactly when both rooted constructor trees agree.
-    /// - fails: `InvalidCertificate` for unequal content; Unbalanced for bad
-    ///   IDs.
+    /// - ensures: succeeds exactly when the subtree with its arms in place
+    ///   agrees with the arena term.
+    /// - fails: `InvalidCertificate` for unequal content, or a predecessor
+    ///   whose arm is no positive outer numeral; `Unbalanced` for a point that
+    ///   `arms` does not cover; malformed graph or arena lookups.
     /// - panics: none.
+    /// - executable: none — the predicate is the in-place comparison itself,
+    ///   and a runtime check would repeat it.
+    /// - intension: one visit of each distinct node and term pair with a child;
+    ///   no import and no copy of the term.
     ///
     /// # Errors
-    /// Returns `StageError::InvalidCertificate` or `StageError::Unbalanced`.
+    /// Returns `StageError::InvalidCertificate`, `StageError::Unbalanced` or
+    /// the arena's lookup errors.
     ///
     /// # Adequacy
-    /// - hypothesis: L2/L3 — matching selects exact existing arms and refuses
-    ///   different numerals even when constructor skeletons agree.
-    /// - witness: `template::tests::peak_choices_are_correlated`
+    /// - hypothesis: L2/L3 — every harvested member holds its instance, each
+    ///   predecessor of a point included, and a member whose target is altered
+    ///   does not.
+    /// - witness: `template::tests::a_staging_member_holds_the_instance_of_its_row`
     /// - witness: `template::tests::comparison_refuses_content_that_differs_below_the_root`
-    #[spec(ensures: |output| output.is_err() || self.node(left).ok().zip(other.node(right).ok())
-        .is_some_and(|(left, right)| left.head == right.head))]
-    pub(super) fn compare(
+    pub(super) fn reads(
         &self,
-        left: Id,
-        other: &Self,
-        right: Id,
+        root: Id,
+        arms: &[Id],
+        arena: &Arena,
+        term: TermId,
     ) -> Result<(), StageError>
     {
-        let mut pending = Vec::from([(left, right)]);
+        let mut pending = Vec::new();
         let mut seen = BTreeSet::new();
-        while let Some((left, right)) = pending.pop() {
-            if !seen.insert((left, right)) {
-                continue;
+        let mut next = Some((root, term));
+        while let Some((id, term)) = next.take().or_else(|| pending.pop()) {
+            let node = self.node(id)?;
+            match node.head {
+                Head::Point(entry) => {
+                    let arm = *arms.get(usize::from(entry)).ok_or(StageError::Unbalanced)?;
+                    next = Some((arm, term));
+                },
+                Head::Predecessor => {
+                    let point = node
+                        .children
+                        .0
+                        .first()
+                        .copied()
+                        .flatten()
+                        .ok_or(StageError::Unbalanced)?;
+                    let Head::Point(entry) = self.node(point)?.head
+                    else {
+                        return Err(StageError::Unbalanced);
+                    };
+                    let arm = *arms.get(usize::from(entry)).ok_or(StageError::Unbalanced)?;
+                    let Head::OuterNatural(Natural(value)) = self.node(arm)?.head
+                    else {
+                        return Err(StageError::InvalidCertificate);
+                    };
+                    let value = value.checked_sub(1).ok_or(StageError::InvalidCertificate)?;
+                    if !matches!(arena.term(term)?,
+                        Term::Natural(Stage::Outer, Natural(actual)) if actual == value)
+                    {
+                        return Err(StageError::InvalidCertificate);
+                    }
+                },
+                head @ (Head::Variable(_)
+                | Head::OuterNatural(_)
+                | Head::InnerNatural(..)
+                | Head::Code(_)
+                | Head::Lambda(_)
+                | Head::Apply
+                | Head::Multiply
+                | Head::Quote
+                | Head::Splice
+                | Head::Iterate
+                | Head::Eliminate(_)) => {
+                    if node.children.0.iter().any(Option::is_some) && !seen.insert((id, term)) {
+                        continue;
+                    }
+                    let actual = arena.term(term)?;
+                    self.same_head(head, arena, actual)?;
+                    for pair in node.children.0.into_iter().zip(actual.children()) {
+                        match pair {
+                            (Some(child), Child::Present(slot)) => {
+                                if next.is_none() {
+                                    next = Some((child, slot));
+                                }
+                                else {
+                                    pending.push((child, slot));
+                                }
+                            },
+                            (None, Child::Vacant) => {},
+                            (Some(_), Child::Vacant) | (None, Child::Present(_)) => {
+                                return Err(StageError::InvalidCertificate);
+                            },
+                        }
+                    }
+                },
             }
-            let left = self.node(left)?;
-            let right = other.node(right)?;
-            if left.head != right.head {
-                return Err(StageError::InvalidCertificate);
-            }
-            pending.extend(
-                left.children
-                    .0
-                    .into_iter()
-                    .flatten()
-                    .zip(right.children.0.into_iter().flatten()),
-            );
         }
         Ok(())
     }
