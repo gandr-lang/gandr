@@ -2133,6 +2133,36 @@ enum Declared
     Binder,
 }
 
+/// Where a loop stands to the scope of a pattern.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LoopScope
+{
+    /// A module enclosing the pattern binds the loop's name to the loop.
+    Declared,
+    /// The pattern's source imports the loop under its name, at this import.
+    Imported(ByteSpan),
+    /// No binding of the loop's name in the pattern's scope is the loop.
+    Out,
+}
+
+/// The types of words whose empty word a bare `here` pattern can name.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HereWords
+{
+    /// No type of words is in the pattern's scope.
+    None,
+    /// One is, at this position among the collected words.
+    One(usize),
+    /// More than one is.
+    Many,
+}
+
 /// One pattern matrix the compiler has yet to reduce, and the tree node it
 /// fills.
 ///
@@ -6910,6 +6940,160 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The types of words whose empty word a bare `here` pattern at `at`
+    /// names: each one that has a loop in the pattern's scope.
+    ///
+    /// A source reads only what it declares and what it imports, so the
+    /// words that an earlier source of the program mints never count.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`HereWords::One`] at the position of the only collected
+    ///   words that have a loop [`Self::loop_scope`] reads in scope at `at`;
+    ///   [`HereWords::None`] when no words have one, and [`HereWords::Many`]
+    ///   when two or more have one. For [`HereWords::One`] through an import,
+    ///   the import is marked reached.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when a walk spends the
+    ///   fuel.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: two `for` loops over the collected words and their loops, not
+    ///   recursion; each walk spends fuel.
+    /// - measure: the words and loops left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case over the circle's paths reads `here` as the
+    ///   circle's empty word after a source that mints the sphere's words, as
+    ///   it reads it alone.
+    /// - witness: `tests::namespace::here_names_the_words_its_source_can_name_6722`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| match *found {
+        HereWords::One(words) => words < self.collected.words.len(),
+        HereWords::None | HereWords::Many => true,
+    }))]
+    fn here_words(
+        &mut self,
+        at: Placed,
+    ) -> Result<HereWords, LoweringRefusal<'source>>
+    {
+        let mut found = HereWords::None;
+        let mut import = None;
+        for words in 0 .. self.collected.words.len() {
+            let loops = self
+                .collected
+                .words
+                .get(words)
+                .map_or(0_usize, |form| form.loops.len());
+            for generator in 0 .. loops {
+                let Some(&bound) = self
+                    .collected
+                    .words
+                    .get(words)
+                    .and_then(|form| form.loops.get(generator))
+                else {
+                    continue;
+                };
+                let scope = self.loop_scope(at, bound)?;
+                if scope == LoopScope::Out {
+                    continue;
+                }
+                found = match found {
+                    HereWords::None => HereWords::One(words),
+                    HereWords::One(_) | HereWords::Many => HereWords::Many,
+                };
+                if let LoopScope::Imported(span) = scope {
+                    import = Some(span);
+                }
+                break;
+            }
+        }
+        if let (HereWords::One(_), Some(span)) = (found, import) {
+            self.collected.reach(span);
+        }
+        Ok(found)
+    }
+
+    /// Where the loop at `target` stands to the scope of the pattern at `at`:
+    /// the first binding of its name, from the module enclosing the pattern's
+    /// owner out to the top level and then through the source's imports.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`LoopScope::Declared`] when the first module on that chain
+    ///   that binds the loop's name binds it to `target`;
+    ///   [`LoopScope::Imported`] when no module binds the name and the source's
+    ///   one import of it is `target`; [`LoopScope::Out`] otherwise.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk out spends
+    ///   the fuel.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` steps out one module per iteration, each step
+    ///   spending fuel, never recursing.
+    /// - measure: the modules between the owner and the top level.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::here_words`].
+    /// - witness: `tests::namespace::here_names_the_words_its_source_can_name_6722`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&scope| scope == LoopScope::Out || usize::from(target) < self.collected.slots.len()))]
+    fn loop_scope(
+        &mut self,
+        at: Placed,
+        target: SlotIndex,
+    ) -> Result<LoopScope, LoweringRefusal<'source>>
+    {
+        let (Maybe::Present(own), Some(name)) = (
+            self.collected.owner_of(at.node),
+            self.collected
+                .slots
+                .get(usize::from(target))
+                .map(|slot| slot.name),
+        )
+        else {
+            return Ok(LoopScope::Out);
+        };
+        let mut container = self.collected.slots.get(usize::from(own)).map_or_else(
+            || self.collected.top(at.span.start()),
+            |slot| slot.container,
+        );
+        loop {
+            self.fuel.spend()?;
+            if let Some(&bound) = self.collected.by_name.get(&(container, name)) {
+                return Ok(if bound == target {
+                    LoopScope::Declared
+                }
+                else {
+                    LoopScope::Out
+                });
+            }
+            let module = match container {
+                crate::module::Container::Module(module) => module,
+                crate::module::Container::TopLevel(source) => {
+                    return Ok(match self.collected.imported_slot(source, name) {
+                        Ok(Maybe::Present((bound, span))) if bound == target => {
+                            LoopScope::Imported(span)
+                        },
+                        Ok(Maybe::Present(_) | Maybe::Absent(_)) | Err(_) => LoopScope::Out,
+                    });
+                },
+            };
+            container = self
+                .collected
+                .structures
+                .get(usize::from(module))
+                .map_or_else(
+                    || self.collected.top(at.span.start()),
+                    |structure| structure.container,
+                );
+        }
+    }
+
     /// Each of `loops`' arms as the loop its case owes and the arm's place
     /// after the match's `first` constructor arms.
     ///
@@ -7207,14 +7391,14 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
-                return match self.collected.words.len() {
-                    0_usize => Err(LoweringRefusal::WithoutK { span: at.span }),
-                    1_usize => Ok(Matcher::Constructor {
-                        form: Generators::Words(0),
+                return match self.here_words(at)? {
+                    HereWords::None => Err(LoweringRefusal::WithoutK { span: at.span }),
+                    HereWords::One(words) => Ok(Matcher::Constructor {
+                        form: Generators::Words(words),
                         tag: 0,
                         fields: allocated(patterns, work, &[]),
                     }),
-                    _ => Err(here.out(FragmentBoundary::Unannotated)),
+                    HereWords::Many => Err(here.out(FragmentBoundary::Unannotated)),
                 };
             }
             // A loop's name in a pattern names the loop, never a variable; a
