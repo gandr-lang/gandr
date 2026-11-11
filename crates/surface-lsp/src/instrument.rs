@@ -29,8 +29,8 @@
 //! A client cannot subscribe to a layer yet, because the subscription on the
 //! render bus is a later unit. Until then, each connection holds the silent
 //! layer, and a test selects another layer through its constant, such as
-//! `Subscription::COUNTS` or `Subscription::TIMINGS`, with the `instrument`
-//! feature.
+//! `Subscription::COUNTS`, `Subscription::TIMINGS` or `Subscription::TRACE`,
+//! with the `instrument` feature.
 
 #[cfg(feature = "instrument")]
 use alloc::sync::Arc;
@@ -51,6 +51,8 @@ use gandr_surface_session::Instrument;
 use gandr_surface_session::Silent;
 #[cfg(feature = "instrument")]
 use gandr_surface_session::Timings;
+#[cfg(feature = "instrument")]
+use gandr_surface_session::Trace;
 #[cfg(feature = "instrument")]
 use gandr_surface_session::unrecorded;
 #[cfg(feature = "instrument")]
@@ -89,6 +91,16 @@ pub enum Layer
         )
     )]
     Timings,
+    /// The trace layer: each job runs at a fresh [`Trace`], so each recheck
+    /// folds the steps of each item it judges into the item's tree.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
+        )
+    )]
+    Trace,
 }
 
 /// What a client subscribed to, read once by each job of a recheck.
@@ -136,6 +148,19 @@ impl Subscription
     )]
     pub const TIMINGS: Self = Self {
         layer: Layer::Timings,
+    };
+
+    /// The subscription of a client that subscribed to the trace layer.
+    #[cfg(feature = "instrument")]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "a client subscribes through the render bus, a later unit; until then a test selects the layer"
+        )
+    )]
+    pub const TRACE: Self = Self {
+        layer: Layer::Trace,
     };
 
     /// The subscription of a job while the hub has a watcher of the activity:
@@ -218,10 +243,11 @@ impl Subscription
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the answer of `job` run at the sink of the layer, [`Silent`]
-    ///   for [`Layer::Silent`], a fresh [`Counts`] for [`Layer::Counts`] and a
-    ///   fresh [`Timings`] for [`Layer::Timings`]. At [`Layer::Activity`],
-    ///   `job` runs as one task of its kind between two marks on the ring of
-    ///   its thread, at a sink that answers the rings.
+    ///   for [`Layer::Silent`], a fresh [`Counts`] for [`Layer::Counts`], a
+    ///   fresh [`Timings`] for [`Layer::Timings`] and a fresh [`Trace`] for
+    ///   [`Layer::Trace`]. At [`Layer::Activity`], `job` runs as one task of
+    ///   its kind between two marks on the ring of its thread, at a sink that
+    ///   answers the rings.
     /// - provides: the one branch of a job on its layer.
     /// - fails: never.
     /// - panics: only by propagating a panic of `job`.
@@ -247,6 +273,7 @@ impl Subscription
             Layer::Silent => job.run(&mut Silent),
             Layer::Counts => job.run(&mut Counts::default()),
             Layer::Timings => job.run(&mut Timings::default()),
+            Layer::Trace => job.run(&mut Trace::default()),
             Layer::Activity(ref rings) => {
                 marked(rings, (Run::TASK, World::from(0)), Declared::NONE, || {
                     job.run(&mut Rings(rings))

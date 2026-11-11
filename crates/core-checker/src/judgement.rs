@@ -542,6 +542,9 @@ mod elaboration;
 
 mod memo;
 
+#[cfg(feature = "instrument")]
+pub use memo::unanswered;
+
 mod native;
 
 mod session;
@@ -4318,7 +4321,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let register = machine.context.binders().world();
         let scope = machine.session_scope();
         let entered = machine.open_entry();
-        match machine.drive(goal) {
+        #[cfg(feature = "instrument")]
+        machine
+            .context
+            .traced(|clock| crate::trace::Step::Opened { clock });
+        let driven = machine.drive(goal);
+        #[cfg(feature = "instrument")]
+        machine
+            .context
+            .traced(|clock| crate::trace::Step::Closed { clock });
+        match driven {
             Ok(produced) => {
                 // An entry's capabilities are tokens: spent or not, they end
                 // with the run that held them.
@@ -4515,6 +4527,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let mut step = Step::Descend(goal);
         loop {
             if let Err(refusal) = self.charge() {
+                #[cfg(feature = "instrument")]
+                self.context
+                    .traced(|clock| crate::trace::Step::Refused { clock });
                 let control = match step {
                     Step::Descend(goal) => Control::Starting(goal),
                     Step::Ascend(_) => Control::Handing,
@@ -4523,24 +4538,39 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }
             let (control, next) = match step {
                 Step::Descend(goal) => match self.consulted(goal) {
-                    Maybe::Present(produced) => match self.handed(produced) {
-                        Maybe::Present(handed) => handed,
-                        Maybe::Absent(handed::Absent::Done) => return Ok(produced),
+                    Maybe::Present(produced) => {
+                        #[cfg(feature = "instrument")]
+                        self.trace_answered(goal);
+                        match self.handed(produced) {
+                            Maybe::Present(handed) => handed,
+                            Maybe::Absent(handed::Absent::Done) => return Ok(produced),
+                        }
                     },
-                    Maybe::Absent(_) => {
+                    Maybe::Absent(memo) => {
+                        #[cfg(feature = "instrument")]
+                        self.trace_started(goal, memo);
+                        #[cfg(not(feature = "instrument"))]
+                        let _: memo::unanswered::Absent = memo;
                         self.owner = goal;
                         self.anchor(goal);
                         (Control::Starting(goal), self.descend(goal))
                     },
                 },
-                Step::Ascend(produced) => match self.handed(produced) {
-                    Maybe::Present(handed) => handed,
-                    Maybe::Absent(handed::Absent::Done) => return Ok(produced),
+                Step::Ascend(produced) => {
+                    #[cfg(feature = "instrument")]
+                    self.trace_finished(produced);
+                    match self.handed(produced) {
+                        Maybe::Present(handed) => handed,
+                        Maybe::Absent(handed::Absent::Done) => return Ok(produced),
+                    }
                 },
             };
             step = match next {
                 Ok(next) => next,
                 Err(refusal) => {
+                    #[cfg(feature = "instrument")]
+                    self.context
+                        .traced(|clock| crate::trace::Step::Refused { clock });
                     let refusal = self.unwinding(refusal, control);
                     let refusal = self.spliced_refusal(refusal);
                     match self.recover(refusal) {
@@ -4550,6 +4580,80 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
             };
         }
+    }
+
+    /// Write the start of `goal`, which the memo did not answer for `memo`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn trace_started(
+        &mut self,
+        goal: Goal,
+        memo: memo::unanswered::Absent,
+    )
+    {
+        let (node, against) = judged(goal);
+        let cover = match memo {
+            memo::unanswered::Absent::Missed => self.cover(),
+            memo::unanswered::Absent::Closed | memo::unanswered::Absent::Unkeyed => {
+                crate::trace::Cover::default()
+            },
+        };
+        let height = crate::trace::Height::from(self.frames.len());
+        self.context.traced(|clock| crate::trace::Step::Started {
+            node,
+            against,
+            memo,
+            cover,
+            height,
+            clock,
+        });
+    }
+
+    /// Write the answer that the memo gave `goal`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn trace_answered(
+        &mut self,
+        goal: Goal,
+    )
+    {
+        let (node, against) = judged(goal);
+        let cover = self.cover();
+        let height = crate::trace::Height::from(self.frames.len());
+        self.context.traced(|clock| crate::trace::Step::Answered {
+            node,
+            against,
+            cover,
+            height,
+            clock,
+        });
+    }
+
+    /// Write the hand-off of `produced` to the frame on top of the stack.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    fn trace_finished(
+        &mut self,
+        produced: Produced,
+    )
+    {
+        let handed = match produced {
+            Produced::ValueType(ty) => crate::trace::Handed::Value(ty),
+            Produced::CompType(ty) => crate::trace::Handed::Computation(ty),
+            Produced::Checked => crate::trace::Handed::Checked,
+        };
+        let height = crate::trace::Height::from(self.frames.len());
+        self.context.traced(|clock| crate::trace::Step::Finished {
+            handed,
+            height,
+            clock,
+        });
     }
 
     /// Hand `produced` to the frame that waits for it: retire the goals the

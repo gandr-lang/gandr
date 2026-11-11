@@ -22,6 +22,7 @@
 //! | a fork job starts or ends | `Instrument::activity` | activity | at each fork site of the judgement: with the rings it answers, the site forks through the pool's recording fork, whose jobs mark the rings |
 //! | each declaration's work | `Instrument::counts` | counts | each item the incremental pass adopts or judges, and each declaration's molded forms and obligations after the lowering, into the column the sink answers |
 //! | each phase's samples | `Instrument::timings` | timings | each phase entered and left, and each item the incremental pass judges, into the column the sink answers |
+//! | each judgement step | `Instrument::trace` | trace | each item the incremental pass judges: the pass lends the checking context the column's buffer, the machine writes each step into it, and the column folds the item's steps into its tree |
 //! | what an admission records | `Instrument::positioning` | counts, timings | once for each admission, before it starts |
 //!
 //! `Instrument::activity` takes `&self` and answers a shared handle: the
@@ -30,8 +31,10 @@
 //! the column of the counts layer, and the session counts into it directly,
 //! so a sink that answers no column costs no attribution.
 //! `Instrument::timings` answers the column of the timings layer, so a sink
-//! that answers none reads no clock for an item. These four methods exist
-//! with the `instrument` feature alone.
+//! that answers none reads no clock for an item. `Instrument::trace` answers
+//! the column of the trace layer, so a sink that answers none lends no
+//! buffer, and the machine writes no step. These five methods exist with the
+//! `instrument` feature alone.
 //!
 //! **Alternatives.** A trait object costs one indirect call for each event,
 //! and the compiler cannot remove a call on the silent sink. A flag that each
@@ -39,16 +42,18 @@
 //! gives a document one sink for its whole life, but a client chooses its
 //! layer for each recheck.
 //!
-//! **Reversal.** A layer whose events come from inside the checker, the kernel
-//! or the pool, such as a memo hit or a schedule event, needs its site to take
+//! **Reversal.** A layer whose events come from inside the kernel or the
+//! pool, such as a replay step or a schedule event, needs its site to take
 //! the sink too. The unit of that layer adds its method here and makes its
 //! site generic over the sink, with [`Silent`] as the sink of every caller
-//! that records nothing.
+//! that records nothing. The steps of the checker reach the trace layer
+//! through the checking context instead, which holds the buffer that the
+//! pass lends it.
 //!
 //! # What it does not cover
 //!
-//! Each judgement step and each replay step has its site inside the checker
-//! and the kernel, so no method here names it yet. A fork job deeper than the
+//! Each replay step has its site inside the kernel, so no method here names
+//! it yet. A fork job deeper than the
 //! session's fork sites, such as a kernel replay inside a judgement, is marked
 //! with the kind of its site. The hub does not compile a declaration, so no
 //! phase names a compile step yet.
@@ -59,6 +64,8 @@
 //!   engine-surface-layers decides the one sink, the silent sink, the
 //!   `instrument` feature and the choice of sink for each recheck.
 
+#[cfg(feature = "instrument")]
+use gandr_core_checker::trace::untraced;
 #[cfg(feature = "instrument")]
 use gandr_core_fork::activity::Activity;
 use gandr_core_incremental::ItemCount;
@@ -77,6 +84,8 @@ use crate::forms::FormCount;
 use crate::timings::TimingColumn;
 #[cfg(feature = "instrument")]
 use crate::timings::untimed;
+#[cfg(feature = "instrument")]
+use crate::trace::TraceColumn;
 
 #[cfg(feature = "instrument")]
 quenchant_shape::reason_enum! {
@@ -255,6 +264,27 @@ pub trait Instrument
     fn timings(&mut self) -> Maybe<&mut TimingColumn, untimed::Absent>
     {
         Maybe::Absent(untimed::Absent::Unselected)
+    }
+
+    /// The column that this sink folds each judged item's steps into, when
+    /// it records the trace.
+    ///
+    /// # Specification
+    /// - ensures: the default answers [`untraced::Absent::Unlent`], so the
+    ///   session's incremental pass lends its checking context no buffer, and
+    ///   the machine writes no step.
+    /// - panics: none.
+    /// - executable: none — a handle the sink holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sink that answers a column reads each judged
+    ///   declaration's tree in the account, and a silent sink reads none.
+    /// - witness: `tests::trace::each_judged_declaration_keeps_the_tree_its_judgement_visited`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn trace(&mut self) -> Maybe<&mut TraceColumn, untraced::Absent>
+    {
+        Maybe::Absent(untraced::Absent::Unlent)
     }
 
     /// What an admission at this sink records of each declaration it crosses.

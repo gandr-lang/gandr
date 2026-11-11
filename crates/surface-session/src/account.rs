@@ -85,6 +85,16 @@ use crate::timings::RowRings;
 use crate::timings::TimingColumn;
 #[cfg(feature = "instrument")]
 use crate::timings::untimed;
+#[cfg(feature = "instrument")]
+use crate::trace::Derivation;
+#[cfg(feature = "instrument")]
+use crate::trace::Derived;
+#[cfg(feature = "instrument")]
+use crate::trace::Printed;
+#[cfg(feature = "instrument")]
+use crate::trace::TraceColumn;
+#[cfg(feature = "instrument")]
+use crate::trace::underived;
 
 quenchant_shape::reason_enum! {
     /// Why a row has no compile tier.
@@ -304,6 +314,11 @@ pub struct Account
     /// The rings of each row whose phases were sampled, by its key.
     #[cfg(feature = "instrument")]
     sampled: BTreeMap<ContentKey, Box<RowRings>>,
+    /// The tree of each row whose content a traced judgement judged, by its
+    /// key. Each tree pins the program of the revision that judged it, so the
+    /// account can pin one program for each row. #6643 removes that ceiling.
+    #[cfg(feature = "instrument")]
+    derived: BTreeMap<ContentKey, Derived>,
 }
 
 /// How many judgements an account took: the mark of the judgement that
@@ -398,6 +413,11 @@ impl Account
         if !self.sampled.is_empty() {
             let rows = &self.rows;
             self.sampled.retain(|key, _| rows.contains_key(key));
+        }
+        #[cfg(feature = "instrument")]
+        if !self.derived.is_empty() {
+            let rows = &self.rows;
+            self.derived.retain(|key, _| rows.contains_key(key));
         }
     }
 
@@ -630,6 +650,48 @@ impl Account
         }
     }
 
+    /// Take the trees of the latest judgement: each tree that `column` folded
+    /// for a listed declaration, beside `printed`, the printing of the
+    /// revision that judged it.
+    ///
+    /// # Specification
+    /// - requires: the latest judgement traced into `column`, and `printed`
+    ///   holds its revision's program.
+    /// - ensures: the key of each listed declaration that `column` folded holds
+    ///   that tree, or the reason the fold built none; every other key keeps
+    ///   what it held. The rows, their verdicts and their tiers are unchanged.
+    /// - provides: the judgement's half of the derivation index.
+    /// - fails: never.
+    /// - panics: none.
+    /// - economy: one search of the positions for each judged item, and one
+    ///   insertion for each tree it moves; no tree is copied. The pass judges
+    ///   the items the edit reaches, and #4369 bounds them by the edit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Trace`].
+    /// - witness: `tests::trace::each_judged_declaration_keeps_the_tree_its_judgement_visited`
+    #[cfg(feature = "instrument")]
+    #[spec(captures: [count = self.rows.len()], ensures: self.rows.len() == count)]
+    pub(crate) fn traced(
+        &mut self,
+        column: &mut TraceColumn,
+        printed: &Printed,
+    )
+    {
+        for (constant, tree) in column.take() {
+            if let Some(&(_, key)) = self
+                .declared
+                .binary_search_by_key(&constant, |&(at, _)| at)
+                .ok()
+                .and_then(|found| self.declared.get(found))
+            {
+                let _replaced = self
+                    .derived
+                    .insert(key, Derived::new(tree, printed.clone()));
+            }
+        }
+    }
+
     /// The content key and the row of the latest judged revision's
     /// declaration at `constant`.
     ///
@@ -731,6 +793,42 @@ impl Account
             .and_then(|&(_, key)| self.sampled.get(&key))
             .map_or(Maybe::Absent(untimed::Absent::Unsampled), |rings| {
                 Maybe::Present(&**rings)
+            })
+    }
+
+    /// The derivation of the latest judged revision's declaration at
+    /// `constant`: the tree its key holds, with its row's kernel tier.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when the latest judgement listed a key at
+    ///   `constant` and a traced judgement of that key's content built a tree;
+    ///   [`underived::Absent::Unkeyed`] when it listed no key there,
+    ///   [`underived::Absent::Untraced`] when no traced judgement judged the
+    ///   content, and [`underived::Absent::Overflowed`] when the steps of the
+    ///   one that did overflowed the buffer.
+    /// - panics: none.
+    /// - executable: none — the predicate would read the account's rows and
+    ///   trees again, which is the call itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::Trace`].
+    /// - witness: `tests::trace::each_judged_declaration_keeps_the_tree_its_judgement_visited`
+    #[cfg(feature = "instrument")]
+    #[inline]
+    pub fn derivation_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<Derivation<'_>, underived::Absent>
+    {
+        let Maybe::Present((key, row)) = self.row_at(constant)
+        else {
+            return Maybe::Absent(underived::Absent::Unkeyed);
+        };
+        self.derived
+            .get(&key)
+            .map_or(Maybe::Absent(underived::Absent::Untraced), |derived| {
+                derived.read(row.kernel)
             })
     }
 }
