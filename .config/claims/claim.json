@@ -1,0 +1,203 @@
+[
+  {
+    "name": "#6569: without the vault's statuses, as in CI, no row is read",
+    "input": {
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | primary | the bridge |\n",
+      "absorption": null,
+      "before": null
+    },
+    "output": ""
+  },
+  {
+    "name": "#6569: a primary row of a design page that states no claim is refused, each part named",
+    "input": {
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | the bridge and its keys |\n",
+      "absorption": {
+        "bridge-keys.md": [
+          {
+            "path": "docs/programme/bridge-keys.md",
+            "status": "design"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "absorbed"
+          }
+        ],
+        "notes.md": [
+          {
+            "path": "plans/a/notes.md",
+            "status": "partly"
+          },
+          {
+            "path": "plans/b/notes.md",
+            "status": "concept"
+          }
+        ]
+      },
+      "before": null
+    },
+    "output": "the `## Sources` row of `bridge-keys.md`, a primary design page, does not state the design's claim (`builds:` is missing, `saves:` is missing, `decides:` is missing): write `builds: <what the unit keys or builds>`, `saves: <what the design saves>, read by <instrument>` and `decides: <what the trusted side still decides>` in its third cell, a part `n/a — <reason>` where the design claims nothing of it (`units.md` § units-issue)"
+  },
+  {
+    "name": "#6569: a primary row of a design page with its three parts passes",
+    "input": {
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n",
+      "absorption": {
+        "bridge-keys.md": [
+          {
+            "path": "docs/programme/bridge-keys.md",
+            "status": "design"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "absorbed"
+          }
+        ],
+        "notes.md": [
+          {
+            "path": "plans/a/notes.md",
+            "status": "partly"
+          },
+          {
+            "path": "plans/b/notes.md",
+            "status": "concept"
+          }
+        ]
+      },
+      "before": null
+    },
+    "output": ""
+  },
+  {
+    "name": "#6569: a part `n/a` with no reason and a `saves:` with no instrument are refused; `n/a — <reason>` passes",
+    "input": {
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `notes.md` | primary | builds: the table, saves: n/a, decides: n/a — the change admits nothing |\n| `bridge-keys.md` | primary | builds: the key, saves: the key build, decides: the kernel admits |\n",
+      "absorption": {
+        "bridge-keys.md": [
+          {
+            "path": "docs/programme/bridge-keys.md",
+            "status": "design"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "absorbed"
+          }
+        ],
+        "notes.md": [
+          {
+            "path": "plans/a/notes.md",
+            "status": "partly"
+          },
+          {
+            "path": "plans/b/notes.md",
+            "status": "concept"
+          }
+        ]
+      },
+      "before": null
+    },
+    "output": "the `## Sources` row of `notes.md`, a primary design page, does not state the design's claim (`saves:` reads `n/a` with no reason): write `builds: <what the unit keys or builds>`, `saves: <what the design saves>, read by <instrument>` and `decides: <what the trusted side still decides>` in its third cell, a part `n/a — <reason>` where the design claims nothing of it (`units.md` § units-issue)\nthe `## Sources` row of `bridge-keys.md`, a primary design page, does not state the design's claim (`saves:` names no instrument after `read by`): write `builds: <what the unit keys or builds>`, `saves: <what the design saves>, read by <instrument>` and `decides: <what the trusted side still decides>` in its third cell, a part `n/a — <reason>` where the design claims nothing of it (`units.md` § units-issue)"
+  },
+  {
+    "name": "#6569: a secondary row of a design page, a primary row of an absorbed page and a library key ask for no claim",
+    "input": {
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | secondary | background |\n| `lineage.md` | primary | the picture |\n| `Doe-2024-keys` | primary | the paper |\n",
+      "absorption": {
+        "bridge-keys.md": [
+          {
+            "path": "docs/programme/bridge-keys.md",
+            "status": "design"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "absorbed"
+          }
+        ],
+        "notes.md": [
+          {
+            "path": "plans/a/notes.md",
+            "status": "partly"
+          },
+          {
+            "path": "plans/b/notes.md",
+            "status": "concept"
+          }
+        ]
+      },
+      "before": null
+    },
+    "output": ""
+  },
+  {
+    "name": "#6569: a unit signed before the rule landed, its `## Sources` as it was then, gets a note and no refusal",
+    "input": {
+      "body": "## Problem\n\nx, and a later line\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | the bridge and its keys |\n",
+      "absorption": {
+        "bridge-keys.md": [
+          {
+            "path": "docs/programme/bridge-keys.md",
+            "status": "design"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "absorbed"
+          }
+        ],
+        "notes.md": [
+          {
+            "path": "plans/a/notes.md",
+            "status": "partly"
+          },
+          {
+            "path": "plans/b/notes.md",
+            "status": "concept"
+          }
+        ]
+      },
+      "before": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | the bridge and its keys |\n"
+    },
+    "output": "note: the `## Sources` row of `bridge-keys.md`, a primary design page, does not state the design's claim (`builds:` is missing, `saves:` is missing, `decides:` is missing): write `builds: <what the unit keys or builds>`, `saves: <what the design saves>, read by <instrument>` and `decides: <what the trusted side still decides>` in its third cell, a part `n/a — <reason>` where the design claims nothing of it (`units.md` § units-issue); the issue was signed before this check landed, so it is not refused until its `## Sources` changes"
+  },
+  {
+    "name": "#6569: once the `## Sources` of a unit signed before the rule changes, the row is refused",
+    "input": {
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | the bridge, its keys and its cache |\n",
+      "absorption": {
+        "bridge-keys.md": [
+          {
+            "path": "docs/programme/bridge-keys.md",
+            "status": "design"
+          }
+        ],
+        "lineage.md": [
+          {
+            "path": "docs/programme/index/lineage.md",
+            "status": "absorbed"
+          }
+        ],
+        "notes.md": [
+          {
+            "path": "plans/a/notes.md",
+            "status": "partly"
+          },
+          {
+            "path": "plans/b/notes.md",
+            "status": "concept"
+          }
+        ]
+      },
+      "before": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | the bridge and its keys |\n"
+    },
+    "output": "the `## Sources` row of `bridge-keys.md`, a primary design page, does not state the design's claim (`builds:` is missing, `saves:` is missing, `decides:` is missing): write `builds: <what the unit keys or builds>`, `saves: <what the design saves>, read by <instrument>` and `decides: <what the trusted side still decides>` in its third cell, a part `n/a — <reason>` where the design claims nothing of it (`units.md` § units-issue)"
+  }
+]

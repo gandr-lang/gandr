@@ -1947,5 +1947,47 @@
       ]
     },
     "output": "the change drops 20 comment lines that it does not add back, 20 or more (most in `crates/kernel/src/check.rs` (18), `crates/kernel/src/unfold.rs` (2)), and the body lacks `## Facts kept`: write the table `| Source | Claim | Class | Where it lands |` with one row for each claim the rewrite drops, or `none — <reason>`, then run `pr:open` again"
+  },
+  {
+    "name": "#6569: a `## Sources read` item that leaves a part of the issue's claim without its site is refused",
+    "input": {
+      "branch": "triage-6569-design-claim",
+      "body": "Closes #6569\n\n## Sources read\n\n- `bridge-keys.md` — taken: builds: `checker_key` in `bridge.rs`, saves: the bench `bridge_keys`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 6569,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": "the `## Sources read` item of `bridge-keys.md` does not answer the claim that #6569's `## Sources` states (`units.md` § units-pr): name the site of `decides:` in it, as `taken: builds: <site>, saves: <site>, decides: <site>`, or write `departed: <the recorded design, the change, why>`, then run `pr:open` again"
+  },
+  {
+    "name": "#6569: an item that names the site of each part of the claim answers it",
+    "input": {
+      "branch": "triage-6569-design-claim",
+      "body": "Closes #6569\n\n## Sources read\n\n- `bridge-keys.md` — taken: builds: `checker_key` in `bridge.rs`, saves: the bench `bridge_keys`, decides: `Kernel::admit`\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 6569,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#6569: `departed:` with its reason answers the claim",
+    "input": {
+      "branch": "triage-6569-design-claim",
+      "body": "Closes #6569\n\n## Sources read\n\n- `bridge-keys.md` — departed: the design keys by the checker; the change keys by the kernel, as its ruling states\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 6569,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` § the key | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": ""
   }
 ]

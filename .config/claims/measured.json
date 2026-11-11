@@ -1,0 +1,34 @@
+[
+  {
+    "name": "#6569: a comment that sets a unit aside on a probe with no measured saving is refused",
+    "input": {
+      "issue": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n| `notes.md` | primary | builds: the table, saves: n/a — no saving, decides: n/a — the change admits nothing |\n",
+      "comment": "A probe measures the re-encoding at the bridge: 0.6 % of the run. The unit closes as decided.\n"
+    },
+    "output": "the comment sets the unit aside on a probe and states 0 measured saving(s) of the 1 that its `## Sources` claims: add one line `measured: <value> by <instrument>` for each, the value read by the instrument that the claim names:\n  - `bridge-keys.md` — saves: the kernel's key build, read by the kernel's samples of `perf`"
+  },
+  {
+    "name": "#6569: a comment that states the measured saving by its instrument passes",
+    "input": {
+      "issue": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n| `notes.md` | primary | builds: the table, saves: n/a — no saving, decides: n/a — the change admits nothing |\n",
+      "comment": "The probe reads the claim.\n\n- measured: the kernel's key build is 41 % of the kernel's samples by `perf`\n"
+    },
+    "output": ""
+  },
+  {
+    "name": "#6569: a `measured:` line with no value or no instrument measures nothing",
+    "input": {
+      "issue": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | primary | builds: the checker's key at the bridge; saves: the kernel's key build, read by the kernel's samples of `perf`; decides: the kernel still admits each declaration |\n| `notes.md` | primary | builds: the table, saves: n/a — no saving, decides: n/a — the change admits nothing |\n",
+      "comment": "measured: none by perf\nmeasured: 41 %\n"
+    },
+    "output": "the comment sets the unit aside on a probe and states 0 measured saving(s) of the 1 that its `## Sources` claims: add one line `measured: <value> by <instrument>` for each, the value read by the instrument that the claim names:\n  - `bridge-keys.md` — saves: the kernel's key build, read by the kernel's samples of `perf`"
+  },
+  {
+    "name": "#6569: a unit that claims no saving asks the comment for nothing",
+    "input": {
+      "issue": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `bridge-keys.md` | primary | the bridge |\n| `notes.md` | primary | builds: x, saves: n/a — none, decides: y |\n",
+      "comment": "The probe settles it.\n"
+    },
+    "output": ""
+  }
+]
