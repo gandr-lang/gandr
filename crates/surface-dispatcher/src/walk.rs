@@ -26,26 +26,28 @@
 //! as a settled run over nothing. The walk continues past a fault, so one run
 //! reports every path that faults.
 //!
-//! # Components fork; judgement keeps walk order
+//! # Components fork; the steps keep walk order
 //!
 //! At a width above one, `Walk::visit` forks by component: one job per
 //! component, its text's byte length the estimate, the jobs sorted largest
 //! first behind one atomic cursor that each thread — the calling thread among
 //! them — advances to take the next. A job parses and lowers its component
-//! into an arena of its own, so no component's state is shared; the grammar is
-//! the one value every thread reads. The calling thread judges, readmits,
+//! into an arena of its own, then judges and readmits it, so no component's
+//! state is shared. The grammar, the prelude's judged closure and its
+//! readmission record are the values every thread reads. The calling thread
 //! settles and counts each component when the first of its sources comes up in
-//! walk order and its lowering has arrived over a channel, holds a lowering
-//! that arrives early until its turn, and takes a job itself whenever the next
-//! component in walk order has not arrived. A visitor that stops the visit
-//! stops the cursor, so no thread starts another component. Every count,
-//! verdict and printed byte is the serial visit's: the walk tests compare rows
-//! and reports at widths one and three, the corpus suite compares every
-//! composition at two, seven and the host's width with the serial visit's, and
-//! the driver's suite compares both streams and the exit at several widths,
-//! set by flag and by environment. `Width::SERIAL` is that serial visit, which
-//! lowers each component on the calling thread when its first source comes up,
-//! and the reference every wider visit is tested against.
+//! walk order and its judgement has arrived over a channel. It holds a
+//! judgement that arrives early until its turn, and it takes a job itself
+//! whenever the next component in walk order has not arrived. A visitor that
+//! stops the visit stops the cursor, so no thread starts another component.
+//! Every count, verdict and printed byte is the serial visit's: the walk tests
+//! compare rows and reports at widths one and three, the corpus suite compares
+//! every composition at two, seven and the host's width with the serial
+//! visit's, and the driver's suite compares both streams and the exit at
+//! several widths, set by flag and by environment. `Width::SERIAL` is that
+//! serial visit, which lowers and judges each component on the calling thread
+//! when its first source comes up, and the reference every wider visit is
+//! tested against.
 //!
 //! **Largest first.** A component is the unit because it is one parse and one
 //! lowering, and the largest bounds the tail: started first, it ends while the
@@ -55,18 +57,18 @@
 //! rather than bytes. The estimate reverses to a measured cost per component
 //! if byte length stops predicting it.
 //!
-//! **Judgement stays in walk order.** The checker, the kernel's readmission and
-//! the settle comparison run on the calling thread, one component after
-//! another, while the pool lowers the components after it. Each component is
-//! judged alone, so judging on the pool would give the same verdicts, but a
-//! checker that consults what earlier components admitted needs that order,
-//! and judgement is under a twentieth of a corpus walk. The choice reverses if
-//! judgement grows into the tail of a wide visit, when the components whose
-//! judgement depends on no other move onto the pool.
+//! **Judgement on the pool.** The checker and the kernel's readmission run in
+//! the job that lowers the component. Each component is judged alone, in a
+//! kernel environment of its own, so no judgement reads another's. The
+//! settle comparison, the counts and the visitor stay on the calling thread,
+//! in walk order. The alternative was judgement in walk order on the calling
+//! thread, which held a check of the standard library near one core: its
+//! judgement was two fifths of the run. The choice reverses if a checker
+//! consults what earlier components admitted, which needs the walk order.
 //!
-//! **On the driver's pool.** The walk spawns its lowering jobs on the driver's
-//! [`Pool`], `rayon` threads started once per process, and keeps the cursor
-//! and the in-order consumer on the calling thread. Before, the pool was
+//! **On the driver's pool.** The walk spawns its component jobs on the
+//! driver's [`Pool`], `rayon` threads started once per process, and keeps the
+//! cursor and the in-order consumer on the calling thread. Before, the pool was
 //! `std::thread::scope` threads started for each visit. On the corpus, with
 //! the same cursor and the same consumer, `rayon` measured the same as scoped
 //! threads, since one shared cursor leaves nothing for work stealing to
@@ -80,7 +82,6 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map;
 use alloc::sync::Arc;
-use core::cell::OnceCell;
 use core::cmp::Reverse;
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
@@ -121,6 +122,7 @@ use crate::compose::Keeping;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::Positioning;
+use crate::compose::SpellingCount;
 use crate::compose::judge_component;
 use crate::compose::kept;
 use crate::compose::lower_onto_closure;
@@ -433,6 +435,32 @@ struct Job<'text>
     parsed: ParsedBytes,
 }
 
+/// The work one component's job counts: the sources it lowered, the bytes it
+/// parsed and the spelling passes it made. The calling thread adds it to the
+/// run's report when the component's first source comes up in walk order.
+#[derive(Clone, Copy, Debug, Default)]
+struct Work
+{
+    /// The sources lowered.
+    lowerings: LoweringCount,
+    /// The bytes parsed.
+    parsed: ParsedBytes,
+    /// The spelling passes made.
+    spellings: SpellingCount,
+}
+
+/// What a thread made of one component: the held composition of each of its
+/// sources, in member order, and the work it counted.
+#[derive(Debug)]
+struct Judgement<'text>
+{
+    /// Each source's composition, in member order: none for a source that no
+    /// part of a regrouping holds.
+    held: Vec<Option<Held<'text>>>,
+    /// The work that the lowering and the judgement counted.
+    work: Work,
+}
+
 /// The prelude every component lays first, lowered once per walk and its
 /// declarations judged once under each root a component is judged under:
 /// each component is parsed past it, lowered onto its judged arena and
@@ -677,15 +705,15 @@ impl Walk
     ///   returns, after which no step is handed over or counted and no thread
     ///   starts another component. As many threads as the pool's width answers,
     ///   never more than the components, the calling thread among them, lower
-    ///   the components, each taking the largest component by bytes that no
-    ///   thread has taken; the calling thread meanwhile judges and hands over
-    ///   the sources in walk order, and lowers a component itself whenever the
-    ///   next one in walk order has not arrived. One component is lowered on
-    ///   the calling thread alone, and the pool starts its threads only when
-    ///   there are two or more; at [`Width::SERIAL`](crate::Width::SERIAL) the
-    ///   calling thread lowers each component when its first source comes up. A
-    ///   pool the host refuses to start leaves every component to the calling
-    ///   thread.
+    ///   and judge the components, each taking the largest component by bytes
+    ///   that no thread has taken. The calling thread meanwhile hands over the
+    ///   sources in walk order, and it lowers and judges a component itself
+    ///   whenever the next one in walk order has not arrived. One component is
+    ///   lowered and judged on the calling thread alone, and the pool starts
+    ///   its threads only when there are two or more. At
+    ///   [`Width::SERIAL`](crate::Width::SERIAL) the calling thread lowers and
+    ///   judges each component when its first source comes up. A pool the host
+    ///   refuses to start leaves every component to the calling thread.
     /// - provides: the pass `check` and `test` run, on the driver's pool.
     /// - fails: never; every fault is a step, and the walk continues past it.
     /// - panics: only by propagating a panic of `visitor` or of a pool thread,
@@ -874,14 +902,14 @@ impl Walk
         let prelude = Prelude::new((!grouped.components.is_empty()).then_some(grammar), grant);
         self.report.parsed_mut().absorb(prelude.parsed());
         let prelude = &prelude;
-        // Each component its parse did not confirm, grouped again once its
-        // turn comes.
-        let regrouped: Vec<OnceCell<Grouped>> =
-            grouped.components.iter().map(|_| OnceCell::new()).collect();
+        // Each component its parse did not confirm, grouped again by its own
+        // job.
+        let regrouped: Vec<OnceLock<Grouped>> =
+            grouped.components.iter().map(|_| OnceLock::new()).collect();
         // Each component the lowering refused as a whole within one of its
-        // sources, grouped again with that source set apart.
-        let parted: Vec<OnceCell<Grouped>> =
-            grouped.components.iter().map(|_| OnceCell::new()).collect();
+        // sources, grouped again by its own job with that source set apart.
+        let parted: Vec<OnceLock<Grouped>> =
+            grouped.components.iter().map(|_| OnceLock::new()).collect();
         // How many steps still to come stand at each source of each
         // component: its compositions are held until the last is handed over.
         let mut owed: Vec<Vec<usize>> = grouped
@@ -905,18 +933,32 @@ impl Walk
             .collect();
         order.sort_unstable();
         let cursor = AtomicUsize::new(0);
-        // The largest component no thread has taken, lowered.
+        // The component at `position`, lowered and judged.
+        let work = |position: usize| {
+            let component = grouped.components.get(position)?;
+            let cells = (regrouped.get(position)?, parted.get(position)?);
+            Some(pool.job(|| {
+                judgement(
+                    grammar,
+                    prelude,
+                    component,
+                    cells,
+                    (grant, keeping, positioning),
+                )
+            }))
+        };
+        // The largest component no thread has taken, lowered and judged.
         let take = || {
             let &(_, position) = order.get(cursor.fetch_add(1, Ordering::Relaxed))?;
-            let component = grouped.components.get(position)?;
-            Some((position, pool.job(|| lower(grammar, prelude, component))))
+            Some((position, work(position)?))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
-        // The calling thread's share: judge each component in walk order as
-        // its lowering arrives from `helpers` pool threads, lowering one itself
-        // whenever the next in walk order has not arrived.
+        // The calling thread's share: hand each component's steps over in walk
+        // order as its judgement arrives from `helpers` pool threads, lowering
+        // and judging one itself whenever the next in walk order has not
+        // arrived.
         let consume = |helpers: usize| -> ControlFlow<Stop> {
-            // Lowerings that arrived ahead of their turn in walk order.
+            // Judgements that arrived ahead of their turn in walk order.
             let mut early = BTreeMap::new();
             // Each judged component's compositions, by source, taken as the
             // last step standing at each is handed over.
@@ -948,17 +990,13 @@ impl Walk
                         else {
                             continue;
                         };
-                        let Some(component) = grouped.components.get(placed.component)
-                        else {
-                            continue;
-                        };
                         if let btree_map::Entry::Vacant(unjudged) = judged.entry(placed.component) {
                             let job = loop {
                                 if helpers == 0 {
-                                    break pool.job(|| lower(grammar, prelude, component));
+                                    break work(placed.component);
                                 }
                                 if let Some(job) = early.remove(&placed.component) {
-                                    break job;
+                                    break Some(job);
                                 }
                                 if let Ok((arrived, job)) = receiver.try_recv() {
                                     early.insert(arrived, job);
@@ -966,7 +1004,7 @@ impl Walk
                                 }
                                 if let Some((taken, job)) = take() {
                                     if taken == placed.component {
-                                        break job;
+                                        break Some(job);
                                     }
                                     early.insert(taken, job);
                                     continue;
@@ -979,60 +1017,18 @@ impl Walk
                                     // it: one panicked, and the scope will say
                                     // so.
                                     Err(_) => {
-                                        break pool.job(|| lower(grammar, prelude, component));
+                                        break work(placed.component);
                                     },
                                 }
                             };
-                            self.report.lowerings_mut().absorb(job.lowerings);
-                            self.report.parsed_mut().absorb(job.parsed);
-                            let held = if let Some(lowering) = job.lowering {
-                                let refused = lowering
-                                    .as_ref()
-                                    .ok()
-                                    .and_then(|lowering| refused_member(lowering, component));
-                                if let Some(first) = refused {
-                                    let Some(again) = parted.get(placed.component).map(|cell| {
-                                        cell.get_or_init(|| {
-                                            part(grammar, &mut self.report, component, first)
-                                        })
-                                    })
-                                    else {
-                                        continue;
-                                    };
-                                    judge_regrouped(
-                                        &mut self.report,
-                                        grammar,
-                                        (grant, keeping, positioning),
-                                        again,
-                                    )
-                                }
-                                else {
-                                    judge(
-                                        &mut self.report,
-                                        (grant, keeping, positioning),
-                                        component,
-                                        (lowering, job.checking),
-                                    )
-                                    .into_iter()
-                                    .map(Some)
-                                    .collect()
-                                }
-                            }
+                            let Some(job) = job
                             else {
-                                let Some(again) = regrouped
-                                    .get(placed.component)
-                                    .map(|cell| cell.get_or_init(|| regroup(grammar, component)))
-                                else {
-                                    continue;
-                                };
-                                judge_regrouped(
-                                    &mut self.report,
-                                    grammar,
-                                    (grant, keeping, positioning),
-                                    again,
-                                )
+                                continue;
                             };
-                            unjudged.insert(held);
+                            self.report.lowerings_mut().absorb(job.work.lowerings);
+                            self.report.parsed_mut().absorb(job.work.parsed);
+                            self.report.spellings_mut().absorb(job.work.spellings);
+                            unjudged.insert(job.held);
                         }
                         let Some(remaining) = owed
                             .get_mut(placed.component)
@@ -1417,7 +1413,7 @@ fn settled<'step>(
     }
 }
 
-/// Parse and lower `component` once: one thread's share of a visit.
+/// Parse and lower `component` once: the first step of [`judgement`].
 ///
 /// # Specification
 /// - requires: `component` was laid out by `component::group`.
@@ -1555,6 +1551,74 @@ fn lower_after<'text>(
     })
 }
 
+/// Lower `component` and judge it: one thread's share of a visit.
+///
+/// # Specification
+/// - requires: `component` was laid out by `component::group`. `regrouped` and
+///   `parted` are the component's own cells of the visit, and only this
+///   judgement sets them.
+/// - ensures: one held composition per member, in member order, beside the work
+///   counted. The component is lowered as [`lower`] lowers it. A lowering that
+///   refuses the component as a whole within one of its sources is judged as
+///   [`judge_regrouped`] judges what [`part`] makes of it, kept in `parted`. A
+///   component that its parse did not confirm is judged as [`judge_regrouped`]
+///   judges what [`regroup`] makes of it, kept in `regrouped`. Any other
+///   lowering is judged as [`judge`] judges it. The work holds what the
+///   lowering and each of these steps count.
+/// - fails: never; a fault is carried in the answer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every width composes the corpus as the serial visit does,
+///   source by source, with the same report. A source refused whole and an
+///   import that its parse does not read are judged as before.
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `walk::tests::a_tree_is_walked_in_order`
+/// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
+/// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
+#[spec(ensures: |ref ret| ret.held.len() == component.members.len())]
+fn judgement<'text>(
+    grammar: &Pbg,
+    prelude: &'text Prelude,
+    component: &'text Component,
+    (regrouped, parted): (&'text OnceLock<Grouped>, &'text OnceLock<Grouped>),
+    judging: (&HostGrant, Keeping, Positioning),
+) -> Judgement<'text>
+{
+    let job = lower(grammar, prelude, component);
+    let mut work = Work {
+        lowerings: job.lowerings,
+        parsed: job.parsed,
+        spellings: SpellingCount::default(),
+    };
+    let held = if let Some(lowering) = job.lowering {
+        let refused = lowering
+            .as_ref()
+            .ok()
+            .and_then(|lowering| refused_member(lowering, component));
+        if let Some(first) = refused {
+            let again = parted.get_or_init(|| part(grammar, &mut work, component, first));
+            judge_regrouped(&mut work, grammar, judging, again)
+        }
+        else {
+            judge(
+                &mut work.spellings,
+                judging,
+                component,
+                (lowering, job.checking),
+            )
+            .into_iter()
+            .map(Some)
+            .collect()
+        }
+    }
+    else {
+        let again = regrouped.get_or_init(|| regroup(grammar, component));
+        judge_regrouped(&mut work, grammar, judging, again)
+    };
+    Judgement { held, work }
+}
+
 /// Judge `component` from what lowering it came to and how it is checked,
 /// under `grant`, each source settled under its own root: each source's
 /// composition beside its unit's text up to the source's own end and where
@@ -1566,8 +1630,8 @@ fn lower_after<'text>(
 /// - ensures: one held composition per member, in member order: what
 ///   [`judge_component`] makes of a lowering under `keeping` and `positioning`,
 ///   each beside the component's one kept admission, or the lowering's fault at
-///   every source, with no admission; `report`'s spellings advance as
-///   [`judge_component`] says.
+///   every source, with no admission. `spelled` advances as [`judge_component`]
+///   says.
 /// - fails: never; a fault is carried in the answer.
 /// - panics: none.
 ///
@@ -1577,7 +1641,7 @@ fn lower_after<'text>(
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 #[spec(ensures: |ref ret| ret.len() == component.members.len())]
 fn judge<'text>(
-    report: &mut RunReport,
+    spelled: &mut SpellingCount,
     (grant, keeping, positioning): (&HostGrant, Keeping, Positioning),
     component: &'text Component,
     (lowering, checking): (
@@ -1590,7 +1654,7 @@ fn judge<'text>(
         Ok(lowering) => judge_component(
             (lowering, SourceText::from(component.text.as_str())),
             (grant, checking),
-            (&component.members, report.spellings_mut()),
+            (&component.members, spelled),
             (keeping, positioning),
         ),
         Err(fault) => (
@@ -1634,7 +1698,7 @@ fn judge<'text>(
 /// - requires: `again` is what [`regroup`] made of one component.
 /// - ensures: each component of `again` parsed and lowered once with
 ///   [`lower_unit_source`] and judged with [`judge`], its sources counted
-///   lowered and its text and `again`'s grouping counted parsed into `report`;
+///   lowered and its text and `again`'s grouping counted parsed into `work`;
 ///   one held composition per given source, in the order given, none for a
 ///   source no component holds.
 /// - fails: never; a fault is carried in the answer.
@@ -1645,13 +1709,13 @@ fn judge<'text>(
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 #[spec(ensures: |ref ret| ret.len() == again.placed.len())]
 fn judge_regrouped<'text>(
-    report: &mut RunReport,
+    work: &mut Work,
     grammar: &Pbg,
     (grant, keeping, positioning): (&HostGrant, Keeping, Positioning),
     again: &'text Grouped,
 ) -> Vec<Option<Held<'text>>>
 {
-    report.parsed_mut().absorb(again.parsed);
+    work.parsed.absorb(again.parsed);
     let mut parts: Vec<Vec<Option<Held<'text>>>> = Vec::with_capacity(again.components.len());
     for part in &again.components {
         let mut lowerings = LoweringCount::default();
@@ -1661,13 +1725,11 @@ fn judge_regrouped<'text>(
             &part.unit,
             &mut lowerings,
         );
-        report.lowerings_mut().absorb(lowerings);
-        report
-            .parsed_mut()
-            .absorb(ParsedBytes::from(part.text.len()));
+        work.lowerings.absorb(lowerings);
+        work.parsed.absorb(ParsedBytes::from(part.text.len()));
         parts.push(
             judge(
-                report,
+                &mut work.spellings,
                 (grant, keeping, positioning),
                 part,
                 (lowering, Checking::Whole),
@@ -1794,7 +1856,7 @@ fn refused_member(
 ///   member order, apart from `first` and from each source [`refused_member`]
 ///   finds in a part of a round's grouping; `placed` holds each member's place,
 ///   in member order. Each part of more than one source is lowered once per
-///   round to find them, counted into `report` with its text counted parsed, as
+///   round to find them, counted into `work` with its text counted parsed, as
 ///   is each round's grouping but the last.
 /// - fails: never.
 /// - panics: none.
@@ -1811,7 +1873,7 @@ fn refused_member(
 #[spec(ensures: |ref ret| ret.placed.len() == component.members.len())]
 fn part(
     grammar: &Pbg,
-    report: &mut RunReport,
+    work: &mut Work,
     component: &Component,
     first: PathBuf,
 ) -> Grouped
@@ -1838,10 +1900,8 @@ fn part(
                 &piece.unit,
                 &mut lowerings,
             );
-            report.lowerings_mut().absorb(lowerings);
-            report
-                .parsed_mut()
-                .absorb(ParsedBytes::from(piece.text.len()));
+            work.lowerings.absorb(lowerings);
+            work.parsed.absorb(ParsedBytes::from(piece.text.len()));
             if let Some(found) = lowering
                 .as_ref()
                 .ok()
@@ -1853,7 +1913,7 @@ fn part(
         if apart.len() == before {
             return again;
         }
-        report.parsed_mut().absorb(again.parsed);
+        work.parsed.absorb(again.parsed);
     }
 }
 

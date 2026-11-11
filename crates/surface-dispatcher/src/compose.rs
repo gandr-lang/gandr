@@ -184,7 +184,9 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 use core::ops::Range;
+use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::PoisonError;
 
 use anodized::spec;
 use gandr_core_checker::AbstractType;
@@ -408,6 +410,31 @@ impl SpellingCount
     pub(crate) fn tick(&mut self)
     {
         self.0 = self.0.saturating_add(1);
+    }
+
+    /// Count `other`'s spelling passes into these, saturating.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum of both counts, saturated at the maximum count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a wider walk absorbs each component's passes into the
+    ///   run's, and its report equals the serial walk's spelling count over
+    ///   trees and the corpus. A lost or doubled absorption changes that count.
+    ///   Saturation is not reached by these witnesses.
+    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
+    #[inline]
+    #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(other.0))]
+    pub(crate) fn absorb(
+        &mut self,
+        other: Self,
+    )
+    {
+        self.0 = self.0.saturating_add(other.0);
     }
 }
 
@@ -2232,11 +2259,15 @@ struct ClosureJudgement<'held>
     settled: Result<Vec<DeclarationReport<'held>>, SettleFault>,
     /// The types their checker refusals compare and their failures name.
     spellings: TypeSpellings,
-    /// What readmitting their declarations built, kept by the first admission
-    /// of a module judged after them ([`judge_component`]): every later one
-    /// resumes from it rather than offering the kernel those declarations
-    /// again.
-    crossed: OnceLock<bridge::Crossed>,
+    /// What readmitting their declarations built, or why it holds nothing,
+    /// kept by the first admission of a module judged after them
+    /// ([`judge_component`]): every later one resumes from it rather than
+    /// offering the kernel those declarations again.
+    crossed: OnceLock<Maybe<bridge::Crossed, bridge::crossed::Absent>>,
+    /// Held by an admission that finds no record in `crossed`, while it
+    /// readmits whole and keeps its record: an admission that comes to it
+    /// meanwhile waits, then resumes from that record.
+    first: Mutex<()>,
 }
 
 /// The self-referential cell a judged closure is held in: the closure's
@@ -2480,6 +2511,7 @@ fn judge_closure<'held>(
         settled: settled.map(|report| report.declarations().to_vec()),
         spellings,
         crossed: OnceLock::new(),
+        first: Mutex::new(()),
     })
 }
 
@@ -3992,28 +4024,17 @@ pub fn judge_component<'source>(
             };
             let admission = admission.positioning(positioning);
             // A module judged after a closure leads with the closure's
-            // declarations, judged as the closure's judgement judged them:
-            // its readmission resumes them from the record the first such
+            // declarations, judged as the closure's judgement judged them: its
+            // readmission resumes them from the record the first such
             // admission kept.
             let (admitted, positions, declined) = match (checking, after) {
                 (Checking::After(closure), Some(boundary)) => {
-                    let crossed = &closure.judgement().crossed;
                     let Resumption {
                         artifact,
                         positions,
                         declined,
-                        crossed: record,
                         ..
-                    } = admission.admit_resuming(
-                        boundary,
-                        crossed.get().map_or(
-                            Maybe::Absent(bridge::crossed::Absent::Unasked),
-                            Maybe::Present,
-                        ),
-                    );
-                    if let Maybe::Present(record) = record {
-                        let _kept = crossed.set(record);
-                    }
+                    } = admitted_after(admission, boundary, closure.judgement());
                     (artifact, positions, declined)
                 },
                 (Checking::After(_) | Checking::Whole, _) => {
@@ -4064,6 +4085,58 @@ pub fn judge_component<'source>(
             Maybe::Absent(unkept),
         ),
     }
+}
+
+/// `admission`, whose first `boundary` declarations are `closure`'s, resumed
+/// from the record of them that the first such admission keeps.
+///
+/// # Specification
+/// - requires: the first `boundary` declarations of `admission`'s verdicts are
+///   `closure`'s, judged as `closure` judged them.
+/// - ensures: [`Admission::admit_resuming`]'s answer. The first admission to
+///   find no record readmits whole, under `closure`'s lock, and keeps its
+///   record. An admission that comes to the lock meanwhile waits, then resumes
+///   from that record.
+/// - provides: the kernel crosses the closure's declarations once in a run,
+///   whatever the width, and no admission copies another.
+/// - fails: as [`Admission::admit_resuming`], in the artifact.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an admission resumed from another's record exports what a
+///   whole admission exports; the corpus at every width composes alike.
+/// - witness: `compose::tests::a_resumed_admission_exports_what_a_whole_one_does_776`
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+#[spec(ensures: |ref ret| ret.resumed <= ret.judged)]
+fn admitted_after(
+    admission: Admission,
+    boundary: bridge::LeadingCount,
+    closure: &ClosureJudgement<'_>,
+) -> Resumption
+{
+    let resumed = |admission: Admission,
+                   record: &Maybe<bridge::Crossed, bridge::crossed::Absent>| {
+        admission.admit_resuming(boundary, match *record {
+            Maybe::Present(ref record) => Maybe::Present(record),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        })
+    };
+    if let Some(record) = closure.crossed.get() {
+        return resumed(admission, record);
+    }
+    let first = closure.first.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(record) = closure.crossed.get() {
+        drop(first);
+        return resumed(admission, record);
+    }
+    let mut whole =
+        admission.admit_resuming(boundary, Maybe::Absent(bridge::crossed::Absent::Unasked));
+    let _kept = closure.crossed.set(core::mem::replace(
+        &mut whole.crossed,
+        Maybe::Absent(bridge::crossed::Absent::Unasked),
+    ));
+    drop(first);
+    whole
 }
 
 /// The runs the checker inferred over `module`, joined with the lowering's
