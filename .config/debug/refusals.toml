@@ -105,3 +105,8 @@ sites = [
 sites = [
   { file = "crates/core-checker/src/judgement.rs", pattern = '^\s*Err\(CheckRefusal::UndecidedCoverage\(term\)\)' },
 ]
+
+[refusal.CrossBlockReference]
+sites = [
+  { file = "crates/core-checker/src/occurrence.rs", pattern = '\.map_err\(\|later\| CheckRefusal::CrossBlockReference \{ site, index: later \}\)\?;' },
+]

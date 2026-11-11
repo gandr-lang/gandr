@@ -154,8 +154,10 @@ INSERT INTO purpose VALUES('core-checker','ledger::ObligationCount','struct','Ho
 INSERT INTO purpose VALUES('core-checker','ledger::ObligationEntry','struct','One obligation a ledger holds: the absence it records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','ledger::ObligationLedger','struct','The obligations a run owes, in the order their holes were met.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::Judged','struct','One declaration''s verdict, beside the position and origin it was offered with.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','module::Membership','enum','Says whether a declaration is a member of the mutual block a schedule holds open.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::ModuleReport','struct','A module''s verdicts, in the order given, and the obligations they owe.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::ModuleRun','struct','A module run part way: the verdicts of the declarations judged so far and the schedule''s state after the last of them, so that judging the rest later continues the run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','module::Schedule','struct','The admission schedule of a module''s mutual blocks, which every judgement of a module in admission order and the incremental pass step.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::TypedModule','struct','What type_module keeps of a module''s typed run: the types each declaration''s run formed and judged, the declared type each judgement filled, and the refusal of each declaration the run refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::Verdict','enum','A declaration''s verdict.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','module::check_declaration','function','Judges one declaration in context.',NULL,'fits','sound',NULL);

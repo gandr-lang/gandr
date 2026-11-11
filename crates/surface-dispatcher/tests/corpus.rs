@@ -1956,7 +1956,7 @@ mod sweeps
     /// (`gandr-workflow-sweep`). The nightly profile decides the night's
     /// slice, and the `sweeps` profile every source.
     const DECIDED: Sample = Sample {
-        name: SampleName("a_deciding_pass_admits_nothing_its_judgement_refuses"),
+        name: SampleName("a_deciding_pass_admits_what_its_judgement_admits"),
         size: SampleSize(64),
     };
 
@@ -1965,26 +1965,27 @@ mod sweeps
     const DECIDED_NIGHTS: Nights = Nights(7);
 
     /// A pass that decides each item opens its context through the
-    /// judgement's own constructor. So over each corpus source it admits no
-    /// item that the whole judgement refuses: a pattern hole, a reduct or a
-    /// literal reader that the pass's context lacked would admit one. The
-    /// sweep counts the items that the pass refuses and the judgement admits;
-    /// it does not assert them.
+    /// judgement's own constructor, and steps the module run's own schedule
+    /// of mutual blocks. So over each corpus source it admits each item that
+    /// the whole judgement admits, and refuses each item that it refuses. A
+    /// pattern hole, a reduct or a literal reader that the pass's context
+    /// lacked would admit an item the judgement refuses; a member of a block
+    /// decided alone would refuse one it admits.
     #[test]
-    fn a_deciding_pass_admits_nothing_its_judgement_refuses()
+    fn a_deciding_pass_admits_what_its_judgement_admits()
     {
         decides_within(&Sweep::asked().expect("the run's sweep resolves"));
     }
 
     /// The change's sources beside the fixed set.
     #[test]
-    fn a_deciding_pass_admits_nothing_its_judgement_refuses_changed()
+    fn a_deciding_pass_admits_what_its_judgement_admits_changed()
     {
         decides_within(&Sweep::asked().expect("the run's sweep resolves").changed());
     }
 
     /// Every source `sweep` visits, judged whole and decided item by item by
-    /// a fresh pass, has no item that the pass admits and the judgement
+    /// a fresh pass, has no item that one of the two admits and the other
     /// refuses.
     ///
     /// # Specification
@@ -2020,7 +2021,7 @@ mod sweeps
             visited.len()
         );
         let mut compared = 0_usize;
-        let mut refused_by_the_pass = 0_usize;
+        let mut refused_by_the_pass = Vec::new();
         let mut admitted_by_the_pass = Vec::new();
         for source in visited {
             let path = source.path.as_path();
@@ -2090,20 +2091,22 @@ mod sweeps
                 else if admitted.contains(&constant) {
                     compared = compared.saturating_add(1);
                     if pass_refuses {
-                        refused_by_the_pass = refused_by_the_pass.saturating_add(1);
+                        refused_by_the_pass.push((source.path.clone(), constant));
                     }
                 }
             }
         }
         eprintln!(
-            "{compared} items compared; the pass refuses {refused_by_the_pass} that the \
-             judgement admits, and admits {} that it refuses",
+            "{compared} items compared; the pass refuses {} that the judgement admits, and \
+             admits {} that it refuses",
+            refused_by_the_pass.len(),
             admitted_by_the_pass.len()
         );
         assert!(
-            admitted_by_the_pass.is_empty(),
-            "over {compared} items, a deciding pass admits no item that the whole judgement \
-             refuses; admitted: {admitted_by_the_pass:?}"
+            admitted_by_the_pass.is_empty() && refused_by_the_pass.is_empty(),
+            "over {compared} items, a deciding pass admits and refuses each item as the whole \
+             judgement does; admitted: {admitted_by_the_pass:?}; refused: \
+             {refused_by_the_pass:?}"
         );
     }
 
