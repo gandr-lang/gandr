@@ -481,7 +481,7 @@ impl Following
                         && held.key == card.key
                         && Some(held.at) == focus
                 })
-                .map(|&(_, ref goal)| goal.as_str());
+                .map(|&(_, ref goal)| goal.lines());
             frame.records.extend(derivation_records(
                 card,
                 (focus, whole),
@@ -549,6 +549,8 @@ impl Following
     /// - hypothesis: L3 — an opened view asks once for its node in focus, shows
     ///   the answer's lines below the node, and asks again after a new card.
     /// - witness: `follow::tests::the_view_shows_the_derivation_at_the_cursor`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|frame| self.opened
+        && matches!(*frame.body(), FrameBody::Open { .. })))]
     #[inline]
     pub fn ask(&mut self) -> Option<RenderFrame>
     {
@@ -571,14 +573,14 @@ impl Following
 }
 
 /// The records of the derivation pane of `card` with `focus` in focus,
-/// computed for `revision`: one per row that the pane shows, and the lines of
-/// `whole`, the whole goal of the focus, in further fields of its record.
+/// computed for `revision`: one per row that the pane shows, and `whole`, the
+/// lines of the whole goal of the focus, in further fields of its record.
 ///
 /// # Specification
 /// trivial.
 fn derivation_records(
     card: &DerivationCard,
-    (focus, whole): (Option<NodeAt>, Option<&str>),
+    (focus, whole): (Option<NodeAt>, Option<core::str::Lines<'_>>),
     revision: Revision,
 ) -> Vec<Record>
 {
@@ -628,28 +630,24 @@ fn derivation_records(
                 }),
             ]);
             if focus == Some(at)
-                && let Some(goal) = whole
+                && let Some(lines) = whole.clone()
             {
-                fields.extend(
-                    goal.lines()
-                        .filter(|line| !line.trim().is_empty())
-                        .map(|line| {
-                            let set = line
-                                .len()
-                                .saturating_sub(line.trim_start().len())
-                                .checked_div(2)
-                                .unwrap_or_default();
-                            entry("goal", Datum::Nested {
-                                text: String::from(line.trim()),
-                                depth: Count(
-                                    row.depth
-                                        .0
-                                        .saturating_add(1)
-                                        .saturating_add(u64::try_from(set).unwrap_or(u64::MAX)),
-                                ),
-                            })
-                        }),
-                );
+                fields.extend(lines.filter(|line| !line.trim().is_empty()).map(|line| {
+                    let set = line
+                        .len()
+                        .saturating_sub(line.trim_start().len())
+                        .checked_div(2)
+                        .unwrap_or_default();
+                    entry("goal", Datum::Nested {
+                        text: String::from(line.trim()),
+                        depth: Count(
+                            row.depth
+                                .0
+                                .saturating_add(1)
+                                .saturating_add(u64::try_from(set).unwrap_or(u64::MAX)),
+                        ),
+                    })
+                }));
             }
             Record { fields }
         })
