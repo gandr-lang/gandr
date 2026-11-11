@@ -12,9 +12,17 @@
 # runs a check for each `mise run check:<name>` in its steps, and it is the
 # brake when a step runs `mise run ci:brake`.
 #
-# Input: `{jobs, landing}`. `jobs` is `.github/workflows/ci.yml`'s `jobs`,
-# anchors expanded. `landing` is the list of tasks that `check:landing`
-# depends on.
+# The same merge group uploads no build state, and main's push reads it as
+# its queue run (#6790). So each build state that the nightly restores
+# needs a job that saves it (a step `cache complete test state`, the state
+# its `CI_BUILD_STATE`) on a push whose queue run holds none: its `if` holds
+# `!contains(…, 'build-state-<state>--')`. Without it, no run of main writes
+# the state, and each night builds cold.
+#
+# Input: `{jobs, landing, states}`. `jobs` is `.github/workflows/ci.yml`'s
+# `jobs`, anchors expanded. `landing` is the list of tasks that
+# `check:landing` depends on. `states` is the build states that
+# `.github/workflows/nightly.yml` restores, none when absent.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 
 def skip: "github.event.merge_group.base_ref != 'refs/heads/landing'";
@@ -34,6 +42,12 @@ def checks: [(.steps // [])[] | (.run // "") | tostring | scan("\\bmise run (che
 def brakes: any((.steps // [])[]; (.run // "") | tostring | test("\\bmise run ci:brake(?![\\w:-])"));
 
 def needed: (.needs // []) | if type == "string" then [.] else . end;
+
+def saves($state):
+  (.env.CI_BUILD_STATE // "") == $state
+  and any((.steps // [])[]; (.name // "") == "cache complete test state");
+
+def unheld($state): "!contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-\($state)--')";
 
 def closure($jobs):
   . as $names
@@ -63,4 +77,7 @@ def closure($jobs):
   ($jobs
     | to_entries[]
     | select(.value.name == "check Clippy wall" and (.value | condition | contains(pull) | not))
-    | "`\(.key)` runs Clippy on a pull request on `landing`: add `\(pull)` to its `if` (#5439)")]
+    | "`\(.key)` runs Clippy on a pull request on `landing`: add `\(pull)` to its `if` (#5439)"),
+  ((.states // [])[] as $state
+    | select(any($jobs[]; saves($state) and (condition | contains(unheld($state)))) | not)
+    | "no job saves `\($state)` on a push to main whose queue run holds none, so the nightly restores no state and builds cold: add `\(unheld($state))` to the `if` of the job that saves it (#6790)")]
