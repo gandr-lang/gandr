@@ -2825,14 +2825,18 @@ findings=$(jq -n --slurpfile rows "$tables/rows.json" '{rows: $rows[0], issues: 
 # lines and blank lines skipped. The list is the owner's and never lives in
 # the tree. Each match is printed with its file (or `title`) and line, and
 # the check exits 1; a missing or empty list refuses too, naming its path,
-# never a silent pass. `pr:open` runs it on the title and the body before it
-# pushes, and `issue:file` before it files.
+# never a silent pass. A title that holds a JSON escape `\uXXXX` is refused
+# too (#6496, `.config/issues/title.jq`): a filer that quotes the title for
+# the shell with a JSON encoder sends the escape, and GitHub shows it as
+# text. `pr:open` runs it on the title and the body before it pushes, and
+# `issue:file` before it files.
 ["body:check"]
-description = "Refuse a body naming anything on the private-names list"
+description = "Refuse a body or a title naming anything on the private-names list, and a title holding a JSON escape"
 usage = '''
 flag "--title <text>" help="a title to scan with the files"
 arg "<file>..." help="the body files to scan"
 '''
+tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -2851,11 +2855,21 @@ eval "files=(${usage_file:?})"
 # grep exits 1 on no match, 2 on an unreadable file or a malformed pattern:
 # the second fails the check.
 scan() { grep -HniE -f "$patterns" "$@" >> "$found" || (($? == 1)); }
-if [[ -n ${usage_title:-} ]]; then printf '%s\n' "$usage_title" | scan --label=title; fi
+escaped=
+if [[ -n ${usage_title:-} ]]; then
+  printf '%s\n' "$usage_title" | scan --label=title
+  escaped=$(printf '%s' "$usage_title" | jq -R -s -r -f "$(git rev-parse --show-toplevel)/.config/issues/title.jq")
+fi
 scan -- "${files[@]}"
 if [[ -s $found ]]; then
   printf 'body:check FAILED: these lines name private material (%s); rewrite them:\n' "$list" >&2
   sed 's/^/  /' "$found" >&2
+fi
+if [[ -n $escaped ]]; then
+  printf 'body:check FAILED: the title holds JSON escapes; pass the title as the text a reader sees, quoted for the shell (shlex.quote in Python), never JSON-encoded:\n' >&2
+  printf '%s\n' "$escaped" | sed 's/^/  /' >&2
+fi
+if [[ -s $found || -n $escaped ]]; then
   exit 1
 fi
 echo "body check OK: nothing on the private-names list in ${usage_title:+the title and }${#files[@]} file(s)"
