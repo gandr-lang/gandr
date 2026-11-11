@@ -1,0 +1,297 @@
+[
+  {
+    "name": "#6817: pull request 6748 as it landed takes the five builders, the wrapper, a ledger row and a kept line out with no `## Deletes`",
+    "input": {
+      "body": "Advances #5677\n\n## Rows\n\n- `v::hom::DirectedHom::new`\n",
+      "title": "refactor(theory): delete directed hom builders",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        },
+        {
+          "id": "v::boundary::DirectedHomReflexivity",
+          "kind": "item",
+          "names": ["v::boundary::DirectedHomReflexivity"],
+          "file": "crates/vd/src/boundary.rs",
+          "origin": 701
+        },
+        {
+          "id": "purpose:vd,boundary::DirectedHomReflexivity,struct",
+          "kind": "ledger",
+          "names": [
+            "purpose:vd,boundary::DirectedHomReflexivity,struct",
+            "gandr_vd::boundary::DirectedHomReflexivity"
+          ],
+          "file": "ledger/purposes.sql",
+          "origin": 701
+        }
+      ],
+      "held": ["v::hom::DirectedHom"],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": ["agent-shade"]
+    },
+    "output": "the change takes 3 things out of the tree, and the body has no `## Deletes` section: write one row for each (`units.md` § units-pr, #6817)\na `refactor` pull request carries `## Preserved and changed`: one table of the behaviour it keeps, with the test that passes before and after, and one of the behaviour or test it changes, with the reason"
+  },
+  {
+    "name": "#6817: a row of the wrapper covers its field and its trait implementation's items, and a kept line with no row is refused",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::boundary::Refl`|#701|moved|the newtype of a bool|n/a|n/a|`v::refl::Refl`|`refl_round_trips`|n/a|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::boundary::Refl",
+          "kind": "item",
+          "names": ["v::boundary::Refl"],
+          "origin": 701
+        },
+        {
+          "id": "v::boundary::Refl::0",
+          "kind": "item",
+          "names": ["v::boundary::Refl::0"],
+          "origin": 701
+        },
+        {
+          "id": "<v::boundary::Refl as core::convert::From<bool>>::from",
+          "kind": "item",
+          "names": ["<v::boundary::Refl as core::convert::From<bool>>::from"],
+          "origin": 701
+        },
+        {
+          "id": "v::boundary::<impl core::convert::From<v::boundary::Refl> for bool>::from",
+          "kind": "item",
+          "names": ["v::boundary::<impl core::convert::From<v::boundary::Refl> for bool>::from"],
+          "origin": 701
+        },
+        {
+          "id": "kept.txt:v::boundary::Other",
+          "kind": "kept",
+          "names": ["kept.txt:v::boundary::Other", "v::boundary::Other"],
+          "origin": 650
+        }
+      ],
+      "held": ["v::refl::Refl"],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": ["agent-shade"]
+    },
+    "output": "`kept.txt:v::boundary::Other` (kept) leaves the tree with no row in `## Deletes`"
+  },
+  {
+    "name": "#6817: a deleted row with an empty reasoning cell, another pull request as its origin, and no sign-off is refused on each",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#699|deleted|builds a hom from its fields|—|the tests build the struct by its fields|none|none|—|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [],
+      "architects": ["agent-shade"]
+    },
+    "output": "the `deleted` row of `v::hom::DirectedHom::new` leaves `Future use` empty\nthe `deleted` row of `v::hom::DirectedHom::new` gives `Origin` \"#699\", and the commit that adds it comes from pull request #700\nthe `deleted` row of `v::hom::DirectedHom::new` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
+  },
+  {
+    "name": "#6817: the architect's sign-off at a head whose files the change keeps admits a deleted row, and a witness of none is no refusal",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700 (#640)|deleted|builds a hom from its fields|#640 reads the hom by its fields; README: none; none found|no test, exemplar or crate takes a constructor that the fields give; consumers: gandr-kernel-core|none|none|the comment of 2026-11-11|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "changed": ["crates/vd/tests/directed.rs"]
+        }
+      ],
+      "architects": ["agent-shade"]
+    },
+    "output": ""
+  },
+  {
+    "name": "#6817: a push past the signed commit that changes the row's file needs a new sign-off",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::hom::DirectedHom::new",
+          "kind": "item",
+          "names": ["v::hom::DirectedHom::new"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "changed": ["crates/vd/src/hom.rs"]
+        }
+      ],
+      "architects": ["agent-shade"]
+    },
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` names no commit that the head keeps for its files; the architect signs again on the new head"
+  },
+  {
+    "name": "#6817: a comment that says signed with no architect heading signs nothing",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|signed|\n",
+      "title": "",
+      "mode": "rows",
+      "left": [],
+      "held": [],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "changed": []
+        }
+      ],
+      "architects": ["agent-shade"]
+    },
+    "output": "the `deleted` row of `v::hom::DirectedHom::new` has no sign-off: a comment of the architect on the unit names the item and the head commit and says `signed`"
+  },
+  {
+    "name": "#6817: the README names the item, and its crate has no consumer: no sign-off admits the row",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`gandr_vd::hom::DirectedHom`|#700|deleted|the directed hom|README: directed hom|none|none|none|signed|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "gandr_vd::hom::DirectedHom",
+          "kind": "item",
+          "names": ["gandr_vd::hom::DirectedHom"],
+          "file": "crates/vd/src/hom.rs",
+          "origin": 700
+        }
+      ],
+      "held": [],
+      "tests": [],
+      "readme": ["gandr_vd::hom::DirectedHom"],
+      "lonely": [{ "library": "gandr_vd", "dir": "vd" }],
+      "files": { "gandr_vd::hom::DirectedHom": ["crates/vd/src/hom.rs"] },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect)\n\n`gandr_vd::hom::DirectedHom` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "changed": []
+        }
+      ],
+      "architects": ["agent-shade"]
+    },
+    "output": "the crate's `## Provided features` names `gandr_vd::hom::DirectedHom`: no sign-off admits its deletion until the README line leaves in the same change, with its own row\nno other crate names `vd`, so its items wait for their consumer: the row of `gandr_vd::hom::DirectedHom` is refused, and the dead-weight row reads `find the consumer`"
+  },
+  {
+    "name": "#6817: a row of a thing that the head still holds, an unknown act, and a restore that names no pull request are refused",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::kept::Item`|#700|moved|to a module|n/a|n/a|`v::other::Item`|`item_reads`|n/a|\n|`v::gone::Item`|#700|removed|gone|n/a|n/a|none|none|n/a|\n|`v::back::Item`|#700|restored|the collector took it|n/a|n/a|`v::back::Item`|none|n/a|\n",
+      "title": "",
+      "mode": "full",
+      "left": [],
+      "held": ["v::kept::Item", "v::back::Item"],
+      "tests": [],
+      "readme": [],
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": ["agent-shade"]
+    },
+    "output": "`v::kept::Item` is still in the head, and its row says `moved`\nthe `## Deletes` row of `v::gone::Item` says `removed`; the act is one of `deleted`, `moved`, `renamed`, `merged`, `narrowed`, `restored`\nthe `restored` row of `v::back::Item` names no pull request that it reverses in `Why`"
+  },
+  {
+    "name": "#6817: a test whose text changes needs its row in `## Preserved and changed`; a test named there passes",
+    "input": {
+      "body": "## Deletes\n\nnone\n\n## Preserved and changed\n\n|Behaviour|Test|\n|---|---|\n|the covariant motive transports forward|`directed_j_transports_along_a_covariant_motive`|\n\n|Test|What it no longer asserts|Why|\n|---|---|---|\n|`directed_j_transports_along_a_covariant_motive`|nothing: it builds the hom by its fields|the builder leaves|\n",
+      "title": "refactor(theory): build the directed hom by its fields",
+      "mode": "full",
+      "left": [],
+      "held": [],
+      "tests": [
+        {
+          "id": "tests::directed::directed_j_transports_along_a_covariant_motive",
+          "name": "directed_j_transports_along_a_covariant_motive"
+        },
+        {
+          "id": "tests::directed::directed_j_on_the_reflexive_hom_is_the_reflexive_hom",
+          "name": "directed_j_on_the_reflexive_hom_is_the_reflexive_hom"
+        }
+      ],
+      "readme": [],
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": ["agent-shade"]
+    },
+    "output": "the test `tests::directed::directed_j_on_the_reflexive_hom_is_the_reflexive_hom` changes its text: name it in the second table of `## Preserved and changed`, with what it no longer asserts and why"
+  },
+  {
+    "name": "#6817: a change that takes nothing out needs no section, and the merge queue reads no tree",
+    "input": {
+      "body": "Fixes #1\n",
+      "title": "fix(workflow): a change",
+      "mode": "rows",
+      "left": [{ "id": "ignored", "kind": "item", "names": ["ignored"], "origin": null }],
+      "held": [],
+      "tests": [{ "id": "ignored", "name": "ignored" }],
+      "readme": [],
+      "lonely": [],
+      "files": {},
+      "signoffs": [],
+      "architects": ["agent-shade"]
+    },
+    "output": ""
+  }
+]

@@ -719,14 +719,14 @@
         "area": "kernel",
         "title": "refactor(kernel-y): dead weight",
         "count": 1,
-        "body": "This issue lists the items of `kernel-y` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that deletes or narrows an item cites this issue. An item that a decision keeps goes into the kept list with its decision.\n\n## Exported with no use in another crate\n\nThe table gives each exported item that only its own crate names. The refactoring is `consolidate`: narrow the item's visibility.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_kernel_y::Shape`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/kernel-y/src/lib.rs#L7) | `pub` | its crate only | 2026-09-01 |"
+        "body": "This issue lists the items of `kernel-y` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.\n\n## Exported with no use in another crate\n\nThe table gives each exported item that only its own crate names. The answer is `find the consumer`: the crate that takes the item, or a narrower visibility once the design names none.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_kernel_y::Shape`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/kernel-y/src/lib.rs#L7) | `pub` | its crate only | 2026-09-01 |"
       },
       {
         "crate": "theory-x",
         "area": "theory",
         "title": "refactor(theory-x): dead weight",
         "count": 3,
-        "body": "This issue lists the items of `theory-x` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that deletes or narrows an item cites this issue. An item that a decision keeps goes into the kept list with its decision.\n\n## No caller outside tests\n\nThe table gives each item that only tests name, or that nothing names. The refactoring is `delete`.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::old`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L3) | `pub` | tests only (2) | 2026-10-01 |\n| [`gandr_theory_x::private`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L40) | not exported | none | 2026-10-02 |\n\n## Exported with no use in another crate\n\nThe table gives each exported item that only its own crate names. The refactoring is `consolidate`: narrow the item's visibility.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::Wide::narrow`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L30) | `pub` | its crate only | 2026-10-23 |"
+        "body": "This issue lists the items of `theory-x` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.\n\n## No caller outside tests\n\nThe table gives each item that only tests name, or that nothing names. The answer is `find the consumer`: a test, a corpus exemplar or the crate that takes the item. A deletion is the last answer, with the architect's sign-off.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::old`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L3) | `pub` | tests only (2) | 2026-10-01 |\n| [`gandr_theory_x::private`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L40) | not exported | none | 2026-10-02 |\n\n## Exported with no use in another crate\n\nThe table gives each exported item that only its own crate names. The answer is `find the consumer`: the crate that takes the item, or a narrower visibility once the design names none.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::Wide::narrow`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L30) | `pub` | its crate only | 2026-10-23 |"
       }
     ]
   },
@@ -789,7 +789,78 @@
         "area": "theory",
         "title": "refactor(theory-x): dead weight",
         "count": 3,
-        "body": "This issue lists the items of `theory-x` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that deletes or narrows an item cites this issue. An item that a decision keeps goes into the kept list with its decision.\n\n## No caller outside tests\n\nThe table gives each item that only tests name, or that nothing names. The refactoring is `delete`.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::f0`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L3) | `pub` | none | 2026-10-01 |\n| [`gandr_theory_x::f1`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L13) | `pub` | none | 2026-10-01 |\n\nThe table leaves out 1 more row. `mise run report:dead-weight --crate theory-x` prints them all."
+        "body": "This issue lists the items of `theory-x` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.\n\n## No caller outside tests\n\nThe table gives each item that only tests name, or that nothing names. The answer is `find the consumer`: a test, a corpus exemplar or the crate that takes the item. A deletion is the last answer, with the architect's sign-off.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::f0`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L3) | `pub` | none | 2026-10-01 |\n| [`gandr_theory_x::f1`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L13) | `pub` | none | 2026-10-01 |\n\nThe table leaves out 1 more row. `mise run report:dead-weight --crate theory-x` prints them all."
+      }
+    ]
+  },
+  {
+    "name": "#6817: a crate that no other crate names gets one row that waits for the epics its README names, and no row for each item",
+    "program": "render.jq",
+    "input": {
+      "items": [
+        {
+          "crate": "theory-z",
+          "path": "gandr_theory_z::a",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-z/src/lib.rs",
+          "line": 3,
+          "start": 3,
+          "end": 5,
+          "verdict": "unused",
+          "callers": "none"
+        },
+        {
+          "crate": "theory-z",
+          "path": "gandr_theory_z::b",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-z/src/lib.rs",
+          "line": 9,
+          "start": 9,
+          "end": 11,
+          "verdict": "local",
+          "callers": "its crate only"
+        },
+        {
+          "crate": "theory-w",
+          "path": "gandr_theory_w::c",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-w/src/lib.rs",
+          "line": 3,
+          "start": 3,
+          "end": 5,
+          "verdict": "unused",
+          "callers": "none"
+        }
+      ],
+      "dates": {
+        "crates/theory-z/src/lib.rs:3-5": "2026-10-01",
+        "crates/theory-z/src/lib.rs:9-11": "2026-10-01",
+        "crates/theory-w/src/lib.rs:3-5": "2026-10-01"
+      },
+      "today": "2026-11-06",
+      "grace": 14,
+      "repository": "gandr-lang/gandr",
+      "commit": "cccccccccccccccccccccccccccccccccccccccc",
+      "budget": null,
+      "lonely": { "theory-z": [640, 1301], "theory-w": [] }
+    },
+    "output": [
+      {
+        "crate": "theory-w",
+        "area": "theory",
+        "title": "refactor(theory-w): dead weight",
+        "count": 1,
+        "body": "This issue lists the items of `theory-w` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.\n\n## No consumer yet\n\nNo other crate names `theory-w`, so each of its 1 items waits for its consumer, and no row asks for one item.\n\n| Crate | Items | Answer |\n| --- | --- | --- |\n| `theory-w` | 1 | waits for the epic that its README names; the README names none yet |"
+      },
+      {
+        "crate": "theory-z",
+        "area": "theory",
+        "title": "refactor(theory-z): dead weight",
+        "count": 1,
+        "body": "This issue lists the items of `theory-z` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that takes an item out cites this issue, and its `## Deletes` row needs the architect's sign-off (#6817). An item that a decision keeps goes into the kept list with its decision.\n\n## No consumer yet\n\nNo other crate names `theory-z`, so each of its 2 items waits for its consumer, and no row asks for one item.\n\n| Crate | Items | Answer |\n| --- | --- | --- |\n| `theory-z` | 2 | waits for #640, #1301 |"
       }
     ]
   }
