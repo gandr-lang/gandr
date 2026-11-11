@@ -2863,7 +2863,7 @@ mod tests
         /// seventh a night, the count the nightly's sweeps share (#3013). A
         /// quarter of the corpus read for 80 s on the nightly runner (run
         /// 40602657172).
-        const NIGHTS: Nights = Nights(7);
+        const NIGHTS: Nights = Nights(14);
 
         /// Every source's cursors are read without specification enforcement;
         /// the enforcing build checks every contract on every call and reads

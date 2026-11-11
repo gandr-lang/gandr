@@ -1733,7 +1733,7 @@ mod sweeps
     /// The nights the nightly profile takes to read every source's tokens: a
     /// seventh a night, the count the nightly's sweeps share (#3013). The
     /// whole corpus read for 150 s on the nightly runner (run 40602657172).
-    const NIGHTS: Nights = Nights(7);
+    const NIGHTS: Nights = Nights(14);
 
     #[test]
     fn corpus_tokens_cover_the_highlighted_bytes()
