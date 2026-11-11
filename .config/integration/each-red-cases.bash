@@ -54,8 +54,10 @@ got=$(watch_failed "$work/log" | paste -sd ',' -)
 [[ $got == "check:tests-enforcing green adds,check:tests-enforcing red adds" ]] \
   || fail "#6750: a head with two red tests in two packages gives the watcher's reading two lines, one for each test" "$got"
 
-got=$(env -u GATE_TEST_EVERY_RED "$scope")
-[[ $got == --workspace ]] || fail "#6750: a lane's scope keeps fail-fast" "$got"
+# A lane's scope is its touched packages and the dispatcher (#6812), with
+# no `--no-fail-fast`.
+got=$(env -u GATE_TEST_EVERY_RED "$scope" 2> /dev/null)
+[[ $got != *--no-fail-fast* ]] || fail "#6750: a lane's scope keeps fail-fast" "$got"
 
 # A stub `mise` that runs `check:tests-enforcing` over `GATE_TEST_SCOPE`.
 mkdir -p "$work/bin"

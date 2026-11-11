@@ -158,9 +158,10 @@ watch_checkout() {
 # is `check`, on commit `$1` against the green head, writing its log to `$3`;
 # exits as the run exits. The run is a background gate (#6638): at niceness
 # 19 and in no host slot, so a lane's gate beside it loses neither CPU nor a
-# slot to it. The enforcing suite runs over the whole workspace, as in every
-# gate (#6738), and past its first red (`GATE_TEST_EVERY_RED`, #6750). A line
-# that names one test runs each test of that name (`watch_test`).
+# slot to it. Its enforcing suite runs over the whole workspace, where a
+# lane's runs the touched packages and the dispatcher (#6812), and past its
+# first red (`GATE_TEST_EVERY_RED`, #6750). A line that names one test runs
+# each test of that name (`watch_test`).
 watch_run() {
   local commit=$1 check=$2 log=$3
   watch_checkout "$commit"

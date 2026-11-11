@@ -11,17 +11,24 @@
 # whole workspace. A change with no Rust path selects no Rust check, and its
 # scope is the whole workspace too, so a Rust check run by hand never excludes
 # every package. With `--touched`, the set is the packages the change touches
-# alone, for `check:witnesses` (#6433).
+# alone, for `check:witnesses` (#6433). With `--readers`, the set holds the
+# packages whose tests read the corpus and the whole pipeline too
+# (`table.json`'s `readers`), for a lane's enforcing suite (#6812).
 #
-# Usage: scope.bash [--touched]
+# Usage: scope.bash [--touched] [--readers]
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
 source "$here/../pr-stack/trunk.bash"
 touched=false
-if [[ ${1:-} == --touched ]]; then
-  touched=true
-fi
+readers=false
+for arg in "$@"; do
+  case $arg in
+    --touched) touched=true ;;
+    --readers) readers=true ;;
+    *) echo "scope: unknown argument $arg; usage: scope.bash [--touched] [--readers]" >&2; exit 2 ;;
+  esac
+done
 if ! base=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then
   echo "scope: no fork from origin/$trunk to read the change against; the whole workspace" >&2
   echo --workspace
@@ -34,6 +41,9 @@ packages=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path 
 set=$({ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } \
   | jq -nR --argjson packages "$packages" --argjson touched "$touched" '{changed: [inputs], packages: $packages, touched: $touched}' \
   | jq -c -L "$here" -f "$here/packages.jq")
+if [[ $readers == true ]]; then
+  set=$(jq -c --slurpfile table "$here/table.json" 'if . == "workspace" then . else . + $table[0].readers | unique end' <<< "$set")
+fi
 jq -r --argjson packages "$packages" \
   'if . == "workspace" then "scope: the whole workspace"
    elif length == 0 then "scope: no Rust path changes; a Rust check run by hand runs over the whole workspace"
