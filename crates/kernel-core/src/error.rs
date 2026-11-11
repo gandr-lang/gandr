@@ -542,6 +542,24 @@ pub enum FieldCause
     NotInferable(NonInferableForm),
 }
 
+/// Why the kernel refused to keep a retired entry live again.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum KeepRefusal
+{
+    /// The keep names a position other than the first member of the entry's
+    /// unit, or another number of ranks than the unit has members, or ranks
+    /// that do not ascend.
+    Unit,
+    /// The entry holds no entry key, or its check now reads an input that has
+    /// none: the policy rechecks, the bypass admitted the entry, or an atom is
+    /// sealed to the end of the sequence.
+    Unkeyed,
+    /// The key that the entry's check reads now is another key than the one
+    /// it was admitted under: an input of the check changed, its precedence
+    /// among them.
+    KeyChanged,
+}
+
 /// Every way the kernel refuses a declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelError
@@ -971,6 +989,24 @@ pub enum KernelError
         /// The entry or block member that holds the rank or ranks above it.
         by: ConstantIndex,
     },
+    /// A readmission found the entry at a position of another kind than it
+    /// names: a retire of a retired entry, or a keep of a live one.
+    KindTaken
+    {
+        /// The position of the entry.
+        position: ConstantIndex,
+        /// The kind the entry stands at.
+        kind: crate::env::EntryKind,
+    },
+    /// A keep of a retired entry was refused, and the entry stays retired: a
+    /// readmission offers its declaration as an edited one.
+    Unkept
+    {
+        /// The position of the first member of the entry's unit.
+        position: ConstantIndex,
+        /// Why the keep was refused.
+        refusal: KeepRefusal,
+    },
 }
 
 impl From<LevelError> for KernelError
@@ -1218,6 +1254,12 @@ impl core::fmt::Display for KernelError
             Self::RankTaken { .. } => {
                 f.write_str("another entry holds the rank the declaration was staged at")
             },
+            Self::KindTaken { .. } => {
+                f.write_str("the readmission names an entry of another kind than it stands at")
+            },
+            Self::Unkept { .. } => f.write_str(
+                "the entry's check does not read what it read at its admission, so it is not kept",
+            ),
         }
     }
 }
@@ -1527,6 +1569,14 @@ mod tests
             KernelError::RankTaken {
                 rank: gandr_kernel_term::SourceRank::from(0_usize),
                 by: ConstantIndex::from(0_usize),
+            },
+            KernelError::KindTaken {
+                position: ConstantIndex::from(0_usize),
+                kind: crate::env::EntryKind::Retired,
+            },
+            KernelError::Unkept {
+                position: ConstantIndex::from(0_usize),
+                refusal: crate::error::KeepRefusal::KeyChanged,
             },
             KernelError::AbsentRecordField {
                 label: FieldLabel::from(String::from("a")),

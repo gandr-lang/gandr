@@ -248,8 +248,7 @@ impl Presentations
     /// of the sort its cells loop in, for a type of words.
     ///
     /// # Specification
-    /// - requires: `position` is past every position these presentations hold,
-    ///   and no row holds `rank`.
+    /// - requires: no row holds `position` or `rank`.
     /// - ensures: the declaration's row, with its rules and arities, when it is
     ///   a data declaration whose presentation holds a rule, and its row in the
     ///   registry of its sort, in rank order, when it is a type of words;
@@ -322,6 +321,42 @@ impl Presentations
             words.retain(|&(_, held)| held < first);
             !words.is_empty()
         });
+        if table.types.is_empty() {
+            self.table = None;
+        }
+    }
+
+    /// These presentations without the rows of the entry at `position`: the
+    /// rows of an entry that a readmission retired.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn retire(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        let Some(shared) = self.table.as_mut()
+        else {
+            return;
+        };
+        let Some(sort) = shared
+            .types
+            .get(&position)
+            .map(|presented| presented.presentation.cells().map(FreeCells::sort))
+        else {
+            return;
+        };
+        let table = Arc::make_mut(shared);
+        let _retired = table.types.remove(&position);
+        if let Some(sort) = sort
+            && let Some(words) = table.words.get_mut(&sort)
+        {
+            words.retain(|&(_, held)| held != position);
+            if words.is_empty() {
+                let _emptied = table.words.remove(&sort);
+            }
+        }
         if table.types.is_empty() {
             self.table = None;
         }
