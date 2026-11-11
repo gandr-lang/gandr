@@ -41,7 +41,7 @@ def sphereId(x : S2) -> S2 =
     | surf => surf
 
 /// The identity of the 3-sphere by cases.
-def sphereId3(x : S3) -> S3 =
+pub def sphereId3(x : S3) -> S3 =
   match x where
     | Base3 => Base3
     | surf3 => surf3

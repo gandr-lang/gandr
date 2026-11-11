@@ -1,0 +1,56 @@
+/// This source states the degree `ξ` of a map of the 3-sphere as the winding
+/// at its 3-cell.
+///
+/// `wind3` cases on the words at the 3-cell, as `wind` cases on the loop
+/// words of the circle. Its `here` arm reads its words from the type that the
+/// scrutinee's position states.
+/// `ξ f` is `wind3 (Path.ap f surf3)`, the exponent of the map's image of the
+/// 3-cell.
+///
+/// The checker converts each degree to its integer, and the kernel replays
+/// the conversion.
+///
+/// Limits: `ξ` reads a map that fixes the point by its cases. `Path.ap` of a
+/// bound map takes one layer at the 3-cell, so `ξ` takes no bound map.
+///
+/// - see: #6811 — `ξ` over a bound pointed map
+/// - see: corpus/model/identity/sphere-maps.gandr — `sphereId3`, the identity
+///   of the 3-sphere by cases
+/// - see: corpus/model/identity/circle-base.gandr — `wind`, the winding at
+///   dimension one
+
+// The 2-sphere and the 3-sphere.
+import "./sphere.gandr";
+// The identity of the 3-sphere by cases.
+import "./sphere-maps.gandr";
+// The integers and the circle.
+import "./circle-base.gandr";
+
+/// A case with no arm at the 3-cell sends the 3-cell to reflexivity.
+def flat3(x : S3) -> S3 =
+  match x where
+    | Base3 => Base3
+
+/// The winding of a word at the 3-cell: one step for each letter.
+pub def rec wind3(
+  p : Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here Base3)](
+    Path.here (Path.here Base3),
+    Path.here (Path.here Base3)
+  )
+) -> Int =
+  match p where
+    | here => Z
+    | surf3 ∷ q => S (wind3[<] q)
+    | back(surf3) ∷ q => P (wind3[<] q)
+
+/// The degree of the identity is one.
+///
+/// - see: #6807 — the run of `wind3 (Path.ap sphereId3 surf3)` to `S Z`
+def xiId3 : Path[.A = Int](wind3 (Path.ap sphereId3 surf3), S Z) = Path.here (S Z);
+
+/// The degree of a map with no arm at the 3-cell is zero.
+def xiFlat3 : Path[.A = Int](wind3 (Path.ap flat3 surf3), Z) = Path.here Z;
+
+/// The degree of the identity is not zero.
+@[refuses("EndpointMismatch")]
+def xiIdZero : Path[.A = Int](wind3 (Path.ap sphereId3 surf3), Z) = Path.here Z;
