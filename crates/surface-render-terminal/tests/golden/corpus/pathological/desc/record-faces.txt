@@ -1,8 +1,13 @@
 error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
-   ╭▸ corpus/pathological/desc/record-faces.gandr:30:24
+   ╭▸ corpus/pathological/desc/record-faces.gandr:29:18
    │
-30 │     face bad = { port, cert };
-   │                        ━━━━ what the description check refuses
+29 │     type Outside = *{host : String, port : Integer} where
+   │ ┏━━━━━━━━━━━━━━━━━━┛
+30 │ ┃     face bad = { port, cert };
+   │ ┃                        ┬──╿
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━│━━┥
+   │                          │  what the description check refuses
+   │                          the part the description check refuses
    │
    ├ note: `Outside` is refused with IllFormedDescription, as its expectation states
    ╰ help: put in the face only names that the boundary lists
