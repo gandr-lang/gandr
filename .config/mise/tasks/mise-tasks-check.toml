@@ -2272,7 +2272,10 @@ run = ".config/landing/rebase-cases.bash"
 # and `gap.jq` reads how long `main` stands behind `landing` and pages past
 # 45 minutes once for each head of `main`. Each case in
 # `.config/integration/cases.json` names its program, its input and the
-# compact JSON that the program gives.
+# compact JSON that the program gives. `.config/integration/token-cases.bash`
+# runs `watch_token` over a stubbed gh (#6644): with no `GH_TOKEN`, the
+# watcher's gate takes the token gh gives, a token already set stays, and a
+# failed read leaves none.
 ["check:integration"]
 description = "The integration cycle's step, known-red list, brake and runner, and the head watcher's search, owner and gap, give each recorded case its output"
 tools.jq = "1.8.1"
@@ -2280,6 +2283,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash integration .config/integration/cases.json --programs .config/integration --mode c
+.config/integration/token-cases.bash
 echo "integration check OK: $(jq length .config/integration/cases.json) cases read as recorded"
 '''
 

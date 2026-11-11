@@ -84,6 +84,7 @@ site = [
   { file = ".config/integration/watch.bash", scope = "watch_own", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "landing:watch: a red check of a new head of landing, the pull request of the commit the search names; a green or unmoved head calls nothing" },
   { file = ".config/integration/watch.bash", scope = "watch_own", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "landing:watch: a red check of a new head, one search of the open landing: defects; 1 point (rateLimit, 2026-11-11)" },
   { file = ".config/integration/watch.bash", scope = "watch_own", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "landing:watch: a red check whose defect is open, one comment on it; a new defect is issue:file's row, and its claim is claim:take's" },
+  { file = ".config/integration/watch.bash", scope = "watch_token", api = "graphql", identity = "write", calls = 1, points = 0, measured = "free", hour = 12, trigger = "landing:watch: a new head of landing in a service with no GH_TOKEN, one gh auth token, a local read with no request (#6644)" },
 
   # The ledger check: a gate on a host and in CI.
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "check:ledger in a seat's gate: one aliased batch of the issues rows name" },
