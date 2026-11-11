@@ -2182,6 +2182,21 @@ mod tests
         status: &Value,
     ) -> Message
     {
+        answered(callback, status).0
+    }
+
+    /// The next request `callback` takes, read whole and answered with the
+    /// status line `status`, and the instant just before the answer is
+    /// written. The toolset reads the answer after that instant, so a wait
+    /// the toolset starts when it reads the answer starts after it too.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answered(
+        callback: &TcpListener,
+        status: &Value,
+    ) -> (Message, std::time::Instant)
+    {
         let (mut stream, _peer) = callback.accept().expect("the toolset calls back");
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -2205,6 +2220,7 @@ mod tests
                 }
             }
         };
+        let before = std::time::Instant::now();
         stream
             .write_all(
                 alloc::format!(
@@ -2214,7 +2230,7 @@ mod tests
                 .as_bytes(),
             )
             .expect("the toolset reads the answer");
-        message
+        (message, before)
     }
 
     /// Whether `callback` takes no request for `wait`.
@@ -2996,10 +3012,12 @@ mod tests
         ));
         let mut editor = Editor::new(&scratch);
         editor.edit(&uri, &json!(1_i32), &json!("def f = 42 ;\n"));
-        let failed = heard(&callback, &json!("503 Service Unavailable"));
-        let answered = std::time::Instant::now();
+        // The toolset starts its wait when it reads the 503, after `answered`
+        // takes its instant, so the measured wait holds the whole policy wait
+        // however late this thread runs after the write.
+        let (failed, written) = answered(&callback, &json!("503 Service Unavailable"));
         let retried = received(&callback);
-        let waited = answered.elapsed();
+        let waited = written.elapsed();
         assert!(
             waited >= Policy::default().first && waited < Duration::from_secs(5),
             "the retry follows the first wait of the policy, not {waited:?}"

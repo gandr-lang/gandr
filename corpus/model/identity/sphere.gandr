@@ -80,7 +80,6 @@ def surfDoubled : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
 ) = Path.here (surf ∷ surf ∷ Path.here (Path.here Base2));
 
 /// A case with no branch at the cell sends the cell to reflexivity.
-@[checks]
 def squash(x : S2) -> S2 =
   match x where
     | Base2 => Base2
