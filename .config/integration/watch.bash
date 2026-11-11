@@ -50,6 +50,18 @@ watch_remember() {
   mv "$watch_state.tmp" "$watch_state"
 }
 
+# A seat's gate runs with `GH_TOKEN` set (#6644). With none, a host's wrapper
+# of gh asks the next gh on `PATH` for a token, and in a case over a gh stub
+# that is the stub, which refuses. So the watcher's gate runs with the token
+# that `gh auth token` gives. A token already set stays, and a failed read
+# leaves it unset, as before.
+watch_token() {
+  local token
+  if [[ -z ${GH_TOKEN:-} ]] && token=$(gh auth token 2> /dev/null) && [[ -n $token ]]; then
+    export GH_TOKEN=$token
+  fi
+}
+
 # Makes the clone when it is absent, then reads `landing`, `main` and
 # `integration` into its `refs/watch/`. A local clone links the objects of
 # this checkout's repository, so it copies no object. A clone of a shallow
@@ -207,6 +219,7 @@ watch_once() {
   git -C "$watch_tree" update-ref refs/remotes/origin/landing "$green"
   git -C "$watch_tree" update-ref refs/remotes/origin/main "$(git -C "$watch_tree" rev-parse refs/watch/main)"
   log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.log"
+  watch_token
   SECONDS=0
   watch_run "$head" check "$log" && status=0 || status=$?
   echo "landing:watch: the gate on ${head::9} ran ${SECONDS}s and exited $status" >&2
