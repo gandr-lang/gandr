@@ -3549,3 +3549,46 @@ fn a_seam_refusal_stands_at_its_rule_5763()
         }
     }
 }
+
+/// A lowercase word before a type molds as the moded type `m T`. At a sort's
+/// index its words spell the application that the call form writes, in either
+/// order of the indices. A spaced group after a lowercase index is an index of
+/// its own, as it is after a type name.
+#[test]
+fn a_moded_type_at_a_sort_index_is_the_application_it_spells_6459()
+{
+    let ext = FreeTerm::op("ext", [FreeTerm::var("g"), FreeTerm::var("a")]);
+    let (d, g) = (FreeTerm::var("d"), FreeTerm::var("g"));
+    for (output, indices) in [
+        ("Sub(d, ext(g, a))", [d.clone(), ext.clone()]),
+        ("Sub(d, ext g a)", [d.clone(), ext.clone()]),
+        ("Sub (ext g a) d", [ext.clone(), d.clone()]),
+        ("Sub d (ext g a)", [d.clone(), ext.clone()]),
+        ("Sub d (ext(g, a))", [d.clone(), ext]),
+        ("Sub d (g)", [d.clone(), g.clone()]),
+        ("Sub (d) (g)", [d, g]),
+    ] {
+        let source = alloc::format!(
+            "theory CwF where {{ sort Con : Type; sort Ty(g : Con) : Type; sort Sub(d : Con, g : Con) : Type; oper ext : (g : Con, a : Ty g) --> Con; oper pair : (d : Con, g : Con, a : Ty g) --> {output}; }}"
+        );
+        let report = described(source.as_str());
+        assert_eq!(report.diagnostics, [], "`{output}`");
+        let Some(pair) = report.declarations[0]
+            .description
+            .opers
+            .iter()
+            .find(|operation| operation.name.as_ref() == "pair")
+        else {
+            panic!("`{output}`: the theory describes `pair`")
+        };
+        let [ref sort] = *pair.arity.outputs
+        else {
+            panic!("`{output}`: one output port")
+        };
+        assert_eq!(
+            (sort.sort.as_ref(), &*sort.arguments),
+            ("Sub", indices.as_slice()),
+            "`{output}`: `Sub` over its two indices"
+        );
+    }
+}

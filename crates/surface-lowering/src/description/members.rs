@@ -33,6 +33,7 @@ use super::written::WrittenTerm;
 use super::written::head;
 use super::written::member_name;
 use super::written::port_name;
+use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::TileName;
@@ -308,9 +309,11 @@ impl Reader<'_, '_>
     ///   name `a` inside it that atom's occurrence and outside it a variable; a
     ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
     ///   variable; a port `C(a, …).l`, its call in parentheses or not, is the
-    ///   constructor `C.l` over `a, …`. The written term holds one node per
-    ///   node of the term, in pre-order, each at its own bytes and an
-    ///   application or an abstraction with its head's or its atom's.
+    ///   constructor `C.l` over `a, …`; a moded type, `ext g a`, is the
+    ///   application its words spell, `ext(g, a)`, as [`Self::moded_words`]
+    ///   reads it. The written term holds one node per node of the term, in
+    ///   pre-order, each at its own bytes and an application or an abstraction
+    ///   with its head's or its atom's.
     /// - fails: forms outside names, applications, parenthesized lists and
     ///   abstractions are located.
     /// - panics: none.
@@ -332,6 +335,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
     /// - witness: `description::theory::tests::a_rule_term_names_an_atom_inside_its_abstraction`
     /// - witness: `description::tests::a_rule_names_a_port_through_parentheses_4853`
+    /// - witness: `description::theory::tests::a_moded_type_at_a_sort_index_is_the_application_it_spells_6459`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
@@ -452,6 +456,25 @@ impl Reader<'_, '_>
                         let atom = Name::from(spelled);
                         pending.push(TermFrame::Abstract(atom));
                         pending.push(TermFrame::Read(body));
+                        continue;
+                    }
+                    // A lowercase word before a type molds as the moded type
+                    // `m T` until #5330 settles the two readings. Where a term
+                    // stands, its words spell an application.
+                    if let Some((head, args)) = self.moded_words(at, &pieces)? {
+                        written.nodes.push(WrittenNode {
+                            span: at.span,
+                            head: Maybe::Present(head.span),
+                        });
+                        let name = Name::from(self.text(head).0);
+                        let kind = if instantiable.contains(&name) {
+                            TermKind::Instantiation
+                        }
+                        else {
+                            TermKind::Operation
+                        };
+                        pending.push(TermFrame::Apply(name, ArgumentCount(args.len()), kind));
+                        pending.extend(args.into_iter().rev().map(TermFrame::Read));
                         continue;
                     }
                     // `C(a, …).l` names the port `l` of the multi-output
@@ -594,6 +617,61 @@ impl Reader<'_, '_>
             fault: DescriptionFault::Malformed,
         })?;
         Ok((term, written))
+    }
+
+    /// The words of the moded type at `at`, whose pieces are `pieces`, read as
+    /// the application they spell: `ext g a` molds as `ext` over the moded
+    /// type `g a`, and spells `ext(g, a)`.
+    ///
+    /// # Specification
+    /// - ensures: `Some((head, arguments))` exactly when `at` is a moded type:
+    ///   `head` its word, and `arguments` the word of each moded type down its
+    ///   right spine, then the type that ends the spine, in written order.
+    ///   `None` for any other form.
+    /// - fails: a moded type whose pieces are not one word and one operand is
+    ///   malformed.
+    /// - panics: none.
+    /// - intension: a loop down the spine, so a long run of words costs no
+    ///   stack.
+    ///
+    /// # Errors
+    /// Returns `Malformed` for a moded type of other pieces.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `ext g a` against `ext(g, a)` and `(ext g a)` at a
+    ///   sort's index: reading only the first word, or the spine in reverse,
+    ///   gives another description than the call form's.
+    /// - witness: `description::theory::tests::a_moded_type_at_a_sort_index_is_the_application_it_spells_6459`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.as_ref().is_none_or(|&(_, ref arguments)| !arguments.is_empty())))]
+    fn moded_words(
+        &self,
+        at: Placed,
+        pieces: &[Piece],
+    ) -> Result<Option<(Placed, Vec<Placed>)>, DescriptionDiagnostic>
+    {
+        if self.former(at) != Some(Former::ModedType) {
+            return Ok(None);
+        }
+        let malformed = |span| DescriptionDiagnostic {
+            span,
+            fault: DescriptionFault::Malformed,
+        };
+        let [Piece::Tile { at: head, .. }, Piece::Operand(mut rest)] = *pieces
+        else {
+            return Err(malformed(at.span));
+        };
+        let mut arguments = Vec::new();
+        while self.former(rest) == Some(Former::ModedType) {
+            let inner = self.pieces(rest)?;
+            let [Piece::Tile { at: word, .. }, Piece::Operand(next)] = *inner.as_slice()
+            else {
+                return Err(malformed(rest.span));
+            };
+            arguments.push(word);
+            rest = next;
+        }
+        arguments.push(rest);
+        Ok(Some((head, arguments)))
     }
 }
 
