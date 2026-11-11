@@ -125,6 +125,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep, and § 4.2's useful sharing, whose compact normal form readback builds.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite evaluates as the fold it realises, and every nesting of its chain evaluates to that fold.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, whose arm at a cell `eval::words` reads.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the ruling on the presented type and its loop space, which `eval::words` follows when a loop moves past two empty images of a cell.
 
 ## License
 

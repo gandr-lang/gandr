@@ -84,7 +84,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 
 ## References
 
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design items 1–3, 6, 7 and 10) — a key names the constants it reaches by content; the kernel derives every support from its own nodes and judgement, taking none across the bridge; a replay step enters the trusted base on a test against its reference; one skeleton replays every certificate.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `encoding`, `support`, `replay` and `descent` name the items each takes.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: content addressing as strictified descent (§ storage-conjecture-chunk-descent) — a record's name is its key up to an identification, with the identification as a parameter; `RecordName` takes `Exact`, the identity on content.
 - `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
 - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as descent (§ sharing-rule-descent, § sharing-rule-probe) — a cover glued once and replayed.
@@ -101,6 +101,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2, whose holders the kernel validates.
 - `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace-certificate design — the replay runs a held operand's steps, which the trace does not record.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, in `words`.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the loop carried past two empty images of a cell, in `words`.
 
 ## License
 

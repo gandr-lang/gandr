@@ -93,10 +93,12 @@
 //! endpoint `⟨tr(x. Path[.A = C](l, r), y, b)⟩`. The transport of `b` along
 //! `q` there is `ap(l, q)⁻¹ · b · ap(r, q)`, so the endpoint's image of a cell
 //! is `l`'s image inverted, then `r`'s, each one `Path.ap` layer deeper
-//! ([`carried`]). The rule reduces the conjugation only where `b` is
-//! reflexivity: a `b` that holds a letter whiskers the two images, and the
-//! transport stays held. Each endpoint of the inner family is its binder,
-//! fixed, one call of one argument, or carried in turn.
+//! ([`carried`]). The rule reduces the conjugation where `b` is reflexivity,
+//! and where both images are empty by the endpoints' syntax alone ([`flat`]):
+//! there the image is `b`, whatever `b` holds. Elsewhere a `b` that holds a
+//! letter whiskers the two images, and the transport stays held. Each endpoint
+//! of the inner family is its binder, fixed, one call of one argument, or
+//! carried in turn.
 //!
 //! # References
 //!
@@ -104,6 +106,9 @@
 //!   spheres as presentations with one cell per dimension, and the eliminator
 //!   whose arm at the cell is a cell of the answer at the reflexivity of the
 //!   arm at the point.
+//! - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the transport of a
+//!   loop along a cell, which moves it to itself where both images of the cell
+//!   are empty, and the reflexivity of the loops' empty word read one level up.
 
 use alloc::vec::Vec;
 
