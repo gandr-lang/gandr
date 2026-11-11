@@ -511,7 +511,7 @@ impl Tree
             .nodes
             .first()
             .is_some_and(|node| agreement(original, node) == Agreement::Same)
-            && discovered(&ret.nodes)
+            && numbering(&ret.nodes) == Numbering::Discovered
             && ret.names.first() == self.names.get(usize::from(root))
     }
     None => ret.nodes.is_empty(),
@@ -572,6 +572,7 @@ impl Tree
 /// The name reads no table index, so two nodes of two tables have one name
 /// exactly when the terms beneath them are equal, but for a collision of the
 /// name's sixteen bytes.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct ContentName([u8; 16]);
 
@@ -580,6 +581,7 @@ struct ContentName([u8; 16]);
 ///
 /// # Specification
 /// trivial.
+#[repr(transparent)]
 struct Naming(blake3::Hasher);
 
 impl core::hash::Hasher for Naming
@@ -632,13 +634,14 @@ impl core::hash::Hasher for Naming
 #[spec(ensures: |ret| ret.len() == nodes.len())]
 fn names_of(
     nodes: &[ContentNode],
-    order: &[usize],
+    order: &[NodeIndex],
 ) -> Vec<ContentName>
 {
     use core::hash::Hash as _;
 
     let mut names = vec![ContentName::default(); nodes.len()];
     for &at in order {
+        let at = usize::from(at);
         let Some(node) = nodes.get(at)
         else {
             continue;
@@ -694,7 +697,7 @@ fn names_of(
 /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
 /// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
 #[spec(ensures: |ret| ret.len() == nodes.len())]
-fn topological(nodes: &[ContentNode]) -> Vec<usize>
+fn topological(nodes: &[ContentNode]) -> Vec<NodeIndex>
 {
     // Each index is unseen, open on the stack, or settled.
     let mut settled = vec![false; nodes.len()];
@@ -709,7 +712,7 @@ fn topological(nodes: &[ContentNode]) -> Vec<usize>
                     && !*slot
                 {
                     *slot = true;
-                    order.push(at);
+                    order.push(NodeIndex::from(at));
                 }
                 continue;
             }
@@ -731,15 +734,28 @@ fn topological(nodes: &[ContentNode]) -> Vec<usize>
     order
 }
 
-/// Whether `nodes` is numbered in discovery order: walked in order, each child
-/// is a node already numbered or the next one.
+/// How a table is numbered.
 ///
 /// # Specification
 /// trivial.
-fn discovered(nodes: &[ContentNode]) -> bool
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Numbering
+{
+    /// Walked in order, each child is a node already numbered or the next
+    /// one: the order a breadth-first walk first reaches the nodes in.
+    Discovered,
+    /// A child skips ahead of the next number.
+    Other,
+}
+
+/// How `nodes` is numbered.
+///
+/// # Specification
+/// trivial.
+fn numbering(nodes: &[ContentNode]) -> Numbering
 {
     let mut expected = 1_usize;
-    nodes.iter().all(|node| {
+    let ordered = nodes.iter().all(|node| {
         children(node).all(|child| {
             let child = usize::from(child);
             if child == expected {
@@ -750,7 +766,13 @@ fn discovered(nodes: &[ContentNode]) -> bool
                 child < expected
             }
         })
-    }) && (nodes.is_empty() || expected == nodes.len())
+    });
+    if ordered && (nodes.is_empty() || expected == nodes.len()) {
+        Numbering::Discovered
+    }
+    else {
+        Numbering::Other
+    }
 }
 
 /// Arena-independent declaration content, retaining native signatures
@@ -1006,7 +1028,7 @@ impl Snapshot
             .all(|((item, spans), (original, reference))| {
                 item.reference == *reference
                     && {
-                        let ordered = |tree: &Tree| discovered(&tree.nodes);
+                        let ordered = |tree: &Tree| numbering(&tree.nodes) == Numbering::Discovered;
                         { let (matched_left_value, matched_right_value) = (&item.declaration,original.declaration().content());
 if let DeclarationTree::Value {ref signature,ref body} = *matched_left_value && let gandr_core_checker::DeclarationContent::Value {signature:ref source_signature,body:ref source_body} = *matched_right_value { {
                                 ({ let (matched_left_value, matched_right_value) = (signature,source_signature);
@@ -2441,7 +2463,7 @@ struct Place
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 #[spec(
     ensures: |ret| {
-    discovered(&ret.nodes)
+    numbering(&ret.nodes) == Numbering::Discovered
         && match edits.iter().rev().find(|edit| edit.0.slots.is_empty()) {
             Some(&(_, Graft::Subtree(subtree))) => ret == *subtree,
             Some(&(_, Graft::Leaf(ref leaf))) => {
@@ -3389,7 +3411,7 @@ enum Root
     ensures: |ret| {
     ret.0.nodes.len() == ret.1.len() && !ret.0.nodes.is_empty()
         && ret.0.names.len() == ret.0.nodes.len()
-        && discovered(&ret.0.nodes)
+        && numbering(&ret.0.nodes) == Numbering::Discovered
         && ret
             .0
             .nodes
@@ -4644,12 +4666,13 @@ where
 fn hull(
     tree: &Tree,
     spans: &mut [Maybe<ByteSpan, spanned::Absent>],
-    order: &[usize],
+    order: &[NodeIndex],
 )
 {
     // Each node comes after every node beneath it in `order`, so one pass
     // settles each child before any of its parents.
     for &index in order {
+        let index = usize::from(index);
         let Some(node) = tree.nodes.get(index)
         else {
             continue;
@@ -6109,18 +6132,25 @@ mod tests
         text
     }
 
-    /// The nodes of the pair's signature and body in the snapshot of a pair
+    /// How many entries a snapshot's image holds.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Entries(usize);
+
+    /// The entries of the pair's signature and body in the snapshot of a pair
     /// spine `depth` levels deep.
     ///
     /// # Specification
     /// - requires: the fixture lowers to a module.
-    /// - ensures: the entry count of the last item's signature and body images.
+    /// - ensures: the entry count of the last item's signature and body images,
+    ///   at least one for each level of the signature.
     /// - panics: if the fixture does not lower.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`pair_spine`].
     /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
-    fn pair_image(depth: Depth) -> usize
+    #[spec(ensures: |ret| ret.0 > depth.0)]
+    fn pair_image(depth: Depth) -> Entries
     {
         let text = pair_spine(depth);
         let snapshot = snapshot_of(SourceText::from(text.as_str()));
@@ -6130,7 +6160,7 @@ mod tests
             .expect("the spine declares the pair last");
         let signature = pair.signature().map_or(0_usize, |tree| tree.nodes.len());
         let body = pair.body().map_or(0_usize, |tree| tree.nodes.len());
-        signature.saturating_add(body)
+        Entries(signature.saturating_add(body))
     }
 
     #[test]
@@ -6139,7 +6169,8 @@ mod tests
         // An image with one entry for each arena node grows linearly in the
         // depth, so the doubled depth at most doubles it. An image with one
         // entry for each occurrence grows as 2^depth: 2^12 times more entries.
-        let (half, whole) = (pair_image(Depth(12_usize)), pair_image(Depth(24_usize)));
+        let (Entries(half), Entries(whole)) =
+            (pair_image(Depth(12_usize)), pair_image(Depth(24_usize)));
         assert!(
             whole <= half.saturating_mul(2_usize),
             "the spine 24 levels deep reads {whole} nodes, against {half} at 12 levels"
