@@ -1,15 +1,15 @@
-error[Undecided]: the checker could not decide what this code unfolds to
-   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:20:17
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/specification/tree-state-wp.gandr:20:37
    │
 20 │ } = *{incrTree, fun (s) { fun (h) { h } }};
-   │                 ┬─────────┬─────────┬────
+   │                 ┬─────────┬─────────┯────
    │                 │         │         │
-   │                 │         │         checked against `-F wp(incrTree, isOne, s)`; while comparing the type this synthesises with the one it is checked against
+   │                 │         │         its type does not convert: expected `wp(incrTree, isOne, s)`, found `isOne(*{}, s)`
    │                 │         checked against `isOne(*{}, s) -> -F wp(incrTree, isOne, s)`; while checking the body of this function; binds h : isOne(*{}, s)
    │                 checked against `(a : Integer, isOne(*{}, a)) -> wp(incrTree, isOne, a)`; while checking the body of this function; binds s : Integer
    │
-   ├ note: `incrMissesOne` is refused with Undecided, as its expectation states
-   ╰ help: write code whose unfolding the checker can decide
+   ├ note: `incrMissesOne` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/specification/tree-state-wp.gandr:32:30

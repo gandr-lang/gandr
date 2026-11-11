@@ -4156,6 +4156,83 @@ fn a_continuation_casing_on_a_stuck_call_stays_whole()
     );
 }
 
+/// #6574: the machine declined a held endpoint against every value other
+/// than an endpoint. A held endpoint stuck on a constant with no body, against
+/// a constant with no body, is two rigid neutrals with different heads.
+#[test]
+fn a_held_endpoint_against_a_rigid_neutral_is_apart_6574()
+{
+    // `⟨force R ()⟩` for the rigid `R`, and `⟨force D R⟩` for `D = λx. return
+    // ()`: an operation whose one rule can still fire.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let rigid = core.value_constant(Name::Rigid.constant());
+    let other = core.value_constant(Name::Three.constant());
+    // `U`, a constant with no body at the unit type, which η relates to every
+    // value of that type; `⟨force R ()⟩` is at the unit type too.
+    let at_unit = core.value_constant(Name::One.constant());
+    let defined = core.value_constant(Name::Zero.constant());
+    let forced = core.computation_force(rigid);
+    let call = core.computation_application(forced, unit);
+    let held = core.value_returned(call);
+    let again = core.value_returned(call);
+    let ruled_force = core.computation_force(defined);
+    let ruled_call = core.computation_application(ruled_force, rigid);
+    let ruled = core.value_returned(ruled_call);
+    let returned = core.computation_return(unit);
+    let body = core.computation_lambda(returned);
+    let body = core.value_thunk(body);
+    let world = World::new(core, &[(Name::Zero, body)]).holding();
+    let undecided = MachineVerdict::Declined(DeclineReason::Indeterminate);
+    for (sides, expected, reason) in [
+        (
+            Sides::Values(held, other),
+            MachineVerdict::NotConvertible,
+            "an endpoint at a call of a constant with no body and another constant with no body are apart",
+        ),
+        (
+            Sides::Values(other, held),
+            MachineVerdict::NotConvertible,
+            "on either side",
+        ),
+        // #6161 owes the typed η that converts this pair; the case then
+        // expects `Convertible`.
+        (
+            Sides::Values(held, at_unit),
+            MachineVerdict::NotConvertible,
+            "at the unit type, as two rigid neutrals of the unit type are apart",
+        ),
+        (
+            Sides::Values(held, again),
+            MachineVerdict::Convertible,
+            "the endpoint is its own call",
+        ),
+        (
+            Sides::Values(held, defined),
+            undecided,
+            "a constant with a body can unfold to the endpoint's value",
+        ),
+        (
+            Sides::Values(held, unit),
+            undecided,
+            "a former can meet the endpoint by η",
+        ),
+        (
+            Sides::Values(ruled, held),
+            undecided,
+            "an endpoint whose rule can fire is not apart from a rigid endpoint",
+        ),
+        (
+            Sides::Values(ruled, other),
+            MachineVerdict::Convertible,
+            "its rule fires, and the unit it returns meets the constant by η",
+        ),
+    ] {
+        let (verdict, decisions) = world.traced(sides);
+        assert_eq!(expected, verdict, "{reason}: {decisions:?}");
+    }
+}
+
 #[test]
 fn a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761()
 {
