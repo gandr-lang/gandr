@@ -3125,6 +3125,8 @@ enum Looped
     Empty,
     /// The empty word of the 2-cell's words.
     EmptyCell,
+    /// `here(ε)`, for `ε` the empty word of the loop's words.
+    HereEmpty,
 }
 
 /// `side` in `arena`.
@@ -3178,6 +3180,10 @@ fn looped_side(
         },
         Looped::Empty => empty(arena, 1),
         Looped::EmptyCell => empty(arena, 2),
+        Looped::HereEmpty => {
+            let end = empty(arena, 1);
+            arena.value_here(end)
+        },
     }
 }
 
@@ -3289,6 +3295,33 @@ fn a_reflexivity_at_a_looped_point_presents_as_its_empty_word_6477()
             &[SHARED]
         ),
         KernelVerdict::Convertible
+    );
+}
+
+/// #6741: at a point with a loop and a 2-cell, a reflexivity at the loop's
+/// empty word presents as the 2-cell's empty word, on either side, as the
+/// reflexivity of the point's reflexivity does.
+#[test]
+fn a_reflexivity_at_the_loops_empty_word_presents_as_the_cells_empty_word_6741()
+{
+    for sides in [
+        (Looped::HereEmpty, Looped::EmptyCell),
+        (Looped::EmptyCell, Looped::HereEmpty),
+    ] {
+        assert_eq!(
+            looped_replay(sides, EngineClaim::Convertible, &[SHARED]),
+            KernelVerdict::Convertible,
+            "{sides:?}"
+        );
+    }
+    assert_ne!(
+        looped_replay(
+            (Looped::HereEmpty, Looped::Empty),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "a reflexivity at the loop's empty word is no loop"
     );
 }
 
