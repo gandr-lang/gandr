@@ -56,6 +56,15 @@ while IFS= read -r hit; do
   fail "#6853: a grep of .config/deletes reads POSIX classes alone" "$hit"
 done < <(git -C "$root" grep -n -E "^[^#]*grep .*$perl" -- '.config/deletes/*.bash' || :)
 
+# A sign-off names its commit by a whole word of 7 to 40 hexadecimal digits
+# (#6853), the word that the word boundary of GNU's grep bounds. A digest
+# inside a longer word is no match, and a word of 41 digits is none either.
+source "$here/digests.bash"
+long=0123456789abcdef0123456789abcdef01234567
+got=$(digests <<< "signed at abc1234 and $long, not xabc1234, abc1234g, dead_beef1234 or ${long}8" | tr '\n' ' ')
+[[ $got == "abc1234 $long " ]] \
+  || fail "#6853: a sign-off names its commit by a whole word of 7 to 40 hexadecimal digits, never by part of a longer word" "$got"
+
 mkdir -p "$work/empty/.config/mise/tasks"
 : > "$work/empty/.config/mise/tasks/mise-tasks-check.toml"
 for mode in '' --flags; do

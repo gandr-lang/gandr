@@ -52,6 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT
 source "$root/.config/gh/repo.bash"
+source "$here/digests.bash"
 repo=$(repo_name)
 SECONDS=0
 
@@ -91,7 +92,7 @@ signoffs=$(for issue in "${issues[@]}"; do
     || { echo "check:deletes: the comments of #$issue cannot be read" >&2; exit 2; }
 done | jq -s -c . | jq -c '.[]' | while IFS= read -r comment; do
   sha=
-  for word in $(jq -r '.body' <<< "$comment" | tr -cs '[:alnum:]_' '\n' | grep -xE '[0-9a-f]{7,40}' || :); do
+  for word in $(jq -r '.body' <<< "$comment" | digests); do
     if git cat-file -e "$word^{commit}" 2> /dev/null || { git fetch --quiet --depth=1 origin "$word" 2> /dev/null && git cat-file -e "$word^{commit}" 2> /dev/null; }; then
       sha=$(git rev-parse "$word^{commit}")
       break
