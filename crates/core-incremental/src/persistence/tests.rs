@@ -279,6 +279,7 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
         footprint,
         Vec::new(),
         Typing::Owed,
+        gandr_core_checker::Entered::AsWritten,
     )])
 }
 

@@ -1802,7 +1802,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 19, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 20, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1812,7 +1812,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 18;
+    *wrong_version.get_mut(7).expect("version byte") = 19;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
@@ -1862,6 +1862,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
             footprint,
             vec![Answered::new(Reference::Unoccupied, answer)],
             typing,
+            gandr_core_checker::Entered::AsWritten,
         );
         let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
         let validated = encode_checkpoints(&checkpoints).map(|_bytes| ());
@@ -2102,6 +2103,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
             ),
             vec![Answered::new(Reference::Unoccupied, answer)],
             typing,
+            gandr_core_checker::Entered::AsWritten,
         );
         let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
         assert_eq!(
@@ -2218,6 +2220,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
             ),
             vec![Answered::new(Reference::Unoccupied, answer)],
             typing,
+            gandr_core_checker::Entered::AsWritten,
         );
         let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
         assert_eq!(
@@ -2269,6 +2272,7 @@ fn every_refusal_holding_a_capped_level_is_refused_when_written_4451()
             ),
             Vec::new(),
             Typing::Refused(refusal.clone()),
+            gandr_core_checker::Entered::AsWritten,
         );
         let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
         match encode_checkpoints(&checkpoints) {
@@ -2319,6 +2323,7 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2399,6 +2404,7 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2464,6 +2470,7 @@ fn an_atom_interface_round_trips_with_and_without_its_law()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2516,6 +2523,7 @@ fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2579,6 +2587,7 @@ fn a_supplying_value_root_round_trips_and_its_supplies_are_content_1227()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2663,6 +2672,7 @@ fn a_modelled_value_root_round_trips_and_its_candidates_are_content_739()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2723,6 +2733,7 @@ fn a_type_of_words_round_trips_its_cells()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };
@@ -2798,6 +2809,7 @@ fn an_indexed_family_round_trips_its_indices()
             ),
             vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
             Typing::Owed,
+            gandr_core_checker::Entered::AsWritten,
         );
         Checkpoints::new(CheckBudget::DEFAULT, vec![item])
     };

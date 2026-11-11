@@ -5492,6 +5492,59 @@ fn an_omitted_implicit_is_supplied_before_the_kernel_1216()
     );
 }
 
+/// #6549: the table holds a declaration as written unless its judgement
+/// elaborated it. The identity and the call that supplies its implicit enter
+/// as written. The call that omits the implicit enters with it filled, so it
+/// enters elaborated. A judgement that gave every declaration one form fails
+/// this.
+#[test]
+fn a_declaration_whose_implicit_is_filled_enters_elaborated_6549()
+{
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def id       : U ((a : Type) -> El a -> F (El a)) = thunk λ λ. return x ;
+    // def omitting : U (F Integer) = thunk ((force id) ?a) 0 ;
+    // def supplied : U (F Integer) = thunk ((force id) Integer) 0 ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let (identity_type, identity, call) =
+        identity_and_call(&mut arena, ConstantIndex::from(0_usize));
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let nominated = arena.value_hole(
+        HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name"),
+    );
+    let omitting = call(&mut arena, nominated);
+    let code = arena.value_quote(integer);
+    let supplied = call(&mut arena, code);
+    let module = [
+        declaration(
+            At(0),
+            Maybe::Present(identity_type),
+            Maybe::Present(identity),
+        ),
+        declaration(At(1), Maybe::Present(suspended), Maybe::Present(omitting)),
+        declaration(At(2), Maybe::Present(suspended), Maybe::Present(supplied)),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let entered: Vec<_> = module
+        .iter()
+        .map(|declaration| {
+            let supported = crate::check_declaration_supported(&mut context, declaration);
+            (supported.verdict(), supported.entered())
+        })
+        .collect();
+    assert!(
+        matches!(entered.as_slice(), [
+            (Verdict::Checked { .. }, crate::Entered::AsWritten),
+            (Verdict::Checked { .. }, crate::Entered::Elaborated),
+            (Verdict::Checked { .. }, crate::Entered::AsWritten),
+        ]),
+        "only the call whose implicit the judgement filled enters elaborated: {entered:?}"
+    );
+}
+
 #[test]
 fn an_omitted_implicit_is_refused_unforced_or_apart_1216()
 {
