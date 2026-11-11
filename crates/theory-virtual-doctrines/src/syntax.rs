@@ -33,17 +33,6 @@ impl ProVar
     {
         Self(Name::from(name))
     }
-
-    /// The variable's name.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn name(&self) -> NameRef<'_>
-    {
-        NameRef::from(self.0.as_ref())
-    }
 }
 
 /// A reference to an **embedded engine derivation** — an index into the
