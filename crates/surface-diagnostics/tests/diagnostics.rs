@@ -3456,6 +3456,48 @@ fn a_words_point_spells_its_constructors_arguments()
     );
 }
 
+/// The words of a higher cell are spelled as the path type at the point wrapped
+/// in its reflexivity once for each wrapping, so they read back to their
+/// certificate (#6446).
+#[test]
+fn a_higher_cell_s_words_spell_at_the_wrapped_point_6446()
+{
+    use gandr_surface_lowering::Role;
+
+    let grammar = built_in().expect("the grammar builds");
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-higher-cell-s-words-spell-at-the-wrapped-point-6446.gandr"
+    ));
+    let Lowered::Module { module, .. } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let names = constant_names(&module, module.unit().last());
+    let points: Vec<_> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == Role::Words)
+        .map(|declaration| {
+            names
+                .get(usize::from(declaration.constant()))
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(
+        points,
+        [
+            "Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)",
+            "Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here \
+             Base3)](Path.here (Path.here Base3), Path.here (Path.here Base3))",
+        ],
+        "the words of a cell wrapped once and twice spell the path type at the wrapped point"
+    );
+}
+
 /// A declaration that a source reads through an alias is spelled after the
 /// alias for that source, and by its own name for the source that declares
 /// it (#3498).
