@@ -30,6 +30,12 @@
 //! frame. An admission that settles the document's kernel tiers sends the
 //! edits alone, because the report did not change.
 //!
+//! The face sends the stack card of a document after its report: the context
+//! stack at the cursor that the editor's last signature-help or context-stack
+//! request named (`Workspace::stacked`). It sends the card again when the
+//! cursor moves and after each publication, and nothing when the frame did not
+//! change. A document with no cursor sends no card.
+//!
 //! In the build with the `instrument` feature, the face also watches the
 //! hub's work ledger at the cadence of the rows while the renderer is
 //! attached. It folds each tick it hears into the renderer's pane
@@ -102,6 +108,8 @@ enum Event
     Changed(DocumentUri),
     /// A document whose kernel tiers an admission settled.
     Settled(DocumentUri),
+    /// A document whose cursor a request moved.
+    Moved(DocumentUri),
     /// A tick of the hub's work ledger that moves the activity pane.
     #[cfg(feature = "instrument")]
     Ticked(Arc<Tick>),
@@ -148,6 +156,30 @@ fn patched(
     Some(frame)
 }
 
+/// The stack frame of the document at `uri` when it differs from the one
+/// `shown` holds for it, which `shown` then holds; none when it is the same,
+/// and none for a document with no card, whose frame `shown` lets go.
+///
+/// # Specification
+/// trivial.
+fn restacked(
+    stacked: Option<RenderFrame>,
+    uri: &DocumentUri,
+    shown: &mut BTreeMap<DocumentUri, RenderFrame>,
+) -> Option<RenderFrame>
+{
+    let Some(frame) = stacked
+    else {
+        drop(shown.remove(uri));
+        return None;
+    };
+    if shown.get(uri) == Some(&frame) {
+        return None;
+    }
+    drop(shown.insert(uri.clone(), frame.clone()));
+    Some(frame)
+}
+
 /// Whether a renderer asks for a whole account or is owed the patch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Whole
@@ -184,18 +216,21 @@ fn send(
 /// - ensures: a connection whose first line is not [`RENDER_BUS_PREFACE`] is
 ///   answered with a detach and nothing else. Otherwise the face sends the
 ///   greeting naming every document the hub holds, then each one's whole
-///   account and its report. Then, for every document a synchronisation
-///   publishes, it sends the patch of its account when the account changed, and
-///   its report at the version published. For every document whose kernel tiers
-///   an admission settled, it sends the patch alone, when the account changed.
-///   A resync from the client is answered with the named document's whole
-///   account and its report at its current version, nothing for a document the
-///   hub does not hold; a detach is answered with a detach and ends the face.
-///   Frames are written one line each, in the order the face made them. In the
-///   build with the `instrument` feature, each tick of the hub's work ledger
-///   that changes the pane sends the pool's activity, connection-scoped, and a
-///   tick that leaves it as it was sends nothing. The face returns when the
-///   client's stream ends, a line is not a frame, or a write fails.
+///   account, its report and its stack card. Then, for every document a
+///   synchronisation publishes, it sends the patch of its account when the
+///   account changed, its report at the version published, and its stack card
+///   when the card frame changed. For every document whose kernel tiers an
+///   admission settled, it sends the patch alone, when the account changed. For
+///   every document whose cursor a request moved, it sends the stack card when
+///   the card frame changed. A resync from the client is answered with the
+///   named document's whole account, its report at its current version and its
+///   stack card, nothing for a document the hub does not hold; a detach is
+///   answered with a detach and ends the face. Frames are written one line
+///   each, in the order the face made them. In the build with the `instrument`
+///   feature, each tick of the hub's work ledger that changes the pane sends
+///   the pool's activity, connection-scoped, and a tick that leaves it as it
+///   was sends nothing. The face returns when the client's stream ends, a line
+///   is not a frame, or a write fails.
 /// - provides: `gandr serve`'s render-bus face, which `gandr view` attaches to.
 /// - fails: never; a fault ends the connection.
 /// - panics: none.
@@ -211,10 +246,12 @@ fn send(
 ///   patch after an edit to a comment. In the build with the `instrument`
 ///   feature, the edit's judgement shows in the pool's activity, each frame
 ///   differs from the one before, and the pane goes back to idle once the busy
-///   time leaves the window.
+///   time leaves the window. The view hears the stack card at the cursor the
+///   editor's signature help names, and a card again after an edit changes it.
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_attached_view_follows_the_accounts_of_the_editors_document`
 /// - witness: `hub::tests::an_attached_view_hears_the_pool_at_work`
+/// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -241,14 +278,18 @@ pub fn serve(
     let (events, inbox) = channel();
     let (watcher, changes) = channel::<DocumentUri>();
     let (accountant, settlements) = channel::<DocumentUri>();
+    let (stacker, moves) = channel::<DocumentUri>();
     #[cfg(feature = "instrument")]
     let (ticker, ticks) = channel::<Arc<Tick>>();
     // The cards each document's last account frame left the renderer with.
     let mut sent: BTreeMap<DocumentUri, Vec<AccountCard>> = BTreeMap::new();
+    // The last stack frame each document sent.
+    let mut stacks: BTreeMap<DocumentUri, RenderFrame> = BTreeMap::new();
     let opening = {
         let mut held = lock(workspace);
         held.watch(peer, watcher);
         held.watch_accounts(peer, accountant);
+        held.watch_stacks(peer, stacker);
         // A host that refuses the fold's thread leaves the pane out; the
         // reports go on.
         #[cfg(feature = "instrument")]
@@ -258,6 +299,7 @@ pub fn serve(
         for uri in &uris {
             opening.extend(patched(held.accounted(uri), uri, &mut sent, Whole::Asked));
             opening.extend(held.rendered(uri));
+            opening.extend(restacked(held.stacked(uri), uri, &mut stacks));
         }
         drop(held);
         opening
@@ -279,7 +321,11 @@ pub fn serve(
     // The pane of the pool, and the last activity frame the renderer holds.
     #[cfg(feature = "instrument")]
     let (mut pane, mut shown) = (Pane::default(), None::<RenderFrame>);
-    let forwarded: [Forwarded; 2] = [(changes, Event::Changed), (settlements, Event::Settled)];
+    let forwarded: [Forwarded; 3] = [
+        (changes, Event::Changed),
+        (settlements, Event::Settled),
+        (moves, Event::Moved),
+    ];
     for (heard, event) in forwarded {
         let forward = events.clone();
         drop(thread::spawn(move || {
@@ -310,15 +356,27 @@ pub fn serve(
                 Event::Closed => break,
                 Event::Changed(uri) => {
                     let held = lock(workspace);
-                    let (account, report) = (held.accounted(&uri), held.rendered(&uri));
+                    let (account, report, card) = (
+                        held.accounted(&uri),
+                        held.rendered(&uri),
+                        held.stacked(&uri),
+                    );
                     drop(held);
                     let patch = patched(account, &uri, &mut sent, Whole::Owed);
-                    (patch.into_iter().chain(report).collect(), false)
+                    let card = restacked(card, &uri, &mut stacks);
+                    (patch.into_iter().chain(report).chain(card).collect(), false)
                 },
                 Event::Settled(uri) => {
                     let account = lock(workspace).accounted(&uri);
                     let patch = patched(account, &uri, &mut sent, Whole::Owed);
                     (patch.into_iter().collect(), false)
+                },
+                Event::Moved(uri) => {
+                    let card = lock(workspace).stacked(&uri);
+                    (
+                        restacked(card, &uri, &mut stacks).into_iter().collect(),
+                        false,
+                    )
                 },
                 #[cfg(feature = "instrument")]
                 Event::Ticked(tick) => {
@@ -336,10 +394,16 @@ pub fn serve(
                     (&FrameScope::Document(ref document), &FrameBody::Resync) => {
                         let uri = DocumentUri::from(&document.uri);
                         let held = lock(workspace);
-                        let (account, report) = (held.accounted(&uri), held.rendered(&uri));
+                        let (account, report, card) = (
+                            held.accounted(&uri),
+                            held.rendered(&uri),
+                            held.stacked(&uri),
+                        );
                         drop(held);
                         let whole = patched(account, &uri, &mut sent, Whole::Asked);
-                        (whole.into_iter().chain(report).collect(), false)
+                        drop(stacks.remove(&uri));
+                        let card = restacked(card, &uri, &mut stacks);
+                        (whole.into_iter().chain(report).chain(card).collect(), false)
                     },
                     (_, &FrameBody::Detach) => (Vec::from([RenderFrame::detach()]), true),
                     (
@@ -349,6 +413,7 @@ pub fn serve(
                         | FrameBody::Resync
                         | FrameBody::Accounts { .. }
                         | FrameBody::AccountPatch { .. }
+                        | FrameBody::Stack { .. }
                         | FrameBody::Activity { .. }),
                     ) => (Vec::new(), false),
                 },

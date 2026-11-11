@@ -569,6 +569,19 @@ impl From<Slot> for usize
     }
 }
 
+impl From<usize> for Slot
+{
+    /// The slot at `position`, from zero.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
 /// One spine that encloses an offset: its head, the slot the offset writes,
 /// and the argument written in that slot, each span in the text's own
 /// coordinates.

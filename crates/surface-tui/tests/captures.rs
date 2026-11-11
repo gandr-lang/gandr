@@ -130,3 +130,15 @@ fn the_schedule_scene_renders_as_its_capture()
         leads: &["world", "cores"],
     });
 }
+
+/// The stack scene: the stack pane at the editor's cursor in a nested call,
+/// at a hole three spines deep and after the cursor moves out to the middle
+/// spine.
+#[test]
+fn the_stack_scene_renders_as_its_captures()
+{
+    captured(Scene {
+        stem: "stack",
+        leads: &["head"],
+    });
+}

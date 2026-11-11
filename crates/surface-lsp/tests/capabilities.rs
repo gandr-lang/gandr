@@ -45,7 +45,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "inlayHintProvider": {"resolveProvider": true},
                 "selectionRangeProvider": true,
                 "hoverProvider": true,
-                "signatureHelpProvider": {"triggerCharacters": ["(", ","], "retriggerCharacters": [")"]},
+                "signatureHelpProvider": {"triggerCharacters": ["(", ",", " "], "retriggerCharacters": [")"]},
                 "definitionProvider": true,
                 "declarationProvider": true,
                 "typeDefinitionProvider": true,

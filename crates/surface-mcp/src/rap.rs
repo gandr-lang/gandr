@@ -2203,6 +2203,7 @@ fn carded(frame: &RenderFrame) -> Option<(&DocId, &ReportView)>
             | FrameBody::Resync
             | FrameBody::Accounts { .. }
             | FrameBody::AccountPatch { .. }
+            | FrameBody::Stack { .. }
             | FrameBody::Activity { .. }
             | FrameBody::Detach),
         ) => None,

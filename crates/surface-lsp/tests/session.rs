@@ -1488,6 +1488,7 @@ fn signature_help_reads_a_sibling_s_head()
             "label": "pick(a : Integer, b : Integer) -> -F Integer",
             "documentation": {"kind": "markdown", "value": "Picks the first."},
             "parameters": [{"label": "a : Integer"}, {"label": "b : Integer"}],
+            "activeParameter": 0_i32,
         }], "activeSignature": 0_i32, "activeParameter": 0_i32}),
         "the first argument of the sibling's `pick`: {answer}"
     );

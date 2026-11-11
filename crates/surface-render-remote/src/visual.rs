@@ -29,7 +29,8 @@
 //! a time is in µs below 1 ms and in ms above, and bytes are in B, KiB and
 //! MiB. A sparkline is 32 cells of the eight block elements `▁▂▃▄▅▆▇█` and its
 //! last value as a numeral. A label is the name of its field. An absent datum
-//! draws nothing.
+//! draws nothing. A marked text draws its marked run underlined, and an
+//! underline anywhere else is decoration.
 //!
 //! Each rule is one private function named by the rule's slug, over a
 //! [`Shown`]: the frame, its rendering, and the frame and rendering before it
@@ -54,6 +55,8 @@ use core::num::NonZeroU64;
 use core::time::Duration;
 
 use anodized::spec;
+
+use crate::present::ByteRange;
 
 /// How far a layer vouches for what a mark shows: the one variable that a
 /// mark's hue and glyph carry.
@@ -759,6 +762,8 @@ pub enum Attribute
     Border,
     /// The cell drawn on and off in time.
     Blink,
+    /// A line drawn under the run of the cell's text that its datum marks.
+    Underline(ByteRange),
 }
 
 /// What a cell shows of its field: the field's name, or its datum.
@@ -981,6 +986,15 @@ pub enum Datum
     Absent,
     /// A text.
     Text(String),
+    /// A text with one run of it marked: in a type, the parameter that a slot
+    /// fills.
+    Marked
+    {
+        /// The text.
+        text: String,
+        /// The run of `text` that is marked.
+        run: ByteRange,
+    },
     /// A count.
     Count(Count),
     /// A time, and the window that bounds it when the producer states one: a
@@ -1334,7 +1348,7 @@ fn quantity(datum: &Datum) -> Option<()>
         | Datum::Ratio { .. }
         | Datum::Samples(_)
         | Datum::Comparison { .. } => Some(()),
-        Datum::Absent | Datum::Text(_) | Datum::Warrant(_) => None,
+        Datum::Absent | Datum::Text(_) | Datum::Marked { .. } | Datum::Warrant(_) => None,
     }
 }
 
@@ -1384,8 +1398,8 @@ fn ink_is_data(shown: &Shown<'_>) -> Result<(), Spot>
     )
 }
 
-/// `no-decoration`: no background, no border, and no line drawn as text that
-/// its datum does not hold.
+/// `no-decoration`: no background, no border, no line drawn as text that its
+/// datum does not hold, and no underline but the run that its datum marks.
 ///
 /// # Specification
 /// trivial.
@@ -1393,19 +1407,32 @@ fn no_decoration(shown: &Shown<'_>) -> Result<(), Spot>
 {
     let ruled = |cell: &Cell| {
         let spelled = match encoded(shown.frame, cell).map(|field| &field.datum) {
-            Some(&Datum::Text(ref text)) => text.as_str(),
+            Some(&(Datum::Text(ref text) | Datum::Marked { ref text, .. })) => text.as_str(),
             Some(_) | None => "",
         };
         cell.text
             .chars()
             .any(|drawn| ('\u{2500}' ..= '\u{257f}').contains(&drawn) && !spelled.contains(drawn))
     };
+    let marked = |cell: &Cell, underlined: ByteRange| {
+        matches!(
+            encoded(shown.frame, cell).map(|field| &field.datum),
+            Some(&Datum::Marked { run, .. }) if run == underlined
+        )
+    };
     first(
         cells(shown.rendering)
             .filter(|&(_, cell)| {
                 ruled(cell)
-                    || cell.attributes.iter().any(|attribute| {
-                        matches!(*attribute, Attribute::Background(_) | Attribute::Border)
+                    || cell.attributes.iter().any(|attribute| match *attribute {
+                        Attribute::Background(_) | Attribute::Border => true,
+                        Attribute::Underline(run) => !marked(cell, run),
+                        Attribute::Hue(_)
+                        | Attribute::Bold
+                        | Attribute::Italic
+                        | Attribute::Faint
+                        | Attribute::Opacity
+                        | Attribute::Blink => false,
                     })
             })
             .map(|(at, _)| Spot::Cell(at)),
@@ -1432,7 +1459,8 @@ fn hue_is_warrant(shown: &Shown<'_>) -> Result<(), Spot>
                     | Attribute::Opacity
                     | Attribute::Background(_)
                     | Attribute::Border
-                    | Attribute::Blink => false,
+                    | Attribute::Blink
+                    | Attribute::Underline(_) => false,
                 })
             })
             .map(|(at, _)| Spot::Cell(at)),

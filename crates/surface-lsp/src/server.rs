@@ -247,6 +247,7 @@ use crate::protocol::ShadowingSetting;
 use crate::protocol::ShowDocumentParams;
 use crate::protocol::ShowsDocuments;
 use crate::protocol::ShowsProgress;
+use crate::protocol::SignatureParams;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
 use crate::protocol::TakesSnippets;
@@ -342,7 +343,9 @@ use crate::search::FOUND_HELD;
 use crate::search::Query;
 use crate::session_trace::SessionTrace;
 use crate::shadowed;
+use crate::signature::Opened;
 use crate::signature::Signatures;
+use crate::signature::card;
 use crate::signature::help;
 use crate::signature::stack;
 use crate::sweep::Seen;
@@ -1511,6 +1514,12 @@ pub struct Workspace
     /// Where each render-bus connection hears which document's kernel tiers
     /// an admission settled.
     accountants: BTreeMap<Peer, Sender<DocumentUri>>,
+    /// Where each render-bus connection hears which document's cursor moved.
+    stackers: BTreeMap<Peer, Sender<DocumentUri>>,
+    /// The cursor that a signature-help or a context-stack request named last
+    /// in the latest copy of each document: where the render bus reads the
+    /// stack card. What the editor asked, so it changes under a shared borrow.
+    cursors: RefCell<BTreeMap<DocumentUri, Position>>,
     /// The spelling its user's configuration names: what a connection writes
     /// types in until its project's manifest or its editor's
     /// `gandr.presentation.spelling` says otherwise, and what a query writes
@@ -1767,6 +1776,63 @@ impl Workspace
     )
     {
         let _prior = self.accountants.insert(peer, accountant);
+    }
+
+    /// Admit `peer` as a stacker: the URI of each document whose cursor a
+    /// signature-help or a context-stack request moved goes to `stacker`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn watch_stacks(
+        &mut self,
+        peer: Peer,
+        stacker: Sender<DocumentUri>,
+    )
+    {
+        let _prior = self.stackers.insert(peer, stacker);
+    }
+
+    /// Keep `position` as the cursor of the document at `uri` when `peer` is
+    /// answered from its latest copy, and tell every stacker when the cursor
+    /// moved.
+    ///
+    /// # Specification
+    /// trivial.
+    fn moved(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    )
+    {
+        let latest = self
+            .documents
+            .get(uri)
+            .is_some_and(|held| held.latest == peer || matches!(held.own(peer), Maybe::Absent(_)));
+        if !latest {
+            return;
+        }
+        // An unmoved cursor tells no stacker, and a moved one is kept in place:
+        // only a document's first cursor copies its URI.
+        let mut cursors = self.cursors.borrow_mut();
+        let moved = match cursors.get_mut(uri) {
+            Some(held) if *held == position => false,
+            Some(held) => {
+                *held = position;
+                true
+            },
+            None => {
+                let _prior = cursors.insert(uri.clone(), position);
+                true
+            },
+        };
+        drop(cursors);
+        if moved {
+            for stacker in self.stackers.values() {
+                let _gone = stacker.send(uri.clone());
+            }
+        }
     }
 
     /// Admit `peer`, a hub connection, as an editor: the paths of the held
@@ -2066,6 +2132,56 @@ impl Workspace
         })
     }
 
+    /// The render bus's stack card of the document at `uri`: the context stack
+    /// of its latest copy at the cursor a request named last, each type spelled
+    /// as a query spells it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` for a document no connection holds, one with no
+    ///   cursor, and one whose session did not build; otherwise a frame scoped
+    ///   to the document at its latest copy's version, carrying the [`card`] of
+    ///   that copy at the cursor.
+    /// - provides: what the render-bus face sends when the cursor moves or the
+    ///   stack at it changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view attached to a hub hears the card of the cursor
+    ///   the editor's signature help names, and a card again once an edit
+    ///   changes the stack there.
+    /// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
+    #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
+    #[inline]
+    #[must_use]
+    pub fn stacked(
+        &self,
+        uri: &DocumentUri,
+    ) -> Option<RenderFrame>
+    {
+        let position = *self.cursors.borrow().get(uri)?;
+        let held = self.documents.get(uri)?;
+        let document = &held.document;
+        let hovering = document.hovering(uri, &self.shadowing(held.latest)).ok()?;
+        let style = Style {
+            spelling: self.spelling,
+            ..STYLE
+        };
+        Some(RenderFrame::stack(
+            DocId {
+                uri: uri.into(),
+                version: document.version.into(),
+            },
+            card(
+                document.text.source(),
+                document.text.reading(),
+                hovering,
+                position,
+                style.printed(),
+            ),
+        ))
+    }
+
     /// Judge each of `changes`, applied alone to the latest copy of the
     /// document at `uri` as it stands, without submitting any: that copy's
     /// version and each candidate's result, best first.
@@ -2303,7 +2419,7 @@ impl Workspace
         )
     )]
     #[spec(ensures: !self.watchers.contains_key(&peer) && !self.accountants.contains_key(&peer)
-        && !self.editors.contains_key(&peer)
+        && !self.stackers.contains_key(&peer) && !self.editors.contains_key(&peer)
         && self.documents.values().all(|held| matches!(held.own(peer), Maybe::Absent(_))))]
     #[inline]
     pub fn depart(
@@ -2313,6 +2429,7 @@ impl Workspace
     {
         let _watcher = self.watchers.remove(&peer);
         let _accountant = self.accountants.remove(&peer);
+        let _stacker = self.stackers.remove(&peer);
         let _editor = self.editors.remove(&peer);
         let _reporting = self.reporting.remove(&peer);
         #[cfg(feature = "instrument")]
@@ -2391,6 +2508,7 @@ impl Workspace
         }
         if held.latest == peer && held.others.is_empty() {
             let _forgotten = self.paths.remove(&held.path);
+            let _cursor = self.cursors.get_mut().remove(&uri);
             if let Some(set) = handed_on(&held.document) {
                 let _replaced = self.handed.insert(uri, set);
             }
@@ -5190,16 +5308,27 @@ impl Server
                 }
             },
             (Phase::Running, "textDocument/signatureHelp") => {
-                match serde_json::from_value::<PositionParams>(params) {
-                    Ok(params) => success(
-                        id,
-                        workspace.signature_help(
-                            &params.text_document.uri,
-                            self.peer,
-                            params.position,
-                            self.offsets,
-                        ),
-                    ),
+                match serde_json::from_value::<SignatureParams>(params) {
+                    Ok(params) => {
+                        let spaced = params.context.is_some_and(|context| {
+                            context.trigger_character.as_deref() == Some(" ")
+                        });
+                        success(
+                            id,
+                            workspace.signature_help(
+                                &params.text_document.uri,
+                                self.peer,
+                                params.position,
+                                (self.offsets, self.style.printed()),
+                                if spaced {
+                                    Opened::Spaced
+                                }
+                                else {
+                                    Opened::Asked
+                                },
+                            ),
+                        )
+                    },
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -7514,7 +7643,9 @@ impl Workspace
 
     /// What a signature-help request at `position` of the copy of the document
     /// at `uri` that `peer` is answered from answers, to a client taking a
-    /// parameter as its place in the label when `offsets` holds.
+    /// parameter as its place in the label when `offsets` holds, each type
+    /// spelled in `style`, asked as `opened` says. The position becomes the
+    /// document's cursor when `peer` is answered from its latest copy.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
@@ -7536,13 +7667,15 @@ impl Workspace
         uri: &DocumentUri,
         peer: Peer,
         position: Position,
-        offsets: LabelOffsets,
+        written: (LabelOffsets, gandr_surface_pretty::Style),
+        opened: Opened,
     ) -> Answer
     {
         let Maybe::Present(document) = self.view(uri, peer)
         else {
             return Answer::Nothing;
         };
+        self.moved(uri, peer, position);
         document
             .hovering(uri, &self.shadowing(peer))
             .map_or(Answer::Nothing, |hovering| {
@@ -7551,14 +7684,16 @@ impl Workspace
                     document.text.reading(),
                     hovering,
                     position,
-                    offsets,
+                    written,
+                    opened,
                 )
             })
     }
 
     /// What a `gandr/stack` request at `position` of the copy of the document
     /// at `uri` that `peer` is answered from answers, each type spelled in
-    /// `style`.
+    /// `style`. The position becomes the document's cursor when `peer` is
+    /// answered from its latest copy.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
@@ -7587,6 +7722,7 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
+        self.moved(uri, peer, position);
         document
             .hovering(uri, &self.shadowing(peer))
             .map_or(Answer::Nothing, |hovering| {
@@ -10365,7 +10501,7 @@ mod tests
                         "inlayHintProvider":{"resolveProvider":true},
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
-                        "signatureHelpProvider":{"triggerCharacters":["(",","],"retriggerCharacters":[")"]},
+                        "signatureHelpProvider":{"triggerCharacters":["(",","," "],"retriggerCharacters":[")"]},
                         "definitionProvider":true,
                         "declarationProvider":true,
                         "typeDefinitionProvider":true,
@@ -13278,7 +13414,8 @@ mod tests
             wire(Json(&format!(
                 r#"[{{"jsonrpc":"2.0","id":9,"result":{{"signatures":[{{
                     "label":"plus(n : Nat, m : Nat) -> -F Nat",
-                    "parameters":[{{"label":[5,12]}},{{"label":[14,21]}}]}}],
+                    "parameters":[{{"label":[5,12]}},{{"label":[14,21]}}],
+                    "activeParameter":{active}}}],
                     "activeSignature":0,"activeParameter":{active}}}}}]"#
             )))
         };
@@ -13296,20 +13433,22 @@ mod tests
             r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                 "label":"Succ : (n : Nat) --> Nat",
                 "documentation":{"kind":"markdown","value":"One more."},
-                "parameters":[{"label":[8,15]}]}],
+                "parameters":[{"label":[8,15]}],"activeParameter":0},{
+                "label":"plus(n : Nat, m : Nat) -> -F Nat",
+                "parameters":[{"label":[5,12]},{"label":[14,21]}],"activeParameter":1}],
                 "activeSignature":0,"activeParameter":0}}]"#,
         ));
         assert_eq!(
             ask(&mut offsets, 9, 33),
             succ,
-            "a constructor applied to no field yet, though the lowering refuses `f`"
+            "a constructor applied to no field yet, though the lowering refuses `f`, and the call around it"
         );
         assert_eq!(
             ask(&mut texts, 9, 27),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                     "label":"plus(n : Nat, m : Nat) -> -F Nat",
-                    "parameters":[{"label":"n : Nat"},{"label":"m : Nat"}]}],
+                    "parameters":[{"label":"n : Nat"},{"label":"m : Nat"}],"activeParameter":1}],
                     "activeSignature":0,"activeParameter":1}}]"#
             )),
             "a client taking no offsets: each parameter as its text"
@@ -13319,10 +13458,13 @@ mod tests
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                     "label":"plus(n : Nat, m : Nat) -> -F Nat",
-                    "parameters":[{"label":[5,12]},{"label":[14,21]}]}],
+                    "parameters":[{"label":[5,12]},{"label":[14,21]}],"activeParameter":1},{
+                    "label":"Succ : (n : Nat) --> Nat",
+                    "documentation":{"kind":"markdown","value":"One more."},
+                    "parameters":[{"label":[8,15]}],"activeParameter":0}],
                     "activeSignature":0,"activeParameter":1}}]"#
             )),
-            "a recursive call, by its claim's name"
+            "a recursive call, by its claim's name, inside the constructor it fills"
         );
         assert_eq!(
             ask(&mut offsets, 9, 36),
@@ -13334,7 +13476,7 @@ mod tests
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                     "label":"g : +U (Nat -> -F Nat)",
-                    "parameters":[{"label":[8,11]}]}],
+                    "parameters":[{"label":[8,11]}],"activeParameter":0}],
                     "activeSignature":0,"activeParameter":0}}]"#
             )),
             "a parameter typed by a function, by its written type"
@@ -13371,7 +13513,7 @@ mod tests
                     "label":"add(a : Integer, b : Integer) -> -F Integer",
                     "parameters":[
                         {"label":[4,15],"documentation":{"kind":"markdown","value":"The first."}},
-                        {"label":[17,28]}]}],
+                        {"label":[17,28]}],"activeParameter":0}],
                     "activeSignature":0,"activeParameter":0}}]"#
             )),
         );
@@ -13471,28 +13613,57 @@ mod tests
                 stacked,
                 "{main}: the spines around the marker, innermost first"
             );
+            // Each row as the help writes its signature, and each signature
+            // the help answers, at one position, kept across positions.
+            let mut spines: Vec<(Value, Value)> = Vec::new();
+            let mut signed: Vec<(Value, Value)> = Vec::new();
             for (line, written) in text.lines().enumerate() {
                 for character in 0 ..= written.len() {
                     let stack = ask(&mut server, "gandr/stack", (line, character));
                     let help = ask(&mut server, "textDocument/signatureHelp", (line, character));
-                    let first = stack.as_array().and_then(|rows| rows.first());
-                    match first.filter(|first| first["declared"].is_string()) {
-                        Some(first) => {
-                            let (slot, arity) = (&first["slot"], &first["arity"]);
-                            assert_eq!(
-                                (&help["signatures"][0]["label"], &help["activeParameter"]),
-                                (
-                                    &first["declared"],
-                                    &if slot.as_u64() < arity.as_u64() {
-                                        slot.clone()
-                                    }
-                                    else {
-                                        Value::Null
-                                    }
-                                ),
-                                "{line}:{character} of {main}: the help answers the innermost spine"
-                            );
+                    // A row's signature: the declared head, or the head and
+                    // its type, and the slot while the declared head takes a
+                    // parameter there.
+                    spines.clear();
+                    spines.extend(stack.as_array().into_iter().flatten().map(|row| {
+                        let declared = row["declared"].is_string();
+                        let label = match (declared, row["type"].as_str()) {
+                            (true, _) => row["declared"].clone(),
+                            (false, Some(ty)) => Value::from(format!(
+                                "{} : {ty}",
+                                row["head"].as_str().unwrap_or_default()
+                            )),
+                            (false, None) => row["head"].clone(),
+                        };
+                        let owed = declared && row["slot"].as_u64() < row["arity"].as_u64();
+                        (
+                            label,
+                            if owed {
+                                row["slot"].clone()
+                            }
+                            else {
+                                Value::Null
+                            },
+                        )
+                    }));
+                    signed.clear();
+                    signed.extend(help["signatures"].as_array().into_iter().flatten().map(
+                        |signature| {
+                            (
+                                signature["label"].clone(),
+                                signature["activeParameter"].clone(),
+                            )
                         },
+                    ));
+                    assert_eq!(
+                        signed, spines,
+                        "{line}:{character} of {main}: one signature per spine, the innermost first"
+                    );
+                    match spines.first() {
+                        Some(&(_, ref active)) => assert_eq!(
+                            &help["activeParameter"], active,
+                            "{line}:{character} of {main}: the innermost spine is active"
+                        ),
                         None => {
                             assert_eq!(help, Value::Null, "{line}:{character} of {main}: no help");
                         },
@@ -13517,6 +13688,92 @@ mod tests
                 }
             }
         }
+    }
+
+    /// #4697: a space after a head whose type still takes arguments opens the
+    /// help at the slot the space opens, a space after a saturated call or no
+    /// head opens none, and a space in a nested call answers each spine
+    /// around it, the innermost active.
+    #[test]
+    fn a_space_opens_the_help_while_the_spine_owes_an_argument_4697()
+    {
+        let heads = include_str!(
+            "server/unformatted/the-context-stack-agrees-with-the-hover-and-the-signature-help-heads.gandr"
+        );
+        // The help a space typed at the end of `marker` in `main` opens: each
+        // signature's label and its active parameter, none for `null`.
+        let spaced = |main: &str, marker: &str| {
+            let text = format!("{heads}{main}");
+            let mut server = initialized();
+            let opened = serde_json::json!({
+                "jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///tmp/spaced.gandr",
+                    "languageId": "gandr", "version": 1_i32, "text": text}},
+            });
+            let _published = send(&mut server, Json(&opened.to_string()));
+            let line = text.lines().count().saturating_sub(1);
+            let character = main
+                .find(marker)
+                .expect("the marker occurs")
+                .saturating_add(marker.len());
+            let answer = asked_at(
+                &mut server,
+                &serde_json::json!({
+                    "jsonrpc": "2.0", "id": 9_i32, "method": "textDocument/signatureHelp",
+                    "params": {"textDocument": {"uri": "file:///tmp/spaced.gandr"},
+                        "position": {"line": line, "character": character},
+                        "context": {"triggerKind": 2_i32, "triggerCharacter": " ",
+                            "isRetrigger": false}},
+                }),
+            );
+            answer["signatures"].as_array().map(|signatures| {
+                signatures
+                    .iter()
+                    .map(|signature| {
+                        (
+                            String::from(signature["label"].as_str().unwrap_or_default()),
+                            signature["activeParameter"].as_u64(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        let head = |name: &str, active: u64| {
+            (
+                format!("{name}(a : Integer, b : Integer) -> -F Integer"),
+                Some(active),
+            )
+        };
+        assert_eq!(
+            spaced("def main() -> -F Integer { f }\n", "{ f "),
+            Some(Vec::from([head("f", 0)])),
+            "a space after a head opens its first slot"
+        );
+        assert_eq!(
+            spaced("def main() -> -F Integer { f 1 }\n", "f 1 "),
+            Some(Vec::from([head("f", 1)])),
+            "a space after an argument the head still owes opens the next slot"
+        );
+        assert_eq!(
+            spaced("def main() -> -F Integer { f 1 2 }\n", "f 1 2 "),
+            None,
+            "a space after a saturated call opens nothing"
+        );
+        assert_eq!(
+            spaced("def main() -> -F Integer { g 1 (f ) }\n", "(f "),
+            Some(Vec::from([head("f", 0), head("g", 1)])),
+            "in a nested call the innermost spine is active and the outer ones follow it"
+        );
+        assert_eq!(
+            spaced("def main() -> -F Integer { f  (h 2) }\n", "{ f "),
+            Some(Vec::from([head("f", 0)])),
+            "a space typed back inside a spine answers the slot it fills"
+        );
+        assert_eq!(
+            spaced("def main() -> -F Integer { return 1 }\n", "return "),
+            None,
+            "a space after no head opens nothing"
+        );
     }
 
     #[test]

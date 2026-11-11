@@ -19,14 +19,16 @@
 //! # Session shape
 //!
 //! The message set is the projection of one binary session,
-//! `?Attach . !Hello . μX. (!Frame . X & !Activity . X & ?Resync . X & ?Detach
-//! . end)`, so a typed endpoint can carry the same frames as its messages.
+//! `?Attach . !Hello . μX. (!Frame . X & !Stack . X & !Activity . X & ?Resync
+//! . X & ?Detach . end)`, so a typed endpoint can carry the same frames as its
+//! messages.
 //!
 //! # The frame
 //!
-//! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame` and `Resync`
-//! are document-scoped: they carry the document's URI and the editor's version
-//! of it, the version the report describes, and a renderer paints a report only
+//! A `RenderFrame` is a `FrameBody` under a `FrameScope`. `Frame`, `Stack` and
+//! `Resync` are document-scoped: they carry the document's URI and the
+//! editor's version of it, the version the report describes, and a renderer
+//! paints a report only
 //! while that version matches the buffer it shows, asking for a resync
 //! otherwise, so a stale report is dropped rather than painted. `Hello`, the
 //! documents a server tracks, `Activity`, the pool's activity at one tick,
@@ -59,6 +61,7 @@ use crate::present::DiagCard;
 use crate::present::GoalCard;
 use crate::present::HlSpan;
 use crate::present::MarkSpan;
+use crate::stack::StackCard;
 
 /// A render-bus wire schema version.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -283,6 +286,13 @@ pub enum FrameBody
         /// The edits, to be applied in order.
         edits: Vec<AccountEdit>,
     },
+    /// The context stack at the cursor of the document version, whole.
+    /// Document-scoped.
+    Stack
+    {
+        /// The card.
+        card: StackCard,
+    },
     /// Server to client, for each tick of the hub's work ledger that changes
     /// it: the activity of the hub's pool. Connection-scoped.
     Activity
@@ -298,10 +308,10 @@ pub enum FrameBody
 ///
 /// # Specification
 /// - ensures: a [`FrameBody::Frame`], [`FrameBody::Resync`],
-///   [`FrameBody::Accounts`] or [`FrameBody::AccountPatch`] is document-scoped
-///   and a [`FrameBody::Hello`], [`FrameBody::Activity`] or
-///   [`FrameBody::Detach`] is connection-scoped, in every frame built by the
-///   seven constructors or decoded.
+///   [`FrameBody::Accounts`], [`FrameBody::AccountPatch`] or
+///   [`FrameBody::Stack`] is document-scoped and a [`FrameBody::Hello`],
+///   [`FrameBody::Activity`] or [`FrameBody::Detach`] is connection-scoped, in
+///   every frame built by the eight constructors or decoded.
 /// - provides: under the `serde` feature, the wire image `{"schema_version",
 ///   "doc_uri", "doc_version", "body"}`, the two routing keys `null` for a
 ///   connection-scoped frame; the decode refuses another schema version, keys
@@ -424,7 +434,7 @@ impl RenderFrame
     /// # Adequacy
     /// - hypothesis: L3 — the document routing and the cards survive a round
     ///   trip through JSON, and the decode refuses the body unrouted.
-    /// - witness: `wire::tests::the_account_bodies_are_document_scoped`
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| matches!(
@@ -455,7 +465,7 @@ impl RenderFrame
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`RenderFrame::accounts`].
-    /// - witness: `wire::tests::the_account_bodies_are_document_scoped`
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| matches!(
@@ -470,6 +480,38 @@ impl RenderFrame
         Self {
             scope: FrameScope::Document(document),
             body: FrameBody::AccountPatch { edits },
+        }
+    }
+
+    /// The context stack at the cursor of `document`: `card`, whole.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a frame scoped to `document` whose body is
+    ///   [`FrameBody::Stack`] carrying `card` unchanged.
+    /// - provides: the card the stack pane paints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a card of two spines, one with a filled parameter and
+    ///   one with no declared head, survives a round trip through JSON, and the
+    ///   decode refuses the body unrouted.
+    /// - witness: `wire::tests::the_card_bodies_are_document_scoped`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Stack { .. }),
+    ))]
+    pub const fn stack(
+        document: DocId,
+        card: StackCard,
+    ) -> Self
+    {
+        Self {
+            scope: FrameScope::Document(document),
+            body: FrameBody::Stack { card },
         }
     }
 
@@ -657,6 +699,8 @@ enum DocumentBody
     Accounts,
     /// [`FrameBody::AccountPatch`].
     AccountPatch,
+    /// [`FrameBody::Stack`].
+    Stack,
 }
 
 /// Why a decoded image is not a frame.
@@ -738,6 +782,7 @@ impl fmt::Display for FrameDecodeError
                     DocumentBody::Resync => "resync",
                     DocumentBody::Accounts => "accounts",
                     DocumentBody::AccountPatch => "account_patch",
+                    DocumentBody::Stack => "stack",
                 };
                 write!(f, "{name} render frames require document routing keys")
             },
@@ -793,13 +838,15 @@ impl RenderFrame
                 FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
-                | FrameBody::AccountPatch { .. } => None,
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. } => None,
             },
             unrouted = match wire.body {
                 FrameBody::Frame { .. } => Some(DocumentBody::Frame),
                 FrameBody::Resync => Some(DocumentBody::Resync),
                 FrameBody::Accounts { .. } => Some(DocumentBody::Accounts),
                 FrameBody::AccountPatch { .. } => Some(DocumentBody::AccountPatch),
+                FrameBody::Stack { .. } => Some(DocumentBody::Stack),
                 FrameBody::Hello { .. } | FrameBody::Activity { .. } | FrameBody::Detach => None,
             },
         ],
@@ -844,7 +891,8 @@ impl RenderFrame
                 &(FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
-                | FrameBody::AccountPatch { .. }),
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. }),
                 &FrameScope::Document(_),
             ) => None,
             (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
@@ -868,6 +916,7 @@ impl RenderFrame
             (&FrameBody::AccountPatch { .. }, &FrameScope::Connection) => {
                 Some(DocumentBody::AccountPatch)
             },
+            (&FrameBody::Stack { .. }, &FrameScope::Connection) => Some(DocumentBody::Stack),
         };
         if let Some(body) = unrouted {
             return Err(FrameDecodeError::DocumentScopedUnrouted { body });
@@ -918,7 +967,8 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
             | (&FrameScope::Document(_), &(FrameBody::Frame { .. }
                 | FrameBody::Resync
                 | FrameBody::Accounts { .. }
-                | FrameBody::AccountPatch { .. })),
+                | FrameBody::AccountPatch { .. }
+                | FrameBody::Stack { .. })),
     )))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -959,6 +1009,8 @@ mod tests
     use crate::present::GoalCard;
     use crate::present::HlRole;
     use crate::present::HlSpan;
+    use crate::stack::SpineRow;
+    use crate::stack::StackCard;
     use crate::visual::Count;
     use crate::visual::SampleUnit;
     use crate::visual::Samples;
@@ -1214,7 +1266,7 @@ mod tests
     }
 
     #[test]
-    fn the_account_bodies_are_document_scoped()
+    fn the_card_bodies_are_document_scoped()
     {
         let card = AccountCard {
             key: AccountKey::from(alloc::string::String::from("k")),
@@ -1239,6 +1291,36 @@ mod tests
                     AccountEdit::Drop { key: card.key },
                 ]),
                 super::DocumentBody::AccountPatch,
+            ),
+            (
+                RenderFrame::stack(document(Version(4)), StackCard {
+                    offset: ByteOffset::from(9_usize),
+                    rows: vec![
+                        SpineRow {
+                            head: alloc::string::String::from("plus"),
+                            ty: Some(alloc::string::String::from("(n : Nat, m : Nat) -> -F Nat")),
+                            filled: Some(
+                                ByteRange::new(
+                                    ByteOffset::from(10_usize),
+                                    ByteOffset::from(17_usize),
+                                )
+                                .expect("an ordered range"),
+                            ),
+                            slot: Count(1),
+                            arity: Some(Count(2)),
+                            expected: Some(alloc::string::String::from("Nat")),
+                        },
+                        SpineRow {
+                            head: alloc::string::String::from("f"),
+                            ty: None,
+                            filled: None,
+                            slot: Count(0),
+                            arity: None,
+                            expected: None,
+                        },
+                    ],
+                }),
+                super::DocumentBody::Stack,
             ),
         ];
         for (frame, body) in frames {

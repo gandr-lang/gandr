@@ -3,7 +3,7 @@
 //!
 //! The crate parses, lowers, types and marks nothing, and names no other
 //! crate of the workspace, so a language server, a terminal face or an agent
-//! links it without linking the checker. Six modules:
+//! links it without linking the checker. Seven modules:
 //!
 //! - `present`: highlight and mark spans over validated byte ranges, diagnostic
 //!   and goal cards, transcript blocks, and the projection from a byte offset
@@ -16,6 +16,8 @@
 //!   the next.
 //! - `activity`: the [`PoolActivity`] of the hub's pool at one tick, one row
 //!   for each core and the totals row.
+//! - `stack`: the [`StackCard`] of a document, the context stack at its cursor,
+//!   one [`SpineRow`] for each spine, the innermost first.
 //! - `wire`: the render-bus [`RenderFrame`] — a document-scoped or
 //!   connection-scoped [`FrameBody`] under the wire schema version
 //!   [`WIRE_SCHEMA_VERSION`].
@@ -115,6 +117,7 @@
 //! | `Warrant`, `Glyph`, `Frame`, `Rendering`, `RULES`, `conform` | the language server's tier lenses, which mark each declaration with its warrant, and the side view in `gandr-surface-tui`, whose rendering every rule checks |
 //! | `AccountCard`, `AccountEdit`, `account_edits`, `Samples`, `Sparkline::of` | the engine hub's render-bus face, which sends each document's account and its patches, and the side view, which shows one row per declaration |
 //! | `PoolActivity`, `CoreActivity`, `Load`, `Lengths`, `TaskKind` | the engine hub's render-bus face, which folds its work ledger once for each tick, and the side view, whose activity pane shows one row per core |
+//! | `StackCard`, `SpineRow`, `Datum::Marked`, `Attribute::Underline` | the engine hub's render-bus face, which sends the stack at the cursor that the editor asked about last, and the side view, whose stack pane underlines the parameter of the cursor's slot |
 //!
 //! # A leaf beside the pipeline
 //!
@@ -189,6 +192,7 @@ mod account;
 mod activity;
 mod diagnostic;
 mod present;
+mod stack;
 mod visual;
 mod wire;
 
@@ -232,6 +236,8 @@ pub use crate::present::Utf16Column;
 pub use crate::present::Utf16Pos;
 pub use crate::present::byte_of_pos;
 pub use crate::present::pos_of_byte;
+pub use crate::stack::SpineRow;
+pub use crate::stack::StackCard;
 pub use crate::visual::Align;
 pub use crate::visual::At;
 pub use crate::visual::Attribute;
