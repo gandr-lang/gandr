@@ -311,6 +311,7 @@ fn erase(
         motives: &BTreeMap::new(),
         payloads: &BTreeMap::new(),
         handled: &BTreeMap::new(),
+        rows: &crate::program::Rows::default(),
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         restatements: &BTreeMap::new(),
@@ -3046,6 +3047,9 @@ fn native_lists_check_and_round_trip()
     );
 }
 
+/// A declaration at a row the bridge has no model of, a row with divergence,
+/// is refused by name at its type; so are a reset, a stack and a resumption
+/// of a reified stack. A deep handler crosses.
 #[test]
 fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
 {
@@ -3062,8 +3066,14 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
         reply: unit_type,
     }])
     .expect("one operation");
-    let effectful =
-        arena.comp_type_returner_with_effects(unit_type, EffectRow::singleton(interface.clone()));
+    // Divergence waits on the delay model, the second unit of #2742.
+    let divergent = EffectRow::singleton(interface.clone())
+        .union(
+            &EffectRow::singleton(gandr_core_term::effect::host::partiality()),
+            &arena,
+        )
+        .expect("divergence joins");
+    let effectful = arena.comp_type_returner_with_effects(unit_type, divergent);
     let effectful_type = arena.value_type_thunk(effectful);
     let pure = arena.comp_type_returner(unit_type);
     let pure_type = arena.value_type_thunk(pure);
@@ -3256,7 +3266,7 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
 /// A deep handler of one operation crosses as the fold of its effect's free
 /// model: a clause that resumes the subject and one that answers for it each
 /// cross, through the one model the kernel admits ahead of the first, named
-/// by its admission ordinal.
+/// by its level and its interface.
 #[test]
 fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
 {
@@ -3334,7 +3344,7 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
         .iter()
         .map(|marked| marked.declaration().name().segments().to_vec())
         .collect::<Vec<_>>();
-    let model = ["effect", "free", "0"]
+    let model = ["effect", "free", "0", "Ask"]
         .map(|segment| NameSegment::from_text(segment.into()).expect("a name segment"));
     assert_eq!(
         names.len(),
@@ -3360,6 +3370,259 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
         [1, 2],
         "`Return(x)`, then `ask(p, k)`"
     );
+}
+
+/// The declarations of a row of operations `Ask`, `ask : Unit ↠ Integer` and
+/// `tell : Integer ↠ Unit`: `asked = x ← ask(); return x`, and `twice = x ←
+/// force asked; y ← ask(); return y`, which binds a call of the first. Both
+/// stand at `U(F^{Ask} Integer)`.
+///
+/// # Specification
+/// trivial.
+fn asking_declarations(arena: &mut CoreArena) -> [Declaration; 2]
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let ask = EffectSig::new(EffectName::from("Ask"), [
+        EffectOp {
+            name: OperationName::from("ask"),
+            payload: unit_type,
+            reply: integer,
+        },
+        EffectOp {
+            name: OperationName::from("tell"),
+            payload: integer,
+            reply: unit_type,
+        },
+    ])
+    .expect("two operations");
+    let returner =
+        arena.comp_type_returner_with_effects(integer, EffectRow::singleton(ask.clone()));
+    let declared = arena.value_type_thunk(returner);
+    let request = |arena: &mut CoreArena| {
+        let unit = arena.value_unit();
+        let requested = arena.computation_perform(ask.clone(), "ask".into(), unit);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        arena.computation_bind(requested, returned)
+    };
+    let asked = request(arena);
+    let asked = arena.value_thunk(asked);
+    let first = arena.value_constant(ConstantIndex::from(0_usize));
+    let called = arena.computation_force(first);
+    let again = request(arena);
+    let twice = arena.computation_bind(called, again);
+    let twice = arena.value_thunk(twice);
+    [
+        declaration(At(0), Maybe::Present(declared), Maybe::Present(asked)),
+        declaration(At(1), Maybe::Present(declared), Maybe::Present(twice)),
+    ]
+}
+
+/// Two declarations at one row of operations cross as programs of one free
+/// model of the row: the kernel admits the model once, ahead of the first,
+/// with `Return(x)` and one constructor for each operation, and checks the
+/// request, the bound call and the return of each. The row and the level fix
+/// the model's name, so a second session names it alike.
+#[test]
+fn two_declarations_at_one_row_read_one_model_6642()
+{
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::NameSegment;
+    let session = || {
+        let mut arena = CoreArena::new();
+        let module = asking_declarations(&mut arena);
+        let (_, readmission) = judge_and_readmit(&mut arena, &module);
+        for crossed in [0_usize, 1] {
+            assert!(
+                matches!(
+                    readmission.readmitted()[crossed].outcome(),
+                    Outcome::Defined { .. }
+                ),
+                "the declaration at {crossed} crosses: {:?}",
+                readmission.readmitted()[crossed].outcome()
+            );
+        }
+        decode(readmission.export(BTreeMap::new()).as_image()).expect("the declarations export")
+    };
+    let decoded = session();
+    let names = decoded
+        .declarations()
+        .iter()
+        .map(|marked| marked.declaration().name().clone())
+        .collect::<Vec<_>>();
+    let model = gandr_kernel_term::StructuredName::from(
+        ["effect", "free", "0", "Ask"]
+            .map(|segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+            .to_vec(),
+    );
+    assert_eq!(
+        names.len(),
+        3,
+        "one free model, then the two declarations: {names:?}"
+    );
+    assert_eq!(names[0], model, "the model crosses first, once");
+    let DeclarationContent::Data {
+        ref constructors, ..
+    } = *decoded.declarations()[0].declaration().content()
+    else {
+        panic!("the free model is a data declaration");
+    };
+    assert_eq!(
+        constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+        [1, 2, 2],
+        "`Return(x)`, then `ask(p, k)` and `tell(p, k)`"
+    );
+    let again = session();
+    assert_eq!(
+        again.declarations()[0].declaration().name(),
+        &model,
+        "a second session names the model alike"
+    );
+}
+
+/// A program whose request stands at another operation's tag is the kernel's
+/// refusal: `asked`'s artifact, its request of `ask(())` forged to `tell`'s
+/// tag, passes the unit where `tell` takes an integer.
+#[test]
+fn a_program_at_another_operation_is_the_kernels_refusal_6642()
+{
+    use gandr_kernel_term::Computation as KernelComputation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::MarkedDeclaration;
+    let mut arena = CoreArena::new();
+    let module = asking_declarations(&mut arena);
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let mut declarations = artifact.declarations().to_vec();
+    let mut kernel = artifact.arena().clone();
+    let asked = &mut declarations[1];
+    let DeclarationContent::Def { declared, body } = *asked.declaration().content()
+    else {
+        panic!("`asked` crosses as a definition");
+    };
+    // `return ask((), thunk(λx. return Return(x)))`, forged to read `tell`.
+    let Some(&KernelValue::Thunk(program)) = kernel.value(body)
+    else {
+        panic!("`asked` crosses as a thunk");
+    };
+    let Some(&KernelComputation::Return(requested)) = kernel.computation(program)
+    else {
+        panic!("the program returns its request");
+    };
+    let Some(&KernelValue::Constructor {
+        family,
+        datatype,
+        tag,
+        ref fields,
+    }) = kernel.value(requested)
+    else {
+        panic!("the request is a constructor of the model");
+    };
+    assert_eq!(
+        tag,
+        gandr_kernel_term::ConstructorTag::from(1_usize),
+        "`ask` stands at tag one"
+    );
+    let fields = fields.clone();
+    let forged = kernel.value_constructor(
+        family,
+        datatype,
+        gandr_kernel_term::ConstructorTag::from(2_usize),
+        fields,
+    );
+    let forged = kernel.computation_return(forged);
+    let forged = kernel.value_thunk(forged);
+    let content = DeclarationBuilder::new(&mut kernel).def(
+        asked.declaration().levels().clone(),
+        declared,
+        forged,
+    );
+    *asked = MarkedDeclaration::new(
+        asked.mark(),
+        content.named(asked.declaration().name().clone()),
+    );
+    let refusal = gandr_kernel_core::Environment::replay(kernel, &declarations)
+        .expect_err("the forged request passes the unit where `tell` takes an integer");
+    assert_eq!(refusal.position(), ConstantIndex::from(1_usize));
+}
+
+/// A call at a row folds into a rest that reads a parameter from outside
+/// the call and ends in a pure call: `reading = λn. x ← force asked; y ←
+/// ask(); force same n`, where `same = λm. return m` is pure. The fold takes
+/// the rest as a thunk where the rest stands, so the pure call keeps the
+/// records of the judgement, crosses returning its value as a program, and
+/// the kernel replays the declaration.
+#[test]
+fn a_call_folds_into_a_rest_that_reads_a_parameter_6642()
+{
+    let mut arena = CoreArena::new();
+    let [asked, _] = asking_declarations(&mut arena);
+    let &crate::DeclarationContent::Value {
+        signature: Maybe::Present(declared),
+        ..
+    } = asked.content()
+    else {
+        panic!("`asked` states its type");
+    };
+    let Some(&ValueType::Thunk(returner)) = arena.value_type(declared)
+    else {
+        panic!("`asked` stands at a thunk");
+    };
+    let Some(&gandr_core_term::CompType::Returner { ref effects, .. }) = arena.comp_type(returner)
+    else {
+        panic!("`asked` returns at a row");
+    };
+    let ask = effects
+        .signatures()
+        .next()
+        .cloned()
+        .expect("the row holds `Ask`");
+    let integer = arena.value_type_base(BaseType::Integer);
+    let pure = arena.comp_type_returner(integer);
+    let pure = arena.comp_type_arrow(integer, pure);
+    let pure = arena.value_type_thunk(pure);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let same = arena.computation_return(parameter);
+    let same = arena.computation_lambda(same);
+    let same = arena.value_thunk(same);
+    let reads = arena.comp_type_arrow(integer, returner);
+    let reads = arena.value_type_thunk(reads);
+    let first = arena.value_constant(ConstantIndex::from(0_usize));
+    let called = arena.computation_force(first);
+    let unit = arena.value_unit();
+    let requested = arena.computation_perform(ask, "ask".into(), unit);
+    let pure_call = arena.value_constant(ConstantIndex::from(1_usize));
+    let pure_call = arena.computation_force(pure_call);
+    // Beneath the call's value and the reply, the parameter is the third
+    // binder.
+    let read = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+    let pure_call = arena.computation_application(pure_call, read);
+    let rest = arena.computation_bind(requested, pure_call);
+    let reading = arena.computation_bind(called, rest);
+    let reading = arena.computation_lambda(reading);
+    let reading = arena.value_thunk(reading);
+    let module = [
+        asked,
+        declaration(At(1), Maybe::Present(pure), Maybe::Present(same)),
+        declaration(At(2), Maybe::Present(reads), Maybe::Present(reading)),
+    ];
+    let (_, readmission) = judge_and_readmit(&mut arena, &module);
+    for crossed in [0_usize, 1, 2] {
+        assert!(
+            matches!(
+                readmission.readmitted()[crossed].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the declaration at {crossed} crosses: {:?}",
+            readmission.readmitted()[crossed].outcome()
+        );
+    }
 }
 
 /// A deep handler of two operations crosses as one fold of its effect's free
@@ -5997,6 +6260,7 @@ fn the_machine_faults_are_refused_exactly()
         motives: &BTreeMap::new(),
         payloads: &BTreeMap::new(),
         handled: &BTreeMap::new(),
+        rows: &crate::program::Rows::default(),
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         restatements: &BTreeMap::new(),
@@ -6780,6 +7044,7 @@ fn a_static_lambda_crosses_only_as_a_closed_operator()
         motives: &BTreeMap::new(),
         payloads: &BTreeMap::new(),
         handled: &BTreeMap::new(),
+        rows: &crate::program::Rows::default(),
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         restatements: &BTreeMap::new(),
