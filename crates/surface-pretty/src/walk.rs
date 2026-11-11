@@ -234,6 +234,7 @@ use crate::former::Component;
 use crate::former::Elided;
 use crate::former::Forgotten;
 use crate::former::Former;
+use crate::former::Lift;
 use crate::former::Manifest;
 use crate::former::ModelSlot;
 use crate::former::Name;
@@ -1374,11 +1375,17 @@ where
             Slot::of(second, Admits::ValueType, Binds::ONE),
         ]),
         Former::Arrow { domain, codomain } => Vec::from([value_type(domain), comp_type(codomain)]),
-        // The map stands as the derived transport's motive holds it, one
-        // binder deeper; it names no binder there, so it spells as written.
-        Former::Cong(map, path) => {
-            Vec::from([Slot::of(map, Admits::Value, Binds::ONE), value(path)])
-        },
+        // The map stands as the derived transport's motive holds it, as many
+        // binders deeper as its lift; it names no binder there, so it spells
+        // as written.
+        Former::Cong(map, path, lift) => Vec::from([
+            Slot::of(
+                map,
+                Admits::Value,
+                Binds::intuitionistic(OpenBinders(usize::from(lift))),
+            ),
+            value(path),
+        ]),
         // The surface writes no multiplicity: the walk notes one other than
         // `1` as left out, where it joins the arrow.
         Former::Pi { domain, codomain }
@@ -4884,13 +4891,16 @@ enum Derived<Node>
     /// a)`.
     Inverse(Node),
     /// `Path.ap f p`: `Path.walk (fun (y) { Path[.A = B](f(a), f(y)) }) p
-    /// (Path.here (f a))`.
+    /// (Path.here (f a))`, and above the map's domain the same walk with
+    /// `Path.ap` one level below in place of `f`.
     Congruence
     {
-        /// The map, as the motive holds it, one binder deeper.
+        /// The map, as the motive holds it, as many binders deeper as `lift`.
         map: Node,
         /// The path it acts on.
         path: Node,
+        /// How many binders deeper than the action the map stands.
+        lift: Lift,
     },
 }
 
@@ -4898,8 +4908,9 @@ enum Derived<Node>
 /// whose motive is `Path[.A = A](a, y)` over its own binder `y` (a composite),
 /// or `Path[.A = A](y, a)` moving reflexivity, `Path.here(a)` or the empty word
 /// at a looped point `a` (an inverse), or `Path[.A = B](f(a), f(y))` moving
-/// `here` (an action on a path), where every other part of the
-/// motive names no `y`.
+/// `here` (an action on a path), or above the map's domain `Path[.A = B](
+/// Path.ap f a, Path.ap f y)` with the action one level below (an action on a
+/// cell), where every other part of the motive names no `y`.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
@@ -4909,10 +4920,15 @@ enum Derived<Node>
 ///   and the other endpoint the same map, the same constant or variable,
 ///   applied and returned; an inverse moves `here` or a nullary constructor,
 ///   the only one a path type at a looped point holds, and an action moves
-///   `here`. The motive's carrier, its other endpoint and an action's map, read
-///   down through every child [`children`] lists, name no intuitionistic
-///   variable counting out to the motive's binder; absent otherwise, and absent
-///   when that scan reads more than [`VISIT_BUDGET`] nodes. A composite that
+///   `here`. Above the map's domain an action's endpoints are each a returned
+///   transport moving `here`, the end's along the variable of index zero, and
+///   their motives' ends read as an action's endpoints one binder deeper, the
+///   map's lift one more per level. The motive's carrier, its other endpoint,
+///   an action's map, and the reflexivity each level's end moves with its
+///   motive's carrier and start, read down through every child [`children`]
+///   lists, name no intuitionistic variable counting out to the motive's
+///   binder; absent otherwise, and absent when that scan reads more than
+///   [`VISIT_BUDGET`] nodes or the levels outnumber them. A composite that
 ///   moves `Path.here a` is absent where the motive's other endpoint reads
 ///   [`Start::Apart`] from `a`, since `Path.step p q` reads back taking `p`'s
 ///   start for it. A well-typed transport of these shapes moves the reflexivity
@@ -4925,17 +4941,19 @@ enum Derived<Node>
 /// - panics: none.
 ///
 /// # Termination
-/// Every turn pops one pending node and spends one of at most
-/// [`VISIT_BUDGET`] visits.
+/// Every turn of the climb reads one level deeper and spends one of at most
+/// [`VISIT_BUDGET`] levels; every turn of the scan pops one pending node and
+/// spends one of at most [`VISIT_BUDGET`] visits.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a composite of two loops and a transport whose fixed
-///   endpoint names the motive's binder, an inverse and an action on a loop; a
-///   scan that skipped the endpoints, read the wrong index or ignored the
-///   binder count fails the goldens.
+///   endpoint names the motive's binder, an inverse and an action on a loop,
+///   and an action on a 2-cell and a 3-cell; a scan that skipped the endpoints,
+///   read the wrong index or ignored the binder count fails the goldens.
 /// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_as_a_step_754`
 /// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
 /// - witness: `tests::goldens::a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218`
+/// - witness: `tests::goldens::an_action_on_a_cell_is_written_as_derived_6492`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(body), Former::PathTransport { .. }))]
 fn derived<S>(
     source: &S,
@@ -5007,31 +5025,105 @@ where
     else {
         true
     };
-    // The parts of the motive that must not name its binder, with the
-    // operation they make. A carrier the motive omits names nothing.
+    // An action reads its map off its motive's endpoints, `f(a)` and `f(y)`
+    // at the map's domain. Above the domain each endpoint is the action one
+    // level below, a transport moving `here`: the start at a point, the end
+    // along `y`. Their motives' ends read the level below, one binder deeper.
+    // What the end's transport moves, and its motive's carrier and start,
+    // must not name `y` either.
+    let climb = |parts: &mut Vec<(S::Node, Admits, usize)>| {
+        let (mut start, mut end) = (left, right);
+        let mut climbed = 0_usize;
+        let bound = usize::try_from(VISIT_BUDGET).unwrap_or(usize::MAX);
+        loop {
+            if let Some((map, argument)) = image(end)
+                && let Some((fixed, _)) = image(start)
+            {
+                return (moving(argument) && same(map, fixed)).then_some((map, climbed));
+            }
+            let (Former::Returned(below_start), Former::Returned(below_end)) =
+                (source.read(start), source.read(end))
+            else {
+                return None;
+            };
+            let (
+                Former::PathTransport {
+                    motive: start_motive,
+                    value: start_value,
+                    ..
+                },
+                Former::PathTransport {
+                    motive: end_motive,
+                    path: along,
+                    value: end_value,
+                },
+            ) = (source.read(below_start), source.read(below_end))
+            else {
+                return None;
+            };
+            let (
+                Former::Path {
+                    right: start_right, ..
+                },
+                Former::Path {
+                    carrier: end_carrier,
+                    left: end_left,
+                    right: end_right,
+                },
+                Former::Here(_),
+                Former::Here(moved),
+            ) = (
+                source.read(start_motive),
+                source.read(end_motive),
+                source.read(start_value),
+                source.read(end_value),
+            )
+            else {
+                return None;
+            };
+            let deeper = climbed
+                .checked_add(1_usize)
+                .filter(|&deeper| deeper < bound)?;
+            if !moving(along) {
+                return None;
+            }
+            parts.push((moved, Admits::Value, climbed));
+            parts.push((end_left, Admits::Value, deeper));
+            parts.extend(end_carrier.map(|ty| (ty, Admits::ValueType, deeper)));
+            (start, end) = (start_right, end_right);
+            climbed = deeper;
+        }
+    };
+    let mut parts = Vec::new();
+    // The parts of the motive that must not name its binder, each with the
+    // binders it stands under inside the motive, and the operation they make.
+    // A carrier the motive omits names nothing.
     let (operation, apart) = if moving(right) && starts {
-        (Derived::Composite { value, path }, [left, left])
+        (Derived::Composite { value, path }, [
+            (left, 0_usize),
+            (left, 0_usize),
+        ])
     }
     else if moving(left) && (reflexive || empty) {
-        (Derived::Inverse(path), [right, right])
+        (Derived::Inverse(path), [(right, 0_usize), (right, 0_usize)])
     }
-    else if reflexive
-        && let Some((map, argument)) = image(right)
-        && moving(argument)
-        && let Some((fixed, _)) = image(left)
-        && same(map, fixed)
-    {
-        (Derived::Congruence { map, path }, [left, map])
+    else if reflexive && let Some((map, climbed)) = climb(&mut parts) {
+        let lift = Lift::from(climbed.saturating_add(1_usize));
+        (Derived::Congruence { map, path, lift }, [
+            (left, 0_usize),
+            (map, climbed),
+        ])
     }
     else {
         return None;
     };
-    let [endpoint, other] = apart;
+    let [(endpoint, endpoint_above), (other, other_above)] = apart;
     let mut pending = Vec::from([
-        (endpoint, Admits::Value, 0_usize),
-        (other, Admits::Value, 0_usize),
+        (endpoint, Admits::Value, endpoint_above),
+        (other, Admits::Value, other_above),
     ]);
     pending.extend(carrier.map(|ty| (ty, Admits::ValueType, 0_usize)));
+    pending.append(&mut parts);
     let mut visits = 0_u32;
     while let Some((node, admits, above)) = pending.pop() {
         visits = visits
@@ -5204,7 +5296,7 @@ where
         return match operation {
             Derived::Composite { value, path } => Former::Step(value, path),
             Derived::Inverse(path) => Former::Back(path),
-            Derived::Congruence { map, path } => Former::Cong(map, path),
+            Derived::Congruence { map, path, lift } => Former::Cong(map, path, lift),
         };
     }
     former

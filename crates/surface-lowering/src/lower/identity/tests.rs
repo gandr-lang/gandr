@@ -2043,6 +2043,34 @@ fn cong_on_a_cell_above_the_map_s_domain_takes_its_levels()
     );
 }
 
+/// #6492: `Path.ap f (Path.here c)` in a type, `c` a point of a family with
+/// no parameters, was refused `Unannotated`: the reflexivity read no type off
+/// a constructor, and a reflexivity of a reflexivity read none either. The
+/// printer writes the images of the spheres' cells so, so a printed type did
+/// not read back. Each reflexivity stands at the paths from its point to
+/// itself, the innermost at the point's family, so both declarations lower.
+#[test]
+fn an_action_on_a_constructor_s_reflexivity_reads_its_family_6492()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/an-action-on-a-constructor-s-reflexivity-reads-its-family-6492-module.gandr"
+        )),
+        &mut arena,
+    );
+    for name in ["apHere", "apHereTwice"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers its type and its body: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+}
+
 #[test]
 fn a_motive_telescope_rebuilds_exactly_when_an_entry_is_an_arrow()
 {

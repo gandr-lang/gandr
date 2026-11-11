@@ -5224,6 +5224,54 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
     }
 }
 
+/// #6492: an action on a cell above its map's domain, which the lowering
+/// derives as `Path.ap` one level below moving `here`, was written as that
+/// transport in full, and the transport's motive did not read back. It
+/// spells `Path.ap(f, p)` in both forms, as on a path, at a 2-cell and a
+/// 3-cell, and its map, read as many binders deeper as it climbs, as the
+/// source names it.
+#[test]
+fn an_action_on_a_cell_is_written_as_derived_6492()
+{
+    let mut core = CoreArena::new();
+    let sphere = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let surf = core.value_constant(ConstantIndex::from(2_usize));
+    let spin = core.value_constant(ConstantIndex::from(3_usize));
+    let here = core.value_here(base);
+    let twice = core.value_here(here);
+    let parameter = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let mut acted = |map, levels: &[gandr_core_term::identity::Level]| {
+        let action = gandr_core_term::identity::cong_above(&mut core, (map, sphere), levels, surf)
+            .expect("the action builds at every level");
+        core.value_returned(action)
+    };
+    let on_square = acted(spin, &[(base, base), (here, here)]);
+    let on_cube = acted(spin, &[(base, base), (here, here), (twice, twice)]);
+    let mapped = acted(parameter, &[(base, base), (here, here)]);
+    let names = [
+        Name::from("S2"),
+        Name::from("base"),
+        Name::from("surf"),
+        Name::from("spin"),
+    ];
+    let context = [Some(Name::from("f"))];
+    let source = CoreSource::new(&core, &names).within(&context);
+    for root in [on_square, on_cube] {
+        agrees(&core, &names, CoreNode::Value(root));
+    }
+    for (root, form, expected) in [
+        (on_square, Form::Sugared, "Path.ap spin surf"),
+        (on_square, Form::Explicit, "Path.ap spin surf"),
+        (on_cube, Form::Sugared, "Path.ap spin surf"),
+        (on_cube, Form::Explicit, "Path.ap spin surf"),
+        (mapped, Form::Sugared, "Path.ap f surf"),
+    ] {
+        let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+        assert_eq!(rendered.as_ref(), expected, "{form:?}");
+    }
+}
+
 /// An elaborated body spells as the grammar writes it, its exits elided:
 /// a returner at the end of a block bare, a call by its head, a thunk in
 /// a body spelled; a case binds its summand's payload, a split its

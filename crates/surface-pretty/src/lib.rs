@@ -339,6 +339,7 @@ pub use crate::former::Elided;
 pub use crate::former::ForgetCall;
 pub use crate::former::Forgotten;
 pub use crate::former::Former;
+pub use crate::former::Lift;
 pub use crate::former::Manifest;
 pub use crate::former::ModelSlot;
 pub use crate::former::Name;
