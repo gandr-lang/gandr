@@ -51,8 +51,12 @@ gate_lane() {
 }
 
 # The niceness of the gate's shell, which a background gate reads (#6638).
+# Under `SCHED_IDLE`, the policy of the head watcher's service, `ps` prints
+# `-` in place of the niceness (#6656), and `nice` prints the niceness that
+# the kernel keeps. A `nice` that takes no bare call, as on macOS, gives
+# `ps` the reading.
 gate_niceness() {
-  ps -o ni= -p $$ | tr -d ' '
+  nice 2> /dev/null || ps -o ni= -p $$ | tr -d ' '
 }
 
 # Takes the lane's lock and then a free slot, waiting for each unless
