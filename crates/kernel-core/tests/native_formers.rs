@@ -2649,6 +2649,122 @@ fn a_map_s_image_of_a_2_cell_in_place_is_its_arm()
     }
 }
 
+/// A tower of `Path.ap` at the 2-cell, whole or departing from the cell.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Tower
+{
+    /// Two levels, as the lowering writes `Path.ap` on a cell one path type
+    /// above the map's domain.
+    Whole,
+    /// One level, the map applied at the cell as at a point of its domain.
+    Short,
+    /// Two levels, the outer one starting at the cell, not at the cell's left
+    /// endpoint.
+    OffItsEndpoint,
+}
+
+/// Stage the tower of `Path.ap map surf`, built as `tower` states, as a
+/// definition at the 2-cell's type `Path[.A = Path[.A = S](Base, Base)](
+/// here(Base), here(Base))`, as the lowering spells `Path.ap` there, and admit
+/// it. The kernel's typing of the tower decides the verdict.
+///
+/// # Specification
+/// trivial.
+fn tower_on_the_two_cell(
+    environment: &mut Environment,
+    map: ConstantIndex,
+    tower: Tower,
+) -> Result<ConstantIndex, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let point = build(arena, Built::Point);
+    let reflexivity = arena.value_here(point);
+    let cell = build(arena, Built::Named);
+    let map = arena.value_constant(map);
+    let call = |arena: &mut TermArena, argument: ValueId| {
+        let forced = arena.computation_force(map);
+        let applied = arena.computation_application(forced, argument);
+        arena.value_returned(applied)
+    };
+    let imaged = call(arena, point);
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let through = call(arena, moving);
+    let layer = arena.value_type_path(carrier, imaged, through);
+    let stays = arena.value_here(imaged);
+    let root = match tower {
+        // `tr(w. Path[.A = S](⟨map Base⟩, ⟨map w⟩), surf, here(⟨map Base⟩))`.
+        Tower::Short => arena.computation_path_transport(layer, cell, stays),
+        // The outer level starts at the inner level at the cell's left
+        // endpoint, or, departing, at the cell itself.
+        Tower::Whole | Tower::OffItsEndpoint => {
+            let from = match tower {
+                Tower::OffItsEndpoint => cell,
+                Tower::Whole | Tower::Short => reflexivity,
+            };
+            let start = arena.computation_path_transport(layer, from, stays);
+            let start = arena.value_returned(start);
+            let inner = arena.computation_path_transport(layer, moving, stays);
+            let inner = arena.value_returned(inner);
+            let below = arena.value_type_path(carrier, imaged, imaged);
+            let motive = arena.value_type_path(below, start, inner);
+            let lifted = arena.value_here(start);
+            arena.computation_path_transport(motive, cell, lifted)
+        },
+    };
+    let root = arena.value_returned(root);
+    let loops = arena.value_type_path(carrier, point, point);
+    let cells = arena.value_type_path(loops, reflexivity, reflexivity);
+    let body = root;
+    let declared = cells;
+    let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+    environment
+        .add_decl(staged)
+        .map(gandr_kernel_core::CheckedId::position)
+}
+
+/// #6811: the kernel checks a tower of `Path.ap` against its cell. A tower one
+/// level short of the 2-cell's depth applies the map at the cell's carrier,
+/// off the map's domain, and is a type error of the kernel. A tower whose
+/// outer level starts at that short level is one too. Neither is a conversion
+/// on the lowering's word, and the second tower after the first is refused as
+/// the first is.
+#[test]
+fn a_tower_short_of_its_cell_or_off_its_endpoints_is_refused_6811()
+{
+    let mut environment = one_two_cell();
+    let identity = case_over(&mut environment, Family::Kept, Built::Point, &[
+        Built::Named,
+    ])
+    .expect("a non-dependent arm at the 2-cell chooses its image");
+    let whole = tower_on_the_two_cell(&mut environment, identity, Tower::Whole);
+    assert!(
+        whole.is_ok(),
+        "the whole tower stands at the cell's words: {whole:?}"
+    );
+    for (tower, what) in [
+        (
+            Tower::OffItsEndpoint,
+            "a tower whose outer level starts at the cell, not at its left endpoint",
+        ),
+        (Tower::Short, "a tower one level short of the 2-cell"),
+        (
+            Tower::OffItsEndpoint,
+            "the same tower again, after the short tower",
+        ),
+    ] {
+        let admitted = tower_on_the_two_cell(&mut environment, identity, tower);
+        assert!(
+            matches!(admitted, Err(KernelError::ValueTypeMismatch(_))),
+            "{what} is a type error of the kernel: {admitted:?}"
+        );
+    }
+}
+
 /// #6458: a dependent case at the 2-cell owes transport along the cell, whose
 /// family carries the answer along the bound path; the kernel reads that
 /// endpoint by its family's two.

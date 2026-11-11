@@ -3715,6 +3715,52 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The domain of the map the value type at `declared` states: `A` of
+    /// `+U (A -> C)`, or of `A -> B`, through parentheses.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified `declared`.
+    /// - ensures: the domain when the walk through transparent plans meets one
+    ///   thunk and then an arrow, or a value function of one domain; nothing
+    ///   otherwise, as [`Self::thunked_codomain`] reads the codomain.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to an operand of the node it read, strictly deeper in
+    /// a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter at a thunked arrow and one at a value
+    ///   function each give their domain, one at a path type none.
+    /// - witness: `lower::identity::tests::cong_at_a_bound_map_takes_its_levels_6811`
+    #[spec(ensures: |ret| ret.is_none_or(|domain| domain != declared))]
+    fn thunked_domain(
+        &self,
+        declared: NodeIndex,
+    ) -> Option<NodeIndex>
+    {
+        let mut at = declared;
+        let mut thunked = false;
+        loop {
+            match self.plans.get(at) {
+                Some(&Plan::Transparent(inner)) => at = inner,
+                Some(&Plan::Former(TypeFormer::Thunk, inner)) if !thunked => {
+                    thunked = true;
+                    at = inner;
+                },
+                Some(&Plan::Arrow(domain, _)) if thunked => return Some(domain),
+                Some(&Plan::ValueFunction(domains, _)) if !thunked => {
+                    return match *self.operands.read(domains) {
+                        [domain] => Some(domain),
+                        _ => None,
+                    };
+                },
+                _ => return None,
+            }
+        }
+    }
+
     /// The frame a bound map's use at `function` stands under in a type,
     /// through parentheses: the use site a static application of the bound
     /// binder records.
@@ -5156,14 +5202,17 @@ impl<'source> Lowerer<'_, 'source>
         Some(body)
     }
 
-    /// The written type of the first parameter of the declaration a `Path.ap`
-    /// names as its map: the domain the map's path types stand over.
+    /// The domain the map of a `Path.ap` stands over: the written type of the
+    /// first parameter of a named declaration, or the domain of the arrow that
+    /// a bound map's binder writes.
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified every node.
     /// - ensures: through transparent plans, a constant whose declaration is a
     ///   function with a first parameter of a written type gives that type's
-    ///   node; `None` otherwise.
+    ///   node; a binder, or a static application of a bound name to nothing,
+    ///   whose written type states a map gives the map's domain, as
+    ///   [`Self::thunked_domain`] reads it; `None` otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -5174,8 +5223,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the sphere's identity gives `S2`, and its type is
-    ///   minted before `Path.ap` reads it.
+    ///   minted before `Path.ap` reads it; a bound map of the 3-sphere gives
+    ///   `S3` from its binder's arrow.
     /// - witness: `lower::identity::tests::cong_on_a_cell_above_the_map_s_domain_takes_its_levels`
+    /// - witness: `lower::identity::tests::cong_at_a_bound_map_takes_its_levels_6811`
     #[spec(ensures: |ret| ret.is_none_or(|domain| self.tree.node(domain).is_some()))]
     fn mapped_domain(
         &self,
@@ -5186,13 +5237,24 @@ impl<'source> Lowerer<'_, 'source>
         while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
             at = inner;
         }
-        let Some(&Plan::Constant(constant)) = self.plans.get(at)
-        else {
-            return None;
+        let binder = match self.plans.get(at) {
+            Some(&Plan::Constant(constant)) => {
+                let parameters = self.function_of(constant)?.parameters;
+                return match self.parameters.read(parameters).first()?.declared {
+                    Maybe::Present(declared) => Some(declared),
+                    Maybe::Absent(_) => None,
+                };
+            },
+            Some(&Plan::Variable(_, binder)) => binder,
+            Some(&Plan::StaticApplication(Code::Bound { binder, .. }, arguments))
+                if arguments == FormStretch::default() =>
+            {
+                binder
+            },
+            _ => return None,
         };
-        let parameters = self.function_of(constant)?.parameters;
-        match self.parameters.read(parameters).first()?.declared {
-            Maybe::Present(declared) => Some(declared),
+        match self.scope.declared(binder) {
+            Maybe::Present(declared) => self.thunked_domain(declared),
             Maybe::Absent(_) => None,
         }
     }
