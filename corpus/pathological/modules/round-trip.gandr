@@ -1,0 +1,33 @@
+// A path whose way back moves a member.
+//
+// The way back defines `answer` as the reply plus one. The answer brought
+// there and back is then not the answer, and the reply brought back and there
+// is not the reply.
+//
+// The checker refuses each round trip that does not convert, at the member the
+// body defines. The refusal marks both endpoints: that definition and the
+// member that the theory states.
+//
+// - see: #3487 — a path between two signatures
+// - see: `model/modules/translated.gandr` — a path whose round trips convert
+
+/// The older signature.
+theory Older where
+  /// The answer.
+  oper answer : Integer;
+
+/// The newer signature.
+theory Newer where
+  /// The answer, under another name.
+  oper reply : Integer;
+
+/// A path whose way back moves the answer.
+path moved : Older <~> Newer where
+  into where
+    /// The reply, which the way back does not bring back.
+    @[refuses("EndpointMismatch")]
+    def reply = answer;
+  from where
+    /// The answer, moved by one.
+    @[refuses("EndpointMismatch")]
+    def answer = reply + 1;

@@ -87,6 +87,74 @@ use crate::syntax::Value;
 use crate::syntax::ValueType;
 use crate::syntax::Zone;
 
+/// A body of a path reads a member of its domain as a constant. Abstracted,
+/// the constant is the bound variable under no binder and one past it under a
+/// lambda, and another constant stays.
+#[test]
+fn an_abstraction_replaces_a_value_s_constant_by_a_variable_under_binders()
+{
+    let mut arena = CoreArena::new();
+    let member = ConstantIndex::from(1_usize);
+    let other = ConstantIndex::from(2_usize);
+    let read = arena.value_constant(member);
+    let kept = arena.value_constant(other);
+    // `thunk (fun _ -> return (member, other))`, the pair under one binder.
+    let pair = arena.value_tuple(&[read, kept]);
+    let returned = arena.computation_return(pair);
+    let lambda = arena.computation_lambda(returned);
+    let thunk = arena.value_thunk(lambda);
+    let at = DeBruijnIndex::from(3_u32);
+    let bare =
+        super::abstract_constant_value_traced(&mut arena, read, (member, at), &mut Vec::new());
+    assert_eq!(
+        arena.value(bare),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: at,
+        })
+    );
+    let mut carried = Vec::new();
+    let under =
+        super::abstract_constant_value_traced(&mut arena, thunk, (member, at), &mut carried);
+    assert_eq!(
+        carried.len(),
+        5,
+        "the constant, the pair, the return, the lambda and the thunk are reported"
+    );
+    let Some(&Value::Thunk(lambda)) = arena.value(under)
+    else {
+        panic!("a thunk");
+    };
+    let Some(&Computation::Lambda(returned)) = arena.computation(lambda)
+    else {
+        panic!("a lambda");
+    };
+    let Some(&Computation::Return(pair)) = arena.computation(returned)
+    else {
+        panic!("a return");
+    };
+    let Some(Value::Tuple(components)) = arena.value(pair).cloned()
+    else {
+        panic!("a pair");
+    };
+    let read: Vec<Option<Value>> = components
+        .iter()
+        .map(|&component| arena.value(component).cloned())
+        .collect();
+    assert_eq!(read, vec![
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(4_u32),
+        }),
+        Some(Value::Constant(other)),
+    ]);
+    assert_eq!(
+        super::abstract_constant_value_traced(&mut arena, kept, (member, at), &mut Vec::new()),
+        kept,
+        "a value naming another constant is kept"
+    );
+}
+
 #[test]
 fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
 {
@@ -4335,6 +4403,73 @@ fn a_renaming_replaces_exactly_the_named_constants_and_atoms()
         renamed_atom,
         integer
     )]);
+}
+
+/// A path's body reads its domain's sort as an atom, and the function it
+/// lowers to reads it as the decode of the variable bound to the sort. Renamed
+/// to that open type, the atom reads it as it stands at the root and raised
+/// past a lambda's binder beneath it.
+#[test]
+fn a_renaming_raises_an_open_type_past_the_binders_above_its_atom_3487()
+{
+    let mut arena = CoreArena::new();
+    let atom = ConstantIndex::from(0_usize);
+    let sort = arena.value_type_abstract(atom);
+    let code = variable(&mut arena, DeBruijnIndex::from(2_u32));
+    let decoded = arena.value_type_element(code, Level::zero());
+    // `(quote sort, thunk (fun _ -> return (quote sort)))`, the sort at the
+    // root and under one binder.
+    let quoted = arena.value_quote(sort);
+    let returned = arena.computation_return(quoted);
+    let lambda = arena.computation_lambda(returned);
+    let thunk = arena.value_thunk(lambda);
+    let pair = arena.value_tuple(&[quoted, thunk]);
+    let mut renaming = Renaming::new();
+    renaming.atom(atom, decoded);
+    let renamed = rename_value_traced(&mut arena, pair, &renaming, &mut Vec::new());
+    let Some(&[at_root, under]) = arena.value(renamed).and_then(Value::components)
+    else {
+        panic!("a renamed pair");
+    };
+    let read = |arena: &CoreArena, quote: ValueId| {
+        let Some(&Value::Quote(stated)) = arena.value(quote)
+        else {
+            panic!("a quote");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(stated)
+        else {
+            panic!("a decode");
+        };
+        arena.value(code).cloned()
+    };
+    assert_eq!(
+        read(&arena, at_root),
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(2_u32),
+        }),
+        "at the root the atom reads the type as it stands"
+    );
+    let Some(&Value::Thunk(body)) = arena.value(under)
+    else {
+        panic!("a thunk");
+    };
+    let Some(&Computation::Lambda(inner)) = arena.computation(body)
+    else {
+        panic!("a lambda");
+    };
+    let Some(&Computation::Return(beneath)) = arena.computation(inner)
+    else {
+        panic!("a return");
+    };
+    assert_eq!(
+        read(&arena, beneath),
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(3_u32),
+        }),
+        "under the lambda the atom reads the type raised past its binder"
+    );
 }
 
 #[test]

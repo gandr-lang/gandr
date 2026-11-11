@@ -816,6 +816,8 @@ mod opening;
 
 mod patched;
 
+mod path;
+
 mod phase;
 
 use crate::table::NodeTable;
@@ -4252,6 +4254,9 @@ struct Lowerer<'run, 'source>
     /// Each slot of an application — a witness or an image of its functor's
     /// body — with the declaration it amounts to.
     instantiated: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
+    /// Each function and each round trip of a path, with the declaration it
+    /// amounts to.
+    pathed: BTreeMap<SlotIndex, DeclarationOutcome<'source>>,
     /// The frame of every continuation an operation clause binds.
     resumptions: BTreeSet<ScopeId>,
     /// Every described family decoded so far, by its description's name: a
@@ -5138,6 +5143,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_reducts(sink);
         self.mint_forgets(sink);
         self.mint_instances(sink);
+        self.mint_paths(sink);
         self.refuse_misshapen_entries(sink);
         self.place_by_layout();
         self.place_misspelt();
@@ -6146,6 +6152,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),
             instantiated: BTreeMap::new(),
+            pathed: BTreeMap::new(),
             capabilities: BTreeSet::new(),
             theory_capabilities: BTreeMap::new(),
             answered: BTreeMap::new(),
@@ -24874,15 +24881,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   reported once, where it was written, and templated otherwise; a slot
     ///   of an application is the declaration its renaming minted, unminted
     ///   when its template refused or its argument's type did not lower; a
-    ///   module's own slot is [`Self::own_outcome`], except that one
-    ///   [`Self::own_outcome`] leaves absent is refused by the expectation its
-    ///   type member states unread, when it states one, and otherwise, while it
-    ///   holds a half that lowers to a core term — any but a top-level
-    ///   `oper`'s, the prelude's `Eq.generic`'s ([`Role::Generic`]), which
-    ///   names the derivation, or a witness of a member refused where it was
-    ///   written — is refused [`LoweringRefusal::Unminted`] at the declaration,
-    ///   by its name; and a witness refused as the member it represents is,
-    ///   yields nothing, so the member's refusal is reported once.
+    ///   path's function or round trip is the declaration [`Self::mint_paths`]
+    ///   minted for it; any other module's own slot is [`Self::own_outcome`],
+    ///   except that one [`Self::own_outcome`] leaves absent is refused by the
+    ///   expectation its type member states unread, when it states one, and
+    ///   otherwise, while it holds a half that lowers to a core term — any but
+    ///   a top-level `oper`'s, the prelude's `Eq.generic`'s
+    ///   ([`Role::Generic`]), which names the derivation, or a witness of a
+    ///   member refused where it was written — is refused
+    ///   [`LoweringRefusal::Unminted`] at the declaration, by its name; and a
+    ///   witness refused as the member it represents is, yields nothing, so the
+    ///   member's refusal is reported once.
     /// - provides: the per-slot row [`Self::assemble`] files, so a declaration
     ///   the lowering collected either lowers or is refused by name, never
     ///   dropped from the module.
@@ -24896,11 +24905,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   dropped silently; a type member's expectation states its refusal and
     ///   is refused when the member yields nothing.
     /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `tests::modules::paths::a_path_lowers_to_its_functions_and_its_round_trips_3487`
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
     /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         ensures: |ret| match self.collected.stratum_of(slot.container) {
+            | Stratum::Module if let Some(&pathed) = self.pathed.get(&position) => ret == Maybe::Present(pathed),
             | Stratum::Module => match self.own_outcome(position, slot) {
                 | Maybe::Absent(_) if let Some(&refusal) = self.collected.unread_expectations.get(&position) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
                 | Maybe::Absent(_) if self.lowers_a_half(slot) == Owed::Owed => ret == Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
@@ -24925,6 +24936,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
         match self.collected.stratum_of(slot.container) {
+            Stratum::Module if let Some(&pathed) = self.pathed.get(&position) => {
+                Maybe::Present(pathed)
+            },
             Stratum::Module => match self.own_outcome(position, slot) {
                 Maybe::Absent(reason) => {
                     if let Some(&refusal) = self.collected.unread_expectations.get(&position) {

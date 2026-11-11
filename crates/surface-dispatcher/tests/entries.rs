@@ -1022,9 +1022,10 @@ fn gated(
         // The splice a law member admits by: every child of a module member
         // holding a `law` tile.
         let admitting = melded && def.sort == Sort::ModuleMember && lawful;
-        // A flow's body: every child of a flow declaration after its `where`.
-        // The pass over the children below opens the body at that tile.
-        let flow = melded && def.label == "flow" && def.sort == Sort::Item;
+        // A flow's body, or a path's two: every child of a flow or a path
+        // declaration after its first `where`. The pass over the children
+        // below opens the bodies at that tile.
+        let flow = melded && matches!(def.label, "flow" | "path") && def.sort == Sort::Item;
         // A face form's face and record: every child of a bracket after a
         // type, but its base, when a `↦` stands among its tiles.
         let faced = melded
