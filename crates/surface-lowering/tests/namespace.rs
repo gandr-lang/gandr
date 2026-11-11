@@ -1503,7 +1503,8 @@ fn refused(module: &LoweredModule<'_>) -> Vec<String>
 /// #6722: a bare `here` pattern names the empty word of the words that its
 /// own source can name. The importer of the circle alone reads it as the
 /// circle's empty word, though an earlier source of the unit mints the
-/// sphere's words. The importer of both is refused as unannotated.
+/// sphere's words. The importer of both is refused as unannotated where the
+/// scrutinee's position states no type.
 #[test]
 fn here_names_the_words_its_source_can_name_6722()
 {

@@ -6405,6 +6405,48 @@ fn a_word_conses_its_letters_and_matches_them()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #6805: a bare `here` reads its words from the type that the scrutinee's
+/// position states. Each of two circles reads its own empty word, and the
+/// 3-cell's case reads the 3-cell's words beside the 2-sphere's.
+#[test]
+fn a_here_pattern_reads_the_words_its_stated_type_names_6805()
+{
+    let source = include_str!(
+        "tests/fixtures/a-here-pattern-reads-the-words-its-stated-type-names-6805.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert_checked(&module, &mut arena);
+}
+
+/// #6805: a `here` at the second circle's point, beside the first circle's
+/// letters, reads the second circle's words, and the letter arm is refused
+/// as a pattern of another type.
+#[test]
+fn a_here_pattern_at_other_words_than_its_letters_is_refused_6805()
+{
+    let source = include_str!(
+        "tests/fixtures/a-here-pattern-at-other-words-than-its-letters-is-refused-6805.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let at = |text: &str| {
+        source
+            .find(text)
+            .unwrap_or_else(|| panic!("`{text}` is written"))
+    };
+    let refusal = refusal_of(&module, "crossed".into());
+    assert!(
+        matches!(
+            refusal,
+            LoweringRefusal::MismatchedPattern { span, first }
+                if usize::from(span.start()) == at("l1 ∷ q")
+                    && usize::from(first.start()) == at("here =>")
+        ),
+        "the first circle's letter disagrees with the second circle's empty word: {refusal:?}"
+    );
+}
+
 /// A case over the circle reads `loop => e` as the loop's arm, one branch
 /// after the point's; a name no loop declares binds, even one a later member
 /// of its module spells, which resolving it would refuse as a forward
