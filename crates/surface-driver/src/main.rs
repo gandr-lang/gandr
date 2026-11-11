@@ -68,6 +68,7 @@
 //! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
 //! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
 //! | `gandr --memory <size> <verb>` | as the verb, each run it starts — a fixture's, a cut's, a world's, `gandr run`'s — holding its heap and its window region within the size, `512MiB` or `2GiB`: a run that asks past it stops, naming each region's bytes, the step and the remedy; without the flag, the least of the host's available memory, its cgroup's `memory.max` and its address-space limit | as the verb; a size that does not read is a malformed invocation |
+//! | `gandr --run-budget <jumps> <verb>` | as the verb, each run it starts holding its code-word jumps within the count, `16777216`: a run that spends it stops, naming the count, the flag and the remedy; without the flag, a run of `check`, `test` or `run` has no budget, and a run of `lsp` or `serve` takes the server's budget of 16 777 216 jumps; a client that starts a hub passes the flag on | as the verb; a count that does not read, or zero, is a malformed invocation |
 //!
 //! A path is a source file of any name, or a directory searched for `.gandr`
 //! sources. The directories a source sits in decide its root — `strict`,
@@ -341,6 +342,10 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_kernel_core::tallied;
+use gandr_runtime_emitter::Budget;
+use gandr_runtime_emitter::budget;
+use gandr_runtime_emitter::budget::Jumps;
+use gandr_runtime_emitter::budget::Origin;
 use gandr_runtime_emitter::regions;
 use gandr_runtime_emitter::regions::Bytes;
 use gandr_runtime_emitter::regions::Memory;
@@ -529,6 +534,11 @@ struct Cli
     /// memory.
     #[arg(long, global = true, value_name = "SIZE")]
     memory: Option<Bytes>,
+    /// Bound the code-word jumps each run of the invocation takes, a count
+    /// such as `16777216`. Without it, a run of `check`, `test` or `run` has
+    /// no budget, and a run of `lsp` or `serve` takes the server's budget.
+    #[arg(long, global = true, value_name = "JUMPS")]
+    run_budget: Option<Jumps>,
     /// The verb; with none, the driver prints its status.
     #[command(subcommand)]
     command: Option<Command>,
@@ -1724,6 +1734,39 @@ fn spelling(
     }
 }
 
+/// The budget that the invocation binds: the count that `flag` names, else
+/// the server's budget for a verb that serves an editor, else none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a named count is an [`Origin::Flag`] budget of that count;
+///   without one, `lsp` and `serve` take [`Budget::SERVED`], and every other
+///   verb binds nothing, so each of its runs has no budget.
+/// - provides: the one place that decides what bounds a run of the invocation.
+/// - panics: none.
+/// - executable: none — the ensures clause is the match itself, so a runtime
+///   predicate restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a named count stops a run of `gandr run` at that count,
+///   no flag lets the run halt, and a language server stops a loop at the
+///   server's budget, through the binary.
+/// - witness: `tests::cli::a_run_past_its_budget_names_its_budget_and_its_origin_6325`
+/// - witness: `tests::cli::a_language_server_stops_a_loop_at_the_server_s_budget_6325`
+fn invocation_budget(
+    flag: Option<Jumps>,
+    command: Option<&Command>,
+) -> Option<Budget>
+{
+    match (flag, command) {
+        (Some(jumps), _) => Some(Budget::flag(jumps)),
+        (None, Some(&Command::Lsp { .. })) => Some(Budget::SERVED),
+        #[cfg(unix)]
+        (None, Some(&Command::Serve { .. })) => Some(Budget::SERVED),
+        (None, Some(_) | None) => None,
+    }
+}
+
 /// The lints `names` enable everywhere, each widening the reach the others
 /// leave: `explicit-runs` reaches every run whether or not
 /// `explicit-runs=effects` is named beside it.
@@ -1858,6 +1901,16 @@ fn main() -> ExitCode
         return match writeln!(
             std::io::stderr(),
             "gandr: the memory bound is {bound} already"
+        ) {
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        };
+    }
+    if let Some(budget) = invocation_budget(cli.run_budget, cli.command.as_ref())
+        && let Err(bound) = budget::bind(budget)
+    {
+        return match writeln!(
+            std::io::stderr(),
+            "gandr: the run budget is {bound} already"
         ) {
             Ok(()) | Err(_) => ExitCode::from(FAULTED),
         };
@@ -2966,8 +3019,9 @@ fn view(
 /// - requires: nothing.
 /// - ensures: a hub answering at once is connected; otherwise this executable
 ///   is started detached as `gandr serve --no-toolset` on the socket with
-///   `--spelling` naming `spelling`, so the hub serves no toolset and lingers
-///   out, and the socket is tried every 20 ms for five seconds.
+///   `--spelling` naming `spelling`, and with the `--run-budget` that the
+///   invocation names, so the hub serves no toolset and lingers out. The socket
+///   is tried every 20 ms for five seconds.
 /// - provides: one way every client reaches its workspace's hub.
 /// - fails: when the socket cannot be named, the hub cannot be started, or it
 ///   never answers within five seconds.
@@ -2997,7 +3051,12 @@ fn reach_hub(
     if let Ok(stream) = UnixStream::connect(&socket) {
         return Ok(stream);
     }
-    let child = std::process::Command::new(std::env::current_exe()?)
+    let budget = budget::bound();
+    let mut hub = std::process::Command::new(std::env::current_exe()?);
+    if matches!(budget.origin(), Origin::Flag) {
+        hub.arg("--run-budget").arg(u64::from(budget).to_string());
+    }
+    let child = hub
         .arg("serve")
         .arg("--no-toolset")
         .arg("--socket")

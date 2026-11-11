@@ -55,7 +55,6 @@ use gandr_core_sequent::Store;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
@@ -77,7 +76,6 @@ use gandr_surface_syntax::SourceText;
 use super::Console;
 use super::Line;
 use super::Program;
-use super::RUN_BUDGET;
 
 /// The bytes of a program's key.
 const KEY_BYTES: usize = 32_usize;
@@ -542,7 +540,7 @@ impl Program<'_>
         let answer = match world::arrive(
             (&self.arena, &self.definitions),
             (at, world),
-            Fuel::from(RUN_BUDGET),
+            gandr_runtime_emitter::budget::bound(),
             (&mut store, &captures),
         ) {
             Ok(answer) => answer,

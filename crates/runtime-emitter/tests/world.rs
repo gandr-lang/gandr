@@ -36,8 +36,8 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::Summand;
+use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::Declined;
-use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::HostReply;
@@ -56,9 +56,9 @@ use gandr_runtime_emitter::world::arrive;
 ///
 /// # Specification
 /// trivial.
-pub fn budget() -> Fuel
+pub fn budget() -> Budget
 {
-    Fuel::from(1_usize << 20)
+    Budget::from(1_usize << 20)
 }
 
 /// The tiers this host runs: native where a patcher exists, the executor

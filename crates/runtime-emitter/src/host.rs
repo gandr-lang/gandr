@@ -115,6 +115,7 @@ use self::sessions::Message;
 use self::sessions::Scheduler;
 use self::sessions::Waits;
 use self::sessions::gather_end;
+use crate::budget::Budget;
 use crate::executor::Program;
 use crate::function::Function;
 use crate::function::Label;
@@ -288,6 +289,9 @@ pub struct Calls<'run, 'host>
     definitions: &'run Definitions,
     /// Each migration's body this run has lowered, by its command.
     migrations: BTreeMap<CommandId, Lowered>,
+    /// The run's budget, whose origin a migration's run keeps over the jumps
+    /// left.
+    budget: Budget,
     /// The caller's store.
     store: &'run mut Store,
     /// The objects already moved into the store.
@@ -380,7 +384,8 @@ pub enum Refused
 }
 
 /// The parts a run's host state holds: the function lowered from `arena`
-/// over `definitions`, its code, its closure sites, and the run's inputs.
+/// over `definitions`, its code, its closure sites, the run's budget and its
+/// inputs.
 ///
 /// # Specification
 /// trivial.
@@ -396,6 +401,8 @@ pub struct Parts<'run, 'host>
     pub arena: &'run CommandArena,
     /// The constants' definitions it was lowered over.
     pub definitions: &'run Definitions,
+    /// The run's budget of code-word jumps.
+    pub budget: Budget,
     /// The run's store, captures, host and recording.
     pub inputs: RunInputs<'run, 'host>,
 }
@@ -445,6 +452,7 @@ impl<'run, 'host> Calls<'run, 'host>
             sites,
             arena,
             definitions,
+            budget,
             inputs,
         } = parts;
         let (store, mut offer, recording) = inputs.into_held();
@@ -471,6 +479,7 @@ impl<'run, 'host> Calls<'run, 'host>
             arena,
             definitions,
             migrations: BTreeMap::new(),
+            budget,
             store,
             moved: Moved::new(),
             offer,
@@ -1228,8 +1237,8 @@ impl<'run, 'host> Calls<'run, 'host>
     /// captures the tuple `captures` holds, and lay its answer out on the
     /// run's heap: where the host's [`Offer::migrate`] decides, and here, on a
     /// thread and over a store of its own, by default — its body lowered at
-    /// the run's first migration to it, run on this run's tier and the fuel
-    /// it has left.
+    /// the run's first migration to it, run on this run's tier within the
+    /// jumps that this run's budget has left.
     ///
     /// # Specification
     /// trivial.
@@ -1284,7 +1293,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 migrate(
                     self.codes.tier(),
                     (self.arena, self.definitions, lowered),
-                    runtime.fuel(),
+                    self.budget.left(runtime.fuel()),
                     (self.store, &fields),
                     self.offer.as_deref_mut(),
                 )

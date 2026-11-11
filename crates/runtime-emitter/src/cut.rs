@@ -103,8 +103,8 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::Summand;
-use gandr_runtime_stencils::Fuel;
 
+use crate::budget::Budget;
 use crate::lower::Schedule;
 use crate::lower::lower_scheduled;
 use crate::run::Choice;
@@ -181,7 +181,7 @@ pub fn evaluate_scheduled_on<Forking, Host>(
     fork: &Forking,
     choice: Choice,
     (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
-    (fuel, store): (Fuel, &mut Store),
+    (budget, store): (Budget, &mut Store),
     host: &mut Host,
 ) -> Result<HostOutcome<Host::Abort>, Declined>
 where
@@ -197,7 +197,7 @@ where
             arena,
             definitions,
             schedule: &schedule,
-            fuel,
+            budget,
             cost: &cost,
         },
         store,
@@ -206,7 +206,7 @@ where
 }
 
 /// What every run of a schedule reads besides its store: the tier asked for,
-/// the program, its code, the fuel and the measured cost of a spawn.
+/// the program, its code, the budget and the measured cost of a spawn.
 #[derive(Clone, Copy, Debug)]
 struct Program<'scope>
 {
@@ -218,8 +218,8 @@ struct Program<'scope>
     definitions: &'scope Definitions,
     /// The reader's function and each writer's, lowered once for the run.
     schedule: &'scope Schedule,
-    /// The jumps each run may take.
-    fuel: Fuel,
+    /// The budget of code-word jumps that each run takes.
+    budget: Budget,
     /// What starting a writer has cost the runs of this schedule.
     cost: &'scope SpawnCost,
 }
@@ -341,7 +341,7 @@ where
             program.choice,
             &program.schedule.reader,
             (program.arena, program.definitions),
-            (program.fuel, RunInputs::new(store)),
+            (program.budget, RunInputs::new(store)),
             &mut scheduling,
         )
     }
@@ -427,7 +427,7 @@ where
         lowered,
         (program.arena, program.definitions),
         environment,
-        (program.fuel, RunInputs::new(store)),
+        (program.budget, RunInputs::new(store)),
         &mut scheduling,
     ) {
         Ok(HostOutcome::Completed(Outcome::Halted(answer))) => Some(answer),

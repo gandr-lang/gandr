@@ -888,7 +888,20 @@ impl Drop for Reservation
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct Grouped(u64);
+pub(crate) struct Grouped(u64);
+
+impl From<u64> for Grouped
+{
+    /// The count `count`, to write in groups.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u64) -> Self
+    {
+        Self(count)
+    }
+}
 
 impl fmt::Display for Grouped
 {
