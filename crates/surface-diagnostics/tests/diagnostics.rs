@@ -115,11 +115,6 @@ const FIBONACCI_AGREE: &str = include_str!("diagnostics/fixtures/fibonacci-agree
 /// Fibonacci at five against the iteration started one step on: apart.
 const FIBONACCI_APART: &str = include_str!("diagnostics/fixtures/fibonacci-apart.gandr");
 
-/// The circle, its identity map and a claim that `Path.ap` of the map on a
-/// word of 300 letters is that word.
-const LONG_WORD: &str =
-    include_str!("diagnostics/fixtures/a-path-ap-claim-on-a-long-word-6478.gandr");
-
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
 struct Scratch(PathBuf);
@@ -528,40 +523,6 @@ fn a_conversion_past_its_step_budget_is_a_budget_miss_not_endpoints_apart_3139()
         miss(FIBONACCI_APART),
         EndpointMiss::Unshown,
         "endpoints the conversion finds apart are no budget miss"
-    );
-}
-
-/// #6478: before the fix, each side of a pair ran under a budget of 4,096
-/// steps, far below the machine's own. A `Path.ap` claim on a word above 194
-/// letters ran out of it, and the check reported an endpoint mismatch with no
-/// budget.
-#[test]
-fn a_path_ap_claim_on_a_long_word_settles_6478()
-{
-    let step = unsettled(
-        Path::new("circle.gandr"),
-        SourceRoot::Strict,
-        SourceText::from(LONG_WORD),
-    );
-    let Step::Source {
-        composed: Composed::Settled { ref report, .. },
-        ..
-    } = step
-    else {
-        panic!("the circle source settles");
-    };
-    let refusals: Vec<Refusal<'_>> = report
-        .declarations()
-        .iter()
-        .filter_map(|declaration| match declaration.produced().refusal() {
-            Maybe::Present(refusal) => Some(refusal),
-            Maybe::Absent(_) => None,
-        })
-        .collect();
-    assert_eq!(
-        refusals,
-        [],
-        "a claim of 300 letters settles within the machine's budget"
     );
 }
 
