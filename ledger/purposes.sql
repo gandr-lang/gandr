@@ -1126,6 +1126,7 @@ INSERT INTO purpose VALUES('kernel-core','env::ArtifactRefusal','struct','Why an
 INSERT INTO purpose VALUES('kernel-core','env::AxiomReport','struct','The transitive audit of a declaration: the axioms and unchecked admissions it rests on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::CheckedId','struct','An unforgeable receipt that a declaration was admitted, naming its position.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Entries','struct','An environment''s admitted declarations, in admission order, indexed by admission position, and the tables a check reads beside them: a check reads an entry only through its support, and only below the rank of the declaration it admits.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','env::EntryKind','enum','Whether an entry is live, so a check reads it, or retired by a readmission, which keeps its position and its content and frees its rank.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::Environment','struct','The append-only kernel environment: one arena, and the admitted declarations in admission order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::OutstandingContent','enum','Whether an environment holds staged, unresolved content above some mark.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','env::OutstandingCount','struct','How many staged, unresolved marks sit above the one a refusal is about.',NULL,'fits','sound',NULL);
@@ -1137,6 +1138,7 @@ INSERT INTO purpose VALUES('kernel-core','error::CompTypeWitness','struct','A se
 INSERT INTO purpose VALUES('kernel-core','error::ExpectedComputationShape','enum','The computation-type shape a rule required at the position it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::ExpectedValueShape','enum','The value-type shape a rule required at the position it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::FieldCause','enum','Why the kernel refuses the value of a record''s field or a restriction''s fixed value, beside the field''s label.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','error::KeepRefusal','enum','Why the kernel refused to keep a retired entry live again: the keep names no unit, the unit has no key, or its key changed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::KernelError','enum','Every way the kernel refuses a declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::LevelOrderRefutation','enum','Why a strict universe order lower < upper did not hold, in the oracle''s own evidence vocabulary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::NonInferableForm','enum','A checking-only form that appeared where a type had to be synthesized.',NULL,'fits','sound',NULL);

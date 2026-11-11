@@ -27,7 +27,9 @@ use gandr_kernel_term::Value;
 use quenchant_shape::shape::Maybe;
 
 use crate::env::Admission;
+use crate::env::CheckedId;
 use crate::env::Environment;
+use crate::error::KeepRefusal;
 use crate::error::KernelError;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -705,6 +707,181 @@ fn a_rank_below_an_earlier_admission_orients_as_admitted_before_it_6621()
     assert_eq!(
         ranked_law, fresh_law,
         "the ranks, not the positions, orient the law"
+    );
+}
+
+/// A fresh environment that keys each admission, so a readmission can keep
+/// an entry on its key.
+///
+/// # Specification
+/// trivial.
+fn keyed() -> Environment
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    Environment::recalling(
+        TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+        Arc::new(NoVerdicts),
+    )
+}
+
+/// A readmission that keeps an entry and appends the reach of an edit
+/// orients a law as a fresh admission of the edited source does. The source
+/// holds `a`, `b` and `c`, each the identity on the booleans as a ruled
+/// operation. The edit touches `a`, and it gives `c` the law `c(a(x)) ==>
+/// c(b(x))`, which orients only when `a` ranks above `b`. A fresh admission
+/// ranks `b` above `a` and refuses the law. The readmission retires `a`, `b`
+/// and `c`, offers `a` again at rank 1, keeps `b` at rank 2 and offers `c`
+/// at rank 3. The new `a` stands at a later position than `b`, but the law
+/// is refused, as the fresh admission refuses it.
+#[test]
+fn an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621()
+{
+    let law = |left: usize, right: usize| {
+        move |own: ConstantIndex| {
+            vec![OperationRule::new(
+                Box::from([unary!(own), unary!(left), var!(0_u32)].as_slice()),
+                Box::from([unary!(own), unary!(right), var!(0_u32)].as_slice()),
+            )]
+        }
+    };
+    let plain = |_own: ConstantIndex| Vec::new();
+    let rank = SourceRank::from;
+    let at = ConstantIndex::from;
+    let mut fresh = booleans(keyed());
+    for place in [1_usize, 2] {
+        assert_eq!(
+            admit_identity(&mut fresh, rank(place), plain),
+            Ok(()),
+            "the fresh operations admit"
+        );
+    }
+    let fresh_law = admit_identity(&mut fresh, rank(3_usize), law(1, 2));
+    // The previous revision: `a` at 1, `b` at 2 and `c` at 3, `c` with no
+    // law.
+    let mut readmitted = booleans(keyed());
+    for place in [1_usize, 2, 3] {
+        assert_eq!(
+            admit_identity(&mut readmitted, rank(place), plain),
+            Ok(()),
+            "the previous revision admits"
+        );
+    }
+    let watermark = readmitted.arena().watermark();
+    assert_eq!(
+        readmitted.retire(&[at(1_usize), at(2_usize), at(3_usize)]),
+        Ok(()),
+        "the readmission retires `a`, `b` and `c`"
+    );
+    assert_eq!(
+        readmitted.arena().watermark(),
+        watermark,
+        "the retire mints nothing"
+    );
+    assert_eq!(
+        admit_identity(&mut readmitted, rank(1_usize), plain),
+        Ok(()),
+        "`a` admits again, at position 4"
+    );
+    let watermark = readmitted.arena().watermark();
+    assert_eq!(
+        readmitted
+            .keep((at(2_usize), &[rank(2_usize)]))
+            .map(CheckedId::position),
+        Ok(at(2_usize)),
+        "`b` is kept at position 2"
+    );
+    assert_eq!(
+        readmitted.arena().watermark(),
+        watermark,
+        "the keep mints nothing"
+    );
+    let readmitted_law = admit_identity(&mut readmitted, rank(3_usize), law(4, 2));
+    assert_eq!(
+        fresh_law,
+        Err(KernelError::OperationRulesRefused(OperationRuleRefusal {
+            rule: RuleIndex::from(2_usize),
+            fault: OperationRuleFault::Unoriented,
+        })),
+        "a fresh admission refuses the law"
+    );
+    assert_eq!(
+        readmitted_law, fresh_law,
+        "the readmission refuses the law as the fresh admission does"
+    );
+}
+
+/// A keep is refused when the precedence that the entry's check reads
+/// changed. `c` carries the law `c(a(x)) ==> b(x)`, which orients under
+/// either order of `a` and `b`. An edit swaps `a` and `b` in the source. The
+/// readmission keeps each of them at its new rank. The key of `c` holds the
+/// rank order of the operations its rules name, so the keep of `c` is
+/// refused and `c` stays retired. Offered again, `c` admits.
+#[test]
+fn a_keep_whose_precedence_changed_is_refused_6621()
+{
+    let law = |left: usize, right: usize| {
+        move |own: ConstantIndex| {
+            vec![OperationRule::new(
+                Box::from([unary!(own), unary!(left), var!(0_u32)].as_slice()),
+                Box::from([unary!(right), var!(0_u32)].as_slice()),
+            )]
+        }
+    };
+    let plain = |_own: ConstantIndex| Vec::new();
+    let rank = SourceRank::from;
+    let at = ConstantIndex::from;
+    let mut environment = booleans(keyed());
+    for place in [1_usize, 2] {
+        assert_eq!(
+            admit_identity(&mut environment, rank(place), plain),
+            Ok(()),
+            "`a` and `b` admit"
+        );
+    }
+    assert_eq!(
+        admit_identity(&mut environment, rank(3_usize), law(1, 2)),
+        Ok(()),
+        "`c` admits"
+    );
+    assert_eq!(
+        environment.retire(&[at(1_usize), at(2_usize), at(3_usize)]),
+        Ok(()),
+        "the readmission retires `a`, `b` and `c`"
+    );
+    // The edit puts `b` first: `b` at rank 1, `a` at rank 2.
+    for (position, place) in [(2_usize, 1_usize), (1, 2)] {
+        assert_eq!(
+            environment
+                .keep((at(position), &[rank(place)]))
+                .map(CheckedId::position),
+            Ok(at(position)),
+            "an operation whose rules name only itself is kept at its new rank"
+        );
+    }
+    assert_eq!(
+        environment.keep((at(3_usize), &[rank(3_usize)])),
+        Err(KernelError::Unkept {
+            position: at(3_usize),
+            refusal: KeepRefusal::KeyChanged,
+        }),
+        "the precedence of what `c` names changed"
+    );
+    assert!(
+        environment.entries().get(3_usize).is_none(),
+        "`c` stays retired"
+    );
+    assert_eq!(
+        admit_identity(&mut environment, rank(3_usize), law(1, 2)),
+        Ok(()),
+        "offered again, `c` admits"
+    );
+    assert_eq!(
+        environment
+            .entries()
+            .get(4_usize)
+            .map(crate::env::AdmittedDeclaration::admission),
+        Some(Admission::Checked),
+        "the kernel checks the offered `c`"
     );
 }
 

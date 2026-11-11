@@ -1229,6 +1229,107 @@ pub struct AdmittedDeclaration
     /// Its rank in the source of the revision that holds it: what every
     /// reader of "admitted before" compares.
     rank: SourceRank,
+    /// Its kind: live, or retired by a readmission.
+    kind: EntryKind,
+    /// The positions of the unit that admitted it: its own position alone,
+    /// or the members of its mutual block.
+    unit: Unit,
+}
+
+/// The kind of an entry: live, or retired by a readmission.
+///
+/// A retired entry keeps its position and its content, so no other entry
+/// moves. No read sees it, no rank table holds it, and its rank is free.
+/// [`Environment::keep`] makes it live again, at a new rank, when its own
+/// key says that its check reads what it read.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EntryKind
+{
+    /// The entry stands live: a read sees it, and the tables hold it.
+    Live,
+    /// A readmission retired the entry: no read sees it.
+    Retired,
+}
+
+/// The positions of the unit that admitted an entry, `first .. end`, and
+/// how it was admitted.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Unit
+{
+    /// The position of the unit's first member.
+    first: ConstantIndex,
+    /// The position past the unit's last member.
+    end: ConstantIndex,
+    /// Whether one declaration was admitted alone, or a block.
+    shape: UnitShape,
+}
+
+/// How a unit was admitted: one declaration alone, keyed by its own key, or
+/// a block, each member keyed by its place in the block's key.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnitShape
+{
+    /// One declaration, admitted alone.
+    Lone,
+    /// The members of one block, admitted together.
+    Block,
+}
+
+impl Unit
+{
+    /// The unit of one declaration admitted alone at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn lone(position: ConstantIndex) -> Self
+    {
+        Self {
+            first: position,
+            end: ConstantIndex::from(usize::from(position).saturating_add(1)),
+            shape: UnitShape::Lone,
+        }
+    }
+
+    /// Whether `position` is a member of the unit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn holds(
+        self,
+        position: ConstantIndex,
+    ) -> Membership
+    {
+        if self.first <= position && position < self.end {
+            Membership::Member
+        }
+        else {
+            Membership::Outside
+        }
+    }
+}
+
+/// Whether a position is a member of a unit.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Membership
+{
+    /// The position is a member of the unit.
+    Member,
+    /// The position stands outside the unit.
+    Outside,
 }
 
 impl AdmittedDeclaration
@@ -1329,6 +1430,17 @@ impl AdmittedDeclaration
     pub const fn rank(&self) -> SourceRank
     {
         self.rank
+    }
+
+    /// The entry's kind: live, or retired by a readmission.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kind(&self) -> EntryKind
+    {
+        self.kind
     }
 
     /// What the declaration's check charged, goal by goal: its admission's
@@ -1670,7 +1782,7 @@ impl Entries
         let position = usize::from(offset.into());
         let log = self.log.as_deref()?;
         let entry = log.family.get(position)?;
-        if entry.rank >= self.horizon() {
+        if entry.kind == EntryKind::Retired || entry.rank >= self.horizon() {
             return None;
         }
         let Some(support) = self.support.as_deref()
@@ -1706,7 +1818,7 @@ impl Entries
     {
         let position = usize::from(offset.into());
         let entry = self.family().get(position)?;
-        if entry.rank >= self.horizon() {
+        if entry.kind == EntryKind::Retired || entry.rank >= self.horizon() {
             return None;
         }
         let read = self
@@ -1777,7 +1889,23 @@ impl Entries
             .map_or(SourceRank::ABOVE, |horizon| horizon.rank)
     }
 
-    /// The rank of the entry at `position`, read outside any support.
+    /// The live entry at `position`, read outside any support: none for a
+    /// retired entry, and none past the entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn live(
+        &self,
+        position: ConstantIndex,
+    ) -> Option<&AdmittedDeclaration>
+    {
+        self.family()
+            .get(usize::from(position))
+            .filter(|entry| entry.kind == EntryKind::Live)
+    }
+
+    /// The rank of the live entry at `position`, read outside any support.
     ///
     /// # Specification
     /// trivial.
@@ -1787,9 +1915,7 @@ impl Entries
         position: ConstantIndex,
     ) -> Option<SourceRank>
     {
-        self.family()
-            .get(usize::from(position))
-            .map(AdmittedDeclaration::rank)
+        self.live(position).map(AdmittedDeclaration::rank)
     }
 
     /// The position of the live entry that holds `rank`, if one holds it.
@@ -1821,8 +1947,9 @@ impl Entries
             )
     }
 
-    /// The entry key of the declaration at `position`, read outside any
-    /// support; absent as unkeyed past the last entry.
+    /// The entry key of the live declaration at `position`, read outside any
+    /// support; absent as unkeyed for a retired entry and past the last
+    /// entry.
     ///
     /// # Specification
     /// trivial.
@@ -1832,7 +1959,7 @@ impl Entries
         position: ConstantIndex,
     ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
     {
-        self.family().get(usize::from(position)).map_or(
+        self.live(position).map_or(
             Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed),
             AdmittedDeclaration::key,
         )
@@ -1960,7 +2087,8 @@ impl Entries
     }
 
     /// The reach of an edit to the entries at `edited`: each of them, with
-    /// each entry whose support holds an entry of the reach, ascending.
+    /// each entry whose support holds an entry of the reach, ascending; a
+    /// retired entry stands in no reach.
     ///
     /// An entry outside the reach keeps its whole verdict input: the entries
     /// that its support holds are outside the reach too. So a readmission
@@ -1968,10 +2096,10 @@ impl Entries
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: ascending, each once, and each below [`Self::len`]; each
-    ///   edited position below it, and each entry whose support holds an entry
-    ///   of the result through its direct references, its mutual block or a
-    ///   type of words admitted before it over a sort that it holds.
+    /// - ensures: ascending, each once, each below [`Self::len`] and each live;
+    ///   each live edited position below it, and each live entry whose support
+    ///   holds an entry of the result through its direct references, its mutual
+    ///   block or a type of words admitted before it over a sort that it holds.
     /// - provides: the entries whose verdict an edit can change.
     /// - fails: never.
     /// - panics: none.
@@ -2003,7 +2131,20 @@ impl Entries
             let mut over = log.presentations.over(sort);
             over.any(|words| words == position).then_some(sort)
         };
-        crate::dependents::reach(&log.dependents, words, log.family.len(), edited)
+        let reached = crate::dependents::reach(&log.dependents, words, log.family.len(), edited);
+        // A retired entry keeps its rows in the reverse index, so the walk
+        // can pass through it; the reach holds the live entries alone.
+        if reached
+            .iter()
+            .all(|&position| self.live(position).is_some())
+        {
+            return reached;
+        }
+        reached
+            .iter()
+            .copied()
+            .filter(|&position| self.live(position).is_some())
+            .collect()
     }
 
     /// These entries and the support of the check that runs, for a reading
@@ -2058,21 +2199,12 @@ impl Entries
         let log = self.log_mut();
         let position = ConstantIndex::from(usize::from(log.family.len()));
         let declaration = &entry.declaration;
-        let sort_constructors = declaration.presentation().cells().and_then(|cells| {
-            match *log.family.get(usize::from(cells.sort()))?.content() {
-                DeclarationContent::Data {
-                    ref constructors, ..
-                } => Some(constructors.as_slice()),
-                DeclarationContent::Codata { .. }
-                | DeclarationContent::Def { .. }
-                | DeclarationContent::Axiom { .. }
-                | DeclarationContent::LiteralIdentity { .. }
-                | DeclarationContent::AbstractType { .. } => None,
-            }
-        });
         let rank = entry.rank;
-        log.presentations
-            .admit((position, rank), declaration, sort_constructors);
+        log.presentations.admit(
+            (position, rank),
+            declaration,
+            sort_constructors(&log.family, declaration),
+        );
         if let DeclarationContent::Def { body, .. } = *declaration.content()
             && !declaration.operation_rules().rules().is_empty()
             && let Some(&Value::Thunk(root)) = arena.value(body)
@@ -2086,18 +2218,116 @@ impl Entries
             log.roles.entry(role).or_default().push(position);
         }
         if let ConstantName::Definition { digest, .. } = entry.key_name {
-            let family = &log.family;
-            let positions = log.definitions.entry(digest).or_default();
-            let at = positions.partition_point(|&held| {
-                family
-                    .get(usize::from(held))
-                    .is_some_and(|earlier| earlier.rank < rank)
-            });
-            positions.insert(at, position);
+            place_definition(&log.family, &mut log.definitions, digest, (position, rank));
         }
         let _previous = log.ranked.insert(rank, position);
         log.dependents.admit(position, &entry.references);
         log.family.push(entry);
+    }
+
+    /// Retire the live entry at `position`: no read sees it after, and its
+    /// rank is free.
+    ///
+    /// The entry keeps its position, its content and its rows in the reverse
+    /// index, the role index and the generative index. A reader of those
+    /// indexes reads the live entries alone, through their ranks.
+    ///
+    /// # Specification
+    /// - requires: the entry at `position` stands live.
+    /// - ensures: the entry is retired; the rank index, the digest index and
+    ///   the presentations hold no row of it; every other entry and row is
+    ///   unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the tables before and after the
+    ///   change, which a predicate may not capture whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::retire`].
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    pub(crate) fn retire(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        let log = self.log_mut();
+        let Some(entry) = log.family.get_mut(usize::from(position))
+        else {
+            return;
+        };
+        entry.kind = EntryKind::Retired;
+        let (rank, key_name) = (entry.rank, entry.key_name);
+        if log.ranked.get(&rank) == Some(&position) {
+            let _freed = log.ranked.remove(&rank);
+        }
+        if let ConstantName::Definition { digest, .. } = key_name
+            && let Some(positions) = log.definitions.get_mut(&digest)
+        {
+            positions.retain(|&held| held != position);
+        }
+        log.presentations.retire(position);
+    }
+
+    /// Stand the retired entry at `position` live again at the rank `rank`,
+    /// named `key_name`, its content in `arena`.
+    ///
+    /// # Specification
+    /// - requires: the entry at `position` is retired, and no live entry holds
+    ///   `rank`.
+    /// - ensures: the entry stands live at `rank` under `key_name`; the rank
+    ///   index, the digest index, the ruled index and the presentations hold
+    ///   its rows at `rank`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the tables before and after the
+    ///   change, which a predicate may not capture whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::keep`].
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    pub(crate) fn reinstate(
+        &mut self,
+        arena: &TermArena,
+        (position, rank): (ConstantIndex, SourceRank),
+        key_name: ConstantName,
+    )
+    {
+        let log = self.log_mut();
+        let Some(entry) = log.family.get_mut(usize::from(position))
+        else {
+            return;
+        };
+        entry.kind = EntryKind::Live;
+        entry.rank = rank;
+        entry.key_name = key_name;
+        let EntryLog {
+            ref family,
+            ref mut presentations,
+            ref mut ruled,
+            ref mut definitions,
+            ref mut ranked,
+            ..
+        } = *log;
+        let Some(entry) = family.get(usize::from(position))
+        else {
+            return;
+        };
+        let declaration = &entry.declaration;
+        presentations.admit(
+            (position, rank),
+            declaration,
+            sort_constructors(family, declaration),
+        );
+        if let DeclarationContent::Def { body, .. } = *declaration.content()
+            && !declaration.operation_rules().rules().is_empty()
+            && let Some(&Value::Thunk(root)) = arena.value(body)
+        {
+            let _previous = ruled.insert(root, position);
+        }
+        if let ConstantName::Definition { digest, .. } = key_name {
+            place_definition(family, definitions, digest, (position, rank));
+        }
+        let _previous = ranked.insert(rank, position);
     }
 
     /// Keep the first `length` entries, dropping later ones and their rows in
@@ -2251,6 +2481,51 @@ impl Entries
             crate::weakening::Support::reads,
         )
     }
+}
+
+/// The constructor table of the sort that the cells of `declaration` loop
+/// in, read from `family`, for a type of words.
+///
+/// # Specification
+/// trivial.
+fn sort_constructors<'family>(
+    family: &'family Family<AdmittedDeclaration>,
+    declaration: &Declaration,
+) -> Option<&'family [Vec<ValueTypeId>]>
+{
+    let cells = declaration.presentation().cells()?;
+    match *family.get(usize::from(cells.sort()))?.content() {
+        DeclarationContent::Data {
+            ref constructors, ..
+        } => Some(constructors.as_slice()),
+        DeclarationContent::Codata { .. }
+        | DeclarationContent::Def { .. }
+        | DeclarationContent::Axiom { .. }
+        | DeclarationContent::LiteralIdentity { .. }
+        | DeclarationContent::AbstractType { .. } => None,
+    }
+}
+
+/// Place `position`, ranked at `rank`, among the plain definitions that
+/// `definitions` holds under `digest`, by rank ascending; `family` ranks the
+/// definitions it holds already.
+///
+/// # Specification
+/// trivial.
+fn place_definition(
+    family: &Family<AdmittedDeclaration>,
+    definitions: &mut BTreeMap<ContentDigest, Vec<ConstantIndex>>,
+    digest: ContentDigest,
+    (position, rank): (ConstantIndex, SourceRank),
+)
+{
+    let positions = definitions.entry(digest).or_default();
+    let at = positions.partition_point(|&held| {
+        family
+            .get(usize::from(held))
+            .is_some_and(|earlier| earlier.rank < rank)
+    });
+    positions.insert(at, position);
 }
 
 impl EntryLog
@@ -2989,6 +3264,8 @@ impl Environment
                     census,
                     key: entry_key,
                     rank,
+                    kind: EntryKind::Live,
+                    unit: Unit::lone(position),
                 });
                 if let (true, Maybe::Present(content)) = (generative, content) {
                     self.entries.generative(content, position);
@@ -3174,6 +3451,8 @@ impl Environment
             census: ExpansionCensus::new(),
             key: Maybe::Absent(crate::verdict::keyed::Absent::Bypassed),
             rank,
+            kind: EntryKind::Live,
+            unit: Unit::lone(position),
         });
         self.advance_seals(position);
         CheckedId::new(position)
@@ -3467,6 +3746,12 @@ impl Environment
                     Maybe::Absent(absent) => Maybe::Absent(absent),
                 },
                 rank,
+                kind: EntryKind::Live,
+                unit: Unit {
+                    first,
+                    end,
+                    shape: UnitShape::Block,
+                },
             });
             self.advance_seals(position);
             admitted.push(CheckedId::new(position));
@@ -3486,6 +3771,251 @@ impl Environment
             self.entries.generative(content, first);
         }
         Ok(admitted)
+    }
+
+    /// Retire the entries at `positions`, each with every member of the unit
+    /// that admitted it.
+    ///
+    /// A readmission retires each entry from the first one an edit can move,
+    /// and then walks the edited source in order. It keeps each retired entry
+    /// whose check reads what it read ([`Self::keep`]), and it offers each
+    /// other declaration. A retired entry keeps its position and its content,
+    /// so no other entry moves. No read sees it, and its rank is free.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, each entry at `positions` is retired, with each
+    ///   member of its unit, and every other entry is as it was; on refusal,
+    ///   the environment is unchanged. Either way the entries keep their
+    ///   number, and the arena mints nothing.
+    /// - provides: the first half of a readmission that keeps the entries an
+    ///   edit leaves.
+    /// - fails: [`KernelError::UnboundConstant`] at a position past the
+    ///   entries, and [`KernelError::KindTaken`] at an entry retired already.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readmission that retires the entries from an edit
+    ///   on and keeps or offers each declaration in source order reads as a
+    ///   fresh admission of the edited source, entry by entry.
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `env::tests::a_keep_that_names_a_retired_position_is_refused_6621`
+    #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
+        ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
+            && (ret.is_err() || positions.iter().all(|&position| self.entries.live(position).is_none())))]
+    #[inline]
+    pub fn retire(
+        &mut self,
+        positions: &[ConstantIndex],
+    ) -> Result<(), KernelError>
+    {
+        for &position in positions {
+            match self.entries.family().get(usize::from(position)) {
+                None => return Err(KernelError::UnboundConstant { index: position }),
+                Some(entry) if entry.kind == EntryKind::Retired => {
+                    return Err(KernelError::KindTaken {
+                        position,
+                        kind: EntryKind::Retired,
+                    });
+                },
+                Some(_) => {},
+            }
+        }
+        for &position in positions {
+            let Some(unit) = self
+                .entries
+                .family()
+                .get(usize::from(position))
+                .map(|entry| entry.unit)
+            else {
+                continue;
+            };
+            for member in usize::from(unit.first) .. usize::from(unit.end) {
+                let member = ConstantIndex::from(member);
+                if self.entries.live(member).is_some() {
+                    self.entries.retire(member);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Keep the retired unit whose first member stands at `first` live again,
+    /// its members at the ranks `ranks`, when its own key says that its check
+    /// reads what it read.
+    ///
+    /// The kernel keeps an entry on its own key, never on the caller's word.
+    /// It computes the unit's narrowed key again in place, over its stored
+    /// content and the entries live now, and compares it with the key the
+    /// unit was admitted under. The key holds every input of the check and no
+    /// position, so equal keys say that the check reads what it read. The
+    /// keep checks, translates and encodes nothing again, and it mints
+    /// nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, each member of the unit is live at its rank of
+    ///   `ranks`, its key unchanged, and a plain definition kept alone takes
+    ///   the name a fresh admission at its rank gives; on refusal, the
+    ///   environment is unchanged and the unit stays retired. Either way the
+    ///   entries keep their number, and the arena mints nothing.
+    /// - provides: the second half of a readmission that keeps the entries an
+    ///   edit leaves: an entry kept here reads as the entry that a fresh
+    ///   admission of the edited source admits at its rank.
+    /// - fails: [`KernelError::UnboundConstant`] at `first` past the entries,
+    ///   or at a position the unit names that is not live or not ranked below
+    ///   the unit; [`KernelError::KindTaken`] when the entry at `first` is
+    ///   live; [`KernelError::RankTaken`] when a live entry holds a rank of
+    ///   `ranks`; and [`KernelError::Unkept`] when `first` and `ranks` do not
+    ///   name the unit, when the unit or its check now has no key, or when the
+    ///   key its check reads now is another key.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a law whose operations an edit reorders is refused
+    ///   after the keep as a fresh admission refuses it; an entry kept after an
+    ///   appended one reads as after it; a keep that names a retired position,
+    ///   and one whose precedence changed, are refused; a kept environment
+    ///   reads as a fresh admission, entry by entry.
+    /// - witness: `ruled::tests::an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621`
+    /// - witness: `env::tests::an_entry_kept_after_an_appended_twin_reads_as_after_it_6621`
+    /// - witness: `env::tests::a_keep_that_names_a_retired_position_is_refused_6621`
+    /// - witness: `ruled::tests::a_keep_whose_precedence_changed_is_refused_6621`
+    /// - witness: `env::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
+        ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
+            && ret.as_ref().map_or(true, |kept| self.entries.live(kept.position()).is_some()))]
+    #[inline]
+    pub fn keep(
+        &mut self,
+        (first, ranks): (ConstantIndex, &[SourceRank]),
+    ) -> Result<CheckedId, KernelError>
+    {
+        use crate::error::KeepRefusal;
+        let unkept = |refusal| KernelError::Unkept {
+            position: first,
+            refusal,
+        };
+        let Some(entry) = self.entries.family().get(usize::from(first))
+        else {
+            return Err(KernelError::UnboundConstant { index: first });
+        };
+        if entry.kind == EntryKind::Live {
+            return Err(KernelError::KindTaken {
+                position: first,
+                kind: EntryKind::Live,
+            });
+        }
+        let unit = entry.unit;
+        let members = usize::from(unit.end).saturating_sub(usize::from(unit.first));
+        let ascending = ranks
+            .windows(2)
+            .all(|pair| matches!(*pair, [lower, higher] if lower < higher));
+        let Some(&below) = ranks.first()
+        else {
+            return Err(unkept(KeepRefusal::Unit));
+        };
+        if unit.first != first || ranks.len() != members || !ascending {
+            return Err(unkept(KeepRefusal::Unit));
+        }
+        for &rank in ranks {
+            if let Some(by) = self.entries.ranked(rank) {
+                return Err(KernelError::RankTaken { rank, by });
+            }
+        }
+        // Each position the unit names stands live and ranked below it, as a
+        // fresh admission's check reads it. The members of a block share the
+        // references of the whole block.
+        for &reference in &entry.references {
+            if unit.holds(reference) == Membership::Member {
+                continue;
+            }
+            match self.entries.rank_of(reference) {
+                Some(rank) if rank < below => {},
+                Some(_) | None => return Err(KernelError::UnboundConstant { index: reference }),
+            }
+        }
+        let content = match unit.shape {
+            UnitShape::Lone => {
+                self.content_key(core::slice::from_ref(&entry.declaration), (first, ranks))
+            },
+            UnitShape::Block => {
+                let declarations: Vec<Declaration> = (usize::from(unit.first)
+                    .. usize::from(unit.end))
+                    .filter_map(|member| self.entries.family().get(member))
+                    .map(|member| member.declaration.clone())
+                    .collect();
+                self.content_key(&declarations, (first, ranks))
+            },
+        };
+        let generative = (usize::from(unit.first) .. usize::from(unit.end))
+            .filter_map(|member| self.entries.family().get(member))
+            .any(|member| {
+                !matches!(
+                    *member.content(),
+                    DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
+                )
+            });
+        let Maybe::Present(content) = content
+        else {
+            return Err(unkept(KeepRefusal::Unkeyed));
+        };
+        let unit_key = if generative {
+            content.generative(self.entries.generative_count(content, below))
+        }
+        else {
+            content
+        };
+        for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
+            let expected = match unit.shape {
+                UnitShape::Lone => unit_key,
+                UnitShape::Block => unit_key.member(crate::verdict::KeyedCount::from(offset)),
+            };
+            match self
+                .entries
+                .family()
+                .get(member)
+                .map(AdmittedDeclaration::key)
+            {
+                Some(Maybe::Present(held)) if held == expected => {},
+                Some(Maybe::Present(_)) => return Err(unkept(KeepRefusal::KeyChanged)),
+                Some(Maybe::Absent(_)) | None => return Err(unkept(KeepRefusal::Unkeyed)),
+            }
+        }
+        for (member, &rank) in (usize::from(unit.first) .. usize::from(unit.end)).zip(ranks) {
+            let position = ConstantIndex::from(member);
+            let Some(held) = self
+                .entries
+                .family()
+                .get(member)
+                .map(|entry| entry.key_name)
+            else {
+                continue;
+            };
+            // A twin's order among the plain definitions of its content is
+            // in its name: the kept twin takes the order of its new rank.
+            let key_name = match (unit.shape, held) {
+                (UnitShape::Lone, ConstantName::Definition { declared, body, .. }) => {
+                    crate::encoding::name_definition(
+                        &mut self.names.definitions,
+                        &self.arena,
+                        (&self.entries, rank),
+                        declared,
+                        body,
+                    )
+                },
+                (UnitShape::Lone | UnitShape::Block, name) => name,
+            };
+            self.entries
+                .reinstate(&self.arena, (position, rank), key_name);
+        }
+        Ok(CheckedId::new(first))
     }
 
     /// Close the admission that minted `atom`: from the next admission on, the
@@ -3749,8 +4279,10 @@ impl Environment
     /// written as its entry's key.
     ///
     /// # Specification
-    /// - requires: `first` is the environment's length, `members` are staged in
-    ///   its arena, and `ranks` holds one rank per member, ascending.
+    /// - requires: `first` is the position of the unit's first member: the
+    ///   environment's length at an admission, and the first position of the
+    ///   retired unit at a keep. `members` are in the environment's arena, and
+    ///   `ranks` holds one rank per member, ascending.
     /// - ensures: absent as
     ///   [`keyed::Absent::Rechecking`](crate::verdict::keyed::Absent::Rechecking)
     ///   under a policy that rechecks, as
@@ -5261,9 +5793,13 @@ mod tests
     use gandr_kernel_term::SourceRank;
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
+    use quenchant_shape::shape::Maybe;
 
+    use super::Admission;
+    use super::AdmittedDeclaration;
     use super::CheckedId;
     use super::Entries;
+    use super::EntryKind;
     use super::Environment;
     use super::ExpansionCensus;
     use super::OutstandingCount;
@@ -6686,7 +7222,7 @@ mod tests
     }
 
     /// A field type a generated declaration carries.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Field
     {
         /// The value universe at a level.
@@ -6700,7 +7236,7 @@ mod tests
     }
 
     /// One generated declaration, admitted alone or as a block's member.
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     enum Member
     {
         /// A monomorphic data declaration whose one constructor carries the
@@ -6886,7 +7422,7 @@ mod tests
     }
 
     /// One admission of a generated environment.
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     enum Generated
     {
         /// A declaration admitted alone.
@@ -6942,8 +7478,10 @@ mod tests
         ]
     }
 
-    /// Admit `generated` in `environment`. A member's fields come from the
-    /// data types at `data` and from the block's data members before it.
+    /// Admit `generated` in `environment`, its members ranked from `rank` on
+    /// when a rank is given and at their positions otherwise. A member's
+    /// fields come from the data types at `data` and from the block's data
+    /// members before it.
     ///
     /// # Specification
     /// trivial.
@@ -6951,14 +7489,21 @@ mod tests
         environment: &mut Environment,
         generated: &Generated,
         data: &[ConstantIndex],
+        rank: Option<SourceRank>,
     ) -> Result<Vec<ConstantIndex>, KernelError>
     {
         let base = usize::from(environment.entries().len());
+        let ranked = |staged: StagedDeclaration, offset: usize| match rank {
+            Some(first) => {
+                staged.ranked(SourceRank::from(usize::from(first).saturating_add(offset)))
+            },
+            None => staged,
+        };
         match *generated {
             Generated::Lone(ref member) => {
                 let staged = stage_member(environment, member, ConstantIndex::from(base), data);
                 environment
-                    .add_decl(staged)
+                    .add_decl(ranked(staged, 0))
                     .map(|admitted| vec![admitted.position()])
             },
             Generated::Block(ref members) => {
@@ -6966,7 +7511,10 @@ mod tests
                 let mut staged = Vec::with_capacity(members.len());
                 for (offset, member) in members.iter().enumerate() {
                     let own = ConstantIndex::from(base.saturating_add(offset));
-                    staged.push(stage_member(environment, member, own, &scope));
+                    staged.push(ranked(
+                        stage_member(environment, member, own, &scope),
+                        offset,
+                    ));
                     if matches!(*member, Member::Data(..)) {
                         scope.push(own);
                     }
@@ -6976,6 +7524,242 @@ mod tests
                     .map(|ids| ids.into_iter().map(CheckedId::position).collect())
             },
         }
+    }
+
+    /// The members of `generated`, in the order it admits them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn members(generated: &Generated) -> &[Member]
+    {
+        match *generated {
+            Generated::Lone(ref member) => core::slice::from_ref(member),
+            Generated::Block(ref members) => members.as_slice(),
+        }
+    }
+
+    /// The place of a data member in a source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Origin
+    {
+        /// The index of the member's admission in the source.
+        admission: usize,
+        /// The member's offset among the admission's members.
+        member: usize,
+    }
+
+    /// What admitting a source gave: the positions of each admission, or
+    /// none where the kernel refused it, and the places of the data types in
+    /// scope at each admission.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Debug)]
+    struct Admitted
+    {
+        /// The positions of each admission, or none where it was refused.
+        positions: Vec<Option<Vec<ConstantIndex>>>,
+        /// The places of the data types in scope at each admission.
+        scopes: Vec<Vec<Origin>>,
+    }
+
+    /// Admit `source` in `environment`, in order, each admission at its
+    /// positions.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_source(
+        environment: &mut Environment,
+        source: &[Generated],
+    ) -> Admitted
+    {
+        let mut data = Vec::new();
+        let mut origins: Vec<Origin> = Vec::new();
+        let mut positions = Vec::with_capacity(source.len());
+        let mut scopes = Vec::with_capacity(source.len());
+        for (index, admission) in source.iter().enumerate() {
+            scopes.push(origins.clone());
+            let verdict = admit_generated(environment, admission, &data, None).ok();
+            let admitted = verdict.as_deref().unwrap_or_default();
+            for (member, (generated, &position)) in
+                members(admission).iter().zip(admitted).enumerate()
+            {
+                if matches!(*generated, Member::Data(..)) {
+                    data.push(position);
+                    origins.push(Origin {
+                        admission: index,
+                        member,
+                    });
+                }
+            }
+            positions.push(verdict);
+        }
+        Admitted { positions, scopes }
+    }
+
+    /// A fresh environment that keys each admission, so a readmission can
+    /// keep an entry on its key.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keyed() -> Environment
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        Environment::recalling(
+            crate::verdict::TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+            alloc::sync::Arc::new(crate::verdict::NoVerdicts),
+        )
+    }
+
+    /// The live entries of `environment` in rank order, each read as its
+    /// rank, its key and how it was admitted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_by_rank(
+        environment: &Environment
+    ) -> Vec<(
+        SourceRank,
+        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        Admission,
+    )>
+    {
+        let mut read: Vec<_> = environment
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == EntryKind::Live)
+            .map(|entry| (entry.rank(), entry.key(), entry.admission()))
+            .collect();
+        read.sort_by_key(|&(rank, ..)| rank);
+        read
+    }
+
+    /// A keep is refused when the kept entry names a retired position, as a
+    /// fresh admission refuses a reference to a declaration it does not hold.
+    /// `b` names `a`. The readmission retires both, and keeps `b` before it
+    /// keeps `a`.
+    #[test]
+    fn a_keep_that_names_a_retired_position_is_refused_6621()
+    {
+        let zero = LevelConstant::from(0_u64);
+        let mut environment = keyed();
+        let a = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Data(zero, vec![])),
+            &[],
+            None,
+        )
+        .expect("`a` admits");
+        let b = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Axiom(Field::Earlier(0))),
+            &a,
+            None,
+        )
+        .expect("`b` admits");
+        let (a, b) = (a[0], b[0]);
+        let watermark = environment.arena().watermark();
+        assert_eq!(environment.retire(&[a, b]), Ok(()), "`a` and `b` retire");
+        assert_eq!(
+            environment.retire(&[a]),
+            Err(KernelError::KindTaken {
+                position: a,
+                kind: EntryKind::Retired,
+            }),
+            "a retired entry does not retire again"
+        );
+        assert_eq!(
+            environment.keep((b, &[SourceRank::from(1_usize)])),
+            Err(KernelError::UnboundConstant { index: a }),
+            "`b` names the retired `a`"
+        );
+        assert!(
+            environment.entries().get(usize::from(b)).is_none(),
+            "`b` stays retired"
+        );
+        assert_eq!(
+            environment
+                .keep((a, &[SourceRank::from(0_usize)]))
+                .map(CheckedId::position),
+            Ok(a),
+            "`a` is kept"
+        );
+        assert_eq!(
+            environment
+                .keep((b, &[SourceRank::from(1_usize)]))
+                .map(CheckedId::position),
+            Ok(b),
+            "then `b` is kept after it"
+        );
+        assert_eq!(
+            environment.arena().watermark(),
+            watermark,
+            "the retire and the keeps mint nothing"
+        );
+    }
+
+    /// An entry kept after an appended one reads as after it. A plain
+    /// definition is named by its content and by its order among its twins.
+    /// The previous revision holds one unit definition, and the edit puts a
+    /// twin before it. The readmission retires the old twin, offers the new
+    /// one at rank 0, which takes position 1, and keeps the old one at the
+    /// rank 1. The appended twin takes the first order and the kept one the
+    /// second, as a fresh admission of the edited source orders them.
+    #[test]
+    fn an_entry_kept_after_an_appended_twin_reads_as_after_it_6621()
+    {
+        let order = |environment: &Environment, position: usize| match environment
+            .entries()
+            .get(position)
+            .map(AdmittedDeclaration::key_name)
+        {
+            Some(crate::encoding::ConstantName::Definition { rank, .. }) => rank,
+            Some(crate::encoding::ConstantName::Position) | None => {
+                panic!("a plain definition is named by its content")
+            },
+        };
+        let mut fresh = keyed();
+        for _twin in 0 .. 2_usize {
+            let twin = stage_unit(&mut fresh);
+            let _admitted = fresh.add_decl(twin).expect("a twin admits");
+        }
+        let mut readmitted = keyed();
+        let old = stage_unit(&mut readmitted);
+        let old = readmitted
+            .add_decl(old)
+            .expect("the old twin admits")
+            .position();
+        assert_eq!(readmitted.retire(&[old]), Ok(()), "the old twin retires");
+        let new = stage_unit(&mut readmitted).ranked(SourceRank::from(0_usize));
+        let new = readmitted
+            .add_decl(new)
+            .expect("the new twin admits")
+            .position();
+        assert_eq!(
+            readmitted
+                .keep((old, &[SourceRank::from(1_usize)]))
+                .map(CheckedId::position),
+            Ok(old),
+            "the old twin is kept"
+        );
+        assert!(new > old, "the appended twin stands at the later position");
+        assert!(
+            order(&fresh, 0) < order(&fresh, 1),
+            "the fresh twins take two orders"
+        );
+        assert_eq!(
+            order(&readmitted, usize::from(new)),
+            order(&fresh, 0),
+            "the appended twin takes the first order"
+        );
+        assert_eq!(
+            order(&readmitted, usize::from(old)),
+            order(&fresh, 1),
+            "the kept twin takes the second order, as after it"
+        );
     }
 
     proptest::proptest! {
@@ -6993,11 +7777,11 @@ mod tests
             let mut fresh = Environment::new();
             let mut data: Vec<ConstantIndex> = Vec::new();
             for admission in &admissions {
-                let verdict = admit_generated(&mut kept, admission, &data);
+                let verdict = admit_generated(&mut kept, admission, &data, None);
                 // A clone keeps no session. So the reference checks each
                 // admission on an empty one.
                 fresh = fresh.clone();
-                let reference = admit_generated(&mut fresh, admission, &data);
+                let reference = admit_generated(&mut fresh, admission, &data, None);
                 proptest::prop_assert_eq!(&reference, &verdict);
                 let members = match *admission {
                     Generated::Lone(ref member) => core::slice::from_ref(member),
@@ -7023,7 +7807,7 @@ mod tests
             let mut environment = Environment::new();
             let mut data: Vec<ConstantIndex> = Vec::new();
             for admission in &admissions {
-                let verdict = admit_generated(&mut environment, admission, &data);
+                let verdict = admit_generated(&mut environment, admission, &data, None);
                 let members = match *admission {
                     Generated::Lone(ref member) => core::slice::from_ref(member),
                     Generated::Block(ref members) => members.as_slice(),
@@ -7038,6 +7822,101 @@ mod tests
             let entries = environment.entries();
             let found = forward_reach(entries, &edited);
             proptest::prop_assert_eq!(&*entries.reach(edited.iter().copied()), found.as_slice());
+        }
+
+        /// #6621: a kept environment reads as a fresh admission of the edited
+        /// source, entry by entry. The edit replaces one admission of a
+        /// generated source, or none. The readmission retires each entry from
+        /// the first entry of the edited admission on. Then it walks the
+        /// edited source in order: it keeps each admission that the edit
+        /// leaves, and it offers the edited one and each one whose keep is
+        /// refused. A keep is refused only for what its check reads, and with
+        /// no edit no keep is refused.
+        #[test]
+        fn a_kept_environment_reads_as_a_fresh_admission_6621(
+            source in proptest::collection::vec(generated(), 1 .. 10),
+            at in 0_usize .. 10,
+            edit in proptest::option::of(generated()),
+        ) {
+            let at = at.checked_rem(source.len()).unwrap_or_default();
+            let mut edited = source.clone();
+            if let (Some(slot), Some(edit)) = (edited.get_mut(at), edit.clone()) {
+                *slot = edit;
+            }
+            let mut fresh = keyed();
+            let Admitted {
+                positions: answers,
+                scopes: edited_scopes,
+            } = admit_source(&mut fresh, &edited);
+            let mut kept = keyed();
+            let Admitted {
+                positions: admitted,
+                scopes,
+            } = admit_source(&mut kept, &source);
+            let length = usize::from(kept.entries().len());
+            let from = admitted
+                .iter()
+                .skip(at)
+                .flatten()
+                .find_map(|positions| positions.first().copied())
+                .map_or(length, usize::from);
+            let retired: Vec<ConstantIndex> = (from .. length).map(ConstantIndex::from).collect();
+            let watermark = kept.arena().watermark();
+            proptest::prop_assert_eq!(kept.retire(&retired), Ok(()));
+            proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
+            let mut data: Vec<ConstantIndex> = Vec::new();
+            let mut ranks: Vec<SourceRank> = Vec::new();
+            let mut next = 0_usize;
+            for (index, admission) in edited.iter().enumerate() {
+                let held = admitted.get(index).cloned().flatten();
+                let verdict = if index < at {
+                    held
+                }
+                else {
+                    let unchanged = (edit.is_none() || index != at)
+                        && source.get(index) == Some(admission)
+                        && scopes.get(index) == edited_scopes.get(index);
+                    let mut kept_positions = None;
+                    if let (true, Some(positions)) = (unchanged, held) {
+                        ranks.clear();
+                        ranks.extend((next .. next.saturating_add(positions.len())).map(SourceRank::from));
+                        let first = positions
+                            .first()
+                            .copied()
+                            .unwrap_or_else(|| ConstantIndex::from(0_usize));
+                        let watermark = kept.arena().watermark();
+                        match kept.keep((first, &ranks)) {
+                            Ok(_kept) => kept_positions = Some(positions),
+                            Err(refusal) => {
+                                proptest::prop_assert!(edit.is_some(), "with no edit, every keep holds: {:?}", refusal);
+                                proptest::prop_assert!(
+                                    matches!(refusal, KernelError::Unkept { .. } | KernelError::UnboundConstant { .. }),
+                                    "a keep is refused only for what its check reads: {:?}",
+                                    refusal
+                                );
+                            },
+                        }
+                        proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
+                    }
+                    kept_positions.or_else(|| {
+                        admit_generated(&mut kept, admission, &data, Some(SourceRank::from(next))).ok()
+                    })
+                };
+                proptest::prop_assert_eq!(
+                    verdict.is_some(),
+                    answers.get(index).is_some_and(Option::is_some),
+                    "admission {} answers as the fresh admission answers",
+                    index
+                );
+                let positions = verdict.unwrap_or_default();
+                next = next.saturating_add(positions.len());
+                for (member, &position) in members(admission).iter().zip(&positions) {
+                    if matches!(*member, Member::Data(..)) {
+                        data.push(position);
+                    }
+                }
+            }
+            proptest::prop_assert_eq!(read_by_rank(&kept), read_by_rank(&fresh));
         }
     }
 
