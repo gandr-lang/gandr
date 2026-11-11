@@ -2749,7 +2749,9 @@ fi
 # `unsectioned.jq` decides the label and the one comment, each case in
 # `.config/issues/unsectioned.json` an issue, its findings and comments and
 # that decision; and `concerns.jq`'s sqlite-free reading of
-# `ledger/concerns.sql` is held to sqlite's.
+# `ledger/concerns.sql` is held to sqlite's. A title is the text a reader
+# sees (#6496): `.config/issues/title.jq` names each JSON escape a title
+# holds, each case in `.config/issues/title.json` a title and those lines.
 ["check:issues"]
 description = "The issue automations give each recorded case its decision"
 tools.jq = "1.8.1"
@@ -2772,6 +2774,7 @@ cases labels .config/issues/filed.jq "$labelled"
 cases templates .config/issues/rendered.jq .config/issues/templates.json
 .config/cases/run.bash form .config/issues/form.json --program .config/issues/form.jq --mode c || failed=1
 .config/cases/run.bash unsectioned .config/issues/unsectioned.json --program .config/issues/unsectioned.jq --mode c || failed=1
+.config/cases/run.bash title .config/issues/title.json --program .config/issues/title.jq || failed=1
 concerns=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT id, issue FROM concern ORDER BY id;' | jq -c .)
 read_concerns=$(jq -R -s -c -f .config/issues/concerns.jq ledger/concerns.sql | jq -c 'sort_by(.id)')
 if [[ $read_concerns != "$concerns" ]]; then
@@ -2790,7 +2793,7 @@ for template in .config/issues/templates/*.md; do
   fi
 done
 (( failed == 0 )) || exit 1
-echo "issues check OK: $(jq length .config/epics/cases.json) epics gave their decisions, $(jq length .config/epics/link.json) boards their epics' members, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals, $(jq length .config/issues/templates.json) renderings theirs, $templates filer templates render units, $(jq length .config/issues/form.json) form bodies and $(jq length .config/issues/unsectioned.json) issues give theirs, and the concerns read as sqlite reads them"
+echo "issues check OK: $(jq length .config/epics/cases.json) epics gave their decisions, $(jq length .config/epics/link.json) boards their epics' members, $(jq length .config/triage/cases.json) label sets theirs, $(jq length .config/issues/cases.json) label sets their defaults and refusals, $(jq length .config/issues/templates.json) renderings theirs, $templates filer templates render units, $(jq length .config/issues/form.json) form bodies and $(jq length .config/issues/unsectioned.json) issues give theirs, $(jq length .config/issues/title.json) titles their escapes, and the concerns read as sqlite reads them"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each
