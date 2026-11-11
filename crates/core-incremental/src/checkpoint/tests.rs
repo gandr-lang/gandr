@@ -143,13 +143,83 @@ fn recorded_answer_references_participate_in_value_invalidation()
         ),
     ] {
         assert_eq!(
-            super::support_holds(&context, &input, &[Answered::new(
-                Reference::Unoccupied,
-                answer
-            )]),
+            super::support_holds(
+                &context,
+                input.reader(),
+                &[Answered::new(Reference::Unoccupied, answer)],
+                super::Uncompared::Falls
+            ),
             expected
         );
     }
+}
+
+/// A take whose pass holds another answer of an earlier item than the answer
+/// that the judgement read of it fails the requires clause of the take, and the
+/// enforcing build refuses it.
+#[cfg(anodized_panic)]
+#[test]
+#[should_panic(expected = "precondition failed")]
+fn a_take_past_another_answer_than_the_judgement_read_panics_6727()
+{
+    // `source = 0`, then `reader = source`: the judgement reads the type
+    // `Integer` of `source` for `reader`.
+    let unsigned = || Maybe::Absent(signature::Absent::Unsigned);
+    let mut arena = CoreArena::new();
+    let literal = arena.value_literal(crate::fixture::integer(Digits("0")));
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let program = Program::new(arena, vec![
+        Item::new(
+            ItemKey::from("source"),
+            crate::fixture::declaration(
+                crate::fixture::Position(0),
+                unsigned(),
+                Maybe::Present(literal),
+            ),
+        ),
+        Item::new(
+            ItemKey::from("reader"),
+            crate::fixture::declaration(
+                crate::fixture::Position(1),
+                unsigned(),
+                Maybe::Present(named),
+            ),
+        ),
+    ])
+    .expect("positions ascend");
+    let mut judged = program.arena().clone();
+    let mut run = gandr_core_checker::ModuleRun::new();
+    run.keep_supports();
+    let report = {
+        let mut context = gandr_core_checker::CheckingContext::new(
+            &mut judged,
+            gandr_core_checker::CheckBudget::DEFAULT,
+        );
+        run.judge(&mut context, &program.declarations(), |_, _, _| {});
+        run.finish(&mut context)
+    };
+    let judgement = super::Judgement::new(&judged, &report);
+    // The pass holds `source` untyped, as a pass that refuses it holds it.
+    let supplied = Supplied {
+        leading: &[],
+        own: vec![Answer::Untyped],
+    };
+    let mut arena = program.arena().clone();
+    let mut context = gandr_core_checker::CheckingContext::new(
+        &mut arena,
+        gandr_core_checker::CheckBudget::DEFAULT,
+    );
+    let ordinal = ItemOrdinal::from(1_usize);
+    let item = encode_item(program.arena(), program.layout(), ordinal);
+    let types = crate::content::TypeMemo::default();
+    let _taken = judgement.take(&mut context, &super::Taking {
+        item: &item,
+        declaration: program.items()[1].declaration(),
+        layout: program.layout(),
+        types: &types,
+        supplied: &supplied,
+        ordinal,
+    });
 }
 
 #[test]

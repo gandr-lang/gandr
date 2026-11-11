@@ -2721,6 +2721,28 @@ struct Taking<'input>
     layout: &'input Layout,
     /// The types encoded from the judgement's arena.
     types: &'input crate::content::TypeMemo,
+    /// The answers of the items passed so far.
+    supplied: &'input Supplied<'input>,
+    /// The item's ordinal.
+    ordinal: ItemOrdinal,
+}
+
+impl<'input> Taking<'input>
+{
+    /// What a stand test reads of the item and its pass.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reader(&self) -> Reader<'input>
+    {
+        Reader {
+            item: self.item,
+            declaration: self.declaration,
+            layout: self.layout,
+            supplied: self.supplied,
+            ordinal: self.ordinal,
+        }
+    }
 }
 
 impl<'judged> Judgement<'judged>
@@ -2762,26 +2784,63 @@ impl<'judged> Judgement<'judged>
             .map_or_else(MemoTally::default, Supported::memo)
     }
 
+    /// Whether `context` holds each answer that the judgement read of the
+    /// items before this one: the support of the item's kept verdict, projected
+    /// through the edited program with the item's own entry as a decision
+    /// projects it, stands against the answers of the pass, as
+    /// [`support_holds`] reads it with an uncompared answer agreeing. A
+    /// declaration that the judgement kept no verdict of reads nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one projection of the item's kept support and one comparison
+    ///   for each of its answers, the walk that the body of [`Judgement::take`]
+    ///   makes once when it seats the item; no read grows with the program.
+    fn read_as_judged(
+        &self,
+        context: &CheckingContext<'_>,
+        taking: &Taking<'_>,
+    ) -> Standing
+    {
+        self.supported
+            .get(&taking.declaration.constant())
+            .map_or(Standing::Stands, |supported| {
+                let own = own_entry(context, taking.declaration, (taking.item, taking.layout));
+                let support = answered(
+                    (supported.support(), own),
+                    self.arena,
+                    taking.layout,
+                    taking.types,
+                );
+                support_holds(context, taking.reader(), &support, Uncompared::Agrees)
+            })
+    }
+
     /// The item's verdict as this judgement gave it, seated in `context` as
     /// the item's own decision would leave it, with the typing, the support and
     /// the answer its checkpoint keeps.
     ///
     /// # Specification
-    /// - requires: `context` has admitted exactly the items before this one,
-    ///   each with the answer the judgement read of it.
+    /// - requires: `taking` supplies the answers of the items before this one,
+    ///   `context` has admitted those items with them, and each answer the
+    ///   judgement read of them is one of them ([`Judgement::read_as_judged`]).
     /// - ensures: the typing and the support of the verdict the judgement
     ///   decided, projected through the edited program, and the answer [`seat`]
     ///   gives; the context then holds the item as [`seat`] holds it. Otherwise
     ///   the context is unchanged.
     /// - provides: the reason the item is decided again, checked in the order
     ///   of [`taken::Absent`].
-    /// - panics: none.
-    /// - executable: none — the context does not hold the judgement's answers,
-    ///   so a predicate cannot compare the seated item with the decided one.
+    /// - panics: in the enforcing build, where the requires clause fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Judgement`].
+    /// - hypothesis: L3 — as [`Judgement`]; a pass that holds another answer
+    ///   than the judgement read is refused before the take.
     /// - witness: `tests::incremental::a_pass_that_takes_the_judgement_checkpoints_as_one_that_decides_6573`
+    /// - witness: `checkpoint::tests::a_take_past_another_answer_than_the_judgement_read_panics_6727`
+    #[spec(requires: taking.supplied.next() == taking.ordinal
+        && self.read_as_judged(context, taking) == Standing::Stands)]
     fn take(
         &self,
         context: &mut CheckingContext<'_>,
@@ -3506,6 +3565,8 @@ where
                         declaration,
                         layout,
                         types: &judged_types,
+                        supplied: &supplied,
+                        ordinal,
                     }),
                     (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
                     (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
@@ -3897,6 +3958,24 @@ struct AdoptionInput<'input, 'base>
     value_changed: &'input BTreeSet<Reference>,
 }
 
+impl<'input> AdoptionInput<'input, '_>
+{
+    /// What a stand test reads of the item and its pass.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reader(&self) -> Reader<'input>
+    {
+        Reader {
+            item: self.item,
+            declaration: self.declaration,
+            layout: self.layout,
+            supplied: self.supplied,
+            ordinal: self.ordinal,
+        }
+    }
+}
+
 /// How an adopted item's type takes its seat.
 ///
 /// # Specification
@@ -3955,7 +4034,7 @@ enum Seat
         let derived = matches!(*input.candidate.checkpoint.typing(), Typing::Checked { .. } | Typing::Synthesised { .. })
             && matches!(*input.declaration.content(), gandr_core_checker::DeclarationContent::Value { body: Maybe::Present(held), .. }
                 if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..) | gandr_core_term::Value::Equiv(..))));
-        let supported = answers_hold(input, input.candidate.checkpoint.support()) == Standing::Stands;
+        let supported = answers_hold(input.reader(), input.candidate.checkpoint.support(), Uncompared::Falls) == Standing::Stands;
         let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let marked = matches!(input.declaration.builtin(), Maybe::Present(_));
         let elaborated = input.candidate.checkpoint.entered() == Entered::Elaborated;
@@ -4010,7 +4089,13 @@ fn adopt(
     if input.item.content.opacity() == Opacity::Opaque {
         return Maybe::Absent(recall::Absent::Opaque);
     }
-    if support_holds(context, input, checkpoint.support()) == Standing::Falls {
+    if support_holds(
+        context,
+        input.reader(),
+        checkpoint.support(),
+        Uncompared::Falls,
+    ) == Standing::Falls
+    {
         return Maybe::Absent(recall::Absent::Outdated);
     }
     if touches(input, checkpoint.support()) == Standing::Falls {
@@ -4324,17 +4409,101 @@ fn seat(
     Maybe::Present(answer)
 }
 
+/// How a stand test counts a recorded answer that content cannot compare: a
+/// codata answer, and a typed answer whose root has no content form.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Uncompared
+{
+    /// The answer falls, as an adoption reads it, and the pass decides the
+    /// item again.
+    Falls,
+    /// A codata answer stands where the pass supplied an equal one, and an
+    /// opaque type stands where the pass supplied a type. The requires clause
+    /// of [`Judgement::take`] reads an answer so, since it refutes only an
+    /// answer that differs.
+    Agrees,
+}
+
+/// What a stand test reads of an item and its pass.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+struct Reader<'input>
+{
+    /// The item's encoding.
+    item: &'input Encoded,
+    /// The item's declaration.
+    declaration: &'input gandr_core_checker::Declaration,
+    /// The edited program.
+    layout: &'input Layout,
+    /// The answers of the items passed so far.
+    supplied: &'input Supplied<'input>,
+    /// The item's ordinal.
+    ordinal: ItemOrdinal,
+}
+
+/// Whether `answered` stands against `current`, the answer that the pass
+/// supplied of the item that it names, if one precedes this item, counting an
+/// answer that content cannot compare as `uncompared` says.
+///
+/// # Specification
+/// trivial.
+fn answer_stands(
+    answered: &Answered,
+    current: Option<&Answer>,
+    uncompared: Uncompared,
+) -> Standing
+{
+    let stands = match answered.answer {
+        Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
+        Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
+        // A type with a node of no content form is equal to every type with
+        // another such node in its place.
+        Answer::Typed(ref ty) => {
+            let opaque = ty
+                .nodes()
+                .first()
+                .is_some_and(|root| root.opacity() == Opacity::Opaque);
+            match (opaque, uncompared) {
+                (false, Uncompared::Falls | Uncompared::Agrees) => {
+                    current == Some(&answered.answer)
+                },
+                (true, Uncompared::Falls) => false,
+                (true, Uncompared::Agrees) => matches!(current, Some(Answer::Typed(_))),
+            }
+        },
+        Answer::Data(Some(_)) => current == Some(&answered.answer),
+        Answer::Codata => match uncompared {
+            Uncompared::Falls => false,
+            Uncompared::Agrees => current == Some(&answered.answer),
+        },
+        // The register and the grant answer these; `located_stands` reads
+        // them.
+        Answer::Located { .. } | Answer::Entered { .. } => true,
+    };
+    if stands {
+        Standing::Stands
+    }
+    else {
+        Standing::Falls
+    }
+}
+
 /// Whether every recorded answer of the signature tables equals the answer the
 /// edited table gives.
 ///
 /// # Specification
-/// - requires: as [`adopt`].
+/// - requires: `reader` supplies the answers of the items before its ordinal.
 /// - ensures: `Stands` exactly when, for each recorded answer, the item its
 ///   reference names in the edited program precedes this one and supplied an
 ///   equal answer, or no such item precedes it and the recorded answer is
-///   `Untyped`; a recorded codata answer, and a typed one whose content is
-///   opaque, never stands; a located and an entered answer stand here, and
-///   [`located_stands`] reads them.
+///   `Untyped`; a recorded codata answer, and a typed one whose root is opaque,
+///   stands as `uncompared` says; a located and an entered answer stand here,
+///   and [`located_stands`] reads them.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4345,58 +4514,34 @@ fn seat(
 /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
 /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
 #[spec(
-    requires: input.supplied.next() == input.ordinal,
+    requires: reader.supplied.next() == reader.ordinal,
     ensures: |ret| {
         (ret == Standing::Stands)
-            == (support.iter().all(|answered| {
-                input
+            == support.iter().all(|answered| {
+                let current = reader
                     .layout
                     .references
                     .iter()
-                    .take(usize::from(input.ordinal))
-                    .zip(input.supplied.iter())
+                    .take(usize::from(reader.ordinal))
+                    .zip(reader.supplied.iter())
                     .find(|&(reference, _)| *reference == answered.reference)
-                    .map(|(_,current)| current).map_or_else(
-                        || matches!(answered.answer,Answer::Untyped | Answer::Data(None) | Answer::Located { .. } | Answer::Entered { .. }),
-                        |current| match answered.answer {
-                            Answer::Untyped => !matches!(current,Answer::Typed(_)),
-                            Answer::Data(None) => !matches!(current,Answer::Data(Some(_))),
-                            Answer::Typed(ref ty) => ty.nodes().first().is_none_or(|root| root.opacity() == Opacity::Transparent) && *current == answered.answer,
-                            Answer::Data(Some(_)) => *current == answered.answer,
-                            Answer::Codata => false,
-                            Answer::Located { .. } | Answer::Entered { .. } => true,
-                        },
-                    )
-            }))
+                    .map(|(_, current)| current);
+                answer_stands(answered, current, uncompared) == Standing::Stands
+            })
     },
 )]
 fn answers_hold(
-    input: &AdoptionInput<'_, '_>,
+    reader: Reader<'_>,
     support: &[Answered],
+    uncompared: Uncompared,
 ) -> Standing
 {
     let holds = support.iter().all(|answered| {
-        let current = match input.layout.ordinal_of(&answered.reference) {
-            Maybe::Present(ordinal) if ordinal < input.ordinal => input.supplied.get(ordinal),
+        let current = match reader.layout.ordinal_of(&answered.reference) {
+            Maybe::Present(ordinal) if ordinal < reader.ordinal => reader.supplied.get(ordinal),
             Maybe::Present(_) | Maybe::Absent(_) => None,
         };
-        match answered.answer {
-            Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
-            Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
-            // A type with a node of no content form is equal to every type
-            // with another such node in its place.
-            Answer::Typed(ref ty) => {
-                ty.nodes()
-                    .first()
-                    .is_none_or(|root| root.opacity() == Opacity::Transparent)
-                    && current == Some(&answered.answer)
-            },
-            Answer::Data(Some(_)) => current == Some(&answered.answer),
-            Answer::Codata => false,
-            // The register and the grant answer these; `located_stands` reads
-            // them.
-            Answer::Located { .. } | Answer::Entered { .. } => true,
-        }
+        answer_stands(answered, current, uncompared) == Standing::Stands
     });
     if holds {
         Standing::Stands
@@ -4411,7 +4556,7 @@ fn answers_hold(
 /// [`located_stands`] reads them.
 ///
 /// # Specification
-/// - requires: as [`adopt`].
+/// - requires: `reader` supplies the answers of the items before its ordinal.
 /// - ensures: `Stands` exactly when both stand.
 /// - panics: none.
 ///
@@ -4420,19 +4565,20 @@ fn answers_hold(
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
 #[spec(
-    requires: input.supplied.next() == input.ordinal,
+    requires: reader.supplied.next() == reader.ordinal,
     ensures: |ret| (ret == Standing::Stands)
-        == (answers_hold(input, support) == Standing::Stands
-            && located_stands(context, input, support) == Standing::Stands),
+        == (answers_hold(reader, support, uncompared) == Standing::Stands
+            && located_stands(context, reader, support) == Standing::Stands),
 )]
 fn support_holds(
     context: &CheckingContext<'_>,
-    input: &AdoptionInput<'_, '_>,
+    reader: Reader<'_>,
     support: &[Answered],
+    uncompared: Uncompared,
 ) -> Standing
 {
-    if answers_hold(input, support) == Standing::Stands {
-        located_stands(context, input, support)
+    if answers_hold(reader, support, uncompared) == Standing::Stands {
+        located_stands(context, reader, support)
     }
     else {
         Standing::Falls
@@ -4465,7 +4611,7 @@ fn support_holds(
 /// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
 fn located_stands(
     context: &CheckingContext<'_>,
-    input: &AdoptionInput<'_, '_>,
+    reader: Reader<'_>,
     support: &[Answered],
 ) -> Standing
 {
@@ -4483,8 +4629,8 @@ fn located_stands(
         .iter()
         .filter(|answered| answered.answer.consultation() == Consultation::Value)
         .all(|answered| {
-            let current = match input.layout.ordinal_of(&answered.reference) {
-                Maybe::Present(ordinal) if ordinal < input.ordinal => input
+            let current = match reader.layout.ordinal_of(&answered.reference) {
+                Maybe::Present(ordinal) if ordinal < reader.ordinal => reader
                     .layout
                     .items
                     .get(usize::from(ordinal))
@@ -4493,7 +4639,7 @@ fn located_stands(
             };
             match recorded(&answered.reference, Consultation::Located) {
                 Some(&Answer::Located { ref home, spending }) => current.is_some_and(|located| {
-                    crate::content::WorldContent::of(input.layout, located.home()) == *home
+                    crate::content::WorldContent::of(reader.layout, located.home()) == *home
                         && located.spending() == spending
                 }),
                 Some(_) | None => current.is_none_or(|located| {
@@ -4501,11 +4647,11 @@ fn located_stands(
                 }),
             }
         });
-    let resolved = context.resolve_entry(input.declaration).ok();
-    let entered = match recorded(input.item.content.reference(), Consultation::Entry) {
+    let resolved = context.resolve_entry(reader.declaration).ok();
+    let entered = match recorded(reader.item.content.reference(), Consultation::Entry) {
         Some(&Answer::Entered { ref entry, .. }) => {
             resolved
-                .map(|resolved| crate::content::EntryRoots::of(input.layout, &resolved))
+                .map(|resolved| crate::content::EntryRoots::of(reader.layout, &resolved))
                 .as_ref()
                 == entry.as_ref()
         },
