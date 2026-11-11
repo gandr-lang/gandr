@@ -488,27 +488,72 @@ impl From<ParameterCount> for u32
     }
 }
 
+/// Which rules of the admitted entries a replay fires.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Fires(u8);
+
+impl Fires
+{
+    /// A definition's body.
+    const BODIES: Self = Self(1);
+    /// A lawful atom's relation.
+    const IDENTITIES: Self = Self(2);
+    /// A ruled definition's fixpoint.
+    const RULED: Self = Self(8);
+    /// A literal identity test.
+    const TESTS: Self = Self(4);
+
+    /// These rules and `other`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0 | other.0)
+    }
+
+    /// These rules, kept only where `rule` holds them.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn only(
+        self,
+        rule: Self,
+    ) -> Self
+    {
+        Self(self.0 & rule.0)
+    }
+}
+
 /// The rules a replay may fire, by admission position.
 ///
 /// They are the definitions it may unfold, the presented types whose terms it
-/// rewrites, the relations lawful atoms read their identities as, and the
-/// literal identity tests it computes.
+/// rewrites, the relations lawful atoms read their identities as, the literal
+/// identity tests it computes and the ruled fixpoints whose recursion
+/// terminates. A replay over admitted entries reads each rule from its entry
+/// when the replay asks for it, through the support of the check that runs,
+/// so no reading walks the environment.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Unfoldings
 {
-    /// The unfolding of each constant, at its admission position.
+    /// The admitted entries the replay reads its rules from; none for a
+    /// replay given its rules alone.
+    admitted: Option<crate::env::Entries>,
+    /// Which rules of the admitted entries the replay fires.
+    fires: Fires,
+    /// The unfolding of each constant at its admission position: past the
+    /// admitted entries when they give the bodies, from the first position
+    /// otherwise.
     bodies: Vec<Unfoldable>,
     /// The rules of every presented type the replay's terms may hold.
     presentations: crate::presented::Presentations,
-    /// The relation of each lawful atom, at its admission position.
-    identities: BTreeMap<ConstantIndex, ValueId>,
-    /// The test of each literal identity declaration, at its admission
-    /// position.
+    /// The test of each literal identity declaration given beside the
+    /// admitted entries, at its admission position.
     tests: BTreeMap<ConstantIndex, gandr_kernel_term::LiteralIdentity>,
-    /// The fixpoint each ruled definition's body thunks, in ascending order.
-    /// Admission decided that the rules of the definition terminate and that
-    /// the fixpoint is their decision tree, so its recursion terminates.
-    terminating: Vec<ComputationId>,
 }
 
 impl Unfoldings
@@ -542,22 +587,23 @@ impl Unfoldings
     {
         Self {
             bodies,
-            presentations: crate::presented::Presentations::default(),
-            identities: BTreeMap::new(),
-            tests: BTreeMap::new(),
-            terminating: Vec::new(),
+            ..Self::default()
         }
     }
 
-    /// The unfoldings that the admitted `entries` state.
+    /// The unfoldings that the admitted `entries` state, read from each entry
+    /// when a replay asks for it.
     ///
     /// # Specification
-    /// - ensures: one unfolding per entry, the relation of each lawful atom,
-    ///   and each literal identity test.
+    /// - ensures: [`Self::unfolding`] answers the body of each definition among
+    ///   `entries`, [`Self::identity`] the relation of each lawful atom and
+    ///   [`Self::literal_identity`] each literal identity test, each read
+    ///   through the support of the check that runs.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: one pass through `entries`, with one body vector
-    ///   allocation.
+    /// - executable: none — the clauses state what later reads through the
+    ///   support answer, which construction does not run.
+    /// - intension: no walk over `entries` and no allocation.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a definition, a lawful atom and a literal identity
@@ -565,47 +611,47 @@ impl Unfoldings
     /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
     /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
     /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
-    #[spec(ensures: |ret| ret.bodies.len() == usize::from(entries.len()))]
     #[inline]
     #[must_use]
-    pub(crate) fn from_entries(entries: &crate::env::Entries) -> Self
+    pub(crate) fn admitted(entries: &crate::env::Entries) -> Self
     {
-        let mut bodies = Vec::with_capacity(usize::from(entries.len()));
-        let mut identities = BTreeMap::new();
-        let mut tests = BTreeMap::new();
-        for (position, entry) in entries.iter().enumerate() {
-            let position = ConstantIndex::from(position);
-            match *entry.content() {
-                gandr_kernel_term::DeclarationContent::Def { body, .. } => {
-                    bodies.push(Unfoldable::Body(body));
-                },
-                gandr_kernel_term::DeclarationContent::AbstractType {
-                    interface: quenchant_shape::shape::Maybe::Present(interface),
-                    ..
-                } => {
-                    if let quenchant_shape::shape::Maybe::Present(_) = interface.law() {
-                        let _previous = identities.insert(position, interface.relation());
-                    }
-                    bodies.push(Unfoldable::Opaque);
-                },
-                gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } => {
-                    let _previous = tests.insert(position, test);
-                    bodies.push(Unfoldable::Opaque);
-                },
-                gandr_kernel_term::DeclarationContent::Data { .. }
-                | gandr_kernel_term::DeclarationContent::Codata { .. }
-                | gandr_kernel_term::DeclarationContent::Axiom { .. }
-                | gandr_kernel_term::DeclarationContent::AbstractType { .. } => {
-                    bodies.push(Unfoldable::Opaque);
-                },
-            }
-        }
         Self {
-            bodies,
-            presentations: crate::presented::Presentations::default(),
-            identities,
-            tests,
-            terminating: Vec::new(),
+            admitted: Some(entries.reading()),
+            fires: Fires::BODIES.and(Fires::IDENTITIES).and(Fires::TESTS),
+            ..Self::default()
+        }
+    }
+
+    /// These unfoldings, and `bodies` at the positions past the admitted
+    /// entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn extended(
+        self,
+        bodies: Vec<Unfoldable>,
+    ) -> Self
+    {
+        Self { bodies, ..self }
+    }
+
+    /// These unfoldings, reading the rules `fires` names from `entries`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reading(
+        self,
+        entries: &crate::env::Entries,
+        fires: Fires,
+    ) -> Self
+    {
+        Self {
+            admitted: Some(self.admitted.unwrap_or_else(|| entries.reading())),
+            fires: self.fires.and(fires),
+            ..self
         }
     }
 
@@ -666,19 +712,7 @@ impl Unfoldings
         entries: &crate::env::Entries,
     ) -> Self
     {
-        let mut identities = BTreeMap::new();
-        for (position, entry) in entries.iter().enumerate() {
-            if let gandr_kernel_term::DeclarationContent::AbstractType {
-                interface: quenchant_shape::shape::Maybe::Present(interface),
-                ..
-            } = *entry.content()
-                && let quenchant_shape::shape::Maybe::Present(_) = interface.law()
-            {
-                let _previous =
-                    identities.insert(ConstantIndex::from(position), interface.relation());
-            }
-        }
-        Self { identities, ..self }
+        self.reading(entries, Fires::IDENTITIES)
     }
 
     /// The relation the lawful atom at `atom` reads its identity as, when it
@@ -693,7 +727,21 @@ impl Unfoldings
         atom: ConstantIndex,
     ) -> Option<ValueId>
     {
-        self.identities.get(&atom).copied()
+        if self.fires.only(Fires::IDENTITIES) != Fires::IDENTITIES {
+            return None;
+        }
+        let entry = self.admitted.as_ref()?.get(usize::from(atom))?;
+        let gandr_kernel_term::DeclarationContent::AbstractType {
+            interface: quenchant_shape::shape::Maybe::Present(interface),
+            ..
+        } = *entry.content()
+        else {
+            return None;
+        };
+        match interface.law() {
+            quenchant_shape::shape::Maybe::Present(_) => Some(interface.relation()),
+            quenchant_shape::shape::Maybe::Absent(_) => None,
+        }
     }
 
     /// These unfoldings, the replay computing every literal identity test
@@ -723,15 +771,7 @@ impl Unfoldings
         entries: &crate::env::Entries,
     ) -> Self
     {
-        let mut tests = BTreeMap::new();
-        for (position, entry) in entries.iter().enumerate() {
-            if let gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } =
-                *entry.content()
-            {
-                let _previous = tests.insert(ConstantIndex::from(position), test);
-            }
-        }
-        Self { tests, ..self }
+        self.reading(entries, Fires::TESTS)
     }
 
     /// These unfoldings, the replay computing the test each position of
@@ -761,7 +801,25 @@ impl Unfoldings
         constant: ConstantIndex,
     ) -> Option<gandr_kernel_term::LiteralIdentity>
     {
-        self.tests.get(&constant).copied()
+        if let Some(&test) = self.tests.get(&constant) {
+            return Some(test);
+        }
+        if self.fires.only(Fires::TESTS) != Fires::TESTS {
+            return None;
+        }
+        match *self
+            .admitted
+            .as_ref()?
+            .get(usize::from(constant))?
+            .content()
+        {
+            gandr_kernel_term::DeclarationContent::LiteralIdentity { test, .. } => Some(test),
+            gandr_kernel_term::DeclarationContent::Data { .. }
+            | gandr_kernel_term::DeclarationContent::Codata { .. }
+            | gandr_kernel_term::DeclarationContent::Def { .. }
+            | gandr_kernel_term::DeclarationContent::Axiom { .. }
+            | gandr_kernel_term::DeclarationContent::AbstractType { .. } => None,
+        }
     }
 
     /// The rules of these unfoldings that no choice stands behind: the
@@ -782,15 +840,17 @@ impl Unfoldings
     /// - hypothesis: L3 — the kernel's own conversion relates a test applied to
     ///   two literals to its answer.
     /// - witness: `replay::tests::a_literal_identity_test_reduces_on_two_literals`
-    #[spec(ensures: |ret| ret.tests.len() == self.tests.len() && ret.bodies.is_empty())]
+    #[spec(ensures: |ret| ret.tests.len() == self.tests.len() && ret.bodies.is_empty() && ret.fires.only(Fires::BODIES) != Fires::BODIES)]
     #[inline]
     #[must_use]
     pub fn forced(&self) -> Self
     {
         Self {
+            admitted: self.admitted.as_ref().map(crate::env::Entries::reading),
+            fires: self.fires.only(Fires::TESTS),
             presentations: self.presentations.clone(),
             tests: self.tests.clone(),
-            ..Self::default()
+            bodies: Vec::new(),
         }
     }
 
@@ -799,7 +859,7 @@ impl Unfoldings
     ///
     /// # Specification
     /// - requires: `entries` is the admission log the replay's terms were
-    ///   admitted in, its bodies minted into `arena`.
+    ///   admitted in.
     /// - ensures: the partial gate unfolds the fixpoint that the body of each
     ///   definition among `entries` with operation rules thunks. It unfolds no
     ///   other partial fixpoint whose recursion it cannot ignore.
@@ -818,32 +878,38 @@ impl Unfoldings
     #[must_use]
     pub fn ruling(
         self,
-        arena: &TermArena,
         entries: &crate::env::Entries,
     ) -> Self
     {
-        let mut terminating = Vec::new();
-        for entry in entries.iter() {
-            if let gandr_kernel_term::DeclarationContent::Def { body, .. } = *entry.content()
-                && !entry.declaration().operation_rules().rules().is_empty()
-                && let Some(&Value::Thunk(root)) = arena.value(body)
-            {
-                terminating.push(root);
-            }
+        self.reading(entries, Fires::RULED)
+    }
+
+    /// The position of the ruled definition whose body thunks the fixpoint
+    /// `root`, when the replay fires ruled fixpoints: then the fixpoint's
+    /// recursion terminates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn terminates(
+        &self,
+        root: ComputationId,
+    ) -> Option<ConstantIndex>
+    {
+        if self.fires.only(Fires::RULED) != Fires::RULED {
+            return None;
         }
-        terminating.sort_unstable();
-        Self {
-            terminating,
-            ..self
-        }
+        self.admitted.as_ref()?.ruled(root)
     }
 
     /// How the constant `constant` unfolds.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the entry at `constant`'s position, or [`Unfoldable::Opaque`]
-    ///   when the list does not reach it.
+    /// - ensures: the body of the definition at `constant`'s position among the
+    ///   admitted entries, read through the support, or [`Unfoldable::Opaque`]
+    ///   for any other entry there; past them, the listed body at `constant`'s
+    ///   position, or [`Unfoldable::Opaque`] when the list does not reach it.
     /// - provides: the δ-rule lookup the replay runs before every unfolding.
     /// - fails: never.
     /// - panics: none.
@@ -851,7 +917,7 @@ impl Unfoldings
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::new`].
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
-    #[spec(ensures: |ret| ret == self.bodies.get(usize::from(constant)).copied().unwrap_or(Unfoldable::Opaque))]
+    #[spec(ensures: |ret| self.fires.only(Fires::BODIES) == Fires::BODIES || ret == self.bodies.get(usize::from(constant)).copied().unwrap_or(Unfoldable::Opaque))]
     #[inline]
     #[must_use]
     pub fn unfolding(
@@ -859,10 +925,87 @@ impl Unfoldings
         constant: ConstantIndex,
     ) -> Unfoldable
     {
-        self.bodies
-            .get(usize::from(constant))
+        self.held(constant).map_or_else(
+            || self.listed(constant),
+            |admitted| Self::body_of(admitted.get(usize::from(constant))),
+        )
+    }
+
+    /// How the constant `constant` unfolds, read through the support of the
+    /// check that runs without moving it: for a specification clause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn peeked(
+        &self,
+        constant: ConstantIndex,
+    ) -> Unfoldable
+    {
+        self.held(constant).map_or_else(
+            || self.listed(constant),
+            |admitted| Self::body_of(admitted.peek(usize::from(constant))),
+        )
+    }
+
+    /// The admitted entries, when the replay reads bodies from them and
+    /// `constant` is among them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn held(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<&crate::env::Entries>
+    {
+        let admitted = self.admitted.as_ref()?;
+        let bodies = self.fires.only(Fires::BODIES) == Fires::BODIES;
+        (bodies && usize::from(constant) < usize::from(admitted.len())).then_some(admitted)
+    }
+
+    /// The listed body of `constant`, counted past the admitted entries when
+    /// the replay reads bodies from them, or [`Unfoldable::Opaque`] when the
+    /// list does not reach it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn listed(
+        &self,
+        constant: ConstantIndex,
+    ) -> Unfoldable
+    {
+        let past = match self.admitted.as_ref() {
+            Some(admitted) if self.fires.only(Fires::BODIES) == Fires::BODIES => {
+                usize::from(admitted.len())
+            },
+            Some(_) | None => 0,
+        };
+        usize::from(constant)
+            .checked_sub(past)
+            .and_then(|offset| self.bodies.get(offset))
             .copied()
             .unwrap_or(Unfoldable::Opaque)
+    }
+
+    /// How an admitted `entry` unfolds: a definition by its body, any other
+    /// entry, or none, as [`Unfoldable::Opaque`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn body_of(entry: Option<&crate::env::AdmittedDeclaration>) -> Unfoldable
+    {
+        entry.map_or(Unfoldable::Opaque, |entry| match *entry.content() {
+            gandr_kernel_term::DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+            gandr_kernel_term::DeclarationContent::Data { .. }
+            | gandr_kernel_term::DeclarationContent::Codata { .. }
+            | gandr_kernel_term::DeclarationContent::Axiom { .. }
+            | gandr_kernel_term::DeclarationContent::LiteralIdentity { .. }
+            | gandr_kernel_term::DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+        })
     }
 }
 
@@ -7174,7 +7317,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             Some(&(Value::Literal(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. })) => ret == Rigidity::Rigid { unit: false, neutral: false },
             Some(&Value::Variable(_)) => ret == Rigidity::Rigid { unit: false, neutral: true },
             Some(_) if self.unit(term) == UnitForm::Unit => ret == Rigidity::Rigid { unit: true, neutral: false },
-            Some(&Value::Constant(constant)) => ret == if self.unfoldings.unfolding(constant) == Unfoldable::Opaque { Rigidity::Rigid { unit: false, neutral: true } } else { Rigidity::Flexible },
+            Some(&Value::Constant(constant)) => ret == if self.unfoldings.peeked(constant) == Unfoldable::Opaque { Rigidity::Rigid { unit: false, neutral: true } } else { Rigidity::Flexible },
             Some(&(Value::Thunk(_) | Value::Returned(_))) | None => ret == Rigidity::Flexible,
             _ => true,
         },
@@ -7444,7 +7587,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
             Some(&Value::Variable(index)) => matches!(ret, Ok(Shape::Neutral(Head::Variable(found), ref spine)) if found == index && spine.is_empty()),
-            Some(&Value::Constant(constant)) => matches!(ret, Ok(Shape::Neutral(head, ref spine)) if head == self.head(constant, frozen, side) && spine.is_empty()),
+            Some(&Value::Constant(constant)) => matches!(ret, Ok(Shape::Neutral(head, ref spine)) if head == self.peeked_head(constant, frozen, side) && spine.is_empty()),
             Some(&Value::Thunk(body)) => ret == Ok(Shape::Thunk(body)),
             Some(&Value::Returned(_)) | None => ret == Err(unreadable()),
             Some(&Value::StaticApplication(_, argument)) => match ret {
@@ -7736,7 +7879,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `path_universe::tests::no_k`
     #[spec(ensures: |ret| ret == match self.arena.value(value) {
         Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
-        Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
+        Some(&Value::Constant(constant)) => Ok(self.peeked_head(constant, frozen, side)),
         _ => Err(unreadable()),
     })]
     fn value_head(
@@ -7801,7 +7944,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   takes precedence over frozen membership.
     /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
     #[spec(ensures: |ret| ret == Head::Constant(constant,
-        if self.unfoldings.unfolding(constant) == Unfoldable::Opaque { Status::Opaque }
+        if self.unfoldings.peeked(constant) == Unfoldable::Opaque { Status::Opaque }
         else if frozen.side(side).contains(&constant) { Status::Frozen }
         else { Status::Defined }))]
     fn head(
@@ -7811,7 +7954,42 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         side: ConversionSide,
     ) -> Head
     {
-        let status = match self.unfoldings.unfolding(constant) {
+        Head::Constant(
+            constant,
+            Self::status(self.unfoldings.unfolding(constant), constant, frozen, side),
+        )
+    }
+
+    /// As [`Self::head`], read through the support of the check that runs
+    /// without moving it: for a specification clause.
+    ///
+    /// # Specification
+    /// trivial.
+    fn peeked_head(
+        &self,
+        constant: ConstantIndex,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Head
+    {
+        Head::Constant(
+            constant,
+            Self::status(self.unfoldings.peeked(constant), constant, frozen, side),
+        )
+    }
+
+    /// The status of `constant`, which unfolds as `unfoldable`, on `side`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn status(
+        unfoldable: Unfoldable,
+        constant: ConstantIndex,
+        frozen: &Frozen,
+        side: ConversionSide,
+    ) -> Status
+    {
+        match unfoldable {
             Unfoldable::Opaque => Status::Opaque,
             Unfoldable::Body(_) | Unfoldable::Operator { .. }
                 if frozen.side(side).contains(&constant) =>
@@ -7819,8 +7997,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 Status::Frozen
             },
             Unfoldable::Body(_) | Unfoldable::Operator { .. } => Status::Defined,
-        };
-        Head::Constant(constant, status)
+        }
     }
 
     /// Replace the head constant `constant` on `side` by its body.
@@ -7848,7 +8025,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     #[spec(
         captures: before = (goal.side(side), goal.side(opposite(side))),
         ensures: |ret| goal.side(opposite(side)) == before.1 && if ret.is_ok() {
-            self.unfoldings.unfolding(constant) != Unfoldable::Opaque
+            self.unfoldings.peeked(constant) != Unfoldable::Opaque
                 && matches!((before.0, goal.side(side)), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))
         } else { goal.side(side) == before.0 },
     )]
@@ -7899,7 +8076,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::a_staged_fixpoint_unfolds_the_constant_at_its_staged_argument_3387`
     /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
     #[spec(ensures: |ret| match ret {
-        Ok(reduct) => self.unfoldings.unfolding(constant) != Unfoldable::Opaque
+        Ok(reduct) => self.unfoldings.peeked(constant) != Unfoldable::Opaque
             && matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_))),
         Err(_) => true,
     })]
@@ -9060,13 +9237,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     FixpointEvidence::Partial,
                                     Gate::Constructor | Gate::Canonical | Gate::Observed,
                                 ) => {
-                                    if self
-                                        .unfoldings
-                                        .terminating
-                                        .binary_search(&focus.node)
-                                        .is_err()
-                                        && innermost(self.arena.computation_support(body))
-                                            != BinderUse::Ignored
+                                    if innermost(self.arena.computation_support(body))
+                                        != BinderUse::Ignored
+                                        && self.unfoldings.terminates(focus.node).is_none()
                                     {
                                         return Err(Stop::PartialFixpoint);
                                     }
@@ -10105,7 +10278,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
     /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     /// - witness: `replay::tests::a_held_path_runs_over_its_operand_as_it_was_3734`
-    #[spec(ensures: |ret| ret.is_none() || matches!(self.unfoldings.unfolding(constant), Unfoldable::Body(_)))]
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.unfoldings.peeked(constant), Unfoldable::Body(_)))]
     fn suspended_fixpoint(
         &self,
         constant: ConstantIndex,
@@ -10216,7 +10389,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   δ-stepped, it reads as the bare fixpoint at `x` and the sides stay
     ///   apart.
     /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
-    #[spec(ensures: |ret| ret.is_none_or(|constant| self.unfoldings.unfolding(constant) != Unfoldable::Opaque))]
+    #[spec(ensures: |ret| ret.is_none_or(|constant| self.unfoldings.peeked(constant) != Unfoldable::Opaque))]
     fn shut_recursion(
         &self,
         call: ComputationId,

@@ -99,16 +99,20 @@
 //! which sealed atoms did a projection rebind? — and does not become more
 //! permissive by following ordinary code dependencies.
 
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
+use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationBuilder;
@@ -1155,6 +1159,10 @@ pub struct AdmittedDeclaration
     /// identity tests this declaration rests on, itself included when it is
     /// one. Precomputed at admission, so the audit is a lookup.
     rested_on: BTreeSet<ConstantIndex>,
+    /// The positions its content names, ascending: what joins a check's
+    /// support when the check reads it. A mutual block's members each keep the
+    /// references of the whole block.
+    references: Box<[ConstantIndex]>,
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
     block: check::occurrence::Block,
@@ -1397,12 +1405,523 @@ impl ArtifactRefusal
 }
 
 /// An environment's admitted declarations, in admission order, indexed by
-/// admission position: those [`Environment::freeze`] froze are shared with
-/// every clone of the environment made after.
-pub type Entries = Family<AdmittedDeclaration>;
+/// admission position, and the tables a check reads beside them.
+///
+/// Those [`Environment::freeze`] froze are shared with every clone of the
+/// environment made after. A clone shares the entries and takes no support. A
+/// check reads an entry only through [`Self::get`], which answers through the
+/// check's support ([`crate::weakening`]); [`Self::iter`] is for a reader
+/// outside a check.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`Self::get`] states what a read
+///   during a check sees.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration whose check reads an entry its content does
+///   not name is refused at that position, and a check after many unrelated
+///   entries reads as many entries as after few.
+/// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+/// - witness: `env::tests::an_admission_reads_as_many_entries_after_many_unrelated_ones_2797`
+#[derive(Debug, Default)]
+pub struct Entries
+{
+    /// The entries and the tables kept beside them, shared with every clone
+    /// and with every reading a check makes, until one of them admits more.
+    log: Option<alloc::sync::Arc<EntryLog>>,
+    /// The support of the check that runs over the entries: none until a
+    /// check opens one, and never shared with a clone.
+    support: Option<alloc::sync::Arc<crate::weakening::Support>>,
+}
+
+/// The admitted declarations and what a check reads beside them.
+#[derive(Clone, Debug, Default)]
+struct EntryLog
+{
+    /// The admitted declarations, in admission order.
+    family: Family<AdmittedDeclaration>,
+    /// The presented types, and the types of words over each sort.
+    presentations: crate::presented::Presentations,
+    /// The position of each ruled definition, by the fixpoint its body thunks.
+    ruled: BTreeMap<ComputationId, ConstantIndex>,
+    /// The position of each built-in role's holder.
+    roles: BTreeMap<gandr_kernel_term::Builtin, ConstantIndex>,
+    /// The positions of the plain definitions named by their content, by the
+    /// digest of their declared type and body, ascending.
+    definitions: BTreeMap<ContentDigest, Vec<ConstantIndex>>,
+}
+
+/// No admitted declaration.
+static NO_FAMILY: Family<AdmittedDeclaration> = Family::new();
 
 /// No admitted declaration: what a judgement over an empty environment reads.
 pub(crate) static NO_ENTRIES: Entries = Entries::new();
+
+impl Clone for Entries
+{
+    /// The same entries, with no support.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            log: self.log.clone(),
+            support: None,
+        }
+    }
+}
+
+impl PartialEq for Entries
+{
+    /// Two readings of one log: the same entries, shared, at the same length.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        match (self.log.as_ref(), other.log.as_ref()) {
+            (Some(mine), Some(theirs)) => alloc::sync::Arc::ptr_eq(mine, theirs),
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        }
+    }
+}
+
+impl Eq for Entries
+{
+}
+
+impl Entries
+{
+    /// No entry, for a constant or a static.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            log: None,
+            support: None,
+        }
+    }
+
+    /// The admitted declarations, read outside any support.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn family(&self) -> &Family<AdmittedDeclaration>
+    {
+        self.log.as_deref().map_or(&NO_FAMILY, |log| &log.family)
+    }
+
+    /// How many entries there are.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> gandr_kernel_term::ArenaLength
+    {
+        self.family().len()
+    }
+
+    /// The entry at `offset`, read through the support of the check that
+    /// runs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry at `offset` while no check runs, or when it is in
+    ///   the running check's support; then, at the check's first read of it,
+    ///   its direct references join the support, with each type of words over
+    ///   each of them. `None` past the entries, and for an entry outside the
+    ///   support, whose position the support keeps.
+    /// - provides: the one read of an entry a check makes, so the kernel checks
+    ///   the weakening rather than assumes it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the support before and after the
+    ///   read, which a predicate may not capture.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a check reading an entry its content does not name is
+    ///   refused at that position, and a case over a sort keeps the loop arm of
+    ///   a type of words the case does not name.
+    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    #[inline]
+    #[must_use]
+    pub fn get<Offset>(
+        &self,
+        offset: Offset,
+    ) -> Option<&AdmittedDeclaration>
+    where
+        Offset: Into<gandr_kernel_term::ArenaLength>,
+    {
+        let position = usize::from(offset.into());
+        let log = self.log.as_deref()?;
+        let entry = log.family.get(position)?;
+        let Some(support) = self.support.as_deref()
+        else {
+            return Some(entry);
+        };
+        match support.read(ConstantIndex::from(position)) {
+            crate::weakening::Read::Open | crate::weakening::Read::Again => Some(entry),
+            crate::weakening::Read::First => {
+                for &reference in &entry.references {
+                    log.join(support, reference);
+                }
+                Some(entry)
+            },
+            crate::weakening::Read::Outside => None,
+        }
+    }
+
+    /// The entry at `offset`, read through the support of the check that runs
+    /// without moving it: for a specification clause, which may not change
+    /// what the check reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn peek<Offset>(
+        &self,
+        offset: Offset,
+    ) -> Option<&AdmittedDeclaration>
+    where
+        Offset: Into<gandr_kernel_term::ArenaLength>,
+    {
+        let position = usize::from(offset.into());
+        let entry = self.family().get(position)?;
+        let read = self
+            .support
+            .as_deref()
+            .map_or(crate::weakening::Read::Open, |support| {
+                support.peek(ConstantIndex::from(position))
+            });
+        match read {
+            crate::weakening::Read::Outside => None,
+            crate::weakening::Read::Open
+            | crate::weakening::Read::First
+            | crate::weakening::Read::Again => Some(entry),
+        }
+    }
+
+    /// The entry admitted last, read outside any support.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<&AdmittedDeclaration>
+    {
+        self.family().last()
+    }
+
+    /// Every entry, in admission order, read outside any support: for a
+    /// reader outside a check.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &AdmittedDeclaration>
+    {
+        self.family().iter()
+    }
+
+    /// The presented types among the entries, and the types of words over
+    /// each sort.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn presentations(&self) -> &crate::presented::Presentations
+    {
+        self.log
+            .as_deref()
+            .map_or(&crate::presented::FREE, |log| &log.presentations)
+    }
+
+    /// The position of the ruled definition whose body thunks the fixpoint
+    /// `root`, read through the support of the check that runs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn ruled(
+        &self,
+        root: ComputationId,
+    ) -> Option<ConstantIndex>
+    {
+        let position = *self.log.as_deref()?.ruled.get(&root)?;
+        self.get(usize::from(position)).map(|_| position)
+    }
+
+    /// The position of the entry that holds `role`, if one holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn holder(
+        &self,
+        role: gandr_kernel_term::Builtin,
+    ) -> Option<ConstantIndex>
+    {
+        self.log.as_deref()?.roles.get(&role).copied()
+    }
+
+    /// The positions of the plain definitions whose declared type and body
+    /// digest to `digest`, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn digested(
+        &self,
+        digest: ContentDigest,
+    ) -> &[ConstantIndex]
+    {
+        self.log
+            .as_deref()
+            .and_then(|log| log.definitions.get(&digest))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// These entries and the support of the check that runs, for a reading
+    /// the check makes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn reading(&self) -> Self
+    {
+        Self {
+            log: self.log.clone(),
+            support: self.support.clone(),
+        }
+    }
+
+    /// The log, to change: shared with no clone or reading after.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn log_mut(&mut self) -> &mut EntryLog
+    {
+        alloc::sync::Arc::make_mut(self.log.get_or_insert_with(alloc::sync::Arc::default))
+    }
+
+    /// Admit `entry` after every entry, its content in `arena`.
+    ///
+    /// # Specification
+    /// - requires: `entry` is the declaration admitted at the next position,
+    ///   its content in `arena`.
+    /// - ensures: one more entry; the presentations hold its presented type and
+    ///   the type of words it is over its sort, the ruled index its fixpoint,
+    ///   the role index its role, and the digest index its content name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::get`].
+    /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+    #[spec(captures: entry_len = self.len(), ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1))]
+    pub(crate) fn push(
+        &mut self,
+        arena: &TermArena,
+        entry: AdmittedDeclaration,
+    )
+    {
+        let log = self.log_mut();
+        let position = ConstantIndex::from(usize::from(log.family.len()));
+        let declaration = &entry.declaration;
+        let sort_constructors = declaration.presentation().cells().and_then(|cells| {
+            match *log.family.get(usize::from(cells.sort()))?.content() {
+                DeclarationContent::Data {
+                    ref constructors, ..
+                } => Some(constructors.as_slice()),
+                DeclarationContent::Codata { .. }
+                | DeclarationContent::Def { .. }
+                | DeclarationContent::Axiom { .. }
+                | DeclarationContent::LiteralIdentity { .. }
+                | DeclarationContent::AbstractType { .. } => None,
+            }
+        });
+        log.presentations
+            .admit(position, declaration, sort_constructors);
+        if let DeclarationContent::Def { body, .. } = *declaration.content()
+            && !declaration.operation_rules().rules().is_empty()
+            && let Some(&Value::Thunk(root)) = arena.value(body)
+        {
+            let _previous = log.ruled.insert(root, position);
+        }
+        // The first holder keeps its role: admission refuses a second, and
+        // only the bypass admits one.
+        if let Maybe::Present(role) = declaration.role() {
+            let _first = log.roles.entry(role).or_insert(position);
+        }
+        if let ConstantName::Definition { digest, .. } = entry.key_name {
+            log.definitions.entry(digest).or_default().push(position);
+        }
+        log.family.push(entry);
+    }
+
+    /// Keep the first `length` entries, dropping later ones and their rows in
+    /// the tables kept beside them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entries and tables as they were when the first `length`
+    ///   entries were all.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block refused after one member is admitted leaves
+    ///   the entries it found.
+    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    #[spec(captures: entry_len = self.len(), ensures: self.len() == length.min(entry_len))]
+    pub(crate) fn truncate(
+        &mut self,
+        length: gandr_kernel_term::ArenaLength,
+    )
+    {
+        if self.len() <= length {
+            return;
+        }
+        let first = ConstantIndex::from(length);
+        let log = self.log_mut();
+        log.family.truncate(length);
+        log.presentations.forget_from(first);
+        log.ruled.retain(|_, &mut position| position < first);
+        log.roles.retain(|_, &mut position| position < first);
+        log.definitions.retain(|_, positions| {
+            positions.retain(|&position| position < first);
+            !positions.is_empty()
+        });
+    }
+
+    /// Share every entry with every clone made after.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn freeze(&mut self)
+    {
+        if self.log.is_some() {
+            self.log_mut().family.freeze();
+        }
+    }
+
+    /// The entry at `offset`, to change in place, outside any support.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn get_mut<Offset>(
+        &mut self,
+        offset: Offset,
+    ) -> Option<&mut AdmittedDeclaration>
+    where
+        Offset: Into<gandr_kernel_term::ArenaLength>,
+    {
+        self.log.as_ref()?;
+        self.log_mut().family.get_mut(offset)
+    }
+
+    /// Open a check whose support starts at `roots`: each joins, with each
+    /// type of words over it.
+    ///
+    /// # Specification
+    /// - requires: no check runs over these entries.
+    /// - ensures: until [`Self::close`], [`Self::get`] answers only the entries
+    ///   in the support, which grows as the check reads.
+    /// - provides: the start of a support by weakening.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state what later reads answer, which
+    ///   opening does not run.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::get`].
+    /// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+    pub(crate) fn open(
+        &mut self,
+        roots: impl IntoIterator<Item = ConstantIndex>,
+    )
+    {
+        let length = self.len();
+        let fresh = alloc::sync::Arc::default;
+        let support = self.support.get_or_insert_with(fresh);
+        if alloc::sync::Arc::get_mut(support).is_none() {
+            *support = fresh();
+        }
+        let Some(support) = alloc::sync::Arc::get_mut(support)
+        else {
+            return;
+        };
+        support.open(length);
+        if let Some(log) = self.log.as_deref() {
+            for root in roots {
+                log.join(support, root);
+            }
+        }
+    }
+
+    /// Close the running check: the first position it read outside its
+    /// support, if it read one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn close(&mut self) -> Option<ConstantIndex>
+    {
+        alloc::sync::Arc::get_mut(self.support.as_mut()?)?.close()
+    }
+
+    /// How many entries the last check read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    pub(crate) fn reads(&self) -> gandr_kernel_term::ArenaLength
+    {
+        self.support.as_deref().map_or_else(
+            || gandr_kernel_term::ArenaLength::from(0_usize),
+            crate::weakening::Support::reads,
+        )
+    }
+}
+
+impl EntryLog
+{
+    /// Join `position` to `support`, with each type of words over it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn join(
+        &self,
+        support: &crate::weakening::Support,
+        position: ConstantIndex,
+    )
+    {
+        support.join(position);
+        for &words in self.presentations.over(position) {
+            support.join(words);
+        }
+    }
+}
 
 /// What an environment names content through: the session it lends each
 /// admission's check, whose content table names the environment's nodes once
@@ -2029,20 +2548,25 @@ impl Environment
             Maybe::Present(key) => self.verdicts.recall(key),
             Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
         };
+        let named = references(&self.arena, &declaration);
         let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
         let mut census = ExpansionCensus::new();
         let (outcome, admission) = match recalled {
             Maybe::Present(accessibility) => (Ok(accessibility), Admission::Recalled),
             Maybe::Absent(crate::verdict::stored::Absent::Unrecorded) => {
-                let Self {
-                    ref mut arena,
-                    ref entries,
-                    ref manifest,
-                    ref mut names,
-                    admitting,
-                    ..
-                } = *self;
-                (
+                // The check reads through the support its content names, and a
+                // read outside it refuses the declaration whatever the check
+                // decided.
+                self.entries.open(named.iter().copied());
+                let checked = {
+                    let Self {
+                        ref mut arena,
+                        ref entries,
+                        ref manifest,
+                        ref mut names,
+                        admitting,
+                        ..
+                    } = *self;
                     check::check_declaration(
                         arena,
                         check::Judgement::new(entries, &levels)
@@ -2051,9 +2575,9 @@ impl Environment
                         &declaration,
                         names.session_mut(),
                         &mut census,
-                    ),
-                    Admission::Checked,
-                )
+                    )
+                };
+                (supported(checked, self.entries.close()), Admission::Checked)
             },
         };
         match outcome {
@@ -2079,10 +2603,11 @@ impl Environment
                     admission,
                 );
                 let key_name = self.definition_name(&declaration);
-                self.entries.push(AdmittedDeclaration {
+                self.entries.push(&self.arena, AdmittedDeclaration {
                     declaration,
                     admission,
                     rested_on,
+                    references: named,
                     block: check::occurrence::Block::lone(position),
                     accessibility,
                     key_name,
@@ -2235,10 +2760,12 @@ impl Environment
             position,
             Admission::Unchecked,
         );
-        self.entries.push(AdmittedDeclaration {
+        let named = references(&self.arena, &declaration);
+        self.entries.push(&self.arena, AdmittedDeclaration {
             declaration,
             admission: Admission::Unchecked,
             rested_on,
+            references: named,
             block: check::occurrence::Block::lone(position),
             accessibility: check::Accessibility::unwalked(),
             key_name: ConstantName::Position,
@@ -2384,6 +2911,8 @@ impl Environment
             .count();
         let past_families = ConstantIndex::from(base.saturating_add(families));
         let end = ConstantIndex::from(base.saturating_add(members.len()));
+        // Each member's check reads through the references of the whole block.
+        let named = block_references(&self.arena, members, first);
         let mut admitted = Vec::with_capacity(members.len());
         // A block records no verdict, so what its checks take is only counted.
         let taken = core::cell::Cell::new(crate::admitted::AdmittedCount::NONE);
@@ -2398,27 +2927,31 @@ impl Environment
                 member.levels().params(),
                 member.levels().constraints().to_vec(),
             )?;
-            let Self {
-                ref mut arena,
-                ref entries,
-                ref manifest,
-                ref mut names,
-                admitting,
-                ..
-            } = *self;
-            check::form_declared(
-                arena,
-                check::Judgement::new(entries, &levels)
-                    .unsealing(manifest)
-                    .taking(crate::admitted::Taking::under(admitting, &taken))
-                    .within_mutual(
-                        check::occurrence::Block::new(first, past_families, past_families),
-                        members,
-                    ),
-                member.declared_id(),
-                names.session_mut(),
-                census,
-            )?;
+            self.entries.open(named.iter().copied());
+            let formed = {
+                let Self {
+                    ref mut arena,
+                    ref entries,
+                    ref manifest,
+                    ref mut names,
+                    admitting,
+                    ..
+                } = *self;
+                check::form_declared(
+                    arena,
+                    check::Judgement::new(entries, &levels)
+                        .unsealing(manifest)
+                        .taking(crate::admitted::Taking::under(admitting, &taken))
+                        .within_mutual(
+                            check::occurrence::Block::new(first, past_families, past_families),
+                            members,
+                        ),
+                    member.declared_id(),
+                    names.session_mut(),
+                    census,
+                )
+            };
+            supported(formed, self.entries.close())?;
             self.arena.truncate_to(content_end);
         }
         for ((offset, member), census) in members.iter().enumerate().zip(censuses.iter_mut()) {
@@ -2431,7 +2964,8 @@ impl Environment
             // as a lone one is, every family and definition before it
             // admitted, inside the block only so its own fixpoint reads its
             // constant as the self binder.
-            let accessibility = {
+            self.entries.open(named.iter().copied());
+            let checked = {
                 let Self {
                     ref mut arena,
                     ref entries,
@@ -2451,8 +2985,9 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member, names.session_mut(), census)?
+                check::check_declaration(arena, judgement, member, names.session_mut(), census)
             };
+            let accessibility = supported(checked, self.entries.close())?;
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
                 member.content(),
@@ -2461,10 +2996,11 @@ impl Environment
                 Admission::Checked,
             );
             // The block's families share one stage; a definition stands alone.
-            self.entries.push(AdmittedDeclaration {
+            self.entries.push(&self.arena, AdmittedDeclaration {
                 declaration: member.clone(),
                 admission: Admission::Checked,
                 rested_on,
+                references: named.clone(),
                 block: if offset < families {
                     check::occurrence::Block::new(first, past_families, end)
                 }
@@ -2771,16 +3307,16 @@ impl Environment
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
     /// - witness: `env::tests::a_closed_definition_rests_on_nothing`
-    #[spec(ensures: |ret| self.entries.get(usize::from(id.position())).map_or_else(
+    #[spec(ensures: |ret| self.entries.peek(usize::from(id.position())).map_or_else(
         || ret.axioms().is_empty() && ret.unchecked_admissions().is_empty() && ret.primitives().is_empty(),
         |entry| ret.axioms().iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
-            self.entries.get(usize::from(position)).is_some_and(|ancestor|
+            self.entries.peek(usize::from(position)).is_some_and(|ancestor|
                 matches!(*ancestor.declaration.content(), DeclarationContent::Axiom { .. }))))
             && ret.unchecked_admissions().iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
-                self.entries.get(usize::from(position)).is_some_and(|ancestor|
+                self.entries.peek(usize::from(position)).is_some_and(|ancestor|
                     matches!(ancestor.admission, Admission::Unchecked))))
             && ret.primitives().iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
-                self.entries.get(usize::from(position)).is_some_and(|ancestor|
+                self.entries.peek(usize::from(position)).is_some_and(|ancestor|
                     matches!(*ancestor.declaration.content(), DeclarationContent::LiteralIdentity { .. })))),
     ))]
     #[inline]
@@ -2878,7 +3414,7 @@ impl Environment
         ensures: |ret| ret.contains(&position)
             == (matches!(*content, DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. }) || matches!(admission, Admission::Unchecked))
             && ret.iter().all(|&ancestor| ancestor == position ||
-                (ancestor < position && self.entries.get(usize::from(ancestor)).is_some_and(|entry|
+                (ancestor < position && self.entries.peek(usize::from(ancestor)).is_some_and(|entry|
                     matches!(entry.admission, Admission::Unchecked)
                         || matches!(*entry.declaration.content(), DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. }))))
     )]
@@ -2993,6 +3529,37 @@ impl Environment
             ConstantName::Position
         }
     }
+}
+
+/// What a check under a support answers: `checked`, unless the check read the
+/// entry at `outside` outside its support. Then the declaration is refused at
+/// that position, whatever the check decided.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `checked` when `outside` is `None`, and
+///   [`KernelError::OutsideSupport`] at `outside` otherwise.
+/// - provides: the refusal that makes a missing edge in a support a refusal,
+///   never another verdict.
+/// - fails: as `- ensures:`.
+/// - panics: none.
+///
+/// # Errors
+/// As `- ensures:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a check that reads past its support and fails, and one
+///   that reads past it and succeeds, are each refused at the position read.
+/// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+#[spec(ensures: |ret| outside.is_none_or(|position| ret.as_ref().err() == Some(&KernelError::OutsideSupport { position })))]
+fn supported<T>(
+    checked: Result<T, KernelError>,
+    outside: Option<ConstantIndex>,
+) -> Result<T, KernelError>
+{
+    outside.map_or(checked, |position| {
+        Err(KernelError::OutsideSupport { position })
+    })
 }
 
 /// The position past the block the declaration at `first` leads: past the
@@ -3162,6 +3729,146 @@ fn collect_reachable(
         &mut Sink::Gather(&mut found),
     );
     found
+}
+
+/// The positions `declaration`'s content names, ascending, each once.
+///
+/// These are the positions its roots reach through codes — its types, its
+/// body, its constructors and their results, an abstract type's
+/// representation and interface, and its related endpoints — with its laws,
+/// its sealing provenance, the positions its operation rules name and the
+/// sort of its presentation's cells.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id names nothing, so a missing edge
+///   refuses the check that reads past it.
+/// - ensures: exactly the positions [`collect_reachable`] gathers from each
+///   root under [`CodeEdges::Follow`], with each law, each provenance atom,
+///   each operation and family an operation rule names and the cells' sort,
+///   ascending and each once.
+/// - provides: where a check's support starts, and what joins the support of a
+///   later check when it reads the entry.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a check that reads only what its content names admits,
+///   and one that reads past it is refused.
+/// - witness: `env::tests::a_read_outside_the_support_refuses_the_declaration_2797`
+#[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
+fn references(
+    arena: &TermArena,
+    declaration: &Declaration,
+) -> Box<[ConstantIndex]>
+{
+    let mut found = BTreeSet::new();
+    {
+        let mut walk = Walk::default();
+        let mut sink = Sink::Gather(&mut found);
+        let mut from = |root: AnyNode| {
+            let _gathered = reach(arena, root, CodeEdges::Follow, &mut walk, &mut sink);
+        };
+        match *declaration.content() {
+            DeclarationContent::Data {
+                ref parameters,
+                ref indices,
+                ref constructors,
+                ref results,
+                kind,
+            } => {
+                for &root in parameters
+                    .iter()
+                    .chain(indices)
+                    .chain(constructors.iter().flatten())
+                    .chain(core::iter::once(&kind))
+                {
+                    from(AnyNode::ValueType(root));
+                }
+                for &result in results.iter().flatten() {
+                    from(AnyNode::Value(result));
+                }
+            },
+            DeclarationContent::Def { declared, body } => {
+                from(AnyNode::ValueType(declared));
+                from(AnyNode::Value(body));
+            },
+            DeclarationContent::Axiom { declared }
+            | DeclarationContent::LiteralIdentity { declared, .. } => {
+                from(AnyNode::ValueType(declared));
+            },
+            DeclarationContent::AbstractType {
+                kind,
+                representation,
+                interface,
+                ..
+            } => {
+                from(AnyNode::ValueType(kind));
+                from(AnyNode::ValueType(representation));
+                if let Maybe::Present(interface) = interface {
+                    from(AnyNode::Value(interface.relation()));
+                    from(AnyNode::Value(interface.reflexivity()));
+                    if let Maybe::Present(law) = interface.law() {
+                        from(AnyNode::Value(law));
+                    }
+                }
+            },
+            DeclarationContent::Codata {
+                ref parameters,
+                ref observations,
+                kind,
+            } => {
+                for &root in parameters.iter().chain(core::iter::once(&kind)) {
+                    from(AnyNode::ValueType(root));
+                }
+                for &observation in observations {
+                    from(AnyNode::CompType(observation));
+                }
+            },
+        }
+        for related in declaration.related() {
+            from(AnyNode::Value(related.left));
+            from(AnyNode::Value(related.right));
+        }
+    }
+    found.extend(declaration.laws().iter().copied());
+    found.extend(declaration.provenance().iter().copied());
+    for rule in declaration.operation_rules().rules() {
+        found.extend(
+            rule.left()
+                .iter()
+                .chain(rule.right())
+                .filter_map(|node| match *node {
+                    gandr_kernel_term::OperationNode::Operation { constant, .. } => Some(constant),
+                    gandr_kernel_term::OperationNode::Constructor { family, .. } => Some(family),
+                    gandr_kernel_term::OperationNode::Results(_)
+                    | gandr_kernel_term::OperationNode::Variable(_) => None,
+                }),
+        );
+    }
+    if let Some(cells) = declaration.presentation().cells() {
+        let _fresh = found.insert(cells.sort());
+    }
+    found.into_iter().collect()
+}
+
+/// The direct references of a mutual block's members: each position any of
+/// them names, and each member's own position from `first` on.
+///
+/// # Specification
+/// trivial.
+fn block_references(
+    arena: &TermArena,
+    members: &[Declaration],
+    first: ConstantIndex,
+) -> Box<[ConstantIndex]>
+{
+    let mut found = BTreeSet::new();
+    for member in members {
+        found.extend(references(arena, member).iter().copied());
+    }
+    let start = usize::from(first);
+    found.extend((start .. start.saturating_add(members.len())).map(ConstantIndex::from));
+    found.into_iter().collect()
 }
 
 /// Whether a walk met the constant it sought.
@@ -5495,5 +6202,111 @@ mod tests
                 }
             }
         }
+    }
+
+    /// Stage the unit definition `() : 1` in `environment`, or `c : 1` when
+    /// `named` is the constant `c`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unit_definition(
+        environment: &mut Environment,
+        named: Option<ConstantIndex>,
+    ) -> StagedDeclaration
+    {
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = match named {
+            Some(constant) => staging.arena().value_constant(constant),
+            None => staging.arena().value_unit(),
+        };
+        staging.def(LevelSignature::monomorphic(), declared, body)
+    }
+
+    /// #2797: a definition naming an earlier one checks under the support its
+    /// content names. The same check under a support that misses that edge
+    /// reads the earlier entry outside its support, and the declaration is
+    /// refused at that position.
+    #[test]
+    fn a_read_outside_the_support_refuses_the_declaration_2797()
+    {
+        let mut environment = Environment::new();
+        let staged = unit_definition(&mut environment, None);
+        let named = environment
+            .add_decl(staged)
+            .expect("a unit definition admits")
+            .position();
+        let reading = unit_definition(&mut environment, Some(named));
+        let levels = crate::levels::LevelContext::admit(
+            gandr_kernel_term::LevelParamCount::from(0_u32),
+            Vec::new(),
+        )
+        .expect("no level parameter admits");
+        let check = |environment: &mut Environment, roots: &[ConstantIndex]| {
+            environment.entries.open(roots.iter().copied());
+            let mut arena = environment.arena.clone();
+            let checked = crate::check::check_declaration(
+                &mut arena,
+                crate::check::Judgement::new(&environment.entries, &levels),
+                &reading.declaration,
+                &mut crate::support::SupportContext::new(),
+                &mut ExpansionCensus::new(),
+            );
+            super::supported(checked, environment.entries.close())
+        };
+        let roots = super::references(&environment.arena, &reading.declaration);
+        assert_eq!(&*roots, &[named], "the definition names the one before it");
+        assert!(
+            check(&mut environment, &roots).is_ok(),
+            "the check reads only what the content names"
+        );
+        assert_eq!(
+            check(&mut environment, &[]).err(),
+            Some(KernelError::OutsideSupport { position: named }),
+            "a support that misses the edge refuses the read at its position"
+        );
+        assert_eq!(
+            environment
+                .add_decl(reading)
+                .map(super::CheckedId::position)
+                .map(usize::from),
+            Ok(1_usize),
+            "the admission opens the support its content names"
+        );
+    }
+
+    /// #2797: the admission of one definition reads the entries its content
+    /// reaches and no other. So its count of entries read is the same after
+    /// 10, 1,000 and 10,000 unrelated definitions.
+    #[test]
+    fn an_admission_reads_as_many_entries_after_many_unrelated_ones_2797()
+    {
+        let reads = |unrelated: usize| {
+            let mut environment = Environment::new();
+            let staged = unit_definition(&mut environment, None);
+            let named = environment
+                .add_decl(staged)
+                .expect("a unit definition admits")
+                .position();
+            for _ in 0 .. unrelated {
+                let staged = unit_definition(&mut environment, None);
+                let _admitted = environment
+                    .add_decl(staged)
+                    .expect("an unrelated definition admits");
+            }
+            let reading = unit_definition(&mut environment, Some(named));
+            let _admitted = environment
+                .add_decl(reading)
+                .expect("a definition naming the first admits");
+            environment.entries.reads()
+        };
+        let few = reads(10);
+        assert_eq!(
+            few,
+            gandr_kernel_term::ArenaLength::from(1_usize),
+            "the definition reads the one entry it names"
+        );
+        assert_eq!(few, reads(1_000));
+        assert_eq!(few, reads(10_000));
     }
 }

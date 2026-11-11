@@ -533,7 +533,7 @@ fn a_ruled_fixpoint_unfolds_at_its_partial_gate_4291()
     let expected = arena.computation_return(one);
     for (unfoldings, verdict) in [
         (
-            Unfoldings::default().ruling(&arena, entries),
+            Unfoldings::default().ruling(entries),
             KernelVerdict::Convertible,
         ),
         (

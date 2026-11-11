@@ -510,7 +510,7 @@ impl<'entries> Interfaces<'entries>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Interfaces`].
     /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
-    #[spec(ensures: |ret| ret.is_none() || self.0.get(usize::from(atom)).is_some())]
+    #[spec(ensures: |ret| ret.is_none() || self.0.peek(usize::from(atom)).is_some())]
     #[inline]
     #[must_use]
     pub fn of_atom(

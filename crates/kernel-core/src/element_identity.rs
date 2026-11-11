@@ -1530,7 +1530,7 @@ fn decoded_fibre(
         return fibre;
     }
     let entries = interfaces.entries();
-    let unfoldings = Unfoldings::from_entries(entries).ruling(arena, entries);
+    let unfoldings = Unfoldings::admitted(entries).ruling(entries);
     crate::replay::read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(fibre)
 }
 
