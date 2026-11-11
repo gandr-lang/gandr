@@ -353,8 +353,8 @@ impl DialogueWeb
         let MoveIndex(at) = event.at;
         WebVertex::from(match event.side {
             Endpoint::Left if at < self.left => at,
-            Endpoint::Right if at < self.right => self.left.saturating_add(at),
-            Endpoint::Left | Endpoint::Right => self.left.saturating_add(self.right),
+            Endpoint::Left => self.left.saturating_add(self.right),
+            Endpoint::Right => self.left.saturating_add(at),
         })
     }
 

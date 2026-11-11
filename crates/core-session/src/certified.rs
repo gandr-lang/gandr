@@ -480,7 +480,9 @@ fn opened(answer: Result<crate::Completion, ReplayError>) -> Result<(), Transpor
 /// Map each recorded move through the related state pairs, from both roots.
 ///
 /// # Specification
-/// - requires: `evidence` relates `protocols.0` to `protocols.1`.
+/// - requires: `evidence` relates `protocols.0` to `protocols.1`, and the
+///   source monitor accepts `moves`, complete or open; both callers replay it
+///   first. So a choice move meets a source choice of its own kind.
 /// - ensures: one move per move recorded, its label and digest kept and its
 ///   payload identity the target's; the monitors are not consulted.
 /// - fails: `Move` naming the first move the relation or the target protocol
@@ -494,6 +496,7 @@ fn opened(answer: Result<crate::Completion, ReplayError>) -> Result<(), Transpor
 /// - hypothesis: L3 — as [`advance`] and [`advance_prefix`], which share it.
 /// - witness: `tests::certified::recorded_runs_transport_only_forward`
 /// - witness: `tests::certified::a_prefix_advances_open_and_refuses_by_move`
+/// - witness: `tests::certified::a_choice_advances_only_onto_a_choice_of_its_own_kind`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.len() == moves.len()))]
 fn along(
     protocols: (&Session, &Session),
@@ -519,16 +522,9 @@ fn along(
             return Err(refusal(Refusal::WrongDirection));
         }
         if let Move::Select(ref label) | Move::Offer(ref label) = *movement {
-            let source = match *a {
-                Node::Select(ref labels) if matches!(*movement, Move::Select(_)) => labels,
-                Node::Offer(ref labels) if matches!(*movement, Move::Offer(_)) => labels,
-                Node::Send(..)
-                | Node::Receive(..)
-                | Node::Select(_)
-                | Node::Offer(_)
-                | Node::End
-                | Node::Mu(_)
-                | Node::Var(_) => return Err(refusal(Refusal::WrongDirection)),
+            let (Node::Select(ref source) | Node::Offer(ref source)) = *a
+            else {
+                return Err(refusal(Refusal::WrongDirection));
             };
             let target = match *b {
                 Node::Select(ref labels) if matches!(*movement, Move::Select(_)) => labels,

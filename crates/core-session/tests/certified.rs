@@ -32,10 +32,13 @@ use gandr_kernel_core::convertible_value_types;
 use gandr_kernel_core::flow_universe::Family;
 use gandr_kernel_core::flow_universe::form_certificate;
 use gandr_kernel_core::session::SessionError;
+use gandr_kernel_core::session::view;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
 use gandr_kernel_term::session::Evidence;
+use gandr_kernel_term::session::Graph;
 use gandr_kernel_term::session::State;
 use gandr_kernel_term::session::StatePair;
 
@@ -572,6 +575,21 @@ fn a_code_binds_only_the_graph_it_was_encoded_from()
     let selected = session(vec![select(&fork), Node::End, Node::End]);
     let run = [Move::Offer("keep".into()), Move::End];
     let chosen = [Move::Select("keep".into()), Move::End];
+    let nested = session(vec![
+        Node::Mu(NodeId(1)),
+        Node::Send(YIELD, NodeId(2)),
+        Node::Mu(NodeId(3)),
+        Node::Send(YIELD, NodeId(4)),
+        Node::Var(NodeId(2)),
+    ]);
+    let rebound = session(vec![
+        Node::Mu(NodeId(1)),
+        Node::Send(YIELD, NodeId(2)),
+        Node::Mu(NodeId(3)),
+        Node::Send(YIELD, NodeId(4)),
+        Node::Var(NodeId(0)),
+    ]);
+    let empty = [];
     for (encoded, local, moves, what) in [
         (
             &offered,
@@ -594,6 +612,12 @@ fn a_code_binds_only_the_graph_it_was_encoded_from()
             ]),
             run.as_slice(),
             "a label bound to another continuation",
+        ),
+        (
+            &nested,
+            rebound,
+            empty.as_slice(),
+            "a recursively bound variable bound to another binder",
         ),
     ] {
         let code = encode(&mut arena, encoded, &payloads).expect("the encoded graph");
@@ -626,6 +650,48 @@ fn a_code_binds_only_the_graph_it_was_encoded_from()
             "{what} does not bind"
         );
     }
+    // No session encodes this code: its graph moves only the root of the
+    // monitor's graph, so the node-by-node comparison cannot refuse it.
+    let code = encode(&mut arena, &selected, &payloads).expect("the encoded graph");
+    let Some(&Value::Quote(quoted)) = arena.value(code)
+    else {
+        panic!("an encoded protocol is a quoted code");
+    };
+    let (graph, telescope) = view(&arena, quoted).expect("the encoded code");
+    let moved = Graph {
+        nodes: graph.nodes.clone(),
+        root: State(1),
+    };
+    let moved = arena.value_type_session(Arc::new(moved), telescope);
+    let moved = arena.value_quote(moved);
+    let flow = native_flow(
+        &mut arena,
+        (code, code),
+        evidence(&selected, &selected, Relation::Subtype),
+    );
+    let honest = Protocol {
+        session: &selected,
+        code,
+        payloads: &payloads,
+    };
+    let rooted = Protocol {
+        session: &selected,
+        code: moved,
+        payloads: &payloads,
+    };
+    assert!(
+        matches!(
+            transport(
+                &mut arena,
+                flow,
+                (rooted, honest),
+                &chosen,
+                ReplayBudget::DEFAULT
+            ),
+            Err(TransportError::CodeBinding)
+        ),
+        "a graph at another root does not bind"
+    );
 }
 
 #[test]
