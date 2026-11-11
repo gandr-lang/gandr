@@ -4622,9 +4622,6 @@ INSERT INTO purpose VALUES('theory-stone-duality','index::GeneratorCount','struc
 INSERT INTO purpose VALUES('theory-stone-duality','index::Membership','enum','Names whether a set holds an element or a polynomial holds at a vertex, so the membership''s verdict is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-stone-duality','index::WIDEST','constant','Bounds the generators of a term and the elements of a finite poset by the bits of one machine word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-stone-duality','index::WIDEST_CUBE','constant','Bounds the axes of a cube so that a truth table on it fits one machine word.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CartesianDiagonalPreservation','struct','Whether a W-cartesian action preserves the product diagonal.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CartesianProjectionPreservation','struct','Whether a W-cartesian action preserves every product projection.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CartesianStructurePreservation','struct','Whether a W-cartesian action preserves the complete cartesian structure.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CertificateInvertibility','struct','Whether every cell fired by a reflected certificate is invertible.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CheckContextDeclaration','struct','Whether a two-sided VDC checking context declares an object variable.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','boundary::CutCoherence','struct','Whether a directed cut was admitted on the invertible coherence lane.',NULL,'fits','sound',NULL);

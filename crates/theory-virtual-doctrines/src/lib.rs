@@ -47,9 +47,6 @@ pub mod signature;
 pub mod syntax;
 pub mod vdc;
 
-pub use crate::boundary::CartesianDiagonalPreservation;
-pub use crate::boundary::CartesianProjectionPreservation;
-pub use crate::boundary::CartesianStructurePreservation;
 pub use crate::boundary::CertificateInvertibility;
 pub use crate::boundary::CheckContextDeclaration;
 pub use crate::boundary::CutCoherence;
