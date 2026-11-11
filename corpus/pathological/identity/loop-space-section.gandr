@@ -40,9 +40,9 @@ def unaround(c : Circle) -> Circle =
 
 /// A forged section: the loop arm answers with the field's path unchanged,
 /// typed at the motive at `x`, where the arm owes the motive at `Loop(x)`:
-/// a path from `Loop(spin(wind(x)))` to `Loop(x)`. The two path types do not
-/// convert, and the arm is refused.
-@[refuses("TypeMismatch")]
+/// a path from `Loop(spin(wind(x)))` to `Loop(x)`. The machine does not
+/// decide the two path types, and the arm is refused as undecided.
+@[refuses("Undecided")]
 def rec forged(c : Circle) -> Path(spin (wind c), c) =
   match c where
     | Base => Path.here Base
