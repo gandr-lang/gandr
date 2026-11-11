@@ -16,6 +16,7 @@ use gandr_core_fork::activity::World;
 use quenchant_shape::shape::Maybe;
 
 use super::clock;
+use super::marked;
 use crate::pool::ItemIndex;
 use crate::pool::Pool;
 use crate::width::Threads;
@@ -158,5 +159,38 @@ fn a_serial_recorded_fork_marks_the_calling_thread_s_ring()
     assert_eq!(
         cores, [1; 6],
         "a serial pool runs each job on the calling thread, which writes the last ring"
+    );
+}
+
+#[test]
+fn a_marked_task_is_one_start_and_one_end_on_its_thread_s_ring()
+{
+    let pool = four();
+    let activity = pool.activity(slots());
+    let declared = Declared::from(Declaration::from(7));
+    assert_eq!(
+        marked(&activity, (Task::Replay, World::from(2)), declared, || 'a'),
+        'a',
+        "the task answers what its work answers"
+    );
+    let read: Vec<(Edge, usize, Task, World, Declared)> = events(&activity)
+        .iter()
+        .map(|event| {
+            (
+                event.edge,
+                usize::from(event.core),
+                event.task,
+                event.world,
+                event.declaration,
+            )
+        })
+        .collect();
+    assert_eq!(
+        read,
+        [
+            (Edge::Start, 4, Task::Replay, World::from(2), declared),
+            (Edge::End, 4, Task::Replay, World::from(2), declared),
+        ],
+        "a thread outside the pool writes the last ring, start then end, with the task's kind, world and declaration"
     );
 }

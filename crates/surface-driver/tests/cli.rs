@@ -3543,21 +3543,23 @@ fn serve_offers_the_toolset_by_default()
         .iter()
         .filter_map(|tool| tool["name"].as_str())
         .collect();
+    let mut offered = vec![
+        "diagnostics",
+        "documents",
+        "expected_syntax",
+        "ledger_list",
+        "ledger_show",
+        "outline",
+        "propose",
+        "subscribe_account",
+    ];
+    // The hub's build offers the activity too.
+    if cfg!(feature = "instrument") {
+        offered.push("subscribe_activity");
+    }
+    offered.extend(["subscribe_diagnostics", "trial", "type_of"]);
     assert_eq!(
-        names,
-        [
-            "diagnostics",
-            "documents",
-            "expected_syntax",
-            "ledger_list",
-            "ledger_show",
-            "outline",
-            "propose",
-            "subscribe_account",
-            "subscribe_diagnostics",
-            "trial",
-            "type_of"
-        ],
+        names, offered,
         "the toolset offers every operation of the table"
     );
     assert_eq!(code(&second), Code(2_i32), "{}", stderr(&second));

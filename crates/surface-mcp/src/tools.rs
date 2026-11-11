@@ -325,6 +325,9 @@ pub enum Scope
         /// The name of the declaration.
         declaration: String,
     },
+    /// The work ledger of the hub: the tasks that each core of its pool runs,
+    /// as the hub folds the activity ring.
+    Activity,
 }
 
 /// What answers an operation over the hub.
@@ -363,7 +366,8 @@ struct Operation
 /// Protocol's `tools/list` and the Reactive Agent Protocol's manifest each
 /// encode this table, and both faces call through it. Thus a row added here
 /// reaches both faces, except a subscription, which the toolset alone serves.
-static OPERATIONS: [Operation; 11] = [
+/// The hub's build with the `instrument` feature adds `subscribe_activity`.
+static OPERATIONS: [Operation; if cfg!(feature = "instrument") { 12 } else { 11 }] = [
     Operation {
         name: "diagnostics",
         title: "Diagnostics",
@@ -475,6 +479,17 @@ static OPERATIONS: [Operation; 11] = [
                 declaration: String::from(declaration),
             })
         }),
+    },
+    #[cfg(feature = "instrument")]
+    Operation {
+        name: "subscribe_activity",
+        title: "Follow the work ledger",
+        description: "Follow the work of the hub's pool: which task each core runs, and when the \
+                      task starts and ends. Each event carries the tasks since the last event that \
+                      the runtime took, the count of the tasks it dropped while the runtime was slow, \
+                      and the busy time of each core over the last two seconds.",
+        schema: empty_schema,
+        answer: Answer::Subscription(|_arguments| Ok(Scope::Activity)),
     },
     Operation {
         name: "subscribe_diagnostics",
@@ -645,7 +660,8 @@ pub fn call(
 ///
 /// # Specification
 /// - requires: nothing; any name and arguments are admitted.
-/// - ensures: `None` for a name that is not the name of a subscription, and the
+/// - ensures: `None` for a name that names no subscription of the table, such
+///   as `subscribe_activity` in a build without the `instrument` feature. The
 ///   name of each subscription starts with `subscribe_`. Otherwise the scope of
 ///   the row, or the refusal of arguments that the row cannot read. The
 ///   document need not be open in the hub.
@@ -653,11 +669,13 @@ pub fn call(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — through a running hub, `subscribe_diagnostics` and
-///   `subscribe_account` confirm with their scopes, and their events follow.
+/// - hypothesis: L3 — through a running hub, `subscribe_diagnostics`,
+///   `subscribe_account` and `subscribe_activity` confirm with their scopes,
+///   and their events follow.
 /// - witness: `rap::tests::a_subscription_hears_each_new_frame`
 /// - witness: `rap::tests::an_account_subscription_outlives_a_restart_of_the_hub`
-#[spec(ensures: |ret| ret.is_some() == name.as_str().is_some_and(|named| named.starts_with("subscribe_")))]
+/// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends`
+#[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| named.starts_with("subscribe_")))]
 #[inline]
 pub fn subscription(
     name: &Value,
