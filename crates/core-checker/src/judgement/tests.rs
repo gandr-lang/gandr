@@ -4037,8 +4037,11 @@ fn a_one_entry_telescope_motive_is_a_shape_mismatch()
     );
 }
 
+/// #6576: the test expected `NotOver`, the refusal that the checker gave when
+/// it read the machine's decline as apart. The machine declines the pair, so
+/// the check refuses it as undecided.
 #[test]
-fn an_identity_not_over_the_path_is_refused()
+fn an_identity_not_over_the_path_is_refused_6576()
 {
     let mut arena = CoreArena::new();
     let scene = telescope_scene(&mut arena);
@@ -4052,14 +4055,14 @@ fn an_identity_not_over_the_path_is_refused()
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     seed(&mut context, &types);
     let refused = synthesise_comp(&mut context, transport);
+    // The check compares the identity's left end `z₁` with `⟨tr(y. Path[.A =
+    // Integer](a, y), p, z₀)⟩`. The transport is stuck on `p`, a constant with
+    // no body. The machine declines a returned endpoint held there against any
+    // other value. So the check refuses the identity as undecided at its left
+    // end. A refutation of that pair refuses it by name, as `NotOver`.
     assert!(
-        matches!(
-            refused,
-            Err(CheckRefusal::NotOver { at, synthesised, .. })
-                if at == stray && synthesised == stray_type
-        ),
-        "an identity that does not start at the transported start is refused by name: \
-             {refused:?}"
+        matches!(refused, Err(CheckRefusal::Undecided { at }) if at == finish),
+        "an identity that does not start at the transported start is refused: {refused:?}"
     );
     assert_eq!(
         refused.map(|_| ()).map_err(|refusal| refusal.classify()),
@@ -4165,8 +4168,11 @@ fn a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre()
     );
 }
 
+/// #6576: the test expected `TypeMismatch`, the refusal that the checker gave
+/// when it read the machine's decline as apart. The machine declines the pair,
+/// so the check refuses it as undecided.
 #[test]
-fn a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first()
+fn a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first_6576()
 {
     let mut arena = CoreArena::new();
     let scene = sigma_scene(&mut arena);
@@ -4196,12 +4202,14 @@ fn a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first()
         "the second returns the second factor at the first projection: {checked:?}"
     );
     let elsewhere = form_comp_type(&mut context, elsewhere).unwrap();
+    // The check compares `⟨s.0⟩` with `a`. The projection is stuck on `s`, a
+    // constant with no body. The machine declines a returned endpoint held
+    // there against any other value. So the check refuses the type as
+    // undecided. A refutation of that pair refuses it as a mismatch.
+    let refused = check_comp(&mut context, second, elsewhere);
     assert!(
-        matches!(
-            check_comp(&mut context, second, elsewhere),
-            Err(CheckRefusal::TypeMismatch(_))
-        ),
-        "and at no other first component"
+        matches!(refused, Err(CheckRefusal::Undecided { .. })),
+        "and at no other first component: {refused:?}"
     );
     assert!(
         matches!(

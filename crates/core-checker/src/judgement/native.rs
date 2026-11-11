@@ -1455,7 +1455,7 @@ impl Machine<'_, '_>
     ///   free one of a patched type separate the read of the fixed value.
     /// - witness: `tests::native_formers::record_width_depth_and_projection`
     /// - witness: `tests::native_formers::tuple_projection_reads_each_component`
-    /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first`
+    /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first_6576`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
