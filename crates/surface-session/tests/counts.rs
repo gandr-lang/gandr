@@ -185,11 +185,11 @@ fn work(counts: &DeclarationCounts) -> Work
 /// and molds no form, so each row counts no judged item, no memo consult and
 /// no molded form, and the admission offers each declaration to the kernel
 /// again. That readmission resumes after the prelude from its record, which
-/// hands on no kept outcome (#6468): a row charges the goals of the measure,
-/// and more only by the goals that the measure answered from kept outcomes.
-/// A column read at the wrong position, a pass that counted an adopted item
-/// as judged, or a fold that added the second recheck's counts to the
-/// first's changes a row.
+/// hands on the outcomes that the prelude's admission kept, so each row
+/// charges the goals of the measure again. A column read at the wrong
+/// position, a pass that counted an adopted item as judged, a fold that added
+/// the second recheck's counts to the first's, or a record that hands on no
+/// kept outcome (#6468) changes a row.
 #[test]
 fn a_second_recheck_counts_no_judged_item()
 {
@@ -221,7 +221,7 @@ fn a_second_recheck_counts_no_judged_item()
     );
     let second = recheck(&mut session, (&path, Text(&text)));
     assert_eq!(second.len(), first.len(), "the same declarations hold rows");
-    for (counts, &(ref name, goals)) in second.iter().zip(&walked) {
+    for counts in &second {
         assert_eq!(
             work(counts),
             Work {
@@ -233,18 +233,10 @@ fn a_second_recheck_counts_no_judged_item()
             },
             "a second recheck adopts each item and molds no form: {counts:?}"
         );
-        let charged = kernel(counts);
-        let row = charged
-            .expanded
-            .saturating_add(charged.recalled)
-            .saturating_add(charged.kept);
-        let measured = goals
-            .expanded
-            .saturating_add(goals.recalled)
-            .saturating_add(goals.kept);
-        assert!(
-            row >= measured && row.saturating_sub(measured) <= goals.kept,
-            "{name}'s row charges the measure's goals, more only by its kept ones: {charged:?} against {goals:?}"
-        );
     }
+    assert_eq!(
+        second.iter().map(kernel).collect::<Vec<_>>(),
+        walked.iter().map(|&(_, goals)| goals).collect::<Vec<_>>(),
+        "the resumed readmission charges each row the goals the measure reads: {walked:?}"
+    );
 }

@@ -277,6 +277,26 @@ impl SupportContext
         self.read.clear();
     }
 
+    /// This session for an environment that continues this one's arena: the
+    /// same content table and kept memo, and an empty rewrite memo, open
+    /// accruals and read buffer, as [`Self::begin_admission`] leaves them.
+    ///
+    /// The copy's arena holds the nodes that this session names, so each name
+    /// and each kept outcome holds there as here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn carried(&self) -> Self
+    {
+        Self {
+            table: self.table.clone(),
+            kept: self.kept.clone(),
+            ..Self::default()
+        }
+    }
+
     /// Forget the names of the constants from `first` on, as
     /// [`ContentTable::forget_constants_from`] does. Also forget every kept
     /// outcome.
