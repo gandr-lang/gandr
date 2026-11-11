@@ -66,8 +66,8 @@ def rec still(b : Nat) -> Path[.A = Nat](b, b) =
     | Zero => Path.here Zero
     | Succ(x) => Path.step (Path.ap next (still[<] x)) (Path.here (Succ x))
 
-/// The `mapped` proof reads the parameter function result.
-def mapped(f : Circle -> Nat) -> Path[.A = Nat](f Base, f Base) =
+/// The `mappedLoop` proof reads the parameter function result.
+def mappedLoop(f : Circle -> Nat) -> Path[.A = Nat](f Base, f Base) =
   Path.back (Path.ap f loop)
 
 /// The `mappedOver` proof reads a parameter map that depends on
