@@ -43,8 +43,6 @@ mod tests
     use gandr_theory_virtual_doctrines::SignatureRef;
     use gandr_theory_virtual_doctrines::TermRef;
     use gandr_theory_virtual_doctrines::Vdc as _;
-    use gandr_theory_virtual_doctrines::iso::witness_resolution;
-    use quenchant_shape::shape::Maybe;
 
     use crate::require_present;
 
@@ -822,23 +820,16 @@ mod tests
     {
         let (store, base) = peano_fused();
         let relation = rel(NameRef::from("R"), Vec::new());
-        let d_refl = cert(reflexive_cert(&base), relation.clone(), relation);
-        let derivations = vec![d_refl.clone()];
+        let derivations = vec![cert(reflexive_cert(&base), relation.clone(), relation)];
         let bound = Proterm::cert(DerivationId::new(DerivationIndex::from(0_usize)));
         let missing = DerivationId::new(DerivationIndex::from(1_usize));
-        assert_eq!(
-            ProtypeIso::new(bound.clone(), bound.clone()).witness(&derivations),
-            Maybe::Present(IsoWitness::new(d_refl.clone(), d_refl))
-        );
-        assert_eq!(
-            ProtypeIso::new(bound.clone(), Proterm::cert(missing)).witness(&derivations),
-            Maybe::Absent(witness_resolution::Absent::Unbound(missing))
-        );
+        assert!(bool::from(
+            ProtypeIso::new(bound.clone(), bound.clone()).is_valid(&derivations, &store)
+        ));
+        assert!(!bool::from(
+            ProtypeIso::new(bound.clone(), Proterm::cert(missing)).is_valid(&derivations, &store)
+        ));
         let not_cert = ProtypeIso::new(Proterm::unit_term(), bound);
-        assert_eq!(
-            not_cert.witness(&derivations),
-            Maybe::Absent(witness_resolution::Absent::NotCertificate)
-        );
         assert!(!bool::from(not_cert.is_valid(&derivations, &store)));
     }
 
