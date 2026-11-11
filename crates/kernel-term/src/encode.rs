@@ -214,6 +214,83 @@ enum Positions
     /// Each position by where the segment first names it, so the bytes read
     /// no admission order.
     Ordinal(Ordinals),
+    /// Each position as its place in rank order, as the export of a kept
+    /// environment writes it.
+    Placed(Places),
+}
+
+/// The place of each live admission position in rank order: what the export
+/// of a kept environment writes for each position it names.
+///
+/// A kept environment holds retired positions, and positions whose order is
+/// not their rank order. Its export writes each live position as its place
+/// in rank order. Thus it writes the artifact that a fresh admission of the
+/// same source writes, and a replay admits each declaration at its place.
+///
+/// # Specification
+/// - requires: built by [`Places::new`].
+/// - ensures: answers the place [`Places::new`] gives each position, and no
+///   place for any other position.
+/// - panics: none.
+/// - executable: none — the field is private and set only by [`Places::new`],
+///   whose specification states it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode_placed`].
+/// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Places(Arc<[Option<ConstantIndex>]>);
+
+impl Places
+{
+    /// The places of `order`, the live positions in rank order, among the
+    /// first `length` positions.
+    ///
+    /// # Specification
+    /// - requires: each position of `order` is below `length`, and no position
+    ///   repeats.
+    /// - ensures: each position of `order` has its index in `order` as its
+    ///   place; no other position has a place.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`encode_placed`].
+    /// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| usize::from(length) == ret.0.len())]
+    pub fn new<Order>(
+        order: Order,
+        length: ConstantIndex,
+    ) -> Self
+    where
+        Order: IntoIterator<Item = ConstantIndex>,
+    {
+        let mut places = alloc::vec![None; usize::from(length)];
+        for (place, position) in order.into_iter().enumerate() {
+            if let Some(slot) = places.get_mut(usize::from(position)) {
+                *slot = Some(ConstantIndex::from(place));
+            }
+        }
+        Self(Arc::from(places))
+    }
+
+    /// The place of `position` in rank order, or none for a position with no
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn place(
+        &self,
+        position: ConstantIndex,
+    ) -> Option<ConstantIndex>
+    {
+        self.0.get(usize::from(position)).copied().flatten()
+    }
 }
 
 /// The positions a keyed segment names, in the order it first names them,
@@ -237,10 +314,11 @@ impl Positions
     /// The position a segment writes for `position`.
     ///
     /// # Specification
-    /// - ensures: `position` itself under [`Positions::Raw`]; under
-    ///   [`Positions::Ordinal`], one more than twice its place in the block for
-    ///   a member of the block, and twice the place the segment first names it
-    ///   at for any other position.
+    /// - ensures: `position` itself under [`Positions::Raw`]; its place under
+    ///   [`Positions::Placed`], and `position` itself for a position with no
+    ///   place; under [`Positions::Ordinal`], one more than twice its place in
+    ///   the block for a member of the block, and twice the place the segment
+    ///   first names it at for any other position.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the place depends on the positions the segment
@@ -249,15 +327,17 @@ impl Positions
     /// # Adequacy
     /// - hypothesis: L3 — as [`keyed_segment`].
     /// - witness: `encode::tests::a_keyed_segment_writes_no_admission_order_6568`
+    /// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
     #[inline]
     fn rename(
         &mut self,
         position: ConstantIndex,
     ) -> ConstantIndex
     {
-        let Self::Ordinal(ref mut ordinals) = *self
-        else {
-            return position;
+        let ordinals = match *self {
+            Self::Raw => return position,
+            Self::Placed(ref places) => return places.place(position).unwrap_or(position),
+            Self::Ordinal(ref mut ordinals) => ordinals,
         };
         if ordinals.block.contains(&position) {
             let place = usize::from(position).saturating_sub(usize::from(ordinals.block.start));
@@ -480,12 +560,77 @@ pub fn encode(
     declarations: &[MarkedDeclaration],
 ) -> EncodedArtifact
 {
+    encode_sequence(arena, declarations, Positions::Raw)
+}
+
+/// [`encode`] of `declarations`, the live entries of a kept environment in
+/// rank order, with each admission position written as its place in
+/// `places`.
+///
+/// # Specification
+/// - requires: as [`encode`]; `places` gives each position that `declarations`
+///   name a place, and gives each declaration's own position its index in
+///   `declarations`.
+/// - ensures: the bytes [`encode`] writes for `declarations` with each position
+///   renamed to its place: the artifact of the sequence that a fresh admission
+///   of the same source admits.
+/// - provides: the export of an environment that a readmission keeps by
+///   retiring and keeping entries, byte for byte the export of a whole
+///   readmission.
+/// - fails: never within [`encode`]'s domain.
+/// - panics: none within that domain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sequence whose positions are renamed by their places
+///   writes the bytes of the renamed sequence written raw, and the raw writing
+///   of the unrenamed sequence differs. The kernel's kept environments witness
+///   the same for each class of edit.
+/// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.as_image().as_ref().starts_with(tags::MAGIC.as_slice()))]
+pub fn encode_placed(
+    arena: &TermArena,
+    declarations: &[MarkedDeclaration],
+    places: &Places,
+) -> EncodedArtifact
+{
+    encode_sequence(arena, declarations, Positions::Placed(places.clone()))
+}
+
+/// [`encode`] of `declarations`, with each admission position written as
+/// `positions` writes it.
+///
+/// # Specification
+/// - requires: as [`encode`].
+/// - ensures: the header, the minted atom table, the count and each
+///   declaration's segment in order, each position written as `positions`
+///   writes it.
+/// - fails: never within [`encode`]'s domain.
+/// - panics: none within that domain.
+/// - executable: none — [`encode`] and [`encode_placed`] state the bytes for
+///   each kind of `positions`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode`] and [`encode_placed`].
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+/// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
+#[inline]
+fn encode_sequence(
+    arena: &TermArena,
+    declarations: &[MarkedDeclaration],
+    positions: Positions,
+) -> EncodedArtifact
+{
     let mut out = EncodedArtifact::new();
     out.put_image(ArtifactImage::from(tags::MAGIC.as_slice()));
     out.put_version(tags::FORMAT_VERSION);
     encode_minted_atom_table(&mut out, declarations);
     out.put_uvarint(WireU64::from(WireUsize::from(declarations.len())));
-    let mut interner = Interner::new();
+    let mut interner = Interner {
+        positions,
+        ..Interner::new()
+    };
     for (position, declaration) in declarations.iter().enumerate() {
         let remaining = SealExtent::from(
             declarations
@@ -920,7 +1065,7 @@ pub fn keyed_segment(
     );
     let named = match interner.positions {
         Positions::Ordinal(ordinals) => ordinals.named,
-        Positions::Raw => Vec::new(),
+        Positions::Raw | Positions::Placed(_) => Vec::new(),
     };
     Maybe::Present(KeyedSegment { image, named })
 }
@@ -5189,5 +5334,78 @@ mod tests
             "a member of the block is not named outside it"
         );
         assert_ne!(member.image(), early_keyed.image());
+    }
+
+    /// #6845: a placed encoding writes each position as its place in rank
+    /// order. A kept sequence with a retired position, and two declarations
+    /// whose ranks swap, writes the bytes of the fresh sequence. Its raw
+    /// encoding differs, so the test can fail.
+    #[test]
+    fn a_placed_encoding_writes_each_position_as_its_place_6845()
+    {
+        let named = |declaration: Declaration, name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.named(StructuredName::from(alloc::vec![segment])),
+            )
+        };
+        let unit = |arena: &mut TermArena, name: &str| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let declared = builder.arena().value_type_unit();
+            let body = builder.arena().value_unit();
+            named(
+                builder.def(LevelSignature::monomorphic(), declared, body),
+                name,
+            )
+        };
+        let pair = |arena: &mut TermArena, first: usize, second: usize| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let unit = builder.arena().value_type_unit();
+            let declared = builder.arena().value_type_product(&[unit, unit]);
+            let left = builder.arena().value_constant(ConstantIndex::from(first));
+            let right = builder.arena().value_constant(ConstantIndex::from(second));
+            let body = builder.arena().value_tuple(&[left, right]);
+            named(
+                builder.def(LevelSignature::monomorphic(), declared, body),
+                "c",
+            )
+        };
+        // The kept sequence: `a` at 0, a retired position 1, `b` at 2 and `c`
+        // at 3 over both, with `b` ranked first.
+        let mut kept = TermArena::new();
+        let (a, b, c) = (
+            unit(&mut kept, "a"),
+            unit(&mut kept, "b"),
+            pair(&mut kept, 0, 2),
+        );
+        let order = [2_usize, 0, 3].map(ConstantIndex::from);
+        let places = super::Places::new(order, ConstantIndex::from(4_usize));
+        assert_eq!(places.place(ConstantIndex::from(1_usize)), None);
+        assert_eq!(
+            places.place(ConstantIndex::from(3_usize)),
+            Some(ConstantIndex::from(2_usize))
+        );
+        let ranked = [b, a, c];
+        // The fresh sequence: `b` at 0, `a` at 1, and `c` at 2 over both.
+        let mut fresh = TermArena::new();
+        let fresh_sequence = [
+            unit(&mut fresh, "b"),
+            unit(&mut fresh, "a"),
+            pair(&mut fresh, 1, 0),
+        ];
+        let expected = super::encode(&fresh, &fresh_sequence);
+        assert_eq!(
+            super::encode_placed(&kept, &ranked, &places)
+                .as_image()
+                .as_ref(),
+            expected.as_image().as_ref(),
+            "the kept sequence writes the bytes of the fresh one"
+        );
+        assert_ne!(
+            super::encode(&kept, &ranked).as_image().as_ref(),
+            expected.as_image().as_ref(),
+            "the kept sequence written by position is not the fresh one"
+        );
     }
 }

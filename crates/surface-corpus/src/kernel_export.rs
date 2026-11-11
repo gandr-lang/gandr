@@ -141,6 +141,7 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::ModuleReport;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::bridge;
@@ -163,7 +164,9 @@ use gandr_surface_dispatcher::lay_out;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
@@ -622,36 +625,18 @@ fn export(
     // A source is exported over the prelude and the siblings it imports, laid
     // out as the walk lays it out, so its artifact holds theirs first.
     let laid = lay_out(pbg, &path, classify(&path), SourceText::from(read.as_str()));
-    let (text, unit) = (laid.text, laid.unit);
-    let tree = parse(pbg, SourceText::from(text.as_str()))
-        .unwrap_or_else(|fault| panic!("{}: the parser commits a tree: {fault}", path.display()))
-        .into_tree();
-    let mut arena = CoreArena::new();
-    let module = match lower_unit(
+    let Some(Checked {
+        mut arena,
+        module,
+        verdicts,
+    }) = check(
         pbg,
-        &tree,
-        &unit,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-        &mut gandr_surface_lowering::coincide::Decisions::none(),
-    ) {
-        Ok(module) => module,
-        Err(refusal) => {
-            assert_ne!(
-                refusal.classify(),
-                FailureClass::EngineFault,
-                "{}: the lowering faulted: {refusal}",
-                path.display()
-            );
-            return Swept::RefusedWhole;
-        },
+        &path,
+        (SourceText::from(laid.text.as_str()), &laid.unit),
+    )
+    else {
+        return Swept::RefusedWhole;
     };
-    let adapted = declarations(&module, &arena);
-    let verdicts = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-        &adapted,
-    );
     let natives: BTreeSet<StructuredName> = arena
         .native_primitives()
         .map(|primitive| {
@@ -729,6 +714,79 @@ fn export(
         natives,
         crossed_names,
         artifact,
+    })
+}
+
+/// A laid-out source, lowered and checked.
+///
+/// # Specification
+/// trivial.
+struct Checked<'source>
+{
+    /// The arena the source is lowered into.
+    arena: CoreArena,
+    /// The lowered module.
+    module: LoweredModule<'source>,
+    /// The checker's verdicts on it.
+    verdicts: ModuleReport,
+}
+
+/// `text`, laid out as `unit`, parsed, lowered and checked as a driver runs
+/// them; none when the lowering refuses it whole.
+///
+/// # Specification
+/// - requires: `text` is the laid-out text of the source at `path`, and `unit`
+///   is its layout or the layout of a text that `text` cuts short in the
+///   importer.
+/// - ensures: the module and its verdicts over one arena; none when the
+///   lowering refuses the source whole for a reason other than an engine fault.
+/// - panics: when the parser commits no tree, or when the lowering faults.
+/// - executable: none — the result is the pipeline's own, and a predicate would
+///   run the pipeline again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`export`].
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+/// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0`
+fn check<'source>(
+    pbg: &Pbg,
+    path: &Path,
+    (text, unit): (SourceText<'source>, &Unit),
+) -> Option<Checked<'source>>
+{
+    let tree = parse(pbg, text)
+        .unwrap_or_else(|fault| panic!("{}: the parser commits a tree: {fault}", path.display()))
+        .into_tree();
+    let mut arena = CoreArena::new();
+    let module = match lower_unit(
+        pbg,
+        &tree,
+        unit,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    ) {
+        Ok(module) => module,
+        Err(refusal) => {
+            assert_ne!(
+                refusal.classify(),
+                FailureClass::EngineFault,
+                "{}: the lowering faulted: {refusal}",
+                path.display()
+            );
+            return None;
+        },
+    };
+    let adapted = declarations(&module, &arena);
+    let verdicts = check_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &adapted,
+    );
+    Some(Checked {
+        arena,
+        module,
+        verdicts,
     })
 }
 
@@ -975,6 +1033,272 @@ mod kernel_export_gate
             "the sources of shard {} export a declaration from each root it holds a source of",
             shard.0
         );
+    }
+}
+
+/// The kept export: a source whose last form retires exports the bytes of a
+/// fresh check of its text without that form.
+mod kernel_kept_export
+{
+    use alloc::vec::Vec;
+    use std::fs;
+    use std::path::Path;
+
+    use anodized::spec;
+    use gandr_core_checker::bridge;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_term::AdmissionMark;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::EncodedArtifact;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_surface_dispatcher::classify;
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_grammar::Pbg;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_parser::parse;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Checked;
+    use super::Root;
+    use super::SHARDS;
+    use super::Shard;
+    use super::check;
+    use super::sources;
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0()
+    {
+        sweep(Shard(0));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_1()
+    {
+        sweep(Shard(1));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_2()
+    {
+        sweep(Shard(2));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_3()
+    {
+        sweep(Shard(3));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_4()
+    {
+        sweep(Shard(4));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_5()
+    {
+        sweep(Shard(5));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_6()
+    {
+        sweep(Shard(6));
+    }
+
+    #[test]
+    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_7()
+    {
+        sweep(Shard(7));
+    }
+
+    /// What cutting a source's last form did to its kernel entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Cut
+    {
+        /// The last form's entries retired, and the kept export is the export
+        /// of the cut text.
+        Retired,
+        /// The cut changes the readmission of an earlier declaration, as when
+        /// the last form is the definition of a signature that an earlier
+        /// form writes. The cut deletes no whole declaration.
+        Completing,
+        /// The last form left no entry to retire, or the source does not
+        /// lower whole.
+        Unretired,
+    }
+
+    /// The sources of `shard`, each with its last form retired: each kept
+    /// export is the export of the text without that form.
+    ///
+    /// # Specification
+    /// - requires: `shard` is below `SHARDS`.
+    /// - ensures: each source of `shard` whose last form crosses into the
+    ///   kernel, kept with the entries of that form retired, exports the bytes
+    ///   that a fresh check of its text without the form exports.
+    /// - panics: when an export differs, or when no source of `shard` retires
+    ///   an entry.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the `SHARDS` shards together take every source of
+    ///   each root, each in one shard.
+    /// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0`
+    /// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_7`
+    #[spec(requires: shard.0 < SHARDS)]
+    fn sweep(shard: Shard)
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let mut retired = Vec::new();
+        let mut completing = Vec::new();
+        for root in [Root::Strict, Root::Fixture] {
+            for path in sources(root).into_iter().skip(shard.0).step_by(SHARDS) {
+                match cut(&pbg, &path) {
+                    Cut::Retired => retired.push(path),
+                    Cut::Completing => completing.push(path),
+                    Cut::Unretired => {},
+                }
+            }
+        }
+        std::eprintln!(
+            "shard {}: {} sources export their cut text with the last form retired; the cut of {} changes an earlier declaration",
+            shard.0,
+            retired.len(),
+            completing.len()
+        );
+        assert!(
+            !retired.is_empty(),
+            "a source of shard {} retires its last form",
+            shard.0
+        );
+    }
+
+    /// The source at `path`, checked whole and without its last form. The
+    /// whole readmission's environment retires each entry past the entries
+    /// of the cut one, and its export must equal the cut one's.
+    ///
+    /// # Specification
+    /// - requires: `path` names a corpus source.
+    /// - ensures: [`Cut::Retired`] when an entry retires, after the kept and
+    ///   the cut exports agree byte for byte; [`Cut::Completing`] when the cut
+    ///   readmission is not the whole one's leading entries; [`Cut::Unretired`]
+    ///   otherwise.
+    /// - panics: when the exports differ, or when a retire is refused.
+    /// - executable: none — the outcome is the comparison's panic or a variant
+    ///   no predicate reads apart.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`sweep`].
+    /// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0`
+    fn cut(
+        pbg: &Pbg,
+        path: &Path,
+    ) -> Cut
+    {
+        let read = fs::read_to_string(path)
+            .unwrap_or_else(|error| panic!("{}: the source reads: {error}", path.display()));
+        let laid = lay_out(pbg, path, classify(path), SourceText::from(read.as_str()));
+        let tree = parse(pbg, SourceText::from(laid.text.as_str()))
+            .unwrap_or_else(|fault| {
+                panic!("{}: the parser commits a tree: {fault}", path.display())
+            })
+            .into_tree();
+        // The root's children hold the trivia between the forms too, and a
+        // form is a child that has children.
+        let Some(last) = tree
+            .top_level()
+            .iter()
+            .rev()
+            .find(|node| usize::from(node.child_count()) > 0)
+        else {
+            return Cut::Unretired;
+        };
+        let start = last.span().start();
+        let Some(without) = laid.text.get(.. usize::from(start))
+        else {
+            return Cut::Unretired;
+        };
+        if start < laid.base {
+            return Cut::Unretired;
+        }
+        let (
+            Some(Checked {
+                arena: mut whole_arena,
+                verdicts: whole,
+                ..
+            }),
+            Some(Checked {
+                arena: mut cut_arena,
+                verdicts: cut,
+                ..
+            }),
+        ) = (
+            check(
+                pbg,
+                path,
+                (SourceText::from(laid.text.as_str()), &laid.unit),
+            ),
+            check(pbg, path, (SourceText::from(without), &laid.unit)),
+        )
+        else {
+            return Cut::Unretired;
+        };
+        let whole = bridge::readmit(&mut whole_arena, &whole);
+        let fresh = bridge::readmit(&mut cut_arena, &cut);
+        // The cut deletes whole declarations only when its readmission is
+        // the whole one's leading entries.
+        if whole.readmitted().get(.. fresh.readmitted().len()) != Some(fresh.readmitted()) {
+            return Cut::Completing;
+        }
+        let mut kept = whole.environment().clone();
+        let retired: Vec<ConstantIndex> = (usize::from(fresh.environment().entries().len())
+            .. usize::from(kept.entries().len()))
+            .map(ConstantIndex::from)
+            .collect();
+        if retired.is_empty() {
+            return Cut::Unretired;
+        }
+        assert_eq!(
+            kept.retire(&retired),
+            Ok(()),
+            "{}: the last form's entries retire",
+            path.display()
+        );
+        assert_eq!(
+            exported(&kept),
+            exported(fresh.environment()),
+            "{}: the kept environment exports the cut text's bytes",
+            path.display()
+        );
+        Cut::Retired
+    }
+
+    /// The bytes that the export of `environment` writes: its live entries
+    /// in rank order, each marked checked, each position written as its
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported(environment: &Environment) -> EncodedArtifact
+    {
+        let entries = environment.entries();
+        let marked: Vec<MarkedDeclaration> = entries
+            .in_rank_order()
+            .filter_map(|position| entries.get(usize::from(position)))
+            .map(|entry| {
+                MarkedDeclaration::new(AdmissionMark::Checked, entry.declaration().clone())
+            })
+            .collect();
+        match entries.places() {
+            Maybe::Present(places) => {
+                gandr_kernel_term::encode_placed(environment.arena(), &marked, &places)
+            },
+            Maybe::Absent(_) => gandr_kernel_term::encode(environment.arena(), &marked),
+        }
     }
 }
 

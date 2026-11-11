@@ -760,6 +760,7 @@ pub use crate::env::OutstandingContent;
 pub use crate::env::OutstandingCount;
 pub use crate::env::StagedDeclaration;
 pub use crate::env::Staging;
+pub use crate::env::places;
 pub use crate::env::tallied;
 pub use crate::error::CompTypeHead;
 pub use crate::error::CompTypeMismatch;
