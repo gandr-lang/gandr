@@ -21,6 +21,7 @@
       "check:corpus",
       "check:corpus-comments",
       "check:corpus-format",
+      "check:corpus-goldens",
       "check:exemplars",
       "check:gandr-doc",
       "check:syntax-exemplars"
@@ -29,7 +30,10 @@
   },
   "light": ["check:cases", "check:prose", "check:spec-cost-landed"],
   "landing": [
+    "check:corpus",
     "check:corpus-comments",
+    "check:corpus-format",
+    "check:corpus-goldens",
     "check:doc",
     "check:landing",
     "check:syntax-exemplars",

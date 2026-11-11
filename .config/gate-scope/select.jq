@@ -24,8 +24,11 @@
 # dispatcher's test of the ledger's exemplars, so a ledger exemplar that no
 # longer verifies reached `landing` (#6430). The gate runs `check:doc`,
 # `check:witnesses` and `check:syntax-exemplars` too, the last of which runs
-# the same verification as that test. The light checks stay, since each takes
-# seconds.
+# the same verification as that test. A corpus change reached `landing` with
+# a stale golden, a refusing source with no golden, or a source out of the
+# sugared form (#6489). So the gate runs `check:corpus`, `check:corpus-format`
+# and `check:corpus-goldens` for a change under `corpus/` or `crates/`. The
+# light checks stay, since each takes seconds.
 #
 # Input:
 #   tasks    every `check:*` task's name

@@ -166,7 +166,7 @@
     "output": ["check:claims", "check:typos"]
   },
   {
-    "name": "#5458: the landing's gate keeps, of a crate's whole wall, the light checks, Clippy with the compiler policy and the rustdoc (#6433)",
+    "name": "#5458: the landing's gate keeps, of a crate's whole wall, the light checks, Clippy with the compiler policy, the rustdoc (#6433) and the corpus check (#6489)",
     "program": "select.jq",
     "input": {
       "tasks": [
@@ -182,10 +182,10 @@
       "changed": ["crates/core-term/src/lib.rs"],
       "landing": true
     },
-    "output": ["check:claims", "check:doc", "check:landing", "check:typos"]
+    "output": ["check:claims", "check:corpus", "check:doc", "check:landing", "check:typos"]
   },
   {
-    "name": "#5458: the landing's gate runs no extension check and no Rust check for a corpus source, and of the corpus checks only the comment check (#6365)",
+    "name": "#5458: the landing's gate runs no extension check and no Rust check for a corpus source, and of the corpus checks the comment check (#6365) and the corpus check (#6489)",
     "program": "select.jq",
     "input": {
       "tasks": [
@@ -200,7 +200,7 @@
       "changed": ["corpus/model/basics/definitions.gandr", "contrib/gandr-vscode/src/extension.ts"],
       "landing": true
     },
-    "output": ["check:claims", "check:corpus-comments", "check:typos"]
+    "output": ["check:claims", "check:corpus", "check:corpus-comments", "check:typos"]
   },
   {
     "name": "#6365: the landing's gate of a parser change keeps the comment check beside Clippy and the compiler policy",
@@ -218,7 +218,14 @@
       "changed": ["crates/surface-parser/src/meld.rs"],
       "landing": true
     },
-    "output": ["check:claims", "check:corpus-comments", "check:doc", "check:landing", "check:typos"]
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:corpus-comments",
+      "check:doc",
+      "check:landing",
+      "check:typos"
+    ]
   },
   {
     "name": "#6433: the landing's gate of #6408's change, a parser source, runs the rustdoc check that refuses its broken link",
@@ -267,7 +274,43 @@
       "changed": ["corpus/ledger/features/spheres.gandr"],
       "landing": true
     },
-    "output": ["check:claims", "check:corpus-comments", "check:syntax-exemplars", "check:typos"]
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:corpus-comments",
+      "check:syntax-exemplars",
+      "check:typos"
+    ]
+  },
+  {
+    "name": "#6489: the landing's gate of #6469's moved span and #6484's new refusing source runs the corpus check, both format checks and the renderers' goldens, and no corpus check that the landing list leaves out",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:corpus-comments",
+        "check:corpus-format",
+        "check:corpus-goldens",
+        "check:exemplars",
+        "check:gandr-doc",
+        "check:landing",
+        "check:typos"
+      ],
+      "changed": [
+        "corpus/pathological/desc/record-faces.gandr",
+        "corpus/ledger/diagnostics/UndescribedMember.NoOutput.gandr"
+      ],
+      "landing": true
+    },
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:corpus-comments",
+      "check:corpus-format",
+      "check:corpus-goldens",
+      "check:typos"
+    ]
   },
   {
     "name": "#4911: a check building the toolchain outside every group is a finding",

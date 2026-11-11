@@ -1306,6 +1306,25 @@ run = [
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std",
 ]
 
+# The renderers' goldens of the corpus (#6489): each renderer that renders
+# every refusing source holds the test in its `tests/corpus.rs`, under the
+# module `corpus`, and this gate runs that module. A new renderer joins by
+# where its test is written. A change that adds a refusing source with no
+# golden, or that moves a refusal's span, fails here before it opens, not in
+# the integration cycle (#6469, #6484).
+["check:corpus-goldens"]
+description = "Each renderer's corpus goldens: every refusing source renders as its committed golden"
+tools.yq = "4.54.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+packages=()
+for test in crates/surface-render-*/tests/corpus.rs; do
+  packages+=(--package "$(yq -p toml -o yaml -r .package.name "${test%/tests/corpus.rs}/Cargo.toml")")
+done
+exec .config/mise/gated .config/mise/scope cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" "${packages[@]}" -E 'test(/^corpus::/)'
+'''
+
 # Merge residue never lands: a conflict marker, or what a merge driver writes
 # as a comment, its resolution trailer or the `// refused_by:` line it puts
 # atop each side of a block it could not resolve (#1560), read at a line's
@@ -2050,9 +2069,10 @@ run = ".config/mise/host-lock-cases.bash"
 # `select.jq` over the table, a workflow-only change selecting no Rust check, a
 # crate's source the whole wall and an unmapped path every check, and for the
 # landing's gate (#5458) a crate's source keeping the light checks,
-# `check:landing` and `check:corpus-comments`, a corpus source keeping the
-# light checks and `check:corpus-comments`, and an extension source keeping
-# the light checks alone (#6365). It holds
+# `check:landing`, `check:corpus-comments` and `check:corpus`, a corpus source
+# keeping the light checks, `check:corpus-comments` and the corpus checks of
+# #6489, and an extension source keeping the light checks alone (#6365). It
+# holds
 # `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
 # change the whole workspace and a change growing by its dependents, and
 # `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
