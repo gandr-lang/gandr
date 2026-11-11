@@ -13,6 +13,8 @@
 //! the second unit of #2742.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
+use alloc::vec::Vec;
 
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
@@ -120,6 +122,26 @@ pub struct Rows
     levels: BTreeMap<CompTypeId, Level>,
 }
 
+/// A record that [`Rows`] added: the key [`Rows::forget`] removes.
+///
+/// # Specification
+/// - executable: none — data declaration; [`Rows`] writes it and
+///   [`Rows::forget`] reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Rows::forget`].
+/// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Gained
+{
+    /// The returner that a computation was checked at.
+    Checked(ComputationId),
+    /// The returner that a computation synthesised.
+    Synthesised(ComputationId),
+    /// The level of a returner's result.
+    Level(CompTypeId),
+}
+
 impl Rows
 {
     /// The returner over a row of operations `at` was checked at, when the
@@ -172,7 +194,8 @@ impl Rows
     ///
     /// # Specification
     /// - ensures: `at` reads the first returner it was checked at, and `ty`
-    ///   reads the first level recorded for it.
+    ///   reads the first level recorded for it; `gained` names each of the two
+    ///   records that this call adds.
     /// - panics: none.
     /// - executable: none — the record is the statement; the witness crosses
     ///   it.
@@ -185,10 +208,14 @@ impl Rows
         &mut self,
         at: ComputationId,
         (ty, level): (CompTypeId, Level),
+        gained: &mut Vec<Gained>,
     )
     {
-        let _first = self.checked.entry(at).or_insert(ty);
-        let _level = self.levels.entry(ty).or_insert(level);
+        if let Entry::Vacant(vacant) = self.checked.entry(at) {
+            let _kept = vacant.insert(ty);
+            gained.push(Gained::Checked(at));
+        }
+        self.keep_level(ty, level, gained);
     }
 
     /// Record that `at` synthesised `ty`, a returner over a row of operations
@@ -196,7 +223,8 @@ impl Rows
     ///
     /// # Specification
     /// - ensures: `at` reads the first returner it synthesised, and `ty` reads
-    ///   the first level recorded for it.
+    ///   the first level recorded for it; `gained` names each of the two
+    ///   records that this call adds.
     /// - panics: none.
     /// - executable: none — the record is the statement; the witness crosses
     ///   it.
@@ -209,11 +237,15 @@ impl Rows
         &mut self,
         at: ComputationId,
         (ty, level): (CompTypeId, Option<Level>),
+        gained: &mut Vec<Gained>,
     )
     {
-        let _first = self.synthesised.entry(at).or_insert(ty);
+        if let Entry::Vacant(vacant) = self.synthesised.entry(at) {
+            let _kept = vacant.insert(ty);
+            gained.push(Gained::Synthesised(at));
+        }
         if let Some(level) = level {
-            let _level = self.levels.entry(ty).or_insert(level);
+            self.keep_level(ty, level, gained);
         }
     }
 
@@ -221,7 +253,8 @@ impl Rows
     /// operations whose result stands at `level`.
     ///
     /// # Specification
-    /// - ensures: `ty` reads the first level recorded for it.
+    /// - ensures: `ty` reads the first level recorded for it; `gained` names
+    ///   the record when this call adds it.
     /// - panics: none.
     /// - executable: none — the record is the statement; the witness crosses
     ///   it.
@@ -234,9 +267,62 @@ impl Rows
         &mut self,
         ty: CompTypeId,
         level: Level,
+        gained: &mut Vec<Gained>,
     )
     {
-        let _first = self.levels.entry(ty).or_insert(level);
+        self.keep_level(ty, level, gained);
+    }
+
+    /// Record `level` as the level of `ty`'s result, when no level reads for
+    /// it, and name the record in `gained`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep_level(
+        &mut self,
+        ty: CompTypeId,
+        level: Level,
+        gained: &mut Vec<Gained>,
+    )
+    {
+        if let Entry::Vacant(vacant) = self.levels.entry(ty) {
+            let _kept = vacant.insert(level);
+            gained.push(Gained::Level(ty));
+        }
+    }
+
+    /// Forget each record that `gained` names.
+    ///
+    /// # Specification
+    /// - requires: `gained` names records that this record added.
+    /// - ensures: no record that `gained` names reads here; every other record
+    ///   reads as before.
+    /// - panics: none.
+    /// - executable: none — the records are the statement; the witness crosses
+    ///   them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case on a run, at a row and over a type variable,
+    ///   crosses at the records of the run that judges its elaborated body.
+    /// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+    pub(crate) fn forget(
+        &mut self,
+        gained: impl IntoIterator<Item = Gained>,
+    )
+    {
+        for record in gained {
+            match record {
+                Gained::Checked(at) => {
+                    let _forgotten = self.checked.remove(&at);
+                },
+                Gained::Synthesised(at) => {
+                    let _forgotten = self.synthesised.remove(&at);
+                },
+                Gained::Level(ty) => {
+                    let _forgotten = self.levels.remove(&ty);
+                },
+            }
+        }
     }
 
     /// Absorb `other`'s records, each fact this record holds kept.

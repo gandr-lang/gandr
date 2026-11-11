@@ -3598,14 +3598,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`gandr_core_term::effect::host::PARTIAL`], which no handler
     ///   eliminates: a handler of it leaves it in the residual row; success
     ///   binds the subject's returned payload, not the handler's answer
-    ///   payload.
+    ///   payload. The subject reads the returner it synthesised, when that
+    ///   returner stands over a row of operations, so the bridge folds the
+    ///   program it stands for.
     /// - fails: conflicting signatures, a non-returner or leaked effects.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unrelated effect and distinct payload types expose
-    ///   loss; a handler of `Partial` over a diverging call leaks it.
+    ///   loss; a handler of `Partial` over a diverging call leaks it; a handler
+    ///   whose subject is a call at the row crosses as the fold of the call's
+    ///   program, which the kernel admits.
     /// - witness: `judgement::tests::handlers_discharge_only_their_own_interface`
     /// - witness: `divergence::tests::no_handler_discharges_partial`
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth.saturating_add(1))]
     fn handle_subject(
         &mut self,
@@ -3616,6 +3621,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         let answer_result = self.returner_expected(at, answer)?;
+        let Computation::Handle {
+            subject: written, ..
+        } = *self.computation(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        self.context
+            .record_synthesised_row(written, (subject, None));
         let head = self.context.whnf_comp_type(subject)?;
         let CompTypeView::Returner { result, effects } =
             comp_type_view(self.context.arena(), head)?

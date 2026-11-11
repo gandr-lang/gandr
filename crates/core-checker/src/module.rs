@@ -1747,6 +1747,7 @@ fn decide(
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
             let _stale_updates = context.take_updates();
+            context.open_rows();
             context.own_body(body);
             context.supply(declaration.supplies());
             context.worlds_mut().enter(entry);
@@ -1788,10 +1789,11 @@ fn decide(
                                 done.updated(context.arena_mut(), elaborated, &updates, &crossed);
                             elaboration = Maybe::Present(done.after_crossing(crossings, crossed));
                             // The verdict is the second run's, and so are the
-                            // pairs it relates, the nodes it refines and what
-                            // it leaves undecided.
+                            // pairs it relates, the nodes it refines, the rows
+                            // it records and what it leaves undecided.
                             let _first = context.take_relating();
                             let _first_restated = context.take_restating();
+                            context.forget_rows();
                             context.forget_stages();
                             crate::quantified::mint(context.stages_mut(), declaration.stages());
                             context.deferrals_mut().open(Collecting::On);

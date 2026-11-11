@@ -384,6 +384,9 @@ pub struct CheckingContext<'arena>
     /// The computations the judgement checked or synthesised at a returner
     /// over a row of operations, and the levels of those returners.
     rows: crate::program::Rows,
+    /// The records [`Self::rows`] gained since the first run of the body
+    /// under way began: what its second run forgets.
+    gained_rows: Vec<crate::program::Gained>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -840,6 +843,7 @@ impl<'arena> CheckingContext<'arena>
             payloads: BTreeMap::new(),
             handled: BTreeMap::new(),
             rows: crate::program::Rows::default(),
+            gained_rows: Vec::new(),
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -933,6 +937,7 @@ impl<'arena> CheckingContext<'arena>
             ref payloads,
             ref handled,
             ref rows,
+            gained_rows: _,
             ref reflexivities,
             ref nesting,
             ref crossings,
@@ -1144,6 +1149,7 @@ impl<'arena> CheckingContext<'arena>
             payloads,
             handled,
             rows,
+            gained_rows: Vec::new(),
             reflexivities,
             nesting,
             crossings,
@@ -4333,7 +4339,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         if let Maybe::Present(level) = self.row_level(expected) {
-            self.rows.check(at, (expected, level));
+            self.rows
+                .check(at, (expected, level), &mut self.gained_rows);
         }
     }
 
@@ -4364,7 +4371,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         match self.row_level(synthesised) {
-            Maybe::Present(level) => self.rows.synthesise(at, (synthesised, Some(level))),
+            Maybe::Present(level) => {
+                self.rows
+                    .synthesise(at, (synthesised, Some(level)), &mut self.gained_rows);
+            },
             Maybe::Absent(_)
                 if against.is_some_and(|ty| {
                     matches!(
@@ -4373,7 +4383,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     )
                 }) =>
             {
-                self.rows.synthesise(at, (synthesised, None));
+                self.rows
+                    .synthesise(at, (synthesised, None), &mut self.gained_rows);
             },
             Maybe::Absent(_) => {},
         }
@@ -4400,8 +4411,42 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         if let Maybe::Present(level) = self.row_level(formed) {
-            self.rows.form(formed, level);
+            self.rows.form(formed, level, &mut self.gained_rows);
         }
+    }
+
+    /// Start the log of the rows records that the first run of a body gains.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::forget_rows`] forgets exactly the records that
+    ///   [`Self::rows`] gains after this call.
+    /// - panics: none.
+    /// - executable: none — the log is the statement; the witness crosses it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::program::Rows::forget`].
+    /// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+    pub(crate) fn open_rows(&mut self)
+    {
+        self.gained_rows.clear();
+    }
+
+    /// Forget each rows record gained since [`Self::open_rows`]: the second
+    /// run of a body judges its elaborated nodes, and one node can stand in
+    /// both bodies beneath other binders.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::rows`] holds no record that it gained since
+    ///   [`Self::open_rows`], and every record that it held before.
+    /// - panics: none.
+    /// - executable: none — as [`Self::open_rows`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::program::Rows::forget`].
+    /// - witness: `bridge::tests::a_case_on_a_run_at_a_row_crosses_at_its_second_run_6672`
+    pub(crate) fn forget_rows(&mut self)
+    {
+        self.rows.forget(self.gained_rows.drain(..));
     }
 
     /// The level of the result of `ty`, when `ty` is a returner over a row
