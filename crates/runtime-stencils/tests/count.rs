@@ -167,6 +167,7 @@ fn run(program: &[Instruction]) -> Ran
         Word::ZERO,
     );
     let region = (&raw mut windows).cast::<Word>();
+    runtime.set_memory(Words(HEAP.saturating_add(windows.len())));
     runtime.set_windows(region, region.wrapping_add(windows.len()));
     // SAFETY: the program falls through to its halt; the regions live to the
     // end of the call, the sentinel frame below the base mark.

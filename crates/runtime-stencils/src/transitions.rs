@@ -35,12 +35,14 @@
 
 use crate::Runtime;
 use crate::Word;
+use crate::commit;
 use crate::holes::address;
 use crate::holes::hole_alt;
 use crate::holes::hole_frames_exhausted;
 use crate::holes::hole_heap_exhausted;
 use crate::holes::hole_next;
 use crate::holes::hole_stuck;
+use crate::holes::hole_windows_exhausted;
 use crate::holes::operand;
 use crate::holes::resume;
 use crate::layout;
@@ -201,7 +203,8 @@ pub extern "rust-preserve-none" fn stencil_push(
 /// Take an object of `$words` words, header and fields, from the free list
 /// of its block's size, or else from the heap's top, and write its count of
 /// one: evaluates to the object's address and the heap pointer after it.
-/// Takes the heap exit when no block waits and the heap has no room.
+/// Past the heap's committed end it commits the chunks the object needs, and
+/// takes the heap exit when no block waits and no chunk can be committed.
 macro_rules! allocate {
     ($runtime:ident, $heap:ident, $frames:expr, $environment:expr, $value:expr, $words:expr) => {{
         let size: usize = $words.wrapping_add(1);
@@ -223,7 +226,7 @@ macro_rules! allocate {
             next = $heap.wrapping_add(size);
             // SAFETY: the runtime record outlives the run.
             let limit = unsafe { (*$runtime).heap_limit };
-            if next > limit {
+            if next > limit && !commit!($runtime, heap_limit, heap_end, next) {
                 become hole_heap_exhausted($runtime, $heap, $frames, $environment, $value)
             }
             block = $heap;
@@ -893,8 +896,9 @@ macro_rules! entry {
             let $window = unsafe { (*runtime).window_top };
             let next = $window.wrapping_add(operand!(runtime, A));
             // SAFETY: as above.
-            if next > unsafe { (*runtime).window_limit } {
-                become hole_heap_exhausted(runtime, heap, $frames, environment, $value)
+            let limit = unsafe { (*runtime).window_limit };
+            if next > limit && !commit!(runtime, window_limit, window_end, next) {
+                become hole_windows_exhausted(runtime, heap, $frames, environment, $value)
             }
             // SAFETY: as above.
             unsafe {
@@ -906,7 +910,7 @@ macro_rules! entry {
             while index < $at {
                 // SAFETY: the closure holds B captures after its two words.
                 let capture = unsafe { *$closure.wrapping_add(index.wrapping_add(2)) };
-                // SAFETY: the window fits below the window region's limit.
+                // SAFETY: the window fits below the window region's committed end.
                 unsafe { *$window.wrapping_add(index) = capture };
                 index = index.wrapping_add(1);
             }
@@ -2536,7 +2540,7 @@ pub extern "rust-preserve-none" fn stencil_unmatched(
 exit!(
     stencil_heap_exhausted,
     layout::STATUS_HEAP_EXHAUSTED,
-    "The exit an allocation takes at the heap region's limit.",
+    "The exit an allocation takes when the heap commits no chunk it needs.",
     "- witness: `tests::exits::a_full_heap_exits_by_name`"
 );
 exit!(
@@ -2550,6 +2554,12 @@ exit!(
     layout::STATUS_FUEL_EXHAUSTED,
     "The exit a code-word jump takes when the run's fuel is spent.",
     "- witness: `tests::exits::a_run_without_fuel_exits_by_name`"
+);
+exit!(
+    stencil_windows_exhausted,
+    layout::STATUS_WINDOWS_EXHAUSTED,
+    "The exit a closure entry takes when the window region commits no chunk its window needs.",
+    "- witness: `tests::exits::a_full_window_region_exits_by_name`"
 );
 exit!(
     stencil_stuck,

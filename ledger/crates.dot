@@ -237,6 +237,7 @@ digraph crates {
   "surface-driver" -> "core-fork";
   "surface-driver" -> "core-publish";
   "surface-driver" -> "kernel-core";
+  "surface-driver" -> "runtime-emitter";
   "surface-driver" -> "runtime-net";
   "surface-driver" -> "storage-store";
   "surface-driver" -> "surface-diagnostics";

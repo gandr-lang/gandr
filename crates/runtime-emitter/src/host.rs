@@ -2920,6 +2920,7 @@ mod tests
     use gandr_runtime_stencils::Refusal;
     use gandr_runtime_stencils::Runtime;
     use gandr_runtime_stencils::Word;
+    use gandr_runtime_stencils::Words;
     use gandr_runtime_stencils::count_word;
 
     use super::Captured;
@@ -3030,6 +3031,7 @@ mod tests
             enter,
             Word::ZERO,
         );
+        runtime.set_memory(Words(64));
         let arena = CommandArena::new();
         let sites = Sites::default();
         let moved = Moved::new();

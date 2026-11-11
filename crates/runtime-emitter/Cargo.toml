@@ -45,8 +45,9 @@ gandr-theory-cell-complexes.workspace = true
 gandr-runtime-stencils.workspace = true
 object.workspace = true
 
-# The three hosts with a patcher map executable memory through the C library.
-[target.'cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(target_os = "linux", any(target_arch = "aarch64", target_arch = "x86_64"))))'.dependencies]
+# A unix host maps a run's regions, reads its memory and, where it has a
+# patcher, maps executable memory through the C library.
+[target."cfg(unix)".dependencies]
 libc.workspace = true
 
 [lints]

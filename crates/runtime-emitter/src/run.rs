@@ -8,18 +8,19 @@
 //! program. The lowering keeps the code the cache served it, so a later run
 //! of the same lowering — a scheduled run's writer, run once for each spawn —
 //! takes neither the cache's lock nor its key's hash. Both tiers run over a
-//! set of the calling thread's heap and frame regions, each allocated at its
-//! bound and committed page by page as runs touch it; a run that would pass a
-//! bound declines exhausted. The alternative was a small region doubled and
-//! the run repeated from its start, which offers a host handler its requests
-//! a second time; the bound costs address space only. The choice reverses if
-//! a workload needs more than a bound holds, when the bound becomes the
-//! caller's to set.
+//! set of the calling thread's regions. The heap and the window region each
+//! reserve the invocation's memory bound and commit it in chunks, and the
+//! frame region is allocated at its bound ([`crate::regions`]). A run that
+//! would pass the bound, or the frame region's, declines with a report. The
+//! alternative was a small region doubled and the run repeated from its
+//! start, which offers a host handler its requests a second time; the
+//! reservation costs address space only.
 //!
 //! A run takes its set from the thread's idle sets, and gives it back when it
-//! ends. So a run that a host starts inside another run's reply, on the same
-//! thread, runs over a set of its own. A thread holds as many sets as its runs
-//! ever nested deep, each reserving address space at the bounds.
+//! ends, with the pages past each region's first chunk given back to the
+//! host. So a run that a host starts inside another run's reply, on the same
+//! thread, runs over a set of its own. A thread holds as many sets as its
+//! runs ever nested deep, each reserving address space for the bound.
 //!
 //! A command closed over a store's values runs the same way, its captures
 //! laid out on the run's heap first, as a host's reply is, and the run
@@ -107,13 +108,13 @@ use gandr_core_sequent::Suspension;
 use gandr_core_term::Zone;
 use gandr_core_term::world::Unmigrated;
 use gandr_kernel_term::Component;
-use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Observed;
 use gandr_runtime_stencils::Refusal;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::Word;
+use gandr_runtime_stencils::Words;
 
 use crate::executor::Program;
 use crate::function::Unbound;
@@ -135,6 +136,13 @@ use crate::native::EmitRefusal;
 use crate::native::Emitted;
 #[cfg(gandr_patcher)]
 use crate::native::Native;
+use crate::regions;
+use crate::regions::Held;
+use crate::regions::Memory;
+use crate::regions::Region;
+use crate::regions::Reservation;
+use crate::regions::Short;
+use crate::regions::Step;
 use crate::seam::Adapter;
 use crate::seam::HostHandler;
 use crate::seam::HostOutcome;
@@ -277,8 +285,11 @@ pub enum Declined
     /// The run stopped stuck where nothing named why: a host call refused
     /// operands no well-formed command gives it.
     Stuck,
-    /// The run spent its fuel, or a region past its bound.
+    /// The run spent its fuel, or passed the frame region's bound.
     Exhausted(Status),
+    /// The heap or the window region asked for a chunk that the memory bound,
+    /// or the region's reservation, does not hold.
+    Memory(Held),
     /// The answer, or a value the run stopped at or offered, could not be
     /// moved into the store.
     Transfer(TransferRefusal),
@@ -360,15 +371,18 @@ impl core::fmt::Display for Declined
             Self::Uncached => f.write_str("the cache holds no code for the function"),
             Self::Stuck => f.write_str("the run stopped stuck where nothing named why"),
             Self::Exhausted(Status::FuelExhausted) => f.write_str("the run spent its budget"),
-            Self::Exhausted(Status::HeapExhausted) => {
-                f.write_str("the heap region passed its bound")
-            },
             Self::Exhausted(Status::FramesExhausted) => {
                 f.write_str("the frame region passed its bound")
             },
             Self::Exhausted(
-                Status::Running | Status::Halted | Status::Unmatched | Status::Stuck,
+                Status::Running
+                | Status::Halted
+                | Status::Unmatched
+                | Status::Stuck
+                | Status::HeapExhausted
+                | Status::WindowsExhausted,
             ) => f.write_str("the run exited with a status no run returns"),
+            Self::Memory(ref held) => core::fmt::Display::fmt(held, f),
             Self::Transfer(_) => f.write_str("a value could not be moved into the store"),
             Self::Reply(value) => {
                 write!(
@@ -454,77 +468,106 @@ impl Eq for Kept
 /// The policy, read once per process.
 static POLICY: std::sync::LazyLock<Policy> = std::sync::LazyLock::new(Policy::from_environment);
 
-/// The regions one run uses, each allocated at its bound and committed as a
-/// run first touches it.
+/// The regions one run uses: the heap and the window region reserved for
+/// the memory bound, the frame region allocated at its bound.
 #[derive(Debug)]
 struct Buffers
 {
-    /// The heap region: capacity only, every word written before it is read.
-    heap: Vec<Word>,
+    /// The heap region: every word written before it is read.
+    heap: Reservation,
     /// The frame region: capacity only, the sentinel frame written in its
     /// first two words.
     frames: Vec<Word>,
     /// The entry window.
     window: Vec<Word>,
-    /// The window region every closure entry's window is taken from:
-    /// capacity only, every slot written before it is read.
-    windows: Vec<Word>,
+    /// The window region every closure entry's window is taken from: every
+    /// slot written before it is read.
+    windows: Reservation,
 }
 
 impl Buffers
 {
-    /// A set of regions, each allocated at its bound.
+    /// A set whose heap and window region each reserve `bound` words, and
+    /// whose frame region is allocated at its bound.
     ///
     /// # Specification
     /// trivial.
-    fn at_bounds() -> Self
+    fn reserved(bound: Words) -> Self
     {
         Self {
-            heap: Vec::with_capacity(HEAP_BOUND),
+            heap: Reservation::of(bound),
             frames: Vec::with_capacity(FRAME_BOUND),
             window: Vec::new(),
-            windows: Vec::with_capacity(WINDOW_BOUND),
+            windows: Reservation::of(bound),
         }
+    }
+
+    /// Record the committed ends that `runtime` reached, so the set gives
+    /// their pages back when the run ends.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold(
+        &mut self,
+        runtime: &Runtime,
+    )
+    {
+        self.heap.hold(runtime.heap_limit());
+        self.windows.hold(runtime.window_limit());
+    }
+
+    /// What the run over this set held when `asked` could not commit the
+    /// chunk it needed: each region's committed bytes, the jumps spent from
+    /// `fuel`, and whether the bound or the reservation fell short.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held(
+        &self,
+        runtime: &Runtime,
+        asked: Region,
+        (fuel, bound): (Fuel, Memory),
+    ) -> Held
+    {
+        let (reservation, limit) = match asked {
+            Region::Heap => (&self.heap, runtime.heap_limit()),
+            Region::Windows => (&self.windows, runtime.window_limit()),
+        };
+        let short = if limit == reservation.end() {
+            Short::Reservation(reservation.bytes())
+        }
+        else {
+            Short::Bound
+        };
+        Held {
+            asked,
+            short,
+            heap: self.heap.held(runtime.heap_limit()),
+            windows: self.windows.held(runtime.window_limit()),
+            step: Step::from(usize::from(fuel).saturating_sub(usize::from(runtime.fuel()))),
+            bound,
+        }
+    }
+
+    /// Give the host back the pages past each growing region's first chunk.
+    ///
+    /// # Specification
+    /// trivial.
+    fn release(&mut self)
+    {
+        self.heap.release();
+        self.windows.release();
     }
 }
 
-/// The heap region's bound, in words: past it the run declines.
-const HEAP_BOUND: usize = 1 << 25;
 /// The frame region's bound, in words: past it the run declines.
 const FRAME_BOUND: usize = 1 << 23;
-/// The window region's bound, in words: past it the run declines.
-const WINDOW_BOUND: usize = 1 << 24;
 
 std::thread_local! {
     /// The calling thread's idle region sets. A run takes one and gives it
     /// back when it ends, so a run nested in another run's host call takes a
     /// set of its own.
     static BUFFERS: RefCell<Vec<Buffers>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Check that the constant table of `globals` fits the heap region `heap`,
-/// at whose base it sits: one word a constant, within the region's capacity.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// [`Declined::Exhausted`] with [`Status::HeapExhausted`] when `globals`
-/// holds more constants than `heap` has capacity for words.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a table exactly the region's capacity fits and one word
-///   more does not; a strict or a reversed comparison changes one answer.
-/// - witness: `run::tests::a_constant_table_fits_its_region_up_to_its_capacity`
-fn hold_table(
-    heap: &Vec<Word>,
-    globals: &[ConstantIndex],
-) -> Result<(), Declined>
-{
-    if globals.len() > heap.capacity() {
-        return Err(Declined::Exhausted(Status::HeapExhausted));
-    }
-    Ok(())
 }
 
 /// The code a run enters.
@@ -1371,10 +1414,11 @@ fn run_emitted(
 /// Run `code` once over a set of the calling thread's regions, and give the
 /// set back to the thread when the run ends.
 ///
-/// A set is taken from the thread's idle sets, or allocated at its bounds when
-/// none is idle. So a run that a host starts inside another run's reply, on
-/// the same thread, runs over a set of its own, and the outer run's regions
-/// stay as it left them.
+/// A set is taken from the thread's idle sets, or reserved for the memory
+/// bound when none is idle, and its pages past each region's first chunk go
+/// back to the host when the run ends. So a run that a host starts inside
+/// another run's reply, on the same thread, runs over a set of its own, and
+/// the outer run's regions stay as it left them.
 ///
 /// # Specification
 /// trivial.
@@ -1393,17 +1437,19 @@ fn run(
     fuel: Fuel,
 ) -> Result<Ran, Declined>
 {
+    let memory = regions::bound();
     let mut buffers = BUFFERS
         .with_borrow_mut(Vec::pop)
-        .unwrap_or_else(Buffers::at_bounds);
-    let ran = run_over(&mut buffers, code, parts, fuel);
+        .unwrap_or_else(|| Buffers::reserved(memory.bytes().words()));
+    let ran = run_over(&mut buffers, code, parts, (fuel, memory));
+    buffers.release();
     BUFFERS.with_borrow_mut(|idle| idle.push(buffers));
     ran
 }
 
-/// Run `code` once over `buffers`, the store's values `parts`' inputs are
-/// closed over laid out in the entry window's capture slots, and move how it
-/// ended into their store.
+/// Run `code` once over `buffers` within `fuel` and the memory bound, the
+/// store's values `parts`' inputs are closed over laid out in the entry
+/// window's capture slots, and move how it ended into their store.
 ///
 /// # Specification
 /// trivial.
@@ -1424,7 +1470,7 @@ fn run_over(
     buffers: &mut Buffers,
     code: Code<'_>,
     parts: Parts<'_, '_>,
-    fuel: Fuel,
+    (fuel, memory): (Fuel, Memory),
 ) -> Result<Ran, Declined>
 {
     let lowered = parts.lowered;
@@ -1438,17 +1484,7 @@ fn run_over(
         Code::Native(_, halt) => halt,
         Code::Executor(program) => program.halt(),
     };
-    let table = buffers.heap.as_mut_ptr();
-    let heap_limit = table.wrapping_add(buffers.heap.capacity());
-    // The constant table sits at the heap's base, every word zero: no
-    // constant is unfolded yet.
-    let constants = lowered.globals.len();
-    hold_table(&buffers.heap, &lowered.globals)?;
-    // SAFETY: the heap region's capacity holds the table's words.
-    unsafe {
-        table.write_bytes(0, constants);
-    }
-    let heap = table.wrapping_add(constants);
+    let table = buffers.heap.base();
     let frames = buffers.frames.as_mut_ptr();
     let frame_limit = frames.wrapping_add(buffers.frames.capacity());
     // SAFETY: the frame region's capacity holds far more than the
@@ -1466,27 +1502,45 @@ fn run_over(
     let base = frames.wrapping_add(if joined.is_some() { 4 } else { 2 });
     let mut calls = Calls::new(parts);
     let mut runtime = Runtime::new(
-        heap,
-        heap_limit,
+        table,
+        buffers.heap.end(),
         frame_limit,
         base,
         fuel,
         host::enter,
         Word::from_pointer(&raw mut calls),
     );
-    runtime.set_globals(table);
-    let windows = buffers.windows.as_mut_ptr();
-    runtime.set_windows(windows, windows.wrapping_add(buffers.windows.capacity()));
+    runtime.set_memory(memory.bytes().words());
+    runtime.set_windows(buffers.windows.base(), buffers.windows.end());
+    // The constant table sits at the heap's base, every word zero: no
+    // constant is unfolded yet.
+    let constants = lowered.globals.len();
+    let Ok(globals) = runtime.bump(Words(constants))
+    else {
+        buffers.hold(&runtime);
+        return Err(Declined::Memory(buffers.held(
+            &runtime,
+            Region::Heap,
+            (fuel, memory),
+        )));
+    };
+    // SAFETY: the heap committed the table's words.
+    unsafe {
+        globals.write_bytes(0, constants);
+    }
+    runtime.set_globals(globals);
     // A command closed over the store runs over its captures laid out on
     // its heap, each held by its slot of the entry window.
-    let laid = calls
-        .laid_out(&mut runtime, captured)
-        .map_err(|unlaid| match unlaid {
-            Unlaid::Value(value) => Declined::Capture(value),
-            Unlaid::Run(Refusal::Heap) => Declined::Exhausted(Status::HeapExhausted),
-            Unlaid::Run(Refusal::Frames) => Declined::Exhausted(Status::FramesExhausted),
-            Unlaid::Run(Refusal::Operands) => Declined::Stuck,
-        })?;
+    let laid = calls.laid_out(&mut runtime, captured);
+    buffers.hold(&runtime);
+    let laid = laid.map_err(|unlaid| match unlaid {
+        Unlaid::Value(value) => Declined::Capture(value),
+        Unlaid::Run(Refusal::Heap) => {
+            Declined::Memory(buffers.held(&runtime, Region::Heap, (fuel, memory)))
+        },
+        Unlaid::Run(Refusal::Frames) => Declined::Exhausted(Status::FramesExhausted),
+        Unlaid::Run(Refusal::Operands) => Declined::Stuck,
+    })?;
     for (&slot, word) in lowered.captures.iter().zip(laid) {
         let held = usize::try_from(slot.0)
             .ok()
@@ -1523,6 +1577,7 @@ fn run_over(
             gandr_runtime_stencils::execute(program.entry(), &raw mut runtime, top, base, window)
         },
     };
+    buffers.hold(&runtime);
     let refused = calls.refused().cloned();
     // SAFETY: the run exited; its heap and the function's constants are
     // live until this closure returns, and every exit but the regions'
@@ -1576,6 +1631,20 @@ fn run_over(
                 }
             },
         },
+        Ok(Status::HeapExhausted) => {
+            return Err(Declined::Memory(buffers.held(
+                &runtime,
+                Region::Heap,
+                (fuel, memory),
+            )));
+        },
+        Ok(Status::WindowsExhausted) => {
+            return Err(Declined::Memory(buffers.held(
+                &runtime,
+                Region::Windows,
+                (fuel, memory),
+            )));
+        },
         Ok(status) => return Err(Declined::Exhausted(status)),
         Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
     };
@@ -1612,14 +1681,12 @@ mod tests
     use gandr_core_term::Zone;
     use gandr_core_term::equal_certificate_syntax;
     use gandr_core_term::world::Unmigrated;
-    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::IntegerLiteral;
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::Magnitude;
     use gandr_kernel_term::Sign;
     use gandr_runtime_stencils::Fuel;
     use gandr_runtime_stencils::Status;
-    use gandr_runtime_stencils::Word;
 
     use super::Declined;
     use super::Policy;
@@ -1627,37 +1694,19 @@ mod tests
     use super::Tier;
     use super::closed_on_with_host;
     use super::evaluate_on;
-    use super::hold_table;
     use crate::PATCHER;
     use crate::cut::Declining;
     use crate::function::Function;
     use crate::lower::Form;
     use crate::lower::lower_suspended;
+    use crate::regions::Bytes;
+    use crate::regions::Held;
+    use crate::regions::Memory;
+    use crate::regions::Region;
+    use crate::regions::Short;
+    use crate::regions::Step;
     use crate::seam::HostOutcome;
     use crate::transfer::TransferRefusal;
-
-    /// A constant table fills its heap region up to the region's capacity,
-    /// and one constant more is refused before a word is written.
-    #[test]
-    fn a_constant_table_fits_its_region_up_to_its_capacity()
-    {
-        let heap: Vec<Word> = Vec::with_capacity(4);
-        let globals = |count: usize| -> Vec<ConstantIndex> {
-            (0 .. count).map(ConstantIndex::from).collect()
-        };
-        let capacity = heap.capacity();
-        assert_eq!(Ok(()), hold_table(&heap, &globals(0)), "no table fits");
-        assert_eq!(
-            Ok(()),
-            hold_table(&heap, &globals(capacity)),
-            "a table of {capacity} words fills the region"
-        );
-        assert_eq!(
-            Err(Declined::Exhausted(Status::HeapExhausted)),
-            hold_table(&heap, &globals(capacity + 1)),
-            "one word past the region is refused"
-        );
-    }
 
     /// Each spelling of the variable selects its policy, and anything else
     /// the default: a misspelt `never` emits rather than silently running
@@ -1693,6 +1742,14 @@ mod tests
             .expect_err("a label never bound has no target");
         let reply = HeapValueId::from(7_u32);
         let migration = CommandId::from(5_u32);
+        let held = Held {
+            asked: Region::Windows,
+            short: Short::Bound,
+            heap: Bytes::from(8_u64 << 20_u32),
+            windows: Bytes::from(8_u64 << 20_u32),
+            step: Step::from(3_usize),
+            bound: Memory::flag(Bytes::from(16_u64 << 20_u32)),
+        };
         let reasons = [
             Declined::from(Form::ConsumerFields),
             Declined::NoPatcher,
@@ -1700,7 +1757,7 @@ mod tests
             Declined::Uncached,
             Declined::Stuck,
             Declined::Exhausted(Status::FuelExhausted),
-            Declined::Exhausted(Status::HeapExhausted),
+            Declined::Memory(held),
             Declined::Exhausted(Status::FramesExhausted),
             Declined::Exhausted(Status::Running),
             Declined::from(TransferRefusal::Producer),
@@ -1745,7 +1802,18 @@ mod tests
                 .contains(NodeAddress::Command(migration).to_string().as_str()),
             "names the migration"
         );
-        for status in [Status::Halted, Status::Unmatched, Status::Stuck] {
+        assert_eq!(
+            held.to_string(),
+            reasons[6].to_string(),
+            "the memory stop is its report"
+        );
+        for status in [
+            Status::Halted,
+            Status::Unmatched,
+            Status::Stuck,
+            Status::HeapExhausted,
+            Status::WindowsExhausted,
+        ] {
             assert_eq!(
                 Declined::Exhausted(status).to_string(),
                 reasons[8].to_string()

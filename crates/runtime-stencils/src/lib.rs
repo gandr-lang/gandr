@@ -188,6 +188,7 @@ pub use crate::layout::ACCUMULATED_APPLIED;
 pub use crate::layout::ACCUMULATED_FORCED;
 pub use crate::layout::ACCUMULATOR_FREE;
 pub use crate::layout::Arity;
+pub use crate::layout::CHUNK;
 pub use crate::layout::COUNT_IMMORTAL;
 pub use crate::layout::COUNT_ONE;
 pub use crate::layout::FREE_CLASSES;
@@ -205,6 +206,53 @@ pub use crate::layout::UnknownKind;
 pub use crate::layout::UnknownStatus;
 pub use crate::layout::Unnamed;
 pub use crate::layout::Words;
+
+/// Commit the chunks that an allocation reaching `$next` needs past the
+/// committed end `$limit` of the region whose reservation ends at `$end`,
+/// within the words that the record's memory bound leaves uncommitted.
+/// Evaluates to whether the region now holds `$next`; the caller takes the
+/// region's exit when it does not.
+///
+/// The grant is whole chunks, cut to the reservation's room and to the
+/// bound's rest, and it holds when it covers the shortfall. The commit is
+/// arithmetic on the record, so a stencil can take it: no call, no system
+/// call, and the kernel gives each page its memory when the run first
+/// writes it.
+macro_rules! commit {
+    ($runtime:expr, $limit:ident, $end:ident, $next:expr) => {{
+        let runtime: *mut $crate::Runtime = $runtime;
+        let next: *mut $crate::Word = $next;
+        let shift = core::mem::size_of::<$crate::Word>().trailing_zeros();
+        // SAFETY: the runtime record outlives the run.
+        let limit = unsafe { (*runtime).$limit };
+        // SAFETY: as above.
+        let end = unsafe { (*runtime).$end };
+        // SAFETY: as above.
+        let uncommitted = usize::from(unsafe { (*runtime).uncommitted });
+        let shortfall = next.addr().wrapping_sub(limit.addr()).wrapping_shr(shift);
+        let room = end.addr().saturating_sub(limit.addr()).wrapping_shr(shift);
+        let chunk = $crate::layout::CHUNK.0;
+        let grant = shortfall
+            .div_ceil(chunk)
+            .wrapping_mul(chunk)
+            .min(room)
+            .min(uncommitted);
+        let granted = grant >= shortfall;
+        if granted {
+            // SAFETY: as above.
+            unsafe {
+                (*runtime).$limit = limit.wrapping_add(grant);
+            }
+            // SAFETY: as above.
+            unsafe {
+                (*runtime).uncommitted = $crate::Word::from(uncommitted.wrapping_sub(grant));
+            }
+        }
+        granted
+    }};
+}
+
+pub(crate) use commit;
 
 /// One stencil, and every continuation it reaches.
 ///
@@ -384,11 +432,12 @@ impl From<Word> for u64
 /// table — the lowering numbers each distinct callee of a function — and its
 /// first two arguments, unused ones zero; every argument lies at
 /// [`Runtime::frame_top`], popped but intact while the host runs. The host
-/// reads the heap's top and limit from the record, allocates its answer
-/// there, writes the new top back with [`Runtime::set_heap_top`] and returns
-/// the answer; when it cannot, it writes [`Status::HeapExhausted`],
-/// [`Status::FramesExhausted`] or [`Status::Stuck`] with [`Runtime::refuse`]
-/// and returns anything, and the stencil takes that exit. A control
+/// allocates its answer on the heap through [`Runtime::reserve`] or
+/// [`Runtime::bump`], which commit past the heap's committed end as a stencil
+/// does, and returns the answer; when it cannot, it writes
+/// [`Status::HeapExhausted`], [`Status::FramesExhausted`] or
+/// [`Status::Stuck`] with [`Runtime::refuse`] and returns anything, and the
+/// stencil takes that exit. A control
 /// operation also reads the frame region's top and the window in reach, may
 /// move the top with [`Runtime::set_frame_top`] — a capture removes frames, a
 /// replay pushes them — and may name the code word and window the run
@@ -433,7 +482,8 @@ pub enum Refusal
 #[derive(Debug)]
 pub struct Runtime
 {
-    /// One past the heap region's last word.
+    /// The heap region's committed end: one past the last word the run may
+    /// write before it commits the next chunk.
     heap_limit: *mut Word,
     /// One past the frame region's last word.
     frame_limit: *mut Word,
@@ -476,19 +526,28 @@ pub struct Runtime
     /// One past the window region's last live word: the next window's
     /// address.
     window_top: *mut Word,
-    /// One past the window region's last word.
+    /// The window region's committed end, as the heap's.
     window_limit: *mut Word,
+    /// One past the heap region's reservation: no commit passes it.
+    heap_end: *mut Word,
+    /// One past the window region's reservation, as the heap's.
+    window_end: *mut Word,
+    /// The words the memory bound still lets the run commit, over the heap
+    /// and the window region together.
+    uncommitted: Word,
 }
 
 impl Runtime
 {
-    /// A record for a run over the heap region `[heap, heap_limit)` and the
-    /// frame region whose limit is `frame_limit` and whose base mark is
-    /// `frame_base`, whose calls enter `host` with `context` in reach.
+    /// A record for a run over the heap region reserved as `[heap,
+    /// heap_end)`, nothing of it committed, and the frame region whose limit
+    /// is `frame_limit` and whose base mark is `frame_base`, whose calls
+    /// enter `host` with `context` in reach. The run commits nothing until
+    /// [`Self::set_memory`] gives it a bound.
     ///
     /// # Specification
-    /// - requires: the heap region's start is at or below its limit, and
-    ///   `frame_base` lies within the frame region.
+    /// - requires: the heap region's start is at or below its reservation's
+    ///   end, and `frame_base` lies within the frame region.
     /// - ensures: the record reports [`Status::Running`] until an exit writes
     ///   it, and holds `fuel` jumps.
     /// - executable: none — the pointers' validity is the caller's to keep and
@@ -504,7 +563,7 @@ impl Runtime
     #[must_use]
     pub fn new(
         heap: *mut Word,
-        heap_limit: *mut Word,
+        heap_end: *mut Word,
         frame_limit: *mut Word,
         frame_base: *mut Word,
         fuel: Fuel,
@@ -513,7 +572,7 @@ impl Runtime
     ) -> Self
     {
         Self {
-            heap_limit,
+            heap_limit: heap,
             frame_limit,
             frame_base,
             heap_top: heap,
@@ -532,6 +591,9 @@ impl Runtime
             window_base: core::ptr::null_mut(),
             window_top: core::ptr::null_mut(),
             window_limit: core::ptr::null_mut(),
+            heap_end,
+            window_end: core::ptr::null_mut(),
+            uncommitted: Word::ZERO,
         }
     }
 
@@ -557,6 +619,29 @@ impl Runtime
         self.globals = globals;
     }
 
+    /// Give the run the memory bound `words`: the words its heap and its
+    /// window region may commit together.
+    ///
+    /// # Specification
+    /// - ensures: each commit takes its chunks from `words` until they are
+    ///   spent, and a commit past them takes its region's exit.
+    /// - executable: none — the commits are observed only by running them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run whose bound holds its tuple answers it, and the
+    ///   same run under a bound one chunk short of it exits by the heap; a
+    ///   bound read past its rest commits past it.
+    /// - witness: `tests::exits::a_full_heap_exits_by_name`
+    /// - witness: `tests::exits::the_regions_commit_within_one_bound`
+    #[inline]
+    pub fn set_memory(
+        &mut self,
+        words: Words,
+    )
+    {
+        self.uncommitted = Word::from(words.0);
+    }
+
     /// The host's state, as the record was made with it.
     ///
     /// # Specification
@@ -568,8 +653,8 @@ impl Runtime
         self.context
     }
 
-    /// One past the heap region's last word: the bound a host allocation
-    /// stays below.
+    /// The heap region's committed end: the bound a host allocation stays
+    /// below until it commits the next chunk.
     ///
     /// # Specification
     /// trivial.
@@ -578,6 +663,18 @@ impl Runtime
     pub const fn heap_limit(&self) -> *mut Word
     {
         self.heap_limit
+    }
+
+    /// The window region's committed end, as [`Self::heap_limit`] is the
+    /// heap's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn window_limit(&self) -> *mut Word
+    {
+        self.window_limit
     }
 
     /// Move the heap's top to `top`, past a host call's allocations.
@@ -759,14 +856,16 @@ impl Runtime
         self.heap_top
     }
 
-    /// Give the run's closure entries the window region `[base, limit)`,
-    /// empty until the first entry. A record given none has an empty region,
-    /// and its first closure entry takes the heap exit.
+    /// Give the run's closure entries the window region reserved as `[base,
+    /// end)`, nothing of it committed and empty until the first entry. A
+    /// record given none has an empty region, and its first closure entry
+    /// takes the window exit.
     ///
     /// # Specification
-    /// - requires: `base` is at or below `limit` and the words between are the
+    /// - requires: `base` is at or below `end` and the words between are the
     ///   run's, apart from the heap and the frame region.
-    /// - ensures: [`Self::window_top`] is `base`.
+    /// - ensures: [`Self::window_top`] and the region's committed end are
+    ///   `base`.
     /// - executable: none — the pointers' validity is the caller's to keep.
     ///
     /// # Adequacy
@@ -779,12 +878,13 @@ impl Runtime
     pub const fn set_windows(
         &mut self,
         base: *mut Word,
-        limit: *mut Word,
+        end: *mut Word,
     )
     {
         self.window_base = base;
         self.window_top = base;
-        self.window_limit = limit;
+        self.window_limit = base;
+        self.window_end = end;
     }
 
     /// One past the window region's last live word: where the next closure
@@ -875,7 +975,8 @@ impl Runtime
     /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
     ///
     /// # Errors
-    /// [`Refusal::Heap`] when the words would pass the heap's limit.
+    /// [`Refusal::Heap`] when the words would pass the heap's committed end
+    /// and the chunks they need pass the memory bound or the reservation.
     #[inline]
     pub fn bump(
         &mut self,
@@ -884,7 +985,8 @@ impl Runtime
     {
         let top = self.heap_top;
         let next = top.wrapping_add(words.0);
-        if next > self.heap_limit {
+        if next > self.heap_limit && !commit!(core::ptr::from_mut(self), heap_limit, heap_end, next)
+        {
             return Err(Refusal::Heap);
         }
         self.heap_top = next;
