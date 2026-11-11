@@ -1155,7 +1155,7 @@ fn routes(
             pending.push(Pending::Call(first, Some((at, 0)), under));
             continue;
         }
-        if let Some((function, layers, along)) = layered(core, scope, (call, under)) {
+        if let Some((function, layers, along)) = layered(core, scope, (call, under))? {
             // `Path.ap` written in place along the binder: the call it layers,
             // moving at its one argument.
             if !bound(along) {
@@ -1224,9 +1224,13 @@ fn routes(
 ///   past `under` binders.
 /// - ensures: `Some((f, n, q))` exactly when `call` is `n` such layers, `n` at
 ///   least one, around `force f y` for a constant `f`, `q` the outermost
-///   transport's path; `None` otherwise.
-/// - fails: never.
+///   transport's path; `None` otherwise, and for a transport whose left
+///   endpoint reads its family's binder or whose operand is no reflexivity.
+/// - fails: the free-index walk's fault.
 /// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
 ///
 /// # Termination
 /// - reason: the `while let` opens one layer per turn.
@@ -1234,43 +1238,63 @@ fn routes(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Path.ap` of the sphere's identity on the 2-cell is the
-///   identity under one layer.
+///   identity under one layer. A transport in `x. Path[.A = B](⟨g x⟩, ⟨g x⟩)`
+///   conjugates its operand: read as a layer, the map's image of the 2-cell
+///   replaces the image's inverse, then the image.
 /// - witness: `eval::words::tests::cong_along_the_2_cell_is_the_arm_s_image`
-#[spec(ensures: |ret| ret.is_none_or(|(_, layers, _)| layers != Reflexivities::NONE))]
+/// - witness: `eval::words::tests::transport_along_a_cell_carries_an_answer_through_a_map_onto_another_sort_6741`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.is_none_or(|(_, layers, _)| layers != Reflexivities::NONE)))]
 fn layered(
     core: &CoreArena,
     scope: Scope<'_>,
     (call, under): (ComputationId, BinderDepth),
-) -> Option<(ConstantIndex, Reflexivities, ValueId)>
+) -> Result<Option<(ConstantIndex, Reflexivities, ValueId)>, EvalFault>
 {
+    let bound = DeBruijnIndex::from(0_u32);
     let innermost = |value: ValueId| {
         matches!(core.value(value), Some(&Value::Variable { zone: Zone::Intuitionistic, index })
-            if index == DeBruijnIndex::from(0_u32))
+            if index == bound)
     };
     let (mut body, mut layers, mut along) = (call, 0_usize, None);
-    while let Some(&Computation::PathTransport { motive, path, .. }) = core.computation(body) {
+    while let Some(&Computation::PathTransport {
+        motive,
+        path,
+        value,
+    }) = core.computation(body)
+    {
         if along.is_some() && !innermost(path) {
-            return None;
+            return Ok(None);
         }
         along = along.or(Some(path));
-        let &ValueType::Path { right, .. } = core.value_type(motive)?
+        let Some(&ValueType::Path { left, right, .. }) = core.value_type(motive)
         else {
-            return None;
+            return Ok(None);
         };
-        let &Value::Returned(inner) = core.value(right)?
+        // A layer moves its right endpoint alone, from reflexivity at the left.
+        if !matches!(core.value(value), Some(&Value::Here(_)))
+            || reads_through(core, CoreTerm::Value(left), bound)? == Reading::Reads
+        {
+            return Ok(None);
+        }
+        let Some(&Value::Returned(inner)) = core.value(right)
         else {
-            return None;
+            return Ok(None);
         };
         body = inner;
         layers = layers.saturating_add(1);
     }
     let deeper = BinderDepth::from(usize::from(under).saturating_add(layers));
-    let (function, arguments) = spine(core, scope, (body, deeper))?;
+    let Some((function, arguments)) = spine(core, scope, (body, deeper))
+    else {
+        return Ok(None);
+    };
     let [argument] = *arguments.as_slice()
     else {
-        return None;
+        return Ok(None);
     };
-    (layers > 0 && innermost(argument)).then_some((function, Reflexivities::from(layers), along?))
+    Ok(along
+        .filter(|_| layers > 0 && innermost(argument))
+        .map(|along| (function, Reflexivities::from(layers), along)))
 }
 
 /// The function and the arguments, the first outermost, of the call `call`
