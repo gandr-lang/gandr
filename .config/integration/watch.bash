@@ -29,10 +29,19 @@
 # The state is `watch_state`: `green`, the last head where the gate passes;
 # `checked`, the last head the gate ran on; `gap`, the last reading of the
 # gap; and `paged`, the head of `main` at the last page of the gap.
+#
+# The service runs from a checkout of its own, `watch_home` under the state
+# directory (#6653). No sweep of a lane's worktrees removes it, since it is a
+# clone and no worktree. Before each reading the service sets it to
+# `origin/landing`, and the reading sources `watch.bash` from it in a fresh
+# shell. So the service runs landing's own watcher, with no restart. The
+# gate's clone, `watch_tree`, holds a head under test, which can be red, so
+# the service never runs its own code from there.
 
 watch_dir="$(git rev-parse --show-toplevel)/.config/integration"
 watch_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.json"
 watch_tree="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-landing"
+watch_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-service"
 watch_limit=45
 # shellcheck disable=SC2034 # `landing:watch` reads the interval
 watch_interval=60
@@ -48,6 +57,30 @@ watch_remember() {
   mkdir -p "$(dirname "$watch_state")"
   printf '%s\n' "$1" > "$watch_state.tmp"
   mv "$watch_state.tmp" "$watch_state"
+}
+
+# Makes the service's checkout when it is absent, then sets it to
+# `origin/landing` (#6653). A local clone links the objects of this
+# checkout's repository, so it copies no object, and it keeps them when a
+# sweep removes that checkout. Its `origin` is the remote of this checkout.
+watch_home_sync() {
+  if [[ ! -d "$watch_home/.git" ]]; then
+    mkdir -p "$(dirname "$watch_home")"
+    git clone --quiet --no-checkout "$(git rev-parse --path-format=absolute --git-common-dir)" "$watch_home" || return 1
+    git -C "$watch_home" remote set-url origin "$(git remote get-url origin)" || return 1
+  fi
+  git -C "$watch_home" fetch --quiet origin '+refs/heads/landing:refs/remotes/origin/landing' || return 1
+  git -C "$watch_home" checkout --quiet --force --detach refs/remotes/origin/landing || return 1
+  git -C "$watch_home" clean --quiet --force -d
+  mise trust --quiet "$watch_home" > /dev/null 2>&1 || :
+}
+
+# One reading of the repository `$1` in a fresh shell (#6653). The shell
+# sources this script from the checkout again, so a change to the checkout
+# takes effect at the next reading, with no restart of the service. The
+# shell keeps the options that a command substitution of the loop holds.
+watch_reading() {
+  bash -c 'set -uo pipefail; source "$1/watch.bash" && watch_once "$2"' _ "$watch_dir" "$1"
 }
 
 # A seat's gate runs with `GH_TOKEN` set (#6644). With none, a host's wrapper
@@ -242,7 +275,12 @@ watch_once() {
 }
 
 # Install (`$1` = install) or remove (`$1` = remove) the service that keeps
-# `landing:watch` running from this checkout, in the background (#6638).
+# `landing:watch` running, in the background (#6638). An install sets the
+# service's checkout to `origin/landing` first, and the service runs from
+# there (#6653).
 watch_service() {
-  service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)' background
+  if [[ $1 == install ]]; then
+    watch_home_sync || { echo "landing:watch --install: $watch_home cannot take origin/landing" >&2; return 1; }
+  fi
+  (cd "$watch_home" 2> /dev/null || :; service_unit "$1" landing-watch landing:watch 'gandr head watcher of landing (landing:watch)' background)
 }
