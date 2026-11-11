@@ -1064,6 +1064,23 @@ struct Call
     release: Option<Release>,
 }
 
+/// A count of acknowledgements, and the mark that one call waits for.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct Mark(u64);
+
+impl Mark
+{
+    /// The mark one acknowledgement after this one.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn after(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
+}
+
 /// The acknowledgements that one acceptor has written or failed to write.
 /// The worker starts a call that the acceptor queued once the count reaches
 /// the call's mark, so no callback of the call comes before its
@@ -1072,7 +1089,7 @@ struct Call
 struct Written
 {
     /// The count.
-    count: Mutex<u64>,
+    count: Mutex<Mark>,
     /// Woken at each count.
     counted: Condvar,
 }
@@ -1084,9 +1101,9 @@ impl Written
     ///
     /// # Specification
     /// trivial.
-    fn next(&self) -> u64
+    fn next(&self) -> Mark
     {
-        lock(&self.count).saturating_add(1)
+        lock(&self.count).after()
     }
 
     /// Count one acknowledgement, written or not, and wake the worker.
@@ -1096,7 +1113,7 @@ impl Written
     fn count(&self)
     {
         let mut count = lock(&self.count);
-        *count = count.saturating_add(1);
+        *count = count.after();
         drop(count);
         self.counted.notify_all();
     }
@@ -1107,7 +1124,7 @@ impl Written
     /// trivial.
     fn reach(
         &self,
-        mark: u64,
+        mark: Mark,
     )
     {
         let mut count = lock(&self.count);
@@ -1127,7 +1144,7 @@ struct Release
     /// The count of the acceptor.
     written: Arc<Written>,
     /// The mark.
-    mark: u64,
+    mark: Mark,
 }
 
 /// What the worker's queue holds, in the order that the requests reached the
@@ -4059,6 +4076,7 @@ mod tests
     /// Verbs that print each path, and then the verdict line. A path that
     /// ends in `wait` prints a tick each 10 ms until its job is retired, for
     /// ten seconds at most. Its walk first tells `walking` that the job runs.
+    #[repr(transparent)]
     struct Echoing
     {
         /// Where a walk of a path that ends in `wait` tells that it starts.
