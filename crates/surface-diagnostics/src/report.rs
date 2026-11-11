@@ -646,6 +646,28 @@ impl Report<'_>
             Maybe::Present(spelled) => Maybe::Present(String::from(spelled)),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
+        let notes = match self.subject {
+            Subject::Refused {
+                refusal: Refusal::Checking(CheckRefusal::LoopNotRespected { left, right, .. }),
+                spellings,
+                ..
+            } => match (spellings.loop_side(left), spellings.loop_side(right)) {
+                (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
+                    alloc::format!("the answer carried along the loop is `{left}`"),
+                    alloc::format!("the answer at the loop's point is `{right}`"),
+                ]),
+                _ => Vec::new(),
+            },
+            Subject::Refused { .. }
+            | Subject::Unsettled { .. }
+            | Subject::Goal(_)
+            | Subject::Source(_)
+            | Subject::Shadowed(_)
+            | Subject::InferredExit(_)
+            | Subject::InferredRun(_)
+            | Subject::Deprecated(_)
+            | Subject::Ledger { .. } => Vec::new(),
+        };
         let mut diagnostic = Diagnostic {
             path: self.path.to_path_buf(),
             severity: match self.subject {
@@ -731,6 +753,7 @@ impl Report<'_>
                 | Subject::InferredRun(_)
                 | Subject::Deprecated(_) => Maybe::Absent(report_note::Absent::Warning),
             },
+            notes,
             help: lambda_tail_help.map_or_else(
                 || match self.subject {
                     Subject::Refused {
