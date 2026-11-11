@@ -459,7 +459,7 @@ fn add_type_rules(
             ]),
         ])
     };
-    for (name, head) in [("path_type", "Path"), ("bridge_type", "Bridge")] {
+    for (name, head) in [("bridge_type", "Bridge")] {
         rules.push(rule(
             RuleName(name),
             ty,

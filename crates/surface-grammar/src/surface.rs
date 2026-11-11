@@ -487,7 +487,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "release_expression",
     "offers_declaration",
     "pack_model_expression",
-    "path_type",
     "pub_declaration",
     "module_statement",
     "representable_universe_type",

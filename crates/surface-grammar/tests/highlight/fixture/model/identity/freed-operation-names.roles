@@ -82,7 +82,7 @@
 905..908 Keyword "def"
 909..923 FunctionDef "stillReflexive"
 924..925 Other ":"
-926..930 TypeBuiltin "Path"
+926..930 Type "Path"
 930..931 Other "("
 931..932 Number "5"
 932..933 Other ","

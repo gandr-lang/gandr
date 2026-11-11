@@ -13,7 +13,7 @@
 296..299 Keyword "def"
 300..308 FunctionDef "bareHere"
 309..310 Other ":"
-311..315 TypeBuiltin "Path"
+311..315 Type "Path"
 315..316 Other "("
 316..317 Number "4"
 317..318 Other ","
