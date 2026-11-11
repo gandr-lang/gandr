@@ -165,6 +165,10 @@ impl TrackingIssue
     /// A loop each pass of which moves on an endpoint it threads, which the
     /// kernel has no image of.
     pub const KERNEL_ENDPOINT_LOOP: Self = Self(6099);
+    /// A fold of a model over a fork whose two halves each perform: the fold
+    /// over the partial order of the session's web, not over one
+    /// interleaving, is owed.
+    pub const FOLD_OVER_WEB: Self = Self(6353);
     /// An infix form the lowering does not read: list concatenation, or a
     /// path cons whose left operand is neither a loop nor `back` of one.
     pub const INFIX_FORM: Self = Self(1997);

@@ -400,6 +400,7 @@ INSERT INTO purpose VALUES('core-incremental','support::SupportedNode','struct',
 INSERT INTO purpose VALUES('core-incremental','typing::EndpointSite','struct','Names an endpoint, by the site of the fork that bound it and its side.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Forcing','enum','Names what the call of an unanswered model slot forces the slot to, projected: the forced type''s table or no type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Form','enum','Names a checking-only form met where a type had to be synthesised, with its site.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-incremental','typing::Former','enum','Names a former the judgement has no rule for, projected: a former without a payload as itself, or an interleaving with the sites of its two halves.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Linearity','enum','Names how an endpoint escaped its one linear use, projected to item sites and type tables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Located','enum','Names how a located judgement broke, projected: types as their tables, worlds and positions as references.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-incremental','typing::Mismatched','struct','Names a type mismatch, projected: the term''s site and both types as their tables.',NULL,'fits','sound',NULL);

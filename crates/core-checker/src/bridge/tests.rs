@@ -8048,6 +8048,13 @@ fn each_former_the_kernel_refuses_names_its_issue()
             UnadmittedFormer::SortParameter,
             tracked(TrackingIssue::JUDGEMENT_FORMER),
         ),
+        (
+            UnadmittedFormer::Interleaving {
+                child: at,
+                parent: at,
+            },
+            tracked(TrackingIssue::FOLD_OVER_WEB),
+        ),
         (UnadmittedFormer::TopUniverse, FailureClass::EngineFault),
         (UnadmittedFormer::TypeLift, FailureClass::EngineFault),
     ];

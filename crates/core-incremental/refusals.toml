@@ -34,6 +34,7 @@ TypeNode = { stored = "TypeContent", by = "type_node", contents = true }
 CheckingForm = { stored = "Form", by = "form" }
 Mismatch = { stored = "Mismatched", by = "mismatch", contents = true }
 Endpoint = { stored = "EndpointSite", by = "endpoint" }
+UnadmittedFormer = { stored = "Former", by = "former" }
 LinearityDefect = { stored = "Linearity", by = "linearity", contents = true }
 LocatedDefect = { stored = "Located", by = "located", contents = true }
 Forced = { stored = "Forcing", by = "forced", contents = true }

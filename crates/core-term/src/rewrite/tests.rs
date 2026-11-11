@@ -306,7 +306,8 @@ fn exchange(
 /// fork's parent, and inside a lambda there, becomes the one intuitionistic
 /// binder outside the body, counted past the intuitionistic binders between;
 /// a free intuitionistic index rises by one; the nested receive's payload and
-/// every action subject stay linear.
+/// every action subject stay linear. The body is reported beside its copy, so
+/// a caller carries its records to the copy (#6746).
 #[test]
 fn a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319()
 {
@@ -328,7 +329,12 @@ fn a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319()
         parent: (intuitionistic(1), intuitionistic(2)),
         lambda: (intuitionistic(2), intuitionistic(3)),
     });
-    let delinearised = super::delinearise(&mut arena, body);
+    let mut carried = Vec::new();
+    let delinearised = super::delinearise(&mut arena, body, &mut carried);
+    assert!(
+        carried.contains(&Carried::Computation(body, delinearised)),
+        "the body is reported beside its copy"
+    );
     let (delinearised, expected) = (arena.value_thunk(delinearised), arena.value_thunk(expected));
     assert_eq!(
         crate::syntax::equal_certificate_syntax(&arena, delinearised, expected),

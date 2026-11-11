@@ -1205,6 +1205,54 @@ fn a_task_owes_its_draw_past_its_parent_s_handler_6058()
     );
 }
 
+/// A scope folds the program of its subject. Over a fork it reads the child
+/// and the parent in one interleaving, and that order is no claim. So a scope
+/// around a fork whose child draws and whose parent reads a line is refused at
+/// the fork, naming the draw and the read. The same fork with no fold around
+/// it checks (#6746).
+#[test]
+fn a_fold_over_a_fork_whose_halves_each_perform_is_refused_6746()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    let row = gandr_core_term::effect::EffectRow::from_signatures([
+        host.rand.clone(),
+        host.stdin.clone(),
+    ])
+    .unwrap();
+    // let d = fork (s : end) { close(s); draw(1); pure *{} };
+    // close(d); read_line(*{}); pure *{}
+    let closed = Program::new(&mut arena).close();
+    let drawn = draw(&mut arena, &host);
+    let after = then_unit(&mut arena, drawn);
+    let child = arena.computation_bind(closed, after);
+    let parent_closed = Program::new(&mut arena).close();
+    let unit = arena.value_unit();
+    let read = arena.computation_perform(host.stdin.clone(), "read_line".into(), unit);
+    let read_after = then_unit(&mut arena, read);
+    let parent = arena.computation_bind(parent_closed, read_after);
+    let exchange = fork(&mut arena, protocol, child, parent);
+    assert_eq!(
+        check_in_row(&mut arena, exchange, row.clone()),
+        Ok(()),
+        "with no fold around it, the fork checks"
+    );
+    // handle r : std.rand.Eff { <the fork> } with { … }
+    let scoped = drawing_scope(&mut arena, &host, exchange);
+    assert_eq!(
+        check_in_row(&mut arena, scoped, row),
+        Err(CheckRefusal::OutOfFragment {
+            at: CoreNode::Term(TermNode::Computation(exchange)),
+            former: crate::refusal::UnadmittedFormer::Interleaving {
+                child: CoreNode::Term(TermNode::Computation(drawn)),
+                parent: CoreNode::Term(TermNode::Computation(read)),
+            },
+        }),
+        "the scope's fold reads the draw and the read in one order"
+    );
+}
+
 /// `Cap {operations}` over the host's file system, held by the host for the
 /// run.
 ///
@@ -2185,8 +2233,10 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
 }
 
 /// A fork at a row of operations stands for a program of the row's model.
-/// Its reduct copies the parent without the judgement's records, so the
-/// bridge refuses the fork as a session, and the kernel rejects nothing.
+/// #6736 refused it as a session, because its reduct copied the parent
+/// without the judgement's records. Since #6746 the fork crosses as one step
+/// of the program: its child, then its parent, each at its own records, and
+/// the kernel defines it.
 #[test]
 fn a_fork_at_a_row_is_refused_as_a_session_6736()
 {
@@ -2247,13 +2297,266 @@ fn a_fork_at_a_row_is_refused_as_a_session_6736()
         .iter()
         .map(bridge::Readmitted::outcome)
         .collect();
-    let at = CoreNode::Term(TermNode::Computation(forked));
     assert!(
-        matches!(
-            outcomes.as_slice(),
-            [bridge::Outcome::Refused(bridge::Refusal::Session { at: site })] if *site == at
+        matches!(outcomes.as_slice(), [bridge::Outcome::Defined { .. }]),
+        "the kernel defines the fork at the row: {outcomes:?}"
+    );
+}
+
+/// A fork at a row crosses as one step of the row's program: its child, then
+/// its parent, each at its own records. Each receive of the parent binds its
+/// payload in a copy of its continuation, and the copy reads the records of
+/// the node it copies; a refusal at a copy names the node it copies, whose
+/// records admit the receive's assumption. So a parent that receives at two
+/// payload types, then calls a declaration at the row with the first payload,
+/// crosses, and the kernel defines both declarations (#6746).
+#[test]
+fn a_fork_at_a_row_crosses_as_its_child_then_its_parent_6746()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let string = arena.value_type_base(BaseType::String);
+    let ask = EffectSig::new(EffectName::from("Ask"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: unit,
+        reply: string,
+    }])
+    .expect("one operation");
+    let at_row = arena.comp_type_returner_with_effects(string, EffectRow::singleton(ask));
+    let reads_a_string = arena.comp_type_arrow(string, at_row);
+    let declared = arena.value_type_thunk(reads_a_string);
+    // echo = \n. return n, at `[Ask]`
+    let read = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(read);
+    let echoing = arena.computation_lambda(returned);
+    let echo = arena.value_thunk(echoing);
+    // forked = \n. let d = fork (c : !String. !Integer. end) {
+    //   send c "first"; send c 8; close c
+    // }; let x = recv d; let y = recv d; close d; echo x, at `[Ask]`
+    let integral = arena.value_type_base(BaseType::Integer);
+    let state = ProtocolState::from;
+    let protocol = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: state(1),
+            },
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(1_usize),
+                next: state(2),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[string, integral],
+    );
+    let mut sender = Program::new(&mut arena);
+    let closed = sender.close();
+    let eight = integer(sender.arena, Spelled("8"));
+    let second = sender.then(
+        SessionAction::Send {
+            endpoint: sender.endpoint(),
+            payload: eight,
+        },
+        closed,
+    );
+    let child = sender.send(Spelled("first"), second);
+    let mut receiver = Program::new(&mut arena);
+    let parent = receiver.receive(|outer| {
+        outer.receive(|inner| {
+            let closed = inner.close();
+            // Past both receives `x` is linear #1; under the bind it stays.
+            let payload = inner
+                .arena
+                .value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+            let callee = inner.arena.value_constant(ConstantIndex::from(0_usize));
+            let forced = inner.arena.computation_force(callee);
+            let called = inner.arena.computation_application(forced, payload);
+            inner.arena.computation_bind(closed, called)
+        })
+    });
+    let forked = fork(&mut arena, protocol, child, parent);
+    let lambda = arena.computation_lambda(forked);
+    let defined = arena.value_thunk(lambda);
+    let declarations = alloc::vec![
+        Declaration::new(
+            ConstantIndex::from(0_usize),
+            Maybe::Present(declared),
+            Maybe::Present(echo),
+            OriginToken::from(0_usize),
         ),
-        "the bridge refuses the fork at the row as a session: {outcomes:?}"
+        Declaration::new(
+            ConstantIndex::from(1_usize),
+            Maybe::Present(declared),
+            Maybe::Present(defined),
+            OriginToken::from(1_usize),
+        ),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "both declarations check at the row: {:?}",
+        report
+            .judged()
+            .iter()
+            .map(crate::Judged::verdict)
+            .collect::<Vec<_>>()
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(bridge::Readmitted::outcome)
+        .collect();
+    assert!(
+        matches!(outcomes.as_slice(), [
+            bridge::Outcome::Defined { .. },
+            bridge::Outcome::Defined { .. }
+        ]),
+        "the kernel defines the callee and the fork: {outcomes:?}"
+    );
+}
+
+/// A fold over a fork where one half alone performs crosses: no operation of
+/// the other half interleaves with that half's. A console handler around a
+/// fork whose child alone prints, and one around a fork whose parent alone
+/// prints, each check, and the kernel defines each (#6746).
+#[test]
+fn a_fold_over_a_fork_where_one_half_performs_crosses_6746()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let console = host.console.clone();
+    let string = arena.value_type_base(BaseType::String);
+    let protocol = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[string],
+    );
+    // `print(text)`, performed by name.
+    let print = |arena: &mut CoreArena, Spelled(text): Spelled| {
+        let line = arena.value_literal(Literal::Text(StringLiteral::new(String::from(text))));
+        arena.computation_perform(console.clone(), "print".into(), line)
+    };
+    // `handle a : Console { subject } with { | pure(y) => pure y
+    // | oper print(line, k) => resume(k, pure *{}) }`.
+    let handled = |arena: &mut CoreArena, subject: ComputationId| {
+        let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let on_return = arena.computation_return(answered);
+        let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let unit = arena.value_unit();
+        let reply = arena.computation_return(unit);
+        let resumed = arena.computation_resume(stack, reply);
+        let clauses: Arc<[EffectClause]> = [EffectClause {
+            operation: "print".into(),
+            body: resumed,
+        }]
+        .into();
+        arena.computation_handle(console.clone(), subject, on_return, clauses)
+    };
+    // `let x = recv d; close d; then`, `then` built past the receive.
+    let receiving = |arena: &mut CoreArena, then: &dyn Fn(&mut CoreArena) -> ComputationId| {
+        let mut receiver = Program::new(arena);
+        receiver.receive(|inner| {
+            let closed = inner.close();
+            let rest = then(inner.arena);
+            inner.arena.computation_bind(closed, rest)
+        })
+    };
+    // Past the receive and the close's bind, `x` is linear #0.
+    let returned = |arena: &mut CoreArena| {
+        let payload = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        arena.computation_return(payload)
+    };
+    // The child alone prints: `handle { let d = fork (c : !String. end) {
+    // print("child"); send c "seat"; close c }; let x = recv d; close d;
+    // pure x }`, at `[Console]`, since the host answers a task's print.
+    let printed = print(&mut arena, Spelled("child"));
+    let mut sender = Program::new(&mut arena);
+    let closed = sender.close();
+    let sent = sender.send(Spelled("seat"), closed);
+    let child = arena.computation_bind(printed, sent);
+    let parent = receiving(&mut arena, &returned);
+    let forked = fork(&mut arena, protocol, child, parent);
+    let child_prints = handled(&mut arena, forked);
+    let child_prints = arena.value_thunk(child_prints);
+    let printing = arena.comp_type_returner_with_effects(
+        string,
+        gandr_core_term::effect::EffectRow::singleton(host.console),
+    );
+    let printing = arena.value_type_thunk(printing);
+    // The parent alone prints: `handle { let d = fork (c : !String. end) {
+    // send c "seat"; close c }; let x = recv d; close d; print("parent");
+    // pure x }`, pure.
+    let mut sender = Program::new(&mut arena);
+    let closed = sender.close();
+    let child = sender.send(Spelled("seat"), closed);
+    let then = |arena: &mut CoreArena| {
+        let printed = print(arena, Spelled("parent"));
+        let rest = returned(arena);
+        arena.computation_bind(printed, rest)
+    };
+    let parent = receiving(&mut arena, &then);
+    let forked = fork(&mut arena, protocol, child, parent);
+    let parent_prints = handled(&mut arena, forked);
+    let parent_prints = arena.value_thunk(parent_prints);
+    let pure = arena.comp_type_returner(string);
+    let pure = arena.value_type_thunk(pure);
+    let declarations = alloc::vec![
+        Declaration::new(
+            ConstantIndex::from(0_usize),
+            Maybe::Present(printing),
+            Maybe::Present(child_prints),
+            OriginToken::from(0_usize),
+        ),
+        Declaration::new(
+            ConstantIndex::from(1_usize),
+            Maybe::Present(pure),
+            Maybe::Present(parent_prints),
+            OriginToken::from(1_usize),
+        ),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "each fold over a fork with one performing half checks: {:?}",
+        report
+            .judged()
+            .iter()
+            .map(crate::Judged::verdict)
+            .collect::<Vec<_>>()
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(bridge::Readmitted::outcome)
+        .collect();
+    assert!(
+        matches!(outcomes.as_slice(), [
+            bridge::Outcome::Defined { .. },
+            bridge::Outcome::Defined { .. }
+        ]),
+        "the kernel defines the child's print and the parent's print: {outcomes:?}"
     );
 }
 

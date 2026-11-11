@@ -841,10 +841,11 @@ impl Refusal
 ///   naming the kernel's issue for its feature: effects and control,
 ///   capabilities, memory and buffers, runs, sealed abstract types, static
 ///   lambdas left unnormalised and staged types in a term; a numeric literal,
-///   the numeric atom, a value lift and a universe over a sort parameter are
-///   unimplemented as the judgement's refusal of them is; a universe at the
-///   greatest level and a lift that does not raise, which the bridge never
-///   meets in an accepted declaration, are engine faults.
+///   the numeric atom, a value lift, a universe over a sort parameter and a
+///   fold over a fork whose halves each perform are unimplemented as the
+///   judgement's refusal of them is; a universe at the greatest level and a
+///   lift that does not raise, which the bridge never meets in an accepted
+///   declaration, are engine faults.
 /// - provides: the class of [`Refusal::OutOfFragment`].
 /// - fails: never.
 /// - panics: none.
@@ -863,6 +864,7 @@ impl Refusal
     | UnadmittedFormer::Qubit => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT)),
     | UnadmittedFormer::EndpointLoop => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP)),
     | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
+    | UnadmittedFormer::Interleaving { .. } => matches!(ret, FailureClass::Unimplemented(TrackingIssue::FOLD_OVER_WEB)),
     | UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => matches!(ret, FailureClass::EngineFault),
 })]
 #[must_use]
@@ -897,7 +899,8 @@ const fn readmitted(former: UnadmittedFormer) -> FailureClass
         UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom
         | UnadmittedFormer::ValueLift
-        | UnadmittedFormer::SortParameter => former.judged(),
+        | UnadmittedFormer::SortParameter
+        | UnadmittedFormer::Interleaving { .. } => former.judged(),
         UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => FailureClass::EngineFault,
     }
 }
@@ -4679,6 +4682,21 @@ enum Imaged
     Program(Programmed),
 }
 
+/// How the rest of a fold reads the value of the program the fold runs.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rest
+{
+    /// The rest stands beneath one binder more, the value the program
+    /// returns, as the body of a bind does.
+    Bound,
+    /// The rest stands where the program stands and reads no value, as the
+    /// parent of a fork does after its child.
+    Discarded,
+}
+
 /// The program a returner over a row of operations stands for.
 ///
 /// # Specification
@@ -6042,6 +6060,10 @@ struct Erasure<'source, 'positions>
     /// binders, beside the returner it copies: the copy's result inhabits the
     /// universe the original's does, so the copy reads the original's level.
     copied: BTreeMap<CompTypeId, CompTypeId>,
+    /// Each computation a delinearised rest copies, keyed by its copy: the
+    /// copy reads the judgement's records of the computation it copies
+    /// ([`Self::delinearised`]).
+    originals: BTreeMap<ComputationId, ComputationId>,
     /// The pairs the last shift carried, kept so each shift reuses one
     /// buffer ([`Self::shifted`]).
     carrying: Vec<gandr_core_term::Carried>,
@@ -6082,6 +6104,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             rebuilt: BTreeMap::new(),
             assigned: BTreeMap::new(),
             copied: BTreeMap::new(),
+            originals: BTreeMap::new(),
             carrying: Vec::new(),
             crossing: &[],
             restated: &[],
@@ -9853,13 +9876,18 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   bind's variable, and an offer a case on that variable over its arms in
     ///   label order, each arm past the bind's and the case's binders — each
     ///   awaited bound to the assumption admitted for it. An endpoint names no
-    ///   value, and the linear binders bind none.
+    ///   value, and the linear binders bind none. When the action stands for a
+    ///   program of a row's model, each continuation it crosses is assigned
+    ///   that program past its binders, so it crosses as one (#6746).
     /// - fails: [`Refusal::DanglingNode`] for an absent source or one that is
     ///   not a session action; [`Refusal::Session`] for a receive the judgement
     ///   recorded no type for, or a received value or an offer whose assumption
     ///   is not admitted; [`Refusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::Memory`] for a placed or a received buffer, or a
-    ///   placement the judgement recorded no endpoint for.
+    ///   placement the judgement recorded no endpoint for; as
+    ///   [`Self::program_of`]. A refusal of a session action names the node
+    ///   that `at` copies ([`Self::original`]), whose records admit its
+    ///   assumption and whose origin locates it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -9876,9 +9904,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     #[spec(ensures: |ret| match ret {
         | Ok((ref frame, reduct)) => self.arena.computation(reduct).is_some()
             && matches!(*frame, Frame::Rewritten { at: site } | Frame::Assumed { at: site, .. } if site == at),
-        | Err(Refusal::Session { at: site } | Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Memory } | Refusal::DanglingNode { node: site }) =>
-            site == CoreNode::Term(TermNode::Computation(at)),
-        | Err(_) => false,
+        | Err(Refusal::Session { at: site } | Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Memory }) =>
+            site == CoreNode::Term(TermNode::Computation(self.original(at))),
+        | Err(Refusal::DanglingNode { node: site }) => site == CoreNode::Term(TermNode::Computation(at)),
+        | Err(_) => true,
     })]
     fn session_reduct(
         &mut self,
@@ -9886,10 +9915,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ) -> Result<(Frame, ComputationId), Refusal>
     {
         use gandr_core_term::session::SessionAction;
-        let node = CoreNode::Term(TermNode::Computation(at));
+        let node = CoreNode::Term(TermNode::Computation(self.original(at)));
+        let program = self.program_of(at)?;
         let Some(&Computation::Session(ref action)) = self.arena.computation(at)
         else {
-            return Err(Refusal::DanglingNode { node });
+            return Err(Refusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Computation(at)),
+            });
         };
         let rewritten = Frame::Rewritten { at };
         match *action {
@@ -9906,7 +9938,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     return Ok((rewritten, done));
                 }
                 let mut sent = self.arena.computation_return(payload);
-                if let Some(&moved) = self.source.payloads.get(&at) {
+                if let Some(moved) = self.payload(at) {
                     let returner = self.arena.comp_type_returner(moved);
                     sent = self.arena.computation_ascribe(sent, returner);
                 }
@@ -9927,7 +9959,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Ok((rewritten, self.arena.computation_bind(child, parent)))
             },
             SessionAction::Receive { body, .. } => {
-                let Some(&opened) = self.source.payloads.get(&at)
+                let Some(opened) = self.payload(at)
                 else {
                     return Err(Refusal::Session { at: node });
                 };
@@ -9944,7 +9976,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     .assumed
                     .get(&Assumption::Receive(opened))
                     .copied();
-                let rest = gandr_core_term::delinearise(self.arena, body);
+                let rest = self.delinearised(body);
+                if let Some(ref program) = program {
+                    self.assign(rest, (program, Binders::from(1_u32)));
+                }
                 if endpoint {
                     let unit = self.arena.value_unit();
                     let none = self.arena.computation_return(unit);
@@ -9970,6 +10005,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         gandr_core_term::Binders::from(2_u32),
                     )
                     .settle(self.arena);
+                    if let Some(ref program) = program {
+                        self.assign(*branch, (program, Binders::from(2_u32)));
+                    }
                 }
                 let choice = self.arena.value_variable(
                     gandr_core_term::Zone::Intuitionistic,
@@ -9984,8 +10022,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 // The checker records the head a placed endpoint opens at;
                 // a placed buffer records none and stays outside the
                 // fragment.
-                let placed = match self.source.payloads.get(&at) {
-                    Some(&opened) => value_type_view(self.arena, opened)?,
+                let placed = match self.payload(at) {
+                    Some(opened) => value_type_view(self.arena, opened)?,
                     None => ValueTypeView::Buffer,
                 };
                 if !matches!(placed, ValueTypeView::Session(_)) {
@@ -9994,12 +10032,168 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         former: UnadmittedFormer::Memory,
                     });
                 }
-                let rest = gandr_core_term::delinearise(self.arena, body);
+                let rest = self.delinearised(body);
+                if let Some(ref program) = program {
+                    self.assign(rest, (program, Binders::from(1_u32)));
+                }
                 let unit = self.arena.value_unit();
                 let none = self.arena.computation_return(unit);
                 Ok((rewritten, self.arena.computation_bind(none, rest)))
             },
         }
+    }
+
+    /// One step of the program that the session action `at` stands for, or
+    /// none for an action whose continuation crosses at the session reduct.
+    ///
+    /// # Specification
+    /// - requires: `at` stands for `program`, a program of the model at
+    ///   `model`.
+    /// - ensures: `(return v : F T) to _. return Return(())` for `send c v`,
+    ///   `T` the payload type the judgement checked `v` at, and `return
+    ///   Return(())` for an endpoint sent, a select and a close. For a fork,
+    ///   the parent is assigned `program` where it stands, and the child runs
+    ///   first: the fold of the child's program into `thunk parent`, which
+    ///   discards the child's value ([`Rest::Discarded`]), or the sequence of a
+    ///   child whose image returns a value ([`Self::sequenced`]). Neither half
+    ///   is shifted, so each crosses at its own records. The order of the
+    ///   halves is one representative of their interleavings, and the kernel
+    ///   types the program at it. None for a receive, an offer and a placement,
+    ///   whose continuations cross at the session reduct, which assigns them
+    ///   the program ([`Self::session_reduct`]).
+    /// - fails: [`Refusal::DanglingNode`] for an absent source or one that is
+    ///   not a session action; [`Refusal::Session`] for a fork whose child the
+    ///   judgement recorded no type for; as [`Self::imaged`] and
+    ///   [`Self::fold`].
+    /// - panics: none.
+    /// - executable: none — the step is a new term, and the kernel's replay of
+    ///   the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork at a row whose child sends and whose parent
+    ///   receives twice, then calls a declaration at the row, crosses and the
+    ///   kernel admits it; a console handler around a fork whose child alone
+    ///   prints, and one around a fork whose parent alone prints, each cross.
+    /// - witness: `judgement::session::tests::a_fork_at_a_row_crosses_as_its_child_then_its_parent_6746`
+    /// - witness: `judgement::session::tests::a_fold_over_a_fork_where_one_half_performs_crosses_6746`
+    fn session_program(
+        &mut self,
+        at: ComputationId,
+        (model, program): (ConstantIndex, &Programmed),
+    ) -> Result<Option<ComputationId>, Refusal>
+    {
+        use gandr_core_term::session::SessionAction;
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let Some(&Computation::Session(ref action)) = self.arena.computation(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        match *action {
+            SessionAction::Send { payload, .. } => {
+                let unit = self.arena.value_unit();
+                if matches!(
+                    self.arena.value(payload),
+                    Some(&Value::Variable {
+                        zone: Zone::Linear,
+                        ..
+                    })
+                ) {
+                    return Ok(Some(self.returning(
+                        model,
+                        program,
+                        (unit, Binders::from(0_u32)),
+                    )));
+                }
+                let mut sent = self.arena.computation_return(payload);
+                if let Some(moved) = self.payload(at) {
+                    let returner = self.arena.comp_type_returner(moved);
+                    sent = self.arena.computation_ascribe(sent, returner);
+                }
+                let done = self.returning(model, program, (unit, Binders::from(1_u32)));
+                Ok(Some(self.arena.computation_bind(sent, done)))
+            },
+            SessionAction::Select { .. } | SessionAction::Close { .. } => {
+                let unit = self.arena.value_unit();
+                Ok(Some(self.returning(
+                    model,
+                    program,
+                    (unit, Binders::from(0_u32)),
+                )))
+            },
+            SessionAction::Fork { child, parent, .. } => {
+                self.assign(parent, (program, Binders::from(0_u32)));
+                match self.imaged(child)? {
+                    Imaged::Program(inner) => self
+                        .fold((child, &inner), (parent, Rest::Discarded), (model, program))
+                        .map(Some),
+                    Imaged::Pure => {
+                        let Some(ran) = self.checked(child).or_else(|| self.synthesised(child))
+                        else {
+                            return Err(Refusal::Session { at: node });
+                        };
+                        Ok(Some(self.sequenced((child, ran), parent, (model, program))))
+                    },
+                }
+            },
+            SessionAction::Receive { .. }
+            | SessionAction::Offer { .. }
+            | SessionAction::Place { .. } => Ok(None),
+        }
+    }
+
+    /// The sequence that runs `first`, whose image returns a value of the
+    /// returner `ran`, then `then`, a program of the row `program` reads:
+    /// `((λc. λk. _ ← force c; force k) : U(ran) → U(F Free(A)) → F Free(A))
+    /// (thunk first) (thunk then)`.
+    ///
+    /// # Specification
+    /// - requires: `first` and `then` stand in the context of `program`, and
+    ///   `ran` is the pure returner the judgement recorded for `first`; `model`
+    ///   is the position of `program`'s model.
+    /// - ensures: the sequence above. Both halves stand in their own contexts,
+    ///   so the sequence shifts neither, and each crosses at the records the
+    ///   judgement keeps for it.
+    /// - panics: none.
+    /// - executable: none — the sequence is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork at a row whose child performs nothing crosses
+    ///   and the kernel admits it, the child sequenced before the parent.
+    /// - witness: `judgement::session::tests::a_fork_at_a_row_crosses_as_its_child_then_its_parent_6746`
+    fn sequenced(
+        &mut self,
+        (first, ran): (ComputationId, CompTypeId),
+        then: ComputationId,
+        (model, program): (ConstantIndex, &Programmed),
+    ) -> ComputationId
+    {
+        let variable = |arena: &mut CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        // Beneath the two parameters, the first computation is the second
+        // binder; beneath its discarded value, the rest is the second too.
+        let run = variable(self.arena, 1);
+        let run = self.arena.computation_force(run);
+        let rest = variable(self.arena, 1);
+        let rest = self.arena.computation_force(rest);
+        let body = self.arena.computation_bind(run, rest);
+        let body = self.arena.computation_lambda(body);
+        let body = self.arena.computation_lambda(body);
+        let answered = self.answer(model, program, Binders::from(0_u32));
+        let answered = self.arena.comp_type_returner(answered);
+        let later = self.arena.value_type_thunk(answered);
+        let classifier = self.arena.comp_type_arrow(later, answered);
+        let ran = self.arena.value_type_thunk(ran);
+        let classifier = self.arena.comp_type_arrow(ran, classifier);
+        let body = self.arena.computation_ascribe(body, classifier);
+        let first = self.arena.value_thunk(first);
+        let applied = self.arena.computation_application(body, first);
+        let then = self.arena.value_thunk(then);
+        self.arena.computation_application(applied, then)
     }
 
     /// The computation a deep handler or a capability scope is erased to,
@@ -10089,7 +10283,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         | Ok(reduct) => self.arena.computation(reduct).is_some(),
         | Err(Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Handle } | Refusal::DanglingNode { node: site }) =>
             site == CoreNode::Term(TermNode::Computation(at)),
-        | Err(Refusal::MachineInvariant) => matches!(self.unseeded, Some(Seed::Model(..))) || self.source.handled.contains_key(&at),
+        | Err(Refusal::MachineInvariant) => matches!(self.unseeded, Some(Seed::Model(..))) || self.source.handled.contains_key(&self.original(at)),
         | Err(_) => false,
     })]
     fn handler_reduct(
@@ -10121,7 +10315,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             return Err(Refusal::DanglingNode { node });
         };
         let (signature, clauses) = (signature.clone(), alloc::sync::Arc::clone(clauses));
-        let Some(handled) = self.source.handled.get(&at)
+        let Some(handled) = self.source.handled.get(&self.original(at))
         else {
             return Err(uncovered);
         };
@@ -10289,7 +10483,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                             row: program.row.clone(),
                             level: program.level.clone(),
                         };
-                        self.fold((current, &inner), next, (model, &here))?
+                        self.fold((current, &inner), (next, Rest::Bound), (model, &here))?
                     },
                     // The subject's last step is checked at its result, as
                     // the judgement checked it; a bound step is synthesised,
@@ -10492,7 +10686,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     });
                 };
                 let model = self.free_model(&program.row, &program.level)?;
-                self.fold((resumed, &inner), continued, (model, &program))
+                self.fold(
+                    (resumed, &inner),
+                    (continued, Rest::Bound),
+                    (model, &program),
+                )
             },
         }
     }
@@ -10556,10 +10754,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         at: ComputationId,
     ) -> Result<Imaged, Refusal>
     {
-        self.source
-            .rows
-            .checked(at)
-            .or_else(|| self.source.rows.synthesised(at))
+        self.checked(at)
+            .or_else(|| self.synthesised(at))
             .map_or(Ok(Imaged::Pure), |ty| self.programmed(ty))
     }
 
@@ -10667,12 +10863,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// force κ y; force f t′))) : Free'(A′) → F Free(A)) p) : U(F Free'(A′))
     /// → U(A′ → F Free(A)) → F Free(A)) (thunk step) (thunk(λx.
     /// continued))`, each operation of `inner`'s row at the tag `j` of the
-    /// same operation in `program`'s.
+    /// same operation in `program`'s. A rest that discards the value is
+    /// `thunk continued`, of type `U(F Free(A))`, and `Return(x)` is `force
+    /// k` (#6746).
     ///
     /// # Specification
-    /// - requires: `step` stands in the context of `program`, and `continued`
-    ///   beneath one binder more, the value the program returns; `model` is the
-    ///   position of `program`'s model.
+    /// - requires: `step` stands in the context of `program`; `continued`
+    ///   stands beneath one binder more, the value the program returns, for
+    ///   [`Rest::Bound`], and in that context for [`Rest::Discarded`]; `model`
+    ///   is the position of `program`'s model.
     /// - ensures: the fold above, a structural recursion over `inner`'s model
     ///   that the kernel replays: bind for one row, and the injection of a
     ///   smaller row into a larger one, in one. `step` and `continued` stand in
@@ -10692,12 +10891,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Adequacy
     /// - hypothesis: L3 — a call of a declaration at the row bound to the rest,
     ///   and one at a smaller row at the end, each cross through their fold and
-    ///   the kernel admits them.
+    ///   the kernel admits them; a fork whose child alone prints under a
+    ///   handler crosses through the fold that discards the child's value.
     /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `judgement::session::tests::a_fold_over_a_fork_where_one_half_performs_crosses_6746`
     fn fold(
         &mut self,
         (step, inner): (ComputationId, &Programmed),
-        continued: ComputationId,
+        (continued, rest): (ComputationId, Rest),
         (model, program): (ConstantIndex, &Programmed),
     ) -> Result<ComputationId, Refusal>
     {
@@ -10713,8 +10914,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         // Beneath the returned value, the continuation is the fifth binder.
         let continuation = variable(self.arena, 4);
         let continuation = self.arena.computation_force(continuation);
-        let returned = variable(self.arena, 0);
-        let returned = self.arena.computation_application(continuation, returned);
+        let returned = match rest {
+            Rest::Bound => {
+                let returned = variable(self.arena, 0);
+                self.arena.computation_application(continuation, returned)
+            },
+            Rest::Discarded => continuation,
+        };
         let operations = inner
             .row
             .iter()
@@ -10787,14 +10993,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let ran = self.arena.value_type_thunk(ran);
         let answered = self.answer(model, program, Binders::from(0_u32));
         let answered = self.arena.comp_type_returner(answered);
-        let continuation = self.arena.comp_type_arrow(inner.result, answered);
+        let continuation = match rest {
+            Rest::Bound => self.arena.comp_type_arrow(inner.result, answered),
+            Rest::Discarded => answered,
+        };
         let continuation = self.arena.value_type_thunk(continuation);
         let classifier = self.arena.comp_type_arrow(continuation, answered);
         let classifier = self.arena.comp_type_arrow(ran, classifier);
         let body = self.arena.computation_ascribe(body, classifier);
         let step = self.arena.value_thunk(step);
         let applied = self.arena.computation_application(body, step);
-        let continued = self.arena.computation_lambda(continued);
+        let continued = match rest {
+            Rest::Bound => self.arena.computation_lambda(continued),
+            Rest::Discarded => continued,
+        };
         let continued = self.arena.value_thunk(continued);
         Ok(self.arena.computation_application(applied, continued))
     }
@@ -10875,7 +11087,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     }
 
     /// Record each computation type a shift wrote beside the computation type
-    /// it held, so the copy reads the level of the original.
+    /// it held, so the copy reads the level of the original, and each
+    /// computation a rewrite wrote beside the computation it held, so the copy
+    /// reads the original's records.
     ///
     /// # Specification
     /// trivial.
@@ -10885,12 +11099,119 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     )
     {
         for &copied in carried {
-            if let gandr_core_term::Carried::CompType(held, written) = copied
-                && held != written
-            {
-                let _first = self.copied.entry(written).or_insert(held);
+            match copied {
+                gandr_core_term::Carried::CompType(held, written) if held != written => {
+                    let _first = self.copied.entry(written).or_insert(held);
+                },
+                gandr_core_term::Carried::Computation(held, written) if held != written => {
+                    let _first = self.originals.entry(written).or_insert(held);
+                },
+                gandr_core_term::Carried::CompType(..)
+                | gandr_core_term::Carried::Computation(..)
+                | gandr_core_term::Carried::Value(..)
+                | gandr_core_term::Carried::ValueType(..) => {},
             }
         }
+    }
+
+    /// `body` read with its payload bound intuitionistically
+    /// ([`gandr_core_term::delinearise`]), each computation and returner the
+    /// rewrite copies recorded beside the one it copies ([`Self::carry`]).
+    ///
+    /// # Specification
+    /// - ensures: the rest [`gandr_core_term::delinearise`] answers; each copy
+    ///   reads the records of the computation it copies ([`Self::original`]).
+    /// - panics: none.
+    /// - executable: none — the copies are records the erasure keeps, and the
+    ///   witness crosses them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork at a row whose parent receives at two payload
+    ///   types, then calls a declaration at the row with the first payload,
+    ///   crosses: each copy reads the records of the node it copies.
+    /// - witness: `judgement::session::tests::a_fork_at_a_row_crosses_as_its_child_then_its_parent_6746`
+    fn delinearised(
+        &mut self,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        let mut carried = core::mem::take(&mut self.carrying);
+        carried.clear();
+        let rest = gandr_core_term::delinearise(self.arena, body, &mut carried);
+        self.carry(&carried);
+        self.carrying = carried;
+        rest
+    }
+
+    /// The computation whose records `at` reads: `at`, or the computation a
+    /// delinearised rest copied into `at`, through each copy in turn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn original(
+        &self,
+        at: ComputationId,
+    ) -> ComputationId
+    {
+        let mut held = at;
+        // Each copy is minted after the computation it copies, so a chain of
+        // copies holds no cycle and ends within the count of copies.
+        for _copy in 0 ..= self.originals.len() {
+            match self.originals.get(&held) {
+                Some(&earlier) => held = earlier,
+                None => return held,
+            }
+        }
+        held
+    }
+
+    /// The returner the judgement checked `at` at, or the computation that
+    /// `at` copies ([`Self::original`]).
+    ///
+    /// # Specification
+    /// trivial.
+    fn checked(
+        &self,
+        at: ComputationId,
+    ) -> Option<CompTypeId>
+    {
+        self.source
+            .rows
+            .checked(at)
+            .or_else(|| self.source.rows.checked(self.original(at)))
+    }
+
+    /// The returner the judgement synthesised `at` at, or the computation that
+    /// `at` copies ([`Self::original`]).
+    ///
+    /// # Specification
+    /// trivial.
+    fn synthesised(
+        &self,
+        at: ComputationId,
+    ) -> Option<CompTypeId>
+    {
+        self.source
+            .rows
+            .synthesised(at)
+            .or_else(|| self.source.rows.synthesised(self.original(at)))
+    }
+
+    /// The payload type the judgement recorded at the session action `at`, or
+    /// at the action that `at` copies ([`Self::original`]).
+    ///
+    /// # Specification
+    /// trivial.
+    fn payload(
+        &self,
+        at: ComputationId,
+    ) -> Option<ValueTypeId>
+    {
+        self.source
+            .payloads
+            .get(&at)
+            .or_else(|| self.source.payloads.get(&self.original(at)))
+            .copied()
     }
 
     /// The level the judgement recorded for the returner `ty`, or for the
@@ -10990,7 +11311,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         at: ComputationId,
     ) -> Result<Option<Programmed>, Refusal>
     {
-        let recorded = if let Some(checked) = self.source.rows.checked(at) {
+        let recorded = if let Some(checked) = self.checked(at) {
             checked
         }
         else {
@@ -11008,7 +11329,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         }
                 )
             );
-            match self.source.rows.synthesised(at) {
+            match self.synthesised(at) {
                 Some(synthesised) if spine => synthesised,
                 Some(_) | None => return Ok(None),
             }
@@ -11042,7 +11363,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     )
     {
         let body = self.refined(body);
-        if self.source.rows.checked(body).is_some() {
+        if self.checked(body).is_some() {
             return;
         }
         let result = self.shifted(program.result, binders);
@@ -11070,17 +11391,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   for a bind whose step returns a value and for a split at the ambient
     ///   motive, whose body crosses at the program past their binders, and for
     ///   any other node the judgement checked, whose children carry their own
-    ///   records. A node the judgement refined is read as its refinement. No
-    ///   original node is shifted, so each keeps its records.
-    /// - fails: [`Refusal::Session`] for a session action, because its reduct
-    ///   returns the unit or copies its continuation without its records (#6746
-    ///   crosses it); [`Refusal::OutOfFragment`] naming
+    ///   records. A session action is the step [`Self::session_program`] reads
+    ///   it as (#6746). A node the judgement refined is read as its refinement.
+    ///   No original node is shifted, so each keeps its records.
+    /// - fails: [`Refusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::EffectRow`] for a node assigned a program whose
     ///   image the judgement did not record, and for a returned composite;
     ///   [`Refusal::MachineInvariant`] when the environment holds no model yet,
     ///   which the erasure names as the seed it stopped at, or for a request of
     ///   an operation outside the row, which the judgement rules out; as
-    ///   [`Self::program_of`] and [`Self::fold`].
+    ///   [`Self::program_of`], [`Self::fold`] and [`Self::session_program`].
     /// - panics: none.
     /// - executable: none — the reduct is a new term, and the kernel's replay
     ///   of the declaration checks it.
@@ -11110,7 +11430,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             at: CoreNode::Term(TermNode::Computation(at)),
             former: UnadmittedFormer::EffectRow,
         };
-        let checked = self.source.rows.checked(at).is_some();
+        let checked = self.checked(at).is_some();
         let model = self.free_model(&program.row, &program.level)?;
         let returned = |this: &mut Self| {
             let value = this
@@ -11146,7 +11466,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Some(&Computation::Bind(bound, body)) => {
                 self.assign(body, (&program, Binders::from(1_u32)));
                 let step = self.refined(bound);
-                if self.source.rows.checked(step).is_none()
+                if self.checked(step).is_none()
                     && let Some(&Computation::Perform {
                         ref signature,
                         ref operation,
@@ -11164,7 +11484,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return match self.imaged(step)? {
                     Imaged::Pure => Ok(None),
                     Imaged::Program(inner) => self
-                        .fold((bound, &inner), body, (model, &program))
+                        .fold((bound, &inner), (body, Rest::Bound), (model, &program))
                         .map(Some),
                 };
             },
@@ -11183,18 +11503,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Computation::Application(..)
                 | Computation::Primitive { .. }),
             ) => {},
-            Some(&Computation::Session(_)) => {
-                return Err(Refusal::Session {
-                    at: CoreNode::Term(TermNode::Computation(at)),
-                });
-            },
+            // A session action stands for one step of the program (#6746).
+            Some(&Computation::Session(_)) => return self.session_program(at, (model, &program)),
             // A clause's resumption and abandonment cross at their own
             // reducts, which read the program here (#6672).
             Some(&(Computation::Resume(..) | Computation::Abandon(_))) => return Ok(None),
             Some(_) | None if checked => return Ok(None),
             Some(_) | None => return Err(outside),
         }
-        let Some(synthesised) = self.source.rows.synthesised(at)
+        let Some(synthesised) = self.synthesised(at)
         else {
             return if checked { Ok(None) } else { Err(outside) };
         };
@@ -11224,7 +11541,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let rest = returned(self);
         match imaged {
             Imaged::Pure => Ok(Some(self.arena.computation_bind(copy, rest))),
-            Imaged::Program(inner) => self.fold((copy, &inner), rest, (model, &program)).map(Some),
+            Imaged::Program(inner) => self
+                .fold((copy, &inner), (rest, Rest::Bound), (model, &program))
+                .map(Some),
         }
     }
 

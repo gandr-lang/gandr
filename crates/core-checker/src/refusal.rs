@@ -291,6 +291,18 @@ pub enum UnadmittedFormer
     /// A loop each pass of which moves on an endpoint it threads: it never
     /// returns, and the kernel's returner assumes that each call returns.
     EndpointLoop,
+    /// A fold of a model over a fork whose child and parent each perform an
+    /// operation of the folded row. The fold reads the two halves in one
+    /// interleaving, and the judgement holds no claim on the order of their
+    /// operations (#6746). The fold over the web of the two halves is owed.
+    Interleaving
+    {
+        /// The first operation the child performs, by name or through a
+        /// name whose type holds it.
+        child: CoreNode,
+        /// The first operation the parent performs, read as the child's is.
+        parent: CoreNode,
+    },
 }
 
 impl UnadmittedFormer
@@ -304,9 +316,10 @@ impl UnadmittedFormer
     ///   representable level is an engine fault, the bound being the
     ///   representation's; a numeric literal, the numeric atom, a value lift
     ///   and a universe over a sort parameter are unimplemented, naming the
-    ///   issue no source reaches past the lowering yet (#2669); every other
-    ///   former has a rule in the judgement, so its refusal there is an engine
-    ///   fault.
+    ///   issue no source reaches past the lowering yet (#2669); a fold over a
+    ///   fork whose two halves each perform is unimplemented, naming the issue
+    ///   that owes the fold over the web (#6353); every other former has a rule
+    ///   in the judgement, so its refusal there is an engine fault.
     /// - provides: the class of [`CheckRefusal::OutOfFragment`].
     /// - fails: never.
     /// - panics: none.
@@ -317,6 +330,7 @@ impl UnadmittedFormer
     #[spec(ensures: |ret| match self {
         | Self::Stage | Self::TypeLift => matches!(ret, FailureClass::MalformedSource),
         | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
+        | Self::Interleaving { .. } => matches!(ret, FailureClass::Unimplemented(TrackingIssue::FOLD_OVER_WEB)),
         | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Qubit | Self::Abandon | Self::EndpointLoop => matches!(ret, FailureClass::EngineFault),
     })]
     #[inline]
@@ -328,6 +342,7 @@ impl UnadmittedFormer
             Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => {
                 FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)
             },
+            Self::Interleaving { .. } => FailureClass::Unimplemented(TrackingIssue::FOLD_OVER_WEB),
             Self::TopUniverse
             | Self::Abstract
             | Self::StaticLambda

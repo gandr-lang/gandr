@@ -150,6 +150,11 @@ pub enum Label
     Placed,
     /// The first arm of an offer or a case, which a later arm disagrees with.
     FirstArm,
+    /// The first operation the child of a fork performs, under a fold that
+    /// reads the child and the parent in one interleaving.
+    ChildPerforms,
+    /// The first operation the parent of that fork performs.
+    ParentPerforms,
     /// The earlier rule of a pair that rewrites one term apart, or whose
     /// joining the coincidence check's budget left undecided.
     Overlaps,
@@ -227,6 +232,8 @@ impl fmt::Display for Label
             Self::Received => f.write_str("the endpoint was received here"),
             Self::Placed => f.write_str("the endpoint was taken as this parameter"),
             Self::FirstArm => f.write_str("the arm it disagrees with"),
+            Self::ChildPerforms => f.write_str("the child performs this operation"),
+            Self::ParentPerforms => f.write_str("the parent performs this operation"),
             Self::Overlaps => f.write_str("the rule it overlaps"),
             Self::Copied => f.write_str("the variable matched again"),
             Self::Derivation => f.write_str("the derivation that fills it"),
@@ -908,6 +915,8 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. }) {
         ret.primary == Maybe::Present(Annotation { span: declaration, label }) && ret.context == UNNAMED
+    } else if matches!(refusal, CheckRefusal::OutOfFragment { former: UnadmittedFormer::Interleaving { .. }, .. }) {
+        role(&ret.context[0_usize], Label::ChildPerforms) && role(&ret.context[1_usize], Label::ParentPerforms)
     } else {
         ret.context == UNNAMED
     }
@@ -1129,6 +1138,13 @@ fn checked(
         CheckRefusal::MultiplicityUnsupported { at, .. } => {
             (spanned(origins.comp_type(at)), UNNAMED)
         },
+        CheckRefusal::OutOfFragment {
+            at,
+            former: UnadmittedFormer::Interleaving { child, parent },
+        } => (node(origins, at), [
+            annotated(node(origins, child), Label::ChildPerforms),
+            annotated(node(origins, parent), Label::ParentPerforms),
+        ]),
         CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         CheckRefusal::NotADataType(_)
@@ -2297,6 +2313,9 @@ impl fmt::Display for Former
             | UnadmittedFormer::Qubit => "a qubit at the pure kernel boundary",
             | UnadmittedFormer::EndpointLoop => {
                 "an endpoint loop at the pure kernel boundary, which never returns"
+            },
+            | UnadmittedFormer::Interleaving { .. } => {
+                "a fold over a fork whose two halves each perform, which reads one interleaving of them"
             },
         })
     }
@@ -3996,6 +4015,26 @@ mod tests
                 }),
             ]
         };
+        assert_eq!(
+            context(CheckRefusal::OutOfFragment {
+                at: comp,
+                former: UnadmittedFormer::Interleaving {
+                    child: comp,
+                    parent: comp,
+                },
+            }),
+            [
+                Maybe::Present(Annotation {
+                    span: spans[1_usize],
+                    label: Label::ChildPerforms,
+                }),
+                Maybe::Present(Annotation {
+                    span: spans[1_usize],
+                    label: Label::ParentPerforms,
+                }),
+            ],
+            "an interleaving marks the child's operation, then the parent's"
+        );
         for refusal in [
             CheckRefusal::DataFieldLevel {
                 field: value_type,
@@ -4927,6 +4966,10 @@ mod tests
             UnadmittedFormer::Buffer,
             UnadmittedFormer::Qubit,
             UnadmittedFormer::EndpointLoop,
+            UnadmittedFormer::Interleaving {
+                child: comp,
+                parent: comp,
+            },
         ]
         .into_iter()
         .map(|former| title(CheckRefusal::OutOfFragment { at: comp, former }))
@@ -5000,6 +5043,8 @@ mod tests
             Label::Fixed.to_string(),
             Label::Head.to_string(),
             Label::Fault.to_string(),
+            Label::ChildPerforms.to_string(),
+            Label::ParentPerforms.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

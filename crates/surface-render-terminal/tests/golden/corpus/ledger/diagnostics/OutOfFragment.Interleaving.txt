@@ -1,0 +1,23 @@
+error[OutOfFragment.Interleaving]: a fold over a fork whose two halves each perform, which reads one interleaving of them is not supported here
+   ╭▸ corpus/ledger/diagnostics/OutOfFragment.Interleaving.gandr:22:5
+   │
+20 │ ┌  def interleaved() -> [std.rand.Eff] Integer =
+21 │ │┌   handle a : std.io.Console.Eff {
+22 │ ││     let desk = fork (seat : !Integer. end) {
+   │ ││     ━━━ no rule for this former
+23 │ ││       let drawn = std.rand.draw 99;
+   │ ││                   ──────────────── the child performs this operation
+24 │ ││       send seat drawn;
+   ┆ ┆┆
+29 │ ││     std.io.Console.print "parent";
+   │ ││     ───────────────────────────── the parent performs this operation
+   ┆ ┆┆
+33 │ ││     | oper print(line, k) => k *{}
+34 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `+U (-F [std.rand.Eff] Integer)`; while checking the body of this thunk
+   │      checked against `-F [std.rand.Eff] Integer`; while checking the subject of this scope under its capability; binds a : Cap {print}
+   │
+   ├ note: `interleaved` is refused with OutOfFragment.Interleaving, as its expectation states
+   ╰ note: tracked by #6353 <https://github.com/gandr-lang/gandr/issues/6353>

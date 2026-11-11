@@ -79,6 +79,7 @@ use crate::region::Reference;
 use crate::typing::EndpointSite;
 use crate::typing::Forcing;
 use crate::typing::Form;
+use crate::typing::Former;
 use crate::typing::Linearity;
 use crate::typing::Located;
 use crate::typing::Mismatched;
@@ -996,6 +997,28 @@ impl Seat<'_>
         Ok(Endpoint {
             fork: computation_of(self.next()?)?,
             side: endpoint.side,
+        })
+    }
+
+    /// The former `former` names: an interleaving's two operations are the
+    /// refusal's next two nodes, child first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn former(
+        &mut self,
+        former: &Former,
+    ) -> Result<gandr_core_checker::UnadmittedFormer, seating::Absent>
+    {
+        Ok(match *former {
+            Former::Named(named) => named,
+            Former::Interleaving {
+                ref child,
+                ref parent,
+            } => gandr_core_checker::UnadmittedFormer::Interleaving {
+                child: self.core_site(child)?,
+                parent: self.core_site(parent)?,
+            },
         })
     }
 

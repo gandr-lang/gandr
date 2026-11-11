@@ -806,11 +806,14 @@ fn quoted<'arena>(
 /// a held capability's authority, and the row of each returner it reaches.
 /// Two halves are separate when no interface is in both footprints, or every
 /// operation either performs on a shared one only reads the host
-/// ([`gandr_core_term::effect::host::access`]).
+/// ([`gandr_core_term::effect::host::access`]). The footprint also keeps the
+/// node that first added an operation, which a refusal names as the half's
+/// operation.
 ///
 /// # Specification
 /// - ensures: one entry per interface, holding each operation once with the
-///   payload and reply types its interface gives it.
+///   payload and reply types its interface gives it; a first node exactly when
+///   an operation is held.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two children over one capability granting `read` and
@@ -819,8 +822,15 @@ fn quoted<'arena>(
 /// - witness: `capability::tests::a_footprint_reads_held_authority_and_rows_through_every_former`
 /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct Footprint(BTreeMap<EffectName, BTreeMap<OperationName, EffectOp>>);
+pub struct Footprint
+{
+    /// Each interface the half may use, with the operations it may perform
+    /// there.
+    held: BTreeMap<EffectName, BTreeMap<OperationName, EffectOp>>,
+    /// The node that first added an operation: an operation performed by
+    /// name, or a name whose type holds one.
+    first: Option<CoreNode>,
+}
 
 impl Footprint
 {
@@ -828,10 +838,13 @@ impl Footprint
     /// host: each held capability's authority, and each interface of each
     /// returner's row, through every former [`successors`] walks. A
     /// capability a scope introduces is answered by the scope, not the host,
-    /// and a row's tail names no interface; neither adds anything.
+    /// and a row's tail names no interface; neither adds anything. The node
+    /// `by` mentions a name of type `root`; it becomes the first node when
+    /// the footprint held nothing before and holds an operation after.
     ///
     /// # Specification
-    /// - ensures: every operation already held is still held.
+    /// - ensures: every operation already held is still held; a first node
+    ///   already kept stays.
     /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does
     ///   not resolve.
     /// - panics: none.
@@ -848,12 +861,14 @@ impl Footprint
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a held capability inside a thunk's domain, a
-    ///   returner's row, a scoped capability and a row tail, each read.
+    ///   returner's row, a scoped capability and a row tail, each read; the
+    ///   first node is the name of the held capability.
     /// - witness: `capability::tests::a_footprint_reads_held_authority_and_rows_through_every_former`
     pub(crate) fn reach(
         &mut self,
         arena: &CoreArena,
         root: TypeNode,
+        by: CoreNode,
     ) -> Result<(), CheckRefusal>
     {
         let mut pending = alloc::vec![root];
@@ -877,7 +892,33 @@ impl Footprint
             }
             successors(arena, node, &mut pending)?;
         }
+        self.marked(by);
         Ok(())
+    }
+
+    /// Keep `by` as the first node when the footprint holds an operation and
+    /// keeps no first node.
+    ///
+    /// # Specification
+    /// trivial.
+    fn marked(
+        &mut self,
+        by: CoreNode,
+    )
+    {
+        if self.first.is_none() && !self.held.is_empty() {
+            self.first = Some(by);
+        }
+    }
+
+    /// The node that first added an operation to the footprint; `None`
+    /// exactly when the footprint holds no operation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn first(&self) -> Option<CoreNode>
+    {
+        self.first
     }
 
     /// Add every operation of each signature an interface's default label
@@ -892,7 +933,7 @@ impl Footprint
     {
         for (label, signature) in entries {
             if matches!(*label, EffectLabel::Interface(_)) {
-                let held = self.0.entry(signature.name().clone()).or_default();
+                let held = self.held.entry(signature.name().clone()).or_default();
                 for operation in signature.operations() {
                     held.entry(operation.name.clone())
                         .or_insert_with(|| operation.clone());
@@ -901,11 +942,13 @@ impl Footprint
         }
     }
 
-    /// Add the operation `operation` of `signature`, performed by name.
+    /// Add the operation `operation` of `signature`, performed by name at the
+    /// node `by`.
     ///
     /// # Specification
     /// - ensures: the operation is held when `signature` declares it; nothing
-    ///   changes otherwise.
+    ///   changes otherwise; `by` becomes the first node when the footprint held
+    ///   nothing before.
     /// - panics: none.
     /// - executable: none — as [`Self::reach`].
     ///
@@ -917,18 +960,21 @@ impl Footprint
         &mut self,
         signature: &EffectSig,
         operation: &OperationName,
+        by: CoreNode,
     )
     {
         if let Maybe::Present(declared) = signature.operation(operation) {
-            self.0
+            self.held
                 .entry(signature.name().clone())
                 .or_default()
                 .entry(operation.clone())
                 .or_insert_with(|| declared.clone());
         }
+        self.marked(by);
     }
 
-    /// Add every operation `other` holds.
+    /// Add every operation `other` holds; keep the first node of `self`, or
+    /// else the first node of `other`.
     ///
     /// # Specification
     /// - ensures: every operation either footprint held is held.
@@ -944,17 +990,20 @@ impl Footprint
         other: Self,
     )
     {
-        for (interface, operations) in other.0 {
-            let held = self.0.entry(interface).or_default();
+        for (interface, operations) in other.held {
+            let held = self.held.entry(interface).or_default();
             for (name, operation) in operations {
                 held.entry(name).or_insert(operation);
             }
+        }
+        if self.first.is_none() {
+            self.first = other.first;
         }
     }
 
     /// The interfaces both footprints use where either may change the host,
     /// each with the operations both sides hold there; `None` exactly when
-    /// the two are separate.
+    /// the two are separate. The overlap keeps the first node of `self`.
     ///
     /// # Specification
     /// - ensures: an interface is kept only when both footprints hold it and
@@ -966,15 +1015,18 @@ impl Footprint
     /// - hypothesis: L3 — `read` on both sides is separate; `read` beside
     ///   `write` is not; two interfaces apart are separate.
     /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|shared| !shared.0.is_empty() && shared.0.keys().all(|interface| self.0.contains_key(interface) && other.0.contains_key(interface))))]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|shared| !shared.held.is_empty() && shared.held.keys().all(|interface| self.held.contains_key(interface) && other.held.contains_key(interface))))]
     pub(crate) fn overlap(
         &self,
         other: &Self,
     ) -> Option<Self>
     {
-        let mut shared = Self::default();
-        for (interface, mine) in &self.0 {
-            let Some(theirs) = other.0.get(interface)
+        let mut shared = Self {
+            held: BTreeMap::new(),
+            first: self.first,
+        };
+        for (interface, mine) in &self.held {
+            let Some(theirs) = other.held.get(interface)
             else {
                 continue;
             };
@@ -988,10 +1040,10 @@ impl Footprint
                     both.entry(name.clone())
                         .or_insert_with(|| operation.clone());
                 }
-                shared.0.insert(interface.clone(), both);
+                shared.held.insert(interface.clone(), both);
             }
         }
-        if shared.0.is_empty() {
+        if shared.held.is_empty() {
             None
         }
         else {
@@ -1022,7 +1074,7 @@ impl Footprint
     ) -> Result<ValueTypeId, CheckRefusal>
     {
         let signatures = self
-            .0
+            .held
             .iter()
             .map(|(interface, operations)| {
                 EffectSig::new(interface.clone(), operations.values().cloned())

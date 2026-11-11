@@ -53,6 +53,7 @@ use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
+use crate::refusal::UnadmittedFormer;
 use crate::session::Capture;
 use crate::session::Endpoint;
 use crate::session::ForkSide;
@@ -3751,12 +3752,14 @@ impl Machine<'_, '_>
         Ok(())
     }
 
-    /// Add to the innermost fork half being judged what a name it mentions,
-    /// of type `declared`, lets it do to the host
+    /// Add to the innermost fork half being judged what the name `term`, of
+    /// type `declared`, lets it do to the host
     /// ([`crate::capability::Footprint::reach`]); nothing outside a fork.
     ///
     /// # Specification
-    /// - ensures: the innermost footprint holds every operation it held.
+    /// - ensures: the innermost footprint holds every operation it held; `term`
+    ///   is its first node when it held nothing before and holds an operation
+    ///   after.
     /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does
     ///   not resolve.
     /// - panics: none.
@@ -3771,6 +3774,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
     pub(super) fn footprint_mentioned(
         &mut self,
+        term: ValueId,
         declared: ValueTypeId,
     ) -> Result<(), CheckRefusal>
     {
@@ -3778,14 +3782,19 @@ impl Machine<'_, '_>
         else {
             return Ok(());
         };
-        footprint.reach(self.context.arena(), TypeNode::Value(declared))
+        footprint.reach(
+            self.context.arena(),
+            TypeNode::Value(declared),
+            CoreNode::Term(TermNode::Value(term)),
+        )
     }
 
     /// Add to the innermost fork half being judged the operation the request
     /// `at` performs by name; nothing outside a fork or for another former.
     ///
     /// # Specification
-    /// - ensures: the innermost footprint holds every operation it held.
+    /// - ensures: the innermost footprint holds every operation it held; `at`
+    ///   is its first node when it held nothing before.
     /// - panics: none.
     /// - executable: none — as [`crate::capability::Footprint::reach`].
     ///
@@ -3807,7 +3816,11 @@ impl Machine<'_, '_>
             ..
         }) = self.context.arena().computation(at)
         {
-            footprint.perform(signature, operation);
+            footprint.perform(
+                signature,
+                operation,
+                CoreNode::Term(TermNode::Computation(at)),
+            );
         }
     }
 
@@ -4224,8 +4237,12 @@ impl Machine<'_, '_>
     }
 
     /// Finish a fork whose parent was judged: require the parent's end spent
-    /// and the two halves' footprints separate, add both to the half around
-    /// the fork, if any, and hand the parent's result on.
+    /// and the two halves' footprints separate, refuse a fold over the fork
+    /// whose two halves each perform, add both footprints to the half around
+    /// the fork, if any, and hand the parent's result on. A fold of a handler
+    /// or a scope reads the fork's program in one interleaving of its halves.
+    /// That order is the reduct's representative and no claim, so the
+    /// checker admits the fold only where one half alone performs.
     ///
     /// # Specification
     /// - requires: the parent was judged in `direction`.
@@ -4235,6 +4252,10 @@ impl Machine<'_, '_>
     /// - fails: as [`Self::spend`]; [`CheckRefusal::FootprintsOverlap`] at the
     ///   fork when an interface is in both footprints and one of them holds an
     ///   operation on it that does not only read the host;
+    ///   [`CheckRefusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Interleaving`] at the fork when a handler or a
+    ///   scope waits on it with no body apart between them and each half holds
+    ///   an operation, naming each half's first one;
     ///   [`CheckRefusal::MachineInvariant`] when the halves' footprints are not
     ///   open.
     /// - panics: none.
@@ -4246,10 +4267,13 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — an operator that leaves its end open is refused at
     ///   the fork; the seat exchange's operator closes it on every path; two
     ///   halves writing through one capability are refused, and two reading
-    ///   through it check.
+    ///   through it check; a handler around a fork whose child draws and whose
+    ///   parent prints is refused naming the draw and the print, and one around
+    ///   a fork whose child alone prints checks.
     /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     /// - witness: `judgement::session::tests::two_halves_share_a_capability_only_to_read_through_it_2789`
+    /// - witness: `judgement::session::tests::a_fold_over_a_fork_whose_halves_each_perform_is_refused_6746`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
     pub(super) fn joined(
         &mut self,
@@ -4273,6 +4297,21 @@ impl Machine<'_, '_>
                 child: child.capability(arena)?,
                 parent: parent.capability(arena)?,
                 shared: shared.capability(arena)?,
+            });
+        }
+        let folded = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|waiting| delimiter(waiting.frame) != Delimiter::Apart)
+            .any(|waiting| delimiter(waiting.frame) == Delimiter::Answerer);
+        if folded && let (Some(first), Some(then)) = (child.first(), parent.first()) {
+            return Err(CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                former: UnadmittedFormer::Interleaving {
+                    child: first,
+                    parent: then,
+                },
             });
         }
         if let Some(around) = self.sessions.footprints.last_mut() {

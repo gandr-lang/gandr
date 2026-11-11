@@ -3006,7 +3006,14 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
         },
         Refusal::OutOfFragment {
             at,
-            former: super::FORMERS[3],
+            former: crate::typing::Former::Named(super::FORMERS[3]),
+        },
+        Refusal::OutOfFragment {
+            at,
+            former: crate::typing::Former::Interleaving {
+                child: at,
+                parent: Site::Unreached,
+            },
         },
         Refusal::BudgetExceeded {
             budget: CheckBudget::from(9_usize),

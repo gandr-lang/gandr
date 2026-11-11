@@ -5132,7 +5132,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     self.captured(term, index, read)?;
                     self.mention(term, index)?;
                     self.drawn(term, index)?;
-                    self.footprint_mentioned(declared)?;
+                    self.footprint_mentioned(term, declared)?;
                     Ok(Step::Ascend(Produced::ValueType(read)))
                 },
                 Err(ContextError::UnboundIndex { zone, index, depth }) => {
@@ -5152,7 +5152,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Constant(constant) => match self.context.consult(constant) {
                 Maybe::Present(declared) => {
                     self.located_constant(term, constant, declared.id())?;
-                    self.footprint_mentioned(declared.id())?;
+                    self.footprint_mentioned(term, declared.id())?;
                     let read = match self.quantified_at(constant, declared.id())? {
                         Maybe::Present(staged) => staged,
                         Maybe::Absent(crate::quantified::Unread::Plain) => declared.id(),

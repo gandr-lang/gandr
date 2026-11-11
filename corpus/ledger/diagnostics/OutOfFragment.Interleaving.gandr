@@ -1,0 +1,34 @@
+/// `OutOfFragment.Interleaving` refuses a handler around a fork whose two
+/// halves each perform.
+///
+/// The fold of a handler reads the program of its subject.
+/// Over a fork, the fold reads the child first and the parent after it.
+/// That order is one interleaving of the two halves, and nothing orders
+/// their operations.
+/// So the checker admits the fold only where one half alone performs.
+/// The refusal names the first operation of each half.
+///
+/// - see: corpus/ledger/diagnostics/FootprintsOverlap.gandr
+
+// The console's host interface.
+import std.io;
+// The randomness host interface.
+import std.rand;
+
+/// The child draws and the parent prints, under a handler of the console.
+@[refuses("OutOfFragment.Interleaving")]
+def interleaved() -> [std.rand.Eff] Integer =
+  handle a : std.io.Console.Eff {
+    let desk = fork (seat : !Integer. end) {
+      let drawn = std.rand.draw 99;
+      send seat drawn;
+      close seat
+    };
+    let drawn = recv desk
+    close desk
+    std.io.Console.print "parent";
+    pure drawn
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => k *{}
+  }

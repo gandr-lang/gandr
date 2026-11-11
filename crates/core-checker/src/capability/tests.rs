@@ -776,7 +776,9 @@ fn a_binder_is_named_through_every_former()
 /// A footprint reads what a type lets its holder do to the host: a held
 /// capability's authority and a returner's row, found under a thunk's
 /// domain and its codomain; a capability a scope introduces is answered by
-/// the scope, and adds nothing (#2789).
+/// the scope, and adds nothing (#2789). The mention that adds the first
+/// operation is the footprint's first node; a mention that adds nothing
+/// names none (#6746).
 #[test]
 fn a_footprint_reads_held_authority_and_rows_through_every_former()
 {
@@ -796,8 +798,23 @@ fn a_footprint_reads_held_authority_and_rows_through_every_former()
     let prints = arena.comp_type_returner_with_effects(unit, EffectRow::singleton(host.console));
     let takes = arena.comp_type_arrow(both, prints);
     let suspended = arena.value_type_thunk(takes);
+    let name = crate::refusal::CoreNode::Term(crate::refusal::TermNode::Value(arena.value_unit()));
     let mut footprint = super::Footprint::default();
-    footprint.reach(&arena, TypeNode::Value(suspended)).unwrap();
+    footprint
+        .reach(&arena, TypeNode::Value(suspended), name)
+        .unwrap();
+    assert_eq!(
+        footprint.first(),
+        Some(name),
+        "the mention adds the first operation"
+    );
+    let mut apart = super::Footprint::default();
+    apart.reach(&arena, TypeNode::Value(scoped), name).unwrap();
+    assert_eq!(
+        apart.first(),
+        None,
+        "a scope's capability adds no operation"
+    );
     let named = footprint.capability(&mut arena).unwrap();
     let Some(&gandr_core_term::ValueType::Capability { ref authority, .. }) =
         arena.value_type(named)

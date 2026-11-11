@@ -26,6 +26,7 @@ use gandr_core_checker::CoreNode;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
+use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::comonoid::Grade;
 use gandr_core_checker::session::Capture;
@@ -172,6 +173,35 @@ pub struct EndpointSite
     pub fork: Site,
     /// Which of its ends.
     pub side: ForkSide,
+}
+
+/// A former the judgement has no rule for, as the store keeps it: a former
+/// with no payload as the checker states it, or an interleaving by the sites
+/// of its two operations.
+///
+/// # Specification
+/// - requires: each site is interpreted in its item's table.
+/// - ensures: projection keeps a former with no payload and maps the two
+///   operations of an interleaving to their item sites.
+/// - executable: none — this declaration has no call boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an interleaving projects the sites of its child's and its
+///   parent's operations, and a former with no payload projects as it is.
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Former
+{
+    /// A former with no payload.
+    Named(UnadmittedFormer),
+    /// A fold over a fork whose two halves each perform.
+    Interleaving
+    {
+        /// The first operation the child performs.
+        child: Site,
+        /// The first operation the parent performs.
+        parent: Site,
+    },
 }
 
 /// How an endpoint escaped its one linear use, projected: endpoints and arms
@@ -739,6 +769,59 @@ impl Projection<'_, '_, '_, '_>
         EndpointSite {
             fork: self.site(ArenaNode::Computation(endpoint.fork)),
             side: endpoint.side,
+        }
+    }
+
+    /// The stored former of `former`: the item sites of an interleaving's
+    /// two operations, child first, or the former itself.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an interleaving projects to the sites of its two operations,
+    ///   read child first; every other former is kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an interleaving projects both operation sites, and a
+    ///   former with no payload is kept.
+    /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
+    #[spec(ensures: |ret| matches!((former, ret), (UnadmittedFormer::Interleaving { .. }, Former::Interleaving { .. })) || ret == Former::Named(former))]
+    fn former(
+        &self,
+        former: UnadmittedFormer,
+    ) -> Former
+    {
+        match former {
+            UnadmittedFormer::Interleaving { child, parent } => Former::Interleaving {
+                child: self.core_site(child),
+                parent: self.core_site(parent),
+            },
+            UnadmittedFormer::ValueLift
+            | UnadmittedFormer::NumericLiteral
+            | UnadmittedFormer::NumericAtom
+            | UnadmittedFormer::TypeLift
+            | UnadmittedFormer::Abstract
+            | UnadmittedFormer::SortParameter
+            | UnadmittedFormer::TopUniverse
+            | UnadmittedFormer::StaticLambda
+            | UnadmittedFormer::EffectRow
+            | UnadmittedFormer::Reify
+            | UnadmittedFormer::Stack
+            | UnadmittedFormer::Perform
+            | UnadmittedFormer::Handle
+            | UnadmittedFormer::Resume
+            | UnadmittedFormer::Reset
+            | UnadmittedFormer::Shift
+            | UnadmittedFormer::Capability
+            | UnadmittedFormer::Exercise
+            | UnadmittedFormer::Scope
+            | UnadmittedFormer::Run
+            | UnadmittedFormer::Memory
+            | UnadmittedFormer::Stage
+            | UnadmittedFormer::Buffer
+            | UnadmittedFormer::Abandon
+            | UnadmittedFormer::Qubit
+            | UnadmittedFormer::EndpointLoop => Former::Named(former),
         }
     }
 

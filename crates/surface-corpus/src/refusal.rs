@@ -2298,7 +2298,7 @@ const CROSSING_READS: [(Tag, CrossingRead); 2] = [
     (HOMED, CrossingRead::Homed),
 ];
 
-/// Every former the checker's judgement has no rule for.
+/// Every former with no payload the checker's judgement has no rule for.
 const FORMERS: [UnadmittedFormer; 26_usize] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
@@ -2327,6 +2327,10 @@ const FORMERS: [UnadmittedFormer; 26_usize] = [
     UnadmittedFormer::Abandon,
     UnadmittedFormer::EndpointLoop,
 ];
+
+/// The tag of a fold over a fork whose two halves each perform: the one former
+/// with a payload, which [`FORMERS`] does not hold.
+const INTERLEAVING: Tag = Tag("Interleaving");
 
 /// Every fault a model component the derivation cannot state carries.
 const MODEL_FAULTS: [ModelFault; 12_usize] = [
@@ -2424,7 +2428,7 @@ fn crossed() -> [FragmentBoundary; 20_usize]
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each crossed boundary's tag, in order, then the stray's, then
-///   each former's tag.
+///   each former's tag, the interleaving's last.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2432,7 +2436,7 @@ fn crossed() -> [FragmentBoundary; 20_usize]
 ///   name, and every closed name is among them; a lost tag is a name no payload
 ///   spells.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-#[spec(ensures: |ret| ret.len() == crossed().len().saturating_add(1).saturating_add(FORMERS.len()) && ret.get(crossed().len()) == Some(&STRAY))]
+#[spec(ensures: |ret| ret.len() == crossed().len().saturating_add(2).saturating_add(FORMERS.len()) && ret.get(crossed().len()) == Some(&STRAY) && ret.last() == Some(&INTERLEAVING))]
 fn readings() -> Vec<Tag>
 {
     crossed()
@@ -2440,6 +2444,7 @@ fn readings() -> Vec<Tag>
         .map(boundary_tag)
         .chain([STRAY])
         .chain(FORMERS.into_iter().map(former_tag))
+        .chain([INTERLEAVING])
         .collect()
 }
 
@@ -2552,6 +2557,7 @@ pub const fn former_tag(former: UnadmittedFormer) -> Tag
         UnadmittedFormer::Qubit => "Qubit",
         UnadmittedFormer::Abandon => "Abandon",
         UnadmittedFormer::EndpointLoop => "EndpointLoop",
+        UnadmittedFormer::Interleaving { .. } => INTERLEAVING.0,
     })
 }
 
@@ -3613,6 +3619,7 @@ mod tests
         use gandr_surface_lowering::Unbuilt;
 
         use super::FORMERS;
+        use super::INTERLEAVING;
         use super::MEMBER_FAULTS;
         use super::MODEL_FAULTS;
         use super::Qualifier;
@@ -3672,6 +3679,7 @@ mod tests
         let families = FORMERS
             .map(|former| RefusalName::OutOfFragment(Qualifier::Named(former_tag(former))))
             .into_iter()
+            .chain([RefusalName::OutOfFragment(Qualifier::Named(INTERLEAVING))])
             .chain(MODEL_FAULTS.map(|fault| RefusalName::UnstatedComponent(model_tag(fault))))
             .chain(MEMBER_FAULTS.map(|fault| RefusalName::UndescribedMember(member_tag(fault))))
             .chain(

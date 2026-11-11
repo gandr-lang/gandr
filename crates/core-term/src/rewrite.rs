@@ -5537,7 +5537,8 @@ pub fn abstract_constant_value_traced(
     }
 }
 
-/// Read a receive's body with its payload bound intuitionistically.
+/// Read a receive's body with its payload bound intuitionistically, reporting
+/// every node it rewrote beside the node it rewrote it from.
 ///
 /// Every read of the payload's linear binder becomes the variable of one
 /// intuitionistic binder just outside `body`, and every free intuitionistic
@@ -5549,8 +5550,11 @@ pub fn abstract_constant_value_traced(
 /// - ensures: `body` read under one intuitionistic binder more, innermost,
 ///   which each read of the payload names; every other linear index stands, so
 ///   a session action's subject and a memory form's slot keep their names and
-///   the payload's linear slot stays, unread.
-/// - provides: the continuation a receive's erasure binds its payload in.
+///   the payload's linear slot stays, unread. `carried` gains one pair per node
+///   the rewrite changed, as [`substitute_environment_traced`] reports them.
+/// - provides: the continuation a receive's erasure binds its payload in, for a
+///   caller that keeps a table beside the arena, which a copy inherits from the
+///   node it stands for.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -5559,21 +5563,25 @@ pub fn abstract_constant_value_traced(
 ///   under a fork's halves becomes the one new binder counted past the
 ///   intuitionistic binders between; a free intuitionistic index rises by one;
 ///   the nested receive's own payload and every action subject stay as they
-///   were.
+///   were; the body is reported beside its copy.
 /// - witness: `rewrite::tests::a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319`
-#[spec(ensures: |ret| ret == body || arena.computation(ret).is_some())]
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == body || arena.computation(ret).is_some()))]
 #[inline]
 #[must_use]
 pub fn delinearise(
     arena: &mut CoreArena,
     body: ComputationId,
+    carried: &mut Vec<Carried>,
 ) -> ComputationId
 {
-    match Engine::new(arena).run(
+    let mut engine = Engine::new(arena);
+    let delinearised = engine.run(
         Node::Computation(body),
         Binders::NONE,
         Rewrite::Delinearise(Binders::NONE),
-    ) {
+    );
+    report(&engine.memo, carried);
+    match delinearised {
         Node::Computation(id) => id,
         Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
     }

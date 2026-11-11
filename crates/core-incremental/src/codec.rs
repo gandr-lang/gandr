@@ -174,6 +174,7 @@ use crate::support::SupportedNode;
 use crate::typing::EndpointSite;
 use crate::typing::Forcing;
 use crate::typing::Form;
+use crate::typing::Former;
 use crate::typing::Linearity;
 use crate::typing::Located;
 use crate::typing::Mismatched;
@@ -4075,6 +4076,66 @@ fn read_endpoint(reader: &mut Reader<'_>) -> Result<EndpointSite, CodecError>
     })
 }
 
+/// The wire tag of an interleaving: the first tag past [`FORMERS`], so each
+/// former with no payload keeps the tag it had.
+const INTERLEAVING: u8 = 26;
+
+/// Write a former: a former with no payload as its tag in [`FORMERS`], and an
+/// interleaving as [`INTERLEAVING`], then the sites of its child's and its
+/// parent's operations.
+///
+/// # Specification
+/// - ensures: the tag, then an interleaving's two sites in order.
+/// - fails: an unrepresentable site, or a named former the table does not hold.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an interleaving round-trips with its two sites, and a
+///   former with no payload round-trips under its listed tag.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn write_former<Out>(
+    writer: &mut Writer<'_, Out>,
+    former: Former,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match former {
+        Former::Named(named) => write_listed(writer, &FORMERS, &named),
+        Former::Interleaving { child, parent } => {
+            writer.tag(Tag(INTERLEAVING));
+            write_site(writer, child)?;
+            write_site(writer, parent)
+        },
+    }
+}
+
+/// Read a former written by [`write_former`].
+///
+/// # Specification
+/// - ensures: the written former; an interleaving's sites in order.
+/// - fails: malformed bytes, or a tag past [`INTERLEAVING`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_former`].
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_former(reader: &mut Reader<'_>) -> Result<Former, CodecError>
+{
+    match reader.tag()?.0 {
+        INTERLEAVING => Ok(Former::Interleaving {
+            child: read_site(reader)?,
+            parent: read_site(reader)?,
+        }),
+        listed => FORMERS
+            .get(usize::from(listed))
+            .copied()
+            .map(Former::Named)
+            .ok_or(CodecError::Corrupt),
+    }
+}
+
 /// Write how an endpoint escaped its one linear use: the kind's tag, then its
 /// endpoint, state, capture, arms or index.
 ///
@@ -7281,8 +7342,9 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
     }
 }
 
-/// The tags of the unadmitted formers, in stable wire order: a former joins at
-/// the end, so every tag written before it reads back the same.
+/// The tags of the unadmitted formers with no payload, in stable wire order: a
+/// former joins at the end, so every tag written before it reads back the
+/// same. An interleaving is written past the table ([`INTERLEAVING`]).
 const FORMERS: [UnadmittedFormer; 26] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
@@ -8048,6 +8110,7 @@ delegated! {
     TypeContent => write_type(reference), read_type;
     Reference => write_reference(reference), read_reference;
     EndpointSite => write_endpoint(value), read_endpoint;
+    Former => write_former(value), read_former;
     Linearity => write_linearity(reference), read_linearity;
     Located => write_located(reference), read_located;
     OccurrenceSite => write_occurrence_site(value), read_occurrence_site;
@@ -8098,7 +8161,6 @@ macro_rules! listed {
 
 listed! {
     ExpectedShape => SHAPES;
-    UnadmittedFormer => FORMERS;
     gandr_core_checker::Unsolved => UNSOLVED;
     gandr_core_checker::TacticFault => TACTIC_FAULTS;
 }

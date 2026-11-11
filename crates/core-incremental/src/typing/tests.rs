@@ -27,6 +27,7 @@ use gandr_kernel_term::StringLiteral;
 use quenchant_shape::shape::Maybe;
 
 use super::Form;
+use super::Former;
 use super::Projection;
 use super::Refusal;
 use super::Site;
@@ -252,7 +253,7 @@ fn each_refusal_projects_its_payload()
         typing,
         Typing::Refused(Refusal::OutOfFragment {
             at: first,
-            former: UnadmittedFormer::NumericAtom,
+            former: Former::Named(UnadmittedFormer::NumericAtom),
         }),
         "a former without a rule names the node carrying it"
     );
@@ -447,7 +448,23 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
             },
             Refusal::OutOfFragment {
                 at: comp_type_site,
-                former: UnadmittedFormer::NumericAtom,
+                former: Former::Named(UnadmittedFormer::NumericAtom),
+            },
+        ),
+        (
+            super::CheckRefusal::OutOfFragment {
+                at: super::CoreNode::Type(super::TypeNode::Computation(returner)),
+                former: UnadmittedFormer::Interleaving {
+                    child: super::CoreNode::Term(super::TermNode::Value(unit)),
+                    parent: super::CoreNode::Term(super::TermNode::Value(unreached)),
+                },
+            },
+            Refusal::OutOfFragment {
+                at: comp_type_site,
+                former: Former::Interleaving {
+                    child: value_site,
+                    parent: Site::Unreached,
+                },
             },
         ),
         (

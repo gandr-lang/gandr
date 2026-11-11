@@ -5493,9 +5493,10 @@ enum Residence
 /// - ensures: the checker's side for an effect row, a stack and its literal, a
 ///   request, a handler, a resumption, a delimiter, a capture, a capability, an
 ///   exercise, a scope, a recorded run or ride, a memory form, a buffer, a
-///   qubit and an endpoint loop; the kernel's for every pure former, and for a
-///   recursion's stage, which no source writes and the checker never lets a
-///   declaration carry, so its refusal is the checker's fault.
+///   qubit, an endpoint loop and a fold over a fork whose halves each perform;
+///   the kernel's for every pure former, and for a recursion's stage, which no
+///   source writes and the checker never lets a declaration carry, so its
+///   refusal is the checker's fault.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -5528,7 +5529,8 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Memory
         | UnadmittedFormer::Buffer
         | UnadmittedFormer::Qubit
-        | UnadmittedFormer::EndpointLoop => Residence::Checker,
+        | UnadmittedFormer::EndpointLoop
+        | UnadmittedFormer::Interleaving { .. } => Residence::Checker,
         UnadmittedFormer::ValueLift
         | UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom

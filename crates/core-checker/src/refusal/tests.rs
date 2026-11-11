@@ -344,6 +344,13 @@ fn each_unadmitted_former_carries_its_pinned_class()
         (UnadmittedFormer::NumericAtom, unruled),
         (UnadmittedFormer::ValueLift, unruled),
         (UnadmittedFormer::SortParameter, unruled),
+        (
+            UnadmittedFormer::Interleaving {
+                child: at,
+                parent: at,
+            },
+            FailureClass::Unimplemented(TrackingIssue::FOLD_OVER_WEB),
+        ),
         (UnadmittedFormer::TopUniverse, FailureClass::EngineFault),
         (UnadmittedFormer::Abstract, FailureClass::EngineFault),
         (UnadmittedFormer::StaticLambda, FailureClass::EngineFault),
