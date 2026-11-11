@@ -40,7 +40,9 @@
 # evidence. A `supersedes` item is refused while the tree still names the old
 # key on a line that does not mark it demoted. An issue's `## Sources` row
 # that names no key, or a `## Sources` written as a list, is noted, not
-# refused (#3594).
+# refused (#3594). An issue's row that states a design's claim, `builds:`,
+# `saves:` and `decides:` (#6569), is answered by an item that names the site
+# of each part, or by `departed:` with its reason.
 #
 # A primary source that is a vault page is cited where the change decides
 # something by it (#2793), and only there (#4096): when an issue's
@@ -177,6 +179,17 @@ def sources:
       | if length == 0 then empty
         else "the body's `## Sources read` lacks the sources its issue names: add one item per key, `- `<key>` — <disposition>`, the disposition \(vocabulary), then run `pr:open` again:\n" + (map("  - `\(.key)` (#\(.n)'s `## Sources`)") | join("\n"))
         end),
+    ([(.issues // [])[] | .number as $n | .body | source_rows
+        | select(.text | claim_parts | length > 0)
+        | {n: $n, keys}]
+      | .[] as $claim
+      | [$read[] | keyed | select(. != null and any(.keys[]; IN($claim.keys[])))] as $items
+      | select($items | length > 0)
+      | select(any($items[]; .text | test("^departed:\\s*\\S")) | not)
+      | ([$items[] | .text | claim_parts] | add // {}) as $parts
+      | [claim_labels[] | select(($parts[.] // "") == "")] as $missing
+      | select($missing | length > 0)
+      | "the `## Sources read` item of `\($claim.keys | join("`, `"))` does not answer the claim that #\($claim.n)'s `## Sources` states (`units.md` § units-pr): name the site of \($missing | map("`\(.):`") | join(", ")) in it, as `taken: builds: <site>, saves: <site>, decides: <site>`, or write `departed: <the recorded design, the change, why>`, then run `pr:open` again"),
     ($read[]
       | . as $line
       | supersession as $replaced
