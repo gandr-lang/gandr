@@ -3297,20 +3297,17 @@ impl Source for CoreSource<'_>
         else {
             return None;
         };
-        let family = match self.constructors.cases.get(&id) {
-            Some(&family) => family,
-            None => {
-                let &Computation::DataCase { scrutinee, .. } = self.arena.computation(id)?
-                else {
-                    return None;
-                };
-                let &Value::Constructor { family, .. } = self.arena.value(scrutinee)?
-                else {
-                    return None;
-                };
-                self.family(family)?
-            },
-        };
+        let family = self.constructors.cases.get(&id).copied().or_else(|| {
+            let &Computation::DataCase { scrutinee, .. } = self.arena.computation(id)?
+            else {
+                return None;
+            };
+            let &Value::Constructor { family, .. } = self.arena.value(scrutinee)?
+            else {
+                return None;
+            };
+            self.family(family)
+        })?;
         let (name, arity) = self.constructors.arm(family, index)?;
         Some((name, arity, self.constructors.placement(family, arity)))
     }

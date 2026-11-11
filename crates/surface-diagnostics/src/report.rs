@@ -129,6 +129,7 @@ use gandr_surface_lowering::RunSpelling;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::Separation;
 use gandr_surface_parser::juxtaposed;
+use gandr_surface_pretty::Presentation;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -653,8 +654,8 @@ impl Report<'_>
                 ..
             } => match (spellings.loop_side(left), spellings.loop_side(right)) {
                 (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
-                    noted("the answer carried along the loop is", left.as_ref()),
-                    noted("the answer at the loop's point is", right.as_ref()),
+                    LoopSide::Carried.noted(left),
+                    LoopSide::AtPoint.noted(right),
                 ]),
                 _ => Vec::new(),
             },
@@ -1207,27 +1208,48 @@ impl Report<'_>
     }
 }
 
-/// A note naming `term` after `sentence`: in backticks on its line when the
-/// term is one line, laid out on the lines below it otherwise.
+/// A side of a loop refusal, as its note names it.
 ///
 /// # Specification
 /// trivial.
-fn noted(
-    sentence: &str,
-    term: &str,
-) -> String
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LoopSide
 {
-    if term.contains('\n') {
-        let mut note = String::from(sentence);
-        note.push(':');
-        for line in term.lines() {
-            note.push_str("\n  ");
-            note.push_str(line);
+    /// The answer at the loop's point, carried along the loop.
+    Carried,
+    /// The answer at the loop's point.
+    AtPoint,
+}
+
+impl LoopSide
+{
+    /// The note naming `term` as this side: in backticks on its line when the
+    /// term is one line, laid out on the lines below the sentence otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn noted(
+        self,
+        term: &Presentation,
+    ) -> String
+    {
+        let sentence = match self {
+            Self::Carried => "the answer carried along the loop is",
+            Self::AtPoint => "the answer at the loop's point is",
+        };
+        let term = term.as_ref();
+        if term.contains('\n') {
+            let mut note = String::from(sentence);
+            note.push(':');
+            for line in term.lines() {
+                note.push_str("\n  ");
+                note.push_str(line);
+            }
+            note
         }
-        note
-    }
-    else {
-        alloc::format!("{sentence} `{term}`")
+        else {
+            alloc::format!("{sentence} `{term}`")
+        }
     }
 }
 

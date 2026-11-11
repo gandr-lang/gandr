@@ -1,6 +1,13 @@
-// A dependent case over the 2-sphere that its cell refuses. The map at the
-// family's left endpoint sends the cell to reflexivity, so the answer at the
-// point, carried along the cell, is the cell's inverse and not that answer.
+// This source states a dependent case over the 2-sphere that its cell
+// refuses.
+//
+// A case into a path family owes the transport of its answer along the cell.
+// The refusal shows both sides of that obligation at a 2-cell, each by the
+// shared printer.
+//
+// The family's left endpoint runs through `flatten`, which sends the cell to
+// reflexivity. So the answer at the point, carried along the cell, is the
+// cell's inverse and not that answer.
 //
 // - see: #6458 — `flattenRefl`
 // - see: #6548 — the two notes of its refusal
